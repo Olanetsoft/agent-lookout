@@ -1,0 +1,26 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-electron
+release
+.output
+coverage
+
+# OS and logs
+.DS_Store
+*.log
+
+# Environment files
+.env*
+
+# Local-only notes and agent configuration
+.claude/
+CLAUDE.md
+.reference/
+CLAUDE.local.md
+*.local.md
+
+# Everything the browser tests write: failure screenshots and attachments.
+tests/.artifacts/

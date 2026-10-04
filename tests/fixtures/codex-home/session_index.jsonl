@@ -1,0 +1,5 @@
+{"id":"00000000-0000-4000-8000-0000000000c1","thread_name":"first-try","updated_at":"2026-10-01T09:01:00Z"}
+{"id":"00000000-0000-4000-8000-0000000000c3","thread_name":"docs-pass","updated_at":"2026-10-01T10:31:00Z"}
+this line is not JSON
+{"id":"00000000-0000-4000-8000-0000000000c1","thread_name":"demo-project","updated_at":"2026-10-01T09:10:00Z"}
+{"id":"00000000-0000-4000-8000-0000000000ff","thread_name":"removed-session","updated_at":"2026-09-01T09:00:00Z"}

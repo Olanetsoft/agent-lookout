@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="A local control panel for the AI agent sessions already running on this computer."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Agent Lookout</title>
+    <script>
+      // Runs before first paint so the page never flashes the wrong theme.
+      // The stored preference is "light", "dark" or "system". Dark is the default.
+      (function () {
+        var theme = "dark";
+        try {
+          var stored = localStorage.getItem("agent-lookout-theme");
+          if (stored === "light" || stored === "dark") {
+            theme = stored;
+          } else if (stored === "system") {
+            theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+        } catch (error) {
+          // Storage can be blocked. Keep the default.
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/dashboard/main.tsx"></script>
+  </body>
+</html>

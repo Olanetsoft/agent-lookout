@@ -1,0 +1,61 @@
+name: Adapter request
+description: Ask for Agent Lookout to show sessions from another agent tool.
+title: "Adapter: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An adapter finds one agent tool's sessions and reports them to the dashboard. Only the first two fields are required. Fill in the rest if you know it, because it decides how much work the adapter is.
+  - type: input
+    id: tool
+    attributes:
+      label: Which agent tool
+      description: The tool's name and the version you use.
+    validations:
+      required: true
+  - type: dropdown
+    id: surfaces
+    attributes:
+      label: Where its sessions run
+      description: Choose every place that applies.
+      multiple: true
+      options:
+        - Terminal
+        - Editor extension
+        - Desktop app
+        - Cloud
+        - Browser
+    validations:
+      required: true
+  - type: textarea
+    id: listing
+    attributes:
+      label: How it lists sessions
+      description: A command or API that the vendor documents for listing running sessions, if there is one. Include a link to the vendor's page.
+  - type: textarea
+    id: state
+    attributes:
+      label: Where it keeps session state
+      description: Files or folders on disk that describe running sessions, if you know them. Give the paths and say whether the vendor documents the format. Leave out file contents that show your own session names or paths.
+  - type: textarea
+    id: waiting
+    attributes:
+      label: How it shows that a session is waiting
+      description: Whether the tool reports that a session is waiting for permission or for an answer, and where that appears.
+  - type: dropdown
+    id: testing
+    attributes:
+      label: Can you test an adapter on a machine that runs this tool
+      options:
+        - "Yes"
+        - "No"
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Do you want to write it
+      description: CONTRIBUTING.md explains how an adapter is built.
+      options:
+        - "Yes"
+        - "No"
+        - With some help

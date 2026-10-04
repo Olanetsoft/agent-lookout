@@ -1,0 +1,1047 @@
+/*
+ * The whole theme lives in this file. The identity is called Night Watch: a
+ * watchtower at night, in polished black. The ground is a deep black with the
+ * faintest warmth in it, lit from behind by soft silver light, and every panel
+ * is smoked glass at one of three heights. The only warm thing on the screen is
+ * a lamp, lit where a session needs the person and nowhere else, and its light
+ * rises behind the glass of the hero only while that is true. Day is the same
+ * material in daylight: warm stone glass and near-black ink.
+ *
+ * Colours come in two layers. Raw tokens (--ink, --glass-card, ...) hold the
+ * values and change with the theme. `@theme inline` gives each colour a
+ * component may paint a Tailwind name of the same spelling (text-ink,
+ * bg-fill-hover, inset-ring-control-rim, ...). Components never use a hex value,
+ * and no colour exists outside this file: Tailwind's own palette is switched off
+ * below, along with its radii, shadows, type sizes, easings and breakpoints.
+ *
+ * The materials are classes in the components layer: the ground, the glass at
+ * each height, the two lights behind the hero and the fills every bar is drawn
+ * with. A feature takes a whole material by its one name and never rebuilds one
+ * from parts.
+ *
+ * The needs-you tokens and the lamp are the only warm colours. They are for a
+ * session that needs the person now. Everything that can wait is in the neutral
+ * and silver family.
+ */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/*
+ * Tailwind makes a class for every name it finds in the files it reads. The docs
+ * name classes to explain them, often without the guard they are used with, so
+ * reading them would add rules the app never uses: the lamp's breathing without
+ * its reduced-motion guard, for one. They are not read.
+ */
+@source not "../../../docs";
+
+/*
+ * Fonts are bundled with the app. Nothing is fetched from the network. Only the
+ * weights the interface uses are imported: every weight adds files to the build.
+ */
+@import "@fontsource/atkinson-hyperlegible-next/400.css";
+@import "@fontsource/atkinson-hyperlegible-next/500.css";
+@import "@fontsource/atkinson-hyperlegible-next/600.css";
+@import "@fontsource/atkinson-hyperlegible-mono/400.css";
+@import "@fontsource/atkinson-hyperlegible-mono/500.css";
+@import "@fontsource/atkinson-hyperlegible-mono/600.css";
+
+/* `data-theme` on <html> is "light" or "dark". index.html sets it before first paint. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* What does not change with the theme: how the light is laid out, and how far glass blurs. */
+:root {
+  /*
+   * The main field of light: a long, low ellipse across the top right, turned a
+   * little, the way a window reflects in a lacquered surface.
+   */
+  --field-main-width: 1760px;
+  --field-main-height: 470px;
+  --field-main-right: -420px;
+  --field-main-top: -150px;
+  --field-main-turn: -13deg;
+
+  /* Glass that something passes behind: the sticky header, a tooltip, the dialog. */
+  --glass-blur: 30px;
+
+  /* The light along the top edge of the one solid button. Not warm: it is white. */
+  --lit-top: rgba(255, 255, 255, 0.55);
+}
+
+/* Raw tokens. Night is the default, so it also sits on :root. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /*
+   * The ground: black with the faintest warmth, never #000. It shows only in the
+   * gaps between panels and at the edges.
+   */
+  --ground-top: #090908;
+  --ground: linear-gradient(180deg, #090908 0%, #0b0a09 46%, #11100e 100%);
+  /*
+   * The light behind the glass: silver, and a deeper pewter low on the left.
+   * Each light is three channels, so it can be drawn at any strength with
+   * rgb(var(--field) / alpha); the strength is its peak alpha.
+   */
+  --field: 218 214 207;
+  --field-deep: 142 137 130;
+  --field-strength: 0.23;
+  /* A fine dither over the ground, so its dark gradients do not band. */
+  --grain: 0.5;
+
+  /* The lamp's light, behind the hero while a session needs the person. */
+  --lamp: 255 166 60;
+  --lamp-strength: 0.48;
+  /* The light that holds the hero when nothing needs the person. */
+  --rest: 226 221 213;
+  --rest-strength: 0.34;
+
+  /* Smoked glass, from the thinnest to the densest. */
+  --glass-chrome: rgba(16, 15, 14, 0.6);
+  --glass-card: rgba(19, 18, 17, 0.62);
+  --glass-raised: rgba(33, 31, 29, 0.66);
+  --glass-float: rgba(30, 28, 26, 0.84);
+  /* How far blurred glass saturates what is behind it, and the hero's lights. */
+  --saturate: 118%;
+  --saturate-hero: 185%;
+
+  /* Light caught on the edge of the glass, brightest at the top right. */
+  --rim: linear-gradient(
+    205deg,
+    rgba(255, 248, 238, 0.3) 0%,
+    rgba(255, 248, 238, 0.09) 20%,
+    rgba(255, 248, 238, 0.03) 58%,
+    rgba(255, 248, 238, 0.08) 100%
+  );
+  --rim-raised: linear-gradient(
+    205deg,
+    rgba(255, 248, 238, 0.42) 0%,
+    rgba(255, 248, 238, 0.13) 20%,
+    rgba(255, 248, 238, 0.045) 58%,
+    rgba(255, 248, 238, 0.12) 100%
+  );
+  /* The hero's top left edge catching the lamp, and catching the rest light. */
+  --rim-lamp: linear-gradient(
+    135deg,
+    rgba(255, 184, 96, 0.55) 0%,
+    rgba(255, 184, 96, 0.16) 22%,
+    rgba(255, 184, 96, 0) 46%
+  );
+  --rim-rest: linear-gradient(
+    135deg,
+    rgba(240, 234, 224, 0.34) 0%,
+    rgba(240, 234, 224, 0.09) 24%,
+    rgba(240, 234, 224, 0) 48%
+  );
+  /* A little more light just under the top edge, so the surface reads as polished. */
+  --sheen: linear-gradient(
+    180deg,
+    rgba(255, 248, 238, 0.065),
+    rgba(255, 248, 238, 0.012) 120px,
+    rgba(255, 248, 238, 0) 260px
+  );
+  /* The three heights: a 1px dark outer line, then a deep drop. */
+  --elev-1:
+    0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 1px rgba(0, 0, 0, 0.35),
+    0 14px 34px -18px rgba(0, 0, 0, 0.8);
+  --elev-2:
+    0 0 0 1px rgba(0, 0, 0, 0.58), 0 1px 1px rgba(0, 0, 0, 0.38),
+    0 26px 52px -26px rgba(0, 0, 0, 0.88);
+  --elev-3:
+    0 0 0 1px rgba(0, 0, 0, 0.62), 0 2px 2px rgba(0, 0, 0, 0.42),
+    0 44px 90px -34px rgba(0, 0, 0, 0.95);
+
+  /* Flat fills on top of the glass. */
+  --fill-quiet: rgba(255, 248, 238, 0.055);
+  --fill-hover: rgba(255, 248, 238, 0.045);
+  --fill-selected: rgba(255, 248, 238, 0.1);
+  --fill-zebra: rgba(255, 248, 238, 0.022);
+  --control-rim: rgba(255, 248, 238, 0.1);
+  --control-top: rgba(255, 248, 238, 0.1);
+  --well: rgba(0, 0, 0, 0.3);
+  --well-shade: rgba(0, 0, 0, 0.35);
+  --thumb: rgba(255, 248, 238, 0.11);
+  --thumb-drop: rgba(0, 0, 0, 0.35);
+
+  /* Rules, from the faintest to the one a chart stands on. */
+  --hairline: rgba(255, 248, 238, 0.075);
+  --rule: rgba(255, 248, 238, 0.12);
+  --rule-strong: rgba(255, 248, 238, 0.22);
+
+  /* Ink. All three are fit for words on every glass; the hero never takes the third. */
+  --ink: #f3f0ea;
+  --ink-secondary: #c3beb5;
+  --ink-muted: #9e988f;
+
+  /* The lamp. Only where a session needs the person now. */
+  --status-needs-you: #ffb547;
+  --status-needs-you-edge: #ffb547;
+  --label-needs-you: #ffb547;
+  --on-needs-you: #221400;
+  --glow-needs-you: rgba(255, 170, 60, 0.5);
+
+  /* The statuses that can wait: a silver-blue for working, warm greys for the rest. */
+  --status-working: #a9bcd4;
+  --status-working-fill: #86a0bd;
+  --status-working-top: rgba(255, 255, 255, 0.16);
+  --status-idle: #948e85;
+  --answered-fill: rgba(148, 142, 133, 0.26);
+  --status-finished: #9e988f;
+  /* The empty glass of a bar in a chart. */
+  --tube: rgba(255, 248, 238, 0.04);
+  --tube-rim: rgba(255, 248, 238, 0.15);
+  --tube-top: rgba(255, 248, 238, 0.2);
+  /* The hatch over time that was not measured. */
+  --unmeasured: #4b463f;
+
+  --focus: #c3d3e6;
+  --scrim: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ground-top: #d4d0ca;
+  --ground: linear-gradient(180deg, #d4d0ca, #ebe9e5);
+  --field: 255 255 255;
+  --field-deep: 240 235 227;
+  --field-strength: 0.72;
+  --grain: 0.3;
+
+  --lamp: 255 176 80;
+  --lamp-strength: 0.46;
+  --rest: 255 255 255;
+  --rest-strength: 0.7;
+
+  --glass-chrome: rgba(252, 251, 249, 0.52);
+  --glass-card: rgba(255, 255, 254, 0.56);
+  --glass-raised: rgba(255, 255, 255, 0.66);
+  --glass-float: rgba(253, 252, 250, 0.84);
+  --saturate: 160%;
+  --saturate-hero: 190%;
+
+  --rim: linear-gradient(
+    205deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.62) 20%,
+    rgba(255, 255, 255, 0.42) 60%,
+    rgba(255, 255, 255, 0.8) 100%
+  );
+  --rim-raised: linear-gradient(
+    205deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.75) 20%,
+    rgba(255, 255, 255, 0.52) 60%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  --rim-lamp: linear-gradient(
+    135deg,
+    rgba(232, 150, 40, 0.55) 0%,
+    rgba(232, 150, 40, 0.14) 22%,
+    rgba(232, 150, 40, 0) 46%
+  );
+  --rim-rest: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 40%);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 96px);
+  /* By day the outer line is half a pixel, and the drop is a warm shadow. */
+  --elev-1:
+    0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+    0 14px 30px -18px rgba(38, 32, 26, 0.3);
+  --elev-2:
+    0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+    0 24px 46px -26px rgba(38, 32, 26, 0.36);
+  --elev-3:
+    0 0 0 0.5px rgba(38, 32, 26, 0.14), 0 2px 3px rgba(38, 32, 26, 0.07),
+    0 40px 80px -34px rgba(38, 32, 26, 0.45);
+
+  --fill-quiet: rgba(255, 255, 255, 0.62);
+  --fill-hover: rgba(255, 255, 255, 0.55);
+  --fill-selected: rgba(255, 255, 255, 0.85);
+  --fill-zebra: rgba(38, 32, 26, 0.035);
+  --control-rim: rgba(38, 32, 26, 0.13);
+  --control-top: rgba(255, 255, 255, 0.9);
+  --well: rgba(38, 32, 26, 0.055);
+  --well-shade: rgba(38, 32, 26, 0.06);
+  --thumb: #ffffff;
+  --thumb-drop: rgba(38, 32, 26, 0.3);
+
+  --hairline: rgba(38, 32, 26, 0.08);
+  --rule: rgba(38, 32, 26, 0.13);
+  --rule-strong: rgba(38, 32, 26, 0.28);
+
+  --ink: #181613;
+  --ink-secondary: #3f3b36;
+  --ink-muted: #5b564f;
+
+  /*
+   * In daylight the lamp's fill is too pale to be seen on its own, so it is
+   * never drawn without its edge, and words take the darker label colour.
+   */
+  --status-needs-you: #f4a62a;
+  --status-needs-you-edge: #a35a00;
+  --label-needs-you: #864600;
+  --on-needs-you: #221400;
+  --glow-needs-you: rgba(214, 128, 20, 0.4);
+
+  --status-working: #36577e;
+  --status-working-fill: #5b7ca4;
+  --status-working-top: rgba(255, 255, 255, 0.22);
+  --status-idle: #6f6961;
+  --answered-fill: rgba(111, 105, 97, 0.14);
+  --status-finished: #5b564f;
+  --tube: rgba(255, 255, 255, 0.62);
+  --tube-rim: rgba(38, 32, 26, 0.16);
+  --tube-top: #ffffff;
+  --unmeasured: #b2aca3;
+
+  --focus: #36577e;
+  --scrim: rgba(38, 32, 26, 0.28);
+}
+
+/*
+ * What Tailwind brings that this system does not use. With these switched off, a
+ * colour, radius, shadow, blur, type size, weight, easing, breakpoint or
+ * animation that is not defined below produces no CSS at all.
+ */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --font-weight-*: initial;
+  --text-*: initial;
+  --leading-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --blur-*: initial;
+  --ease-*: initial;
+  --breakpoint-*: initial;
+  --animate-*: initial;
+}
+
+/* The raw tokens under their own names. */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+
+  --color-hairline: var(--hairline);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-glass-chrome: var(--glass-chrome);
+  --color-glass-card: var(--glass-card);
+  --color-glass-raised: var(--glass-raised);
+  --color-glass-float: var(--glass-float);
+
+  --color-fill-quiet: var(--fill-quiet);
+  --color-fill-hover: var(--fill-hover);
+  --color-fill-selected: var(--fill-selected);
+  --color-fill-zebra: var(--fill-zebra);
+  --color-control-rim: var(--control-rim);
+  --color-well: var(--well);
+  --color-thumb: var(--thumb);
+
+  --color-status-needs-you: var(--status-needs-you);
+  --color-status-needs-you-edge: var(--status-needs-you-edge);
+  --color-label-needs-you: var(--label-needs-you);
+  --color-on-needs-you: var(--on-needs-you);
+
+  --color-status-working: var(--status-working);
+  --color-status-working-fill: var(--status-working-fill);
+  --color-status-idle: var(--status-idle);
+  --color-answered-fill: var(--answered-fill);
+  --color-status-finished: var(--status-finished);
+  --color-unmeasured: var(--unmeasured);
+
+  --color-focus: var(--focus);
+  --color-scrim: var(--scrim);
+
+  /*
+   * The few shadows a control is made of. Each composes with `inset-ring`, so a
+   * control is a fill, a rim and a light, each named once.
+   *   inset-shadow-top   a control's top light: a quiet button, the thumb, the
+   *                      rail's current view
+   *   inset-shadow-well  the shade inside a recessed well
+   *   inset-shadow-lit   the top light on the one solid button
+   *   shadow-thumb       the thumb lifting off its well
+   *   shadow-glow        the lamp's light under the one solid button
+   *   shadow-edge        3px of ink down the leading side of an error
+   */
+  --inset-shadow-top: inset 0 1px 0 var(--control-top);
+  --inset-shadow-well: inset 0 1px 2px var(--well-shade);
+  --inset-shadow-lit: inset 0 1px 0 var(--lit-top);
+  --shadow-thumb: 0 2px 6px -2px var(--thumb-drop);
+  --shadow-glow: 0 8px 22px -8px var(--glow-needs-you);
+  --shadow-edge: inset 3px 0 0 var(--ink);
+}
+
+@theme {
+  /* One family in two cuts: the sans for words and figures, the mono for clock times and literal strings. */
+  --font-sans: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Running text, labels and figures, names and titles. There is no bold. */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /*
+   * The type scale, named once. A size that is not in this list needs a reason.
+   * Weight is set beside the size, with font-medium or font-semibold. The name
+   * and the wait come down a step at 760px and below.
+   */
+  --text-wait: 46px;
+  --text-wait--line-height: 0.95;
+  --text-wait--letter-spacing: -0.03em;
+  --text-name: 34px;
+  --text-name--line-height: 1.05;
+  --text-name--letter-spacing: -0.025em;
+  --text-stat: 28px;
+  --text-stat--line-height: 1;
+  --text-stat--letter-spacing: -0.02em;
+  /* The unit letters beside the wait: the m and s of 2m 07s. */
+  --text-unit: 22px;
+  --text-unit--line-height: 1;
+  --text-unit--letter-spacing: 0;
+  --text-wordmark: 19px;
+  --text-wordmark--line-height: 1;
+  --text-wordmark--letter-spacing: -0.015em;
+  --text-lead: 16px;
+  --text-lead--line-height: 1.2;
+  --text-title: 15px;
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.006em;
+  --text-row: 14px;
+  --text-row--line-height: 1.45;
+  --text-body: 13px;
+  --text-body--line-height: 1.45;
+  /* Mono beside 13px text. The mono sets wide, so it runs half a pixel under. */
+  --text-fact: 12.5px;
+  --text-fact--line-height: 1.45;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.35;
+  --text-micro: 11px;
+  --text-micro--line-height: 1.2;
+
+  /* Labels sit tight. Running text gets room. */
+  --leading-tight: 1.2;
+  --leading-body: 1.45;
+
+  /*
+   * Corners. Each nested shape keeps its corner concentric with the one around
+   * it: a selection 10px inside a 24px panel takes 14px.
+   */
+  --radius-panel: 24px;
+  --radius-chrome: 22px;
+  --radius-inner: 14px;
+  --radius-row: 10px;
+  --radius-capsule: 999px;
+  /* The top of a bar in a chart, and a block: a wait, a swatch, a hatched stretch. */
+  --radius-tube: 6px;
+  --radius-bar: 4px;
+
+  /*
+   * The sizes the layout is built from. Each is a spacing name, so it works with
+   * every sizing utility: w-rail, h-header, p-window, h-row, size-mark.
+   */
+  --spacing-window: 12px;
+  --spacing-rail: 76px;
+  --spacing-header: 56px;
+  --spacing-row: 44px;
+  --spacing-group: 40px;
+  --spacing-log-row: 38px;
+  --spacing-control: 30px;
+  --spacing-button: 28px;
+  --spacing-button-hero: 38px;
+  --spacing-mark: 14px;
+  --spacing-icon: 20px;
+  /* The timeline: a row, its label column, and a bar for each amount of wanting the person. */
+  --spacing-track: 30px;
+  --spacing-label-col: 188px;
+  --spacing-bar-needs-you: 16px;
+  --spacing-bar-working: 10px;
+  --spacing-bar-idle: 2px;
+  /* The name column of the bars of waits in the hero. */
+  --spacing-waited-name: 132px;
+
+  /*
+   * Two breakpoints. Below `wide` the hero stacks first and the cards follow it
+   * in one column. Below `mid` the layout narrows for a phone. Use `max-wide:`
+   * and `max-mid:`.
+   */
+  --breakpoint-mid: 761px;
+  --breakpoint-wide: 1181px;
+
+  /* The one easing that is not a default: the lamp's light rising, the thumb sliding. */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* The lamp breathing. It is the only motion that runs while nothing is happening, with the drift. */
+  --animate-lamp: lamp 3.2s ease-in-out infinite;
+  --animate-spin-loader: spin-loader 0.9s linear infinite;
+  /* The dialog arriving and leaving: it and its scrim fade, and it drops a little. */
+  --animate-rise-fast: rise 240ms ease-out both;
+  --animate-fade-in: fade-in 200ms ease-out both;
+  --animate-fade-out: fade-out 150ms ease-in both;
+  --animate-drop: drop 150ms ease-in both;
+
+  @keyframes lamp {
+    0%,
+    100% {
+      stroke-opacity: 0.38;
+    }
+    50% {
+      stroke-opacity: 0.8;
+    }
+  }
+
+  @keyframes spin-loader {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes drop {
+    to {
+      transform: translateY(6px);
+    }
+  }
+}
+
+/* At 760px and below the hero's name and wait come down a step, and two columns narrow. */
+@media (width < 761px) {
+  :root {
+    --text-name: 28px;
+    --text-wait: 38px;
+    --spacing-label-col: 140px;
+    --spacing-waited-name: 104px;
+  }
+}
+
+/*
+ * The mono is for clock times and literal strings, and it sets wide, so wherever
+ * it is used it is tightened and its numerals keep one width. This adds to
+ * Tailwind's own `font-mono`, so no component has to remember the three together.
+ */
+@utility font-mono {
+  letter-spacing: -0.02em;
+  word-spacing: -0.22em;
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  * {
+    border-color: var(--hairline);
+    outline-color: var(--focus);
+  }
+
+  /*
+   * The window's own colour is the top of the ground, for the edges a scroll can
+   * pull into view. The ground itself is the fixed `.ground` layer.
+   */
+  html {
+    background-color: var(--ground-top);
+  }
+
+  body {
+    min-height: 100vh;
+    background-color: transparent;
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Anything set in the mono by its element alone gets the same tightening. */
+  code,
+  kbd,
+  samp,
+  pre {
+    letter-spacing: -0.02em;
+    word-spacing: -0.22em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One focus treatment for everything. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--focus) 32%, transparent);
+  }
+}
+
+@layer components {
+  /*
+   * The ground: a fixed layer behind everything, so the panels slide over its
+   * light as the page scrolls. It is the base gradient, three soft fields of
+   * light and a fine dither, and it is drawn as:
+   *
+   *   <div class="ground" aria-hidden="true">
+   *     <i class="ground-main"></i> <i class="ground-deep"></i> <i class="ground-far"></i>
+   *   </div>
+   *
+   * The fields drift a few dozen pixels over minutes, by transform alone, which
+   * is enough for the glass to feel lit and too slow to see as movement. Set
+   * `data-drift="paused"` on the ground while the window is hidden. Under the
+   * reduced-motion preference the fields never start.
+   */
+  .ground {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    background-image: var(--ground);
+  }
+
+  .ground > i {
+    position: absolute;
+    display: block;
+    border-radius: 50%;
+    will-change: transform;
+  }
+
+  .ground-main {
+    top: var(--field-main-top);
+    right: var(--field-main-right);
+    width: var(--field-main-width);
+    height: var(--field-main-height);
+    transform: rotate(var(--field-main-turn));
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--field) / var(--field-strength)),
+      rgb(var(--field) / calc(var(--field-strength) * 0.4)) 52%,
+      transparent 100%
+    );
+  }
+
+  .ground-deep {
+    top: 520px;
+    left: -300px;
+    width: 1180px;
+    height: 880px;
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--field-deep) / calc(var(--field-strength) * 0.85)),
+      rgb(var(--field-deep) / calc(var(--field-strength) * 0.3)) 55%,
+      transparent 100%
+    );
+  }
+
+  .ground-far {
+    top: 820px;
+    left: 46%;
+    width: 900px;
+    height: 600px;
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--field) / calc(var(--field-strength) * 0.45)),
+      transparent 100%
+    );
+  }
+
+  /* The dither: each pixel moves by about two levels. It is not visible as texture. */
+  .ground::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: var(--grain);
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ground-main {
+      animation: drift-main 96s ease-in-out infinite alternate;
+    }
+    .ground-deep {
+      animation: drift-deep 124s ease-in-out infinite alternate;
+    }
+    .ground-far {
+      animation: drift-far 150s ease-in-out infinite alternate;
+    }
+    .ground[data-drift="paused"] > i {
+      animation-play-state: paused;
+    }
+  }
+
+  @keyframes drift-main {
+    to {
+      transform: rotate(var(--field-main-turn)) translate3d(-90px, 70px, 0) scale(1.06);
+    }
+  }
+
+  @keyframes drift-deep {
+    to {
+      transform: translate3d(120px, -60px, 0) scale(1.04);
+    }
+  }
+
+  @keyframes drift-far {
+    to {
+      transform: translate3d(-140px, -40px, 0);
+    }
+  }
+
+  /*
+   * Glass: one material at three heights, each with its own tint, rim and
+   * shadow, and a fourth for what floats over the page.
+   *
+   *   glass-chrome   the rail and the header, the thinnest
+   *   glass-card     every card
+   *   glass-raised   the hero, the brightest glass with the deepest shadow.
+   *                  With data-light="lamp" its top left edge catches the lamp,
+   *                  and with data-light="rest" the rest light
+   *   glass-float    a tooltip and the dialog: denser, so words on it hold
+   *                  their contrast over anything
+   *
+   * The rim is ::before and the sheen ::after, so an element of glass leaves its
+   * own two pseudo-elements to the material. The glass carries no blur of its
+   * own: add `glass-blur` only where content passes behind it.
+   */
+  .glass-chrome,
+  .glass-card,
+  .glass-raised,
+  .glass-float {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .glass-chrome {
+    --rim-paint: var(--rim);
+    border-radius: var(--radius-chrome);
+    background-color: var(--glass-chrome);
+    box-shadow: var(--elev-1);
+  }
+
+  .glass-card {
+    --rim-paint: var(--rim);
+    border-radius: var(--radius-panel);
+    background-color: var(--glass-card);
+    box-shadow: var(--elev-2);
+  }
+
+  .glass-raised {
+    --rim-paint: var(--rim-raised);
+    border-radius: var(--radius-panel);
+    background-color: var(--glass-raised);
+    box-shadow: var(--elev-3);
+  }
+
+  .glass-raised[data-light="lamp"] {
+    --rim-paint: var(--rim-lamp), var(--rim-raised);
+  }
+
+  .glass-raised[data-light="rest"] {
+    --rim-paint: var(--rim-rest), var(--rim-raised);
+  }
+
+  .glass-float {
+    --rim-paint: var(--rim-raised);
+    border-radius: var(--radius-panel);
+    background-color: var(--glass-float);
+    box-shadow: var(--elev-3);
+  }
+
+  /* The rim: a 1px edge of light, cut from a gradient by a mask. */
+  :is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--rim-paint);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  /* The sheen, under the top edge, behind the content. */
+  :is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--sheen);
+  }
+
+  /*
+   * Where the mask cannot be composited, the gradient would fill the whole
+   * panel. The rim is then a plain inset 1px highlight.
+   */
+  @supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+    :is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::before {
+      padding: 0;
+      background: none;
+      -webkit-mask: none;
+      mask: none;
+      box-shadow:
+        inset 0 1px 0 var(--control-top),
+        inset 0 0 0 1px var(--rule);
+    }
+  }
+
+  /* Real blur, for glass that something passes behind. Nowhere else. */
+  .glass-blur {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--saturate));
+  }
+
+  /*
+   * The two lights behind the hero. Each is laid in the hero's own grid cell,
+   * under it, so it follows the hero wherever the layout puts it. The lamp is
+   * drawn only while a session needs the person, and rises into place when a
+   * wait begins. The rest light holds the hero when nothing does. Neither is
+   * drawn while nothing has been counted.
+   *
+   * Each is a broad wash with a hotter core, saturated as glass over it would
+   * saturate it, so the lamp reads as lamplight and not as umber. Its box never
+   * reaches past the right edge of the cell, so it cannot widen the page.
+   *
+   * Its box starts further left of the hero than the gap to the rail, so its
+   * left end lies under the rail. Light belongs to the hero, and warm light
+   * spilt on black reads as a brown haze, so the mask draws nothing there: the
+   * light fades in across the gap and is whole from the hero's edge. At full
+   * width that end is the faint rim of a wide field. In a narrow column the
+   * field is narrower and its core sits close to the rail, and without the mask
+   * the rail would be lit.
+   */
+  .lamp-light,
+  .rest-light {
+    --light-reach: 60px;
+    position: absolute;
+    z-index: 0;
+    top: -90px;
+    left: calc(var(--light-reach) * -1);
+    width: min(820px, calc(100% + var(--light-reach)));
+    height: 520px;
+    pointer-events: none;
+    filter: saturate(var(--saturate-hero));
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent calc(var(--light-reach) - var(--spacing-window)),
+      #000 var(--light-reach)
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent calc(var(--light-reach) - var(--spacing-window)),
+      #000 var(--light-reach)
+    );
+  }
+
+  .lamp-light::before,
+  .rest-light::before {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+  }
+
+  .lamp-light {
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--lamp) / calc(var(--lamp-strength) * 0.3)),
+      rgb(var(--lamp) / calc(var(--lamp-strength) * 0.09)) 50%,
+      transparent 100%
+    );
+  }
+
+  .lamp-light::before {
+    top: 50px;
+    left: 3.7%;
+    width: 63%;
+    height: 330px;
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--lamp) / var(--lamp-strength)),
+      rgb(var(--lamp) / calc(var(--lamp-strength) * 0.35)) 55%,
+      transparent 100%
+    );
+  }
+
+  .rest-light {
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--rest) / calc(var(--rest-strength) * 0.5)),
+      rgb(var(--rest) / calc(var(--rest-strength) * 0.2)) 50%,
+      transparent 100%
+    );
+  }
+
+  .rest-light::before {
+    top: 40px;
+    left: 14.6%;
+    width: 78%;
+    height: 360px;
+    background-image: radial-gradient(
+      closest-side,
+      rgb(var(--rest) / var(--rest-strength)),
+      rgb(var(--rest) / calc(var(--rest-strength) * 0.35)) 55%,
+      transparent 100%
+    );
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .lamp-light {
+      animation: lamp-rise 1.2s var(--ease-out) both;
+    }
+  }
+
+  @keyframes lamp-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 90px, 0) scale(0.9);
+    }
+  }
+
+  /*
+   * The fills every bar and swatch is drawn with: in the timeline, the Last hour
+   * chart, the bars of waits in the hero and every legend. Each status keeps one
+   * look wherever it appears.
+   *
+   *   bar-open      a wait nobody has answered: the lamp's fill inside its edge.
+   *                 Add `bar-glow` for its light, on a bar but not on a swatch
+   *   bar-answered  a wait that is over: hollow in the idle colour, faintly filled
+   *   bar-working   the working fill with a 1px light along its top
+   *   bar-idle      the idle line
+   *   stale-dots    the idle line broken into dots
+   *   bar-tube      the empty glass of a bar in a chart, which is idle there
+   *   unmeasured-hatch  time nobody measured
+   */
+  .bar-open {
+    background-color: var(--status-needs-you);
+    box-shadow:
+      inset 0 0 0 1px var(--status-needs-you-edge),
+      var(--bar-glow, 0 0 transparent);
+  }
+
+  .bar-glow {
+    --bar-glow: 0 0 16px -3px var(--glow-needs-you);
+  }
+
+  .bar-answered {
+    background-color: var(--answered-fill);
+    box-shadow: inset 0 0 0 1.5px var(--status-idle);
+  }
+
+  .bar-working {
+    background-color: var(--status-working-fill);
+    box-shadow: inset 0 1px 0 var(--status-working-top);
+  }
+
+  .bar-idle {
+    background-color: var(--status-idle);
+  }
+
+  .stale-dots {
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--status-idle) 0 2px,
+      transparent 2px 6px
+    );
+  }
+
+  .bar-tube {
+    background-color: var(--tube);
+    box-shadow:
+      inset 0 0 0 1px var(--tube-rim),
+      inset 0 1px 0 var(--tube-top);
+  }
+
+  /*
+   * Time that was not measured. Hatched, so it is never read as zero or as idle.
+   * This is the one definition of the hatch, and everything that draws
+   * unmeasured time uses it. It is the only pattern on the screen, and it is data.
+   * It has no ground of its own, so glass shows between its lines.
+   */
+  .unmeasured-hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      var(--unmeasured) 0 1px,
+      transparent 1px 6px
+    );
+  }
+
+  /*
+   * A 4px scrollbar that is always drawn, so a list that scrolls looks like one.
+   * It is the only sign that a list goes on: nothing fades at its edge, because
+   * faded words fall below AA. Chromium and Safari take the ::-webkit-scrollbar
+   * rules, and would ignore them if the standard properties were set as well, so
+   * those are kept for the browsers that have nothing else.
+   */
+  .thin-scroll::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .thin-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background-color: var(--rule-strong);
+  }
+  .thin-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    .thin-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: var(--rule-strong) transparent;
+    }
+  }
+}
+
+/*
+ * Reduced motion. Every animation and transition collapses to its resting state,
+ * so the spinner holds still, the dialog appears without travelling and the
+ * theme switch's thumb jumps. The lamp's breathing, its light rising and the
+ * drift of the ground are switched off before they start: each is applied only
+ * where motion is allowed.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

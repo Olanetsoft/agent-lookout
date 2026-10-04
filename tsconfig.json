@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.collector.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    // Repeated here so tools that read only this file resolve the aliases from the root.
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@collector/*": ["./src/collector/*"],
+      "@dashboard/*": ["./src/dashboard/*"],
+      "@tests/*": ["./tests/*"]
+    }
+  }
+}

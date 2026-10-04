@@ -1,0 +1,17 @@
+# Build output
+dist
+dist-electron
+release
+.output
+coverage
+
+# Generated
+package-lock.json
+tests/.artifacts/
+
+# Owner-only files. Builders never edit these, so `npm run format` must not either.
+.claude/
+.reference/
+CLAUDE.md
+CLAUDE.local.md
+*.local.md

@@ -1,0 +1,31 @@
+name: Feature request
+description: Something you want Agent Lookout to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the milestones first: https://github.com/Olanetsoft/agent-lookout/milestones. If the feature is already planned, say which milestone it belongs to and what you would add.
+
+        Two rules apply to every feature: nothing leaves the machine, and the dashboard shows only what was measured. If your idea touches either one, say how it fits.
+
+        To ask for another agent tool, use the adapter request form.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What you want to do
+      description: Describe the outcome for someone using the app. The implementation can wait.
+    validations:
+      required: true
+  - type: textarea
+    id: situation
+    attributes:
+      label: When this comes up
+      description: The situation you were in when you wanted it. One real example helps more than a general case.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: Any workaround you use now.

@@ -1,0 +1,6 @@
+{"timestamp":"2026-10-01T11:20:00.000Z","type":"session_meta","payload":{"id":"00000000-0000-4000-8000-0000000000cf","session_id":"00000000-0000-4000-8000-0000000000cf","timestamp":"2026-10-01T11:20:00.000Z","cwd":"/Users/example/code/demo-desktop","originator":"Codex Desktop","cli_version":"0.160.0","source":"vscode","model_provider":"openai","base_instructions":{"text":"Placeholder instructions for a generic session."},"creator_user_id":"user-example","creator_account_id":"account-example"}}
+{"timestamp":"2026-10-01T11:20:05.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-0001"}}
+{"timestamp":"2026-10-01T11:20:05.000Z","type":"turn_context","payload":{"cwd":"/Users/example/code/demo-desktop"}}
+{"timestamp":"2026-10-01T11:20:05.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"A placeholder prompt."}]}}
+{"timestamp":"2026-10-01T11:24:59.000Z","type":"event_msg","payload":{"type":"agent_message"}}
+{"timestamp":"2026-10-01T11:25:00.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-0001"}}

@@ -1,0 +1,82 @@
+name: Bug report
+description: Something in Agent Lookout is wrong or broken.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Session names and folder paths can be private. Replace them with generic ones in text, and crop or blur them in screenshots.
+
+        For a security problem, do not file an issue. Follow SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest list of steps that shows the problem.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How you ran it
+      options:
+        - npm run dev
+        - npm run build, then npm start
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where the affected session runs
+      options:
+        - Terminal
+        - VS Code
+        - Claude Code or Codex desktop app
+        - Not sure
+        - Not about one session
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: What the Sources view says
+      description: Open Sources from the rail on the left of the dashboard and copy what it reports for Claude Code and Codex.
+  - type: input
+    id: commit
+    attributes:
+      label: Agent Lookout commit
+      description: The output of `git rev-parse --short HEAD` in your clone.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: macOS 15.5
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: The output of `node --version`.
+    validations:
+      required: true
+  - type: input
+    id: claude-code
+    attributes:
+      label: Claude Code and Codex versions
+      description: The output of `claude --version` and `codex --version`, for the ones you use.
+    validations:
+      required: true

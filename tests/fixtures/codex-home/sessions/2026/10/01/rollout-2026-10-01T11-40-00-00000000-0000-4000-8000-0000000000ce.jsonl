@@ -1,0 +1,13 @@
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"session_meta","payload":{"id":"00000000-0000-4000-8000-0000000000ce","session_id":"00000000-0000-4000-8000-0000000000ce","timestamp":"2026-10-01T11:40:00.000Z","cwd":"/Users/example/code/demo-imported","originator":"Codex Desktop","cli_version":"0.160.0","source":"vscode","model_provider":"openai","base_instructions":{"text":"Placeholder instructions for a generic session."}}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"external-import-turn-1","started_at":1790000000}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"A placeholder prompt."}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"A placeholder prompt."}]}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"A placeholder reply."}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"A placeholder reply."}]}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"external-import-turn-1","last_agent_message":null,"started_at":1790000000,"completed_at":null}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"external-import-turn-2","started_at":1790000600}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"Another placeholder prompt."}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Another placeholder prompt."}]}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"<EXTERNAL SESSION IMPORTED>"}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"token_count"}}
+{"timestamp":"2026-10-01T11:40:00.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"external-import-turn-2","last_agent_message":null,"started_at":1790000600,"completed_at":1790000700}}
