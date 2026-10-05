@@ -82,6 +82,36 @@ describe("a source's first answer", () => {
   });
 });
 
+describe("a source that is not set up", () => {
+  const F = "status-files:night-shift.json";
+  const custom = (status: "needs-you" | "working") =>
+    makeSession({
+      id: F,
+      source: "status-files",
+      agent: "Night Shift",
+      status,
+      ...(status === "needs-you" && { waitingReason: "question" as const }),
+    });
+
+  test("has been read, with no sessions, so a wait in the first answer once it is set up has started", () => {
+    const memory = memoryAfter(snapshot([], [source("status-files", "not-set-up")]));
+    expect(remembered(memory)).toEqual({ "status-files": [] });
+
+    const result = waitChanges(
+      memory,
+      snapshot([custom("needs-you")], [source("status-files", "ok")]),
+    );
+    expect(result.started.map((session) => session.id)).toEqual([F]);
+  });
+
+  test("taken away while a session waits, ends the wait", () => {
+    const memory = memoryAfter(snapshot([custom("needs-you")], [source("status-files", "ok")]));
+    const result = waitChanges(memory, snapshot([], [source("status-files", "not-set-up")]));
+    expect(result.stopped).toEqual([F]);
+    expect(remembered(result.memory)).toEqual({ "status-files": [] });
+  });
+});
+
 describe("a wait starting", () => {
   test("a session that goes from working to needing you has started, with its name and reason", () => {
     const memory = memoryAfter(snapshot([working(A, { name: "demo-api" })]));
@@ -547,8 +577,18 @@ describe("what it is given", () => {
 describe("over a long run of snapshots", () => {
   const D = "codex:00000000-0000-4000-8000-00000000000d";
   const E = "codex:00000000-0000-4000-8000-00000000000e";
-  const ids: Record<SourceId, string[]> = { "claude-code": [A, B, C], codex: [D, E] };
-  const sourceOf = (id: string): SourceId => (id.startsWith("codex:") ? "codex" : "claude-code");
+  const F = "status-files:night-shift.json";
+  const ids: Record<SourceId, string[]> = {
+    "claude-code": [A, B, C],
+    codex: [D, E],
+    "status-files": [F],
+  };
+  const sourceOf = (id: string): SourceId =>
+    id.startsWith("codex:")
+      ? "codex"
+      : id.startsWith("status-files:")
+        ? "status-files"
+        : "claude-code";
   const statuses: SessionStatus[] = [
     "needs-you",
     "needs-you",
@@ -558,7 +598,16 @@ describe("over a long run of snapshots", () => {
     "failed",
     "unknown",
   ];
-  const states: SourceState[] = ["ok", "ok", "ok", "ok", "error", "searching", "unavailable"];
+  const states: SourceState[] = [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "error",
+    "searching",
+    "unavailable",
+    "not-set-up",
+  ];
   /** Status times: often the same one, sometimes later or earlier, sometimes not known. */
   const times: (number | null)[] = [null, 1_000, 1_000, 2_000, 3_000];
   const laterOf = (a: number | null, b: number | null): number | null =>
@@ -594,7 +643,7 @@ describe("over a long run of snapshots", () => {
         const at = `run ${run}, step ${step}`;
         // A source is sometimes left out, and sometimes cannot be read. A source
         // that cannot be read sometimes lists sessions all the same.
-        const sources = (["claude-code", "codex"] as const)
+        const sources = (["claude-code", "codex", "status-files"] as const)
           .filter(() => random() > 0.05)
           .map((id) => source(id, pick(states)));
         const sessions = sources.flatMap(({ id }) =>
@@ -609,7 +658,12 @@ describe("over a long run of snapshots", () => {
               }),
             ),
         );
-        const ok = new Set(sources.filter((each) => each.state === "ok").map((each) => each.id));
+        // Read: "ok", or not set up, which was read and holds nothing.
+        const ok = new Set(
+          sources
+            .filter((each) => each.state === "ok" || each.state === "not-set-up")
+            .map((each) => each.id),
+        );
         const waitsNow = sessions
           .filter((session) => session.status === "needs-you")
           .map((session) => session.id);

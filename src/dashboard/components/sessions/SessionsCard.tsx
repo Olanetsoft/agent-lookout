@@ -277,7 +277,7 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
     : ways.some((way) => way?.by === "link")
       ? "Jump opens the session, or selects its pane in tmux"
       : "Jump selects the session's pane in tmux";
-  const agents = showsAgents(sources);
+  const agents = showsAgents(sources, sessions);
   const narrow = useNarrow();
   const agentColumn = agents && !narrow;
   // Narrow, the rows still draw the Folder and App cells, hidden, so the first

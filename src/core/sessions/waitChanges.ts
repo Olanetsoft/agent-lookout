@@ -2,10 +2,10 @@ import type { Session, SessionsSnapshot, SourceId } from "./session.ts";
 
 /**
  * What is remembered from one snapshot to the next: for each source that has
- * answered, its sessions that needed the person at its last "ok" answer, by id.
- * Each is kept with the latest status time its wait has been seen with, or null
- * while its source has given none. A source that has never answered "ok" is
- * absent, which is how its first answer is told from a later one.
+ * answered, its sessions that needed the person at its last answer that could
+ * be read, by id. Each is kept with the latest status time its wait has been
+ * seen with, or null while its source has given none. A source that has never
+ * answered so is absent, which is how its first answer is told from a later one.
  */
 export type WaitMemory = ReadonlyMap<SourceId, ReadonlyMap<string, number | null>>;
 
@@ -41,13 +41,16 @@ function laterOf(a: number | null, b: number | null): number | null {
  * A wait is one stretch of "needs-you" that began at one time: the status time
  * its source gives it.
  *
- * - Only a source that is "ok" in this snapshot is compared. One that is
+ * - Only a source that could be read in this snapshot is compared: one that is
+ *   "ok", or "not-set-up", which was read and holds no sessions. One that is
  *   searching, unavailable, in error or not listed could not be read, so what
  *   is remembered of it is kept as it is and nothing is said about its
  *   sessions. A source that fails for one poll does not end every wait and
  *   start them all again.
- * - A source's first "ok" answer is a baseline. The sessions waiting in it were
- *   already waiting; they did not begin at this moment, so none has started.
+ * - A source's first answer that could be read is a baseline. The sessions
+ *   waiting in it were already waiting; they did not begin at this moment, so
+ *   none has started. A source that was not set up at first has a baseline of
+ *   no sessions, so a wait in a folder of status files made later has started.
  * - After that, a session that needs the person and is not remembered has
  *   started. A remembered one that is now in any other status, or gone from
  *   the list, has stopped.
@@ -77,7 +80,9 @@ function laterOf(a: number | null, b: number | null): number | null {
 export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): WaitChanges {
   const waitingNow = new Map<SourceId, Map<string, number | null>>();
   for (const source of snapshot.sources) {
-    if (source.state === "ok") waitingNow.set(source.id, new Map());
+    if (source.state === "ok" || source.state === "not-set-up") {
+      waitingNow.set(source.id, new Map());
+    }
   }
 
   const started: Session[] = [];

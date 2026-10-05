@@ -61,21 +61,25 @@ async function distFolder(withPage: boolean): Promise<string> {
 
 /**
  * Settings that name nothing on this machine: an empty Claude home, a
- * stand-in `claude` that lists no sessions, an empty Codex home and tmux turned
- * off, on a free port. The poller runs in this process, so anything less would
- * read the real `~/.claude` and `~/.codex` and run the real `claude`.
+ * stand-in `claude` that lists no sessions, an empty Codex home, an empty
+ * folder of status files and tmux turned off, on a free port. The poller runs
+ * in this process, so anything less would read the real `~/.claude`,
+ * `~/.codex` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
   const codexHome = await tempDir();
+  const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
     claudeHome,
     codexHome,
+    statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
+      AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
       ...overrides,
@@ -132,7 +136,7 @@ describe("the standalone host", () => {
   });
 
   test("with a page it serves the page and the API on loopback, refuses a foreign Host and stops cleanly", async () => {
-    const { env, claudeHome, codexHome } = await isolatedEnv();
+    const { env, claudeHome, codexHome, statusDir } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
 
     const address = host.address as AddressInfo;
@@ -157,8 +161,8 @@ describe("the standalone host", () => {
     expect(health.json()).toMatchObject({ ok: true });
 
     // The settings it was given reached the adapters: Claude Code reads the
-    // temporary registry folder, the stand-in claude lists nothing, and Codex
-    // looks in the empty temporary folder.
+    // temporary registry folder, the stand-in claude lists nothing, Codex
+    // looks in the empty temporary folder, and so do status files.
     await expect
       .poll(
         async () =>
@@ -183,6 +187,11 @@ describe("the standalone host", () => {
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(codexHome, "sessions") },
             ]),
+          },
+          {
+            id: "status-files",
+            state: "ok",
+            watching: expect.arrayContaining([{ label: "Folder", value: statusDir }]),
           },
         ],
         sessions: [],

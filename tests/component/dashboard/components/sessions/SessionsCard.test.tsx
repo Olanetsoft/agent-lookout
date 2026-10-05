@@ -995,6 +995,119 @@ test.each([
   },
 );
 
+const STATUS_FILES_OK: SourceHealth = {
+  id: "status-files",
+  label: "Status files",
+  state: "ok",
+  checkedAt: NOW,
+};
+
+/** A session one agent says it has in a status file. Its link is one a Claude Code session could have. */
+const custom = (n: number, overrides: Partial<Session> = {}) =>
+  makeSession({
+    id: `status-files:session-${n}.json`,
+    source: "status-files",
+    agent: "Night Shift",
+    surface: "unknown",
+    status: "working",
+    statusSince: NOW - 2 * MINUTE,
+    links: { open: jumpLink(n) },
+    ...overrides,
+  });
+
+test("a session from a status file names its own agent in the Agent column, and has no Jump", async () => {
+  const sessions = [
+    ...MIXED,
+    custom(31, { name: "billing-webhooks" }),
+    custom(32, { name: "search-indexing", agent: "my-agent", status: "idle" }),
+  ];
+  const screen = await render(
+    <SessionsCard sessions={sessions} sources={[SOURCE_OK, STATUS_FILES_OK]} now={NOW} />,
+  );
+
+  const heads = [...screen.container.querySelectorAll("thead th")].map((th) => th.textContent);
+  expect(heads).toEqual(["Session", "Agent", "Folder", "App", "Status and time", "Jump"]);
+  const billing = rowOf(screen.container, "billing-webhooks");
+  expect(billing.querySelector('[data-part="agent"]')?.textContent).toBe("Night Shift");
+  expect(billing.querySelector('[data-part="status"]')?.textContent).toBe("Working");
+  expect(
+    rowOf(screen.container, "search-indexing").querySelector('[data-part="agent"]')?.textContent,
+  ).toBe("my-agent");
+  // The Claude Code rows say whose they are too.
+  expect(
+    rowOf(screen.container, "busy-one").querySelector('[data-part="agent"]')?.textContent,
+  ).toBe("Claude Code");
+  // No Jump, and nothing to follow, whatever link the session carries.
+  for (const name of ["billing-webhooks", "search-indexing"]) {
+    const row = rowOf(screen.container, name);
+    expect(row.querySelector("a, button"), name).toBeNull();
+  }
+  expect(rowOf(screen.container, "stale-one").querySelector("a")).not.toBeNull();
+});
+
+test("an agent's name too long for the Agent column is cut, and stays readable in full", async () => {
+  const agent = "Night Shift Overnight Refactoring Helper";
+  expect(agent).toHaveLength(40);
+  const sessions = [...MIXED, custom(34, { name: "api-rate-limits", agent })];
+  const screen = await render(
+    <SessionsCard sessions={sessions} sources={[SOURCE_OK, STATUS_FILES_OK]} now={NOW} />,
+  );
+  const cell = rowOf(screen.container, "api-rate-limits").querySelector(
+    '[data-part="agent"]',
+  ) as HTMLElement;
+  const label = cell.firstElementChild as HTMLElement;
+
+  expect(cell.textContent).toBe(agent);
+  expect(cell.scrollWidth).toBeLessThanOrEqual(cell.clientWidth);
+  // While it is cut, Tab stops on it and the whole name is in its tooltip.
+  await vi.waitFor(() => expect(label.dataset.cut).toBe("true"));
+  expect(label.tabIndex).toBe(0);
+  await userEvent.hover(label);
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(agent);
+  // One that fits is plain text, as before.
+  const fits = rowOf(screen.container, "busy-one").querySelector('[data-part="agent"]')!;
+  expect((fits.firstElementChild as HTMLElement).dataset.cut).toBe("false");
+});
+
+test("a name or an agent that holds markup is shown as the text it is", async () => {
+  const sessions = [
+    custom(33, { name: "<img src=x onerror=alert(1)>", agent: "<b>Night Shift</b>" }),
+  ];
+  const screen = await render(
+    <SessionsCard sessions={sessions} sources={[SOURCE_OK, STATUS_FILES_OK]} now={NOW} />,
+  );
+  const row = rowOf(screen.container, "<img src=x onerror=alert(1)>");
+  expect(row.querySelector("img, b")).toBeNull();
+  expect(row.querySelector('[data-part="agent"]')?.textContent).toBe("<b>Night Shift</b>");
+});
+
+test.each([
+  [1280, MIXED],
+  [1280, []],
+  [375, MIXED],
+])(
+  "at %i pixels wide, a folder of status files that is not set up changes nothing on the card",
+  async (width, sessions) => {
+    await page.viewport(width, 900);
+    const alone = await render(
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />,
+    );
+    const before = await settledMarkup(alone.container);
+    await alone.unmount();
+    const notSetUp: SourceHealth = {
+      ...STATUS_FILES_OK,
+      state: "not-set-up",
+      detail: "To show any other agent here, make the folder ~/.agent-lookout/sessions.",
+    };
+    const both = await render(
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK, notSetUp]} now={NOW} />,
+    );
+
+    expect(await settledMarkup(both.container)).toBe(before);
+    expect(both.container.textContent).not.toContain("Status files");
+  },
+);
+
 test("with both tools found, each row names its tool in plain words in an Agent column", async () => {
   const screen = await render(
     <SessionsCard sessions={BOTH} sources={[SOURCE_OK, CODEX_OK]} now={NOW} />,
@@ -1086,8 +1199,10 @@ test.each([
       expect(agent.textContent).toBe(
         row.dataset.session?.startsWith("codex:") ? "Codex" : "Claude Code",
       );
-      // The whole word is shown, not cut.
+      // The whole word is shown, not cut: the cell does not cut it, and nor does its text.
       expect(agent.scrollWidth).toBeLessThanOrEqual(agent.clientWidth);
+      const label = agent.firstElementChild as HTMLElement;
+      expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
       expect(row.querySelector('[data-part="app"]') !== null).toBe(hasApp);
       expect(row.querySelector('[data-part="project"]') !== null).toBe(hasFolder);
       expect(row.querySelector('[data-part="status-under"]')).toBeNull();

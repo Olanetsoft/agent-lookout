@@ -18,7 +18,8 @@ export interface AdapterResult {
    * - `feed`: the command's answer, while the registry cannot be relied on.
    *
    * The Codex adapter has one, `files`: Codex's session files, its folder of
-   * open-session locks and its file of session names.
+   * open-session locks and its file of session names. So has the status-file
+   * adapter: the folder of status files.
    */
   basis?: string;
 }

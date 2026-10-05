@@ -45,6 +45,7 @@ export const SOURCE_STATE_LABEL: Record<SourceState, string> = {
   ok: "Watching",
   searching: "Searching",
   unavailable: "Not found",
+  "not-set-up": "Not set up",
   error: "Not working",
 };
 

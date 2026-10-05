@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -421,4 +421,161 @@ test("a Codex that is found says in plain words that a wait for approval shows a
   expect(rows[4]?.querySelector("dd")?.textContent).toBe("1");
   expectFactFonts(rows);
   expect(warmPaint(card.element())).toEqual([]);
+});
+
+const STATUS_FOLDER = "~/.agent-lookout/sessions";
+
+const statusFiles = (overrides: Partial<SourceHealth>): SourceHealth => ({
+  id: "status-files",
+  label: "Status files",
+  state: "ok",
+  detail: `Each file ending in .json in ${STATUS_FOLDER} is one session, written by the agent it belongs to.`,
+  watching: [
+    { label: "Folder", value: STATUS_FOLDER },
+    { label: "Read", value: "every 2 seconds" },
+    { label: "Files read", value: "2" },
+    { label: "Files skipped", value: "1" },
+  ],
+  checkedAt: NOW - 2_000,
+  ...overrides,
+});
+
+const customSession = (name: string) =>
+  makeSession({
+    id: `status-files:${name}.json`,
+    source: "status-files",
+    agent: "Night Shift",
+    surface: "unknown",
+    name,
+  });
+
+describe("the card for status files", () => {
+  test("watching, it gives the folder, how often it is read, and the files read and skipped as figures", async () => {
+    const sessions = [
+      ...snapshot().sessions,
+      customSession("checkout-flow"),
+      customSession("billing-webhooks"),
+    ];
+    const screen = await render(
+      <SourcesView
+        state={state({
+          snapshot: { generatedAt: NOW, sources: [SOURCE, statusFiles({})], sessions },
+        })}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "Status files" });
+
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Watching");
+    const rows = [...card.element().querySelectorAll('[data-slot="fact-row"]')];
+    expect(rows.map((row) => row.querySelector("dt")?.textContent)).toEqual([
+      "Folder",
+      "Read",
+      "Files read",
+      "Files skipped",
+      "Sessions found",
+      "Last checked",
+    ]);
+    expect(rows.map((row) => row.querySelector("dd")?.textContent)).toEqual([
+      STATUS_FOLDER,
+      "every 2 seconds",
+      "2",
+      "1",
+      "2",
+      "2s ago",
+    ]);
+    // The folder is a literal string, in the mono. Every count is a figure in the
+    // sans that keeps its width.
+    const value = (index: number) => rows[index]?.querySelector("dd") as HTMLElement;
+    expect(getComputedStyle(value(0)).fontFamily).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    for (const index of [1, 2, 3, 4]) {
+      expect(getComputedStyle(value(index)).fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+    }
+    for (const index of [2, 3]) {
+      const figure = value(index).querySelector('[data-part="watching"]') as HTMLElement;
+      expect(getComputedStyle(figure).fontVariantNumeric).toContain("tabular-nums");
+    }
+    // A phrase is words, not a figure.
+    const phrase = value(1).querySelector('[data-part="watching"]') as HTMLElement;
+    expect(getComputedStyle(phrase).fontVariantNumeric).not.toContain("tabular-nums");
+    expect(warmPaint(card.element())).toEqual([]);
+  });
+
+  test("not set up, it is calm and says in one sentence how to start", async () => {
+    const detail = `To show any other agent here, make the folder ${STATUS_FOLDER} and have the agent write a small JSON file in it for each session, as "Your own agents" in docs/GUIDE.md describes.`;
+    const notSetUp = statusFiles({
+      state: "not-set-up",
+      detail,
+      watching: [
+        { label: "Folder", value: STATUS_FOLDER },
+        { label: "Read", value: "not found" },
+      ],
+    });
+    const screen = await render(
+      <SourcesView state={state({ snapshot: snapshot([SOURCE, notSetUp]) })} now={NOW} />,
+    );
+    const card = screen.getByRole("region", { name: "Status files" });
+
+    await expect.element(card).toBeVisible();
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Not set up");
+    const sentence = card.element().querySelector('[data-part="detail"]') as HTMLElement;
+    expect(sentence.textContent).toBe(detail);
+    expect(sentence.textContent?.match(/\.(\s|$)/g)).toHaveLength(1);
+    // The folder in it is a machine fact, in the mono.
+    const folder = sentence.querySelector('[data-slot="fact"]') as HTMLElement;
+    expect(folder.textContent).toBe(STATUS_FOLDER);
+    expect(getComputedStyle(folder).fontFamily).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    const rows = [...card.element().querySelectorAll('[data-slot="fact-row"] dt')];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Folder",
+      "Read",
+      "Sessions found",
+      "Last checked",
+    ]);
+    // Calm: no alert, nothing warm.
+    expect(card.element().querySelector('[role="alert"]')).toBeNull();
+    expect(warmPaint(card.element())).toEqual([]);
+  });
+
+  test("once updates stop, not set up is the last known state", async () => {
+    const screen = await render(
+      <SourcesView
+        state={state({
+          snapshot: snapshot([SOURCE, statusFiles({ state: "not-set-up" })]),
+          phase: "stalled",
+          lastOkAt: NOW - 1_000,
+        })}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "Status files" });
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe(
+      "Last known: not set up",
+    );
+  });
+
+  test("a folder it cannot read is not working", async () => {
+    const broken = statusFiles({
+      state: "error",
+      detail: `Status files could not be read: the folder ${STATUS_FOLDER} could not be listed.`,
+      watching: [
+        { label: "Folder", value: STATUS_FOLDER },
+        { label: "Read", value: "cannot be read" },
+      ],
+    });
+    const screen = await render(
+      <SourcesView state={state({ snapshot: snapshot([SOURCE, broken]) })} now={NOW} />,
+    );
+    const card = screen.getByRole("region", { name: "Status files" });
+
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Not working");
+    await expect.element(card).toHaveTextContent(broken.detail as string);
+  });
+
+  test("the view says what status files are for", async () => {
+    const screen = await render(<SourcesView state={state()} now={NOW} />);
+    await expect
+      .element(screen.getByRole("region", { name: "About sources" }))
+      .toHaveTextContent("Status files are how any other agent appears");
+  });
 });

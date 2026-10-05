@@ -1,4 +1,6 @@
+import { writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
@@ -61,6 +63,7 @@ async function serve(env: Record<string, string> = {}) {
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+      AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
       ...env,
     },
     notifier: fakeSystemNotifier(),
@@ -130,12 +133,35 @@ describe("what the dashboard is told", () => {
     expect(new Set(server.tmux.names())).toEqual(new Set(["list-panes"]));
   });
 
+  test("a session from a status file has no jump, even when its process runs in a pane", async () => {
+    const folder = await tempDir();
+    await writeFile(
+      path.join(folder, "night-shift.json"),
+      JSON.stringify({
+        agent: "Night Shift",
+        name: "api-rate-limits",
+        status: "working",
+        pid: process.pid,
+      }),
+    );
+    const server = await serve({ AGENT_LOOKOUT_STATUS_DIR: folder });
+    const custom = named(await server.sessions(), "api-rate-limits");
+
+    expect(custom).toMatchObject({ source: "status-files", pid: process.pid, alive: true });
+    expect(custom).not.toHaveProperty("jump");
+
+    const response = await server.jump(custom?.id);
+    expect(response.status).toBe(404);
+    expect(new Set(server.tmux.names())).toEqual(new Set(["list-panes"]));
+  });
+
   test("with AGENT_LOOKOUT_TMUX off, the tmux on this machine is never run and no session has a jump", async () => {
     const collector = createCollector({
       version: "9.9.9-test",
       env: {
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+        AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
         AGENT_LOOKOUT_TMUX: "off",
       },
       notifier: fakeSystemNotifier(),

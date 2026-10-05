@@ -131,6 +131,9 @@ function Reason({ session, className }: { session: Session; className?: string }
 /**
  * Where it runs: the folder, whose whole path is one hover or one Tab away, the
  * app, and the tool when more than one is found.
+ *
+ * It is positioned, so a cut line also clips the words only a screen reader
+ * meets, which would otherwise sit past its end and widen the page.
  */
 function Place({
   session,
@@ -143,7 +146,10 @@ function Place({
 }) {
   const surface = SURFACE_LABEL[session.surface];
   return (
-    <span data-part='place' className={cn("min-w-0 text-body text-ink-secondary", className)}>
+    <span
+      data-part='place'
+      className={cn("relative min-w-0 text-body text-ink-secondary", className)}
+    >
       {session.project ? (
         <>
           <Tooltip content={session.cwd} mono>
@@ -215,7 +221,8 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
         <p data-part='reason' className='mt-2 flex min-w-0 text-lead font-medium'>
           <Reason session={session} className='truncate' />
         </p>
-        <Place session={session} agent={agent} className='mt-1.5 block' />
+        {/* A folder or an agent named by a status file can be one long word, so it may break anywhere. */}
+        <Place session={session} agent={agent} className='mt-1.5 block wrap-anywhere' />
       </div>
 
       <div className='flex shrink-0 items-end gap-6 max-mid:justify-between'>
@@ -447,7 +454,7 @@ export function HeroPanel({
   const counts = countState(sessions, sources);
   const light = heroLight(counts);
   const waiting = useMemo(() => (sessions ? waitingSessions(sessions) : []), [sessions]);
-  const agents = showsAgents(sources);
+  const agents = showsAgents(sources, sessions ?? []);
   const agentOf = (session: Session) => (agents ? agentLabel(session, sources) : undefined);
 
   const waits = useMemo(

@@ -4,7 +4,7 @@
 
 - macOS. Agent Lookout is developed and tested there. Linux and Windows are untested.
 - Node.js 20.19 or newer. On Node 22 it needs 22.12 or newer.
-- Claude Code, Codex or both. Neither needs any setup.
+- Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 
@@ -24,7 +24,7 @@ The Overview has five parts. The Needs you panel and the Last hour chart share t
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the app, and the agent once both Claude Code and Codex are found. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the app, and the agent once more than one is found. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -54,7 +54,7 @@ The Last hour chart has a bar for each five minutes of the last hour, on the clo
 The Sessions list holds every session that is not waiting for you, grouped in this order: Working, Idle, then sessions that finished or failed, then any whose status is unknown. Stale sessions are listed under Idle and counted beside it. The number by the list's title counts every session, including those in the Needs you panel. Each row gives:
 
 - the session's name
-- the agent it belongs to, Claude Code or Codex, once both are found on this computer
+- the agent it belongs to, such as Claude Code, Codex or the name a [status file](#your-own-agents) gives, once there is more than one
 - its project folder
 - the app it runs in: Terminal, VS Code or Desktop app
 - its status, and how long it has had that status
@@ -75,11 +75,13 @@ The Timeline draws each session's status over the last hour, one row for each se
 
 ![The Sources view in the Night theme. A card for Claude Code and a card for Codex, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. A third card, About sources, says what a source is.](images/sources-night.png)
 
-Sources has a card for Claude Code and one for Codex. Each says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
+Sources has a card for Claude Code, one for Codex and one for status files. Each says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 
 For Claude Code the rows give the folder of session files it reads, normally `~/.claude/sessions`, how often it reads that folder, the Claude Code command it runs to list sessions, and how often it runs it, or "not run". For Codex they give the folder where Codex saves its sessions, normally `~/.codex/sessions`, how often it reads them, the folder where Codex marks the sessions it has open, normally `~/.codex/thread-writer-locks`, and the file where Codex keeps the names you give sessions, normally `~/.codex/session_index.jsonl`. Both cards end with Sessions found and Last checked.
 
 The note on Codex's card also gives the limits of what Codex's files can show, which are described under [What it does not do yet](#what-it-does-not-do-yet).
+
+The card for status files gives the folder it reads, normally `~/.agent-lookout/sessions`, how often it reads it, and how many files it read and skipped. Until that folder exists, the card says Not set up, with one sentence on how to start, and nothing else on the screen mentions it. [Your own agents](#your-own-agents) has the rest.
 
 When an agent is not on this computer, its card says Not found, and after the first few seconds the Overview does not mention it, unless neither is found.
 
@@ -89,7 +91,7 @@ Settings has three cards. Theme chooses Night, which is the default, Day, or Sys
 
 #### Notifications
 
-With notifications on, your browser shows a system notification each time a Claude Code session starts waiting for you. Its title is the session's name. Its text is the reason, in the words the Needs you panel uses: Waiting for permission, Asked you a question or Waiting for you. It appears within a few seconds, whether or not the dashboard is in view, and is cleared when the session stops waiting. Clicking it brings the dashboard forward. It does not open the session.
+With notifications on, your browser shows a system notification each time a Claude Code session, or a session from a [status file](#your-own-agents), starts waiting for you. Its title is the session's name. Its text is the reason, in the words the Needs you panel uses: Waiting for permission, Asked you a question or Waiting for you. It appears within a few seconds, whether or not the dashboard is in view, and is cleared when the session stops waiting. Clicking it brings the dashboard forward. It does not open the session.
 
 Notifications are off until you turn them on. The card says "Notifications are off." beside a button, Turn on notifications. Press it and your browser asks whether this address may show notifications. Agent Lookout asks only when you press that button, never when a page loads. Once you allow it, the card says "Notifications are on." and the button reads Turn off notifications. If the browser already allows notifications from this address, they turn on without a question.
 
@@ -173,17 +175,59 @@ Jump for tmux has these limits.
 
 To stop Agent Lookout running tmux at all, start it with `AGENT_LOOKOUT_TMUX=off`. [PRIVACY.md](../PRIVACY.md#tmux) lists each command it runs and what it reads from tmux.
 
+## Your own agents
+
+Agent Lookout shows any other agent, including one you wrote yourself, when the agent writes one small JSON file for each of its sessions into a folder: `~/.agent-lookout/sessions`. Nothing is installed into the agent, it needs no library, and nothing goes over the network. Agent Lookout reads the folder every 2 seconds, so a session appears, changes and goes within about 2 seconds of the file doing so.
+
+Paste this into a terminal while Agent Lookout is running. It makes the folder, writes a file for a working session, changes it to waiting, then deletes it:
+
+```sh
+dir=~/.agent-lookout/sessions
+mkdir -p "$dir"
+echo "Working: look at Sessions"
+printf '{"agent": "my-agent", "name": "docs-site", "status": "working", "pid": %d}\n' $$ > "$dir/my-agent.json"
+sleep 8
+echo "Waiting: look at Needs you"
+printf '{"agent": "my-agent", "name": "docs-site", "status": "waiting", "reason": "question", "pid": %d}\n' $$ > "$dir/my-agent.json"
+sleep 8
+rm "$dir/my-agent.json"
+echo "Deleted: the session has gone"
+```
+
+The session appears in Sessions as `docs-site`, moves to Needs you as Asked you a question, and leaves the list when the file is deleted. Once there is more than one agent on the screen, each row names its own, here `my-agent`. If you set `AGENT_LOOKOUT_STATUS_DIR`, put that folder in the first line instead.
+
+| Field    | Needed | What it holds                                                                                                                                                                                                                                                                                                         |
+| -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`  | Yes    | The agent's name, shown wherever the agent is named, such as `my-agent`. Up to 40 characters are kept.                                                                                                                                                                                                                |
+| `status` | Yes    | `working`, `waiting`, `idle`, `finished` or `failed`. `waiting` means it needs you. Any other word shows as Unknown.                                                                                                                                                                                                  |
+| `name`   | No     | The session's name. Without it, the last part of `cwd` is used, then the file's name. Up to 200 characters are kept.                                                                                                                                                                                                  |
+| `cwd`    | No     | The folder the session works in, as a full path.                                                                                                                                                                                                                                                                      |
+| `reason` | No     | For `waiting` only: `permission` or `question`. Anything else is shown as Waiting for you.                                                                                                                                                                                                                            |
+| `since`  | No     | When this status began: an ISO 8601 time such as `2026-10-05T14:30:00Z`, or a whole number of milliseconds since 1970. Not seconds: `date +%s` gives seconds, and `date -u +%Y-%m-%dT%H:%M:%SZ` gives a time Agent Lookout reads. Leave it alone while the status stays the same, or each change reads as a new wait. |
+| `pid`    | No     | The ID of the agent's process, as a number, not in quotes.                                                                                                                                                                                                                                                            |
+
+- One file is one session. Its name can be anything that ends in `.json`, and it is what tells one session from another, so keep it for as long as the session lasts.
+- When the process named by `pid` has gone, a session that is working, waiting or idle is not shown, because its agent stopped without deleting the file. A finished or failed session is expected to have no process, and stays. Without `pid`, a session stays until its file is deleted.
+- A finished or failed session stays for 24 hours after its `since`, or after its file was last written.
+- Without `since`, the time is when Agent Lookout first saw that status. For a file that was already there when Agent Lookout started, it is not known until the status changes, and a dash is shown.
+- A name that starts with a dot is not read. To change a file without Agent Lookout ever reading half of it, write the new one under such a name and rename it over the old one with `mv`. A file caught half written is shown as it was for one more read.
+- Agent Lookout reads at most 200 files, each 16 KB or less, directly in the folder. When there are more, it reads the 200 written most recently. It does not follow a symbolic link in the folder, and it does not look in folders inside it. A file over a limit, or one that is not JSON with an `agent` and a `status`, is skipped, and the Sources card counts it and names the first one, with why. Fields it does not know are ignored.
+- Everything in a file is shown as plain text. Nothing in it is used as a link, so these sessions have no Jump button.
+- A waiting session sends a [notification](#notifications) like any other.
+
+Agent Lookout only reads the folder. It never makes it, and never writes, renames or deletes anything in it. When a session ends, delete its file, or write `finished` or `failed` to keep it on screen for a day and delete the file after that, for example the next time the agent starts. A file that is no longer shown still takes one of the 200 places until it is deleted. Any program that can write in the folder can put a session on the dashboard. Under your home folder, that means programs you run.
+
 ## What it does not do yet
 
-It cannot stop, resume or answer a session. It covers Claude Code and Codex, and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
+It cannot stop, resume or answer a session. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
 
-A notification is sent only when a Claude Code session starts waiting. Nothing is sent when a session finishes or fails. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
+A notification is sent only when a Claude Code session, or a session from a status file, starts waiting. Nothing is sent when a session finishes or fails. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 
 A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
 A Claude Code background job is shown as finished or failed, and its row stays for 24 hours. A Codex session is shown as finished once no Codex program has it open, and its row stays until 24 hours after Codex last wrote to it. A session started by a Codex older than 0.155 is never shown as finished. Any other session that ends leaves the list. The Events log records that it ended, without saying whether it finished or failed.
 
-Codex sessions have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
+Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
@@ -206,12 +250,13 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 | `AGENT_LOOKOUT_CLAUDE_FEED`   | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed. |
 | `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                   |
 | `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                   |
+| `AGENT_LOOKOUT_STATUS_DIR`    | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                      |
 | `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications itself from the moment it starts. A dashboard page that has notifications off turns them off again.   |
 | `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                        |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code, Codex, notification and tmux settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, status file, notification and tmux settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -288,9 +333,11 @@ For Claude Code, Agent Lookout reads the small file Claude Code keeps for each r
 
 For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder. Codex documents none of these files, so a new Codex version can change them.
 
+For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seconds, when that folder exists. Each file in it is one session, written by the agent itself, as [Your own agents](#your-own-agents) describes.
+
 While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button.
 
-Agent Lookout never writes to `~/.claude` or `~/.codex`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
+Agent Lookout never writes to `~/.claude`, `~/.codex` or `~/.agent-lookout`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
 
 ## For contributors
 

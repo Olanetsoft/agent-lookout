@@ -28,11 +28,12 @@ interface Started {
 /**
  * Starts the server with an environment that names nothing on this machine: an
  * empty Claude home, a stand-in `claude` that lists no sessions, an empty
- * Codex home, and tmux turned off.
+ * Codex home, an empty folder of status files, and tmux turned off.
  */
 async function start(env: Record<string, string>): Promise<Started> {
   const home = await makeClaudeHome();
   const codexHome = await tempDir();
+  const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   const child = spawn(process.execPath, [tsxCli, serveFile], {
     env: {
@@ -41,6 +42,7 @@ async function start(env: Record<string, string>): Promise<Started> {
       AGENT_LOOKOUT_CLAUDE_HOME: home,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
+      AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       ...env,
     },

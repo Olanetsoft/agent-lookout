@@ -300,6 +300,32 @@ describe("events", () => {
     ]);
   });
 
+  test("a source that is not set up has been read, with no sessions, so what it lists once set up has appeared", async () => {
+    const custom = makeSession({ id: "status-files:night-shift.json", name: "checkout-flow" });
+    const notSetUp: AdapterResult = { ...result([], "not-set-up"), basis: "files" };
+    const { adapter } = scriptedAdapter(
+      notSetUp,
+      { ...result([custom]), basis: "files" },
+      notSetUp,
+    );
+    const { poller, events } = setUp(adapter);
+
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(events.list().map((event) => [event.sessionName, event.kind])).toEqual([
+      ["checkout-flow", "appeared"],
+    ]);
+    // Taken away again, the folder holds nothing, so the session has ended.
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    expect(events.list().map((event) => [event.sessionName, event.kind])).toEqual([
+      ["checkout-flow", "ended"],
+      ["checkout-flow", "appeared"],
+    ]);
+  });
+
   test("a source that fails for one poll does not end every session and bring them back", async () => {
     const a = makeSession({ id: "claude-code:a", status: "working" });
     const b = makeSession({ id: "claude-code:b", status: "idle" });
@@ -746,6 +772,27 @@ describe("history with more than one source", () => {
       [8, 4],
       [10, 4],
     ]);
+  });
+
+  test("a folder of status files that is taken away leaves a gap for one poll, then counts as having none", async () => {
+    const custom = working("status-files", 2);
+    const points = await chart(
+      sourceAdapter("claude-code", [claude, "ok"]),
+      sourceAdapter("status-files", [custom, "ok"], [[], "not-set-up"]),
+    );
+    expect(points).toEqual([
+      [0, 6],
+      [4, 4],
+      [6, 4],
+      [8, 4],
+      [10, 4],
+    ]);
+    // Never set up, it holds back no one.
+    const never = await chart(
+      sourceAdapter("claude-code", [claude, "ok"]),
+      sourceAdapter("status-files", [[], "not-set-up"]),
+    );
+    expect(never.map(([, count]) => count)).toEqual([4, 4, 4, 4, 4, 4]);
   });
 
   test("a source that has never answered does not hold back one that has", async () => {

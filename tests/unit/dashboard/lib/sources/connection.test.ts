@@ -150,11 +150,13 @@ test("a source is its state in words, and once answers stop, the last known stat
   });
   expect(sourceLine(source("searching"), false).state).toBe("Searching");
   expect(sourceLine(source("unavailable"), false).state).toBe("Not found");
+  expect(sourceLine(source("not-set-up"), false).state).toBe("Not set up");
   expect(sourceLine(source("error"), false).state).toBe("Not working");
 
   expect(sourceLine(source("ok"), true).state).toBe("Last known: watching");
   expect(sourceLine(source("searching"), true).state).toBe("Last known: searching");
   expect(sourceLine(source("unavailable"), true).state).toBe("Last known: not found");
+  expect(sourceLine(source("not-set-up"), true).state).toBe("Last known: not set up");
   expect(sourceLine(source("error"), true).state).toBe("Last known: not working");
 });
 
@@ -250,4 +252,64 @@ test("with neither tool found, both are named", () => {
     statusSentence("live", { sources: [source("unavailable"), codex("ok")], sessions: [] }, NOW)
       .text,
   ).toBe("Watching Codex, no sessions running");
+});
+
+const statusFiles = (state: SourceHealth["state"]): SourceHealth => ({
+  id: "status-files",
+  label: "Status files",
+  state,
+  checkedAt: NOW - 2_000,
+});
+
+test("a folder of status files that is not set up leaves every sentence as it is without it", () => {
+  const cases: [SourceHealth[], Session[]][] = [
+    [[source("ok")], sessions("terminal", "vscode")],
+    [[source("ok")], []],
+    [[source("searching")], []],
+    [[source("error")], []],
+    [[source("unavailable"), codex("unavailable")], []],
+    [[source("ok"), codex("ok")], sessions("terminal")],
+    [[], []],
+  ];
+  for (const [sources, list] of cases) {
+    const without = statusSentence("live", { sources, sessions: list }, NOW);
+    const withIt = statusSentence(
+      "live",
+      { sources: [...sources, statusFiles("not-set-up")], sessions: list },
+      NOW,
+    );
+    expect(withIt, `${sources.map((each) => each.state).join(", ")}`).toEqual(without);
+  }
+});
+
+test("a folder of status files that is read is named with the tools, as status files in lower case", () => {
+  const custom = makeSession({
+    id: "status-files:night-shift.json",
+    source: "status-files",
+    agent: "Night Shift",
+    name: "checkout-flow",
+    surface: "unknown",
+  });
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("ok"), statusFiles("ok")], sessions: [...sessions("vscode"), custom] },
+      NOW,
+    ).text,
+  ).toBe("Watching 2 sessions from Claude Code and status files");
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("unavailable"), statusFiles("ok")], sessions: [] },
+      NOW,
+    ).text,
+  ).toBe("Watching status files, no sessions running");
+  // At the start of a sentence, it takes its capital.
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("unavailable"), statusFiles("error")], sessions: [] },
+      NOW,
+    ).text,
+  ).toBe("Status files could not be read");
 });

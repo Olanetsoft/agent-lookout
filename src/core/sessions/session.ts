@@ -1,7 +1,11 @@
 // The session model. Adapters produce these types and the dashboard consumes them.
 // Adding a field is fine. Renaming or removing one is not.
 
-export type SourceId = "claude-code" | "codex";
+/**
+ * Where sessions come from. `status-files` is not one tool: it is a folder in
+ * which any agent writes a small file for each of its sessions.
+ */
+export type SourceId = "claude-code" | "codex" | "status-files";
 
 export type Surface = "terminal" | "vscode" | "desktop" | "cloud" | "browser" | "unknown";
 
@@ -26,6 +30,13 @@ export interface Session {
   /** Stable across polls: `${source}:${vendor session id, or pid when there is none}`. */
   id: string;
   source: SourceId;
+  /**
+   * The agent's own name, in plain text, for a source whose sessions belong to
+   * many agents: a status file names the agent that wrote it, such as
+   * "Night Shift". Shown wherever a session's agent is named. Left out, the
+   * agent is the source's own label.
+   */
+  agent?: string;
   surface: Surface;
   /** Display name. Falls back to the project folder name, then to the id. */
   name: string;
@@ -57,7 +68,16 @@ export interface Session {
   stale: boolean;
 }
 
-export type SourceState = "ok" | "searching" | "unavailable" | "error";
+/**
+ * - `ok`: read.
+ * - `searching`: the first read has not finished.
+ * - `unavailable`: the tool is not on this computer.
+ * - `not-set-up`: nothing to read until the person sets it up, as with a
+ *   folder of status files that has not been made. Not a problem, and not news
+ *   outside the Sources view.
+ * - `error`: the sessions could not be read.
+ */
+export type SourceState = "ok" | "searching" | "unavailable" | "not-set-up" | "error";
 
 /**
  * One thing a source reads or runs, as a label and a value: for example

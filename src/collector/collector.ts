@@ -1,6 +1,7 @@
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
+import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
 import { createEventStore } from "./eventStore.ts";
 import { createApiHandler, type ApiHandler } from "./handler.ts";
 import { createHistoryStore } from "./historyStore.ts";
@@ -17,11 +18,12 @@ import { createTmuxRunner, type RunTmux } from "./tmux/program.ts";
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code and Codex. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
-   * `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME`, and where
+   * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
+   * `AGENT_LOOKOUT_STATUS_DIR`, and where
    * `AGENT_LOOKOUT_NOTIFICATIONS` is read. Defaults to `process.env`.
    */
   env?: NodeJS.ProcessEnv;
@@ -76,6 +78,7 @@ export function createCollector(options: CollectorOptions): Collector {
     adapters: options.adapters ?? [
       createClaudeCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, panes }),
       createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+      createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     ],
     events,
     history,

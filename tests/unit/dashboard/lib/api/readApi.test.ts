@@ -26,6 +26,21 @@ test("a well-formed session is read as it was sent", () => {
   expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
 });
 
+test("a session from a status file keeps its agent's name, as text and only as text", () => {
+  const sent = makeSession({
+    id: "status-files:night-shift.json",
+    source: "status-files",
+    agent: "Night Shift",
+    surface: "unknown",
+    name: "checkout-flow",
+  });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+
+  for (const agent of [undefined, "", "   ", 7, { name: "Night Shift" }, ["Night Shift"]]) {
+    expect(readSession({ ...sent, agent }), String(agent)).not.toHaveProperty("agent");
+  }
+});
+
 test("a name that is not text falls back to the folder, then to the id", () => {
   const base = { ...makeSession(), name: { a: 1 } };
 
@@ -172,6 +187,11 @@ test("a source keeps its sentence, and a state the page does not know is not cal
     detail: "Fine.",
     checkedAt: T,
   });
+
+  expect(
+    readSource({ id: "status-files", label: "Status files", state: "not-set-up", checkedAt: T }, 0)
+      ?.state,
+  ).toBe("not-set-up");
 
   const odd = readSource({ id: "claude-code", label: 9, state: "paused", detail: {} }, T);
   expect(odd).toEqual({ id: "claude-code", label: "claude-code", state: "error", checkedAt: T });

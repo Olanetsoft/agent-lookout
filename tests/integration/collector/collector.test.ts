@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -19,16 +20,18 @@ import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node
  * A collector built the way every host builds it, with its default adapters,
  * and settings that name nothing on this machine: an empty Claude Code folder,
  * which on its own keeps the claude command from being run, a Codex folder of
- * the test's choosing, and tmux turned off. Served over real HTTP on a free
+ * the test's choosing, a folder of status files that is not there unless the
+ * test says otherwise, and tmux turned off. Served over real HTTP on a free
  * loopback port.
  */
-async function serve(codex: Record<string, string>) {
+async function serve(settings: Record<string, string>) {
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+      AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
-      ...codex,
+      ...settings,
     },
     now: () => NOW,
   });
@@ -44,6 +47,7 @@ describe("createCollector", () => {
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
       ["claude-code", "Claude Code", "ok"],
       ["codex", "Codex", "ok"],
+      ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
     expect(snapshot.sources[1]?.detail).toMatch(
@@ -72,9 +76,86 @@ describe("createCollector", () => {
         state: "unavailable",
         detail: `Codex was not found: CODEX_HOME is set to ${missing}, and there is no folder there. Agent Lookout looks again every minute.`,
       },
+      { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
     expect(snapshot.sessions).toEqual([]);
+  });
+
+  test("lists a session from a status file beside the others, with its own agent's name", async () => {
+    const folder = path.join(await tempDir(), "sessions");
+    await mkdir(folder);
+    await writeFile(
+      path.join(folder, "night-shift.json"),
+      JSON.stringify({
+        agent: "Night Shift",
+        name: "billing-webhooks",
+        cwd: "/Users/example/code/billing-webhooks",
+        status: "waiting",
+        reason: "question",
+      }),
+    );
+    const snapshot = await serve({
+      AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME,
+      AGENT_LOOKOUT_STATUS_DIR: folder,
+    });
+
+    expect(snapshot.sources[2]).toMatchObject({
+      id: "status-files",
+      label: "Status files",
+      state: "ok",
+      watching: [
+        { label: "Folder", value: folder },
+        { label: "Read", value: "every 2 seconds" },
+        { label: "Files read", value: "1" },
+        { label: "Files skipped", value: "0" },
+      ],
+    });
+    // It needs the person, so it is listed first, ahead of every Codex session.
+    expect(snapshot.sessions[0]).toMatchObject({
+      id: "status-files:night-shift.json",
+      source: "status-files",
+      agent: "Night Shift",
+      name: "billing-webhooks",
+      project: "billing-webhooks",
+      status: "needs-you",
+      waitingReason: "question",
+      links: {},
+    });
+    expect(snapshot.sessions[0]).not.toHaveProperty("jump");
+    expect(snapshot.sessions.filter((session) => session.source === "codex")).toHaveLength(
+      fixtureSessions.length,
+    );
+  });
+
+  test("a session in a folder of status files made after it started is logged as appearing", async () => {
+    const folder = path.join(await tempDir(), "sessions");
+    const clock = { now: Date.now() };
+    const collector = createCollector({
+      version: "9.9.9-test",
+      env: {
+        AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+        AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+        AGENT_LOOKOUT_STATUS_DIR: folder,
+        AGENT_LOOKOUT_TMUX: "off",
+      },
+      notifier: fakeSystemNotifier(),
+      now: () => clock.now,
+    });
+    const port = await listen(createServer(collector.handler));
+    await collector.poller.pollOnce();
+
+    await mkdir(folder);
+    await writeFile(path.join(folder, "my-agent.json"), '{"agent":"my-agent","status":"working"}');
+    clock.now += 2_000;
+    await collector.poller.pollOnce();
+
+    const { events } = (await request(port, "/api/events?since=0")).json<{
+      events: { sessionId: string; sessionName: string; kind: string }[];
+    }>();
+    expect(events.map((event) => [event.sessionId, event.sessionName, event.kind])).toEqual([
+      ["status-files:my-agent.json", "my-agent", "appeared"],
+    ]);
   });
 });
 

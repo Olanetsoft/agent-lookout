@@ -1,6 +1,6 @@
 # Privacy
 
-Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions. Agent Lookout itself sends nothing anywhere. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read. Agent Lookout itself sends nothing anywhere. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
 
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
@@ -51,7 +51,7 @@ tmux is started directly, never through a shell, with stdin closed and a 2 secon
 
 ### Whether a process exists
 
-Agent Lookout asks the operating system whether each Claude Code session's process still exists with a signal-0 check on the process ID, which sends nothing to the process.
+Agent Lookout asks the operating system whether each Claude Code session's process still exists with a signal-0 check on the process ID, which sends nothing to the process. It does the same for each status file that names a process.
 
 ### Codex's files
 
@@ -72,15 +72,25 @@ From the `session_meta` line it keeps `id`, `timestamp`, `cwd`, `source`, `threa
 
 A session file or `session_index.jsonl` that is a link, a named pipe or a device is never opened. The Codex folder and the folders inside it are followed when they are links.
 
+### Status files
+
+Any agent can write one small JSON file for each of its sessions into a folder for Agent Lookout to read, as the [guide](docs/GUIDE.md#your-own-agents) describes. The folder is `~/.agent-lookout/sessions`, or the one `AGENT_LOOKOUT_STATUS_DIR` names. Agent Lookout never makes it.
+
+Every 2 seconds Agent Lookout lists that folder and reads each file directly in it whose name ends in `.json` and does not start with a dot: at most 200 files. When there are more, it looks up when each was last written, without opening it, and reads the 200 written most recently. It reads only ordinary files of 16 KB or less, and on macOS and Linux it does not follow a symbolic link in the folder. The folder itself is followed when it is a link. It does not look in folders inside it. When the folder is not there, it lists nothing else.
+
+From each file it keeps these fields and drops the rest: `agent`, `name`, `cwd`, `status`, `reason`, `since` and `pid`. `agent` is the agent's name, `cwd` the folder the session works in, `since` when its status began and `pid` the ID of its process. It also keeps each file's name, which tells one session from another, and the time the file was last written, which says how long a finished session stays. The Sources card names the first file it skipped, so you can find it.
+
+For a file that names a `pid`, Agent Lookout asks the operating system whether that process still exists, with the same signal-0 check it makes for Claude Code, which sends nothing to the process. Nothing from a file is run, opened or followed: the `cwd` is shown, never read, and nothing in a file is used as a link.
+
 ### `osascript`
 
-With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a Claude Code session starts waiting for you. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
+With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a Claude Code session, or a session from a status file, starts waiting for you. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
 
 `osascript` is started directly, by that full path, never through a shell, with stdin closed and a 5 second timeout. It is not run on any other system, and never while notifications are off. While it runs, for a fraction of a second, the name is one of that program's arguments, which other programs on this machine can read from the list of running processes. [Notifications](#notifications) says when notifications are on and what one holds.
 
 ### Settings
 
-It reads nine settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads ten settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -90,7 +100,7 @@ It reads nine settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT
 - Codex's `auth.json`, `config.toml`, `history.jsonl`, its SQLite files (`*.sqlite`), its `log/` folder, `archived_sessions/` and compressed session files (`*.jsonl.zst`), and the Codex desktop app's `external_agent_session_imports.json` and `.codex-global-state.json`.
 - The files of any other application.
 
-It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder or to any agent tool's files, and it never sends input to a session. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
+It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder, to the folder of status files or to any agent tool's files, and it never sends input to a session. It never makes, renames or deletes a status file. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
 
 ## Network
 
@@ -116,11 +126,11 @@ A notification is made in one of two ways. While a dashboard page is open, the p
 
 ### From the dashboard page
 
-With notifications on, when a Claude Code session starts waiting for you, the dashboard page makes a notification through the browser's Notifications API, and the browser hands it to the operating system to show. It holds:
+With notifications on, when a Claude Code session, or a session from a status file, starts waiting for you, the dashboard page makes a notification through the browser's Notifications API, and the browser hands it to the operating system to show. It holds:
 
 - the session's name, as its title
 - the reason, as its text: "Waiting for permission", "Asked you a question" or "Waiting for you"
-- a tag that is not shown, which the browser uses to keep one notification for each session: `agent-lookout:claude-code:` followed by the session's ID, or by its job ID or process ID when it has no session ID
+- a tag that is not shown, which the browser uses to keep one notification for each session: `agent-lookout:claude-code:` followed by the session's ID, or by its job ID or process ID when it has no session ID, and for a status file `agent-lookout:status-files:` followed by the file's name
 
 It holds no folder path and none of Claude Code's own wording for the wait. No push service, no service worker and no network request is involved. The page that is open in your browser makes the notification, and can do so only while it is open.
 
@@ -132,7 +142,7 @@ The browser gives its permission to the address, such as `localhost:5173`, not t
 
 ### From the server
 
-The local server shows notifications on this machine too. When a Claude Code session starts waiting for you and no dashboard page is open to show it, the server runs `osascript`, as [described above](#osascript), and macOS shows the notification. It holds:
+The local server shows notifications on this machine too. When a Claude Code session, or a session from a status file, starts waiting for you and no dashboard page is open to show it, the server runs `osascript`, as [described above](#osascript), and macOS shows the notification. It holds:
 
 - the session's name, as its title
 - the reason, as its text, in the same three wordings

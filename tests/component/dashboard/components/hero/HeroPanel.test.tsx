@@ -296,6 +296,83 @@ test("Jump is there only when the session's link is one its source is known to b
   expect(hero(codex.container).querySelector('[data-part="jump"]')).toBeNull();
 });
 
+const STATUS_FILES: SourceHealth = {
+  id: "status-files",
+  label: "Status files",
+  state: "ok",
+  checkedAt: NOW,
+};
+
+/** A session waiting in a status file Night Shift wrote, named after its file. */
+function custom(file: string, overrides: Partial<Session> = {}): Session {
+  return {
+    ...WAITING,
+    id: `status-files:${file}.json`,
+    source: "status-files",
+    agent: "Night Shift",
+    surface: "unknown",
+    name: file,
+    cwd: `/Users/example/code/${file}`,
+    project: file,
+    waitingReason: "question",
+    waitingDetail: undefined,
+    ...overrides,
+  };
+}
+
+test("a waiting session from a status file names its own agent, and has no Jump", async () => {
+  // A link the page would open for Claude Code is still no Jump here.
+  const waiting = custom("checkout-flow", { links: { open: jumpLink(1) } });
+  const screen = await renderHero({ sessions: [waiting, BUSY], sources: [CLAUDE, STATUS_FILES] });
+  const panel = hero(screen.container);
+
+  expect(part(panel, "name").textContent).toBe("checkout-flow");
+  expect(part(panel, "reason").textContent).toContain("Asked you a question");
+  expect(part(part(panel, "place"), "agent").textContent).toBe("Night Shift");
+  expect(panel.querySelector('[data-part="jump"]')).toBeNull();
+  expect(panel.querySelector("a")).toBeNull();
+});
+
+test.each([
+  ["in the longest wait", 0],
+  ["in a later wait", 1],
+])(
+  "at the width of a phone, an agent and a folder that status files give as one long word stay inside the page, the agent %s",
+  async (_, longAgentAt) => {
+    await page.viewport(375, 800);
+    // No hyphen, so no place where a browser would break it of its own accord.
+    const folder = "searchindexing".repeat(43);
+    // The one that has waited longer is the hero's lead.
+    const since = (index: number) => NOW - (index === longAgentAt ? 10 : 1) * MINUTE;
+    const sessions = [
+      custom("checkout-flow", { agent: "W".repeat(40), statusSince: since(0) }),
+      custom("billing-webhooks", {
+        cwd: `/Users/example/code/${folder}`,
+        project: folder,
+        statusSince: since(1),
+      }),
+    ];
+    // The hero as a window 375 pixels wide draws it, beside the rail.
+    const screen = await render(
+      <div style={{ width: 283 }}>
+        <HeroPanel
+          sessions={sessions}
+          sources={[CLAUDE, STATUS_FILES]}
+          history={watched()}
+          now={NOW}
+        />
+      </div>,
+    );
+    const panel = hero(screen.container);
+
+    expect(panel.querySelectorAll('[data-slot="hero-session"]')).toHaveLength(2);
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+      document.documentElement.clientWidth,
+    );
+  },
+);
+
 test("a waiting session whose process has gone says so beside its name", async () => {
   const screen = await renderHero({ sessions: [{ ...WAITING, alive: false }] });
 

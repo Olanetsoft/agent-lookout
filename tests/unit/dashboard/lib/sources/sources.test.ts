@@ -22,12 +22,22 @@ const codex = (state: SourceHealth["state"]): SourceHealth => ({
   state,
   checkedAt: NOW,
 });
+const statusFiles = (state: SourceHealth["state"]): SourceHealth => ({
+  id: "status-files",
+  label: "Status files",
+  state,
+  checkedAt: NOW,
+});
 
 test("source names read as a phrase", () => {
   expect(sourceNames([])).toBe("your agent tools");
   expect(sourceNames([{ label: "Claude Code" }])).toBe("Claude Code");
   expect(sourceNames([{ label: "One" }, { label: "Two" }, { label: "Three" }])).toBe(
     "One, Two and Three",
+  );
+  // The folder of status files is no product, so in a sentence it is in lower case.
+  expect(sourceNames([claude("ok"), codex("ok"), statusFiles("ok")])).toBe(
+    "Claude Code, Codex and status files",
   );
 });
 
@@ -62,4 +72,44 @@ test("a session's tool is its source's own label, or its id when the source is n
   expect(agentLabel({ source: "codex" }, sources)).toBe("Codex");
   expect(agentLabel({ source: "claude-code" }, sources)).toBe("Claude Code");
   expect(agentLabel({ source: "codex" }, [claude("ok")])).toBe("codex");
+});
+
+test("a folder of status files that is not set up is never on the Overview", () => {
+  expect(overviewSources([claude("ok"), codex("ok"), statusFiles("not-set-up")])).toEqual([
+    claude("ok"),
+    codex("ok"),
+  ]);
+  // Not even when nothing is found: the tools that were not found are the story.
+  expect(
+    overviewSources([claude("unavailable"), codex("unavailable"), statusFiles("not-set-up")]),
+  ).toEqual([claude("unavailable"), codex("unavailable")]);
+  expect(overviewSources([statusFiles("not-set-up")])).toEqual([]);
+  // Once it is read, it is a source like the others.
+  expect(overviewSources([claude("unavailable"), statusFiles("ok")])).toEqual([statusFiles("ok")]);
+  expect(overviewSources([claude("ok"), statusFiles("error")])).toHaveLength(2);
+});
+
+test("agents named by status files count as agents, and the folder itself does not", () => {
+  const nightShift = { agent: "Night Shift" };
+  const myAgent = { agent: "my-agent" };
+  // The folder alone, read or not, is no second agent.
+  expect(showsAgents([claude("ok"), statusFiles("ok")])).toBe(false);
+  expect(showsAgents([claude("ok"), statusFiles("not-set-up")])).toBe(false);
+  // An agent it names is.
+  expect(showsAgents([claude("ok"), statusFiles("ok")], [{}, nightShift])).toBe(true);
+  // Two agents of its own are two, with no tool found at all.
+  expect(
+    showsAgents([claude("unavailable"), statusFiles("ok")], [nightShift, myAgent, myAgent]),
+  ).toBe(true);
+  // One agent alone, however many sessions, says the same thing on every row.
+  expect(showsAgents([claude("unavailable"), statusFiles("ok")], [nightShift, nightShift])).toBe(
+    false,
+  );
+  expect(showsAgents([claude("ok"), codex("ok"), statusFiles("not-set-up")])).toBe(true);
+});
+
+test("a session from a status file is its own agent's", () => {
+  const sources = [claude("ok"), statusFiles("ok")];
+  expect(agentLabel({ source: "status-files", agent: "Night Shift" }, sources)).toBe("Night Shift");
+  expect(agentLabel({ source: "status-files" }, sources)).toBe("Status files");
 });

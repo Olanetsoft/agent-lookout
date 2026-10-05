@@ -46,7 +46,13 @@ const STATUSES: readonly SessionStatus[] = [
   "unknown",
 ];
 const REASONS: readonly WaitingReason[] = ["permission", "question", "other"];
-const SOURCE_STATES: readonly SourceState[] = ["ok", "searching", "unavailable", "error"];
+const SOURCE_STATES: readonly SourceState[] = [
+  "ok",
+  "searching",
+  "unavailable",
+  "not-set-up",
+  "error",
+];
 const EVENT_KINDS: readonly EventKind[] = ["appeared", "status-changed", "ended"];
 const SEVERITIES: readonly EventSeverity[] = ["advisory", "warning", "critical"];
 
@@ -115,6 +121,8 @@ export function readSession(value: unknown): Session | null {
     const detail = text(value.waitingDetail);
     if (detail) session.waitingDetail = detail;
   }
+  const agent = text(value.agent);
+  if (agent) session.agent = agent;
   const pid = number(value.pid);
   if (pid !== null) session.pid = pid;
   if (typeof value.alive === "boolean") session.alive = value.alive;

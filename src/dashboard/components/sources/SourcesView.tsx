@@ -11,6 +11,7 @@ import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { problemTitle, sourceLine } from "@dashboard/lib/sources/connection";
 import { formatAgo, formatClock, formatFullTime } from "@dashboard/lib/format";
+import { cn } from "@dashboard/lib/utils";
 
 /**
  * Whether a fact's value is a literal string: a folder, a file or a command.
@@ -19,6 +20,11 @@ import { formatAgo, formatClock, formatFullTime } from "@dashboard/lib/format";
  */
 function isLiteral(value: string): boolean {
   return value.includes("/") || value.startsWith("~") || / --?\w/.test(value);
+}
+
+/** Whether a fact's value is a count, such as the files a source read. */
+function isCount(value: string): boolean {
+  return /^\d+$/.test(value);
 }
 
 interface SourcesViewProps {
@@ -73,8 +79,12 @@ function SourceCard({
         <FactList className='mt-2'>
           {source.watching?.map((fact, index) => (
             <FactRow key={`${index}-${fact.label}`} label={fact.label} mono={isLiteral(fact.value)}>
-              {/* A folder can be any length and has no spaces to break at. */}
-              <span data-part='watching' className='wrap-anywhere'>
+              {/* A folder can be any length and has no spaces to break at. A
+                  count, such as the files read, is a figure that keeps its width. */}
+              <span
+                data-part='watching'
+                className={cn("wrap-anywhere", isCount(fact.value) && "tabular-nums")}
+              >
                 {fact.value}
               </span>
             </FactRow>
@@ -176,6 +186,10 @@ export function SourcesView({ state, now }: SourcesViewProps) {
           <p>
             A source is an agent tool Agent Lookout finds sessions in. It only reads: it never
             starts, stops or changes a session.
+          </p>
+          <p>
+            Status files are how any other agent appears: it writes a small file for each of its
+            sessions in a folder that Agent Lookout reads.
           </p>
           <p>
             Agent Lookout itself sends nothing anywhere. A command listed under a source is that

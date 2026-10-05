@@ -219,8 +219,9 @@ export function SessionRow({
       </td>
 
       {agent !== undefined && !narrow && (
-        <td data-part='agent' className={cn(CELL, "truncate")}>
-          {agent}
+        <td data-part='agent' className={CELL}>
+          {/* A name a status file gives can be long, so a cut one stays a hover or a Tab away. */}
+          <Truncated className='block min-w-0'>{agent}</Truncated>
         </td>
       )}
 

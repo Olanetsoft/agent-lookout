@@ -16,6 +16,7 @@ const LAST_KNOWN_LABEL: Record<SourceHealth["state"], string> = {
   ok: "Last known: watching",
   searching: "Last known: searching",
   unavailable: "Last known: not found",
+  "not-set-up": "Last known: not set up",
   error: "Last known: not working",
 };
 
@@ -82,6 +83,11 @@ const SURFACE_IN_SENTENCE: readonly [Surface, string][] = [
   ["unknown", "another app"],
 ];
 
+/** The words with a capital letter, to begin a sentence: "Status files could not be read". */
+function sentenceStart(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** "A", "A and B", "A, B and C". */
 function listOf(words: readonly string[]): string {
   if (words.length <= 1) return words[0] ?? "";
@@ -108,6 +114,8 @@ function sourcesIn(sources: readonly SourceHealth[], state: SourceHealth["state"
  *
  * A tool that is not on this computer is named only when no tool is found, so
  * someone who uses one tool reads the same line as if only that one were watched.
+ * A source that is not set up, such as a folder of status files nobody has
+ * made, is never named: it is not being watched.
  *
  * Each sentence also has a short form, for a window too narrow for the whole
  * line. It keeps the count and the fact beside it, and drops the names.
@@ -143,7 +151,7 @@ export function statusSentence(
     };
   }
 
-  const sources = snapshot?.sources ?? [];
+  const sources = (snapshot?.sources ?? []).filter((source) => source.state !== "not-set-up");
   const sessions = snapshot?.sessions ?? [];
   if (sources.length === 0) {
     return {
@@ -196,7 +204,7 @@ export function statusSentence(
   if (broken.length > 0) {
     return {
       key: "not-working",
-      text: `${sourceNames(broken)} could not be read`,
+      text: `${sentenceStart(sourceNames(broken))} could not be read`,
       short: broken.length === 1 ? "Source not working" : "Sources not working",
       fact,
     };
@@ -204,7 +212,7 @@ export function statusSentence(
   const missing = sourcesIn(sources, "unavailable");
   return {
     key: "not-found",
-    text: `${sourceNames(missing)} ${missing.length === 1 ? "was" : "were"} not found`,
+    text: `${sentenceStart(sourceNames(missing))} ${missing.length === 1 ? "was" : "were"} not found`,
     short: missing.length === 1 ? "Source not found" : "Sources not found",
     fact,
   };

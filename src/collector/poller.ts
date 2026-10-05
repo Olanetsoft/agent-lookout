@@ -109,9 +109,9 @@ export function createPoller(options: PollerOptions): Poller {
   const memory = new Map<SourceId, SourceMemory>();
   const overdue = new Map<Adapter, Overdue>();
   /**
-   * Each source's last settled answer: "ok", or "unavailable" when the tool is
-   * not there. An error settles nothing, because it says only that the
-   * sessions could not be read.
+   * Each source's last settled answer: "ok", or "unavailable" or "not-set-up"
+   * when there is nothing to read. An error settles nothing, because it says
+   * only that the sessions could not be read.
    */
   const settled = new Map<SourceId, SourceState>();
 
@@ -178,8 +178,9 @@ export function createPoller(options: PollerOptions): Poller {
    * for one source: a source that answered before and does not answer now has
    * sessions that went uncounted, so the point is left out, for as long as it
    * keeps failing, rather than drawn without them. A source that turns
-   * unavailable leaves a gap once, and after that is taken at its word that it
-   * has no sessions. A source that has never answered holds back no one.
+   * unavailable, or not set up, leaves a gap once, and after that is taken at
+   * its word that it has no sessions. A source that has never answered holds
+   * back no one.
    */
   function measuredEverySource(results: readonly AdapterResult[]): boolean {
     let anyOk = false;
@@ -189,7 +190,9 @@ export function createPoller(options: PollerOptions): Poller {
       const { state } = result.health;
       if (state === "ok") anyOk = true;
       else if (settled.get(id) === "ok") missed = true;
-      if (state === "ok" || state === "unavailable") settled.set(id, state);
+      if (state === "ok" || state === "unavailable" || state === "not-set-up") {
+        settled.set(id, state);
+      }
     });
     return anyOk && !missed;
   }
@@ -200,7 +203,10 @@ export function createPoller(options: PollerOptions): Poller {
 
     const changes: SessionEvent[] = [];
     results.forEach((result, index) => {
-      if (result.health.state !== "ok") return;
+      // A source that is not set up was read as well, and holds no sessions. So
+      // what it lists once it is set up has appeared, and is not a baseline.
+      const { state } = result.health;
+      if (state !== "ok" && state !== "not-set-up") return;
       const id = (adapters[index] as Adapter).id;
       let remembered = memory.get(id);
       if (!remembered) {

@@ -4,7 +4,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
-The first version. It shows Claude Code and Codex sessions. The one thing it changes on the machine is which tmux pane is selected, when you press Jump.
+The first version. It shows Claude Code and Codex sessions, and those of any agent that writes a status file. The one thing it changes on the machine is which tmux pane is selected, when you press Jump.
 
 ### Added
 
@@ -29,6 +29,7 @@ The first version. It shows Claude Code and Codex sessions. The one thing it cha
 - Turn on notifications in Settings, and your browser shows a system notification when a Claude Code session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.
 - With notifications on, Agent Lookout goes on sending them on a Mac after the dashboard tab is closed, for as long as it keeps running. It shows those itself, so they come from Script Editor and stay until you clear them. An open tab that is polling and Agent Lookout do not both send one for the same wait.
 - `AGENT_LOOKOUT_NOTIFICATIONS=on` turns Agent Lookout's own notifications on from the moment it starts, without the dashboard being opened.
-- The Sources view says whether Claude Code and Codex were found, what Agent Lookout reads and runs for each, and how often.
+- Any other agent, including one you wrote yourself, can show its sessions by writing one small JSON file for each into `~/.agent-lookout/sessions`, or the folder `AGENT_LOOKOUT_STATUS_DIR` names. A session appears within 2 seconds under the agent's own name, needs you and sends a notification when its file says `waiting`, and goes when its file is deleted or its process ends. The guide's Your own agents part has the format. Agent Lookout only reads the folder.
+- The Sources view says whether Claude Code and Codex were found, what Agent Lookout reads and runs for each, and how often. A card for status files says whether their folder is there, how often it is read, and how many files were read and skipped.
 - Night and Day themes: panels of tinted glass over a warm black at Night or a warm stone by Day, with amber kept for the sessions that need you. Settings can make the theme follow the computer's setting.
 - `npm run build` followed by `npm start` serves the dashboard from one local process at `127.0.0.1:4777`.

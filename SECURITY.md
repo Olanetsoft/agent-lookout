@@ -12,7 +12,7 @@ The project has one maintainer, so replies are best effort. There are no tagged 
 
 ## What the app handles
 
-Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on a loopback address. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and a few fields. It writes to no agent's files. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and keeps.
+Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on a loopback address. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and a few fields. It writes to no agent's files. It also reads the folder of status files, `~/.agent-lookout/sessions` or the one `AGENT_LOOKOUT_STATUS_DIR` names, where any program can write a small JSON file to show one of its sessions, and it writes nothing there. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and keeps.
 
 With notifications turned on in Settings, the dashboard page hands a waiting session's name and a fixed reason to the browser's Notifications API, which passes them to the operating system. When no dashboard page is open, the local server shows the notification itself on macOS: it runs `/usr/bin/osascript` with a fixed script, and passes the name and the reason to that script as arguments. Each dashboard page tells the server whether its notifications are on, in a header on its requests, and the server shows its own only while the last page to say so said they are on, or `AGENT_LOOKOUT_NOTIFICATIONS=on` was set and no page has said anything. Nothing is sent over the network for any of this. [PRIVACY.md](PRIVACY.md#notifications) has the details.
 
@@ -41,6 +41,10 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Any write under the Codex folder (`~/.codex`, or the folder `CODEX_HOME` or `AGENT_LOOKOUT_CODEX_HOME` names), any open of a file in its `thread-writer-locks/`, and any read of a Codex file that PRIVACY.md does not list.
 - Text from a Codex session file, such as a prompt, a reply or a command's output, reaching the API or the dashboard.
 - A session name, path or other session field that runs as script or markup in the dashboard.
+- Anything from a status file that runs as script or markup in the dashboard, or in a notification, or that is used as a link, a Jump, a command or a path to open.
+- A file outside the folder of status files being read through it: by a symbolic link inside it, by a folder inside it, by a file's name or by a path written in a file, such as its `cwd`.
+- Agent Lookout making the folder of status files, or creating, writing, renaming or deleting anything in it.
+- A status file that stops its polls, or makes Agent Lookout read more than 200 files or more than 16 KB of one: by its size, its contents, or by being a pipe or a device.
 - A way to make the app run anything other than the `claude` binary it found, `ps`, the `tmux` binary it found and `/usr/bin/osascript`, or to pass any of them arguments they should not get.
 - A website, or a page served from anywhere but this machine, making the app select a tmux pane.
 - A request to `POST /api/jump` that makes tmux do anything but select a pane found for a listed session, its window and its tmux session: running a command, sending keys, or reaching any other pane.
@@ -57,6 +61,9 @@ Session names and folder paths can be sensitive. The main risk is that something
 - A notification the server showed staying in Notification Centre after its session has moved on. The server cannot take one down, and PRIVACY.md says so.
 - The dev server started with Vite's `--host` flag, which makes it listen on the network. `npm start` refuses to listen on anything but loopback.
 - Attacks that need control of your user account first. Someone with that control can read `~/.claude` and `~/.codex` directly.
+- A program on this machine writing a status file to show a session that does not exist, or to change one that does. Any program that can write in the folder can do that: it is how the format works. The folder sits in your home folder, so that means programs you run.
+- More than 200 status files: only the 200 written most recently are read.
+- A hard link in the folder of status files to a file elsewhere. It is an ordinary file in the folder and is read as one, and making it takes the same access as writing a status file.
 - Vulnerabilities in Claude Code, Codex or another agent tool. Report those to the vendor.
 - Traffic from Claude Code's own `claude agents` command while Agent Lookout runs it. It may contact Anthropic the way Claude Code normally does.
 - Another program later served at the same address using the notification permission your browser gave that address. PRIVACY.md describes this.

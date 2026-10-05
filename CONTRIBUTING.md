@@ -74,6 +74,8 @@ A primitive under `components/ui/` is a component file like any other. The entry
 
 ## Adding an adapter
 
+A status file is the quickest way to show another agent, and needs no code in Agent Lookout: the agent writes one small JSON file for each session into `~/.agent-lookout/sessions`, as the [guide](docs/GUIDE.md#your-own-agents) describes. Try that first. Write an adapter for a tool that keeps its own record of its sessions and cannot be made to write one, as Claude Code and Codex do.
+
 An adapter finds one agent tool's sessions and reports them in the shared session model. Each tool gets one adapter, in `src/collector/adapters/<tool>/`. There are two to learn from: Claude Code's in `src/collector/adapters/claude-code/`, which checks local files against a documented command, and Codex's in `src/collector/adapters/codex/`, which reads files alone. Read both before you write another.
 
 An adapter implements the interface in `src/collector/adapters/adapter.ts`. It has an `id`, a `label` and a `poll()` that resolves to `{ health, sessions }`. The poller calls `poll()` every 2 seconds. `poll()` never throws. A failure becomes `health.state`, with a plain-language `detail` that says where the adapter looked. A tool that is not installed is `unavailable`, which is not an error. Once that is known, do not look again on every poll: the Codex adapter looks once a minute. `health.watching` lists what the adapter reads and runs, and the Sources view shows it.
