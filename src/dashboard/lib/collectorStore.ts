@@ -2,6 +2,7 @@ import { MAX_EVENTS_PER_RESPONSE, type HistoryResponse } from "@core/api";
 import { DEFAULT_HISTORY_WINDOW_MS } from "@core/history";
 import type { SessionEvent, SessionsSnapshot } from "@core/session";
 import { apiRequest } from "@dashboard/lib/apiHost";
+import { timerBeat, type Beat } from "@dashboard/lib/beat";
 import { mergeHistory } from "@dashboard/lib/historyChart";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/readApi";
 
@@ -86,6 +87,8 @@ export interface CollectorStore {
 export interface CollectorStoreOptions {
   now?: () => number;
   intervalMs?: number;
+  /** What calls for a poll every `intervalMs`. The page's own timer unless another is given. */
+  beat?: Beat;
 }
 
 const INITIAL_STATE: CollectorState = {
@@ -198,10 +201,12 @@ export function mergeEvents(
 export function createCollectorStore(options: CollectorStoreOptions = {}): CollectorStore {
   const now = options.now ?? Date.now;
   const intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
+  const beat = options.beat ?? timerBeat;
   const listeners = new Set<() => void>();
 
   let state = INITIAL_STATE;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  /** Stops the beat while it is running. Null while nothing is listening. */
+  let stopBeat: (() => void) | null = null;
   let inFlight = false;
   let failures = 0;
   /**
@@ -300,15 +305,15 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
   }
 
   function start(): void {
-    if (timer !== null) return;
+    if (stopBeat !== null) return;
     void poll();
-    timer = setInterval(() => void poll(), intervalMs);
+    stopBeat = beat(() => void poll(), intervalMs);
   }
 
   function stop(): void {
-    if (timer === null) return;
-    clearInterval(timer);
-    timer = null;
+    if (stopBeat === null) return;
+    stopBeat();
+    stopBeat = null;
   }
 
   return {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/session";
 import { setApiHost, type ApiHost } from "@dashboard/lib/apiHost";
+import type { Beat } from "@dashboard/lib/beat";
 import {
   createCollectorStore,
   fetchHistory,
@@ -582,6 +583,104 @@ test("refresh polls at once and tells listeners", async () => {
 
   expect(collector.sessionRequests()).toBe(2);
   expect(listener).toHaveBeenCalledTimes(1);
+  stop();
+});
+
+/** A beat the test drives by hand, which writes down how it was started and stopped. */
+function handBeat() {
+  const hand = {
+    started: [] as number[],
+    stops: 0,
+    tick: null as (() => void) | null,
+    beat: ((tick, intervalMs) => {
+      hand.started.push(intervalMs);
+      hand.tick = tick;
+      return () => {
+        hand.stops += 1;
+        hand.tick = null;
+      };
+    }) satisfies Beat,
+  };
+  return hand;
+}
+
+test("with a beat of its own, the store polls when that beat ticks and not on the timer", async () => {
+  const collector = fakeCollector();
+  setApiHost(collector.host);
+  const hand = handBeat();
+  const store = createCollectorStore({ beat: hand.beat });
+
+  // Nothing is listening, so the beat has not been started.
+  expect(hand.started).toEqual([]);
+  const stop = store.subscribe(() => {});
+  await settle();
+  // The first poll is made at once, and the beat is started with the poll interval.
+  expect(hand.started).toEqual([POLL_INTERVAL_MS]);
+  expect(collector.sessionRequests()).toBe(1);
+
+  // The page's own timer passing asks for nothing.
+  await beat();
+  await beat();
+  expect(collector.sessionRequests()).toBe(1);
+
+  hand.tick?.();
+  await settle();
+  hand.tick?.();
+  await settle();
+  expect(collector.sessionRequests()).toBe(3);
+  expect(store.getState().phase).toBe("live");
+  stop();
+});
+
+test("the beat is stopped when the last listener leaves, and started afresh for the next", async () => {
+  const collector = fakeCollector();
+  setApiHost(collector.host);
+  const hand = handBeat();
+  const store = createCollectorStore({ beat: hand.beat, intervalMs: 500 });
+
+  const stopFirst = store.subscribe(() => {});
+  const stopSecond = store.subscribe(() => {});
+  await settle();
+  // One beat, however many are listening.
+  expect(hand.started).toEqual([500]);
+
+  stopFirst();
+  expect(hand.stops).toBe(0);
+  stopSecond();
+  expect(hand.stops).toBe(1);
+
+  const stopAgain = store.subscribe(() => {});
+  await settle();
+  expect(hand.started).toEqual([500, 500]);
+  expect(collector.sessionRequests()).toBe(2);
+  stopAgain();
+  expect(hand.stops).toBe(2);
+});
+
+test("a beat that ticks while a poll is still out does not start a second one", async () => {
+  const collector = fakeCollector();
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const answer = collector.host;
+  collector.host = async (path, init) => {
+    await held;
+    return answer(path, init);
+  };
+  setApiHost(collector.host);
+  const hand = handBeat();
+  const store = createCollectorStore({ beat: hand.beat });
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  hand.tick?.();
+  hand.tick?.();
+  await settle();
+  release();
+  await settle();
+
+  expect(collector.sessionRequests()).toBe(1);
   stop();
 });
 

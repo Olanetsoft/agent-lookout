@@ -24,6 +24,7 @@ The first version. It shows Claude Code and Codex sessions and changes nothing o
 - A Jump button opens a Claude Code session that runs in VS Code.
 - A rail down the left edge moves between the Overview, Sources and Settings, and its mark lights up while any session needs you.
 - The browser tab's title shows how many sessions need you, so it can be read while the tab is in the background.
+- Turn on notifications in Settings, and your browser shows a system notification when a Claude Code session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.
 - The Sources view says whether Claude Code and Codex were found, what Agent Lookout reads and runs for each, and how often.
 - Night and Day themes: panels of tinted glass over a warm black at Night or a warm stone by Day, with amber kept for the sessions that need you. Settings can make the theme follow the computer's setting.
 - `npm run build` followed by `npm start` serves the dashboard from one local process at `127.0.0.1:4777`.

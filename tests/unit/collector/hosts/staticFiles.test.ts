@@ -11,6 +11,29 @@ describe("what the browser is told to enforce", () => {
       contentSecurityPolicy('<script type="module" src="/assets/a.js"></script><script></script>'),
     ).toContain("script-src 'self';");
   });
+
+  // The dashboard polls on a beat kept by a worker of its own, loaded from this
+  // server, so that a tab in the background still learns of a waiting session.
+  // A browser decides whether a worker may load by `worker-src`, then
+  // `child-src`, then `script-src`, then `default-src`, whichever is given first.
+  test("the page's own worker may load from this server, and from nowhere else", () => {
+    const policy = new Map(
+      contentSecurityPolicy("<!doctype html><title>Agent Lookout</title>")
+        .split("; ")
+        .map((directive) => {
+          const [name, ...sources] = directive.split(" ");
+          return [name as string, sources];
+        }),
+    );
+
+    const forWorkers =
+      policy.get("worker-src") ??
+      policy.get("child-src") ??
+      policy.get("script-src") ??
+      policy.get("default-src");
+
+    expect(forWorkers).toEqual(["'self'"]);
+  });
 });
 
 describe("path traversal", () => {

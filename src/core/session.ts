@@ -27,7 +27,11 @@ export interface Session {
   waitingDetail?: string;
   /** Epoch milliseconds. */
   startedAt: number | null;
-  /** When the status last changed, when the source reports it. */
+  /**
+   * When the status last changed, when the source reports it. For a session
+   * that needs the person it must not move while the wait goes on: a later
+   * time on a session still waiting is read as a new wait.
+   */
   statusSince: number | null;
   pid?: number;
   /** Whether the process still exists, when a pid is known. */

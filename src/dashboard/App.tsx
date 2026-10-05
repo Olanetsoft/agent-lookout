@@ -12,6 +12,8 @@ import { useDocumentHidden } from "@dashboard/hooks/useDocumentHidden";
 import { useDocumentTitle } from "@dashboard/hooks/useDocumentTitle";
 import { useNow } from "@dashboard/hooks/useNow";
 import { useView } from "@dashboard/hooks/useView";
+import { useWaitNotifications } from "@dashboard/hooks/useWaitNotifications";
+import { workerBeat } from "@dashboard/lib/beat";
 import { createCollectorStore, type CollectorStore } from "@dashboard/lib/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/historyChart";
 import { countNeedingYou } from "@dashboard/lib/sessions";
@@ -30,7 +32,10 @@ const HistoryPanel = lazy(() =>
 const HISTORY_METRICS: readonly HistoryMetric[] = ["needsYou", "working", "idle"];
 
 interface AppProps {
-  /** Tests pass their own store. The app creates one that polls the local server. */
+  /**
+   * Tests pass their own store. The app creates one that polls the local server,
+   * on a beat that keeps time while the tab is in the background.
+   */
   store?: CollectorStore;
 }
 
@@ -76,10 +81,15 @@ function Ground() {
  * focus there; the rail and the header stay where they were. The header stays
  * at the top as the page scrolls, and is the one panel content passes behind.
  * Working, Idle and the hero's title open a history dialog over the Overview.
+ *
+ * A session that starts waiting sends a notification from here, whichever view
+ * is showing, once the person has turned that on in Settings.
  */
 export default function App({ store: providedStore }: AppProps) {
-  const [store] = useState(() => providedStore ?? createCollectorStore());
+  const [store] = useState(() => providedStore ?? createCollectorStore({ beat: workerBeat }));
   const state = useCollector(store);
+  // On every view, and with nothing drawn for it.
+  useWaitNotifications(store);
   const now = useNow();
   const view = useView();
   const [history, setHistory] = useState<HistoryMetric | null>(null);

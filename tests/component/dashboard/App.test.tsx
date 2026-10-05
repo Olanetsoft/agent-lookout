@@ -5,18 +5,34 @@ import { render } from "vitest-browser-react";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/session";
 import App from "@dashboard/App";
 import { setApiHost, type ApiHost } from "@dashboard/lib/apiHost";
-import type { CollectorState, CollectorStore } from "@dashboard/lib/collectorStore";
+import {
+  createCollectorStore,
+  type CollectorState,
+  type CollectorStore,
+} from "@dashboard/lib/collectorStore";
+import { NOTIFICATION_HANDOVER_CHANNEL } from "@dashboard/lib/notificationHandover";
+import { setNotificationHost } from "@dashboard/lib/notificationHost";
+import {
+  NOTIFICATIONS_STORAGE_KEY,
+  resetNotificationSettingForTests,
+} from "@dashboard/lib/notificationSetting";
 import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/theme";
 import type { ViewId } from "@dashboard/lib/view";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/colours";
 import { preferColorScheme, preferReducedMotion } from "@tests/support/media";
+import {
+  fakeNotificationHost,
+  installStubNotification,
+  StubNotification,
+} from "@tests/support/notifications";
 import { atFullSize, pixelsOf } from "@tests/support/pixels";
 
 const MINUTE = 60_000;
 
 const BLOCKED_ID = "claude-code:00000000-0000-4000-8000-000000000001";
+const IDLE_ID = "claude-code:00000000-0000-4000-8000-000000000002";
 
 function session(n: number, overrides: Partial<Session>): Session {
   return makeSession({
@@ -24,6 +40,14 @@ function session(n: number, overrides: Partial<Session>): Session {
     ...overrides,
   });
 }
+
+/**
+ * When the test began. A source gives a session one status time for as long as
+ * its status stands, so the waits in these snapshots are timed from here and
+ * every answer in a test gives the same time. A later time on a session still
+ * waiting would be another wait, begun since the answer before.
+ */
+let testBegan = Date.now();
 
 /** One session waiting for permission in VS Code, and one idle in a terminal. */
 function snapshot(): SessionsSnapshot {
@@ -52,7 +76,7 @@ function snapshot(): SessionsSnapshot {
         surface: "vscode",
         status: "needs-you",
         waitingReason: "permission",
-        statusSince: now - 4 * MINUTE,
+        statusSince: testBegan - 4 * MINUTE,
         links: {
           open: "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000001",
         },
@@ -97,14 +121,21 @@ function events(answered: boolean): SessionEvent[] {
   return [{ ...began, id: "event-2", at: now - MINUTE, from: "needs-you", to: "working" }, began];
 }
 
-/** Polls every two seconds for the last ten minutes. */
-function history(needsYou: number) {
+/**
+ * When the collector began. One collector says the same time in every answer,
+ * so every state in a test carries this one, unless the test says the app was
+ * stopped and started again.
+ */
+let collectorStartedAt = Date.now() - 10 * MINUTE;
+
+/** Polls every two seconds for the last ten minutes, from a collector that began at `startedAt`. */
+function history(needsYou: number, startedAt = collectorStartedAt) {
   const now = Date.now();
   const points = [];
   for (let at = now - 10 * MINUTE; at <= now; at += 2_000) {
     points.push({ at, needsYou, working: 1 - needsYou, idle: 1, total: 2 });
   }
-  return { points, startedAt: now - 10 * MINUTE };
+  return { points, startedAt };
 }
 
 function liveState(overrides: Partial<CollectorState> = {}): CollectorState {
@@ -202,12 +233,19 @@ beforeEach(async () => {
   // A desktop window.
   await page.viewport(1280, 900);
   atView(null);
+  testBegan = Date.now();
+  collectorStartedAt = Date.now() - 10 * MINUTE;
+  // The app of the test before was still on the page while that test tidied up,
+  // and may have read the notification setting again after it was cleared.
+  resetNotificationSettingForTests();
 });
 
 afterEach(() => {
   setApiHost();
+  setNotificationHost();
   localStorage.clear();
   resetThemeForTests();
+  resetNotificationSettingForTests();
   document.documentElement.removeAttribute("data-theme");
   atView(null);
 });
@@ -737,7 +775,7 @@ test("with its own store, the app reads everything through apiRequest and nothin
       ? snapshot()
       : path.startsWith("/api/events")
         ? { events: [] }
-        : { points: [], startedAt: Date.now() - MINUTE };
+        : { points: [], startedAt: collectorStartedAt };
     return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
   };
   setApiHost(host);
@@ -756,6 +794,37 @@ test("with its own store, the app reads everything through apiRequest and nothin
     "/api/history?windowMs=3600000",
   ]);
   expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test("with its own store, the app polls on a worker's beat, which is ended when the app leaves the page", async () => {
+  const requests: string[] = [];
+  setApiHost(async (path) => {
+    requests.push(path);
+    const body = path.startsWith("/api/sessions")
+      ? snapshot()
+      : path.startsWith("/api/events")
+        ? { events: [] }
+        : { points: [], startedAt: collectorStartedAt };
+    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+  });
+  const polls = () => requests.filter((path) => path === "/api/sessions").length;
+  const pageTimer = vi.spyOn(window, "setInterval");
+  const told = vi.spyOn(Worker.prototype, "postMessage");
+  const ended = vi.spyOn(Worker.prototype, "terminate");
+
+  const screen = await render(<App />);
+  await expect
+    .element(screen.getByRole("region", { name: "Sessions" }).getByText("idle-one"))
+    .toBeVisible();
+
+  // One worker, told the two seconds between polls. The page keeps no timer for it.
+  expect(told.mock.calls).toEqual([[2_000]]);
+  expect(pageTimer.mock.calls.filter(([, ms]) => ms === 2_000)).toEqual([]);
+  // The next poll comes on the worker's beat.
+  await vi.waitFor(() => expect(polls()).toBeGreaterThanOrEqual(2), { timeout: 6_000 });
+
+  await screen.unmount();
+  expect(ended).toHaveBeenCalledTimes(1);
 });
 
 test("at 760 pixels and below the status line keeps a short form under the wordmark, and the switch shows its icons", async () => {
@@ -1317,4 +1386,612 @@ test("while a session waits, only the hero's lamp and the ground's light move, a
   expect(halo().animationName).toBe("none");
   expect(getComputedStyle(light).animationName).toBe("none");
   expect(document.getAnimations().filter((a) => a.playState === "running")).toHaveLength(0);
+});
+
+/**
+ * A stand-in for the notification system, in place before the app is drawn.
+ * With `on`, the person has turned notifications on and the browser allows them.
+ */
+function notificationsFor(on: boolean) {
+  const host = fakeNotificationHost({ permission: on ? "granted" : "default" });
+  setNotificationHost(host);
+  if (on) localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  return host;
+}
+
+/** The busy snapshot with the wait a different one: another reason, as it would be next time. */
+function askedSnapshot(): SessionsSnapshot {
+  const asked = snapshot();
+  asked.sessions = asked.sessions.map((s) =>
+    s.status === "needs-you" ? { ...s, waitingReason: "question" as const } : s,
+  );
+  return asked;
+}
+
+test("a session that starts waiting sends one notification, with its name and the reason, and its moving on closes it", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  expect(host.shown).toEqual([]);
+
+  store.set(liveState());
+  expect(host.shown).toHaveLength(1);
+  expect(host.shown[0]).toMatchObject({
+    title: "blocked-one",
+    body: "Waiting for permission",
+    tag: `agent-lookout:${BLOCKED_ID}`,
+    open: true,
+  });
+
+  // The same wait, answer after answer, is still one notification.
+  store.set(liveState());
+  store.set(liveState({ phase: "stalled" }));
+  expect(host.shown).toHaveLength(1);
+
+  store.set(calmState());
+  expect(host.shown[0]).toMatchObject({ open: false, closes: 1 });
+
+  // It waits again, for another reason, and that is a new notification.
+  store.set(liveState({ snapshot: askedSnapshot() }));
+  expect(host.shown).toHaveLength(2);
+  expect(host.shown[1]).toMatchObject({
+    title: "blocked-one",
+    body: "Asked you a question",
+    open: true,
+  });
+  // Nothing was asked of the browser on the way.
+  expect(host.asked).toBe(0);
+});
+
+test("a session already waiting when the page opens sends nothing, then or later in the same wait", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(liveState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+
+  store.set(liveState());
+  store.set(liveState());
+
+  expect(host.shown).toEqual([]);
+});
+
+test("a session already waiting in the first answer the page ever gets sends nothing", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore({
+    phase: "connecting",
+    snapshot: null,
+    events: [],
+    history: null,
+    lastOkAt: null,
+    problem: null,
+    problemKind: null,
+  });
+  await render(<App store={store} />);
+
+  store.set(liveState());
+  store.set(liveState());
+  expect(host.shown).toEqual([]);
+
+  // The next wait to begin is announced.
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.shown).toHaveLength(1);
+});
+
+test("with notifications off, a session that starts waiting sends nothing", async () => {
+  const host = notificationsFor(false);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+
+  store.set(liveState());
+
+  expect(host.shown).toEqual([]);
+  expect(host.asked).toBe(0);
+});
+
+test("chosen on but not allowed by the browser, a session that starts waiting sends nothing", async () => {
+  const host = fakeNotificationHost({ permission: "denied" });
+  setNotificationHost(host);
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+
+  store.set(liveState());
+
+  expect(host.shown).toEqual([]);
+  expect(host.asked).toBe(0);
+});
+
+test.each(["sources", "settings"] as const)(
+  "a notification is sent while the %s view is showing",
+  async (view) => {
+    const host = notificationsFor(true);
+    atView(view);
+    const store = fixedStore(calmState());
+    await render(<App store={store} />);
+    expect(main().dataset.view).toBe(view);
+
+    store.set(liveState());
+
+    expect(host.shown.map((shown) => shown.title)).toEqual(["blocked-one"]);
+  },
+);
+
+test("turning notifications off in Settings closes the one on show, and turning them on mid-wait sends nothing for it", async () => {
+  const host = notificationsFor(true);
+  atView("settings");
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  const card = screen.getByRole("region", { name: "Notifications" });
+  await card.getByRole("button", { name: "Turn off notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  expect(host.open()).toEqual([]);
+  expect(host.shown[0]?.closes).toBe(1);
+
+  // On again while the same wait goes on: it had already begun, so nothing is sent.
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  store.set(liveState());
+  expect(host.shown).toHaveLength(1);
+
+  // The wait after that is announced.
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.shown).toHaveLength(2);
+  expect(host.open()).toHaveLength(1);
+});
+
+test("the page going away closes every notification it showed", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // Closed or reloaded.
+  window.dispatchEvent(new Event("pagehide"));
+  expect(host.open()).toEqual([]);
+
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // The app taken off the page.
+  await screen.unmount();
+  expect(host.open()).toEqual([]);
+  expect(host.shown.map((shown) => shown.closes)).toEqual([1, 1]);
+  // Nothing is listening any more.
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.shown).toHaveLength(2);
+});
+
+test.each(["overview", "sources", "settings"] as const)(
+  "opening the app on the %s view asks the browser for nothing and shows nothing",
+  async (view) => {
+    const host = notificationsFor(false);
+    // Chosen before, in a browser that has since forgotten its answer.
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+    atView(view);
+    const store = fixedStore(liveState());
+    await render(<App store={store} />);
+    expect(main().dataset.view).toBe(view);
+    store.set(calmState());
+    store.set(liveState());
+
+    expect(host.asked).toBe(0);
+    expect(host.shown).toEqual([]);
+  },
+);
+
+test("another tab at this address turning notifications off closes the one on show here, and the next wait sends nothing", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // The other tab's choice arrives as a storage event.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "off");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+
+  expect(host.open()).toEqual([]);
+  expect(host.shown[0]?.closes).toBe(1);
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.shown).toHaveLength(1);
+});
+
+test("when the browser's permission is taken away and the page is not told, the next wait sends nothing, and the one on show is still closed when its session moves on", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // Blocked in the browser's own settings. No event says so.
+  host.state = "denied";
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  store.set(calmState());
+  expect(host.open()).toEqual([]);
+  expect(host.shown[0]?.closes).toBe(1);
+
+  store.set(liveState());
+  expect(host.shown).toHaveLength(1);
+  expect(host.asked).toBe(0);
+});
+
+test("coming back to the page after blocking notifications in the browser closes the one on show", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  host.state = "denied";
+  window.dispatchEvent(new Event("focus"));
+
+  expect(host.open()).toEqual([]);
+  expect(host.shown[0]?.closes).toBe(1);
+  // The person's choice is kept for when the browser allows them again.
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+});
+
+/** The app stopped answering: its last answer is still on the page, and is said to be old. */
+function stoppedAfter(lastAnswer: CollectorState): CollectorState {
+  return {
+    ...lastAnswer,
+    phase: "stalled",
+    problem: "The local server did not answer.",
+    problemKind: "no-answer",
+  };
+}
+
+test("when the app is stopped and started again under an open page, a session already waiting when it started sends nothing, and the next wait to begin does", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+
+  // The app stops answering. A session starts waiting. The app is started again.
+  store.set(stoppedAfter(store.getState()));
+  const startedAgain = Date.now();
+  store.set(liveState({ history: history(1, startedAgain) }));
+  store.set(liveState({ history: history(1, startedAgain) }));
+  expect(host.shown).toEqual([]);
+
+  // It is answered, and waits again while the same app runs.
+  store.set(calmState({ history: history(0, startedAgain) }));
+  store.set(liveState({ snapshot: askedSnapshot(), history: history(1, startedAgain) }));
+  expect(host.shown.map((shown) => [shown.title, shown.body, shown.open])).toEqual([
+    ["blocked-one", "Asked you a question", true],
+  ]);
+  expect(host.asked).toBe(0);
+});
+
+test("a notification on show when the app is started again stays while its session still waits, and is closed when the session moved on meanwhile", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // Started again with the wait unbroken: the one on show stays, and no second one is made.
+  const startedAgain = Date.now();
+  store.set(stoppedAfter(store.getState()));
+  store.set(liveState({ history: history(1, startedAgain) }));
+  store.set(liveState({ history: history(1, startedAgain) }));
+  expect(host.shown).toHaveLength(1);
+  expect(host.shown[0]).toMatchObject({ open: true, closes: 0 });
+
+  // Started once more, and this time the session went back to work while the app was stopped.
+  store.set(calmState({ history: history(0, startedAgain + 1) }));
+  expect(host.shown).toHaveLength(1);
+  expect(host.shown[0]).toMatchObject({ open: false, closes: 1 });
+});
+
+test("with a store that polls, a session found waiting by an app started again under the open page sends nothing, and the wait after it does", async () => {
+  const host = notificationsFor(true);
+  // What the local server answers. Nobody waits at first.
+  let waiting = false;
+  let stopped = false;
+  let startedAt = collectorStartedAt;
+  let polls = 0;
+  setApiHost(async (path) => {
+    if (path.startsWith("/api/sessions")) polls += 1;
+    if (stopped) throw new TypeError("The stand-in server is stopped.");
+    let body: unknown = { points: [], startedAt };
+    if (path.startsWith("/api/events")) body = { events: [] };
+    if (path.startsWith("/api/sessions")) body = waiting ? snapshot() : calmSnapshot();
+    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+  });
+  // Polls never overlap, so once the store has asked twice more, a whole poll
+  // made after the change has been answered and taken in.
+  const takenIn = async () => {
+    const from = polls;
+    await vi.waitFor(() => expect(polls).toBeGreaterThanOrEqual(from + 2), { timeout: 5_000 });
+  };
+  await render(<App store={createCollectorStore({ intervalMs: 40 })} />);
+  await takenIn();
+
+  // Stopped, with the page left open.
+  stopped = true;
+  await takenIn();
+  // A session starts waiting, and then the app is started again.
+  waiting = true;
+  startedAt = Date.now();
+  stopped = false;
+  await takenIn();
+  await takenIn();
+  expect(document.title).toBe("(1) Agent Lookout");
+  expect(host.shown).toEqual([]);
+
+  // That wait ends and another begins, which is announced.
+  waiting = false;
+  await takenIn();
+  waiting = true;
+  await vi.waitFor(() => expect(host.shown).toHaveLength(1));
+  expect(host.shown[0]).toMatchObject({ title: "blocked-one", open: true });
+});
+
+/**
+ * Another page at this address, as far as the channel between pages can tell:
+ * it hears what a page says as it leaves, and can say the same itself. One made
+ * after the app is drawn hears each message after the app has.
+ */
+function otherPage() {
+  const channel = new BroadcastChannel(NOTIFICATION_HANDOVER_CHANNEL);
+  const heard: unknown[] = [];
+  channel.addEventListener("message", (event) => heard.push(event.data));
+  onTestFinished(() => channel.close());
+  return { heard, say: (message: unknown) => channel.postMessage(message) };
+}
+
+/** The busy snapshot with the idle session waiting as well: two sessions need the person. */
+function bothWaitingSnapshot(): SessionsSnapshot {
+  const both = snapshot();
+  both.sessions = both.sessions.map((s) =>
+    s.status === "idle"
+      ? {
+          ...s,
+          status: "needs-you" as const,
+          waitingReason: "question" as const,
+          statusSince: testBegan,
+        }
+      : s,
+  );
+  return both;
+}
+
+test("with the dashboard open twice at one address, the page that stays shows again what the page that left took down, and clears it when the waits end", async () => {
+  // One notification system for both pages. Like a browser, it keeps one
+  // notification for each tag.
+  const host = notificationsFor(true);
+  const onShow = () =>
+    host
+      .open()
+      .map((shown) => shown.tag)
+      .sort();
+  const both = [`agent-lookout:${BLOCKED_ID}`, `agent-lookout:${IDLE_ID}`];
+
+  // The first page is open when a session starts waiting, and shows it.
+  const firstStore = fixedStore(calmState());
+  const first = await render(<App store={firstStore} />);
+  firstStore.set(liveState());
+  expect(host.shown).toHaveLength(1);
+
+  // The second page opens during the wait, and announces nothing.
+  const secondStore = fixedStore(liveState());
+  await render(<App store={secondStore} />);
+  secondStore.set(liveState());
+  expect(host.shown).toHaveLength(1);
+
+  // Another session starts waiting. Both pages notify of it, and the later
+  // notification takes the place of the earlier, so the first page holds both.
+  secondStore.set(liveState({ snapshot: bothWaitingSnapshot() }));
+  firstStore.set(liveState({ snapshot: bothWaitingSnapshot() }));
+  expect(host.shown).toHaveLength(3);
+  expect(onShow()).toEqual(both);
+
+  // The first page goes, and takes down what it showed, which is all there is.
+  await first.unmount();
+  expect(host.shown.slice(0, 3).map((shown) => shown.closes)).toEqual([1, 0, 1]);
+
+  // Both sessions still wait, and the page that stays shows them again.
+  await vi.waitFor(() => expect(onShow()).toEqual(both));
+  expect(host.shown).toHaveLength(5);
+  expect(host.shown.slice(3).map((shown) => [shown.title, shown.body])).toEqual([
+    ["blocked-one", "Waiting for permission"],
+    ["idle-one", "Asked you a question"],
+  ]);
+
+  // It is the one that clears them when the waits end.
+  secondStore.set(calmState());
+  expect(host.open()).toEqual([]);
+  expect(host.shown.slice(3).map((shown) => shown.closes)).toEqual([1, 1]);
+});
+
+test("a page that is closed or reloaded tells the other pages at its address which sessions' notifications it took down, and one that turns them off tells nobody", async () => {
+  const host = notificationsFor(true);
+  const store = fixedStore(calmState());
+  await render(<App store={store} />);
+  const other = otherPage();
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+
+  // Off is the same choice in every page at this address, so nobody is to take over.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "off");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+  expect(host.open()).toEqual([]);
+
+  // On again, and the next wait is on show when the page goes away.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+  store.set(calmState());
+  store.set(liveState());
+  expect(host.open()).toHaveLength(1);
+  window.dispatchEvent(new Event("pagehide"));
+  expect(host.open()).toEqual([]);
+
+  await vi.waitFor(() => expect(other.heard).toHaveLength(1));
+  // The session's id and nothing else: no name, no reason. Nothing was said before it.
+  expect(other.heard).toEqual([{ handedOver: [BLOCKED_ID] }]);
+
+  // Going away with nothing on show says nothing.
+  window.dispatchEvent(new Event("pagehide"));
+  otherPage().say("the end");
+  await vi.waitFor(() => expect(other.heard).toHaveLength(2));
+  expect(other.heard[1]).toBe("the end");
+});
+
+test("what another page hands over is shown again only for a session still waiting here, and only while notifications are on", async () => {
+  const host = notificationsFor(true);
+  // Already waiting when this page opened, so this page announced nothing.
+  const store = fixedStore(liveState());
+  await render(<App store={store} />);
+  const leaving = otherPage();
+  const witness = otherPage();
+  const handOver = async (...sessionIds: string[]) => {
+    const heard = witness.heard.length;
+    leaving.say({ handedOver: sessionIds });
+    // The witness was made after the app's own channel, so the app has heard it by now.
+    await vi.waitFor(() => expect(witness.heard).toHaveLength(heard + 1));
+  };
+  expect(host.shown).toEqual([]);
+
+  // The other page had it on show, and took it down as it left.
+  await handOver(BLOCKED_ID, IDLE_ID, "claude-code:00000000-0000-4000-8000-000000000009");
+  expect(host.shown.map((shown) => [shown.title, shown.body, shown.tag, shown.open])).toEqual([
+    ["blocked-one", "Waiting for permission", `agent-lookout:${BLOCKED_ID}`, true],
+  ]);
+
+  // The session moves on, and this page clears it. Handed over after that, it is not shown.
+  store.set(calmState());
+  expect(host.shown[0]).toMatchObject({ open: false, closes: 1 });
+  await handOver(BLOCKED_ID);
+  expect(host.shown).toHaveLength(1);
+
+  // It waits again with notifications turned off. Nothing is sent, and nothing is shown again.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "off");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+  store.set(liveState());
+  await handOver(BLOCKED_ID);
+  expect(host.shown).toHaveLength(1);
+  expect(host.asked).toBe(0);
+});
+
+test("through the browser's own Notifications API, nothing is asked until the button is pressed, and then a wait is one notification that its end closes", async () => {
+  // The dashboard's own host, over a stand-in for `window.Notification`.
+  onTestFinished(installStubNotification());
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+
+  // A wait comes and goes on every view before anything is turned on.
+  for (const view of ["overview", "sources", "settings"] as const) {
+    location.hash = `#${view}`;
+    await vi.waitFor(() => expect(main().dataset.view).toBe(view));
+    store.set(liveState());
+    store.set(calmState());
+  }
+  expect(StubNotification.asked).toBe(0);
+  expect(StubNotification.made).toEqual([]);
+
+  const card = screen.getByRole("region", { name: "Notifications" });
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(StubNotification.asked).toBe(1);
+  // Turning them on makes no notification by itself.
+  expect(StubNotification.made).toEqual([]);
+
+  store.set(liveState());
+  expect(StubNotification.made).toHaveLength(1);
+  const made = StubNotification.made[0] as StubNotification;
+  expect(made.title).toBe("blocked-one");
+  // The reason and a tag, and nothing else: no icon, no sound, no request to stay on screen.
+  expect(made.options).toEqual({
+    body: "Waiting for permission",
+    tag: `agent-lookout:${BLOCKED_ID}`,
+  });
+  expect(made.closes).toBe(0);
+
+  store.set(calmState());
+  expect(made.closes).toBe(1);
+  expect(StubNotification.made).toHaveLength(1);
+  expect(StubNotification.asked).toBe(1);
+});
+
+test("with notifications on, its own store and its tab out of sight, a wait is notified by the answer that shows it and cleared by the answer that shows it over, and the page calls nothing but its own server", async () => {
+  onTestFinished(installStubNotification());
+  StubNotification.permission = "granted";
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+
+  // Nobody waits in the first answer or from the third. Somebody does in the second.
+  const answeredAt: number[] = [];
+  setApiHost(async (path) => {
+    let body: unknown = { points: [], startedAt: collectorStartedAt };
+    if (path.startsWith("/api/events")) body = { events: [] };
+    if (path.startsWith("/api/sessions")) {
+      answeredAt.push(performance.now());
+      body = answeredAt.length === 2 ? snapshot() : calmSnapshot();
+    }
+    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+  });
+  const spies = [
+    vi.spyOn(globalThis, "fetch"),
+    vi.spyOn(XMLHttpRequest.prototype, "open"),
+    vi.spyOn(Navigator.prototype, "sendBeacon"),
+    vi.spyOn(ServiceWorkerContainer.prototype, "register"),
+  ];
+  onTestFinished(() => spies.forEach((spy) => spy.mockRestore()));
+  const serviceWorkersBefore = (await navigator.serviceWorker.getRegistrations()).length;
+  performance.clearResourceTimings();
+
+  const screen = await render(<App />);
+  // The tab goes into the background, as far as the page can tell. This browser
+  // does not slow a hidden page's timers, so what is checked here is that
+  // nothing in the app stops asking or telling because it is out of sight.
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+  document.dispatchEvent(new Event("visibilitychange"));
+  onTestFinished(() => {
+    delete (document as { hidden?: boolean }).hidden;
+    delete (document as { visibilityState?: string }).visibilityState;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await vi.waitFor(() => expect(ground().dataset.drift).toBe("paused"));
+
+  await vi.waitFor(() => expect(StubNotification.made).toHaveLength(1), { timeout: 8_000 });
+  const made = StubNotification.made[0] as StubNotification;
+  expect([made.title, made.options?.body]).toEqual(["blocked-one", "Waiting for permission"]);
+  // Made by the second answer, the one that showed the wait, and not by a later
+  // one. The collector reads every two seconds and the page asks every two, so
+  // a second here keeps the whole of it inside five.
+  const sawTheWait = answeredAt[1] as number;
+  expect(made.madeAt).toBeGreaterThanOrEqual(sawTheWait);
+  expect(made.madeAt - sawTheWait).toBeLessThan(1_000);
+
+  await vi.waitFor(() => expect(made.closes).toBe(1), { timeout: 8_000 });
+  const sawItOver = answeredAt[2] as number;
+  expect(made.closedAt).toBeGreaterThanOrEqual(sawItOver);
+  expect((made.closedAt as number) - sawItOver).toBeLessThan(1_000);
+  // The two answers came about two seconds apart, on the worker's beat.
+  expect(sawItOver - sawTheWait).toBeGreaterThan(1_000);
+  expect(sawItOver - sawTheWait).toBeLessThan(4_000);
+  expect(StubNotification.made).toHaveLength(1);
+  expect(StubNotification.asked).toBe(0);
+  // The app leaves the page, so its store asks for nothing after this test.
+  await screen.unmount();
+
+  // Everything was read through the app's own seam, and nothing else was called.
+  for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  expect(await navigator.serviceWorker.getRegistrations()).toHaveLength(serviceWorkersBefore);
+  // Whatever the browser fetched for the page meanwhile, the beat's worker
+  // included, came from this address.
+  const fetched = performance.getEntriesByType("resource").map((entry) => new URL(entry.name));
+  expect(fetched.filter((url) => url.origin !== location.origin)).toEqual([]);
+  expect(fetched.some((url) => /beatWorker/.test(url.pathname))).toBe(true);
 });

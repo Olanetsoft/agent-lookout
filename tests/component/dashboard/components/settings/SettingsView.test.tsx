@@ -1,14 +1,36 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
+import { setNotificationHost } from "@dashboard/lib/notificationHost";
+import {
+  NOTIFICATIONS_STORAGE_KEY,
+  resetNotificationSettingForTests,
+} from "@dashboard/lib/notificationSetting";
 import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/theme";
+import { pointAway, startAtTop } from "@tests/support/browser";
 import { rgbOf, warmPaint } from "@tests/support/colours";
 import { preferColorScheme } from "@tests/support/media";
+import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/notifications";
+
+/**
+ * The notification system is a stand-in in every test here, so nothing asks
+ * this browser for permission. It starts as a browser that has not been asked,
+ * and whose person would say yes.
+ */
+let host: FakeNotificationHost;
+
+beforeEach(() => {
+  host = fakeNotificationHost();
+  setNotificationHost(host);
+});
 
 afterEach(() => {
   localStorage.clear();
   resetThemeForTests();
+  resetNotificationSettingForTests();
+  setNotificationHost();
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -85,7 +107,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(2);
+    expect(cards).toHaveLength(3);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -96,5 +118,350 @@ test.each(["dark", "light"] as const)(
     expect(getComputedStyle(well).backgroundColor).toBe(rgbOf("var(--well)"));
     expect(well.querySelector('[data-part="thumb"]')).not.toBeNull();
     expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+const notifications = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen.getByRole("region", { name: "Notifications" });
+
+/** The words that say whether notifications are on. */
+const stateOf = (screen: Awaited<ReturnType<typeof render>>) =>
+  notifications(screen).element().querySelector('[data-part="state"]') as HTMLElement;
+
+test("notifications are off by default, said in words beside one button that turns them on", async () => {
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await expect.element(card).toBeVisible();
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+  // The state is said again to a screen reader when it changes.
+  expect(stateOf(screen).getAttribute("aria-live")).toBe("polite");
+  const buttons = card.getByRole("button").elements();
+  expect(buttons.map((button) => button.textContent)).toEqual(["Turn on notifications"]);
+  // Nothing is wrong, so there is no note.
+  expect(card.element().querySelector('[data-slot="callout"]')).toBeNull();
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
+});
+
+test("drawing the view never asks the browser for permission, whatever was chosen before", async () => {
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+
+  const screen = await render(<SettingsView />);
+  await expect.element(notifications(screen)).toBeVisible();
+  await screen.rerender(<SettingsView />);
+
+  expect(host.asked).toBe(0);
+  expect(host.shown).toEqual([]);
+  // Chosen before, but the browser has not allowed it, so they are not on.
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+});
+
+test("pressing the button asks the browser, and once allowed they are on, the button turns them off, and the choice is remembered", async () => {
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(host.asked).toBe(1);
+  expect(stateOf(screen).textContent).toBe("Notifications are on.");
+  expect(card.getByRole("button").elements()).toHaveLength(1);
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+  // Turning them on shows nothing by itself.
+  expect(host.shown).toEqual([]);
+
+  // Remembered: the page is drawn afresh and they are still on, without asking again.
+  await screen.unmount();
+  resetNotificationSettingForTests();
+  const again = await render(<SettingsView />);
+  expect(stateOf(again).textContent).toBe("Notifications are on.");
+  expect(host.asked).toBe(1);
+
+  await notifications(again).getByRole("button", { name: "Turn off notifications" }).click();
+  await expect
+    .element(notifications(again).getByRole("button", { name: "Turn on notifications" }))
+    .toBeVisible();
+  expect(stateOf(again).textContent).toBe("Notifications are off.");
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("off");
+});
+
+test("the button keeps the keyboard's focus as it changes from on to off", async () => {
+  const screen = await render(<SettingsView />);
+  const button = notifications(screen).getByRole("button").element() as HTMLButtonElement;
+  button.focus();
+
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(button.textContent).toBe("Turn off notifications"));
+  expect(document.activeElement).toBe(button);
+
+  await userEvent.keyboard(" ");
+  await vi.waitFor(() => expect(button.textContent).toBe("Turn on notifications"));
+  expect(document.activeElement).toBe(button);
+});
+
+test("when the browser refuses, they stay off and a note says they are blocked and what to do", async () => {
+  host.answer = "denied";
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+
+  const note = card.getByRole("status");
+  await expect.element(note).toBeVisible();
+  expect(note.element().getAttribute("data-tone")).toBe("info");
+  expect(note.element().textContent).toBe(
+    "Notifications are blocked" +
+      "Your browser is blocking notifications from this address. Allow them for this page in the browser's settings, then turn them on here.",
+  );
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+  // The button stays, for when the browser has been told to allow them.
+  await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
+
+  // Blocked is the browser's last word: pressing again does not ask again.
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  expect(host.asked).toBe(1);
+});
+
+test("once the browser allows them again, the note goes when the person comes back, and the button turns them on", async () => {
+  host.state = "denied";
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+  await expect.element(card.getByRole("status")).toBeVisible();
+
+  // Allowed in the browser's own settings, then back to this page.
+  host.state = "granted";
+  window.dispatchEvent(new Event("focus"));
+
+  await expect.element(card.getByRole("status")).not.toBeInTheDocument();
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(host.asked).toBe(0);
+});
+
+test("when the browser's permission is taken away while they are on, the card says off and blocked once the person comes back", async () => {
+  host.state = "granted";
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+  expect(stateOf(screen).textContent).toBe("Notifications are on.");
+
+  // Blocked in the browser's own settings, then back to this page.
+  host.state = "denied";
+  document.dispatchEvent(new Event("visibilitychange"));
+
+  await expect.element(card.getByRole("status")).toBeVisible();
+  expect(card.getByRole("status").element().textContent).toContain("Notifications are blocked");
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+  expect(
+    card
+      .getByRole("button")
+      .elements()
+      .map((button) => button.textContent),
+  ).toEqual(["Turn on notifications"]);
+  // The choice is the person's, and is kept for when the browser allows them again.
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+  expect(host.asked).toBe(0);
+});
+
+test("a choice made in another tab at this address shows here without a reload", async () => {
+  host.state = "granted";
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+
+  // The other tab turns them on. This one hears it as a storage event.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(stateOf(screen).textContent).toBe("Notifications are on.");
+  expect(host.asked).toBe(0);
+});
+
+test("a browser that cannot show notifications says so, and offers no button", async () => {
+  host.state = "unsupported";
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  const note = card.getByRole("status");
+  await expect.element(note).toBeVisible();
+  expect(note.element().textContent).toBe(
+    "This browser cannot show notifications" +
+      "Open Agent Lookout in a browser that can, then turn them on here.",
+  );
+  expect(stateOf(screen).textContent).toBe("Notifications are off.");
+  expect(card.getByRole("button").elements()).toEqual([]);
+  expect(host.asked).toBe(0);
+});
+
+test.each(["denied", "unsupported"] as const)(
+  "when the browser's answer is %s, nothing under the note says the browser can show a notification",
+  async (state) => {
+    host.state = state;
+    const screen = await render(<SettingsView />);
+    const card = notifications(screen);
+    await expect.element(card.getByRole("status")).toBeVisible();
+
+    const words = card.element().textContent ?? "";
+    expect(words).not.toMatch(/browser can\b/i);
+    // What turning them on does is still said, as what happens once they are on.
+    expect(words).toContain(
+      "When notifications are on, one appears each time a session starts waiting for you.",
+    );
+  },
+);
+
+test("the card says what a notification holds, that the page has to stay open, and that only Claude Code sessions can be seen waiting", async () => {
+  const screen = await render(<SettingsView />);
+  const words = notifications(screen).element().textContent ?? "";
+
+  expect(words).toContain(
+    "When notifications are on, one appears each time a session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.",
+  );
+  expect(words).toContain(
+    "Notifications come from this page, so it has to stay open in a tab. Only Claude Code sessions can be seen waiting, so a Codex session never sends one.",
+  );
+});
+
+test("the notifications button is reached by Tab after the theme, and shows the focus ring", async () => {
+  const screen = await render(<SettingsView />);
+  const button = notifications(screen).getByRole("button").element();
+  await pointAway();
+
+  startAtTop();
+  const stops: Element[] = [];
+  for (let presses = 0; presses < 10 && document.activeElement !== button; presses += 1) {
+    await userEvent.tab();
+    if (document.activeElement) stops.push(document.activeElement);
+  }
+
+  expect(document.activeElement).toBe(button);
+  // The theme's choice is one stop, and the button is the next.
+  expect(stops.map((stop) => stop.getAttribute("role") ?? stop.tagName)).toEqual([
+    "radio",
+    "BUTTON",
+  ]);
+  const style = getComputedStyle(button);
+  expect(style.outlineStyle).toBe("solid");
+  expect(style.outlineWidth).toBe("2px");
+  expect(style.outlineColor).toBe(rgbOf("var(--focus)"));
+});
+
+test("the notifications card is built from the same parts as the rest: a quiet button, body words and an info note", async () => {
+  host.state = "denied";
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+  await pointAway();
+
+  const button = card.getByRole("button").element();
+  expect(button.getAttribute("data-variant")).toBe("quiet");
+  expect(getComputedStyle(button).height).toBe("28px");
+  expect(getComputedStyle(button).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+  expect(getComputedStyle(button).color).toBe(rgbOf("var(--ink-secondary)"));
+
+  const state = stateOf(screen);
+  expect(getComputedStyle(state).fontSize).toBe("13px");
+  expect(getComputedStyle(state).fontWeight).toBe("500");
+  expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
+
+  for (const sentence of card.element().querySelectorAll(":scope > div > p")) {
+    expect(getComputedStyle(sentence).fontSize).toBe("13px");
+    expect(getComputedStyle(sentence).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(getComputedStyle(sentence).fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+  }
+  expect(card.element().querySelectorAll(":scope > div > p")).toHaveLength(2);
+
+  // The note is the quiet one, not the error.
+  const note = card.getByRole("status").element();
+  expect(getComputedStyle(note).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+  expect(getComputedStyle(note).borderRadius).toBe("14px");
+});
+
+test("the theme and notifications share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
+  await page.viewport(1440, 900);
+  onTestFinished(() => page.viewport(1280, 900));
+  const screen = await render(<SettingsView />);
+  const box = (name: string) =>
+    screen.getByRole("region", { name }).element().getBoundingClientRect();
+  const [theme, notes, copy] = [box("Theme"), box("Notifications"), box("This copy")];
+
+  expect(notes.left).toBe(theme.left);
+  expect(notes.width).toBe(theme.width);
+  expect(notes.top - theme.bottom).toBe(16);
+  expect(copy.top).toBe(theme.top);
+  expect(copy.left - theme.right).toBe(16);
+});
+
+test.each([1000, 375])(
+  "at %i pixels the cards stack as Theme, Notifications, This copy, and nothing runs off the side",
+  async (width) => {
+    await page.viewport(width, 900);
+    onTestFinished(() => page.viewport(1280, 900));
+    // The fullest the card gets: blocked, with its note.
+    host.state = "denied";
+    const screen = await render(<SettingsView />);
+    await expect.element(notifications(screen).getByRole("status")).toBeVisible();
+
+    const cards = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="section-card"]')];
+    expect(cards.map((card) => card.querySelector("h2")?.textContent)).toEqual([
+      "Theme",
+      "Notifications",
+      "This copy",
+    ]);
+    const boxes = cards.map((card) => card.getBoundingClientRect());
+    for (const [index, box] of boxes.entries()) {
+      expect(box.left).toBe(boxes[0]?.left);
+      expect(box.width).toBe(boxes[0]?.width);
+      if (index > 0) expect(box.top - (boxes[index - 1] as DOMRect).bottom).toBe(16);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    for (const card of cards) {
+      expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+      for (const part of card.querySelectorAll<HTMLElement>("p, button, [data-slot='callout']")) {
+        expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(
+          card.getBoundingClientRect().right - 24 + 0.5,
+        );
+      }
+    }
+  },
+);
+
+const NOTIFICATION_STATES = [
+  ["off", "default", null],
+  ["on", "granted", "on"],
+  ["blocked", "denied", null],
+  ["not possible", "unsupported", null],
+] as const;
+
+test.each(
+  (["dark", "light"] as const).flatMap((theme) =>
+    NOTIFICATION_STATES.map((state) => [theme, ...state] as const),
+  ),
+)(
+  "in the %s theme, with notifications %s, nothing in the view is warm",
+  async (theme, _state, permission, stored) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    host.state = permission;
+    if (stored) localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, stored);
+
+    const screen = await render(<SettingsView />);
+    await expect.element(notifications(screen)).toBeVisible();
+    expect(stateOf(screen).textContent).toBe(
+      stored ? "Notifications are on." : "Notifications are off.",
+    );
+
+    expect(warmPaint(screen.container)).toEqual([]);
+    // Nor when the button is under the keyboard or the pointer.
+    const button = notifications(screen).getByRole("button").elements()[0];
+    if (button) {
+      (button as HTMLElement).focus();
+      expect(warmPaint(screen.container)).toEqual([]);
+      await userEvent.hover(button);
+      expect(warmPaint(screen.container)).toEqual([]);
+      await pointAway();
+    }
   },
 );

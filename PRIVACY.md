@@ -75,9 +75,29 @@ The local server has no password. While Agent Lookout is running, another progra
 
 The Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code.
 
+## Notifications
+
+Notifications are off until you turn them on in Settings. Pressing Turn on notifications is the only thing in Agent Lookout that asks your browser for permission to show them.
+
+With notifications on, when a Claude Code session starts waiting for you, the dashboard page makes a notification through the browser's Notifications API, and the browser hands it to the operating system to show. It holds:
+
+- the session's name, as its title
+- the reason, as its text: "Waiting for permission", "Asked you a question" or "Waiting for you"
+- a tag that is not shown, which the browser uses to keep one notification for each session: `agent-lookout:claude-code:` followed by the session's ID, or by its job ID or process ID when it has no session ID
+
+It holds no folder path and none of Claude Code's own wording for the wait. No push service, no service worker and no network request is involved. The page that is open in your browser makes the notification, and can do so only while it is open.
+
+The page closes a notification when its session stops waiting, when you turn notifications off, and when the page is closed or reloaded. It cannot close one if the browser crashes or is forced to quit first. While Agent Lookout is stopped, the page cannot tell that a session has moved on, so a notification already showing stays. A notification stays in the system's notification list, Notification Centre on macOS, until the page closes it or you clear it. What the browser and the operating system keep of a notification, in memory or on disk, is theirs, and Agent Lookout cannot read it back.
+
+When a dashboard tab is closed or reloaded, it tells the other dashboard tabs open at the same address, in the same browser, which sessions' notifications it closed, so that one of them can show them again. That message holds session IDs, goes over the browser's `BroadcastChannel` and does not leave the browser.
+
+The browser gives its permission to the address, such as `localhost:5173`, not to Agent Lookout. Another program served at the same address later can show notifications without asking, and can read or change the two values listed under Storage. To take the permission back, remove it for that address in the browser's site settings.
+
 ## Storage
 
 Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops.
+
+With notifications on, each notification holds a session's name, and the browser and the operating system keep it in their own notification list. [Notifications](#notifications) says what it holds and how long it stays.
 
 The tools that run it write files of their own. None of these holds session data.
 
@@ -86,11 +106,13 @@ The tools that run it write files of their own. None of these holds session data
 - `npm run dev` runs through Vite, which keeps pre-bundled copies of the dependencies in `node_modules/.vite/`.
 - `npm run build` writes the built dashboard to `dist/` and the type checker's records to `node_modules/.tmp/`.
 
-The dashboard saves one value in your browser's local storage: your theme choice, under the key `agent-lookout-theme`.
+The dashboard saves two values in your browser's local storage. Your theme choice is under the key `agent-lookout-theme`. Whether notifications are on is under the key `agent-lookout-notifications`, as `on` or `off`, and is written only when you turn them on or off. Both belong to one browser at one address.
 
 ## What is on screen
 
 Session names and folder paths can show what you are working on. Check a screenshot before you share it.
+
+With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. It stays there until the session stops waiting or you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, or leave notifications off.
 
 ## Changes
 
