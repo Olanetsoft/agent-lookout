@@ -1,10 +1,10 @@
 import type { Session, SessionsSnapshot, SourceId } from "@core/sessions/session";
+import { waitNotice } from "@core/sessions/waiting";
 import { EMPTY_WAIT_MEMORY, waitChanges, type WaitMemory } from "@core/sessions/waitChanges";
 import type {
   NotificationHost,
   ShownNotification,
 } from "@dashboard/lib/notifications/notificationHost";
-import { waitingLabel } from "@dashboard/lib/sessions/status";
 
 /**
  * Turns the snapshots the page receives into notifications: one when a session
@@ -92,12 +92,9 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     close(session.id);
     let shown: ShownNotification | null;
     try {
-      // The name, and the reason in the words the Needs you panel uses.
-      shown = host.show({
-        title: session.name,
-        body: waitingLabel(session),
-        tag: tagFor(session),
-      });
+      // The name, and the reason in the words the Needs you panel uses. The
+      // collector's own notification of a wait says the same.
+      shown = host.show({ ...waitNotice(session), tag: tagFor(session) });
     } catch {
       // A host should not throw. One that does must not stop the next notification.
       shown = null;

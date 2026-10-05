@@ -1,15 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type {
-  ErrorResponse,
-  EventsResponse,
-  HealthResponse,
-  HistoryResponse,
+import {
+  NOTIFICATIONS_HEADER,
+  type ErrorResponse,
+  type EventsResponse,
+  type HealthResponse,
+  type HistoryResponse,
+  type NotificationsSaid,
 } from "../core/api.ts";
 import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
 import type { EventStore } from "./eventStore.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
+import type { ServerNotifications } from "./notifications/serverNotifications.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
 
 /**
@@ -23,6 +26,11 @@ export interface ApiHandlerOptions {
   poller: Pick<Poller, "getSnapshot" | "startedAt">;
   events: EventStore;
   history: HistoryStore;
+  /**
+   * Told what each dashboard page says about its notifications, in the header
+   * on its requests. Left out, the header is ignored.
+   */
+  notifications?: Pick<ServerNotifications, "pageSaid">;
   now?: () => number;
 }
 
@@ -105,6 +113,17 @@ function fail(res: ServerResponse, status: number, error: string, headers = {}):
   send(res, status, { error } satisfies ErrorResponse, headers);
 }
 
+/**
+ * What a page said about its notifications, or null when the request carries no
+ * such header or one with any other value. Node gives header names in lower case.
+ */
+export function notificationsSaid(req: IncomingMessage): NotificationsSaid | null {
+  const value = req.headers[NOTIFICATIONS_HEADER.toLowerCase()];
+  if (typeof value !== "string") return null;
+  const said = value.trim().toLowerCase();
+  return said === "on" || said === "off" ? said : null;
+}
+
 /** Reads a query value that must be a plain non-negative number. */
 function numberParam(value: string | null): number | undefined | "invalid" {
   if (value === null) return undefined;
@@ -114,7 +133,7 @@ function numberParam(value: string | null): number | undefined | "invalid" {
 }
 
 export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
-  const { version, poller, events, history } = options;
+  const { version, poller, events, history, notifications } = options;
   const now = options.now ?? Date.now;
 
   function route(req: IncomingMessage, res: ServerResponse): void {
@@ -135,6 +154,11 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
       fail(res, 400, "That address could not be read.");
       return;
     }
+
+    // Only a request that passed every check above is listened to, so a page
+    // at another address can no more steer the notifications than read a session.
+    const said = notificationsSaid(req);
+    if (said) notifications?.pageSaid(said, url.pathname === "/api/sessions");
 
     switch (url.pathname) {
       case "/api/health": {

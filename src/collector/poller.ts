@@ -30,6 +30,12 @@ export interface PollerOptions {
   /** Defaults to `POLL_DEADLINE_MS`. */
   deadlineMs?: number;
   now?: () => number;
+  /**
+   * Hears each snapshot as soon as it is the latest. The collector's own
+   * notifications listen here. Whatever it throws is dropped, so a listener
+   * can never stop a poll.
+   */
+  onSnapshot?: (snapshot: SessionsSnapshot) => void;
 }
 
 export interface Poller {
@@ -231,6 +237,11 @@ export function createPoller(options: PollerOptions): Poller {
     latest = snapshot;
     events.add(changes);
     if (measuredEverySource(results)) history.add(historyPointFor(snapshot.sessions, at));
+    try {
+      options.onSnapshot?.(snapshot);
+    } catch {
+      // A listener's failure is its own. The poll is done and its answer stands.
+    }
     return snapshot;
   }
 

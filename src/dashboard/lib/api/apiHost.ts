@@ -1,3 +1,6 @@
+import { NOTIFICATIONS_HEADER, type NotificationsSaid } from "@core/api";
+import { getNotificationSetting } from "@dashboard/lib/notifications/notificationSetting";
+
 /**
  * The one seam between the dashboard and its data.
  *
@@ -6,6 +9,12 @@
  * server, and later in an Electron window or a browser extension. A host that is
  * not same-origin installs its own transport with `setApiHost` before React
  * renders.
+ *
+ * Every request also says whether this page's notifications are on, in a
+ * header. The collector shows a notification itself when no page is open to,
+ * and what the pages say is all it knows of the setting, so turning
+ * notifications off here turns the collector's off at the next request. It is
+ * added here, at the seam, so no request can go without it.
  */
 
 /** Fetch-shaped on purpose, so a call site only swaps `fetch(` for `apiRequest(`. */
@@ -39,11 +48,22 @@ function staysOnThisServer(path: string): boolean {
 }
 
 /**
+ * What this page says of its notifications: "on" only while the person has
+ * turned them on and the browser allows them, which is when the page shows
+ * them itself. Read at each request, because either can change in between.
+ */
+function notificationsSaid(): NotificationsSaid {
+  return getNotificationSetting().on ? "on" : "off";
+}
+
+/**
  * Requests a path from the app's own server, for example `apiRequest("/api/sessions")`.
  *
  * Only root-relative paths are accepted. A full URL, or any path a browser would
  * resolve to another host, is rejected before any request is made, because
  * nothing in the app may call another machine.
+ *
+ * The request is passed on as it was given, with one header added to its own.
  */
 export function apiRequest(path: string, init?: RequestInit): Promise<Response> {
   if (!staysOnThisServer(path)) {
@@ -53,5 +73,7 @@ export function apiRequest(path: string, init?: RequestInit): Promise<Response> 
       ),
     );
   }
-  return currentHost(path, init);
+  const headers = new Headers(init?.headers);
+  headers.set(NOTIFICATIONS_HEADER, notificationsSaid());
+  return currentHost(path, { ...init, headers });
 }

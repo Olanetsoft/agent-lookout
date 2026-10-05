@@ -314,7 +314,7 @@ test.each(["denied", "unsupported"] as const)(
   },
 );
 
-test("the card says what a notification holds, that the page has to stay open, and that only Claude Code sessions can be seen waiting", async () => {
+test("the card says what a notification holds, that on a Mac they arrive with no tab open while the app keeps running, and that only Claude Code sessions can be seen waiting", async () => {
   const screen = await render(<SettingsView />);
   const words = notifications(screen).element().textContent ?? "";
 
@@ -322,8 +322,10 @@ test("the card says what a notification holds, that the page has to stay open, a
     "When notifications are on, one appears each time a session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.",
   );
   expect(words).toContain(
-    "Notifications come from this page, so it has to stay open in a tab. Only Claude Code sessions can be seen waiting, so a Codex session never sends one.",
+    "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them. Only Claude Code sessions can be seen waiting, so a Codex session never sends one.",
   );
+  // One switch covers the page's notifications and the app's own.
+  expect(notifications(screen).getByRole("button").elements()).toHaveLength(1);
 });
 
 test("the notifications button is reached by Tab after the theme, and shows the focus ring", async () => {

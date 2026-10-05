@@ -15,6 +15,10 @@ import {
  *
  * They are off until the person turns them on, and turning them on is the only
  * thing that ever asks the browser for permission.
+ *
+ * The collector's own notifications, shown when no page is open, follow this
+ * setting too: `apiRequest` tells the collector whether it is on with every
+ * request.
  */
 
 export type NotificationChoice = "on" | "off";

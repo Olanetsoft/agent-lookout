@@ -14,7 +14,7 @@ The project has one maintainer, so replies are best effort. There are no tagged 
 
 Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on a loopback address. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and a few fields. It writes to no agent's files. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and keeps.
 
-With notifications turned on in Settings, the dashboard page hands a waiting session's name and a fixed reason to the browser's Notifications API, which passes them to the operating system. Nothing is sent over the network for this. [PRIVACY.md](PRIVACY.md#notifications) has the details.
+With notifications turned on in Settings, the dashboard page hands a waiting session's name and a fixed reason to the browser's Notifications API, which passes them to the operating system. When no dashboard page is open, the local server shows the notification itself on macOS: it runs `/usr/bin/osascript` with a fixed script, and passes the name and the reason to that script as arguments. Each dashboard page tells the server whether its notifications are on, in a header on its requests, and the server shows its own only while the last page to say so said they are on, or `AGENT_LOOKOUT_NOTIFICATIONS=on` was set and no page has said anything. Nothing is sent over the network for any of this. [PRIVACY.md](PRIVACY.md#notifications) has the details.
 
 Session names and folder paths can be sensitive. The main risk is that something other than your own browser reads them.
 
@@ -27,15 +27,17 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Any write under the Codex folder (`~/.codex`, or the folder `CODEX_HOME` or `AGENT_LOOKOUT_CODEX_HOME` names), any open of a file in its `thread-writer-locks/`, and any read of a Codex file that PRIVACY.md does not list.
 - Text from a Codex session file, such as a prompt, a reply or a command's output, reaching the API or the dashboard.
 - A session name, path or other session field that runs as script or markup in the dashboard.
-- A way to make the app run anything other than the `claude` binary it found and `ps`, or to pass either of them arguments they should not get.
+- A way to make the app run anything other than the `claude` binary it found, `ps` and `/usr/bin/osascript`, or to pass any of them arguments they should not get.
+- A session name, or anything else from a session, that `osascript` reads as AppleScript or as one of its options instead of showing it as text.
 - A Jump link that opens anything other than the intended `vscode://` address.
-- A notification, or the browser's question about allowing them, appearing when you have not turned notifications on.
+- A notification, or the browser's question about allowing them, appearing when you have not turned notifications on, in Settings or with `AGENT_LOOKOUT_NOTIFICATIONS=on`.
 - A notification that holds anything but the session's name and the reason, or that makes the browser fetch anything.
-- A page at another address reading or steering the dashboard's notifications.
+- A page at another address reading or steering the dashboard's notifications, or turning the server's own on or off.
 
 ## Out of scope
 
-- Other programs on the same machine reading the local API. The API has no authentication, so any local process can request it, and on a shared computer that includes other user accounts. This is a known limit of this version.
+- Other programs on the same machine reading the local API, or sending it the header that turns the server's notifications on or off. The API has no authentication, so any local process can request it, and on a shared computer that includes other user accounts. This is a known limit of this version.
+- A notification the server showed staying in Notification Centre after its session has moved on. The server cannot take one down, and PRIVACY.md says so.
 - The dev server started with Vite's `--host` flag, which makes it listen on the network. `npm start` refuses to listen on anything but loopback.
 - Attacks that need control of your user account first. Someone with that control can read `~/.claude` and `~/.codex` directly.
 - Vulnerabilities in Claude Code, Codex or another agent tool. Report those to the vendor.

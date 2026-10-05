@@ -47,9 +47,15 @@ From the `session_meta` line it keeps `id`, `timestamp`, `cwd`, `source`, `threa
 
 A session file or `session_index.jsonl` that is a link, a named pipe or a device is never opened. The Codex folder and the folders inside it are followed when they are links.
 
+### `osascript`
+
+With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a Claude Code session starts waiting for you. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
+
+`osascript` is started directly, by that full path, never through a shell, with stdin closed and a 5 second timeout. It is not run on any other system, and never while notifications are off. While it runs, for a fraction of a second, the name is one of that program's arguments, which other programs on this machine can read from the list of running processes. [Notifications](#notifications) says when notifications are on and what one holds.
+
 ### Settings
 
-It reads seven settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads eight settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -59,7 +65,7 @@ It reads seven settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGEN
 - Codex's `auth.json`, `config.toml`, `history.jsonl`, its SQLite files (`*.sqlite`), its `log/` folder, `archived_sessions/` and compressed session files (`*.jsonl.zst`), and the Codex desktop app's `external_agent_session_imports.json` and `.codex-global-state.json`.
 - The files of any other application.
 
-It runs no program but the `claude` binary and `ps`. It never writes to `~/.claude`, to the Codex folder or to any agent tool's files, and it never sends input to a session.
+It runs no program but the `claude` binary, `ps` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder or to any agent tool's files, and it never sends input to a session.
 
 ## Network
 
@@ -71,13 +77,19 @@ The `claude agents` command is Claude Code's own program, and it may contact Ant
 
 The API refuses any request whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]`, any request whose `Origin` header names another site, and any request the browser marks as cross-site. It sends no CORS headers. Together these stop a website you visit from reading your session names and paths through your browser.
 
-The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account.
+Each request the dashboard makes carries one header of Agent Lookout's own, `X-Agent-Lookout-Notifications`, which says `on` or `off`: whether that page has notifications on. It goes to Agent Lookout's own server and nowhere else. [Notifications](#notifications) says what the server does with it.
+
+The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account. Such a program can also send that header, and so turn the notifications the server shows on or off.
 
 The Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code.
 
 ## Notifications
 
-Notifications are off until you turn them on in Settings. Pressing Turn on notifications is the only thing in Agent Lookout that asks your browser for permission to show them.
+Notifications are off until you turn them on in Settings, or start Agent Lookout with `AGENT_LOOKOUT_NOTIFICATIONS=on`, which turns on only the ones the server shows. Pressing Turn on notifications is the only thing in Agent Lookout that asks your browser for permission to show them.
+
+A notification is made in one of two ways. While a dashboard page is open, the page makes it through your browser. With no page open, the local server shows it on this machine itself. A page that is open shows the wait and the server does not, unless the page's requests are held up for more than about 4 seconds, when both can show one. The [guide](docs/GUIDE.md#notifications) says when that happens.
+
+### From the dashboard page
 
 With notifications on, when a Claude Code session starts waiting for you, the dashboard page makes a notification through the browser's Notifications API, and the browser hands it to the operating system to show. It holds:
 
@@ -93,11 +105,30 @@ When a dashboard tab is closed or reloaded, it tells the other dashboard tabs op
 
 The browser gives its permission to the address, such as `localhost:5173`, not to Agent Lookout. Another program served at the same address later can show notifications without asking, and can read or change the two values listed under Storage. To take the permission back, remove it for that address in the browser's site settings.
 
+### From the server
+
+The local server shows notifications on this machine too. When a Claude Code session starts waiting for you and no dashboard page is open to show it, the server runs `osascript`, as [described above](#osascript), and macOS shows the notification. It holds:
+
+- the session's name, as its title
+- the reason, as its text, in the same three wordings
+
+It holds no folder path, none of Claude Code's own wording and no tag. No network request is involved. On any system but macOS the server shows nothing.
+
+The server shows them only while notifications are on, and it learns that from the dashboard. Each request a dashboard page makes says, in the `X-Agent-Lookout-Notifications` header, `on` when that page's choice is on and the browser allows notifications, and `off` otherwise. The server keeps the last thing a page said, in memory, for as long as it runs, and never writes it to disk. Before any page has said anything it is off, unless `AGENT_LOOKOUT_NOTIFICATIONS=on` was set when Agent Lookout started. A page that says `off` after that turns it off all the same. The header is listened to only on a request that passes the checks described under [Network](#network), so a page at another address cannot set it.
+
+While a page that has notifications on is open and asking every 2 seconds, the page shows each notification and the server does not. The server holds its own back for a few seconds when such a page has just been asking, and drops it once that page has fetched the sessions.
+
+A notification the server shows differs from the browser's:
+
+- macOS shows it as coming from Script Editor, which is how it labels whatever `osascript` shows. The browser's permission and its notification settings do not apply to it. On macOS 26.5, where this was checked in the system's log, macOS delivered it without first asking whether Script Editor may show notifications.
+- It holds nothing that could open the session or the dashboard. What a click on it does has not been checked.
+- The server cannot take it down. It stays in Notification Centre after the session stops waiting, and after Agent Lookout stops, until you clear it.
+
 ## Storage
 
-Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops.
+Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So is what the dashboard pages last said about notifications.
 
-With notifications on, each notification holds a session's name, and the browser and the operating system keep it in their own notification list. [Notifications](#notifications) says what it holds and how long it stays.
+With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays.
 
 The tools that run it write files of their own. None of these holds session data.
 
@@ -112,7 +143,7 @@ The dashboard saves two values in your browser's local storage. Your theme choic
 
 Session names and folder paths can show what you are working on. Check a screenshot before you share it.
 
-With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. It stays there until the session stops waiting or you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, or leave notifications off.
+With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made stays there until the session stops waiting or you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off.
 
 ## Changes
 

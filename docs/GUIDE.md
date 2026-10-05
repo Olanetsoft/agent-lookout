@@ -85,7 +85,7 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 ### Settings
 
-Settings has three cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off. This copy shows the version you are running.
+Settings has three cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself. This copy shows the version you are running.
 
 #### Notifications
 
@@ -97,13 +97,35 @@ If you refuse, the card shows Notifications are blocked and they stay off. Allow
 
 Nothing is sent for a session that was already waiting when you opened or reloaded the page, when you turned notifications on, or when Agent Lookout started. Each wait that begins after that sends one notification, and a session that is answered and later waits again sends another. A Codex session never sends one, because a Codex session never shows as needing you.
 
-The dashboard page makes each notification, so a dashboard tab has to stay open and Agent Lookout has to keep running. Closing or reloading the page clears the notifications it showed, and a wait that is still open is not announced again. If Agent Lookout stops while a notification is showing, or can no longer read Claude Code's sessions (Sources then shows Claude Code as Not found or Not working), the page cannot tell when the session moves on. The notification then stays until you clear it, close the page, turn notifications off, or start Agent Lookout again and it finds the session no longer waiting.
+While a dashboard tab is open, the page makes each notification. Closing or reloading the page clears the notifications it showed, and a wait that is still open is not announced again. If Agent Lookout stops while a notification is showing, or can no longer read Claude Code's sessions (Sources then shows Claude Code as Not found or Not working), the page cannot tell when the session moves on. The notification then stays until you clear it, close the page, turn notifications off, or start Agent Lookout again and it finds the session no longer waiting.
 
 Your choice and the browser's permission belong to one browser at one address. `http://localhost:5173` and `http://127.0.0.1:4777` are different addresses, so notifications turned on at one are still off at the other. Two tabs at the same address share one notification for a wait. When you close one of them, the other shows the notification again, so it can appear a second time. With notifications on at two addresses, or in two browsers, each sends its own.
 
+With no dashboard tab open, Agent Lookout shows the notification itself, on a Mac. It checks the sessions every 2 seconds for as long as it runs, with a page open or not. When a wait begins and no page is there to show it, Agent Lookout runs `osascript`, a program that is part of macOS, to show a notification with the same title and text. Nothing is sent anywhere for this.
+
+The button in Settings covers these too. Every request a dashboard page makes tells Agent Lookout whether that page has notifications on, and Agent Lookout goes by the last thing a page said. Turn notifications off in Settings and Agent Lookout's own are off within a couple of seconds. If pages that are open at once disagree, it goes by whichever asked last. It keeps what it was told in memory only. Each time Agent Lookout starts, its own notifications are off until a dashboard page that has notifications on has been open once.
+
+To have them from the moment it starts, without opening the dashboard, start Agent Lookout with `AGENT_LOOKOUT_NOTIFICATIONS=on`:
+
+```sh
+AGENT_LOOKOUT_NOTIFICATIONS=on npm start
+```
+
+A dashboard page still has the last word. Opening one that has notifications off turns Agent Lookout's own off too, until a page says they are on or Agent Lookout is started again.
+
+One wait sends one notification. While a tab with notifications on is open, the page shows each wait and Agent Lookout shows nothing. To make sure of that, when such a page has asked Agent Lookout for anything in the last 5 seconds, Agent Lookout holds its own notification back. If the page then fetches the sessions, the page has the wait and shows it, and Agent Lookout drops its own. If it does not, Agent Lookout shows the notification itself a few seconds later, at most about 6 seconds after the wait began. A wait that ends before then is not announced. Nor is a wait that begins in the couple of seconds around a reload of the page: the page that loads takes the session as already waiting, and Agent Lookout drops its own because a page has fetched the sessions. Two can still arrive for one wait when a page goes more than about 4 seconds between two fetches of the sessions, as when a browser slows a background tab down or the Mac has just woken.
+
+A notification that Agent Lookout shows itself is not the browser's, and differs from it:
+
+- macOS shows it as coming from Script Editor, which is how it labels whatever `osascript` shows.
+- It holds the session's name and the reason, and nothing that could open the session or bring the dashboard forward.
+- Agent Lookout cannot take it down. It stays in Notification Centre after the session moves on, until you clear it.
+
+These were checked on macOS 26.5 in the system's log, with the screen locked. There macOS filed each one under Script Editor and kept it in Notification Centre, without first asking whether Script Editor may show notifications. How one looks on screen, and what a click on it does, have not been checked. On any other system Agent Lookout shows none itself, and the browser's notifications work as described above.
+
 Notifications have been checked in Chrome 154 on macOS. There one arrived within a few seconds of a session starting to wait, with the tab in view and with it hidden for more than six minutes. Safari and Firefox have not been checked. A browser that puts a background tab to sleep, or unloads it to save memory, can delay notifications or stop them until you open the tab again.
 
-A notification shows the session's name outside the dashboard: over other apps, in Notification Centre and, depending on your Mac's settings, on the lock screen and while you share or record the screen. To keep names off those, open Notifications in System Settings and change what your browser's notifications may show, or leave notifications off.
+A notification shows the session's name outside the dashboard: over other apps, in Notification Centre and, depending on your Mac's settings, on the lock screen and while you share or record the screen. To keep names off those, open Notifications in System Settings and change what your browser's notifications may show, or leave notifications off. The ones Agent Lookout shows itself are Script Editor's as far as macOS is concerned, so what you set there for your browser does not cover them.
 
 The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npm start` serves Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
 
@@ -111,7 +133,7 @@ The browser gives its permission to the address, not to Agent Lookout. Another p
 
 It cannot stop, resume or answer a session. It covers Claude Code and Codex, and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
 
-A notification is sent only when a Claude Code session starts waiting, and only while the dashboard is open in a browser tab. Nothing is sent when a session finishes or fails.
+A notification is sent only when a Claude Code session starts waiting. Nothing is sent when a session finishes or fails. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 
 A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
@@ -131,19 +153,20 @@ Put a setting in front of the command that starts Agent Lookout:
 AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 ```
 
-| Setting                     | What it does                                                                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AGENT_LOOKOUT_PORT`        | The port `npm start` uses. The default is 4777.                                                                                                                    |
-| `AGENT_LOOKOUT_HOST`        | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.               |
-| `AGENT_LOOKOUT_CLAUDE_BIN`  | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                         |
-| `AGENT_LOOKOUT_CLAUDE_HOME` | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                  |
-| `AGENT_LOOKOUT_CLAUDE_FEED` | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed. |
-| `AGENT_LOOKOUT_CODEX_HOME`  | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                   |
-| `CODEX_HOME`                | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                   |
+| Setting                       | What it does                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AGENT_LOOKOUT_PORT`          | The port `npm start` uses. The default is 4777.                                                                                                                    |
+| `AGENT_LOOKOUT_HOST`          | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.               |
+| `AGENT_LOOKOUT_CLAUDE_BIN`    | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                         |
+| `AGENT_LOOKOUT_CLAUDE_HOME`   | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                  |
+| `AGENT_LOOKOUT_CLAUDE_FEED`   | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed. |
+| `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                   |
+| `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                   |
+| `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications itself from the moment it starts. A dashboard page that has notifications off turns them off again.   |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code and Codex settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex and notification settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -206,8 +229,9 @@ Use port 4777 if you started it with `npm start`. It prints the sessions it foun
 1. Open Settings in the same browser, at the same address, where you turned notifications on. If the card says "Notifications are off.", press Turn on notifications. If it shows Notifications are blocked, allow notifications for this address in the browser's site settings first.
 2. If the card says "Notifications are on.", your browser is allowed to show them, and macOS may be holding them back. The card reads the browser's permission and cannot see the system's. Open System Settings, then Notifications, choose your browser and check that Allow notifications is on.
 3. Check Focus. While a Focus such as Do Not Disturb is on, notifications go to Notification Centre without appearing on screen.
-4. Check that a dashboard tab is still open and that the page does not say Agent Lookout has stopped updating.
-5. A session that was already waiting when you opened the page sends nothing. Wait for the next one, or check the Needs you panel.
+4. With a dashboard tab open, check that the page does not say Agent Lookout has stopped updating.
+5. With no dashboard tab open, Agent Lookout shows notifications itself on a Mac only, and only once a page that has notifications on has been open since Agent Lookout started, or when it was started with `AGENT_LOOKOUT_NOTIFICATIONS=on`. Those arrive as Script Editor's notifications, not your browser's.
+6. A session that was already waiting when you opened the page, or when Agent Lookout started, sends nothing. Wait for the next one, or check the Needs you panel.
 
 ### The page says Agent Lookout has stopped updating
 

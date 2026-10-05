@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { apiRequest } from "@dashboard/lib/api/apiHost";
 import type { CollectorStore } from "@dashboard/lib/api/collectorStore";
 import { openNotificationHandover } from "@dashboard/lib/notifications/notificationHandover";
 import { notificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -10,6 +11,26 @@ import {
 import { createWaitNotifier } from "@dashboard/lib/notifications/waitNotifier";
 
 const notificationsAreOn = () => getNotificationSetting().on;
+
+/**
+ * Tells the collector what the setting is now, in a request of its own.
+ *
+ * The collector shows notifications itself when no page is open, and knows the
+ * setting only from the header `apiRequest` puts on every request. The next
+ * poll can be two seconds off, and a tab closed before it would leave the
+ * collector with the old setting until a dashboard is opened again. So the
+ * change is said at once, and `keepalive` lets the request finish when the tab
+ * is closed straight after. The store's `refresh` would not do: it is skipped
+ * while a poll is under way, and that poll left with the old setting.
+ */
+async function tellCollector(): Promise<void> {
+  try {
+    // Asked for the header it carries. The answer is not read.
+    await apiRequest("/api/health", { keepalive: true });
+  } catch {
+    // Not heard. The next poll says it.
+  }
+}
 
 /**
  * Sends a notification when a session starts waiting for the person, and takes
@@ -30,6 +51,9 @@ const notificationsAreOn = () => getNotificationSetting().on;
  * other pages open at this address which sessions those were, because two
  * pages share one notification for a wait, and a page that stays shows it
  * again while the session still waits.
+ *
+ * When notifications go on or off, the collector is told at once, because its
+ * own notifications follow the same setting.
  */
 export function useWaitNotifications(store: CollectorStore): void {
   useEffect(() => {
@@ -49,6 +73,7 @@ export function useWaitNotifications(store: CollectorStore): void {
     let wasOn = notificationsAreOn();
     const stopWatchingSetting = subscribeToNotificationSetting(() => {
       const on = notificationsAreOn();
+      if (on !== wasOn) void tellCollector();
       // Off is the same choice in every page at this address, so nothing is handed over.
       if (wasOn && !on) notifier.closeAll();
       wasOn = on;

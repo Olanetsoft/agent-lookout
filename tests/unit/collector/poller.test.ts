@@ -93,6 +93,54 @@ describe("the snapshot", () => {
   });
 });
 
+describe("a listener to the snapshots", () => {
+  test("hears each snapshot once it is the latest, in order", async () => {
+    const a = makeSession({ id: "claude-code:a", status: "working" });
+    const { adapter } = scriptedAdapter(result([a]), result([{ ...a, status: "needs-you" }]));
+    const heard: [string | undefined, boolean][] = [];
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+      onSnapshot: (snapshot) => {
+        heard.push([snapshot.sessions[0]?.status, poller.getSnapshot() === snapshot]);
+      },
+    });
+
+    await poller.pollOnce();
+    await poller.pollOnce();
+
+    expect(heard).toEqual([
+      ["working", true],
+      ["needs-you", true],
+    ]);
+  });
+
+  test("one that throws does not fail the poll or stop the next", async () => {
+    const { adapter } = scriptedAdapter(result([makeSession()]));
+    let heard = 0;
+    const events = createEventStore();
+    const history = createHistoryStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history,
+      onSnapshot: () => {
+        heard += 1;
+        throw new Error("The listener failed.");
+      },
+    });
+
+    const first = await poller.pollOnce();
+    await poller.pollOnce();
+
+    expect(first.sessions).toHaveLength(1);
+    expect(poller.getSnapshot().sources[0]?.state).toBe("ok");
+    expect(heard).toBe(2);
+    expect(history.list(60_000, Date.now())).toHaveLength(2);
+  });
+});
+
 describe("the schedule", () => {
   test("the interval is two seconds", () => {
     expect(POLL_INTERVAL_MS).toBe(2_000);

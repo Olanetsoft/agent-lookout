@@ -4,16 +4,16 @@ Agent Lookout has two halves and a shared middle. The collector is Node code tha
 
 ## Folders
 
-| Folder                 | Holds                                                                                                                              | Runs in                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `src/core/`            | The session model, status mapping, staleness, snapshot diffing and the rule for which waits are announced. No DOM and no Node APIs | Everywhere                 |
-| `src/collector/`       | One adapter per agent tool under `adapters/`, the poller, the event and history stores and the request handler                     | Node                       |
-| `src/collector/hosts/` | The standalone server behind `npm start`, and the Vite plugin that mounts the handler at `/api/*`                                  | Node                       |
-| `src/dashboard/`       | The React app: `main.tsx`, `App.tsx`, `components/`, `hooks/`, `lib/`, `assets/` and `styles/`                                     | The browser                |
-| `tests/`               | Every test, in `unit/`, `integration/` and `component/`, with `fixtures/` and `support/`                                           | Node and headless Chromium |
-| `scripts/`             | The layout check that `npm run check` runs first                                                                                   | Node                       |
-| `public/`              | Static files served as they are                                                                                                    | The browser                |
-| `docs/`                | This file, the user guide, the adapter notes in `adapters/` and the screenshots in `images/`                                       | GitHub                     |
+| Folder                 | Holds                                                                                                                                                                                 | Runs in                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `src/core/`            | The session model, status mapping, staleness, snapshot diffing, the rule for which waits are announced and what a notification says. No DOM and no Node APIs                          | Everywhere                 |
+| `src/collector/`       | One adapter per agent tool under `adapters/`, the poller, the event and history stores, the request handler and, under `notifications/`, the notifications the collector shows itself | Node                       |
+| `src/collector/hosts/` | The standalone server behind `npm start`, and the Vite plugin that mounts the handler at `/api/*`                                                                                     | Node                       |
+| `src/dashboard/`       | The React app: `main.tsx`, `App.tsx`, `components/`, `hooks/`, `lib/`, `assets/` and `styles/`                                                                                        | The browser                |
+| `tests/`               | Every test, in `unit/`, `integration/` and `component/`, with `fixtures/` and `support/`                                                                                              | Node and headless Chromium |
+| `scripts/`             | The layout check that `npm run check` runs first                                                                                                                                      | Node                       |
+| `public/`              | Static files served as they are                                                                                                                                                       | The browser                |
+| `docs/`                | This file, the user guide, the adapter notes in `adapters/` and the screenshots in `images/`                                                                                          | GitHub                     |
 
 It is one npm package with no workspaces. `index.html`, `package.json` and the config files are at the root.
 
@@ -43,7 +43,9 @@ An adapter implements the interface in `src/collector/adapters/adapter.ts`: an `
 
 The poller in `src/collector/poller.ts` calls every adapter every two seconds and skips a beat when the previous poll is still running. An adapter that has not answered within 15 seconds is reported as an error until it does. Events and history sit in bounded in-memory buffers: the last 1,000 events and the last 10,800 history points, which is six hours. Both are lost when the process stops. A poll in which no source answered adds no history point, so the gap is not drawn as zero. Nor does a poll in which a source that answered before fails to answer, for as long as it keeps failing, so the charts never draw a total that leaves its sessions out. A source that turns `unavailable` leaves a gap once and then counts as having no sessions.
 
-`createCollector` in `src/collector/collector.ts` builds the two adapters, Claude Code's and Codex's, the poller, the two stores and the request handler in one call. Every host starts the collector that way.
+The poller hands each snapshot, as soon as it is the latest, to a listener it was given. Whatever the listener throws is dropped, so it cannot stop a poll.
+
+`createCollector` in `src/collector/collector.ts` builds the two adapters, Claude Code's and Codex's, the poller, the two stores, the collector's own notifications and the request handler in one call. Every host starts the collector that way.
 
 ## The API
 
@@ -59,6 +61,8 @@ One handler, in `src/collector/handler.ts`, answers every route. All routes are 
 `startedAt` is when the collector began. The dashboard marks the time before it as unmeasured instead of drawing zeros.
 
 The handler refuses any request whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]`, any request with an `Origin` header that is not one of those, and any request the browser marks as `Sec-Fetch-Site: cross-site`. It sends no CORS headers. This keeps other websites, and DNS rebinding, away from session names and paths.
+
+A request may carry the header `X-Agent-Lookout-Notifications`, with the value `on` or `off`. The dashboard sends it on every request, to say whether that page's notifications are on. It changes no answer. The handler reads it only after the checks above and the check that the request is a `GET`, and passes it to the collector's notifications, described under [Notifications from the collector](#notifications-from-the-collector). A page at another address cannot send it: a browser asks permission with a preflight before it sends a header of this kind across origins, and the handler answers a preflight with 405 and no CORS headers. The header's name is in `src/core/api.ts`.
 
 ## The Claude Code adapter
 
@@ -114,6 +118,8 @@ On the dashboard side, every request goes through `apiRequest(path, init)` in `s
 
 Notifications have a seam of the same kind. `notificationHost()` in `src/dashboard/lib/notifications/notificationHost.ts` says what the permission is, asks for it and shows a notification, and defaults to the browser's Notifications API. `setNotificationHost` replaces it, which is how a desktop app could show native notifications.
 
+The collector has its own, for the notifications it shows when no page is open. `SystemNotifier` in `src/collector/notifications/systemNotifier.ts` has one method, `show`, which never throws. `createCollector` takes one as `notifier` and defaults to `createSystemNotifier()`, which runs `osascript` on macOS and does nothing on any other system. Tests pass one that writes down what it was asked to show.
+
 ## The dashboard
 
 `src/dashboard/App.tsx` puts a rail down the left edge and, beside it, the header over the current view. The rail, in `components/rail/Rail.tsx`, links to three views: Overview, Sources and Settings. Each view has its own address in the URL fragment, `#overview`, `#sources` or `#settings`, which `lib/shell/view.ts` reads, so the back button, a reload and a bookmark land on the same view. Choosing one replaces the view in `<main>` and moves focus there, and the rail and the header stay. A fault inside a view is caught there and leaves the rail and the header standing.
@@ -134,7 +140,28 @@ Two pages open at one address give a wait the same tag, so the browser keeps one
 
 `lib/notifications/notificationSetting.ts` keeps the choice, `on` or `off`, in local storage under `agent-lookout-notifications`. It is off by default. A notification is sent only while the choice is on and the browser's permission is granted, and both are read at the moment of sending. `turnOnNotifications` is the only code that asks for permission, and the Settings card calls it from a click.
 
+`apiRequest` adds the `X-Agent-Lookout-Notifications` header to every request: `on` while that same setting is on, which is while the page shows notifications itself, and `off` otherwise. It is read at each request, and added at the seam so that no request goes without it. When the setting goes on or off, `useWaitNotifications` asks for `/api/health` at once, with `keepalive`, so the collector hears the change without waiting for the next poll, and still hears it when the tab is closed straight after.
+
 The interface is built from the tokens in `src/dashboard/styles/index.css` and the primitives in `src/dashboard/components/ui/`.
+
+## Notifications from the collector
+
+A dashboard page can only notify while it is open. The poller runs for as long as the app does, so the collector shows the notification itself when no page is going to. The code is in `src/collector/notifications/`.
+
+`serverNotifications.ts` is handed each snapshot by the poller and runs `waitChanges` over it, the same rule the page runs, so the same waits are announced: none for a session already waiting when the collector started, and one for each wait that begins after that. What a notification says comes from `waitNotice` in `src/core/sessions/waiting.ts`, which the page's notifier uses too: the session's name as the title and the reason as the text.
+
+Whether they are on is not stored. The collector keeps the last thing a page said in the header, in memory. Until a page has said anything they are off, unless `AGENT_LOOKOUT_NOTIFICATIONS=on` was in the environment when the collector was built, and a page that says `off` later still turns them off. So the one setting in the dashboard covers both, and a collector that is started again has to be told again.
+
+A wait is announced once while an open page keeps asking on time. The collector always learns of a wait first, because a page learns of it from the collector's answer. So it holds its notification back, and `heldWaitOutcome` in `heldWait.ts`, a pure function of the times involved, decides on each poll what becomes of it:
+
+- If a page that said `on` has fetched `/api/sessions` since the wait was seen, that page has the wait and shows it, and the collector drops its own. A page that has only just loaded is the exception: its first answer is a baseline and announces nothing, so a wait that begins within a poll of a reload is announced by neither.
+- If no page that said `on` has asked for anything in the last 5 seconds, there is nobody to wait for, and it is shown at once.
+- Otherwise it is held for 3 seconds and then shown. Polls are 2 seconds apart, so that is the second poll after the wait was seen, about 4 seconds on.
+- If notifications are turned off meanwhile, it is dropped. If the wait ends meanwhile, it is forgotten.
+
+`systemNotifier.ts` shows the notification. On macOS it starts `/usr/bin/osascript` with `execFile`, with no shell, stdin closed and a 5 second timeout. The script is fixed: an `on run argv` handler that calls `display notification` with two items of `argv`. The title and the text follow a `--` as arguments, so a session's name is never part of the script and is never read as an option of `osascript`, which without the `--` a name beginning with a dash would be. A failure shows nothing and is not reported.
+
+macOS shows such a notification as coming from Script Editor. Nothing in it can open the session, and the collector keeps no handle on it, so it is not taken down when the session moves on. A page that goes more than about 4 seconds without fetching `/api/sessions` can miss the 3 seconds it is given, and one that asks for nothing for more than 5 seconds is taken to be closed. Either way the collector shows the wait and the page shows it too when it next fetches, so a wait can be announced twice when a browser has slowed a hidden tab down that far or the machine has just woken.
 
 ## Tests
 

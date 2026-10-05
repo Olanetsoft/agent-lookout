@@ -1,18 +1,6 @@
 import { expect, test } from "vitest";
 
-import {
-  eventPhrase,
-  safeJumpLink,
-  waitingDetail,
-  waitingLabel,
-} from "@dashboard/lib/sessions/status";
-
-test("a waiting reason is said in plain words", () => {
-  expect(waitingLabel({ waitingReason: "permission" })).toBe("Waiting for permission");
-  expect(waitingLabel({ waitingReason: "question" })).toBe("Asked you a question");
-  expect(waitingLabel({ waitingReason: "other" })).toBe("Waiting for you");
-  expect(waitingLabel({})).toBe("Waiting for you");
-});
+import { eventPhrase, safeJumpLink, waitingDetail } from "@dashboard/lib/sessions/status";
 
 test("the vendor's wording is kept only when it adds something", () => {
   // These two say nothing the plain label has not already said.

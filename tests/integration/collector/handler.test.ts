@@ -6,18 +6,24 @@ import type { Adapter } from "@collector/adapters/adapter";
 import { createClaudeCodeAdapter } from "@collector/adapters/claude-code/index";
 import { createCollector } from "@collector/collector";
 import { MAX_HISTORY_WINDOW_MS } from "@collector/handler";
-import type { EventsResponse, HistoryResponse } from "@core/api";
+import { NOTIFICATIONS_HEADER, type EventsResponse, type HistoryResponse } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 import { listen, request } from "@tests/support/node/http";
+import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 const T0 = 1_700_000_000_000;
 
-/** A collector fed by the test, served over real HTTP on a free loopback port. */
+/**
+ * A collector fed by the test, served over real HTTP on a free loopback port.
+ * Its notifier writes down what it is asked to show and shows nothing, and its
+ * environment is empty, so no test here raises a notification on this machine.
+ */
 async function serve(initial: Session[] = []) {
   const state = { sessions: initial, now: T0 };
+  const notifier = fakeSystemNotifier();
   const adapter: Adapter = {
     id: "claude-code",
     label: "Claude Code",
@@ -30,6 +36,8 @@ async function serve(initial: Session[] = []) {
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
+    env: {},
+    notifier,
     now: () => state.now,
   });
   const port = await listen(createServer(collector.handler));
@@ -37,6 +45,7 @@ async function serve(initial: Session[] = []) {
   return {
     port,
     collector,
+    notifier,
     /** Moves the clock, replaces the sessions and polls once. */
     async poll(atOffsetMs: number, sessions: Session[]) {
       state.now = T0 + atOffsetMs;
@@ -441,5 +450,96 @@ describe("the Origin check", () => {
       });
       expect(response.status).toBe(200);
     }
+  });
+});
+
+describe("the notifications header", () => {
+  const working = makeSession({ name: "checkout-flow", status: "working" });
+  const waiting = makeSession({
+    name: "checkout-flow",
+    status: "needs-you",
+    waitingReason: "question",
+  });
+
+  test.each(["on", "off"])(
+    "a request that says %s is answered exactly as one that says nothing",
+    async (said) => {
+      const server = await serve();
+      await server.poll(0, [working]);
+
+      for (const target of ["/api/health", "/api/sessions", "/api/events", "/api/history"]) {
+        const plain = await request(server.port, target);
+        const saying = await request(server.port, target, {
+          headers: { [NOTIFICATIONS_HEADER]: said, Origin: `http://localhost:${server.port}` },
+        });
+        expect([target, saying.status]).toEqual([target, 200]);
+        expect(saying.body).toBe(plain.body);
+        expect(saying.headers).toEqual({ ...plain.headers, date: saying.headers.date });
+      }
+    },
+  );
+
+  test("a page that says on turns the collector's notifications on, under any spelling of the header's name", async () => {
+    const server = await serve();
+    await server.poll(0, [working]);
+    await request(server.port, "/api/health", {
+      headers: { "x-agent-lookout-notifications": "on" },
+    });
+
+    await server.poll(60_000, [waiting]);
+    expect(server.notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Asked you a question" },
+    ]);
+  });
+
+  test.each(["yes", "true", "1", "", "on, on", "on, off"])(
+    "a header that says %j says nothing",
+    async (value) => {
+      const server = await serve();
+      await server.poll(0, [working]);
+      const response = await request(server.port, "/api/sessions", {
+        headers: { [NOTIFICATIONS_HEADER]: value },
+      });
+      expect(response.status).toBe(200);
+
+      await server.poll(60_000, [waiting]);
+      expect(server.notifier.shown).toEqual([]);
+    },
+  );
+
+  test.each<[string, { method?: string; headers: Record<string, string> }]>([
+    ["sent to another Host", { headers: { Host: "evil.example" } }],
+    ["sent to a name rebound to this machine", { headers: { Host: "rebind.evil.example:4777" } }],
+    ["from a page at another site", { headers: { Origin: "https://evil.example" } }],
+    ["from a sandboxed frame", { headers: { Origin: "null" } }],
+    ["the browser marks as cross-site", { headers: { "Sec-Fetch-Site": "cross-site" } }],
+    ["that is not a GET", { method: "POST", headers: {} }],
+    ["that is a preflight", { method: "OPTIONS", headers: { Origin: "http://localhost:3000" } }],
+  ])("a request %s is refused as before, and is not listened to", async (_what, options) => {
+    const server = await serve();
+    await server.poll(0, [working]);
+
+    const response = await request(server.port, "/api/sessions", {
+      method: options.method,
+      headers: { ...options.headers, [NOTIFICATIONS_HEADER]: "on" },
+    });
+    expect([403, 405]).toContain(response.status);
+    expect(response.body).not.toContain("checkout-flow");
+
+    // Had it been listened to, this wait would be shown.
+    await server.poll(60_000, [waiting]);
+    expect(server.notifier.shown).toEqual([]);
+  });
+
+  test("a refused request cannot turn them off either", async () => {
+    const server = await serve();
+    await server.poll(0, [working]);
+    await request(server.port, "/api/sessions", { headers: { [NOTIFICATIONS_HEADER]: "on" } });
+    await request(server.port, "/api/sessions", {
+      headers: { Origin: "https://evil.example", [NOTIFICATIONS_HEADER]: "off" },
+    });
+
+    await server.poll(60_000, [waiting]);
+    expect(server.notifier.shown).toHaveLength(1);
   });
 });

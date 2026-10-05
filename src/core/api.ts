@@ -28,3 +28,14 @@ export interface ErrorResponse {
 
 /** The most events one response carries. */
 export const MAX_EVENTS_PER_RESPONSE = 200;
+
+/**
+ * The request header in which a dashboard page says, on every request, whether
+ * its own notifications are on. The collector keeps the last thing a page said
+ * and shows its own notifications only while that is "on", so the one switch in
+ * Settings covers both.
+ */
+export const NOTIFICATIONS_HEADER = "X-Agent-Lookout-Notifications";
+
+/** What a page says in `NOTIFICATIONS_HEADER`. Any other value says nothing. */
+export type NotificationsSaid = "on" | "off";

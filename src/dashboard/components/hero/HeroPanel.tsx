@@ -1,6 +1,7 @@
 import { useId, useMemo, type ReactNode } from "react";
 
 import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import { waitingLabel } from "@core/sessions/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
 import { Badge } from "@dashboard/components/ui/status/Badge";
@@ -24,12 +25,7 @@ import {
   type CountState,
 } from "@dashboard/lib/sessions/sessions";
 import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
-import {
-  safeJumpLink,
-  SURFACE_LABEL,
-  waitingDetail,
-  waitingLabel,
-} from "@dashboard/lib/sessions/status";
+import { safeJumpLink, SURFACE_LABEL, waitingDetail } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 import {
   unmeasuredNote,

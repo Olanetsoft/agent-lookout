@@ -3,8 +3,9 @@
  *
  * In a browser a notification is made by this page, through the browser's own
  * Notifications API, and shown by the operating system. Nothing is sent to a
- * server and no service worker is registered, so a notification can only be
- * made while the page is open. A later desktop host installs its own, native
+ * server and no service worker is registered, so the page can only make one
+ * while it is open. With no page open the collector shows its own, in
+ * `src/collector/notifications/`. A later desktop host installs its own, native
  * notifications with `setNotificationHost` before React renders, and nothing
  * else in the dashboard changes.
  */

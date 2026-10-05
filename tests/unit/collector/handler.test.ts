@@ -1,6 +1,13 @@
+import type { IncomingMessage } from "node:http";
+
 import { describe, expect, test } from "vitest";
 
-import { isApiPath, isLoopbackHostHeader, isLoopbackOrigin } from "@collector/handler";
+import {
+  isApiPath,
+  isLoopbackHostHeader,
+  isLoopbackOrigin,
+  notificationsSaid,
+} from "@collector/handler";
 
 describe("the helpers", () => {
   test("isLoopbackHostHeader", () => {
@@ -28,5 +35,22 @@ describe("the helpers", () => {
     expect(isApiPath("/assets/api/index.js")).toBe(false);
     expect(isApiPath("/index.html?next=/api/sessions")).toBe(false);
     expect(isApiPath(undefined)).toBe(false);
+  });
+
+  test("notificationsSaid reads on or off from the header, and nothing else", () => {
+    // Node gives header names in lower case, and repeats of this one joined by a comma.
+    const said = (value?: string | string[]) =>
+      notificationsSaid({
+        headers: value === undefined ? {} : { "x-agent-lookout-notifications": value },
+      } as unknown as IncomingMessage);
+
+    expect(said("on")).toBe("on");
+    expect(said("off")).toBe("off");
+    expect(said(" On ")).toBe("on");
+    expect(said()).toBeNull();
+    expect(said("")).toBeNull();
+    expect(said("yes")).toBeNull();
+    expect(said("on, off")).toBeNull();
+    expect(said(["on", "off"])).toBeNull();
   });
 });

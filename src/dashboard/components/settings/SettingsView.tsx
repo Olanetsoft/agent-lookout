@@ -22,6 +22,10 @@ const THEME_OPTIONS = [
  * switch the theme uses, because that chooses as soon as it has focus, and the
  * browser can refuse "on". When it does, or cannot show notifications at all,
  * the state stays off and a note says why and what to do.
+ *
+ * There is one switch. Every request the page makes tells the app what it is
+ * set to, and the notifications the app shows itself, when no page is open,
+ * follow it.
  */
 function NotificationsCard() {
   const { on, permission, turnOn, turnOff } = useNotificationSetting();
@@ -62,8 +66,9 @@ function NotificationsCard() {
           names the session and the reason, and is cleared when the session moves on.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
-          Notifications come from this page, so it has to stay open in a tab. Only Claude Code
-          sessions can be seen waiting, so a Codex session never sends one.
+          On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout
+          keeps running, and those stay until you clear them. Only Claude Code sessions can be seen
+          waiting, so a Codex session never sends one.
         </p>
       </div>
     </SectionCard>

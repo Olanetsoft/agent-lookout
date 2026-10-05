@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { Beat } from "@dashboard/lib/api/beat";
@@ -148,6 +149,33 @@ test("the first answer makes the store live, with sessions, events and history",
   expect(state.lastOkAt).toBe(T0);
   expect(state.problem).toBeNull();
   expect(state.problemKind).toBeNull();
+  stop();
+});
+
+test("each of the three requests says whether this page's notifications are on", async () => {
+  const said: [string, string | null][] = [];
+  const collector = fakeCollector();
+  setApiHost((path, init) => {
+    said.push([
+      new URL(path, "http://localhost").pathname,
+      new Headers(init?.headers).get(NOTIFICATIONS_HEADER),
+    ]);
+    return collector.host(path, init);
+  });
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  // Outside a browser the page's notifications are never on.
+  expect(said).toEqual([
+    ["/api/sessions", "off"],
+    ["/api/events", "off"],
+    ["/api/history", "off"],
+  ]);
+
+  said.length = 0;
+  await fetchHistory(6 * 60 * 60 * 1000);
+  expect(said).toEqual([["/api/history", "off"]]);
   stop();
 });
 

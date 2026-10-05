@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
@@ -238,6 +239,9 @@ beforeEach(async () => {
   // The app of the test before was still on the page while that test tidied up,
   // and may have read the notification setting again after it was cleared.
   resetNotificationSettingForTests();
+  // The app tells its server when the notification setting changes. No test
+  // here has a server, so that goes to a stand-in unless a test puts its own in.
+  setApiHost(async () => new Response("{}"));
 });
 
 afterEach(() => {
@@ -1542,6 +1546,64 @@ test("turning notifications off in Settings closes the one on show, and turning 
   store.set(liveState());
   expect(host.shown).toHaveLength(2);
   expect(host.open()).toHaveLength(1);
+});
+
+test("pressing the button in Settings tells the app at once, in one request that outlives the tab, without waiting for the next poll", async () => {
+  const host = notificationsFor(true);
+  const told: [string, string | null, boolean][] = [];
+  setApiHost(async (path, init) => {
+    told.push([
+      path,
+      new Headers(init?.headers).get(NOTIFICATIONS_HEADER),
+      init?.keepalive === true,
+    ]);
+    return new Response(JSON.stringify({ ok: true, version: "0.0.0" }));
+  });
+  atView("settings");
+  // This store asks for nothing, so no poll can carry the news.
+  const screen = await render(<App store={fixedStore(calmState())} />);
+  expect(told).toEqual([]);
+
+  const card = screen.getByRole("region", { name: "Notifications" });
+  await card.getByRole("button", { name: "Turn off notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  expect(told).toEqual([["/api/health", "off", true]]);
+
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(told).toEqual([
+    ["/api/health", "off", true],
+    ["/api/health", "on", true],
+  ]);
+
+  // Another tab at this address turns them off, and this page says so as well.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "off");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
+  expect(told).toHaveLength(3);
+  expect(told[2]).toEqual(["/api/health", "off", true]);
+
+  // The permission goes while they are off already: nothing has changed for the app, so nothing is said.
+  host.state = "denied";
+  window.dispatchEvent(new Event("focus"));
+  expect(told).toHaveLength(3);
+});
+
+test("a request to say the setting has changed that fails is left to the next poll, and breaks nothing", async () => {
+  notificationsFor(true);
+  setApiHost(() => Promise.reject(new TypeError("Failed to fetch")));
+  const unhandled = vi.fn();
+  window.addEventListener("unhandledrejection", unhandled);
+  onTestFinished(() => window.removeEventListener("unhandledrejection", unhandled));
+  atView("settings");
+  const screen = await render(<App store={fixedStore(calmState())} />);
+
+  const card = screen.getByRole("region", { name: "Notifications" });
+  await card.getByRole("button", { name: "Turn off notifications" }).click();
+
+  await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  // Long enough for a rejection nobody handled to have been reported.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(unhandled).not.toHaveBeenCalled();
 });
 
 test("the page going away closes every notification it showed", async () => {

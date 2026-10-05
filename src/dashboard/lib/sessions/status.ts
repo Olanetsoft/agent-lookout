@@ -5,7 +5,6 @@ import type {
   SourceId,
   SourceState,
   Surface,
-  WaitingReason,
 } from "@core/sessions/session";
 import { formatDuration } from "@dashboard/lib/format";
 
@@ -27,17 +26,6 @@ export const SURFACE_LABEL: Record<Surface, string> = {
   browser: "Browser",
   unknown: "Unknown app",
 };
-
-const WAITING_LABEL: Record<WaitingReason, string> = {
-  permission: "Waiting for permission",
-  question: "Asked you a question",
-  other: "Waiting for you",
-};
-
-/** Why a session needs the person, in plain words. */
-export function waitingLabel(session: Pick<Session, "waitingReason">): string {
-  return WAITING_LABEL[session.waitingReason ?? "other"];
-}
 
 /**
  * The vendor's own wording, kept as a secondary detail. It is left out when it
