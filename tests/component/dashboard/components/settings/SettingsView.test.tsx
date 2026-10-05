@@ -211,7 +211,7 @@ test("when the browser refuses, they stay off and a note says they are blocked a
   expect(note.element().getAttribute("data-tone")).toBe("info");
   expect(note.element().textContent).toBe(
     "Notifications are blocked" +
-      "Your browser is blocking notifications from this address. Allow them for this page in the browser's settings, then turn them on here.",
+      "Your browser is blocking notifications from this address. Allow them for this address in the browser's site settings, then turn them on here.",
   );
   expect(stateOf(screen).textContent).toBe("Notifications are off.");
   // The button stays, for when the browser has been told to allow them.

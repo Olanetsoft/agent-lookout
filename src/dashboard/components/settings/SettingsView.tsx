@@ -45,8 +45,8 @@ function NotificationsCard() {
         {permission === "denied" && (
           <Callout title='Notifications are blocked' className='mt-3'>
             <p>
-              Your browser is blocking notifications from this address. Allow them for this page in
-              the browser's settings, then turn them on here.
+              Your browser is blocking notifications from this address. Allow them for this address
+              in the browser's site settings, then turn them on here.
             </p>
           </Callout>
         )}

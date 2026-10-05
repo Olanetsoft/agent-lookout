@@ -14,6 +14,8 @@ The project has one maintainer, so replies are best effort. There are no tagged 
 
 Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on a loopback address. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and a few fields. It writes to no agent's files. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and keeps.
 
+With notifications turned on in Settings, the dashboard page hands a waiting session's name and a fixed reason to the browser's Notifications API, which passes them to the operating system. Nothing is sent over the network for this. [PRIVACY.md](PRIVACY.md#notifications) has the details.
+
 Session names and folder paths can be sensitive. The main risk is that something other than your own browser reads them.
 
 ## In scope
@@ -27,6 +29,9 @@ Session names and folder paths can be sensitive. The main risk is that something
 - A session name, path or other session field that runs as script or markup in the dashboard.
 - A way to make the app run anything other than the `claude` binary it found and `ps`, or to pass either of them arguments they should not get.
 - A Jump link that opens anything other than the intended `vscode://` address.
+- A notification, or the browser's question about allowing them, appearing when you have not turned notifications on.
+- A notification that holds anything but the session's name and the reason, or that makes the browser fetch anything.
+- A page at another address reading or steering the dashboard's notifications.
 
 ## Out of scope
 
@@ -35,4 +40,5 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Attacks that need control of your user account first. Someone with that control can read `~/.claude` and `~/.codex` directly.
 - Vulnerabilities in Claude Code, Codex or another agent tool. Report those to the vendor.
 - Traffic from Claude Code's own `claude agents` command while Agent Lookout runs it. It may contact Anthropic the way Claude Code normally does.
+- Another program later served at the same address using the notification permission your browser gave that address. PRIVACY.md describes this.
 - Vulnerabilities in a dependency that cannot be shown to affect Agent Lookout. Report those upstream.
