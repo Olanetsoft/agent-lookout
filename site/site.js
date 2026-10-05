@@ -30,6 +30,23 @@
   // The page opens with nothing waiting, unless motion is not wanted.
   if (matchMedia("(prefers-reduced-motion: no-preference)").matches) root.classList.add("lamp-out");
 
+  // The two switches are set as the parser reaches them, so no frame shows one
+  // in a state the page is not in.
+  const isDay = () => (kept ? kept === "light" : systemDay.matches);
+  const check = (id) => {
+    const input = document.getElementById(id);
+    if (input) input.checked = true;
+  };
+  const markTheme = () => check(isDay() ? "theme-day" : "theme-night");
+  const markLamp = () => check(root.classList.contains("lamp-out") ? "lamp-out" : "lamp-lit");
+  const early = new MutationObserver(() => {
+    markTheme();
+    markLamp();
+    // The second lamp radio is the last of the four.
+    if (document.getElementById("lamp-lit")) early.disconnect();
+  });
+  early.observe(root, { childList: true, subtree: true });
+
   const nothing = () => {};
   const after = (ms) => new Promise((done) => setTimeout(done, ms));
   /** Settles once a picture is fetched and decoded, or cannot be. */
@@ -47,6 +64,12 @@
     });
 
   document.addEventListener("DOMContentLoaded", () => {
+    early.disconnect();
+    markTheme();
+    markLamp();
+    // A switch slides only after the page has been drawn with it in place.
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("ready")));
+
     const $ = (id) => document.getElementById(id);
     const quiet = $("shot-out");
     const waiting = $("shot-lit");
@@ -94,12 +117,6 @@
       });
     };
 
-    const night = $("theme-night");
-    const day = $("theme-day");
-    const isDay = () => (kept ? kept === "light" : systemDay.matches);
-    const mark = () => {
-      if (night) (isDay() ? day : night).checked = true;
-    };
     const choose = (theme) => {
       kept = theme;
       try {
@@ -107,15 +124,14 @@
       } catch {
         // The choice then lasts for this visit.
       }
-      mark();
+      markTheme();
       return turn(theme);
     };
 
-    mark();
-    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("ready")));
     // Until a choice is made here, the switch follows the system.
-    systemDay.addEventListener?.("change", mark);
-    for (const input of [night, day]) input?.addEventListener("change", () => choose(input.value));
+    systemDay.addEventListener?.("change", markTheme);
+    for (const input of [$("theme-night"), $("theme-day")])
+      input?.addEventListener("change", () => choose(input.value));
     document
       .querySelector("[data-turn]")
       ?.addEventListener("click", () => choose(isDay() ? "dark" : "light"));
@@ -134,15 +150,11 @@
     // A press on the choice already made is still a hand on the switch.
     out.parentNode.addEventListener("click", () => (touched = true));
 
-    if (!root.classList.contains("lamp-out")) {
-      lit.checked = true;
-      return;
-    }
+    if (!root.classList.contains("lamp-out")) return;
 
     // The one moment: nothing is waiting, and a second and a half after the
     // quiet picture is on the screen the lamp lights. Touching the switch
     // first calls that off. A waiting picture that cannot be fetched does too.
-    out.checked = true;
     let seen = 0;
     settled
       .then(watched)

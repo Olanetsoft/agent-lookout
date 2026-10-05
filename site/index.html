@@ -41,6 +41,7 @@
       content="The words One session needs you over the Agent Lookout dashboard at night. Its Needs you panel shows checkout-flow waiting for permission."
     />
 
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link
@@ -117,7 +118,7 @@
     </header>
 
     <main id="main" class="wrap">
-      <section class="hero" aria-labelledby="pitch">
+      <section class="hero">
         <p class="state" aria-hidden="true">
           <span class="state-turn">
             <span class="when-out">Nothing</span>
@@ -127,7 +128,7 @@
         </p>
 
         <div class="pitch">
-          <h1 id="pitch">
+          <h1>
             <span>Agent Lookout</span> puts every Claude Code and Codex session running on your Mac
             on one page in your browser, and shows which Claude Code sessions are waiting for you.
           </h1>
@@ -144,10 +145,10 @@
       </section>
 
       <section class="instrument" aria-label="The dashboard">
-        <div class="seg lamp-switch" role="radiogroup" aria-label="Sessions waiting">
-          <input type="radio" name="lamp" id="lamp-out" autocomplete="off" />
+        <div class="seg lamp-switch" role="radiogroup" aria-label="Show the dashboard with">
+          <input type="radio" name="lamp" id="lamp-out" autocomplete="off" checked />
           <label for="lamp-out">Nothing waiting</label>
-          <input type="radio" name="lamp" id="lamp-lit" autocomplete="off" checked />
+          <input type="radio" name="lamp" id="lamp-lit" autocomplete="off" />
           <label for="lamp-lit">One waiting</label>
           <i class="seg-thumb" aria-hidden="true"></i>
         </div>
@@ -161,8 +162,8 @@
             <div class="screen">
               <picture>
                 <source
-                  data-day="(max-width: 640px)"
-                  media="(max-width: 640px) and (prefers-color-scheme: light)"
+                  data-day="(width < 761px)"
+                  media="(width < 761px) and (prefers-color-scheme: light)"
                   srcset="
                     /assets/phone-quiet-day-780.webp   780w,
                     /assets/phone-quiet-day-1170.webp 1170w
@@ -172,7 +173,7 @@
                   height="2532"
                 />
                 <source
-                  media="(max-width: 640px)"
+                  media="(width < 761px)"
                   srcset="
                     /assets/phone-quiet-night-780.webp   780w,
                     /assets/phone-quiet-night-1170.webp 1170w
@@ -189,7 +190,7 @@
                     /assets/dashboard-quiet-day-1770.webp 1770w,
                     /assets/dashboard-quiet-day-2360.webp 2360w
                   "
-                  sizes="(min-width: 1248px) 1180px, (min-width: 761px) calc(100vw - 68px), calc(100vw - 44px)"
+                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
                 />
                 <img
                   class="shot shot-out"
@@ -200,7 +201,7 @@
                     /assets/dashboard-quiet-night-1770.webp 1770w,
                     /assets/dashboard-quiet-night-2360.webp 2360w
                   "
-                  sizes="(min-width: 1248px) 1180px, (min-width: 761px) calc(100vw - 68px), calc(100vw - 44px)"
+                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
                   width="2360"
                   height="1475"
                   fetchpriority="high"
@@ -209,8 +210,8 @@
               </picture>
               <picture>
                 <source
-                  data-day="(max-width: 640px)"
-                  media="(max-width: 640px) and (prefers-color-scheme: light)"
+                  data-day="(width < 761px)"
+                  media="(width < 761px) and (prefers-color-scheme: light)"
                   srcset="
                     /assets/phone-waiting-day-780.webp   780w,
                     /assets/phone-waiting-day-1170.webp 1170w
@@ -220,7 +221,7 @@
                   height="2532"
                 />
                 <source
-                  media="(max-width: 640px)"
+                  media="(width < 761px)"
                   srcset="
                     /assets/phone-waiting-night-780.webp   780w,
                     /assets/phone-waiting-night-1170.webp 1170w
@@ -237,7 +238,7 @@
                     /assets/dashboard-waiting-day-1770.webp 1770w,
                     /assets/dashboard-waiting-day-2360.webp 2360w
                   "
-                  sizes="(min-width: 1248px) 1180px, (min-width: 761px) calc(100vw - 68px), calc(100vw - 44px)"
+                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
                 />
                 <img
                   class="shot shot-lit"
@@ -248,7 +249,7 @@
                     /assets/dashboard-waiting-night-1770.webp 1770w,
                     /assets/dashboard-waiting-night-2360.webp 2360w
                   "
-                  sizes="(min-width: 1248px) 1180px, (min-width: 761px) calc(100vw - 68px), calc(100vw - 44px)"
+                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
                   width="2360"
                   height="1475"
                   alt="The Agent Lookout dashboard with one session waiting. The Needs you panel at the top names checkout-flow, a Claude Code session in VS Code that has waited 4 minutes 12 seconds for permission, with a Jump button beside it. Under that are bars of how long sessions waited on you and counts of 3 working, 2 idle and 1 stale session out of 8. The Last hour chart follows."
@@ -258,72 +259,72 @@
           </div>
         </div>
 
-        <figure class="plate-slot at-night">
-          <div class="plate glass-float glass-blur" data-theme="light">
+        <div class="plate-slot at-night">
+          <figure class="plate glass-float glass-blur" data-theme="light">
             <div class="screen">
               <img
                 class="shot shot-out"
-                src="/assets/panel-quiet-day-753.webp"
+                src="/assets/panel-quiet-day-727.webp"
                 srcset="
-                  /assets/panel-quiet-day-753.webp   753w,
-                  /assets/panel-quiet-day-1506.webp 1506w
+                  /assets/panel-quiet-day-727.webp   727w,
+                  /assets/panel-quiet-day-1454.webp 1454w
                 "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) 46vw, 60vw"
-                width="1506"
-                height="336"
+                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
+                width="1454"
+                height="310"
                 loading="lazy"
                 alt="The head of the same panel in the Day theme. It says Nothing needs you and gives the last wait, 2 minutes."
               />
               <img
                 class="shot shot-lit"
-                src="/assets/panel-waiting-day-753.webp"
+                src="/assets/panel-waiting-day-727.webp"
                 srcset="
-                  /assets/panel-waiting-day-753.webp   753w,
-                  /assets/panel-waiting-day-1506.webp 1506w
+                  /assets/panel-waiting-day-727.webp   727w,
+                  /assets/panel-waiting-day-1454.webp 1454w
                 "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) 46vw, 60vw"
-                width="1506"
-                height="336"
+                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
+                width="1454"
+                height="310"
                 loading="lazy"
                 alt="The head of the same panel in the Day theme: checkout-flow, waiting for permission for 4 minutes 12 seconds, and the Jump button, on pale glass."
               />
             </div>
             <figcaption><strong>Day</strong> <span>the same panel in daylight</span></figcaption>
-          </div>
-        </figure>
-        <figure class="plate-slot by-day">
-          <div class="plate glass-float glass-blur" data-theme="dark">
+          </figure>
+        </div>
+        <div class="plate-slot by-day">
+          <figure class="plate glass-float glass-blur" data-theme="dark">
             <div class="screen">
               <img
                 class="shot shot-out"
-                src="/assets/panel-quiet-night-753.webp"
+                src="/assets/panel-quiet-night-727.webp"
                 srcset="
-                  /assets/panel-quiet-night-753.webp   753w,
-                  /assets/panel-quiet-night-1506.webp 1506w
+                  /assets/panel-quiet-night-727.webp   727w,
+                  /assets/panel-quiet-night-1454.webp 1454w
                 "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) 46vw, 60vw"
-                width="1506"
-                height="336"
+                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
+                width="1454"
+                height="310"
                 loading="lazy"
                 alt="The head of the same panel in the Night theme. It says Nothing needs you and gives the last wait, 2 minutes."
               />
               <img
                 class="shot shot-lit"
-                src="/assets/panel-waiting-night-753.webp"
+                src="/assets/panel-waiting-night-727.webp"
                 srcset="
-                  /assets/panel-waiting-night-753.webp   753w,
-                  /assets/panel-waiting-night-1506.webp 1506w
+                  /assets/panel-waiting-night-727.webp   727w,
+                  /assets/panel-waiting-night-1454.webp 1454w
                 "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) 46vw, 60vw"
-                width="1506"
-                height="336"
+                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
+                width="1454"
+                height="310"
                 loading="lazy"
                 alt="The head of the same panel in the Night theme: checkout-flow, waiting for permission for 4 minutes 12 seconds, and the Jump button, on smoked glass."
               />
             </div>
             <figcaption><strong>Night</strong> <span>the same panel at night</span></figcaption>
-          </div>
-        </figure>
+          </figure>
+        </div>
 
         <div class="about">
           <p class="lights">
@@ -338,7 +339,7 @@
       </section>
 
       <section class="facts" aria-labelledby="facts-title">
-        <h2 id="facts-title" class="vh">What it does</h2>
+        <h2 id="facts-title" class="vh">In short</h2>
 
         <article class="fact fact-finds glass-card">
           <h3>It finds the sessions already running</h3>
@@ -485,7 +486,7 @@
             <li>
               <span class="figure">0</span>
               <span class="label">Remote fonts</span>
-              <span class="note">the fonts are bundled</span>
+              <span class="note">none fetched</span>
             </li>
             <li>
               <span class="figure">0</span>
@@ -518,27 +519,32 @@
                 <h3>Check what you have</h3>
                 <p>
                   You need Node.js 20.19 or newer (on Node 22, 22.12 or newer), and Claude Code,
-                  Codex or both.
+                  Codex or both. If you use only the Codex desktop app and <code>codex</code> is not
+                  found, carry on.
                 </p>
-                <pre><code><span>node --version</span><span>claude --version</span><span>codex --version</span></code></pre>
+                <pre><code><span>node --version
+</span><span>claude --version
+</span><span>codex --version</span></code></pre>
               </div>
             </li>
             <li>
               <span class="n" aria-hidden="true">2</span>
               <div>
                 <h3>Clone it and install what it needs</h3>
-                <pre><code><span>git clone https://github.com/<wbr />Olanetsoft/<wbr />agent-lookout.git</span><span>cd agent-lookout</span><span>npm install</span></code></pre>
+                <pre><code><span>git clone https://github.com/<wbr />Olanetsoft/<wbr />agent-lookout.git
+</span><span>cd agent-lookout
+</span><span>npm install</span></code></pre>
               </div>
             </li>
             <li>
               <span class="n" aria-hidden="true">3</span>
               <div>
                 <h3>Start it</h3>
+                <pre><code><span>npm run dev</span></code></pre>
                 <p>
                   It prints an address, normally <code>http://localhost:5173</code>. Open it, and
                   your sessions appear within a few seconds.
                 </p>
-                <pre><code><span>npm run dev</span></code></pre>
               </div>
             </li>
           </ol>
@@ -559,7 +565,10 @@
       <section class="split" aria-labelledby="today-title">
         <div class="intro">
           <h2 id="today-title">What it does today</h2>
-          <p>It watches, it jumps, and it notifies you if you ask it to.</p>
+          <p>
+            It watches your sessions, opens a Claude Code session in VS Code, and notifies you if
+            you ask it to.
+          </p>
         </div>
 
         <div class="body">
@@ -592,8 +601,9 @@
               <dd>
                 Off until you turn them on in Settings. Then your browser shows one when a Claude
                 Code session starts waiting, with the session’s name and the reason, and it is
-                cleared when the session moves on. With no dashboard tab open, Agent Lookout shows
-                them itself for as long as it keeps running. Nothing is sent off your Mac.
+                cleared when the session moves on. Once the dashboard tab is closed, Agent Lookout
+                shows the notification itself for as long as it keeps running, and that one stays
+                until you clear it. Nothing is sent off your Mac.
               </dd>
             </div>
             <div>
@@ -606,7 +616,7 @@
             </div>
             <div>
               <dt>Controls</dt>
-              <dd>None. It only watches: there are no approve, stop or pause buttons.</dd>
+              <dd>None. There are no approve, stop or pause buttons.</dd>
             </div>
             <div>
               <dt>Licence</dt>

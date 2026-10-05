@@ -113,13 +113,17 @@
    */
   --bezel: 10px;
   --shot-width: 1280;
-  --shot-ratio: 1280 / 800;
+  /*
+   * The window is 1280 by 800. The screen shows its first 784 rows, which end
+   * under a whole row of the list whether a session is waiting or not.
+   */
+  --shot-ratio: 1280 / 784;
   --radius-screen: calc((100cqw - 2 * var(--bezel)) * 34 / var(--shot-width));
   --radius-frame: calc(var(--radius-screen) + var(--bezel));
   /* Where the lamp is in the picture. The lit picture is let in from here. */
-  --lamp-at: 10.7% 14.6%;
+  --lamp-at: 10.7% 14.9%;
   /* How far the floating plate rises over the frame's lower edge. */
-  --lift: calc(6.4cqw + var(--bezel));
+  --lift: calc(5.2cqw + var(--bezel));
 }
 
 /* Night, the default. */
@@ -143,6 +147,8 @@
   --halo-strength: 0.8;
 
   --glass-chrome: rgba(16, 15, 14, 0.6);
+  /* The header's own glass. Bright things pass behind it, so at Night it is denser. */
+  --glass-bar: rgba(16, 15, 14, 0.84);
   --glass-card: rgba(19, 18, 17, 0.62);
   --glass-raised: rgba(33, 31, 29, 0.66);
   --glass-float: rgba(30, 28, 26, 0.84);
@@ -199,6 +205,8 @@
   --well: rgba(0, 0, 0, 0.3);
   --well-shade: rgba(0, 0, 0, 0.35);
   --thumb: rgba(255, 248, 238, 0.11);
+  /* The thumb's edge is what says which choice is made, so it is a firm line. */
+  --thumb-edge: rgba(255, 248, 238, 0.42);
   --thumb-drop: rgba(0, 0, 0, 0.35);
 
   --hairline: rgba(255, 248, 238, 0.075);
@@ -258,6 +266,7 @@
     --halo-strength: 0.7;
 
     --glass-chrome: rgba(252, 251, 249, 0.52);
+    --glass-bar: rgba(252, 251, 249, 0.52);
     --glass-card: rgba(255, 255, 254, 0.56);
     --glass-raised: rgba(255, 255, 255, 0.66);
     --glass-float: rgba(253, 252, 250, 0.84);
@@ -304,6 +313,7 @@
     --well: rgba(38, 32, 26, 0.055);
     --well-shade: rgba(38, 32, 26, 0.06);
     --thumb: #ffffff;
+    --thumb-edge: rgba(38, 32, 26, 0.7);
     --thumb-drop: rgba(38, 32, 26, 0.3);
 
     --hairline: rgba(38, 32, 26, 0.08);
@@ -350,6 +360,7 @@
   --halo-strength: 0.7;
 
   --glass-chrome: rgba(252, 251, 249, 0.52);
+  --glass-bar: rgba(252, 251, 249, 0.52);
   --glass-card: rgba(255, 255, 254, 0.56);
   --glass-raised: rgba(255, 255, 255, 0.66);
   --glass-float: rgba(253, 252, 250, 0.84);
@@ -396,6 +407,7 @@
   --well: rgba(38, 32, 26, 0.055);
   --well-shade: rgba(38, 32, 26, 0.06);
   --thumb: #ffffff;
+  --thumb-edge: rgba(38, 32, 26, 0.7);
   --thumb-drop: rgba(38, 32, 26, 0.3);
 
   --hairline: rgba(38, 32, 26, 0.08);
@@ -548,12 +560,12 @@ pre {
   margin-inline: auto;
 }
 
-/* A link in running text: ink, on a rule. */
+/* A link in running text: ink, on a line firm enough to say it is a link. */
 .link {
   border-radius: 4px;
   color: var(--ink);
   text-decoration: underline;
-  text-decoration-color: var(--rule-strong);
+  text-decoration-color: var(--ink-muted);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   transition: text-decoration-color 120ms;
@@ -577,7 +589,6 @@ pre {
   position: absolute;
   display: block;
   border-radius: 50%;
-  will-change: transform;
 }
 
 .ground-main {
@@ -629,34 +640,10 @@ pre {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* The ground keeps still. The one thing that moves on this page is the lamp. */
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
-  }
-  .ground-main {
-    animation: drift-main 96s ease-in-out infinite alternate;
-  }
-  .ground-deep {
-    animation: drift-deep 124s ease-in-out infinite alternate;
-  }
-  .ground-far {
-    animation: drift-far 150s ease-in-out infinite alternate;
-  }
-}
-
-@keyframes drift-main {
-  to {
-    transform: rotate(var(--field-main-turn)) translate3d(-90px, 70px, 0) scale(1.06);
-  }
-}
-@keyframes drift-deep {
-  to {
-    transform: translate3d(120px, -60px, 0) scale(1.04);
-  }
-}
-@keyframes drift-far {
-  to {
-    transform: translate3d(-140px, -40px, 0);
   }
 }
 
@@ -823,13 +810,21 @@ pre {
     inset 0 1px 2px var(--well-shade);
 }
 
+/* Each radio lies over its own option, so focus and a reader's cursor land on it. */
 .seg input {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  top: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
   margin: 0;
   opacity: 0;
   pointer-events: none;
+}
+.seg input:nth-of-type(1) {
+  left: 3px;
+}
+.seg input:nth-of-type(2) {
+  right: 3px;
 }
 
 .seg label {
@@ -848,7 +843,6 @@ pre {
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 120ms;
 }
 .seg label:has(svg) {
   padding-inline: 12px 14px;
@@ -882,17 +876,25 @@ pre {
   border-radius: var(--radius-capsule);
   background-color: var(--thumb);
   box-shadow:
-    inset 0 0 0 1px var(--control-rim),
+    inset 0 0 0 1px var(--thumb-edge),
     inset 0 1px 0 var(--control-top),
     0 2px 6px -2px var(--thumb-drop);
   pointer-events: none;
 }
-/* Only once the page has settled, so a switch never slides into place as it loads. */
-.ready .seg-thumb {
-  transition: transform 220ms var(--ease-out);
-}
+/*
+ * The thumb moves by its own width, taken to a whole pixel where the browser
+ * can do that: moved by a fraction, its 1px edge would be drawn faint across two.
+ */
 .seg input:nth-of-type(2):checked ~ .seg-thumb {
   transform: translateX(100%);
+  transform: translateX(round(100%, 1px));
+}
+/* A switch moves only once the page has been drawn. It opens where it belongs. */
+.ready .seg label {
+  transition: color 120ms;
+}
+.ready .seg-thumb {
+  transition: transform 220ms var(--ease-out);
 }
 
 /* The switches need script. Without it the page shows no dead control. */
@@ -938,6 +940,7 @@ html:not(.js) :is(.seg, [data-turn]) {
   height: 56px;
   margin-top: 12px;
   padding: 0 10px 0 18px;
+  background-color: var(--glass-bar);
 }
 
 .brand {
@@ -967,7 +970,8 @@ html:not(.js) :is(.seg, [data-turn]) {
   font-size: 13px;
   line-height: 1.2;
   color: var(--ink-secondary);
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
 }
 .bar-status span {
   margin-left: 10px;
@@ -1088,6 +1092,7 @@ html:not(.js) :is(.seg, [data-turn]) {
   font-size: 13px;
   line-height: 1.45;
   color: var(--ink-secondary);
+  text-wrap: balance;
 }
 
 /* -------------------------------------------------------------- instrument */
@@ -1214,25 +1219,32 @@ html:not(.js) :is(.seg, [data-turn]) {
   aspect-ratio: var(--shot-ratio);
 }
 
+/*
+ * A picture is drawn at its own size from the top, and what is taller than
+ * its box is cut off the bottom. So the type in the picture keeps its own
+ * pixels and stays sharp.
+ */
 .shot {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  object-position: 50% 0;
 }
 
 /*
  * The lit picture lies over the quiet one and is let in from the lamp
- * outwards: a soft-edged circle, centred on the light in the picture, that
- * grows until it covers the screen. So the panel lights first, and the two
- * pictures only ever meet along the circle's edge, never as a double exposure.
+ * outwards: a circle, centred on the light in the picture, that grows until
+ * it covers the screen. So the panel lights first. The circle's edge is kept
+ * narrow, so the words of the two pictures never show through each other.
  * Whichever picture is not showing is hidden once that is done, so only one is
  * ever described. Going out, the lit picture only fades.
  */
 .shot-lit {
-  -webkit-mask: radial-gradient(farthest-corner at var(--lamp-at), #000 50%, transparent 64%)
+  -webkit-mask: radial-gradient(farthest-corner at var(--lamp-at), #000 56%, transparent 60%)
     var(--lamp-at) / 240% 240% no-repeat;
-  mask: radial-gradient(farthest-corner at var(--lamp-at), #000 50%, transparent 64%)
+  mask: radial-gradient(farthest-corner at var(--lamp-at), #000 56%, transparent 60%)
     var(--lamp-at) / 240% 240% no-repeat;
   transition:
     -webkit-mask-size 1000ms var(--ease-wipe),
@@ -1286,7 +1298,7 @@ html:not(.js) :is(.seg, [data-turn]) {
 }
 
 .plate {
-  --lamp-at: 6.2% 25.6%;
+  --lamp-at: 4.6% 19.6%;
   padding: 8px;
   border-radius: var(--radius-chrome);
   box-shadow: none;
@@ -1294,7 +1306,7 @@ html:not(.js) :is(.seg, [data-turn]) {
 }
 .plate .screen {
   border-radius: var(--radius-inner);
-  aspect-ratio: 1506 / 336;
+  aspect-ratio: 1454 / 310;
 }
 .plate figcaption {
   display: flex;
@@ -1312,9 +1324,11 @@ html:not(.js) :is(.seg, [data-turn]) {
   color: var(--ink-secondary);
 }
 
+/* These words lie in the frame's shadow, so they are drawn over it, not under. */
 .about {
   grid-column: 1 / 7;
   grid-row: 3;
+  z-index: 1;
   padding-top: 30px;
 }
 .lights {
@@ -1435,6 +1449,28 @@ html:not(.js) :is(.seg, [data-turn]) {
   color: var(--status-idle);
 }
 
+/*
+ * Beside the second fact the card can be taller than its list. The five rows
+ * then share the spare height, so no glass is left empty under them.
+ */
+@media (width >= 901px) {
+  .fact-finds .found {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .fact-finds .rows {
+    display: grid;
+    grid-auto-rows: minmax(40px, 1fr);
+  }
+  .fact-finds .rows:nth-of-type(1) {
+    flex: 3;
+  }
+  .fact-finds .rows:nth-of-type(2) {
+    flex: 2;
+  }
+}
+
 /* Fact two: the mark with its lamp out, and lit. The page's one amber. */
 .fact-shows code {
   font-size: 14px;
@@ -1464,6 +1500,10 @@ html:not(.js) :is(.seg, [data-turn]) {
   flex-direction: column;
   padding: 26px 0;
 }
+/* Each caption keeps clear of the rule between the two marks. */
+.lamp-pair > div:first-child {
+  padding-right: 16px;
+}
 .lamp-pair > div + div {
   padding-left: 24px;
 }
@@ -1479,6 +1519,7 @@ html:not(.js) :is(.seg, [data-turn]) {
   font-size: 13px;
   line-height: 1.4;
   color: var(--ink-secondary);
+  text-wrap: balance;
 }
 .fact-shows .limit {
   padding-top: 18px;
@@ -1619,8 +1660,14 @@ h2 {
   padding-left: 1.5em;
   text-indent: -1.5em;
 }
+/* What a command prints comes after it. */
+.steps pre + p {
+  margin-top: 12px;
+}
 
+/* Positioned, so the card's shadow falls under these words and not over them. */
 .after {
+  position: relative;
   margin-top: 18px;
   font-size: 14px;
   color: var(--ink-secondary);
@@ -1644,6 +1691,12 @@ h2 {
 .sheet dd {
   color: var(--ink);
   text-wrap: pretty;
+}
+/* Beside its heading, the first row stands on the heading's baseline. */
+@media (width >= 901px) {
+  .sheet > div:first-child {
+    padding-top: 12px;
+  }
 }
 
 /* ------------------------------------------------------------------- close */
@@ -1678,10 +1731,20 @@ h2 {
 .foot p {
   max-width: 62ch;
 }
+/*
+ * Each link is 44px tall for a finger: its 19.5px line and 12.25px above and
+ * below. The row is drawn back by as much, so the words stay where they were.
+ * Beside the paragraph the links keep their one row, and the paragraph gives way.
+ */
 .foot nav {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 20px;
+  gap: 0 20px;
+  margin-block: -12.25px;
+}
+.foot nav a {
+  padding-block: 12.25px;
 }
 .foot a {
   border-radius: 4px;
@@ -1694,14 +1757,21 @@ h2 {
 }
 .foot p a {
   text-decoration: underline;
-  text-decoration-color: var(--rule-strong);
+  text-decoration-color: var(--ink-muted);
   text-underline-offset: 3px;
 }
 
 /* --------------------------------------------------------- the lost page */
 
+/* The page is as tall as the window and no taller, with its footer at the foot. */
+body:has(> .lost) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
 .lost {
-  min-height: calc(100vh - 220px);
+  flex: 1;
 }
 .lost .hero {
   padding-top: clamp(64px, 18vh, 200px);
@@ -1751,7 +1821,7 @@ h2 {
     grid-column: 1 / 6;
   }
   .lights {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .fact-finds,
@@ -1774,9 +1844,17 @@ h2 {
     padding-right: 0;
     margin-bottom: 28px;
   }
+
+  /* The footer's links take one row under its paragraph. */
+  .foot {
+    flex-direction: column;
+  }
 }
 
-/* Under 761px: a phone, or a narrow window. The plate is put away. */
+/*
+ * Under 761px: a phone, or a narrow window. The plate is put away, and what a
+ * finger presses is 44px tall.
+ */
 @media (width < 761px) {
   :root {
     --gutter: 16px;
@@ -1786,7 +1864,7 @@ h2 {
   }
 
   .bar {
-    padding: 0 8px 0 14px;
+    padding: 0 6px 0 14px;
   }
   .bar-nav {
     display: none;
@@ -1794,17 +1872,23 @@ h2 {
   .theme-switch {
     margin-left: auto;
   }
+  .seg label {
+    height: 38px;
+  }
 
+  /* The opening is drawn close, so the frame's first session is on the first screen. */
+  .hero {
+    row-gap: 18px;
+    padding-top: 24px;
+  }
   .pitch h1 {
     font-size: 16px;
   }
-  /* Tighter, so the waiting session is in the first screen of a phone's browser. */
-  .hero {
-    padding-top: 24px;
-    row-gap: 18px;
-  }
   .actions {
     margin-top: 20px;
+  }
+  .actions .link {
+    padding-block: 11px;
   }
   .fine {
     margin-top: 12px;
@@ -1823,9 +1907,14 @@ h2 {
   .lights {
     font-size: 22px;
   }
+  .about .btn {
+    height: 44px;
+    padding: 0 18px;
+    font-size: 14px;
+  }
 
   .fact h3 {
-    font-size: 24px;
+    font-size: 22px;
   }
   h2 {
     font-size: 28px;
@@ -1843,8 +1932,11 @@ h2 {
   .rows .mark {
     grid-area: mark;
   }
+  /* A long name takes a second line before it is cut. */
   .rows .name {
     grid-area: name;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .rows .time {
     grid-area: time;
@@ -1904,18 +1996,25 @@ h2 {
   }
 
   .foot {
-    flex-direction: column;
     padding-bottom: 48px;
+  }
+  .foot nav {
+    gap: 0 4px;
+    margin: -6px -10px 0;
+  }
+  .foot nav a {
+    padding-inline: 10px;
   }
 }
 
 /*
- * Under 641px the frame shows the app's own one-column layout, as a phone
- * draws it, in place of the wide window. Its rail keeps the same 12px inset
- * and 22px corner, so the screen's corner is still 34px at the picture's full
- * size. The frame is never drawn wider than a large phone.
+ * In that same layout the frame shows the app's own one-column layout, as a
+ * phone draws it, in place of the wide window, whose type would be too small
+ * to read here. Its rail keeps the same 12px inset and 22px corner, so the
+ * screen's corner is still 34px at the picture's full size. The frame is
+ * never drawn wider than a large phone.
  */
-@media (width < 641px) {
+@media (width < 761px) {
   :root {
     --shot-width: 390;
     --shot-ratio: 390 / 844;
@@ -1923,6 +2022,11 @@ h2 {
   }
 
   .stage {
+    width: min(100%, 492px);
+    justify-self: center;
+  }
+  /* The words under the frame are as wide as it is, and start on its left edge. */
+  .about {
     width: min(100%, 492px);
     justify-self: center;
   }
@@ -1954,10 +2058,36 @@ h2 {
   }
 }
 
+/*
+ * A short phone window, as when the browser's bars are showing on a small
+ * phone. The opening is drawn closer still and its small line is left out, so
+ * the waiting session is on the first screen when the lamp lights. What the
+ * small line says is said again further down the page. The lost page has no
+ * frame under its opening, and keeps its spacing.
+ */
+@media (width < 761px) and (height < 640px) {
+  .hero:has(+ .instrument) {
+    row-gap: 12px;
+    padding-top: 12px;
+  }
+  .hero:has(+ .instrument) .actions {
+    margin-top: 14px;
+  }
+  .fine {
+    display: none;
+  }
+  .instrument {
+    margin-top: 14px;
+  }
+  .lamp-switch {
+    margin-bottom: 8px;
+  }
+}
+
 /* The theme switch keeps its words while there is room for them. */
 @media (width < 400px) {
-  .theme-switch label {
-    padding-inline: 11px;
+  .theme-switch label:has(svg) {
+    padding-inline: 15px;
   }
   .theme-switch label span {
     position: absolute;
@@ -1968,6 +2098,30 @@ h2 {
   }
 }
 
+/* The five footer links keep to one row down to 330px. */
+@media (width < 370px) {
+  .foot nav {
+    gap: 0;
+    margin-inline: -7px;
+  }
+  .foot nav a {
+    padding-inline: 7px;
+  }
+}
+
+/*
+ * The narrowest window. The wordmark and the large line come down a step, so
+ * the header and the line still fit when a reader widens the spacing of text.
+ */
+@media (width < 360px) {
+  .wordmark {
+    font-size: 16px;
+  }
+  .state {
+    font-size: 40px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1975,5 +2129,34 @@ h2 {
     transition-duration: 0s !important;
     transition-delay: 0s !important;
     animation: none !important;
+  }
+}
+
+/*
+ * Forced colours. The system paints its own, and drops every shadow and
+ * gradient this page draws its edges with. So the ground's dither is put away,
+ * each control and card gets a real edge, and the choice made in a switch is
+ * ringed.
+ */
+@media (forced-colors: active) {
+  .ground {
+    display: none;
+  }
+  .seg,
+  .btn,
+  .steps pre,
+  .glass-chrome,
+  .glass-card,
+  .glass-raised,
+  .glass-float {
+    border: 1px solid ButtonBorder;
+  }
+  .seg-thumb {
+    border: 2px solid Highlight;
+  }
+  /* The frame's edge goes outside its box, so its picture keeps its size. */
+  .frame {
+    border: 0;
+    outline: 1px solid ButtonBorder;
   }
 }
