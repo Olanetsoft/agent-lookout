@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
+import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -91,6 +92,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   document.documentElement.removeAttribute("data-theme");
+  setApiHost();
 });
 
 test("the sessions are a table with a head for each column, kept for assistive technology only", async () => {
@@ -1247,4 +1249,199 @@ test("with no tool found, each is said", async () => {
   expect(notices).toHaveLength(2);
   expect(notices[0]?.textContent).toContain("Claude Code was not found");
   expect(notices[1]?.textContent).toContain("Codex was not found");
+});
+
+/** Sessions in a terminal: one found in a tmux pane, one in VS Code with its link, one in neither. */
+const IN_TMUX = session(21, {
+  name: "billing-webhooks",
+  status: "working",
+  statusSince: NOW - 3 * MINUTE,
+  pid: 4321,
+  alive: true,
+  jump: { kind: "tmux", place: "work:2.1" },
+});
+const IN_VSCODE = session(22, {
+  name: "docs-site",
+  surface: "vscode",
+  status: "idle",
+  statusSince: NOW - 9 * MINUTE,
+  links: { open: jumpLink(22) },
+});
+const IN_NEITHER = session(23, {
+  name: "search-indexing",
+  status: "idle",
+  statusSince: NOW - MINUTE,
+});
+
+test("a session in a tmux pane has its Jump in the Jump column, a button where a VS Code session has a link", async () => {
+  const screen = await render(
+    <div style={{ width: 900 }}>
+      <SessionsCard sessions={[IN_TMUX, IN_VSCODE, IN_NEITHER]} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+
+  const heads = [...screen.container.querySelectorAll("thead th")].map((head) => head.textContent);
+  expect(heads).toEqual(["Session", "Folder", "App", "Status and time", "Jump"]);
+
+  const button = screen
+    .getByRole("button", { name: "Jump to billing-webhooks in tmux, work:2.1" })
+    .element();
+  const link = screen.getByRole("link", { name: "Jump to docs-site in VS Code" }).element();
+  expect(button.tagName).toBe("BUTTON");
+  expect(rowOf(screen.container, "billing-webhooks").lastElementChild?.contains(button)).toBe(true);
+  // The two line up, and are drawn alike: the quiet capsule, never the solid one.
+  expect(button.getBoundingClientRect().left).toBe(link.getBoundingClientRect().left);
+  expect(button.getBoundingClientRect().width).toBe(link.getBoundingClientRect().width);
+  expect(button.getAttribute("data-variant")).toBe("quiet");
+  expect(solidButtons(screen.container)).toEqual([]);
+
+  // A session in neither has an empty cell, as before.
+  expect(rowOf(screen.container, "search-indexing").querySelector("a, button")).toBeNull();
+  expect(warmPaint(screen.container)).toEqual([]);
+});
+
+test.each([
+  ["only sessions in tmux", [IN_TMUX, IN_NEITHER], "Jump selects the session's pane in tmux"],
+  [
+    "sessions in tmux and in VS Code",
+    [IN_TMUX, IN_VSCODE],
+    "Jump opens the session, or selects its pane in tmux",
+  ],
+  ["only sessions with a link", [IN_VSCODE, IN_NEITHER], "Jump opens the session where it runs"],
+])("with %s, the head says what the Jumps in the table do", async (_what, sessions, words) => {
+  const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(screen.container.querySelector('[data-part="hint"]')?.textContent).toBe(words);
+});
+
+test("a session whose pane is of no kind this page knows gets no Jump, and alone it makes no Jump column", async () => {
+  const odd = { ...IN_NEITHER, jump: { kind: "screen", place: "work:2.1" } } as unknown as Session;
+  const screen = await render(<SessionsCard sessions={[odd]} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(
+    [...screen.container.querySelectorAll("thead th")].map((head) => head.textContent),
+  ).toEqual(["Session", "Folder", "App", "Status and time"]);
+  expect(screen.container.querySelector('[data-part="jump"]')).toBeNull();
+});
+
+test.each([
+  ["the pane is selected", 200, { ok: true, kind: "tmux", place: "work:2.1" }, "Selected in tmux"],
+  ["the pane has gone", 409, { error: "x", reason: "pane-gone" }, "That pane has closed"],
+])(
+  "pressing a tmux Jump asks for that session, and when %s the row says so beside the name without growing",
+  async (_what, status, body, words) => {
+    const sent: { path: string; body: unknown }[] = [];
+    setApiHost(async (path, init) => {
+      sent.push({ path, body: init?.body });
+      return new Response(JSON.stringify(body), { status });
+    });
+    const screen = await render(
+      <div style={{ width: 900 }}>
+        <SessionsCard sessions={[IN_TMUX, IN_VSCODE, IN_NEITHER]} sources={[SOURCE_OK]} now={NOW} />
+      </div>,
+    );
+    const row = rowOf(screen.container, "billing-webhooks");
+
+    await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+    await expect.element(screen.getByRole("status")).toHaveTextContent(words);
+
+    expect(sent).toEqual([{ path: "/api/jump", body: JSON.stringify({ sessionId: IN_TMUX.id }) }]);
+    const note = row.querySelector('[data-part="jump-note"]') as HTMLElement;
+    expect(note.textContent).toBe(words);
+    // Beside the name, on its line, in the row it belongs to and no other.
+    expect(note.parentElement?.contains(row.querySelector('[data-part="name"]'))).toBe(true);
+    expect(screen.container.querySelectorAll('[data-part="jump-note"]')).toHaveLength(1);
+    expect(row.getBoundingClientRect().height).toBe(44);
+    expect(row.querySelector('[data-part="name"]')?.textContent).toBe("billing-webhooks");
+    expect(warmPaint(screen.container)).toEqual([]);
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
+  },
+);
+
+// The card a window 1,181 to 1,440 pixels wide gives the Sessions list, beside
+// the Events card: the name's line is too short for the name and the badge.
+test.each([
+  ["the pane is selected", 200, { ok: true, kind: "tmux", place: "work:2.1" }, "Selected in tmux"],
+  [
+    "another jump was made a moment before",
+    429,
+    { error: "x", reason: "too-soon" },
+    "Try again in a moment",
+  ],
+])(
+  "in a card too narrow to hold both on a line, when %s the row says so under the name, which is not cut for it, without growing",
+  async (_what, status, body, words) => {
+    setApiHost(async () => new Response(JSON.stringify(body), { status }));
+    const screen = await render(
+      <div style={{ width: 670 }}>
+        <SessionsCard
+          sessions={[IN_TMUX, IN_VSCODE, IN_NEITHER]}
+          sources={[SOURCE_OK, CODEX_OK]}
+          now={NOW}
+        />
+      </div>,
+    );
+    const row = rowOf(screen.container, "billing-webhooks");
+    const cell = row.firstElementChild as HTMLElement;
+    const name = row.querySelector('[data-part="name"]') as HTMLElement;
+    const nameWidth = name.getBoundingClientRect().width;
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+
+    await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+    await expect.element(screen.getByRole("status")).toHaveTextContent(words);
+
+    const note = row.querySelector('[data-part="jump-note"]') as HTMLElement;
+    expect(note.textContent).toBe(words);
+    // Under the name, at its left edge, and whole inside the name's cell.
+    expect(note.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      name.getBoundingClientRect().bottom,
+    );
+    expect(note.getBoundingClientRect().left).toBe(name.getBoundingClientRect().left);
+    expect(note.getBoundingClientRect().right).toBeLessThanOrEqual(
+      cell.getBoundingClientRect().right,
+    );
+    // The name kept every letter and all its room.
+    expect(name.getBoundingClientRect().width).toBe(nameWidth);
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    expect(name.getAttribute("data-cut")).toBe("false");
+    // The row's 44 pixels hold both lines, so no row under it moves.
+    expect(row.getBoundingClientRect().height).toBe(44);
+  },
+);
+
+test("in a narrow window a tmux session keeps its Jump, and what it came to has a line of its own under the name, which is not cut for it", async () => {
+  await page.viewport(375, 800);
+  setApiHost(
+    async () => new Response(JSON.stringify({ error: "x", reason: "pane-gone" }), { status: 409 }),
+  );
+  const screen = await render(
+    <SessionsCard sessions={[IN_TMUX]} sources={[SOURCE_OK]} now={NOW} />,
+  );
+  const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  const row = rowOf(screen.container, "billing-webhooks");
+  const name = row.querySelector('[data-part="name"]') as HTMLElement;
+  const nameWidth = name.getBoundingClientRect().width;
+
+  await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+  await expect.element(screen.getByRole("status")).toHaveTextContent("That pane has closed");
+
+  const note = row.querySelector('[data-part="jump-note"]') as HTMLElement;
+  // Under the name and over the status, at the name's left edge, as wide as its words.
+  expect(note.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    name.getBoundingClientRect().bottom,
+  );
+  expect(note.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    (row.querySelector('[data-part="status-under"]') as HTMLElement).getBoundingClientRect().top,
+  );
+  expect(note.getBoundingClientRect().left).toBe(name.getBoundingClientRect().left);
+  expect(note.getBoundingClientRect().width).toBeLessThan(160);
+  // The name kept every letter and all its room.
+  expect(name.getBoundingClientRect().width).toBe(nameWidth);
+  expect(name.getAttribute("data-cut")).toBe("false");
+  expect(screen.container.querySelectorAll('[data-part="jump-note"]')).toHaveLength(1);
+  expect(screen.container.querySelectorAll('[data-part="jump-said"]')).toHaveLength(1);
+  expect(note.getBoundingClientRect().right).toBeLessThanOrEqual(
+    card.getBoundingClientRect().right,
+  );
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
 });

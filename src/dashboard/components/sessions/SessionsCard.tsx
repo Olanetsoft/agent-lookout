@@ -14,7 +14,7 @@ import {
   showsAgents,
   sourceNames,
 } from "@dashboard/lib/sources/sources";
-import { safeJumpLink } from "@dashboard/lib/sessions/status";
+import { jumpWay } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionsCardProps {
@@ -268,7 +268,15 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   const searching = shown.some((source) => source.state === "searching");
   const groups = tableGroups(sessions);
   const listed = groups.flatMap((group) => group.sessions);
-  const jumpColumn = listed.some((session) => safeJumpLink(session) !== null);
+  const ways = listed.map(jumpWay);
+  const jumpColumn = ways.some((way) => way !== null);
+  // What Jump does depends on where a session runs, and the head says only
+  // what the Jumps in this table do.
+  const jumpHint = !ways.some((way) => way?.by === "tmux")
+    ? "Jump opens the session where it runs"
+    : ways.some((way) => way?.by === "link")
+      ? "Jump opens the session, or selects its pane in tmux"
+      : "Jump selects the session's pane in tmux";
   const agents = showsAgents(sources);
   const narrow = useNarrow();
   const agentColumn = agents && !narrow;
@@ -372,7 +380,7 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
       aside={
         jumpColumn ? (
           <span data-part='hint' className='max-mid:hidden'>
-            Jump opens the session where it runs
+            {jumpHint}
           </span>
         ) : undefined
       }

@@ -4,12 +4,13 @@ import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session
 import { waitingLabel } from "@core/sessions/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
+import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Badge } from "@dashboard/components/ui/status/Badge";
-import { Button } from "@dashboard/components/ui/controls/Button";
 import { DurationFigure } from "@dashboard/components/ui/status/DurationFigure";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
+import { useJump } from "@dashboard/hooks/data/useJump";
 import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import {
   durationInWords,
@@ -25,7 +26,7 @@ import {
   type CountState,
 } from "@dashboard/lib/sessions/sessions";
 import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
-import { safeJumpLink, SURFACE_LABEL, waitingDetail } from "@dashboard/lib/sessions/status";
+import { SURFACE_LABEL, waitingDetail } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 import {
   unmeasuredNote,
@@ -175,23 +176,6 @@ function Place({
   );
 }
 
-/** The one solid button on the screen: the lamp's fill, for a session that needs the person now. */
-function Jump({ session, size }: { session: Session; size: "hero" | "sm" }) {
-  const link = safeJumpLink(session);
-  if (!link) return null;
-  return (
-    <Button asChild variant='needs-you' size={size} className={size === "sm" ? "w-16" : undefined}>
-      <a
-        href={link}
-        data-part='jump'
-        aria-label={`Jump to ${session.name} in ${SURFACE_LABEL[session.surface]}`}
-      >
-        Jump
-      </a>
-    </Button>
-  );
-}
-
 /** "Process ended", for a waiting session whose process has gone. */
 function Ended({ session }: { session: Session }) {
   return session.alive === false ? <Badge tone='outline'>Process ended</Badge> : null;
@@ -205,10 +189,12 @@ function waitedFor(session: Session, asOf: number): number | null {
 /**
  * The longest wait, in full: its name large, why it waits and where it runs on
  * the left; the wait at the hero's largest size, when it began, and the Jump on
- * the right.
+ * the right. Its Jump is the lamp's fill, the one solid button on the screen,
+ * because the session needs the person now.
  */
 function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
+  const jump = useJump(session.id);
   return (
     <div
       data-slot='hero-session'
@@ -216,11 +202,15 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
       className='flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4'
     >
       <div className='min-w-0 flex-1'>
-        <div className='mt-3.5 flex min-w-0 items-center gap-3'>
-          <Truncated data-part='name' className='text-name font-semibold'>
-            {session.name}
-          </Truncated>
-          <Ended session={session} />
+        {/* What Jump came to goes under the name when the line cannot hold both. */}
+        <div className='mt-3.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
+          <div className='flex max-w-full min-w-0 items-center gap-3'>
+            <Truncated data-part='name' className='text-name font-semibold'>
+              {session.name}
+            </Truncated>
+            <Ended session={session} />
+          </div>
+          <JumpNote session={session} jump={jump} />
         </div>
         <p data-part='reason' className='mt-2 flex min-w-0 text-lead font-medium'>
           <Reason session={session} className='truncate' />
@@ -258,7 +248,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
             )}
           </p>
         </div>
-        <Jump session={session} size='hero' />
+        <Jump session={session} jump={jump} variant='needs-you' size='hero' />
       </div>
     </div>
   );
@@ -267,6 +257,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
 /** A wait after the longest, as one compact row with the same parts. */
 function Other({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
+  const jump = useJump(session.id);
   return (
     <li
       data-slot='hero-session'
@@ -274,11 +265,14 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
       className='flex items-center gap-5 border-t border-hairline py-3 max-mid:flex-wrap max-mid:gap-x-4 max-mid:gap-y-2'
     >
       <div className='min-w-0 flex-1 max-mid:basis-full'>
-        <div className='flex min-w-0 items-center gap-2'>
-          <Truncated data-part='name' className='text-lead font-semibold text-ink'>
-            {session.name}
-          </Truncated>
-          <Ended session={session} />
+        <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
+          <div className='flex max-w-full min-w-0 items-center gap-2'>
+            <Truncated data-part='name' className='text-lead font-semibold text-ink'>
+              {session.name}
+            </Truncated>
+            <Ended session={session} />
+          </div>
+          <JumpNote session={session} jump={jump} />
         </div>
         <p
           data-part='reason'
@@ -304,7 +298,7 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
           </>
         )}
       </p>
-      <Jump session={session} size='sm' />
+      <Jump session={session} jump={jump} variant='needs-you' size='sm' />
     </li>
   );
 }
@@ -493,7 +487,8 @@ export function HeroPanel({
           count={waiting.length}
           onOpen={openHistory && (() => openHistory("needsYou"))}
         />
-        <Lead session={first} asOf={asOf} agent={agentOf(first)} />
+        {/* Keyed, so what a press of one session's Jump came to is never said of another. */}
+        <Lead key={first.id} session={first} asOf={asOf} agent={agentOf(first)} />
         {rest.length > 0 && (
           <ul data-part='others' aria-label='Also waiting, longest first' className='mt-5'>
             {rest.map((session) => (

@@ -3,6 +3,7 @@ import type {
   EventKind,
   EventSeverity,
   HistoryPoint,
+  JumpTarget,
   Session,
   SessionEvent,
   SessionsSnapshot,
@@ -121,7 +122,22 @@ export function readSession(value: unknown): Session | null {
     const open = text(value.links.open);
     if (open) session.links.open = open;
   }
+  const jump = readJump(value.jump);
+  if (jump) session.jump = jump;
   return session;
+}
+
+/** The longest place a label carries. The collector cuts a long name well short of this. */
+const MAX_PLACE_LENGTH = 200;
+
+/**
+ * Where the collector can take the person, or null when the answer names no
+ * kind of place this page knows, or names it with anything but a short text.
+ */
+function readJump(value: unknown): JumpTarget | null {
+  if (!isRecord(value) || value.kind !== "tmux") return null;
+  const place = text(value.place);
+  return place && place.length <= MAX_PLACE_LENGTH ? { kind: "tmux", place } : null;
 }
 
 /** One source's health, or null when it has no id. */

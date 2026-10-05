@@ -44,6 +44,33 @@ test("missing links become no links, and a link that is not text is dropped", ()
   expect(readSession({ ...withoutLinks, links: { open: ["a"] } })?.links).toEqual({});
 });
 
+test("a place the collector can take the person to is read when it is a tmux pane named in a short text", () => {
+  const sent = makeSession({ pid: 4242, alive: true, jump: { kind: "tmux", place: "work:2.1" } });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+
+  // Whatever else the answer holds beside the place is not kept.
+  const padded = { ...sent, jump: { kind: "tmux", place: "work:2.1", pane: "%7", run: "x" } };
+  expect(readSession(padded)?.jump).toEqual({ kind: "tmux", place: "work:2.1" });
+});
+
+test.each([
+  ["nothing", undefined],
+  ["null", null],
+  ["a text", "tmux, work:2.1"],
+  ["a list", [{ kind: "tmux", place: "work:2.1" }]],
+  ["a kind this page does not know", { kind: "iterm", place: "work:2.1" }],
+  ["no kind", { place: "work:2.1" }],
+  ["no place", { kind: "tmux" }],
+  ["an empty place", { kind: "tmux", place: "  " }],
+  ["a place that is not text", { kind: "tmux", place: 21 }],
+  ["a place too long to be one", { kind: "tmux", place: "x".repeat(201) }],
+])("a jump that is %s is no jump, and the session is still read", (_what, jump) => {
+  const read = readSession({ ...makeSession(), jump });
+
+  expect(read?.id).toBe(makeSession().id);
+  expect(read && "jump" in read).toBe(false);
+});
+
 test("a surface or status the page does not know is read as unknown, not dropped", () => {
   const read = readSession({ ...makeSession(), surface: "tmux", status: "paused" });
 

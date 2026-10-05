@@ -21,6 +21,16 @@ import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
  */
 export type ApiHandler = (req: IncomingMessage, res: ServerResponse) => void;
 
+/** An answer a route worked out for the handler to send. */
+export interface ApiAnswer {
+  status: number;
+  body: unknown;
+  headers?: Record<string, string>;
+}
+
+/** Where the one route that does something is. Every other route only reads. */
+export const JUMP_PATH = "/api/jump";
+
 export interface ApiHandlerOptions {
   version: string;
   poller: Pick<Poller, "getSnapshot" | "startedAt">;
@@ -31,6 +41,12 @@ export interface ApiHandlerOptions {
    * on its requests. Left out, the header is ignored.
    */
   notifications?: Pick<ServerNotifications, "pageSaid">;
+  /**
+   * Answers `POST /api/jump`, with checks of its own on top of the ones every
+   * request passes: `createJumpRoute` in `jumpRoute.ts`. Left out, there is no
+   * such route.
+   */
+  jump?: (req: IncomingMessage) => Promise<ApiAnswer>;
   now?: () => number;
 }
 
@@ -133,7 +149,7 @@ function numberParam(value: string | null): number | undefined | "invalid" {
 }
 
 export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
-  const { version, poller, events, history, notifications } = options;
+  const { version, poller, events, history, notifications, jump } = options;
   const now = options.now ?? Date.now;
 
   function route(req: IncomingMessage, res: ServerResponse): void {
@@ -142,15 +158,34 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
       fail(res, 403, refusal);
       return;
     }
-    if (req.method !== "GET") {
-      fail(res, 405, "The API only answers GET requests.", { Allow: "GET" });
-      return;
-    }
 
-    let url: URL;
+    let url: URL | null;
     try {
       url = new URL(req.url ?? "/", "http://localhost");
     } catch {
+      url = null;
+    }
+
+    // The one route that is not a GET. It makes its own checks, method included,
+    // after the ones above, which every request has passed by now.
+    if (jump && url?.pathname === JUMP_PATH) {
+      jump(req)
+        .then((answer) => send(res, answer.status, answer.body, answer.headers))
+        .catch(() => {
+          if (res.headersSent) res.end();
+          else fail(res, 500, "The collector ran into an unexpected problem.");
+        })
+        .catch(() => {
+          // The connection has gone, and there is nobody left to tell.
+        });
+      return;
+    }
+
+    if (req.method !== "GET") {
+      fail(res, 405, "This address only answers GET requests.", { Allow: "GET" });
+      return;
+    }
+    if (url === null) {
       fail(res, 400, "That address could not be read.");
       return;
     }

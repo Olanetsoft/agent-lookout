@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import type { HistoryResponse } from "@core/api";
 import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/sessions/session";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
+import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -130,6 +131,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   document.documentElement.removeAttribute("data-theme");
+  setApiHost();
   await page.viewport(414, 896);
 });
 
@@ -673,4 +675,188 @@ test("the hero ends with the waits and then the counts, in that order", async ()
   expect(panel.lastElementChild).toBe(counts);
   // The waits are drawn from the history, and name the period honestly.
   expect(waited.getAttribute("aria-label")).toBe("Waited on you since 13:32");
+});
+
+/** The same wait, in a terminal that runs inside a tmux pane: no link, and a place to select. */
+const WAITING_IN_TMUX = session(1, {
+  name: "demo-project",
+  surface: "terminal",
+  status: "needs-you",
+  waitingReason: "permission",
+  statusSince: NOW - (4 * MINUTE + 11 * SECOND),
+  pid: 4321,
+  alive: true,
+  jump: { kind: "tmux", place: "work:2.1" },
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme a waiting session in tmux has the solid Jump where a VS Code one has, as a button named for the place",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    const screen = await renderHero({ sessions: [WAITING_IN_TMUX, BUSY, RESTING] });
+    const jump = screen.getByRole("button", { name: "Jump to demo-project in tmux, work:2.1" });
+
+    await expect.element(jump).toBeVisible();
+    expect(jump.element().tagName).toBe("BUTTON");
+    expect(jump.element().getAttribute("data-variant")).toBe("needs-you");
+    const style = getComputedStyle(jump.element());
+    expect(style.backgroundColor).toBe(rgbOf("var(--status-needs-you)"));
+    expect(style.height).toBe("38px");
+    expect(hero(screen.container).querySelector("a")).toBeNull();
+
+    // It sits where the link sits for a session in VS Code.
+    const place = jump.element().getBoundingClientRect();
+    const linked = await renderHero();
+    const link = linked.getByRole("link", { name: "Jump to demo-project in VS Code" }).element();
+    expect(Math.round(place.right - hero(screen.container).getBoundingClientRect().right)).toBe(
+      Math.round(
+        link.getBoundingClientRect().right - hero(linked.container).getBoundingClientRect().right,
+      ),
+    );
+    expect(Math.round(place.width)).toBe(Math.round(link.getBoundingClientRect().width));
+  },
+);
+
+test.each([
+  [
+    "the pane is selected",
+    200,
+    { ok: true, kind: "tmux", place: "work:2.1" },
+    "Selected in tmux",
+    "neutral",
+  ],
+  ["tmux has stopped", 409, { error: "x", reason: "tmux-stopped" }, "tmux has stopped", "outline"],
+] as const)(
+  "pressing it asks for that session, and when %s the hero says so beside the name, in no warm colour",
+  async (_what, status, body, words, tone) => {
+    const sent: unknown[] = [];
+    setApiHost(async (path, init) => {
+      sent.push([path, init?.method, init?.body]);
+      return new Response(JSON.stringify(body), { status });
+    });
+    const screen = await renderHero({ sessions: [WAITING_IN_TMUX, BUSY, RESTING] });
+    const panel = hero(screen.container);
+    const before = panel.getBoundingClientRect().height;
+
+    await screen.getByRole("button", { name: /^Jump to demo-project/ }).click();
+    await expect.element(screen.getByRole("status")).toHaveTextContent(words);
+
+    expect(sent).toEqual([
+      ["/api/jump", "POST", JSON.stringify({ sessionId: WAITING_IN_TMUX.id })],
+    ]);
+    const note = part(panel, "jump-note");
+    expect(note.textContent).toBe(words);
+    expect(note.getAttribute("data-tone")).toBe(tone);
+    expect(note.parentElement?.contains(part(panel, "name"))).toBe(true);
+    expect(warmPaint(note)).toEqual([]);
+    // The hero never uses the muted ink, here included.
+    expect(getComputedStyle(note).color).toBe(rgbOf("var(--ink-secondary)"));
+    // Nothing moved to make room, and nothing opened over the page.
+    expect(panel.getBoundingClientRect().height).toBe(before);
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
+  },
+);
+
+test("where the name's line cannot hold both, what a press came to goes under the name, which is not cut for it", async () => {
+  // The hero as a window 375 pixels wide draws it, beside the rail.
+  await page.viewport(375, 800);
+  setApiHost(
+    async () => new Response(JSON.stringify({ ok: true, kind: "tmux", place: "work:2.1" })),
+  );
+  const screen = await render(
+    <div style={{ width: 283 }}>
+      <HeroPanel
+        sessions={[{ ...WAITING_IN_TMUX, name: "checkout-flow" }]}
+        sources={[CLAUDE]}
+        history={watched()}
+        now={NOW}
+      />
+    </div>,
+  );
+  const panel = hero(screen.container);
+  const name = part(panel, "name");
+  const nameWidth = name.getBoundingClientRect().width;
+  expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+
+  await screen.getByRole("button", { name: /^Jump to checkout-flow/ }).click();
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Selected in tmux");
+
+  const note = part(panel, "jump-note");
+  expect(note.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    name.getBoundingClientRect().bottom,
+  );
+  expect(note.getBoundingClientRect().left).toBe(name.getBoundingClientRect().left);
+  // The name kept every letter and all its room.
+  expect(name.getBoundingClientRect().width).toBe(nameWidth);
+  expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+  expect(name.getAttribute("data-cut")).toBe("false");
+  expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+});
+
+test("with several waiting, each one in tmux has its own solid Jump, and what one came to is said of that one alone", async () => {
+  setApiHost(
+    async () => new Response(JSON.stringify({ ok: true, kind: "tmux", place: "api:0.0" })),
+  );
+  const other = session(6, {
+    name: "api-rate-limits",
+    status: "needs-you",
+    waitingReason: "question",
+    statusSince: NOW - 40 * SECOND,
+    pid: 4322,
+    alive: true,
+    jump: { kind: "tmux", place: "api:0.0" },
+  });
+  const plain = session(7, {
+    name: "email-templates",
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: NOW - 20 * SECOND,
+  });
+  const screen = await renderHero({ sessions: [WAITING_IN_TMUX, other, plain] });
+  const panel = hero(screen.container);
+
+  const jumps = [...panel.querySelectorAll<HTMLElement>('[data-part="jump"]')];
+  expect(jumps.map((jump) => jump.getAttribute("aria-label"))).toEqual([
+    "Jump to demo-project in tmux, work:2.1",
+    "Jump to api-rate-limits in tmux, api:0.0",
+  ]);
+  for (const jump of jumps) {
+    expect(jump.tagName).toBe("BUTTON");
+    expect(getComputedStyle(jump).backgroundColor).toBe(rgbOf("var(--status-needs-you)"));
+  }
+
+  await screen.getByRole("button", { name: /^Jump to api-rate-limits/ }).click();
+  await vi.waitFor(() => expect(panel.querySelectorAll('[data-part="jump-note"]')).toHaveLength(1));
+  const note = part(panel, "jump-note");
+  const row = note.closest('[data-slot="hero-session"]') as HTMLElement;
+  expect(row.getAttribute("data-session")).toBe(other.id);
+  expect(note.textContent).toBe("Selected in tmux");
+});
+
+test("what a press came to does not pass to another session that takes the lead", async () => {
+  setApiHost(
+    async () => new Response(JSON.stringify({ ok: true, kind: "tmux", place: "work:2.1" })),
+  );
+  const screen = await renderHero({ sessions: [WAITING_IN_TMUX] });
+  await screen.getByRole("button", { name: /^Jump to demo-project/ }).click();
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Selected in tmux");
+
+  // The first is answered, and another session is now the one waiting.
+  const next = session(8, {
+    name: "infra-terraform",
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: NOW - 5 * SECOND,
+    pid: 4323,
+    alive: true,
+    jump: { kind: "tmux", place: "infra:1.0" },
+  });
+  await screen.rerender(
+    <div style={{ width: 820, padding: 24 }}>
+      <HeroPanel sessions={[next]} sources={[CLAUDE]} history={watched()} now={NOW} />
+    </div>,
+  );
+
+  expect(part(hero(screen.container), "name").textContent).toBe("infra-terraform");
+  expect(hero(screen.container).querySelector('[data-part="jump-note"]')).toBeNull();
 });

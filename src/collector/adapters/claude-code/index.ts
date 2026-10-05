@@ -8,6 +8,7 @@ import {
 import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
+import type { PaneFinder } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import {
   createFeedReader,
@@ -74,6 +75,12 @@ export interface ClaudeCodeAdapterOptions {
   registryIo?: RegistryIo;
   /** Reads when processes started. Defaults to asking `ps`. */
   readProcessStarts?: ReadProcessStarts;
+  /**
+   * Finds the tmux pane each live session's process runs in, so that Jump can
+   * select it. The collector passes the one it also acts with. Left out, no
+   * pane is looked for and tmux is never run.
+   */
+  panes?: Pick<PaneFinder, "look" | "paneOf">;
   /** How long `claude agents --json` gets. Defaults to 5 seconds. */
   feedTimeoutMs?: number;
   /** How often the command is run. Defaults to 30 seconds. */
@@ -168,6 +175,10 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * this machine is not run at all and only the named directory's registry is
  * read. The feed runs again when `AGENT_LOOKOUT_CLAUDE_BIN` names a program too,
  * because then the person has said exactly what to run.
+ *
+ * A live session whose process runs inside a tmux pane is given a `jump` that
+ * names the place, when the adapter is handed something to find panes with.
+ * The finder keeps its own slow beat, so tmux is not asked on every poll.
  */
 export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Adapter {
   const env = options.env ?? process.env;
@@ -314,7 +325,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
-    const context: SessionContext = { now: checkedAt, isAlive };
+    const context: SessionContext = {
+      now: checkedAt,
+      isAlive,
+      paneOf: (pid) => options.panes?.paneOf(pid),
+    };
 
     // How often the command is due depends on whether the registry can be relied
     // on, so the registry is read first. On the first poll the command is due
@@ -347,6 +362,16 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     const answer = read?.feed.ok ? read.feed.entries : null;
     const problem = problemWith(reading, read);
     const { registry, live } = reading;
+
+    if (options.panes) {
+      // Every process a session below can have: the registry's, and the ones
+      // the command listed, for when sessions come from its answer.
+      const pids = new Set(live.map((entry) => entry.pid));
+      for (const entry of answer ?? []) {
+        if (entry.pid !== undefined && isAlive(entry.pid)) pids.add(entry.pid);
+      }
+      await options.panes.look([...pids]);
+    }
 
     const fallbackEvery = every(feedFallbackIntervalMs);
     const facts = watching(

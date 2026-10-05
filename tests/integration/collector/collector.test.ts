@@ -18,13 +18,18 @@ import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node
 /**
  * A collector built the way every host builds it, with its default adapters,
  * and settings that name nothing on this machine: an empty Claude Code folder,
- * which on its own keeps the claude command from being run, and a Codex folder
- * of the test's choosing. Served over real HTTP on a free loopback port.
+ * which on its own keeps the claude command from being run, a Codex folder of
+ * the test's choosing, and tmux turned off. Served over real HTTP on a free
+ * loopback port.
  */
 async function serve(codex: Record<string, string>) {
   const collector = createCollector({
     version: "9.9.9-test",
-    env: { AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(), ...codex },
+    env: {
+      AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+      AGENT_LOOKOUT_TMUX: "off",
+      ...codex,
+    },
     now: () => NOW,
   });
   const port = await listen(createServer(collector.handler));

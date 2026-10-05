@@ -61,9 +61,9 @@ async function distFolder(withPage: boolean): Promise<string> {
 
 /**
  * Settings that name nothing on this machine: an empty Claude home, a
- * stand-in `claude` that lists no sessions and an empty Codex home, on a free
- * port. The poller runs in this process, so anything less would read the real
- * `~/.claude` and `~/.codex` and run the real `claude`.
+ * stand-in `claude` that lists no sessions, an empty Codex home and tmux turned
+ * off, on a free port. The poller runs in this process, so anything less would
+ * read the real `~/.claude` and `~/.codex` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -76,6 +76,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
+      AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
       ...overrides,
     },

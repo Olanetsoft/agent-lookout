@@ -9,6 +9,19 @@ export type SessionStatus = "needs-you" | "working" | "idle" | "finished" | "fai
 
 export type WaitingReason = "permission" | "question" | "other";
 
+/**
+ * A place the collector can take the person to itself, when the dashboard asks
+ * it to with `POST /api/jump`. Today that is a tmux pane.
+ *
+ * It names the place in words, for a label, and holds nothing a command could
+ * be made of. What the collector acts on, the pane it found, never leaves it.
+ */
+export interface JumpTarget {
+  kind: "tmux";
+  /** The session, window and pane as tmux writes them, for example `work:2.1`. */
+  place: string;
+}
+
 export interface Session {
   /** Stable across polls: `${source}:${vendor session id, or pid when there is none}`. */
   id: string;
@@ -38,6 +51,8 @@ export interface Session {
   alive?: boolean;
   /** Deep links. `open` jumps to the session in its own app. */
   links: { open?: string };
+  /** Present when the collector can take the person to the session: see `JumpTarget`. */
+  jump?: JumpTarget;
   /** True when the session has been idle longer than the stale threshold. */
   stale: boolean;
 }

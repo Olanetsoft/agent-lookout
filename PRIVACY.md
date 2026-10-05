@@ -24,6 +24,31 @@ To find the `claude` binary, Agent Lookout reads the `PATH` environment variable
 
 A registry file can outlive a crashed session, and the system can later give its process ID to another program. To catch that, Agent Lookout runs `ps -o pid=,lstart= -p <pids>`, which prints when each of those processes started, and compares the answer with the `procStart` that the registry file recorded. A file whose process started at another time is not shown as a session. One run covers several processes, and each process is asked about at most once every 30 seconds. `ps` is run directly from `/usr/bin` or `/bin`, never through a shell, and never on Windows.
 
+### `tmux`
+
+A Claude Code session that runs inside tmux gets a Jump button, and for that Agent Lookout has to know which pane the session's process is in. While at least one Claude Code session is running, it runs:
+
+```sh
+tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'
+```
+
+It runs this when it first has a session to ask about and every 30 seconds after that. It runs it sooner when a new session's process appears, though never within 5 seconds of the last run, and once more after a Jump has found its pane gone or tmux stopped. For every pane of the tmux server it reads five things: the ID of the process tmux started in the pane, the pane's ID, the numbers of its window and of the pane, and the name of its tmux session. It reads nothing a pane shows, and no pane's title, command or folder. With no Claude Code session running, it does not run tmux.
+
+When tmux lists at least one pane, Agent Lookout also runs `ps -A -o pid=,ppid=`, which prints the ID of every process on this machine and the ID of its parent, and nothing else about any of them. It follows each session's process up through its parents until it reaches a pane's process. The list of processes is dropped as soon as that is done.
+
+For a session found in a pane, the dashboard is sent the tmux session's name with the window and pane numbers, such as `work:2.1`, to show on the Jump button. The pane's ID stays in the server, in memory.
+
+When you press Jump on such a session, the page sends the server the session's ID, and the server runs these, each with the pane's ID that it found itself:
+
+- `tmux select-window -t <pane ID>` and `tmux select-pane -t <pane ID>`, which select the pane and its window
+- `tmux -u display-message -p -t <pane ID> '#{session_id} #{window_index} #{pane_index} #{session_name}'`, which prints where the pane is and changes nothing
+- `tmux list-clients -F '#{session_id} #{client_name}'`, which prints each terminal attached to tmux and the ID of the tmux session it is showing
+- `tmux switch-client -c <terminal> -t <pane ID>`, once for each terminal that is showing another tmux session
+
+These change which pane, window and tmux session are selected, and nothing else. No keys and no text are sent to any pane.
+
+tmux is started directly, never through a shell, with stdin closed and a 2 second timeout, and never on Windows. Agent Lookout looks for it in each `PATH` directory, then at `/opt/homebrew/bin/tmux`, `/usr/local/bin/tmux`, `/opt/local/bin/tmux` and `/usr/bin/tmux`, and runs nothing when it is not there. tmux is given the environment Agent Lookout was started with, so it reaches the tmux server the `tmux` command would reach from there. None of these commands starts a tmux server. When the folder tmux keeps its sockets in is not there yet, `/tmp/tmux-` followed by your user number, tmux itself makes it, empty, the first time it is asked. With `AGENT_LOOKOUT_TMUX=off`, Agent Lookout runs neither tmux nor that `ps`.
+
 ### Whether a process exists
 
 Agent Lookout asks the operating system whether each Claude Code session's process still exists with a signal-0 check on the process ID, which sends nothing to the process.
@@ -55,7 +80,7 @@ With notifications on, and no dashboard page open to show one, Agent Lookout sho
 
 ### Settings
 
-It reads eight settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads nine settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -65,7 +90,7 @@ It reads eight settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGEN
 - Codex's `auth.json`, `config.toml`, `history.jsonl`, its SQLite files (`*.sqlite`), its `log/` folder, `archived_sessions/` and compressed session files (`*.jsonl.zst`), and the Codex desktop app's `external_agent_session_imports.json` and `.codex-global-state.json`.
 - The files of any other application.
 
-It runs no program but the `claude` binary, `ps` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder or to any agent tool's files, and it never sends input to a session.
+It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder or to any agent tool's files, and it never sends input to a session. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
 
 ## Network
 
@@ -77,11 +102,11 @@ The `claude agents` command is Claude Code's own program, and it may contact Ant
 
 The API refuses any request whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]`, any request whose `Origin` header names another site, and any request the browser marks as cross-site. It sends no CORS headers. Together these stop a website you visit from reading your session names and paths through your browser.
 
-Each request the dashboard makes carries one header of Agent Lookout's own, `X-Agent-Lookout-Notifications`, which says `on` or `off`: whether that page has notifications on. It goes to Agent Lookout's own server and nowhere else. [Notifications](#notifications) says what the server does with it.
+Each request the dashboard makes carries one header of Agent Lookout's own, `X-Agent-Lookout-Notifications`, which says `on` or `off`: whether that page has notifications on. It goes to Agent Lookout's own server and nowhere else. [Notifications](#notifications) says what the server does with it. The request the Jump button sends for a session in tmux carries one more, `X-Agent-Lookout-Action: jump`, which names what is asked for.
 
-The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account. Such a program can also send that header, and so turn the notifications the server shows on or off.
+The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account. Such a program can also send that header, and so turn the notifications the server shows on or off. It can also ask the server to select a tmux pane, as the Jump button does.
 
-The Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code.
+For a session in VS Code, the Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code. For a session in tmux, the Jump button sends a request that holds the session's ID to Agent Lookout's own server, which selects the pane as described under [`tmux`](#tmux). That request is the only one that changes anything, and the server answers it only for a page served from this machine. [SECURITY.md](SECURITY.md) lists its checks.
 
 ## Notifications
 
@@ -126,7 +151,7 @@ A notification the server shows differs from the browser's:
 
 ## Storage
 
-Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So is what the dashboard pages last said about notifications.
+Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, and what the dashboard pages last said about notifications.
 
 With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays.
 

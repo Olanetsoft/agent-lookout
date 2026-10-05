@@ -34,6 +34,11 @@ export interface TestRequest {
    * to send no Host header at all.
    */
   headers?: Record<string, string | null>;
+  /**
+   * A body, sent as it is. `Content-Length` is set from it, unless the headers
+   * give one or say the body comes in chunks.
+   */
+  body?: string;
 }
 
 /**
@@ -53,6 +58,12 @@ export function request(
     } else {
       headers[name] = value;
     }
+  }
+
+  const sent = Object.keys(headers).map((name) => name.toLowerCase());
+  const sized = sent.includes("content-length") || sent.includes("transfer-encoding");
+  if (options.body !== undefined && !sized) {
+    headers["Content-Length"] = String(Buffer.byteLength(options.body));
   }
 
   return new Promise((resolve, reject) => {
@@ -81,6 +92,6 @@ export function request(
       },
     );
     req.on("error", reject);
-    req.end();
+    req.end(options.body);
   });
 }

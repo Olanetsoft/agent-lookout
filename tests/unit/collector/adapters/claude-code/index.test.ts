@@ -6,8 +6,16 @@ import {
   FEED_INTERVAL_MS,
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
-import { HOME } from "@tests/fixtures/claudeCode";
-import { adapterFor, now, watching, WITHHELD } from "@tests/support/adapters/claudeCodeAdapter";
+import type { TmuxPane } from "@collector/tmux/panes";
+import { HOME, pids, registryFiles } from "@tests/fixtures/claudeCode";
+import {
+  adapterFor,
+  fails,
+  now,
+  prints,
+  watching,
+  WITHHELD,
+} from "@tests/support/adapters/claudeCodeAdapter";
 
 // The adapter with every outside thing handed in: the registry folder is a
 // stand-in that is never on disk, and no command or process is real. The tests
@@ -95,5 +103,112 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
       "/Users/example/elsewhere/sessions",
       "/Users/example/.claude/sessions",
     ]);
+  });
+});
+
+describe("tmux panes", () => {
+  /** The fixtures' registry folder, held in memory. */
+  const registryIo: RegistryIo = {
+    readdir: async () => Object.keys(registryFiles),
+    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+  };
+
+  /** A stand-in for the collector's finder: it knows one pane, and writes down who it was asked about. */
+  function knownPanes(panes: Record<number, TmuxPane>) {
+    const looked: number[][] = [];
+    return {
+      looked,
+      look: async (asked: readonly number[]) => {
+        looked.push([...asked].sort());
+      },
+      paneOf: (pid: number) => panes[pid],
+    };
+  }
+
+  const pane: TmuxPane = { pid: 4100, id: "%3", place: "api-rate-limits:0.1" };
+
+  test("a live session whose process is in a pane is given the place, and the others are not", async () => {
+    const panes = knownPanes({ [pids.question]: pane });
+    const { sessions } = await adapterFor("/Users/example/elsewhere", { registryIo, panes }).poll();
+
+    expect(panes.looked).toEqual([[pids.busy, pids.permission, pids.question, pids.idle]]);
+    expect(sessions.map((session) => [session.name, session.jump])).toEqual([
+      ["demo-project", undefined],
+      ["demo-api", undefined],
+      ["demo-docs", { kind: "tmux", place: "api-rate-limits:0.1" }],
+      ["demo-site", undefined],
+      ["nightly-report", undefined],
+    ]);
+    expect(JSON.stringify(sessions)).not.toContain("%3");
+  });
+
+  test("the finder is asked on every poll, and keeps its own beat", async () => {
+    const panes = knownPanes({});
+    const adapter = adapterFor("/Users/example/elsewhere", { registryIo, panes });
+    await adapter.poll();
+    await adapter.poll();
+
+    expect(panes.looked).toHaveLength(2);
+  });
+
+  test("while sessions come from the command, its processes are the ones asked about", async () => {
+    const panes = knownPanes({ [pids.busy]: pane });
+    const { sessions, basis } = await adapterFor("/Users/example/elsewhere", {
+      registryIo: unlistable,
+      panes,
+    }).poll();
+
+    expect(basis).toBe("feed");
+    expect(panes.looked).toEqual([[pids.busy, pids.permission, pids.question, pids.idle]]);
+    expect(sessions.find((session) => session.name === "demo-project")?.jump).toEqual({
+      kind: "tmux",
+      place: "api-rate-limits:0.1",
+    });
+  });
+
+  test("a process that has gone is not asked about", async () => {
+    const panes = knownPanes({});
+    await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      panes,
+      isAlive: (pid) => pid !== pids.idle,
+    }).poll();
+
+    expect(panes.looked).toEqual([[pids.busy, pids.permission, pids.question]]);
+  });
+
+  test("with no session there is nobody to ask about", async () => {
+    const panes = knownPanes({});
+    await adapterFor("/Users/example/elsewhere", {
+      registryIo: { readdir: async () => [], readFile: async () => "" },
+      run: prints("[]"),
+      panes,
+    }).poll();
+
+    expect(panes.looked).toEqual([[]]);
+  });
+
+  test("without a finder no pane is looked for, and the sessions are as they were", async () => {
+    const withFinder = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      panes: knownPanes({}),
+    });
+    const without = adapterFor("/Users/example/elsewhere", { registryIo });
+
+    expect((await without.poll()).sessions).toEqual((await withFinder.poll()).sessions);
+  });
+
+  test("the health of the source says nothing of tmux, found or not", async () => {
+    const a = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      run: fails("stopped with exit code 1"),
+      panes: knownPanes({ [pids.busy]: pane }),
+    }).poll();
+    const b = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      run: fails("stopped with exit code 1"),
+    }).poll();
+
+    expect(a.health).toEqual(b.health);
   });
 });

@@ -45,14 +45,15 @@ export function fixedLocations(homeDir: string): string[] {
   ];
 }
 
-function pathCandidates(env: NodeJS.ProcessEnv): string[] {
+/** Where a program of this name would be in each `PATH` directory, in order. */
+export function pathCandidates(env: NodeJS.ProcessEnv, program = "claude"): string[] {
   return (
     (env.PATH ?? "")
       .split(path.delimiter)
       // A relative or empty entry means "the current directory". Running whatever
-      // is called `claude` there is not something a monitor should do.
+      // has that name there is not something a monitor should do.
       .filter((dir) => dir !== "" && path.isAbsolute(dir))
-      .map((dir) => path.join(dir, "claude"))
+      .map((dir) => path.join(dir, program))
   );
 }
 

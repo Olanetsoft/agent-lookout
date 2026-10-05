@@ -105,3 +105,25 @@ export function safeJumpLink(session: Pick<Session, "source" | "links">): string
   const allowed = Object.hasOwn(JUMP_LINK, session.source) ? JUMP_LINK[session.source] : undefined;
   return allowed?.test(link) ? link : null;
 }
+
+/**
+ * How Jump reaches a session, with where it goes in words for its label.
+ *
+ * link  an address the browser opens, which hands the session to its own app
+ * tmux  a pane the collector selects when the page asks it to
+ */
+export type JumpWay = { by: "link"; href: string; where: string } | { by: "tmux"; where: string };
+
+/**
+ * The way Jump reaches this session, or null when it has none and gets no
+ * button. A session with a safe link keeps it. Otherwise a session the
+ * collector found in a tmux pane is reached there: "tmux, work:2.1".
+ */
+export function jumpWay(
+  session: Pick<Session, "source" | "surface" | "links" | "jump">,
+): JumpWay | null {
+  const href = safeJumpLink(session);
+  if (href !== null) return { by: "link", href, where: SURFACE_LABEL[session.surface] };
+  if (session.jump?.kind === "tmux") return { by: "tmux", where: `tmux, ${session.jump.place}` };
+  return null;
+}

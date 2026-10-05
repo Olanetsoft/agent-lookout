@@ -286,6 +286,44 @@ describe("sessionFromFeed", () => {
     }
   });
 
+  test("a session whose process was found in a tmux pane names the place, and only the place", () => {
+    const pane = { pid: 4100, id: "%7", place: "checkout-flow:2.1" };
+    const inTmux: SessionContext = {
+      ...context,
+      paneOf: (pid) => (pid === pids.busy ? pane : undefined),
+    };
+    const found = sessionFromRegistry(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy", entrypoint: "cli" },
+      inTmux,
+    );
+    expect(found.jump).toEqual({ kind: "tmux", place: "checkout-flow:2.1" });
+    expect(JSON.stringify(found)).not.toContain("%7");
+    // From the command's answer as well, for when the registry is not relied on.
+    expect(
+      sessionFromFeed({ pid: pids.busy, sessionId: ids.busy, status: "busy" }, undefined, inTmux)
+        .jump,
+    ).toEqual({ kind: "tmux", place: "checkout-flow:2.1" });
+
+    // A session in no pane, and any session when panes are not looked for, has none.
+    const elsewhere = sessionFromRegistry({ pid: pids.idle, sessionId: ids.idle }, inTmux);
+    expect("jump" in elsewhere).toBe(false);
+    const unasked = sessionFromRegistry({ pid: pids.busy, sessionId: ids.busy }, context);
+    expect("jump" in unasked).toBe(false);
+  });
+
+  test("a session whose process has gone is not said to be in a pane", () => {
+    const session = sessionFromRegistry(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy" },
+      {
+        now,
+        isAlive: () => false,
+        paneOf: () => ({ pid: 4100, id: "%7", place: "checkout-flow:2.1" }),
+      },
+    );
+    expect(session.alive).toBe(false);
+    expect("jump" in session).toBe(false);
+  });
+
   test("a background session with no live process has no pid and no liveness", () => {
     const session = sessionFromFeed(
       {

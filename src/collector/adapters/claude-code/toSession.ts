@@ -8,6 +8,7 @@ import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import type { TmuxPane } from "../../tmux/panes.ts";
 import type { FeedEntry } from "./feed.ts";
 import type { RegistryEntry } from "./registry.ts";
 
@@ -20,6 +21,8 @@ export interface SessionContext {
   /** Epoch milliseconds of this poll. */
   now: number;
   isAlive: (pid: number) => boolean;
+  /** The tmux pane a process was last found in, when panes are looked for. */
+  paneOf?: (pid: number) => TmuxPane | undefined;
 }
 
 /** Whether a process exists. A process owned by someone else still exists. */
@@ -91,6 +94,10 @@ function build(fields: Fields, origin: ClaudeCodeOrigin, context: SessionContext
   if (fields.pid !== undefined) {
     session.pid = fields.pid;
     session.alive = context.isAlive(fields.pid);
+    // Only the place's name goes to the dashboard. The pane's id stays with
+    // the collector, which is the one that acts on it.
+    const pane = session.alive ? context.paneOf?.(fields.pid) : undefined;
+    if (pane) session.jump = { kind: "tmux", place: pane.place };
   }
   return session;
 }

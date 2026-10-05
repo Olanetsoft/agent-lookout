@@ -4,7 +4,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
-The first version. It shows Claude Code and Codex sessions and changes nothing on the machine.
+The first version. It shows Claude Code and Codex sessions. The one thing it changes on the machine is which tmux pane is selected, when you press Jump.
 
 ### Added
 
@@ -22,6 +22,8 @@ The first version. It shows Claude Code and Codex sessions and changes nothing o
 - The Events log records when a session appears, changes status or ends, and when Agent Lookout started watching again after a break.
 - The Timeline shows each session's status over the last hour, with the time Agent Lookout did not measure hatched.
 - A Jump button opens a Claude Code session that runs in VS Code.
+- A Claude Code session that runs inside tmux has a Jump button too. It selects the session's pane, the pane's window and, on any attached terminal that is showing another tmux session, the pane's session. The row says what happened: Selected in tmux, That pane has closed or tmux has stopped. It does not bring your terminal to the front.
+- `AGENT_LOOKOUT_TMUX=off` stops Agent Lookout running tmux, and takes the Jump button off sessions in tmux.
 - A rail down the left edge moves between the Overview, Sources and Settings, and its mark lights up while any session needs you.
 - The browser tab's title shows how many sessions need you, so it can be read while the tab is in the background.
 - Turn on notifications in Settings, and your browser shows a system notification when a Claude Code session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.

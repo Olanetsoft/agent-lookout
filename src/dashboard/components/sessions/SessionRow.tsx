@@ -1,19 +1,20 @@
 import type { ReactNode } from "react";
 
 import type { Session } from "@core/sessions/session";
+import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Badge } from "@dashboard/components/ui/status/Badge";
-import { Button } from "@dashboard/components/ui/controls/Button";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
+import { useJump } from "@dashboard/hooks/data/useJump";
 import { formatShortDuration, formatSince, shortDurationInWords } from "@dashboard/lib/format";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { safeJumpLink, STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
+import { STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionRowProps {
   session: Session;
   now: number;
-  /** Whether the table has a Jump column. It is left out when no session has a link. */
+  /** Whether the table has a Jump column. It is left out when no session can be jumped to. */
   jumpColumn: boolean;
   /**
    * A narrow window: the status and its time move under the name, in place of
@@ -63,7 +64,11 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * The tool is never a logo or a colour.
  *
  * The sessions that need the person are the hero's, not the table's, so the
- * Jump here is always the quiet one.
+ * Jump here is always the quiet one. What a press of a tmux session's Jump
+ * came to is said for a few seconds in a badge beside the name. Where the line
+ * cannot hold both, the badge goes under the name, so the name is never cut
+ * for it, and the row's height holds the two lines. In a narrow window it is
+ * always under the name.
  */
 export function SessionRow({
   session,
@@ -83,7 +88,7 @@ export function SessionRow({
   const quiet = stale || ended || gone;
   const mark: MarkKind = stale ? "stale" : session.status;
   const statusWord = stale ? "Stale" : STATUS_LABEL[session.status];
-  const jump = safeJumpLink(session);
+  const jump = useJump(session.id);
   const since = session.statusSince;
   const surface = SURFACE_LABEL[session.surface];
   const lasted = since !== null ? now - since : null;
@@ -185,18 +190,24 @@ export function SessionRow({
         <div className='flex min-w-0 items-center gap-3'>
           <StatusMark kind={mark} />
           <div className='grid min-w-0 flex-1 gap-px'>
-            <div className='flex min-w-0 items-center gap-2'>
-              <Truncated
-                data-part='name'
-                className={cn(
-                  "text-row",
-                  quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
-                )}
-              >
-                {session.name}
-              </Truncated>
-              {orphaned && <Badge tone='outline'>Process ended</Badge>}
+            {/* What Jump came to goes under the name when the line cannot hold both. */}
+            <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-px'>
+              <div className='flex max-w-full min-w-0 items-center gap-2'>
+                <Truncated
+                  data-part='name'
+                  className={cn(
+                    "text-row",
+                    quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
+                  )}
+                >
+                  {session.name}
+                </Truncated>
+                {orphaned && <Badge tone='outline'>Process ended</Badge>}
+              </div>
+              {!narrow && <JumpNote session={session} jump={jump} />}
             </div>
+            {/* Narrow, there is no room beside the name, so it has a line of its own. */}
+            {narrow && <JumpNote session={session} jump={jump} className='justify-self-start' />}
             {narrow &&
               statusUnder(
                 <span data-part='status' className='whitespace-nowrap'>
@@ -246,17 +257,11 @@ export function SessionRow({
 
       {jumpColumn && (
         <td className={cn(CELL, "overflow-visible text-right")}>
-          {jump && (
-            <Button
-              asChild
-              size='sm'
-              className='w-16 group-hover:bg-fill-selected group-hover:text-ink'
-            >
-              <a href={jump} data-part='jump' aria-label={`Jump to ${session.name} in ${surface}`}>
-                Jump
-              </a>
-            </Button>
-          )}
+          <Jump
+            session={session}
+            jump={jump}
+            className='group-hover:bg-fill-selected group-hover:text-ink'
+          />
         </td>
       )}
     </tr>

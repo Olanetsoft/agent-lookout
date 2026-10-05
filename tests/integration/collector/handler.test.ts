@@ -5,7 +5,9 @@ import { describe, expect, test } from "vitest";
 import type { Adapter } from "@collector/adapters/adapter";
 import { createClaudeCodeAdapter } from "@collector/adapters/claude-code/index";
 import { createCollector } from "@collector/collector";
-import { MAX_HISTORY_WINDOW_MS } from "@collector/handler";
+import { createEventStore } from "@collector/eventStore";
+import { createApiHandler, MAX_HISTORY_WINDOW_MS, type ApiAnswer } from "@collector/handler";
+import { createHistoryStore } from "@collector/historyStore";
 import { NOTIFICATIONS_HEADER, type EventsResponse, type HistoryResponse } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
@@ -275,6 +277,70 @@ describe("routes", () => {
       expect([method, response.status]).toEqual([method, 405]);
       expect(response.headers.allow).toBe("GET");
     }
+  });
+});
+
+describe("the route that acts", () => {
+  /** The handler alone, with whatever answers `/api/jump`, or nothing that does. */
+  async function handlerWith(jump?: () => Promise<ApiAnswer>) {
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+      jump,
+    });
+    return listen(createServer(handler));
+  }
+  const post = (port: number, headers: Record<string, string> = {}) =>
+    request(port, "/api/jump", { method: "POST", body: "{}", headers });
+
+  test("is handed the request only after the checks every request passes", async () => {
+    let asked = 0;
+    const port = await handlerWith(async () => {
+      asked += 1;
+      return { status: 200, body: { ok: true }, headers: { "Retry-After": "1" } };
+    });
+
+    const refused: Record<string, string>[] = [
+      { Host: "evil.example" },
+      { Origin: "https://evil.example" },
+      { "Sec-Fetch-Site": "cross-site" },
+    ];
+    for (const headers of refused) {
+      expect((await post(port, headers)).status).toBe(403);
+    }
+    expect(asked).toBe(0);
+
+    // What it answers is sent as every answer is, with the headers it asked for.
+    const response = await post(port);
+    expect([response.status, response.json()]).toEqual([200, { ok: true }]);
+    expect(response.headers["retry-after"]).toBe("1");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(asked).toBe(1);
+  });
+
+  test("a failure inside it is a plain 500, and the next request is still answered", async () => {
+    const port = await handlerWith(async () => {
+      throw new Error("The stand-in was told to throw.");
+    });
+
+    const response = await post(port);
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({ error: "The collector ran into an unexpected problem." });
+    expect(response.body).not.toContain("stand-in");
+    expect((await request(port, "/api/health")).status).toBe(200);
+  });
+
+  test("a handler built without it has no such route", async () => {
+    const port = await handlerWith();
+
+    const posted = await post(port);
+    expect([posted.status, posted.headers.allow]).toEqual([405, "GET"]);
+    expect((await request(port, "/api/jump")).status).toBe(404);
   });
 });
 

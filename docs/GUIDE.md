@@ -24,7 +24,7 @@ The Overview has five parts. The Needs you panel and the Last hour chart share t
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the app, and the agent once both Claude Code and Codex are found. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session in VS Code has a Jump button that opens it there. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the app, and the agent once both Claude Code and Codex are found. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -61,7 +61,7 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 
 When the list is too narrow for every column, the app is left out first and then the folder, so names keep their room. In a narrow window both are left out and the status moves under the name.
 
-A Claude Code session in VS Code has a Jump button here too.
+A Claude Code session in VS Code or inside tmux has a Jump button here too.
 
 #### Events
 
@@ -129,6 +129,50 @@ A notification shows the session's name outside the dashboard: over other apps, 
 
 The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npm start` serves Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
 
+## Jump
+
+A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, or when its process runs inside a tmux pane. The button is in the Needs you panel and in the Sessions list. No other session has one.
+
+### A session in VS Code
+
+Jump is a link. Your browser opens a `vscode://` address that holds the session's ID, and VS Code opens the session. Agent Lookout's server takes no part in it. VS Code finds the session only when its folder is open in the VS Code window that has focus. Otherwise it starts a new conversation.
+
+### A session in tmux
+
+Jump is a button. Point at it, or move to it with Tab, to read where it goes, such as `tmux, work:2.1`: the tmux session's name, then the window's number and the pane's.
+
+Press it, and the page asks Agent Lookout to select that pane. Agent Lookout runs `tmux` to do three things:
+
+1. make the pane's window the selected window of its tmux session
+2. make the pane the selected pane of that window
+3. switch each terminal that is attached to tmux and showing another tmux session over to this one
+
+A terminal already showing the session is not switched. It shows the window and pane just selected, as tmux does for every terminal on a session.
+
+The session's row then says what happened, by its name, for a few seconds. A second press of the same button within a second does nothing.
+
+| It says               | What happened                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| Selected in tmux      | The pane is selected.                                                                                   |
+| That pane has closed  | tmux no longer has that pane. Nothing was changed, and the button goes within a few seconds.            |
+| tmux has stopped      | No tmux server answered. Nothing was changed, and the button goes within a few seconds.                 |
+| No tmux pane found    | The session has ended, or has left tmux, since the page last heard of it.                               |
+| Try again in a moment | Another Jump was pressed less than a second before. Agent Lookout makes one jump a second.              |
+| Jump did not work     | Agent Lookout did not answer, or could not run tmux. The page says so too if it has stopped altogether. |
+
+Jump for tmux has these limits.
+
+- It does not bring your terminal to the front. Jump selects the pane, and you switch to the terminal yourself. With no terminal attached to tmux, the pane is the one you see when you next attach to that tmux session.
+- It sends nothing to the session: no keys and no text.
+- If another pane of the window was zoomed, tmux ends the zoom when the selected pane changes.
+- It knows one tmux server: the one the `tmux` command reaches from where Agent Lookout was started. That is the default server, or the one Agent Lookout was itself started inside. A session in another tmux server, such as one started with `tmux -L`, gets no button.
+- It asks tmux where its panes are when it first finds a Claude Code session, then every 30 seconds, and within about 5 seconds of a new session appearing. So a session that has just started can be a few seconds without its button. After you move a pane, the place named on the button can be up to 30 seconds out of date. The press still selects the right pane, because it goes by the pane's own ID.
+- When a window is linked into more than one tmux session, tmux chooses which of them is switched to.
+- It is for Claude Code sessions. A session in a terminal that is not running tmux has no button: Jump does not reach a tab of iTerm2 or Terminal.
+- It needs the `tmux` program, on your `PATH` or at `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` or `/usr/bin`. Without it, or while no tmux server is running, no session has the button and nothing else changes.
+
+To stop Agent Lookout running tmux at all, start it with `AGENT_LOOKOUT_TMUX=off`. [PRIVACY.md](../PRIVACY.md#tmux) lists each command it runs and what it reads from tmux.
+
 ## What it does not do yet
 
 It cannot stop, resume or answer a session. It covers Claude Code and Codex, and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
@@ -139,7 +183,7 @@ A Codex session never shows as needing you. Codex's session files do not record 
 
 A Claude Code background job is shown as finished or failed, and its row stays for 24 hours. A Codex session is shown as finished once no Codex program has it open, and its row stays until 24 hours after Codex last wrote to it. A session started by a Codex older than 0.155 is never shown as finished. Any other session that ends leaves the list. The Events log records that it ended, without saying whether it finished or failed.
 
-Codex sessions, and Claude Code sessions in a terminal or the desktop app, have no Jump button. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. Otherwise VS Code starts a new conversation.
+Codex sessions have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
@@ -163,10 +207,11 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 | `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                   |
 | `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                   |
 | `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications itself from the moment it starts. A dashboard page that has notifications off turns them off again.   |
+| `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                        |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code, Codex and notification settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, notification and tmux settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -242,6 +287,8 @@ The program serving the page has stopped. The page keeps the last thing it saw, 
 For Claude Code, Agent Lookout reads the small file Claude Code keeps for each running session in `~/.claude/sessions/`, every 2 seconds. That starts no program and uses no network. When it starts, and every 30 seconds after that, it also runs `claude agents --json --all`, the command Claude Code [documents](https://code.claude.com/docs/en/agent-view) for listing its sessions. That answer decides which sessions exist, and it adds background jobs that have finished or failed. If the command cannot be found or fails, Agent Lookout uses the files alone.
 
 For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder. Codex documents none of these files, so a new Codex version can change them.
+
+While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button.
 
 Agent Lookout never writes to `~/.claude` or `~/.codex`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
 

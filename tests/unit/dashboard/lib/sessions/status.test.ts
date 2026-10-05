@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { eventPhrase, safeJumpLink, waitingDetail } from "@dashboard/lib/sessions/status";
+import { eventPhrase, jumpWay, safeJumpLink, waitingDetail } from "@dashboard/lib/sessions/status";
+import { makeSession } from "@tests/fixtures/session";
 
 test("the vendor's wording is kept only when it adds something", () => {
   // These two say nothing the plain label has not already said.
@@ -114,4 +115,34 @@ test.each([
   "vscode://openai.chatgpt/open?thread=00000000-0000-4000-8000-0000000000c1",
 ])("a Codex session gets no Jump, even with %j", (link) => {
   expect(safeJumpLink({ source: "codex", links: { open: link } })).toBeNull();
+});
+
+test("Jump reaches a VS Code session by its link, and says where in the app's name", () => {
+  const session = makeSession({ surface: "vscode", links: { open: JUMP } });
+  expect(jumpWay(session)).toEqual({ by: "link", href: JUMP, where: "VS Code" });
+});
+
+test("Jump reaches a session the collector found in tmux by its pane, and names the place", () => {
+  const session = makeSession({ jump: { kind: "tmux", place: "work:2.1" } });
+  expect(jumpWay(session)).toEqual({ by: "tmux", where: "tmux, work:2.1" });
+});
+
+test("a session with both keeps its link", () => {
+  const session = makeSession({
+    surface: "vscode",
+    links: { open: JUMP },
+    jump: { kind: "tmux", place: "work:2.1" },
+  });
+  expect(jumpWay(session)?.by).toBe("link");
+});
+
+test("a session with neither, or with a link that is not its source's, has no way", () => {
+  expect(jumpWay(makeSession())).toBeNull();
+  expect(jumpWay(makeSession({ links: { open: "https://evil.example" } }))).toBeNull();
+  // A link that is refused does not stop a pane being reached.
+  const both = makeSession({
+    links: { open: "javascript:alert(1)" },
+    jump: { kind: "tmux", place: "work:2.1" },
+  });
+  expect(jumpWay(both)).toEqual({ by: "tmux", where: "tmux, work:2.1" });
 });

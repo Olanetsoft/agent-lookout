@@ -27,8 +27,8 @@ interface Started {
 
 /**
  * Starts the server with an environment that names nothing on this machine: an
- * empty Claude home, a stand-in `claude` that lists no sessions, and an empty
- * Codex home.
+ * empty Claude home, a stand-in `claude` that lists no sessions, an empty
+ * Codex home, and tmux turned off.
  */
 async function start(env: Record<string, string>): Promise<Started> {
   const home = await makeClaudeHome();
@@ -41,6 +41,7 @@ async function start(env: Record<string, string>): Promise<Started> {
       AGENT_LOOKOUT_CLAUDE_HOME: home,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
+      AGENT_LOOKOUT_TMUX: "off",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
