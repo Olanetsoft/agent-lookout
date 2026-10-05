@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -6,6 +6,7 @@ import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
 import { LAST_LOOKED_STORAGE_KEY } from "@dashboard/hooks/data/useNewSince";
+import { ASK_AFTER_MS } from "@dashboard/hooks/data/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   createCollectorStore,
@@ -2316,4 +2317,384 @@ test("back in sight after the browser held the page's timers back, the line stil
   vi.advanceTimersByTime(9_000);
   await vi.waitFor(() => expect(newLine()).toBeNull());
   await screen.unmount();
+});
+
+describe("finding a session from the keyboard", () => {
+  const LINK = "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000014";
+  const ASK_LINE =
+    "macOS will ask once whether the app you started Agent Lookout from may control Terminal. Allow it to let Jump switch tabs.";
+
+  /**
+   * Four sessions: one waiting in a tmux pane, one working with no Jump, one
+   * idle in a tab of Terminal and one idle in VS Code.
+   */
+  function keyboardState(): CollectorState {
+    const now = Date.now();
+    const busy = snapshot();
+    busy.sessions = [
+      session(11, {
+        name: "checkout-flow",
+        status: "needs-you",
+        waitingReason: "permission",
+        statusSince: testBegan - 4 * MINUTE,
+        cwd: "/Users/example/code/storefront",
+        project: "storefront",
+        git: { branch: "checkout-flow" },
+        pid: 4242,
+        alive: true,
+        jump: { kind: "tmux", place: "work:2.1" },
+      }),
+      session(12, {
+        name: "billing-webhooks",
+        status: "working",
+        statusSince: now - 12 * MINUTE,
+        cwd: "/Users/example/code/payments",
+        project: "payments",
+      }),
+      session(13, {
+        name: "search-indexing",
+        status: "idle",
+        statusSince: now - 30 * MINUTE,
+        pid: 4243,
+        alive: true,
+        jump: { kind: "terminal", app: "Terminal", place: "Terminal" },
+      }),
+      session(14, {
+        name: "docs-site",
+        status: "idle",
+        surface: "vscode",
+        statusSince: now - 40 * MINUTE,
+        links: { open: LINK },
+      }),
+    ];
+    return liveState({ snapshot: busy, events: [] });
+  }
+
+  /** Says the page runs on this platform, until the test finishes. */
+  function platform(name: string) {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(name);
+  }
+
+  /**
+   * Stands in for the collector's jump, as the Jump tests do: each request is
+   * written down and answered as the test says, and anything else gets "{}".
+   */
+  function jumpCollector(answer: () => Response | Promise<Response>) {
+    const jumps: unknown[] = [];
+    setApiHost(async (path, init) => {
+      if (path !== "/api/jump") return new Response("{}");
+      jumps.push(JSON.parse(String(init?.body)));
+      return answer();
+    });
+    return jumps;
+  }
+  const answer = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+  const search = () => page.getByRole("dialog", { name: "Find a session" });
+  const field = () => page.getByRole("combobox", { name: "Find a session" });
+  const sheet = () => page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  const row = (id: string) =>
+    document.querySelector<HTMLElement>(
+      `[data-slot="session-row"][data-session="${id}"], [data-slot="hero-session"][data-session="${id}"]`,
+    )!;
+  const idOf = (n: number) => `claude-code:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+  async function renderApp(view: ViewId | null = null) {
+    atView(view);
+    const screen = await render(<App store={fixedStore(keyboardState())} />);
+    await expect.element(screen.getByRole("navigation", { name: "Views" })).toBeVisible();
+    if (view === null) {
+      await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+    }
+    return screen;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test.each([
+    ["on a Mac", "MacIntel", "{Meta>}k{/Meta}", "{Control>}k{/Control}"],
+    ["elsewhere", "Linux x86_64", "{Control>}k{/Control}", "{Meta>}k{/Meta}"],
+  ])(
+    '%s, "/" and its own Cmd+K or Ctrl+K open the search from any view, and Escape gives focus back to where it was',
+    async (_where, name, command, other) => {
+      platform(name);
+      await renderApp("sources");
+
+      for (const view of ["sources", "settings", "overview"] as const) {
+        location.hash = `#${view}`;
+        await vi.waitFor(() => expect(main().dataset.view).toBe(view));
+        const link = railLink("sources");
+        link.focus();
+
+        await userEvent.keyboard("/");
+        await expect.element(search()).toBeVisible();
+        await expect.element(field()).toHaveFocus();
+        // The key opened it, and typed nothing.
+        expect((field().element() as HTMLInputElement).value).toBe("");
+        await userEvent.keyboard("{Escape}");
+        await expect.element(search()).not.toBeInTheDocument();
+        await expect.element(page.elementLocator(link)).toHaveFocus();
+
+        await userEvent.keyboard(command);
+        await expect.element(search()).toBeVisible();
+        // The same key in the open search closes it.
+        await userEvent.keyboard(command);
+        await expect.element(search()).not.toBeInTheDocument();
+        await expect.element(page.elementLocator(link)).toHaveFocus();
+
+        // The other computer's key is nothing here.
+        await userEvent.keyboard(other);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(document.querySelector('[role="dialog"]'), view).toBeNull();
+      }
+    },
+  );
+
+  test('"/" and "?" pressed in a text field are typed into it, and Cmd+K there still opens the search', async () => {
+    platform("MacIntel");
+    await renderApp();
+    const input = document.createElement("input");
+    input.setAttribute("aria-label", "A field of some other part of the page");
+    document.body.append(input);
+    onTestFinished(() => input.remove());
+    input.focus();
+
+    await userEvent.keyboard("a/b?");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(input.value).toBe("a/b?");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(search()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(input);
+  });
+
+  test("the header's quiet round button opens the search for a pointer, names its keys, and has focus again after Escape", async () => {
+    platform("MacIntel");
+    const screen = await renderApp();
+    const button = screen.getByRole("button", { name: "Find a session" });
+
+    expect(header().contains(button.element())).toBe(true);
+    await expect.element(button).toHaveAttribute("aria-keyshortcuts", "/ Meta+K");
+    await expect.element(button).toHaveAttribute("aria-haspopup", "dialog");
+    const box = button.element().getBoundingClientRect();
+    expect([box.width, box.height]).toEqual([28, 28]);
+    expect(getComputedStyle(button.element()).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+    // Just left of the switch.
+    const theme = screen.getByRole("radiogroup", { name: "Theme" }).element();
+    expect(box.right).toBeLessThan(theme.getBoundingClientRect().left);
+
+    await button.click();
+    await expect.element(search()).toBeVisible();
+    await expect.element(field()).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(search()).not.toBeInTheDocument();
+    await expect.element(button).toHaveFocus();
+  });
+
+  test('"?" opens the sheet of shortcuts, and Escape gives focus back', async () => {
+    await renderApp();
+    const link = railLink("settings");
+    link.focus();
+
+    await userEvent.keyboard("?");
+    await expect.element(sheet()).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(sheet()).not.toBeInTheDocument();
+    await expect.element(page.elementLocator(link)).toHaveFocus();
+  });
+
+  test('"?" in the empty search puts the sheet in its place, and closing the sheet gives focus back to where it was before the search', async () => {
+    await renderApp();
+    const link = railLink("settings");
+    link.focus();
+
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("?");
+    await expect.element(sheet()).toBeVisible();
+    await expect.element(search()).not.toBeInTheDocument();
+    // One dialog at a time.
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+    await expect.element(sheet()).not.toBeInTheDocument();
+    await expect.element(page.elementLocator(link)).toHaveFocus();
+  });
+
+  test("while a history dialog is open, the keys are left to it", async () => {
+    platform("MacIntel");
+    const screen = await renderApp();
+    await screen.getByRole("button", { name: "Working: open history" }).click();
+    const history = screen.getByRole("dialog", { name: "Working" });
+    await expect.element(history).toBeVisible();
+
+    await userEvent.keyboard("/?{Meta>}k{/Meta}");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+    await expect.element(history).not.toBeInTheDocument();
+  });
+
+  test("Enter on a session with no Jump goes to the Overview, brings its row into view and puts focus on it, with the ring round its rounded shape", async () => {
+    const jumps = jumpCollector(() => answer({ ok: true }));
+    await renderApp("settings");
+    await page.viewport(1280, 500);
+
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("billing");
+    await userEvent.keyboard("{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+
+    await vi.waitFor(() => expect(main().dataset.view).toBe("overview"));
+    await vi.waitFor(() => expect(document.activeElement).toBe(row(idOf(12))));
+    const focused = row(idOf(12));
+    expect(focused.tagName).toBe("TR");
+    const box = focused.getBoundingClientRect();
+    expect(box.top).toBeGreaterThanOrEqual(header().getBoundingClientRect().bottom);
+    expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
+    // The ring is drawn round the row's shape, 10px inside the card, not round the row.
+    expect(focused.matches(":focus-visible")).toBe(true);
+    expect(getComputedStyle(focused).outlineStyle).toBe("none");
+    const shape = getComputedStyle(focused.querySelector("td")!, "::before");
+    expect(shape.outlineStyle).toBe("solid");
+    expect(shape.outlineWidth).toBe("2px");
+    // Its colour comes up with the shape's own 120ms change of colour.
+    await vi.waitFor(() => expect(shape.outlineColor).toBe(rgbOf("var(--focus)")));
+    expect(shape.borderRadius).toBe("14px");
+    expect(jumps).toEqual([]);
+
+    // It is no stop on the way through the page once focus moves on.
+    await userEvent.tab();
+    expect(focused.hasAttribute("tabindex")).toBe(false);
+  });
+
+  test("a click on a session with no Jump shows the ring on its row, as Enter does", async () => {
+    await renderApp();
+    await page.getByRole("button", { name: "Find a session" }).click();
+    await expect.element(search()).toBeVisible();
+    await page.getByRole("option", { name: /^billing-webhooks/ }).click();
+    await expect.element(search()).not.toBeInTheDocument();
+
+    const focused = row(idOf(12));
+    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+    expect(focused.matches(":focus-visible")).toBe(true);
+    expect(getComputedStyle(focused.querySelector("td")!, "::before").outlineStyle).toBe("solid");
+  });
+
+  test("a dialog opened from the row the search put focus on gives focus back to the row", async () => {
+    await renderApp();
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("billing{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+    const focused = row(idOf(12));
+    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(search()).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+
+    await userEvent.keyboard("?");
+    await expect.element(sheet()).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(sheet()).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+
+    // The sheet opened from the search gives focus back there too.
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("?");
+    await expect.element(sheet()).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(sheet()).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+
+    // Tab goes on from the row, and the row is no stop of it after that.
+    await userEvent.tab();
+    const next = document.activeElement!;
+    expect(focused.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(focused.hasAttribute("tabindex")).toBe(false);
+  });
+
+  test("Enter on a session with a Jump presses the Jump on its own row: the collector is asked once, and the row says what came of it", async () => {
+    const jumps = jumpCollector(() => answer({ ok: true, kind: "tmux", place: "work:2.1" }));
+    await renderApp("sources");
+
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("checkout{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+
+    await vi.waitFor(() => expect(main().dataset.view).toBe("overview"));
+    const lead = row(idOf(11));
+    expect(lead.dataset.slot).toBe("hero-session");
+    await vi.waitFor(() =>
+      expect(lead.querySelector('[data-part="jump-note"]')?.textContent).toBe("Selected in tmux"),
+    );
+    expect(jumps).toEqual([{ sessionId: idOf(11) }]);
+    // Focus is on the Jump that was pressed.
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Jump to checkout-flow in tmux, work:2.1",
+    );
+    expect(lead.contains(document.activeElement)).toBe(true);
+    // The search said nothing of it: it had gone.
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("Enter on a session in a tab of Terminal says on its row, as its button does, that macOS will ask once", async () => {
+    const answers: ((response: Response) => void)[] = [];
+    const jumps = jumpCollector(() => new Promise<Response>((resolve) => answers.push(resolve)));
+    await renderApp();
+
+    await userEvent.keyboard("/");
+    await userEvent.keyboard("search-indexing");
+    // A click chooses as Enter does, and the ring shows on the Jump it pressed.
+    await page.getByRole("option", { name: /^search-indexing/ }).click();
+    await expect.element(search()).not.toBeInTheDocument();
+
+    const tableRow = row(idOf(13));
+    await vi.waitFor(() => expect(tableRow.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.matches(":focus-visible")).toBe(true);
+    await vi.waitFor(
+      () => expect(tableRow.querySelector('[data-part="jump-line"]')?.textContent).toBe(ASK_LINE),
+      { timeout: ASK_AFTER_MS + 1_000 },
+    );
+    expect(jumps).toEqual([{ sessionId: idOf(13) }]);
+    answers.shift()?.(answer({ ok: true, kind: "terminal", app: "Terminal", place: "Terminal" }));
+    await vi.waitFor(() =>
+      expect(tableRow.querySelector('[data-part="jump-note"]')?.textContent).toBe(
+        "Switched to Terminal",
+      ),
+    );
+    expect(tableRow.querySelector('[data-part="jump-line"]')).toBeNull();
+  });
+
+  test("Enter on a session in VS Code follows its Jump link, as a press of it does", async () => {
+    jumpCollector(() => answer({ ok: true }));
+    const followed: string[] = [];
+    const follow = (event: MouseEvent) => {
+      const link = (event.target as Element).closest?.("a");
+      if (!link) return;
+      followed.push(link.getAttribute("href") ?? "");
+      // The test page stays where it is.
+      event.preventDefault();
+    };
+    document.addEventListener("click", follow, true);
+    onTestFinished(() => document.removeEventListener("click", follow, true));
+    await renderApp();
+
+    await userEvent.keyboard("/");
+    await userEvent.keyboard("docs{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(followed).toEqual([LINK]));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Jump to docs-site in VS Code");
+  });
 });

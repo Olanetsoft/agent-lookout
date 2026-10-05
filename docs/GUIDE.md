@@ -16,7 +16,7 @@ The [README](../README.md#install) has the steps to install and start it.
 
 A rail down the left edge moves between three views: Overview, Sources and Settings. The mark at the top of the rail lights up while any session needs you, so you can see it from every view. The browser tab's title gives the number that need you, as in `(2) Agent Lookout`.
 
-The header over each view says how many sessions are being watched and, in a wide window, when they were last checked. Click that line to open Sources. The switch on the right moves between the Night and Day themes.
+The header over each view says how many sessions are being watched and, in a wide window, when they were last checked. Click that line to open Sources. The switch on the right moves between the Night and Day themes, and the magnifier beside it opens the search: see [Keyboard](#keyboard).
 
 ### Overview
 
@@ -380,6 +380,39 @@ To change the answer later, open System Settings, choose Privacy & Security, the
 - With two copies of iTerm2 running at once, macOS chooses which of them is asked.
 
 To stop Agent Lookout looking for tabs at all, start it with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. It then runs neither `ps` for this nor `osascript` for Jump, and sessions in Terminal and iTerm2 have no button. [PRIVACY.md](../PRIVACY.md#terminal-and-iterm2) lists what it reads and runs.
+
+## Keyboard
+
+Every view answers to a few keys. Press `?` to see them all.
+
+| Key                                             | What it does                                                |
+| ----------------------------------------------- | ----------------------------------------------------------- |
+| `/`, or `Cmd+K` on a Mac and `Ctrl+K` elsewhere | Opens the search                                            |
+| `?`                                             | Lists every shortcut                                        |
+| `Esc`                                           | Closes the search, the list of shortcuts or a history chart |
+
+`/` and `?` work wherever you are not typing in a text field. `Cmd+K` and `Ctrl+K` work there too. While a history chart is open, the keys are left to it.
+
+### Finding a session
+
+Press `/` or `Cmd+K`, or click the magnifier at the right of the header, and type. The search looks at four things of each session: its name, the name of its folder, its [branch](#branches) or the commit in the branch's place, and its agent, such as Claude Code, Codex or the name a [status file](#your-own-agents) gives. Upper and lower case are the same to it, and so are letters with and without accents. Type several words, in any order, and a session is listed when every word is somewhere in those four, as a whole word or part of one: `storefront main` finds the session in the `storefront` folder on the branch `main`. It does not look at the folder's full path, the status or the app.
+
+With nothing typed, it lists every session. Whatever is typed, the sessions that need you come first, longest wait first, as in the Needs you panel, and the others follow in the order of the Sessions list. Each shows its status and how long it has had it, its folder and branch, and its agent. Only the mark of a session that needs you is amber.
+
+Up and Down move through the list. Down on the last goes back to the first, and Up on the first goes to the last. The line under the list says what Enter will do with the session that is lit:
+
+- A session with a [Jump](#jump) button: Enter presses it. The search closes, the Overview opens if it was not showing, focus goes to the button, and the session's row says what happened, as it does when you press the button yourself. The first press of a Jump to a tab of Terminal or iTerm2 says on the row that macOS will ask once.
+- Any other session: Enter closes the search, opens the Overview if it was not showing, scrolls to the session's row and puts focus on it, so the next Tab goes on from there.
+
+Clicking a session does the same as Enter. `Esc` closes the search and puts focus back where it was. With nothing typed, `?` closes the search and lists the shortcuts.
+
+### In charts and switches
+
+The Last hour chart, a history chart and each row of the Timeline take one stop of Tab. The left and right arrow keys then move along them, and Home and End go to the first and the last. In a history chart, Page Up and Page Down move ten steps at once. In the theme switch and the switches in Settings, the left and right arrow keys choose the next or the previous option.
+
+### Keys the browser uses
+
+Some browsers use two of these keys when the page leaves them alone. In Firefox, `/` starts a quick find and `Cmd+K` or `Ctrl+K` searches the web, and in Chrome on Windows and Linux `Ctrl+K` searches from the address bar. While the dashboard has focus, these keys open its search instead. `Cmd+F` or `Ctrl+F` still finds text in the page, and with the address bar clicked first the keys are the browser's again. Safari, and Chrome on a Mac, use none of these keys.
 
 ## In the terminal
 

@@ -1,7 +1,12 @@
+import { Search } from "lucide-react";
+
 import type { SessionsSnapshot } from "@core/sessions/session";
 import { ThemeToggle } from "@dashboard/components/dashboard/ThemeToggle";
+import { Button } from "@dashboard/components/ui/controls/Button";
+import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
 import type { CollectorPhase } from "@dashboard/lib/api/collectorStore";
+import { commandK, onMac, searchKeyShortcuts } from "@dashboard/lib/shell/shortcuts";
 import { statusSentence } from "@dashboard/lib/sources/connection";
 import { cn } from "@dashboard/lib/utils";
 
@@ -11,6 +16,31 @@ interface HeaderProps {
   /** When the last answer arrived, for the line once answers stop. */
   lastOkAt: number | null;
   now: number;
+  /** Opens the search over every session. */
+  onSearch?: () => void;
+}
+
+/**
+ * The way into the search for a pointer: a quiet round button with the
+ * magnifier, named for what it does. Its tooltip, and what it tells assistive
+ * technology, give the keys that open the search from anywhere.
+ */
+function SearchButton({ onSearch }: { onSearch: () => void }) {
+  const mac = onMac();
+  return (
+    <Tooltip content={`Find a session: / or ${commandK(mac).shown}`} align='end'>
+      <Button
+        size='icon'
+        aria-label='Find a session'
+        aria-haspopup='dialog'
+        aria-keyshortcuts={searchKeyShortcuts(mac)}
+        data-part='search'
+        onClick={onSearch}
+      >
+        <Search aria-hidden className='size-4' strokeWidth={1.75} />
+      </Button>
+    </Tooltip>
+  );
 }
 
 /**
@@ -28,8 +58,10 @@ interface HeaderProps {
  *
  * In a narrow window the line moves under the wordmark and keeps its short form,
  * the count or the state in a few words, so it is never left out.
+ *
+ * Beside the switch is the button that opens the search.
  */
-export function Header({ phase, snapshot, lastOkAt, now }: HeaderProps) {
+export function Header({ phase, snapshot, lastOkAt, now, onSearch }: HeaderProps) {
   const status = statusSentence(phase, snapshot, now, lastOkAt);
   const narrow = useNarrow();
 
@@ -67,7 +99,10 @@ export function Header({ phase, snapshot, lastOkAt, now }: HeaderProps) {
         </p>
       </div>
 
-      <ThemeToggle className='ml-auto shrink-0' />
+      <div className='ml-auto flex shrink-0 items-center gap-2.5'>
+        {onSearch && <SearchButton onSearch={onSearch} />}
+        <ThemeToggle />
+      </div>
     </header>
   );
 }

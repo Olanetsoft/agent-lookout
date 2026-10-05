@@ -3,15 +3,19 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import { Header } from "@dashboard/components/dashboard/Header";
+import { SearchDialog } from "@dashboard/components/keyboard/SearchDialog";
+import { ShortcutsDialog } from "@dashboard/components/keyboard/ShortcutsDialog";
 import { Rail } from "@dashboard/components/rail/Rail";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { SourcesView } from "@dashboard/components/sources/SourcesView";
 import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
 import { useCollector } from "@dashboard/hooks/data/useCollector";
 import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
+import { useShowSession } from "@dashboard/hooks/dom/useShowSession";
 import { useDocumentTitle } from "@dashboard/hooks/shell/useDocumentTitle";
 import { useNewSince } from "@dashboard/hooks/data/useNewSince";
 import { useNow } from "@dashboard/hooks/data/useNow";
+import { useShortcuts } from "@dashboard/hooks/shell/useShortcuts";
 import { useView } from "@dashboard/hooks/shell/useView";
 import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
 import { workerBeat } from "@dashboard/lib/api/beat";
@@ -90,6 +94,11 @@ function Ground() {
  * line under what arrived meanwhile. Where it goes is worked out here, on every
  * view, because the time the log was last on screen has to outlast the
  * Overview while another view shows.
+ *
+ * On every view, "/", Cmd+K or Ctrl+K, and the header's button open the search,
+ * and "?" the sheet of shortcuts. While another dialog is open those keys are
+ * left to it. Choosing a session in the search takes the person to its row on
+ * the Overview, and presses its Jump when it has one.
  */
 export default function App({ store: providedStore }: AppProps) {
   const [store] = useState(() => providedStore ?? createCollectorStore({ beat: workerBeat }));
@@ -99,6 +108,8 @@ export default function App({ store: providedStore }: AppProps) {
   const now = useNow();
   const view = useView();
   const [history, setHistory] = useState<HistoryMetric | null>(null);
+  const [search, setSearch] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const main = useRef<HTMLElement>(null);
   const shownView = useRef(view);
   const newSince = useNewSince(state.events, view === "overview", state.snapshot !== null);
@@ -119,6 +130,18 @@ export default function App({ store: providedStore }: AppProps) {
     window.scrollTo({ top: 0 });
   }, [view]);
 
+  // After the effect above, so a session's row takes focus from the new view.
+  const showSession = useShowSession(main, view);
+
+  useShortcuts((shortcut) => {
+    if (history !== null || shortcuts) return false;
+    // Cmd+K in the open search closes it. "?" in it is the search's own to answer.
+    if (shortcut === "search") setSearch((open) => !open);
+    else if (search) return false;
+    else setShortcuts(true);
+    return true;
+  });
+
   // The three things the Overview can be. Moving between them is a cross-fade.
   const overview = state.snapshot
     ? "dashboard"
@@ -138,6 +161,7 @@ export default function App({ store: providedStore }: AppProps) {
             snapshot={state.snapshot}
             lastOkAt={state.lastOkAt}
             now={now}
+            onSearch={() => setSearch(true)}
           />
 
           <main
@@ -190,6 +214,16 @@ export default function App({ store: providedStore }: AppProps) {
           />
         ))}
       </Suspense>
+
+      <SearchDialog
+        open={search}
+        onOpenChange={setSearch}
+        state={state}
+        now={now}
+        onChoose={(session) => showSession(session.id)}
+        onShortcuts={() => setShortcuts(true)}
+      />
+      <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
     </MotionConfig>
   );
 }

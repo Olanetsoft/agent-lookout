@@ -202,6 +202,13 @@ function Ended({ session }: { session: Session }) {
   return session.alive === false ? <Badge tone='outline'>Process ended</Badge> : null;
 }
 
+/**
+ * A waiting session is no stop on the way through the page, but the search can
+ * put focus on one that has no Jump, to show the person the session they
+ * chose. Its ring then stands a little off it, on rounded corners.
+ */
+const FOCUSED = "focus-visible:rounded-inner focus-visible:outline-offset-4";
+
 /** How long a session has waited, as of `asOf`, or null when its source did not say. */
 function waitedFor(session: Session, asOf: number): number | null {
   return session.statusSince === null ? null : Math.max(0, asOf - session.statusSince);
@@ -220,11 +227,14 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
     <div
       data-slot='hero-session'
       data-session={session.id}
-      className='flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4'
+      className={cn(
+        "mt-3.5 flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4",
+        FOCUSED,
+      )}
     >
       <div className='min-w-0 flex-1'>
         {/* What Jump came to goes under the name when the line cannot hold both. */}
-        <div className='mt-3.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
+        <div className='flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
           <div className='flex max-w-full min-w-0 items-center gap-3'>
             <Truncated data-part='name' className='text-name font-semibold'>
               {session.name}
@@ -284,7 +294,10 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
     <li
       data-slot='hero-session'
       data-session={session.id}
-      className='flex items-center gap-5 border-t border-hairline py-3 max-mid:flex-wrap max-mid:gap-x-4 max-mid:gap-y-2'
+      className={cn(
+        "flex items-center gap-5 border-t border-hairline py-3 max-mid:flex-wrap max-mid:gap-x-4 max-mid:gap-y-2",
+        FOCUSED,
+      )}
     >
       <div className='min-w-0 flex-1 max-mid:basis-full'>
         <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
