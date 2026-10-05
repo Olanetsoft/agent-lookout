@@ -852,6 +852,10 @@ test("at 760 pixels and below the status line keeps a short form under the wordm
   for (const width of [760, 375]) {
     await page.viewport(width, 900);
     await vi.waitFor(() => expect(status().querySelector("a")?.textContent).toBe("2 sessions"));
+    // The wordmark keeps to one line and is never cut. Linux draws the same font
+    // a few pixels wider than macOS, which once broke it onto two lines at 375.
+    expect(wordmark().getBoundingClientRect().height, `${width}`).toBeLessThan(24);
+    expect(wordmark().scrollWidth, `${width}`).toBeLessThanOrEqual(wordmark().clientWidth);
     // Shown, under the wordmark, with when it was checked beside it.
     const line = status().getBoundingClientRect();
     expect(getComputedStyle(status()).display, `${width}`).not.toBe("none");

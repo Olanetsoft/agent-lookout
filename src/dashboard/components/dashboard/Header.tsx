@@ -68,10 +68,10 @@ export function Header({ phase, snapshot, lastOkAt, now, onSearch }: HeaderProps
   return (
     <header
       data-slot='header'
-      className='glass-chrome glass-blur sticky top-window z-30 flex h-header shrink-0 items-center gap-5 pr-2.5 pl-6 max-mid:gap-3 max-mid:pl-4'
+      className='glass-chrome glass-blur sticky top-window z-30 flex h-header shrink-0 items-center gap-5 pr-2.5 pl-6 max-mid:gap-2 max-mid:pl-4'
     >
       <div className='flex min-w-0 items-center gap-5 max-mid:flex-col max-mid:items-start max-mid:gap-0.5'>
-        <h1 className='shrink-0 text-wordmark font-semibold'>Agent Lookout</h1>
+        <h1 className='shrink-0 text-wordmark font-semibold whitespace-nowrap'>Agent Lookout</h1>
 
         <p
           data-slot='status-line'
@@ -99,7 +99,7 @@ export function Header({ phase, snapshot, lastOkAt, now, onSearch }: HeaderProps
         </p>
       </div>
 
-      <div className='ml-auto flex shrink-0 items-center gap-2.5'>
+      <div className='ml-auto flex shrink-0 items-center gap-2.5 max-mid:gap-1.5'>
         {onSearch && <SearchButton onSearch={onSearch} />}
         <ThemeToggle />
       </div>
