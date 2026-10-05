@@ -25,6 +25,7 @@
     "noUncheckedSideEffectImports": true,
 
     "paths": {
+      "@cli/*": ["./src/cli/*"],
       "@core/*": ["./src/core/*"],
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],

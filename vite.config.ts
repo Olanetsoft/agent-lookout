@@ -57,6 +57,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@cli": fromRoot("./src/cli"),
       "@core": fromRoot("./src/core"),
       "@collector": fromRoot("./src/collector"),
       "@dashboard": fromRoot("./src/dashboard"),

@@ -5,6 +5,9 @@
   "description": "A free, open-source control panel for the AI agents you already have running.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "agent-lookout": "bin/agent-lookout.mjs"
+  },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
@@ -12,6 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "start": "tsx src/collector/hosts/serve.ts",
+    "status": "node bin/agent-lookout.mjs status",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint . --max-warnings 0",

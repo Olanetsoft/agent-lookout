@@ -245,6 +245,144 @@ Jump for tmux has these limits.
 
 To stop Agent Lookout running tmux at all, start it with `AGENT_LOOKOUT_TMUX=off`. [PRIVACY.md](../PRIVACY.md#tmux) lists each command it runs and what it reads from tmux.
 
+## In the terminal
+
+`agent-lookout status` prints which sessions need you, for when the dashboard is not in view, such as over SSH or inside tmux. It asks the Agent Lookout that is already running on this computer, and starts nothing.
+
+In the `agent-lookout` folder, run it through npm:
+
+```sh
+npm run --silent status
+```
+
+To run it from any folder as `agent-lookout status`, run `npm link` once in the `agent-lookout` folder. That puts the command on your `PATH`, pointing at this folder, so it keeps up when you pull new code. `npm uninstall -g agent-lookout` takes it away again. It is not published to npm yet.
+
+It prints the counts, then a line for each session that needs you: its name, the reason in the words the Needs you panel uses, and how long it has waited, longest first.
+
+```text
+2 need you · 3 working · 2 idle
+checkout-flow    Waiting for permission  4m 12s
+search-indexing  Asked you a question    31s
+```
+
+When nothing needs you it prints one line, such as `Nothing needs you · 4 working · 2 idle`. Sessions are counted as the Overview counts them: a stale session is counted as stale and not as idle, and stale is left out while there are none. A wait whose start is not known shows a dash. A name is cut at 40 columns, and anything in it that a terminal would act on, such as an escape sequence or a line break, is taken out before it is printed. Until an agent has been read, it says so in place of the counts, and exits with 2.
+
+| Option            | What it does                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `--count`         | Prints only the number of sessions that need you, such as `2`, or a dash until an agent is read |
+| `--json`          | Prints the counts and the waiting sessions as JSON, described below                             |
+| `--url <address>` | Asks Agent Lookout at this address, such as `http://127.0.0.1:4778`                             |
+| `--help`          | Prints the options and the exit codes                                                           |
+
+The exit code says whether any session needs you, so a script can act on it without reading what was printed:
+
+| Exit code | Means                                                                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 0         | Nothing needs you                                                                                                                      |
+| 1         | One or more sessions need you                                                                                                          |
+| 2         | Agent Lookout could not be reached or read, or has not read any agent yet. Also when the command was mistyped, or could not run at all |
+
+Without `--url`, it tries `http://127.0.0.1:4777`, where `npm start` listens, then `http://localhost:5173`, where `npm run dev` does, giving each half a second. If Agent Lookout runs at another address, give it with `--url`, or set `AGENT_LOOKOUT_URL`:
+
+```sh
+AGENT_LOOKOUT_URL=http://127.0.0.1:4778 agent-lookout status
+```
+
+Only an address on this computer is accepted: `localhost`, `127.0.0.1` or `[::1]`, over `http`. Any other is refused, in one line, because session names are read from this computer only. When nothing answers, it says so in one line, with how to start Agent Lookout, and exits with 2:
+
+```text
+Agent Lookout is not running at http://127.0.0.1:4777 or http://localhost:5173. Start it with npm start or npm run dev in its folder, or give its address with --url.
+```
+
+It asks only for the list of sessions, as `curl -s http://127.0.0.1:4777/api/sessions` does. Asking changes nothing in Agent Lookout, and does not count as a dashboard page for [notifications](#notifications).
+
+With `--json` it prints:
+
+```json
+{
+  "counted": true,
+  "needsYou": 1,
+  "working": 3,
+  "idle": 2,
+  "stale": 0,
+  "waiting": [
+    {
+      "id": "claude-code:00000000-0000-4000-8000-000000000001",
+      "name": "checkout-flow",
+      "agent": "Claude Code",
+      "reason": "permission",
+      "waitingSince": 1791205668000,
+      "waitedMs": 252000
+    }
+  ]
+}
+```
+
+| Field                                  | What it holds                                                                     |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| `counted`                              | `false` until an agent has been read, when the numbers below are not a count      |
+| `needsYou`, `working`, `idle`, `stale` | How many sessions have each status, counted as above                              |
+| `waiting`                              | The sessions that need you, longest wait first                                    |
+| `id`                                   | The session's id, as `/api/sessions` gives it                                     |
+| `name`                                 | The session's name, exactly as its agent gave it                                  |
+| `agent`                                | `Claude Code`, or the agent a [status file](#your-own-agents) names               |
+| `reason`                               | `permission`, `question` or `other`                                               |
+| `waitingSince`                         | When the wait began, in milliseconds since 1970, or `null` when that is not known |
+| `waitedMs`                             | How long it has waited, in milliseconds, or `null`                                |
+
+Any character in a name that a terminal would act on is written as a `\u` escape, so the JSON is safe to print too.
+
+### In a tmux status line
+
+Put this in `~/.tmux.conf`, then run `tmux source-file ~/.tmux.conf`:
+
+```sh
+set -g status-right 'Needs you #(agent-lookout status --count) '
+```
+
+Without `npm link`, run it from the folder instead, with the path to yours. tmux then needs `npm` and `node` on its `PATH`:
+
+```sh
+set -g status-right 'Needs you #(cd ~/agent-lookout && npm run --silent status -- --count) '
+```
+
+The right of the status line then reads `Needs you 2`. tmux runs the command again every 15 seconds, or as often as `status-interval` says, such as `set -g status-interval 5`. One run takes about a tenth of a second, and about a third of a second through npm.
+
+Use `--count` there. Without it, tmux shows only the last line the command prints, which is the last session in the list, or the counts when nothing waits. tmux reads a `#` in what a command prints as the start of its own formatting, so when tmux runs the command, each `#` in a session's name is printed twice, which tmux shows as one. A name cannot change how the status line looks.
+
+If the count stays blank, Agent Lookout is not running, or tmux could not run the command. tmux runs it with the `PATH` it had when it started, and the command needs both `agent-lookout` and `node` on it. If they are not there, as when Node was installed with nvm, give both full paths, which `command -v node` and `command -v agent-lookout` print:
+
+```sh
+set -g status-right 'Needs you #(/path/to/node /path/to/agent-lookout status --count) '
+```
+
+### In a shell prompt
+
+This function prints `(2 waiting) ` when two sessions need you, and nothing otherwise. Put it in `~/.bashrc` or `~/.zshrc`:
+
+```sh
+agent_lookout_prompt() {
+  local count
+  count=$(agent-lookout status --count 2>/dev/null)
+  [ $? -eq 1 ] && printf '(%s waiting) ' "$count"
+}
+```
+
+Then, for bash:
+
+```sh
+PS1='$(agent_lookout_prompt)'"$PS1"
+```
+
+Or for zsh:
+
+```sh
+setopt PROMPT_SUBST
+PROMPT='$(agent_lookout_prompt)'"$PROMPT"
+```
+
+The prompt then runs the command each time it is drawn, which adds about a tenth of a second. Use `--count` in a prompt and a status line, not the full output: it prints only a number, so nothing from a session's name reaches them.
+
 ## Your own agents
 
 Agent Lookout shows any other agent, including one you wrote yourself, when the agent writes one small JSON file for each of its sessions into a folder: `~/.agent-lookout/sessions`. Nothing is installed into the agent, it needs no library, and nothing goes over the network. Agent Lookout reads the folder every 2 seconds, so a session appears, changes and goes within about 2 seconds of the file doing so.

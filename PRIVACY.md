@@ -104,7 +104,7 @@ It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notifica
 
 ## Network
 
-With email off, which is the default, the only network traffic Agent Lookout's own code makes is between the dashboard in your browser and its own server on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
+With email off, which is the default, the only network traffic Agent Lookout's own code makes is between its own server and the dashboard in your browser, or the `agent-lookout status` command, on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
 
 The `claude agents` command is Claude Code's own program, and it may contact Anthropic the way it does for anyone who runs it. Agent Lookout sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` for each run, to ask Claude Code to skip its update check, usage reporting and error reporting, and runs the command seldom. Anything else that program does is governed by Claude Code's settings and terms. To stop Agent Lookout running it, set `AGENT_LOOKOUT_CLAUDE_FEED=off`. Sessions then come from the registry alone, and background jobs whose process has ended are not listed.
 
@@ -205,7 +205,7 @@ With notifications on, each notification holds a session's name, and the operati
 The tools that run it write files of their own. None of these holds session data.
 
 - npm keeps a short log of each command it runs in `~/.npm/_logs/`. The log names the command and the project folder. It does not hold the program's output.
-- `npm start` runs through tsx, which keeps compiled copies of Agent Lookout's own source files in the system's temporary directory, in a folder named `tsx-` followed by your user ID.
+- `npm start` and the `agent-lookout` command run through tsx, which keeps compiled copies of Agent Lookout's own source files in the system's temporary directory, in a folder named `tsx-` followed by your user ID.
 - `npm run dev` runs through Vite, which keeps pre-bundled copies of the dependencies in `node_modules/.vite/`.
 - `npm run build` writes the built dashboard to `dist/` and the type checker's records to `node_modules/.tmp/`.
 

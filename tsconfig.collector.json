@@ -1,5 +1,6 @@
 {
-  // The collector, the shared core and their tests, checked as Node code.
+  // The collector, the agent-lookout command, the shared core and their tests,
+  // checked as Node code.
   //
   // `src/core` is listed as well as in tsconfig.app.json. The collector imports
   // it, and this project has no DOM lib, so checking it here is what holds core
@@ -24,6 +25,7 @@
     "noUncheckedSideEffectImports": true,
 
     "paths": {
+      "@cli/*": ["./src/cli/*"],
       "@core/*": ["./src/core/*"],
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],
@@ -31,9 +33,11 @@
     }
   },
   "include": [
+    "src/cli",
     "src/collector",
     "src/core",
     "tests/integration",
+    "tests/unit/cli",
     "tests/unit/collector",
     "tests/unit/core"
   ]

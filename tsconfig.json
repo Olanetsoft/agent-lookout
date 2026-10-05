@@ -8,6 +8,7 @@
   "compilerOptions": {
     // Repeated here so tools that read only this file resolve the aliases from the root.
     "paths": {
+      "@cli/*": ["./src/cli/*"],
       "@core/*": ["./src/core/*"],
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],

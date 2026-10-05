@@ -6,11 +6,14 @@ import type { AddressInfo } from "node:net";
 
 import { onTestFinished } from "vitest";
 
-/** Starts a server on a free loopback port and closes it when the test finishes. */
-export async function listen(server: Server): Promise<number> {
+/**
+ * Starts a server on a free loopback port, at 127.0.0.1 unless `host` names
+ * another loopback address such as `::1`, and closes it when the test finishes.
+ */
+export async function listen(server: Server, host = "127.0.0.1"): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, host, resolve);
   });
   onTestFinished(async () => {
     server.closeAllConnections();
