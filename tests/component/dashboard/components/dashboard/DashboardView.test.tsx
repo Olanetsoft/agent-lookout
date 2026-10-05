@@ -6,6 +6,7 @@ import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@cor
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
+import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
 
@@ -270,6 +271,8 @@ test.each(["dark", "light"] as const)(
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
     await atFullSize();
+    // A pointer left over Jump by an earlier test would measure its hover colour.
+    await pointAway();
     const worst = theme === "dark" ? "brightest" : "darkest";
 
     const screen = await renderView(state({}));
