@@ -4,7 +4,7 @@ import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { SegmentedControl } from "@dashboard/components/ui/SegmentedControl";
-import { startAtTop } from "@tests/support/browser";
+import { pointAway, startAtTop } from "@tests/support/browser";
 import { rgbOf, warmPaint } from "@tests/support/colours";
 
 test("the segmented control is a set of radios that the arrow keys move through", async () => {
@@ -107,6 +107,9 @@ test.each(["dark", "light"] as const)(
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
     onTestFinished(() => document.documentElement.removeAttribute("data-theme"));
+    // Tests share one page, and the last click may have left the pointer where an
+    // option is about to be drawn. These are the colours at rest, so it moves off.
+    await pointAway();
     const options = [
       { value: "dark", label: "Night" },
       { value: "light", label: "Day" },
