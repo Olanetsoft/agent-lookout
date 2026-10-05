@@ -1,0 +1,118 @@
+import { SURFACE_LABEL, type Session } from "../../core/sessions/session.ts";
+import { sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
+import { EMAIL_TO_ENV } from "./emailSettings.ts";
+
+/**
+ * What one email says. It is plain text and short: a subject that names the
+ * session and what happened, and a body with how long it has waited, the
+ * project folder's name, the app, the agent, when the wait began and how to
+ * stop these emails. Nothing else goes in it: no path, no prompt, none of the
+ * agent's own words, no link and no markup.
+ */
+export interface EmailContent {
+  subject: string;
+  text: string;
+}
+
+export interface WaitFacts {
+  session: Pick<Session, "id" | "name" | "project" | "surface" | "waitingReason">;
+  /** The agent, as its source calls itself: "Claude Code". Null when not known. */
+  agent: string | null;
+  /** When the wait began. */
+  begunAt: number;
+  /** When the email is written. */
+  now: number;
+}
+
+/** The longest a session's name, a folder's name or an agent's name may run in an email. */
+export const MOST_NAME_LENGTH = 80;
+
+/**
+ * Line breaks, every other control character, and the marks that reorder the
+ * text around them. None has a place in a subject or a line of the body.
+ */
+const NOT_ON_ONE_LINE =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * Text from a session, made to stand on one line: what cannot sit on one line
+ * becomes a space, runs of spaces become one, and it is cut to `most`
+ * characters with an ellipsis. It is cut between code points, so no letter is
+ * broken in two.
+ */
+export function oneLine(text: string, most = MOST_NAME_LENGTH): string {
+  const flat = text.replace(NOT_ON_ONE_LINE, " ").replace(/\s+/g, " ").trim();
+  const characters = Array.from(flat);
+  if (characters.length <= most) return flat;
+  return `${characters
+    .slice(0, most - 1)
+    .join("")
+    .trimEnd()}…`;
+}
+
+function counted(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+/** A length of time in words, to the second under an hour and to the minute after: "1 minute 5 seconds". */
+export function waitedInWords(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1_000));
+  if (seconds < 60) return counted(seconds, "second");
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    const rest = seconds % 60;
+    return rest === 0
+      ? counted(minutes, "minute")
+      : `${counted(minutes, "minute")} ${counted(rest, "second")}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0
+    ? counted(hours, "hour")
+    : `${counted(hours, "hour")} ${counted(rest, "minute")}`;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * A moment on this computer's clock, 24-hour, as the dashboard writes one:
+ * "14:01", with the day in front when it is not the day of `now`: "Oct 4, 23:59".
+ */
+export function clockTime(at: number, now: number): string {
+  const date = new Date(at);
+  const today = new Date(now);
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  return sameDay ? time : `${MONTHS[date.getMonth()]} ${date.getDate()}, ${time}`;
+}
+
+/** The email for a wait that has lasted the delay and is still open. */
+export function waitEmail(facts: WaitFacts): EmailContent {
+  const { session, begunAt, now } = facts;
+  const name = oneLine(sessionTitle(session));
+  const happened = `${name} ${waitingPhrase(session)}`;
+
+  const lines = [
+    `${happened}.`,
+    "",
+    `It has waited ${waitedInWords(now - begunAt)}, since ${clockTime(begunAt, now)}.`,
+    "",
+  ];
+  const folder = session.project ? oneLine(session.project) : "";
+  if (folder) lines.push(`Folder: ${folder}`);
+  if (session.surface !== "unknown") lines.push(`App: ${SURFACE_LABEL[session.surface]}`);
+  const agent = facts.agent ? oneLine(facts.agent) : "";
+  if (agent) lines.push(`Agent: ${agent}`);
+  lines.push(
+    "",
+    `Sent by Agent Lookout on your computer. To stop these emails, start it again without ${EMAIL_TO_ENV}.`,
+  );
+
+  return { subject: happened, text: `${lines.join("\n")}\n` };
+}

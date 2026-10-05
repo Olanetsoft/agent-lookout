@@ -87,7 +87,7 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 ### Settings
 
-Settings has three cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself. This copy shows the version you are running.
+Settings has four cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself. Email says whether Agent Lookout emails you when a session has waited, which is set up when you start it, not here. This copy shows the version you are running.
 
 #### Notifications
 
@@ -130,6 +130,76 @@ Notifications have been checked in Chrome 154 on macOS. There one arrived within
 A notification shows the session's name outside the dashboard: over other apps, in Notification Centre and, depending on your Mac's settings, on the lock screen and while you share or record the screen. To keep names off those, open Notifications in System Settings and change what your browser's notifications may show, or leave notifications off. The ones Agent Lookout shows itself are Script Editor's as far as macOS is concerned, so what you set there for your browser does not cover them.
 
 The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npm start` serves Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
+
+#### Email
+
+Agent Lookout can also email you when a session has waited for a while, for when you are away from the computer. It is off unless you set it up. With it off, which is the default, Agent Lookout sends nothing anywhere and opens no connection to a mail server.
+
+It is set up with settings in the environment when you start Agent Lookout, not on this page, and it has its own off switch: leaving those settings out. The button for notifications does not turn emails on or off.
+
+You need an address to send the emails to, and a mail server to send them through, which is usually your email provider's SMTP server, with a user name and password for it. Use an app password: a password your provider makes for one program, which you can take back at any time without changing your own. Create it in your provider's settings. Never put your main password here.
+
+Two settings turn email on:
+
+| Setting                  | What it holds                                                         |
+| ------------------------ | --------------------------------------------------------------------- |
+| `AGENT_LOOKOUT_EMAIL_TO` | The one address emails go to                                          |
+| `AGENT_LOOKOUT_SMTP_URL` | The mail server, as `smtps://name:password@server:port`, or `smtp://` |
+
+Two more can be left out. `AGENT_LOOKOUT_EMAIL_FROM` is the address emails come from, which is the address they go to unless you set it. If emails go to an address other than the one you sign in to the mail server with, set `AGENT_LOOKOUT_EMAIL_FROM` to the address you sign in with. Most providers refuse to send from any other. `AGENT_LOOKOUT_EMAIL_AFTER` is how many seconds a wait lasts before it is emailed: 60 unless you set it, and 0 for at once.
+
+In `AGENT_LOOKOUT_SMTP_URL`, write any `@`, `:`, `/`, `?`, `#` or `%` in the user name or the password as `%40`, `%3A`, `%2F`, `%3F`, `%23` or `%25`. A user name that is an email address is the usual case: `name@example.com` is written `name%40example.com`.
+
+For Gmail, for example:
+
+1. In your Google Account, turn on 2-Step Verification if it is not on, then create an app password. Google shows it as 16 letters in four groups. Use the letters without the spaces.
+2. Start Agent Lookout with the two settings, putting your Gmail address and the app password in place of `YOUR_ADDRESS` and `YOUR_APP_PASSWORD`:
+
+   ```sh
+   AGENT_LOOKOUT_EMAIL_TO=YOUR_ADDRESS@gmail.com \
+   AGENT_LOOKOUT_SMTP_URL='smtps://YOUR_ADDRESS%40gmail.com:YOUR_APP_PASSWORD@smtp.gmail.com:465' \
+   npm start
+   ```
+
+   To use the development server instead, put the same two settings in front of `npm run dev`.
+
+Other providers work the same way: look up the name and port of their SMTP server, and create an app password in their settings. Use `smtps://` for a server that takes TLS from the start, usually on port 465, and `smtp://` for one that switches to TLS after connecting, usually on port 587. Over `smtp://`, Agent Lookout sends nothing to a server that does not switch to TLS. Only a mail server on your own computer, at `127.0.0.1` or `localhost`, is used without TLS.
+
+A setting typed in front of a command can be kept in your shell's history, and the password with it. To keep it out, put the two settings in a file that only you can read, and read the file in when you start Agent Lookout:
+
+```sh
+touch ~/.agent-lookout-email && chmod 600 ~/.agent-lookout-email
+```
+
+In an editor, put these two lines in that file, with your own values:
+
+```sh
+export AGENT_LOOKOUT_EMAIL_TO=YOUR_ADDRESS@gmail.com
+export AGENT_LOOKOUT_SMTP_URL='smtps://YOUR_ADDRESS%40gmail.com:YOUR_APP_PASSWORD@smtp.gmail.com:465'
+```
+
+Then start Agent Lookout with them, brackets included:
+
+```sh
+(source ~/.agent-lookout-email && npm start)
+```
+
+The brackets keep the settings to this one run, so the terminal does not keep them afterwards, and no program you start from it later is handed the password. For the development server, use `npm run dev` in place of `npm start`, inside the same brackets.
+
+To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or why it could not be, such as "The last email could not be sent: the mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
+
+The card can say where emails go before any has been tried, so a wrong password or port shows only once a wait has lasted the delay. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_EMAIL_AFTER=0` as well, and let a session ask for permission. The card then says whether the email went. Start it again without that setting afterwards.
+
+An email's subject names the session and what happened: "checkout-flow is waiting for permission", "checkout-flow asked you a question" or "checkout-flow is waiting for you". Its text says how long the session has waited and since when, the name of its project folder, its app and its agent, and how to stop these emails. It holds no path, no prompt and no link. [PRIVACY.md](../PRIVACY.md#email) lists all it holds.
+
+- One email goes for a wait that has lasted the delay and is still open. A wait you answer before then sends nothing.
+- Each wait sends one email at most. A session you answer that waits again later sends another.
+- A session already waiting when Agent Lookout starts sends nothing, so starting it again does not send again.
+- At most 20 emails are tried in any hour, and a try that fails counts. Past that, none goes until the hour has passed, and the card says when the next can. A wait still open then is emailed then.
+- An email that could not be sent is not tried again. The card says why, and the next wait sends its own.
+- A Codex session never sends one, because a Codex session never shows as needing you.
+
+To turn email off, start Agent Lookout again without `AGENT_LOOKOUT_EMAIL_TO`. If you keep the settings in a file, start it without reading the file in. If you read the file in without the brackets, run `unset AGENT_LOOKOUT_EMAIL_TO AGENT_LOOKOUT_SMTP_URL` or open a new terminal first.
 
 ## Jump
 
@@ -229,6 +299,8 @@ A Claude Code background job is shown as finished or failed, and its row stays f
 
 Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
+Email is the one way it can tell you of a wait away from this computer, and it sends to one address. There are no webhooks or chat messages yet. An email that could not be sent is not tried again, and nothing is emailed when a session finishes or fails.
+
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
 The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list what is planned.
@@ -253,10 +325,14 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 | `AGENT_LOOKOUT_STATUS_DIR`    | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                      |
 | `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications itself from the moment it starts. A dashboard page that has notifications off turns them off again.   |
 | `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                        |
+| `AGENT_LOOKOUT_EMAIL_TO`      | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                  |
+| `AGENT_LOOKOUT_SMTP_URL`      | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                           |
+| `AGENT_LOOKOUT_EMAIL_FROM`    | The address emails come from. The default is the address they go to.                                                                                               |
+| `AGENT_LOOKOUT_EMAIL_AFTER`   | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                            |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code, Codex, status file, notification and tmux settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, status file, notification, tmux and email settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -322,6 +398,13 @@ Use port 4777 if you started it with `npm start`. It prints the sessions it foun
 4. With a dashboard tab open, check that the page does not say Agent Lookout has stopped updating.
 5. With no dashboard tab open, Agent Lookout shows notifications itself on a Mac only, and only once a page that has notifications on has been open since Agent Lookout started, or when it was started with `AGENT_LOOKOUT_NOTIFICATIONS=on`. Those arrive as Script Editor's notifications, not your browser's.
 6. A session that was already waiting when you opened the page, or when Agent Lookout started, sends nothing. Wait for the next one, or check the Needs you panel.
+
+### No email arrives
+
+1. Open Settings. If the Email card says "Email is off.", it names the setting to correct, or says to set both `AGENT_LOOKOUT_EMAIL_TO` and `AGENT_LOOKOUT_SMTP_URL`. Set them in the terminal you start Agent Lookout from, then start it again.
+2. If it says the last email could not be sent, the reason says what went wrong: the user name and password, a server that did not answer, or one that refused the connection or the email. Check the server's name and port, that the address begins `smtps://` or `smtp://` as your provider says, and that the password is an app password, with its special characters written as described under [Email](#email). A server that refused the email often refuses the sender: if emails go to an address other than the one you sign in with, set `AGENT_LOOKOUT_EMAIL_FROM` to the address you sign in with.
+3. If it says where emails go and nothing more, no wait has lasted the delay since Agent Lookout started. A session that was already waiting when it started sends nothing.
+4. If it says when the last email was sent, the mail server took it. Look in the spam folder of the address the card shows.
 
 ### The page says Agent Lookout has stopped updating
 

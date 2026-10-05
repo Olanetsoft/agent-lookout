@@ -9,6 +9,16 @@ export type SourceId = "claude-code" | "codex" | "status-files";
 
 export type Surface = "terminal" | "vscode" | "desktop" | "cloud" | "browser" | "unknown";
 
+/** What each surface is called, in the dashboard and in an email. */
+export const SURFACE_LABEL: Record<Surface, string> = {
+  terminal: "Terminal",
+  vscode: "VS Code",
+  desktop: "Desktop app",
+  cloud: "Cloud",
+  browser: "Browser",
+  unknown: "Unknown app",
+};
+
 export type SessionStatus = "needs-you" | "working" | "idle" | "finished" | "failed" | "unknown";
 
 export type WaitingReason = "permission" | "question" | "other";

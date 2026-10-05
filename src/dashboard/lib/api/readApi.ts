@@ -1,4 +1,4 @@
-import type { HistoryResponse } from "@core/api";
+import type { EmailOutcome, EmailStatusResponse, HistoryResponse } from "@core/api";
 import type {
   EventKind,
   EventSeverity,
@@ -251,4 +251,41 @@ export function readHistory(data: unknown): HistoryResponse | null {
     if (point) points.push(point);
   }
   return { points, startedAt };
+}
+
+/** The longest reason or problem the page shows. The collector's own are far shorter. */
+const MAX_EMAIL_WORDS = 300;
+
+/** A short sentence from the collector, or null. */
+function shortText(value: unknown): string | null {
+  const words = text(value);
+  return words && words.length <= MAX_EMAIL_WORDS ? words : null;
+}
+
+function readEmailOutcome(value: unknown): EmailOutcome | null {
+  if (!isRecord(value)) return null;
+  const at = number(value.at);
+  if (at === null) return null;
+  if (value.sent === true) return { at, sent: true };
+  return { at, sent: false, reason: shortText(value.reason) ?? "the email could not be sent" };
+}
+
+/**
+ * The answer of `/api/email`. Email counts as on only when the answer says so
+ * and gives the address and the delay, so a broken answer never claims that
+ * emails are going out.
+ */
+export function readEmailStatus(data: unknown): EmailStatusResponse | null {
+  if (!isRecord(data) || typeof data.on !== "boolean") return null;
+  const to = shortText(data.to);
+  const afterMs = number(data.afterMs);
+  const on = data.on && to !== null && afterMs !== null && afterMs >= 0;
+  return {
+    on,
+    to: on ? to : null,
+    afterMs: on ? afterMs : null,
+    problem: on ? null : shortText(data.problem),
+    last: on ? readEmailOutcome(data.last) : null,
+    limitedUntil: on ? number(data.limitedUntil) : null,
+  };
 }

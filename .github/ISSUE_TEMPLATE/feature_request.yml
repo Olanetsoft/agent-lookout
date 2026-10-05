@@ -7,7 +7,7 @@ body:
       value: |
         Check the milestones first: https://github.com/Olanetsoft/agent-lookout/milestones. If the feature is already planned, say which milestone it belongs to and what you would add.
 
-        Two rules apply to every feature: nothing leaves the machine, and the dashboard shows only what was measured. If your idea touches either one, say how it fits.
+        Two rules apply to every feature: by default nothing leaves the machine, and the dashboard shows only what was measured. If your idea touches either one, say how it fits.
 
         To ask for another agent tool, use the adapter request form.
   - type: textarea

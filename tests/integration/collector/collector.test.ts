@@ -1,18 +1,27 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { Socket } from "node:net";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { Adapter } from "@collector/adapters/adapter";
 import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
+import { HOUR_MS } from "@collector/email/emailTiming";
+import { createSmtpSender } from "@collector/email/smtpSender";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
-import { NOTIFICATIONS_HEADER } from "@core/api";
+import { EMAILS_PER_HOUR, NOTIFICATIONS_HEADER, type EmailStatusResponse } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { fixtureSessions, NOW } from "@tests/fixtures/codex";
 import { makeSession } from "@tests/fixtures/session";
 import { listen, request } from "@tests/support/node/http";
+import {
+  headerValues,
+  startSmtpServer,
+  textOf,
+  type SmtpBehaviour,
+} from "@tests/support/node/smtp";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
@@ -357,5 +366,262 @@ describe("the collector's own notifications", () => {
     await server.poll(4_000, [working("checkout-flow")]);
     await server.poll(6_000, [waiting("checkout-flow")]);
     expect(server.notifier.shown).toHaveLength(1);
+  });
+});
+
+describe("email notifications", () => {
+  const CREDENTIALS = { user: "name@example.test", pass: "app-password:/#?@%" };
+
+  /**
+   * A collector over a stand-in source, served over real HTTP, with the email
+   * settings in `env`. A sender it makes waits at most 300 milliseconds for a
+   * mail server, and every line it would print is written down.
+   */
+  async function mailing(env: Record<string, string>, source = standInSource()) {
+    const { state, adapter } = source;
+    const warnings: string[] = [];
+    let sendersMade = 0;
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [adapter],
+      env,
+      notifier: fakeSystemNotifier(),
+      now: () => state.now,
+      warn: (line) => warnings.push(line),
+      createEmailSender: (settings) => {
+        sendersMade += 1;
+        return createSmtpSender(settings, { timeoutMs: 300 });
+      },
+    });
+    const port = await listen(createServer(collector.handler));
+
+    return {
+      collector,
+      warnings,
+      sendersMade: () => sendersMade,
+      /** Moves the clock, replaces the sessions and polls once. */
+      async poll(atOffsetMs: number, sessions: Session[]) {
+        state.now = T0 + atOffsetMs;
+        state.sessions = sessions;
+        await collector.poller.pollOnce();
+      },
+      /** Waits until every email handed over so far has been tried. */
+      settled: () => collector.email?.settled() ?? Promise.resolve(),
+      async status() {
+        const response = await request(port, "/api/email");
+        expect(response.status).toBe(200);
+        return response.json<EmailStatusResponse>();
+      },
+    };
+  }
+
+  const mailId = (n: number) =>
+    `claude-code:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const busy = (n: number, name: string) =>
+    makeSession({ id: mailId(n), name, project: name, status: "working", statusSince: null });
+  /** Waiting for permission since `atOffsetMs`, as the registry says. */
+  const asking = (n: number, name: string, atOffsetMs: number) =>
+    makeSession({
+      id: mailId(n),
+      name,
+      project: name,
+      surface: "vscode",
+      cwd: `/Users/example/code/${name}`,
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingDetail: "permission prompt",
+      statusSince: T0 + atOffsetMs,
+    });
+
+  test("with nothing set, no email is sent, nothing that could send one is made, and no connection is opened", async () => {
+    const server = await mailing({ AGENT_LOOKOUT_NOTIFICATIONS: "on" });
+    // Every connection this process opens, to any address, while the polls run.
+    const connects = vi.spyOn(Socket.prototype, "connect");
+    try {
+      await server.poll(0, [busy(1, "checkout-flow")]);
+      await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+      await server.poll(HOUR_MS, [asking(1, "checkout-flow", 2_000)]);
+      await server.settled();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(connects).not.toHaveBeenCalled();
+    } finally {
+      connects.mockRestore();
+    }
+
+    expect(server.collector.email).toBeNull();
+    expect(server.sendersMade()).toBe(0);
+    expect(server.warnings).toEqual([]);
+    expect(await server.status()).toEqual({
+      on: false,
+      to: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    });
+  });
+
+  test("a wait shorter than the delay sends nothing, and one that lasts it sends one short email to the address set", async () => {
+    const mail = await startSmtpServer({ auth: CREDENTIALS });
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(CREDENTIALS),
+      AGENT_LOOKOUT_EMAIL_AFTER: "60",
+    });
+    expect(await server.status()).toMatchObject({
+      on: true,
+      to: "n…@example.test",
+      afterMs: 60_000,
+    });
+
+    await server.poll(0, [busy(1, "checkout-flow")]);
+    await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(50_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(52_000, [busy(1, "checkout-flow")]);
+    await server.settled();
+    expect(mail.connections).toBe(0);
+
+    await server.poll(70_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.poll(128_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.settled();
+    expect(mail.connections).toBe(0);
+
+    await server.poll(130_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.settled();
+    expect((await server.status()).last).toEqual({ at: T0 + 130_000, sent: true });
+    await server.poll(132_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.poll(HOUR_MS, [asking(1, "checkout-flow", 70_000)]);
+    await server.settled();
+
+    expect(mail.received).toHaveLength(1);
+    const [email] = mail.received;
+    expect(email?.to).toEqual(["notify@example.test"]);
+    expect(email?.auth).toEqual(CREDENTIALS);
+    expect(headerValues(email?.data ?? "", "Subject")).toEqual([
+      "checkout-flow is waiting for permission",
+    ]);
+    const text = textOf(email?.data ?? "");
+    expect(text).toContain("checkout-flow is waiting for permission.\n");
+    expect(text).toContain("It has waited 1 minute, since ");
+    expect(text).toContain("Folder: checkout-flow\nApp: VS Code\nAgent: Claude Code\n");
+    expect(text).not.toContain("/Users/example");
+    expect(text).not.toContain("permission prompt");
+  });
+
+  test("a collector that is started again does not send again for a wait it finds open", async () => {
+    const mail = await startSmtpServer();
+    const env = {
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_AFTER: "0",
+    };
+    const source = standInSource();
+    const first = await mailing(env, source);
+    await first.poll(0, [busy(1, "api-rate-limits")]);
+    await first.poll(2_000, [asking(1, "api-rate-limits", 2_000)]);
+    await first.settled();
+    expect(mail.received).toHaveLength(1);
+
+    // Stopped and started, with the session still waiting.
+    first.collector.stop();
+    const second = await mailing(env, source);
+    await second.poll(60_000, [asking(1, "api-rate-limits", 2_000)]);
+    await second.poll(HOUR_MS, [asking(1, "api-rate-limits", 2_000)]);
+    await second.settled();
+    expect(mail.received).toHaveLength(1);
+
+    // The next wait is new to it, and is emailed.
+    await second.poll(HOUR_MS + 2_000, [busy(1, "api-rate-limits")]);
+    await second.poll(HOUR_MS + 4_000, [asking(1, "api-rate-limits", HOUR_MS + 4_000)]);
+    await second.settled();
+    expect(mail.received).toHaveLength(2);
+  });
+
+  test(`no more than ${EMAILS_PER_HOUR} go in an hour, and the status says when the next can`, async () => {
+    const mail = await startSmtpServer();
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_AFTER: "0",
+    });
+    const sessions = (make: (n: number) => Session) =>
+      Array.from({ length: EMAILS_PER_HOUR + 3 }, (_, index) => make(index + 1));
+
+    await server.poll(
+      0,
+      sessions((n) => busy(n, `docs-site-${n}`)),
+    );
+    await server.poll(
+      2_000,
+      sessions((n) => asking(n, `docs-site-${n}`, 2_000)),
+    );
+    await server.poll(
+      60_000,
+      sessions((n) => asking(n, `docs-site-${n}`, 2_000)),
+    );
+    await server.settled();
+
+    expect(mail.received).toHaveLength(EMAILS_PER_HOUR);
+    expect((await server.status()).limitedUntil).toBe(T0 + 2_000 + HOUR_MS);
+  });
+
+  test.each<[SmtpBehaviour, string]>([
+    ["refuse", "the mail server refused the connection"],
+    ["silent", "the mail server did not answer in time"],
+    ["trickle", "the mail server did not answer in time"],
+  ])(
+    "a mail server that does %s leaves the poll unharmed, and the status says what happened",
+    async (behaviour, reason) => {
+      const mail = await startSmtpServer({ behaviour });
+      const server = await mailing({
+        AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+        AGENT_LOOKOUT_SMTP_URL: mail.url(),
+        AGENT_LOOKOUT_EMAIL_AFTER: "0",
+      });
+      await server.poll(0, [busy(1, "billing-webhooks")]);
+
+      const started = Date.now();
+      await server.poll(2_000, [asking(1, "billing-webhooks", 2_000)]);
+      // The poll did not wait for the mail server.
+      expect(Date.now() - started).toBeLessThan(250);
+      expect(server.collector.poller.getSnapshot().sessions[0]?.status).toBe("needs-you");
+
+      await server.settled();
+      expect(mail.connections).toBe(1);
+      expect((await server.status()).last).toEqual({ at: T0 + 2_000, sent: false, reason });
+
+      // The polls go on, and that wait is not tried again.
+      await server.poll(4_000, [asking(1, "billing-webhooks", 2_000)]);
+      await server.poll(6_000, [busy(1, "billing-webhooks")]);
+      await server.settled();
+      expect(mail.connections).toBe(1);
+      expect(server.collector.poller.getSnapshot().sessions[0]?.status).toBe("working");
+    },
+  );
+
+  test("a setting that is wrong turns email off, with one line that names it and never the password", async () => {
+    const mail = await startSmtpServer();
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: "https://name%40example.test:s3cret-app-password@smtp.example.test",
+    });
+    await server.poll(0, [busy(1, "email-templates")]);
+    await server.poll(2_000, [asking(1, "email-templates", 2_000)]);
+    await server.poll(HOUR_MS, [asking(1, "email-templates", 2_000)]);
+
+    expect(server.warnings).toEqual([
+      "Email notifications are off: AGENT_LOOKOUT_SMTP_URL must begin with smtps:// or smtp://.",
+    ]);
+    const status = await server.status();
+    expect(status).toMatchObject({
+      on: false,
+      problem: "AGENT_LOOKOUT_SMTP_URL must begin with smtps:// or smtp://.",
+    });
+    const said = `${server.warnings.join("\n")}${JSON.stringify(status)}`;
+    for (const secret of ["s3cret", "name%40", "name@", "smtp.example.test"]) {
+      expect(said).not.toContain(secret);
+    }
+    expect(server.sendersMade()).toBe(0);
+    expect(mail.connections).toBe(0);
   });
 });

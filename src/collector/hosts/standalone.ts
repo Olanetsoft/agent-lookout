@@ -38,8 +38,8 @@ export interface StandaloneOptions {
   /** The built dashboard: the folder that holds `index.html`, normally `dist/`. */
   distDir: string;
   /**
-   * Where the settings are read: `AGENT_LOOKOUT_HOST`, `AGENT_LOOKOUT_PORT`
-   * and each adapter's own.
+   * Where the settings are read: `AGENT_LOOKOUT_HOST`, `AGENT_LOOKOUT_PORT`,
+   * each adapter's own and the email settings.
    */
   env: NodeJS.ProcessEnv;
   print: Printer;
@@ -82,7 +82,11 @@ export async function runStandalone(options: StandaloneOptions): Promise<Address
     );
   }
 
-  const collector = createCollector({ version: readAppVersion(), env });
+  const collector = createCollector({
+    version: readAppVersion(),
+    env,
+    warn: (line) => print.error(line),
+  });
   const server = createAppServer({ distDir, api: collector.handler });
 
   let address: AddressInfo;

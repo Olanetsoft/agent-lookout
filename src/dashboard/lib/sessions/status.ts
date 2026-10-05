@@ -1,12 +1,15 @@
-import type {
-  Session,
-  SessionEvent,
-  SessionStatus,
-  SourceId,
-  SourceState,
-  Surface,
+import {
+  SURFACE_LABEL,
+  type Session,
+  type SessionEvent,
+  type SessionStatus,
+  type SourceId,
+  type SourceState,
 } from "@core/sessions/session";
 import { formatDuration } from "@dashboard/lib/format";
+
+// The core keeps the surfaces' words, which an email uses too.
+export { SURFACE_LABEL };
 
 /** The words the interface uses for each status. Colour is never the only signal. */
 export const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -16,15 +19,6 @@ export const STATUS_LABEL: Record<SessionStatus, string> = {
   finished: "Finished",
   failed: "Failed",
   unknown: "Unknown",
-};
-
-export const SURFACE_LABEL: Record<Surface, string> = {
-  terminal: "Terminal",
-  vscode: "VS Code",
-  desktop: "Desktop app",
-  cloud: "Cloud",
-  browser: "Browser",
-  unknown: "Unknown app",
 };
 
 /**

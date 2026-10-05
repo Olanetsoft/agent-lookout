@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { waitingLabel, waitNotice } from "@core/sessions/waiting";
+import { sessionTitle, waitingLabel, waitingPhrase, waitNotice } from "@core/sessions/waiting";
 import { makeSession } from "@tests/fixtures/session";
 
 test("a waiting reason is said in plain words", () => {
@@ -8,6 +8,21 @@ test("a waiting reason is said in plain words", () => {
   expect(waitingLabel({ waitingReason: "question" })).toBe("Asked you a question");
   expect(waitingLabel({ waitingReason: "other" })).toBe("Waiting for you");
   expect(waitingLabel({})).toBe("Waiting for you");
+});
+
+test("the same reasons are said of a session by its name, for the subject of an email", () => {
+  expect(waitingPhrase({ waitingReason: "permission" })).toBe("is waiting for permission");
+  expect(waitingPhrase({ waitingReason: "question" })).toBe("asked you a question");
+  expect(waitingPhrase({ waitingReason: "other" })).toBe("is waiting for you");
+  expect(waitingPhrase({})).toBe("is waiting for you");
+});
+
+test("a session is called by its name, then its folder, then its id", () => {
+  expect(sessionTitle(makeSession({ name: "docs-site" }))).toBe("docs-site");
+  expect(sessionTitle(makeSession({ name: " ", project: "docs-site" }))).toBe("docs-site");
+  expect(sessionTitle(makeSession({ id: "claude-code:7", name: "", project: null }))).toBe(
+    "claude-code:7",
+  );
 });
 
 test("a notification of a wait is the session's name and the reason, and nothing else", () => {

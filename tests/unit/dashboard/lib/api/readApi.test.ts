@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import {
+  readEmailStatus,
   readEvents,
   readHistory,
   readSession,
@@ -321,4 +322,55 @@ test("history keeps the points that are all numbers, and needs to know when the 
   expect(history).toEqual({ startedAt: T - 60_000, points: [good] });
   expect(readHistory({ points: [] })).toBeNull();
   expect(readHistory({ points: {}, startedAt: T })).toBeNull();
+});
+
+test("the email status is read as it was sent, on and off", () => {
+  const on = {
+    on: true,
+    to: "n…@example.com",
+    afterMs: 60_000,
+    problem: null,
+    last: { at: T, sent: false, reason: "the mail server did not answer in time" },
+    limitedUntil: T + 3_600_000,
+  };
+  expect(readEmailStatus(JSON.parse(JSON.stringify(on)))).toEqual(on);
+  expect(readEmailStatus({ ...on, last: { at: T, sent: true } })?.last).toEqual({
+    at: T,
+    sent: true,
+  });
+
+  const off = {
+    on: false,
+    to: null,
+    afterMs: null,
+    problem: "AGENT_LOOKOUT_SMTP_URL is not set.",
+    last: null,
+    limitedUntil: null,
+  };
+  expect(readEmailStatus(off)).toEqual(off);
+});
+
+test("an email status that cannot be read never claims that emails are going out", () => {
+  expect(readEmailStatus(null)).toBeNull();
+  expect(readEmailStatus({})).toBeNull();
+  expect(readEmailStatus({ on: "yes" })).toBeNull();
+  // On, but with no address or no delay to show: off.
+  expect(readEmailStatus({ on: true, afterMs: 60_000 })?.on).toBe(false);
+  expect(readEmailStatus({ on: true, to: "n…@example.com" })?.on).toBe(false);
+  expect(readEmailStatus({ on: true, to: "n…@example.com", afterMs: -1 })?.on).toBe(false);
+  // An outcome with no time is no outcome, and a failure with no reason gets a plain one.
+  const base = { on: true, to: "n…@example.com", afterMs: 0 };
+  expect(readEmailStatus({ ...base, last: { sent: true } })?.last).toBeNull();
+  expect(readEmailStatus({ ...base, last: { at: T, sent: false } })?.last).toEqual({
+    at: T,
+    sent: false,
+    reason: "the email could not be sent",
+  });
+  expect(
+    readEmailStatus({ ...base, last: { at: T, sent: false, reason: "x".repeat(301) } })?.last,
+  ).toEqual({
+    at: T,
+    sent: false,
+    reason: "the email could not be sent",
+  });
 });

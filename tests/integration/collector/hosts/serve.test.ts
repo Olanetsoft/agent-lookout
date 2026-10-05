@@ -1,19 +1,29 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
+import type { EmailStatusResponse } from "@core/api";
+import type { SessionsSnapshot } from "@core/sessions/session";
+import { request } from "@tests/support/node/http";
 import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // These tests run the real entry point, `src/collector/hosts/serve.ts`, the way
 // `npm start` does: as a process of its own, started by tsx. Each one is refused
 // before the built dashboard is looked for, so none depends on `dist/`. What the
-// host does with a build, and without one, is in standalone.test.ts.
+// host does with a build, and without one, is in standalone.test.ts. The one
+// that has to get past that check runs the same host from a copy of the entry
+// point that serves a stand-in for `dist/`.
 
 const serveFile = fileURLToPath(
   new URL("../../../../src/collector/hosts/serve.ts", import.meta.url),
 );
+const standaloneUrl = new URL("../../../../src/collector/hosts/standalone.ts", import.meta.url)
+  .href;
+const moduleLogUrl = new URL("../../../support/node/moduleLog.mjs", import.meta.url).href;
 const tsxCli = createRequire(import.meta.url).resolve("tsx/cli");
 const ownGroup = process.platform !== "win32";
 
@@ -28,14 +38,16 @@ interface Started {
 /**
  * Starts the server with an environment that names nothing on this machine: an
  * empty Claude home, a stand-in `claude` that lists no sessions, an empty
- * Codex home, an empty folder of status files, and tmux turned off.
+ * Codex home, an empty folder of status files, and tmux turned off. Nothing else
+ * is taken from the shell that runs the tests. `entry` is the file tsx runs,
+ * `serve.ts` unless one is given.
  */
-async function start(env: Record<string, string>): Promise<Started> {
+async function start(env: Record<string, string>, entry = serveFile): Promise<Started> {
   const home = await makeClaudeHome();
   const codexHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
-  const child = spawn(process.execPath, [tsxCli, serveFile], {
+  const child = spawn(process.execPath, [tsxCli, entry], {
     env: {
       PATH: process.env.PATH ?? "/usr/bin:/bin",
       HOME: home,
@@ -87,6 +99,55 @@ describe("npm start, as a real process", () => {
     },
     20_000,
   );
+
+  test("with no email settings, it never loads the mail library, and says email is off", async () => {
+    // `serve.ts` with a stand-in for `dist/`, so the host gets as far as polling.
+    const dir = await tempDir();
+    const dist = path.join(dir, "dist");
+    await mkdir(dist);
+    await writeFile(path.join(dist, "index.html"), "<!doctype html><title>Agent Lookout</title>");
+    const entry = path.join(dir, "start.mts");
+    await writeFile(
+      entry,
+      `import { runStandalone } from ${JSON.stringify(standaloneUrl)};\n` +
+        `await runStandalone({ distDir: ${JSON.stringify(dist)}, env: process.env, print: console, process });\n`,
+    );
+    const log = path.join(dir, "modules.txt");
+
+    const server = await start(
+      {
+        AGENT_LOOKOUT_PORT: "0",
+        MODULE_LOG_FILE: log,
+        NODE_OPTIONS: `--import=${moduleLogUrl}`,
+      },
+      entry,
+    );
+    const running = /is running at http:\/\/127\.0\.0\.1:(\d+)/;
+    await vi.waitFor(() => expect(server.output()).toMatch(running), { timeout: 15_000 });
+    const port = Number(running.exec(server.output())?.[1]);
+    // Once a poll has been answered, everything a poll loads has been loaded.
+    await vi.waitFor(
+      async () => {
+        const snapshot = (await request(port, "/api/sessions")).json<SessionsSnapshot>();
+        expect(snapshot.sources.length).toBeGreaterThan(0);
+      },
+      { timeout: 10_000 },
+    );
+
+    expect((await request(port, "/api/email")).json<EmailStatusResponse>()).toEqual({
+      on: false,
+      to: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    });
+    const loaded = await readFile(log, "utf8");
+    // The log is known to work: it holds the collector itself.
+    expect(loaded).toContain("/src/collector/collector.ts");
+    expect(loaded).not.toContain("/node_modules/nodemailer/");
+    expect(server.output()).not.toContain("Email notifications are off");
+  }, 30_000);
 
   test.each(["http", "-1", "70000", "50.5"])(
     "refuses the port %s, says why and exits with an error",

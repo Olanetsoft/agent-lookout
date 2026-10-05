@@ -278,6 +278,36 @@ describe("routes", () => {
       expect(response.headers.allow).toBe("GET");
     }
   });
+
+  test("/api/email says whether email is set up, which with nothing set it is not, and can only be read", async () => {
+    const { port } = await serve();
+    const off = {
+      on: false,
+      to: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    };
+    expect((await request(port, "/api/email")).json()).toEqual(off);
+    expect((await request(port, "/api/email", { method: "POST", body: "{}" })).status).toBe(405);
+    expect((await request(port, "/api/email", { headers: { Host: "evil.example" } })).status).toBe(
+      403,
+    );
+
+    // A handler given no email notifications at all says the same.
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+    });
+    const bare = await listen(createServer(handler));
+    expect((await request(bare, "/api/email")).json()).toEqual(off);
+  });
 });
 
 describe("the route that acts", () => {

@@ -1552,6 +1552,8 @@ test("pressing the button in Settings tells the app at once, in one request that
   const host = notificationsFor(true);
   const told: [string, string | null, boolean][] = [];
   setApiHost(async (path, init) => {
+    // The Email card reads whether email is set up. That read is not the news here.
+    if (path === "/api/email") return new Response("{}");
     told.push([
       path,
       new Headers(init?.headers).get(NOTIFICATIONS_HEADER),

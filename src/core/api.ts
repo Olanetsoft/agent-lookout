@@ -84,3 +84,29 @@ export const NOTIFICATIONS_HEADER = "X-Agent-Lookout-Notifications";
 
 /** What a page says in `NOTIFICATIONS_HEADER`. Any other value says nothing. */
 export type NotificationsSaid = "on" | "off";
+
+/** The most emails the collector sends in any hour. Past it, none go until the hour has passed. */
+export const EMAILS_PER_HOUR = 20;
+
+/** How the last email went: when it was tried, and whether it was sent or why it was not. */
+export type EmailOutcome = { at: number; sent: true } | { at: number; sent: false; reason: string };
+
+/**
+ * `GET /api/email`: whether the collector sends an email for a wait, to whom
+ * and after how long, and how the last one went. It is read-only. The settings
+ * live in the environment the collector was started with, and this never holds
+ * the mail server's address, its user name or its password.
+ */
+export interface EmailStatusResponse {
+  on: boolean;
+  /** The address, with all but the first letter before the @ hidden: `n…@example.com`. Null while off. */
+  to: string | null;
+  /** How long a wait lasts before it is emailed, in milliseconds. Null while off. */
+  afterMs: number | null;
+  /** While off because a setting is wrong: one sentence naming the setting, never its value. */
+  problem: string | null;
+  /** The last email that was tried, or null when none has been. */
+  last: EmailOutcome | null;
+  /** While the hourly limit holds emails back, when the next may go. */
+  limitedUntil: number | null;
+}

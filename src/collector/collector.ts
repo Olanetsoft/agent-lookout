@@ -2,6 +2,13 @@ import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
+import {
+  createEmailNotifications,
+  emailOffStatus,
+  type EmailNotifications,
+} from "./email/emailNotifications.ts";
+import { emailProblemLine, readEmailSetup } from "./email/emailSettings.ts";
+import { createSmtpSender, type CreateEmailSender } from "./email/smtpSender.ts";
 import { createEventStore } from "./eventStore.ts";
 import { createApiHandler, type ApiHandler } from "./handler.ts";
 import { createHistoryStore } from "./historyStore.ts";
@@ -23,8 +30,8 @@ export interface CollectorOptions {
   /**
    * Where the default adapters read their settings, such as
    * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and where
-   * `AGENT_LOOKOUT_NOTIFICATIONS` is read. Defaults to `process.env`.
+   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS` and
+   * the email settings are read. Defaults to `process.env`.
    */
   env?: NodeJS.ProcessEnv;
   /**
@@ -39,6 +46,17 @@ export interface CollectorOptions {
    * one and `AGENT_LOOKOUT_TMUX` is not `off`. Tests pass one that runs nothing.
    */
   tmux?: RunTmux;
+  /**
+   * Makes what sends an email, once email has been set up in the environment.
+   * Defaults to the mail server named there. With email not set up it is never
+   * called. Tests pass one that sends nothing, or one with short timeouts.
+   */
+  createEmailSender?: CreateEmailSender;
+  /**
+   * Where the one line goes that says email is off because a setting is wrong.
+   * Defaults to the console's errors.
+   */
+  warn?: (line: string) => void;
   intervalMs?: number;
   now?: () => number;
 }
@@ -51,28 +69,45 @@ export interface Collector {
   /** Answers `/api/*`. Mount it in any Node HTTP server. */
   handler: ApiHandler;
   poller: Poller;
+  /** The email notifications, or null while email is not set up. */
+  email: EmailNotifications | null;
 }
 
 /**
  * The collector in one piece: adapters, poller, stores, its own notifications,
- * what finds and selects a tmux pane, and the request handler. Every host
- * builds it the same way: the dev server, the standalone server, and later a
- * desktop app.
+ * the email notifications when they are set up, what finds and selects a tmux
+ * pane, and the request handler. Every host builds it the same way: the dev
+ * server, the standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
+  const env = options.env ?? process.env;
   const intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
   const events = createEventStore();
   const history = createHistoryStore();
   // The panes the Claude Code adapter finds are the ones the jump route selects,
   // so the two share one finder and one way of running tmux.
-  const tmux = options.tmux ?? createTmuxRunner({ env: options.env ?? process.env });
+  const tmux = options.tmux ?? createTmuxRunner({ env });
   const panes = createPaneFinder({ run: tmux, now });
   const notifications = createServerNotifications({
     notifier: options.notifier ?? createSystemNotifier(),
-    onAtStart: notificationsOnAtStart(options.env ?? process.env),
+    onAtStart: notificationsOnAtStart(env),
     now,
   });
+  // Read once, here. With nothing set, nothing that could send an email is
+  // made, and the mail library is never loaded.
+  const emailSetup = readEmailSetup(env);
+  if (!emailSetup.on && emailSetup.problem !== null) {
+    (options.warn ?? console.error)(emailProblemLine(emailSetup.problem));
+  }
+  const email = emailSetup.on
+    ? createEmailNotifications({
+        settings: emailSetup.settings,
+        sender: (options.createEmailSender ?? createSmtpSender)(emailSetup.settings),
+        now,
+      })
+    : null;
+  const emailOff = emailOffStatus(emailSetup.on ? null : emailSetup.problem);
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
     adapters: options.adapters ?? [
@@ -86,7 +121,10 @@ export function createCollector(options: CollectorOptions): Collector {
     now,
     // The poller runs for as long as the app does, with a dashboard open or
     // not, so a wait that begins with no page open is still seen here.
-    onSnapshot: (snapshot) => notifications.handle(snapshot),
+    onSnapshot: (snapshot) => {
+      email?.handle(snapshot);
+      notifications.handle(snapshot);
+    },
   });
   const handler = createApiHandler({
     version: options.version,
@@ -94,6 +132,7 @@ export function createCollector(options: CollectorOptions): Collector {
     events,
     history,
     notifications,
+    email: () => email?.status() ?? emailOff,
     jump: createJumpRoute({ poller, panes, run: tmux, now }),
     now,
   });
@@ -103,5 +142,6 @@ export function createCollector(options: CollectorOptions): Collector {
     stop: () => poller.stop(),
     handler,
     poller,
+    email,
   };
 }

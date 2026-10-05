@@ -1,6 +1,6 @@
 # Privacy
 
-Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read. Agent Lookout itself sends nothing anywhere. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
 
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
@@ -90,7 +90,7 @@ With notifications on, and no dashboard page open to show one, Agent Lookout sho
 
 ### Settings
 
-It reads ten settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads fourteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, and the four email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM` and `AGENT_LOOKOUT_EMAIL_AFTER`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -104,7 +104,7 @@ It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notifica
 
 ## Network
 
-The only network traffic Agent Lookout's own code makes is between the dashboard in your browser and its own server on the same machine. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
+With email off, which is the default, the only network traffic Agent Lookout's own code makes is between the dashboard in your browser and its own server on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
 
 The `claude agents` command is Claude Code's own program, and it may contact Anthropic the way it does for anyone who runs it. Agent Lookout sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` for each run, to ask Claude Code to skip its update check, usage reporting and error reporting, and runs the command seldom. Anything else that program does is governed by Claude Code's settings and terms. To stop Agent Lookout running it, set `AGENT_LOOKOUT_CLAUDE_FEED=off`. Sessions then come from the registry alone, and background jobs whose process has ended are not listed.
 
@@ -159,11 +159,48 @@ A notification the server shows differs from the browser's:
 - It holds nothing that could open the session or the dashboard. What a click on it does has not been checked.
 - The server cannot take it down. It stays in Notification Centre after the session stops waiting, and after Agent Lookout stops, until you clear it.
 
+## Email
+
+Email notifications are off until you set them up, and they can be set up only in the environment Agent Lookout starts with: `AGENT_LOOKOUT_EMAIL_TO`, the one address emails go to, and `AGENT_LOOKOUT_SMTP_URL`, the mail server they go through, with the user name and password to sign in with. `AGENT_LOOKOUT_EMAIL_FROM`, the sender's address, and `AGENT_LOOKOUT_EMAIL_AFTER`, how long a wait lasts before it is emailed, can be left out. While either of the first two is unset, no email is sent, the mail library is not loaded and no connection is opened. The same holds when any of the four is set to something Agent Lookout cannot read. The [guide](docs/GUIDE.md#email) says how to set them up and how to turn them off.
+
+### What an email holds
+
+An email is plain text. Its subject is the session's name followed by the reason, in the words the dashboard uses, such as "checkout-flow is waiting for permission". Its body holds:
+
+- that same sentence
+- how long the session has waited, and the time on this computer's clock when it began
+- the name of the session's project folder: the last part of its path, never the path
+- the app it runs in, such as VS Code or Terminal
+- the agent, Claude Code
+- one line saying Agent Lookout sent it and how to stop these emails
+
+It holds no folder path, no prompt, none of Claude Code's own wording for the wait, no link, no image and nothing that reports back when it is opened. Its headers are the ones the mail library writes for every email: From, with the name Agent Lookout and the sender's address, To, Subject, Date, Message-ID, and three that say it is plain text in UTF-8. A session's name and its folder's name are cut to 80 characters, and anything in them that would end a line becomes a space, so nothing in a name can add a header or a recipient.
+
+### Where it goes, and how
+
+Each email goes to the one address in `AGENT_LOOKOUT_EMAIL_TO`, and to no other. It comes from the address in `AGENT_LOOKOUT_EMAIL_FROM`, or from the same address when that is not set. It goes through the mail server in `AGENT_LOOKOUT_SMTP_URL`, which then delivers it the way it delivers any email.
+
+For each email Agent Lookout looks up the server's name, opens a connection to it, signs in with the user name and password from `AGENT_LOOKOUT_SMTP_URL`, hands the email over and closes the connection. It greets the server as `[127.0.0.1]`, not by this computer's name. The server sees the network address the connection comes from, as any server you connect to does. The connection is encrypted with TLS: from the first byte when the address begins `smtps://`, and when it begins `smtp://`, the server must offer to switch to TLS before anything is sent, or nothing is sent. The server's certificate is always checked. Only to a mail server on this machine, at `127.0.0.1` or `localhost`, does `smtp://` go without TLS, since nothing leaves the machine on the way to it.
+
+### When
+
+An email is sent for a wait that begins after Agent Lookout started, once it has lasted the delay, which is one minute unless `AGENT_LOOKOUT_EMAIL_AFTER` says otherwise, if the session is still waiting then. A wait answered before then sends nothing, and so does a session that was already waiting when Agent Lookout started. Each wait sends one email at most, and an email that could not be sent is not tried again. At most 20 are sent in any hour. Past that, none goes until the hour has passed. Claude Code sessions and sessions from a status file can be seen waiting; a Codex session never can, so it never sends one.
+
+The button for notifications in Settings does not turn emails on or off. To stop them, start Agent Lookout again without `AGENT_LOOKOUT_EMAIL_TO`.
+
+### What is kept
+
+The settings, password included, live in the environment of the Agent Lookout process, as every setting on this page does. Programs running as your user on this machine can read a process's environment. Agent Lookout never writes them to a file, never sends them to the dashboard, and never prints them. When one cannot be read, it prints one line that names the setting and never its value. A setting typed in front of the command can be kept by your shell in its history file. The guide shows how to keep the password out of it.
+
+Through `GET /api/email`, the dashboard learns whether email is on, the address with all but its first letter before the @ hidden, such as `n…@example.com`, the delay, and when the last email was tried, with whether it was sent or a short reason why not. It never learns the server, the user name or the password. That, and the times of the emails of the last hour, are held in memory and are gone when Agent Lookout stops.
+
+Once an email has been handed to the mail server, Agent Lookout has no hold on it. The mail server you named and the mailbox it is delivered to keep the email, and whatever they record about it, for as long as their own settings and terms say. Agent Lookout cannot recall or delete it.
+
 ## Storage
 
 Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, and what the dashboard pages last said about notifications.
 
-With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays.
+With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says.
 
 The tools that run it write files of their own. None of these holds session data.
 
@@ -178,7 +215,7 @@ The dashboard saves two values in your browser's local storage. Your theme choic
 
 Session names and folder paths can show what you are working on. Check a screenshot before you share it.
 
-With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made stays there until the session stops waiting or you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off.
+With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made stays there until the session stops waiting or you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it.
 
 ## Changes
 

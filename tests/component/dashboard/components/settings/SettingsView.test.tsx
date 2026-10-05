@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import type { EmailStatusResponse } from "@core/api";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
+import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
   NOTIFICATIONS_STORAGE_KEY,
@@ -21,9 +23,29 @@ import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/
  */
 let host: FakeNotificationHost;
 
+/** What the app says about email, as `/api/email` would. Off unless a test says otherwise. */
+const EMAIL_OFF: EmailStatusResponse = {
+  on: false,
+  to: null,
+  afterMs: null,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+let email: EmailStatusResponse | null;
+/** The paths the view asked the app for. */
+let asked: string[];
+
 beforeEach(() => {
   host = fakeNotificationHost();
   setNotificationHost(host);
+  email = EMAIL_OFF;
+  asked = [];
+  setApiHost(async (path) => {
+    asked.push(path);
+    if (email === null) throw new TypeError("Failed to fetch");
+    return new Response(JSON.stringify(email), { headers: { "Content-Type": "application/json" } });
+  });
 });
 
 afterEach(() => {
@@ -31,6 +53,7 @@ afterEach(() => {
   resetThemeForTests();
   resetNotificationSettingForTests();
   setNotificationHost();
+  setApiHost();
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -107,7 +130,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -123,6 +146,13 @@ test.each(["dark", "light"] as const)(
 
 const notifications = (screen: Awaited<ReturnType<typeof render>>) =>
   screen.getByRole("region", { name: "Notifications" });
+
+/** The line that says whether email is set up. */
+const emailState = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen
+    .getByRole("region", { name: "Email" })
+    .element()
+    .querySelector('[data-part="state"]') as HTMLElement;
 
 /** The words that say whether notifications are on. */
 const stateOf = (screen: Awaited<ReturnType<typeof render>>) =>
@@ -382,23 +412,32 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme and notifications share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications and email share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
+  await expect.element(emailState(screen)).toHaveTextContent("Email is off.");
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
-  const [theme, notes, copy] = [box("Theme"), box("Notifications"), box("This copy")];
+  const [theme, notes, mail, copy] = [
+    box("Theme"),
+    box("Notifications"),
+    box("Email"),
+    box("This copy"),
+  ];
 
   expect(notes.left).toBe(theme.left);
   expect(notes.width).toBe(theme.width);
   expect(notes.top - theme.bottom).toBe(16);
+  expect(mail.left).toBe(theme.left);
+  expect(mail.width).toBe(theme.width);
+  expect(mail.top - notes.bottom).toBe(16);
   expect(copy.top).toBe(theme.top);
   expect(copy.left - theme.right).toBe(16);
 });
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, Email, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -411,6 +450,7 @@ test.each([1000, 375])(
     expect(cards.map((card) => card.querySelector("h2")?.textContent)).toEqual([
       "Theme",
       "Notifications",
+      "Email",
       "This copy",
     ]);
     const boxes = cards.map((card) => card.getBoundingClientRect());
@@ -465,5 +505,136 @@ test.each(
       expect(warmPaint(screen.container)).toEqual([]);
       await pointAway();
     }
+  },
+);
+
+/** The two lines of the Email card, once the app has answered: the state, and the line under it. */
+async function emailLines(screen: Awaited<ReturnType<typeof render>>) {
+  const card = screen.getByRole("region", { name: "Email" });
+  await vi.waitFor(() => expect(emailState(screen).textContent).not.toBe(""));
+  return [...card.element().querySelectorAll(":scope > div > p")].map((line) => line.textContent);
+}
+
+/** Today at this time on the clock. */
+const today = (hours: number, minutes: number) => {
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date.getTime();
+};
+
+const EMAIL_ON: EmailStatusResponse = {
+  on: true,
+  to: "n…@example.com",
+  afterMs: 60_000,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+
+test("with nothing set, the Email card says email is off and which two settings turn it on, and only reads", async () => {
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Email is off.",
+    "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on.",
+  ]);
+  const card = screen.getByRole("region", { name: "Email" }).element();
+  // The settings are named in the face for literal text, as on the Sources view.
+  expect([...card.querySelectorAll('[data-slot="fact"]')].map((fact) => fact.textContent)).toEqual([
+    "AGENT_LOOKOUT_EMAIL_TO",
+    "AGENT_LOOKOUT_SMTP_URL",
+  ]);
+  // Nothing on the page turns it on or off.
+  expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+  expect(asked).toEqual(["/api/email"]);
+  expect(emailState(screen).getAttribute("aria-live")).toBe("polite");
+});
+
+test("a setting that is wrong is named, with what to do", async () => {
+  email = { ...EMAIL_OFF, problem: "AGENT_LOOKOUT_SMTP_URL must begin with smtps:// or smtp://." };
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Email is off.",
+    "AGENT_LOOKOUT_SMTP_URL must begin with smtps:// or smtp://. Correct it and start Agent Lookout again.",
+  ]);
+});
+
+test("with email on, it says where emails go and after how long, and the facts say emails leave this computer", async () => {
+  email = EMAIL_ON;
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Emails go to n…@example.com after a wait of 1 minute.",
+  ]);
+  const copy = screen.getByRole("region", { name: "This copy" }).element();
+  expect(
+    copy.querySelector('[data-slot="fact-row"] + [data-slot="fact-row"] dd')?.textContent,
+  ).toBe("Leaves only in the emails you set up");
+});
+
+test.each<[string, Partial<EmailStatusResponse>, string]>([
+  ["sent", { last: { at: today(14, 2), sent: true } }, "Last sent at 14:02."],
+  [
+    "not sent",
+    {
+      last: { at: today(14, 2), sent: false, reason: "the mail server did not answer in time" },
+    },
+    "The last email could not be sent: the mail server did not answer in time.",
+  ],
+  [
+    "held by the hourly limit",
+    { last: { at: today(14, 2), sent: true }, limitedUntil: today(15, 2) },
+    "20 emails were tried in the last hour, the most it tries. The next can go at 15:02.",
+  ],
+  [
+    "not sent, and the hourly limit is full",
+    {
+      last: {
+        at: today(14, 2),
+        sent: false,
+        reason: "the mail server did not accept the user name and password",
+      },
+      limitedUntil: today(15, 2),
+    },
+    "The last email could not be sent: the mail server did not accept the user name and password. No more will be tried until 15:02, as 20 were tried in the last hour.",
+  ],
+])("when the last email was %s, the line under says so", async (_, status, line) => {
+  email = { ...EMAIL_ON, ...status };
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Emails go to n…@example.com after a wait of 1 minute.",
+    line,
+  ]);
+});
+
+test("when the app does not answer, the card says it could not be read, and claims nothing", async () => {
+  email = null;
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual(["Whether email is set up could not be read."]);
+  const copy = screen.getByRole("region", { name: "This copy" }).element();
+  expect(copy.textContent).toContain("Stays on this computer");
+  expect(copy.textContent).not.toContain("emails");
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme the Email card is built like the notifications card: the state in ink at 500, the line under it quieter, and nothing warm",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    email = { ...EMAIL_ON, last: { at: today(14, 2), sent: true } };
+    const screen = await render(<SettingsView />);
+    await emailLines(screen);
+
+    const state = emailState(screen);
+    expect(getComputedStyle(state).fontSize).toBe("13px");
+    expect(getComputedStyle(state).fontWeight).toBe("500");
+    expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
+    const under = state.nextElementSibling as HTMLElement;
+    expect(getComputedStyle(under).fontSize).toBe("13px");
+    expect(getComputedStyle(under).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(under.getBoundingClientRect().top - state.getBoundingClientRect().bottom).toBe(12);
+    expect(warmPaint(screen.container)).toEqual([]);
   },
 );

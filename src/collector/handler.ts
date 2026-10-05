@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   NOTIFICATIONS_HEADER,
+  type EmailStatusResponse,
   type ErrorResponse,
   type EventsResponse,
   type HealthResponse,
@@ -10,6 +11,7 @@ import {
 } from "../core/api.ts";
 import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
+import { emailOffStatus } from "./email/emailNotifications.ts";
 import type { EventStore } from "./eventStore.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import type { ServerNotifications } from "./notifications/serverNotifications.ts";
@@ -41,6 +43,11 @@ export interface ApiHandlerOptions {
    * on its requests. Left out, the header is ignored.
    */
   notifications?: Pick<ServerNotifications, "pageSaid">;
+  /**
+   * What `GET /api/email` answers: whether email is set up, the masked address,
+   * the delay and how the last email went. Left out, it answers that email is off.
+   */
+  email?: () => EmailStatusResponse;
   /**
    * Answers `POST /api/jump`, with checks of its own on top of the ones every
    * request passes: `createJumpRoute` in `jumpRoute.ts`. Left out, there is no
@@ -149,7 +156,7 @@ function numberParam(value: string | null): number | undefined | "invalid" {
 }
 
 export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
-  const { version, poller, events, history, notifications, jump } = options;
+  const { version, poller, events, history, notifications, email, jump } = options;
   const now = options.now ?? Date.now;
 
   function route(req: IncomingMessage, res: ServerResponse): void {
@@ -211,6 +218,10 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
           return;
         }
         send(res, 200, { events: events.list({ since }) } satisfies EventsResponse);
+        return;
+      }
+      case "/api/email": {
+        send(res, 200, (email ? email() : emailOffStatus(null)) satisfies EmailStatusResponse);
         return;
       }
       case "/api/history": {

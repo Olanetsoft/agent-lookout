@@ -1,10 +1,16 @@
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
+import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import {
+  useEmailStatus,
+  type EmailStatusReading,
+} from "@dashboard/hooks/notifications/useEmailStatus";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
 import { useTheme } from "@dashboard/hooks/shell/useTheme";
+import { emailWords } from "@dashboard/lib/notifications/emailStatus";
 import type { ThemePreference } from "@dashboard/lib/shell/theme";
 
 const THEME_OPTIONS = [
@@ -76,13 +82,46 @@ function NotificationsCard() {
 }
 
 /**
+ * Whether the app emails the person when a wait lasts, and how the last email
+ * went. It is only read here. Email is set up in the environment Agent Lookout
+ * starts with, so the card has no control, and the button for notifications
+ * does not cover it. Before the app has answered, the card says nothing.
+ */
+function EmailCard({ reading }: { reading: EmailStatusReading | null }) {
+  const words =
+    reading === null
+      ? null
+      : reading.status === "unknown"
+        ? { state: "Whether email is set up could not be read.", detail: null }
+        : emailWords(reading.status, reading.readAt);
+
+  return (
+    <SectionCard title='Email'>
+      <div className='px-6 pb-6'>
+        <p data-part='state' aria-live='polite' className='text-body font-medium text-ink'>
+          {words?.state}
+        </p>
+        {words?.detail && (
+          <p className='mt-3 text-body text-ink-secondary'>
+            <FactText>{words.detail}</FactText>
+          </p>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+/**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified when a session starts waiting, and a few facts about
- * this copy of the app.
+ * whether to be notified when a session starts waiting, whether email has
+ * been set up, and a few facts about this copy of the app.
  */
 export function SettingsView() {
   const { preference, setPreference } = useTheme();
+  const email = useEmailStatus();
+  // An email is the one thing Agent Lookout sends off this computer, and only once set up.
+  const emailing = typeof email?.status === "object" && email.status.on;
 
   return (
     <div
@@ -107,6 +146,7 @@ export function SettingsView() {
         </SectionCard>
 
         <NotificationsCard />
+        <EmailCard reading={email} />
       </div>
 
       <SectionCard title='This copy' className='col-span-4 max-wide:w-full'>
@@ -114,7 +154,9 @@ export function SettingsView() {
           <FactRow label='Version' mono>
             v{__APP_VERSION__}
           </FactRow>
-          <FactRow label='Your data'>Stays on this computer</FactRow>
+          <FactRow label='Your data'>
+            {emailing ? "Leaves only in the emails you set up" : "Stays on this computer"}
+          </FactRow>
         </FactList>
       </SectionCard>
     </div>
