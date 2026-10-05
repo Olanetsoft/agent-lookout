@@ -5,9 +5,10 @@ import { render } from "vitest-browser-react";
 import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway } from "@tests/support/browser/browser";
-import { rgbOf, warmPaint } from "@tests/support/browser/colours";
+import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
@@ -119,6 +120,7 @@ function overlaps(a: DOMRect, b: DOMRect): boolean {
 
 afterEach(async () => {
   document.documentElement.removeAttribute("data-theme");
+  localStorage.removeItem(SESSIONS_LAYOUT_STORAGE_KEY);
   await page.viewport(414, 896);
 });
 
@@ -726,4 +728,151 @@ test("the hero, Last hour, Sessions, Events and the timeline are glass: the hero
     expect(getComputedStyle(card).backdropFilter, String(name)).toBe("none");
   }
   expect(getComputedStyle(slot(screen.container, "hero")).backdropFilter).toBe("none");
+});
+
+/**
+ * The width the app's frame leaves the Overview in a window this wide: the
+ * window less its 12px insets, the rail and the gap beside it. The rail narrows
+ * to its icons at 760 and below.
+ */
+const overviewWidth = (window: number) => window - (window <= 760 ? 92 : 112);
+
+test.each([
+  ["dark", 1440, 4],
+  ["light", 1440, 4],
+  ["dark", 1000, 4],
+  ["light", 1000, 4],
+  ["dark", 375, 1],
+  ["light", 375, 1],
+] as const)(
+  "in the %s theme at %i pixels, the board takes the Sessions card's place with %i columns across, nothing runs off the side, and only the lamp is warm",
+  async (theme, width, across) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+    await page.viewport(width, 1000);
+    const screen = await render(
+      <>
+        <Ground />
+        <div style={{ width: overviewWidth(width) }}>
+          <DashboardView state={state({})} now={NOW} onRetry={() => {}} />
+        </div>
+      </>,
+    );
+    settle();
+    const sessions = screen.getByRole("region", { name: /^Sessions/ }).element() as HTMLElement;
+    const board = sessions.querySelector('[data-slot="session-board"]') as HTMLElement;
+
+    // The hero, Last hour, Events and the timeline stay where they are, in order.
+    const order = [
+      slot(screen.container, "hero"),
+      screen.getByRole("region", { name: "Last hour" }).element(),
+      sessions,
+      screen.getByRole("region", { name: "Events" }).element(),
+      screen.getByRole("region", { name: "Timeline" }).element(),
+    ];
+    for (let index = 1; index < order.length; index += 1) {
+      expect(
+        order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    if (width === 1440) {
+      const [hero, events] = [rectOf(order[0]!), rectOf(order[3]!)];
+      expect(rectOf(sessions).left).toBe(hero.left);
+      expect(rectOf(sessions).width).toBeCloseTo(hero.width, 0);
+      expect(events.top).toBe(rectOf(sessions).top);
+    }
+
+    expect(board).not.toBeNull();
+    expect(sessions.querySelector('[data-slot="session-list"]')).toBeNull();
+    const columns = [...board.querySelectorAll<HTMLElement>('[data-slot="board-column"]')];
+    expect(columns.map((column) => column.dataset.column)).toEqual([
+      "needs-you",
+      "working",
+      "idle",
+      "ended",
+    ]);
+    expect(new Set(columns.map((column) => Math.round(rectOf(column).left))).size).toBe(across);
+    // Each column keeps its head, laid one under another on a phone.
+    for (const column of columns) {
+      expect(column.querySelector("h3")).not.toBeNull();
+      expect(rectOf(column).right).toBeLessThanOrEqual(rectOf(sessions).right);
+    }
+    expect(sessions.scrollWidth).toBeLessThanOrEqual(sessions.clientWidth);
+    for (const card of board.querySelectorAll<HTMLElement>('[data-slot="board-card"]')) {
+      expect(card.scrollWidth, card.dataset.session).toBeLessThanOrEqual(card.clientWidth);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+    // On the board, the waiting sessions' marks are the only warm paint.
+    const warm = warmElements(board);
+    expect(warm.length).toBeGreaterThan(0);
+    for (const element of warm) {
+      expect(
+        element.closest('[data-slot="status-mark"][data-kind="needs-you"]'),
+        element.outerHTML.slice(0, 80),
+      ).not.toBeNull();
+    }
+    // And the only solid buttons on the Overview are still the hero's.
+    for (const button of screen.container.querySelectorAll<HTMLElement>('[data-slot="button"]')) {
+      if (getComputedStyle(button).backgroundColor !== rgbOf("var(--status-needs-you)")) continue;
+      expect(button.closest('[data-slot="hero"]'), button.ariaLabel ?? "").not.toBeNull();
+    }
+  },
+);
+
+test("on the board a card moves to its new column with the next answer, and keyboard focus on its Jump goes with it", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+  await page.viewport(1440, 1000);
+  const moving = session(6, {
+    name: "moving-one",
+    status: "idle",
+    statusSince: NOW - MINUTE,
+    links: { open: jumpLink(6) },
+  });
+  const steady = session(7, { name: "steady-one", status: "idle", statusSince: NOW - 2 * MINUTE });
+  const view = (sessions: Session[]) => (
+    <DashboardView state={state({ snapshot: snapshotOf(sessions) })} now={NOW} onRetry={() => {}} />
+  );
+  const columnOf = (element: Element) =>
+    element.closest('[data-slot="board-column"]')?.getAttribute("data-column");
+  const screen = await render(view([moving, steady]));
+  const jumpOf = () =>
+    screen.getByRole("link", { name: "Jump to moving-one in Terminal" }).element() as HTMLElement;
+  const first = jumpOf();
+  expect(columnOf(first)).toBe("idle");
+  first.focus();
+
+  // The next answer says it is working: its card is drawn under Working, and
+  // nothing had to be pressed or dragged.
+  await screen.rerender(view([{ ...moving, status: "working", statusSince: NOW }, steady]));
+  const moved = jumpOf();
+  expect(first.isConnected).toBe(false);
+  expect(columnOf(moved)).toBe("working");
+  await vi.waitFor(() => expect(document.activeElement).toBe(moved));
+  const heads = () =>
+    [...screen.container.querySelectorAll('[data-slot="board-column"] h3')].map(
+      (head) => head.textContent,
+    );
+  expect(heads()).toEqual(["Needs you0", "Working1", "Idle1", "Finished or failed0"]);
+
+  // It starts waiting: the hero has it, and so does the board's Needs you
+  // column, where focus stays, on the board it was on.
+  await screen.rerender(
+    view([
+      { ...moving, status: "needs-you", waitingReason: "permission", statusSince: NOW },
+      steady,
+    ]),
+  );
+  const cards = screen.container.querySelectorAll(
+    `[data-slot="board-card"][data-session="${moving.id}"]`,
+  );
+  expect(cards).toHaveLength(1);
+  expect(columnOf(cards[0]!)).toBe("needs-you");
+  expect(
+    slot(screen.container, "hero").querySelector(`[data-session="${moving.id}"]`),
+  ).not.toBeNull();
+  await vi.waitFor(() =>
+    expect(document.activeElement?.closest('[data-slot="board-card"]')).toBe(cards[0]),
+  );
+  expect(heads()).toEqual(["Needs you1", "Working0", "Idle1", "Finished or failed0"]);
 });

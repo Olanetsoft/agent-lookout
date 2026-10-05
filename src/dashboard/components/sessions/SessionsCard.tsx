@@ -2,11 +2,14 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionRow } from "@dashboard/components/sessions/SessionRow";
+import { Count, SessionsBoard } from "@dashboard/components/sessions/SessionsBoard";
+import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
+import { useSessionsLayout } from "@dashboard/hooks/shell/useSessionsLayout";
 import { countState, tableGroups, type SessionGroup } from "@dashboard/lib/sessions/sessions";
 import {
   agentLabel,
@@ -15,7 +18,14 @@ import {
   sourceNames,
 } from "@dashboard/lib/sources/sources";
 import { jumpWay } from "@dashboard/lib/sessions/status";
+import type { SessionsLayout } from "@dashboard/lib/shell/sessionsLayout";
 import { cn } from "@dashboard/lib/utils";
+
+/** The two ways the card can lay out its sessions, as the switch in its head offers them. */
+const LAYOUTS = [
+  { value: "list", label: "List" },
+  { value: "board", label: "Board" },
+] as const satisfies readonly { value: SessionsLayout; label: string }[];
 
 interface SessionsCardProps {
   sessions: readonly Session[];
@@ -86,15 +96,6 @@ function Searching({ sources }: { sources: readonly SourceHealth[] }) {
         It checks every two seconds. There is nothing you need to do.
       </p>
     </EmptyState>
-  );
-}
-
-/** A count beside a group's name, in the muted ink, with figures that keep their width. */
-function Count({ children }: { children: number }) {
-  return (
-    <span data-part='count' className='font-medium text-ink-muted tabular-nums'>
-      {children}
-    </span>
   );
 }
 
@@ -258,6 +259,11 @@ function useColumns(
  * Once more than one tool is found, each row names its tool in plain words: in
  * an Agent column after the name on every window wider than 760px, and narrow,
  * at the start of the second line.
+ *
+ * A switch in the head lays the same sessions out as a board instead, with a
+ * column for each status, the sessions that need the person included. The
+ * choice is kept in this browser. With no session there is nothing to lay out,
+ * and the switch is not offered.
  */
 export function SessionsCard({ sessions, sources, now, className }: SessionsCardProps) {
   const table = useRef<HTMLTableElement>(null);
@@ -268,24 +274,30 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   const searching = shown.some((source) => source.state === "searching");
   const groups = tableGroups(sessions);
   const listed = groups.flatMap((group) => group.sessions);
-  const ways = listed.map(jumpWay);
-  const jumpColumn = ways.some((way) => way !== null);
+  const [layout, setLayout] = useSessionsLayout();
+  // With no session there is nothing to lay out, so both ways say the same,
+  // and the switch is not offered.
+  const board = layout === "board" && sessions.length > 0;
+  const jumpColumn = listed.some((session) => jumpWay(session) !== null);
   // What Jump does depends on where a session runs, and the head says only
-  // what the Jumps in this table do. Bringing a terminal's tab forward is
-  // opening the session where it runs, as a link is.
-  const jumpHint = !ways.some((way) => way?.by === "tmux")
+  // what the Jumps on the card do: the table's, or the board's, which has
+  // the sessions that need the person too. Bringing a terminal's tab forward
+  // is opening the session where it runs, as a link is.
+  const ways = (board ? sessions : listed).map(jumpWay).filter((way) => way !== null);
+  const jumpHint = !ways.some((way) => way.by === "tmux")
     ? "Jump opens the session where it runs"
-    : ways.some((way) => way !== null && way.by !== "tmux")
+    : ways.some((way) => way.by !== "tmux")
       ? "Jump opens the session, or selects its pane in tmux"
       : "Jump selects the session's pane in tmux";
   const agents = showsAgents(sources, sessions);
+  const agentOf = agents ? (session: Session) => agentLabel(session, sources) : undefined;
   const narrow = useNarrow();
   const agentColumn = agents && !narrow;
   // Narrow, the rows still draw the Folder and App cells, hidden, so the first
   // paint is right before the window's width is known to the script.
   const { folder: folderColumn, app: appColumn } = useColumns(
     table,
-    listed.length > 0 && !narrow,
+    listed.length > 0 && !narrow && !board,
     agentColumn,
     jumpColumn,
   );
@@ -300,7 +312,14 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   const { counted } = countState(sessions, sources);
 
   let body;
-  if (listed.length > 0) {
+  if (board) {
+    body = (
+      <>
+        {broken.length > 0 && <SourceNotices sources={broken} last={false} />}
+        <SessionsBoard sessions={sessions} now={now} agentOf={agentOf} />
+      </>
+    );
+  } else if (listed.length > 0) {
     body = (
       <>
         {broken.length > 0 && <SourceNotices sources={broken} last={false} />}
@@ -336,7 +355,7 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
               jumpColumn={jumpColumn}
               columns={columns}
               narrow={narrow}
-              agentOf={agents ? (session) => agentLabel(session, sources) : undefined}
+              agentOf={agentOf}
               folderColumn={folderColumn}
               appColumn={appColumn}
             />
@@ -374,19 +393,47 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
     );
   }
 
+  const hint = ways.length > 0 && (
+    <span data-part='hint' className='max-mid:hidden'>
+      {jumpHint}
+    </span>
+  );
+  // The switch is as tall as a control, more than the title's line. In the
+  // head, its margins give that back, so the head is as tall as the heads
+  // beside it and its title sits level with theirs. Narrow, a head that wraps
+  // would put it under the title, where those margins pull it up against the
+  // title, so there it is the card's first line instead, under the head.
+  const layoutSwitch = sessions.length > 0 && (
+    <SegmentedControl
+      label='Show sessions as'
+      value={layout}
+      onValueChange={setLayout}
+      options={LAYOUTS}
+      className={narrow ? undefined : "-my-2.5"}
+    />
+  );
+
   return (
     <SectionCard
       title='Sessions'
       count={counted ? sessions.length : undefined}
       aside={
-        jumpColumn ? (
-          <span data-part='hint' className='max-mid:hidden'>
-            {jumpHint}
-          </span>
-        ) : undefined
+        layoutSwitch && !narrow ? (
+          <div className='flex items-center gap-4'>
+            {hint}
+            {layoutSwitch}
+          </div>
+        ) : (
+          hint || undefined
+        )
       }
       className={className}
     >
+      {layoutSwitch && narrow && (
+        <div data-part='layout' className='flex px-6 pb-1'>
+          {layoutSwitch}
+        </div>
+      )}
       {body}
     </SectionCard>
   );

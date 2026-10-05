@@ -24,8 +24,9 @@ interface DashboardViewProps {
   onNewLineInView?: (inView: boolean) => void;
 }
 
-/** Every row that stands for one session, in the hero or in the Sessions table. */
-const SESSION_ROWS = '[data-slot="hero-session"], [data-slot="session-row"]';
+/** Every row that stands for one session: in the hero, in the Sessions table, or a card on its board. */
+const SESSION_ROWS =
+  '[data-slot="hero-session"], [data-slot="session-row"], [data-slot="board-card"]';
 
 /*
  * Where each card sits. Wide, the hero and Last hour share the first row, the
@@ -55,7 +56,7 @@ const PLACE = {
  *
  * Focus held in a session's row follows the session when its row is drawn
  * somewhere else: to another group of the table, or up into the hero when the
- * session starts waiting.
+ * session starts waiting. On the board it follows the card to its new column.
  */
 export function DashboardView({
   state,

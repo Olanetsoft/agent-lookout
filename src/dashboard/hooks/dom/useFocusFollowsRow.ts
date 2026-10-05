@@ -4,6 +4,8 @@ import { useLayoutEffect, useRef, type FocusEvent, type RefObject } from "react"
 interface Focused {
   /** The row's key, the value of its key attribute. */
   key: string;
+  /** The row's `data-slot`, such as "session-row", so a row of the same kind is preferred. */
+  slot: string | null;
   /** The `data-part` of what had focus, such as "jump". */
   part: string | null;
   element: HTMLElement;
@@ -27,7 +29,8 @@ function canTakeFocus(element: HTMLElement | null): element is HTMLElement {
  * another `<tbody>`, so the browser is handed a new row and the old one, with
  * the button that had focus, leaves the page. Focus would fall back to the top
  * of the page. Instead it follows the row: to the same part of the row with the
- * same key when that part can take focus, or else to the row's Jump.
+ * same key when that part can take focus, or else to the row's Jump. Where two
+ * rows have that key, it goes to the one of the same kind as the row it left.
  *
  * Focus is followed only when it was lost because the row moved. Once the
  * person moves focus anywhere else, or away from the page, it is forgotten.
@@ -59,9 +62,13 @@ export function useFocusFollowsRow<T extends HTMLElement>(
 
     let target: HTMLElement | null = last.element.isConnected ? last.element : null;
     if (!target) {
-      const row = [...container.querySelectorAll<HTMLElement>(rows)].find(
+      const same = [...container.querySelectorAll<HTMLElement>(rows)].filter(
         (candidate) => candidate.getAttribute(key) === last.key,
       );
+      // A session can be drawn twice, in the hero and as a card on the board.
+      // Focus stays with the kind of row it was in when there is one.
+      const row =
+        same.find((candidate) => candidate.getAttribute("data-slot") === last.slot) ?? same[0];
       const part = (name: string | null) =>
         name === null ? null : (row?.querySelector<HTMLElement>(`[data-part="${name}"]`) ?? null);
       target = [part(last.part), part(fallbackPart)].find(canTakeFocus) ?? null;
@@ -75,7 +82,12 @@ export function useFocusFollowsRow<T extends HTMLElement>(
     const row = element.closest<HTMLElement>(rows);
     const rowKey = row?.getAttribute(key);
     focused.current = rowKey
-      ? { key: rowKey, part: element.getAttribute("data-part"), element }
+      ? {
+          key: rowKey,
+          slot: row?.getAttribute("data-slot") ?? null,
+          part: element.getAttribute("data-part"),
+          element,
+        }
       : null;
   };
 

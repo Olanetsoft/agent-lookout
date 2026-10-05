@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
+import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
-import { formatShortDuration, formatSince, shortDurationInWords } from "@dashboard/lib/format";
-import { quietFor, quietPhrase, quietPhraseInWords } from "@dashboard/lib/sessions/quiet";
+import { quietFor } from "@dashboard/lib/sessions/quiet";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
@@ -112,65 +112,12 @@ export function SessionRow({
   const mark: MarkKind = stale ? "stale" : session.status;
   const statusWord = stale ? "Stale" : STATUS_LABEL[session.status];
   const jump = useJump(session);
-  const since = session.statusSince;
   const surface = SURFACE_LABEL[session.surface];
-  const lasted = since !== null ? now - since : null;
-  const quietForMs = quietFor(session, now);
 
-  const duration = (
-    <Tooltip
-      content={
-        since !== null ? `Since ${formatSince(since, now)}` : "The source did not report a time"
-      }
-      mono={since !== null}
-      align='end'
-    >
-      <span
-        data-part='duration'
-        className={cn(
-          "shrink-0 rounded-bar whitespace-nowrap tabular-nums",
-          quiet ? "text-ink-secondary" : "text-ink",
-        )}
-      >
-        {lasted !== null ? (
-          <>
-            <span className='sr-only'>
-              {ended
-                ? `${shortDurationInWords(lasted)} ago`
-                : `for ${shortDurationInWords(lasted)}`}
-            </span>
-            <span aria-hidden>
-              {formatShortDuration(lasted)}
-              {ended && " ago"}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className='sr-only'>time not reported</span>
-            <span aria-hidden>–</span>
-          </>
-        )}
-      </span>
-    </Tooltip>
-  );
+  const duration = <Duration session={session} now={now} quiet={quiet} />;
 
-  /**
-   * How long the agent has written nothing, when the row says so: "quiet for
-   * 12m", in the table's short form. The last write's time is one hover or one
-   * Tab away.
-   */
-  const quietLine = quietForMs !== null && session.lastWriteAt !== undefined && (
-    <Tooltip content={`Last write at ${formatSince(session.lastWriteAt, now)}`} mono align='end'>
-      <span
-        data-part='quiet'
-        tabIndex={0}
-        className='block w-fit rounded-bar leading-tight whitespace-nowrap text-ink-muted tabular-nums'
-      >
-        <span className='sr-only'>{quietPhraseInWords(quietForMs)}</span>
-        <span aria-hidden>{quietPhrase(quietForMs)}</span>
-      </span>
-    </Tooltip>
-  );
+  // How long the agent has written nothing, when the row says so.
+  const quietLine = quietFor(session, now) !== null && <QuietFor session={session} now={now} />;
 
   /**
    * Narrow, the line under the name: the tool when the table names one, then

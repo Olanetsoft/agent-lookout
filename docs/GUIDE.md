@@ -20,7 +20,7 @@ The header over each view says how many sessions are being watched and, in a wid
 
 ### Overview
 
-The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order.
+The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board).
 
 #### Needs you
 
@@ -63,6 +63,27 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
 A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too.
+
+#### Board
+
+The switch at the top right of the Sessions list, or under its title on a phone, chooses List or Board. Board shows the same sessions in a column for each status, so you can see at a glance how many are in each state and which are waiting. Each column's heading gives its count.
+
+| Column             | What it holds                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Needs you          | Sessions waiting for you, longest wait first, as in the Needs you panel, which still shows them too                   |
+| Working            | Sessions busy with a task, the most recent change first                                                               |
+| Idle               | Sessions ready for a new prompt, then stale ones with their own mark. The heading counts them apart: `Idle 1 Stale 1` |
+| Finished or failed | Sessions that finished or failed, failures first                                                                      |
+
+Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab.
+
+The board only shows what Agent Lookout found. When a session's status changes, its card moves to its new column by itself the next time Agent Lookout reads the sessions, within about 2 seconds. Cards cannot be dragged, because Agent Lookout does not change a session's status.
+
+A column with nothing in it says so, such as `Nothing waiting`. A column shows at most five cards and then says how many more there are, such as `and 3 more in the list`. Switch to List to see them all. A session whose status is unknown has no column. A line under the board says how many there are, and the list shows them.
+
+In a wide window the four columns stand side by side. In a narrower one they are two by two, and on a phone one under another.
+
+Your choice of List or Board is kept in your browser, so the Overview opens the same way next time. [PRIVACY.md](../PRIVACY.md#storage) lists what the browser keeps.
 
 #### Quiet for
 
@@ -296,7 +317,7 @@ To turn the webhook off, start Agent Lookout again without `AGENT_LOOKOUT_WEBHOO
 
 ## Jump
 
-A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, when its process runs inside a tmux pane, or when it runs in a tab of Terminal or iTerm2 on a Mac. The button is in the Needs you panel and in the Sessions list. No other session has one.
+A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, when its process runs inside a tmux pane, or when it runs in a tab of Terminal or iTerm2 on a Mac. The button is in the Needs you panel and in the Sessions list, or on the session's card when the list is shown as a board. No other session has one.
 
 ### A session in VS Code
 
@@ -611,7 +632,7 @@ Email and a webhook are the two ways it can tell you of a session away from this
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
-Sessions are not grouped by repository. A session's branch shows in the Sessions list and the Needs you panel, and nowhere else: not in the Timeline, a notification, an email or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
+Sessions are not grouped by repository. A session's branch shows in the Sessions list, on its board and in the Needs you panel, and nowhere else: not in the Timeline, a notification, an email or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
 
 The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list what is planned.
 

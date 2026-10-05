@@ -6,6 +6,7 @@ import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { formatSince } from "@dashboard/lib/format";
+import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -94,6 +95,7 @@ beforeEach(async () => {
 afterEach(() => {
   document.documentElement.removeAttribute("data-theme");
   setApiHost();
+  localStorage.removeItem(SESSIONS_LAYOUT_STORAGE_KEY);
 });
 
 test("the sessions are a table with a head for each column, kept for assistive technology only", async () => {
@@ -849,6 +851,8 @@ test("a long name is cut with an ellipsis and stays readable in full", async () 
   await vi.waitFor(() => expect(label.dataset.cut).toBe("true"));
   expect(label.tabIndex).toBe(0);
   startAtTop();
+  // The switch in the head comes first.
+  await userEvent.tab();
   await userEvent.tab();
   expect(document.activeElement).toBe(label);
   await expect.element(page.getByRole("tooltip")).toHaveTextContent(name);
@@ -1909,3 +1913,188 @@ test.each(["dark", "light"] as const)(
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
+
+test("a switch in the head lays the sessions out as a list or as a board, and the list comes first", async () => {
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  const head = screen.container.querySelector('[data-part="head"]') as HTMLElement;
+  const choice = screen.getByRole("radiogroup", { name: "Show sessions as" });
+
+  // In the head, at its right, after the hint.
+  expect(head.contains(choice.element())).toBe(true);
+  expect(choice.element().getAttribute("data-slot")).toBe("segmented-control");
+  await expect.element(screen.getByRole("radio", { name: "List" })).toBeChecked();
+  await expect.element(screen.getByRole("radio", { name: "Board" })).not.toBeChecked();
+  expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
+  expect(screen.container.querySelector('[data-slot="session-board"]')).toBeNull();
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBeNull();
+
+  await screen.getByRole("radio", { name: "Board" }).click();
+
+  expect(screen.container.querySelector('[data-slot="session-list"]')).toBeNull();
+  const board = screen.container.querySelector('[data-slot="session-board"]') as HTMLElement;
+  // The board has every session, the ones that need the person among them.
+  expect(board.querySelectorAll('[data-slot="board-card"]')).toHaveLength(MIXED.length);
+  expect(board.textContent).toContain("blocked-one");
+  // The count in the head is the same either way.
+  expect(head.querySelector('[data-part="count"]')?.textContent).toBe("7");
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("board");
+
+  await screen.getByRole("radio", { name: "List" }).click();
+  expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("list");
+});
+
+test("the choice is remembered: a card drawn again, as on the next visit, opens on the board", async () => {
+  const first = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  await first.getByRole("radio", { name: "Board" }).click();
+  await first.unmount();
+
+  const again = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+
+  await expect.element(again.getByRole("radio", { name: "Board" })).toBeChecked();
+  expect(again.container.querySelector('[data-slot="session-board"]')).not.toBeNull();
+  expect(again.container.querySelector('[data-slot="session-list"]')).toBeNull();
+});
+
+test("anything else in storage is the list", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "kanban");
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+
+  await expect.element(screen.getByRole("radio", { name: "List" })).toBeChecked();
+  expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
+});
+
+test("Tab reaches the switch, the arrow keys move between List and Board, and the next Tab goes into the board", async () => {
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  startAtTop();
+
+  await userEvent.tab();
+  await expect.element(screen.getByRole("radio", { name: "List" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(screen.getByRole("radio", { name: "Board" })).toHaveFocus();
+  await expect.element(screen.getByRole("radio", { name: "Board" })).toBeChecked();
+  expect(screen.container.querySelector('[data-slot="session-board"]')).not.toBeNull();
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("board");
+
+  // One Tab stop for the switch: the next is on the first card.
+  await userEvent.tab();
+  const active = document.activeElement as HTMLElement;
+  expect(active.closest('[data-slot="board-card"]')?.getAttribute("data-session")).toBe(
+    MIXED[1]!.id,
+  );
+
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(screen.getByRole("radio", { name: "List" })).toBeChecked();
+  expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
+  await pointAway();
+});
+
+test("the switch leaves the head as tall as a head without one, so its title stays level with the card beside it", async () => {
+  const screen = await render(
+    <div style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: 16, width: 1300 }}>
+      <SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />
+      <SessionsCard sessions={[]} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const [withSwitch, without] = [
+    ...screen.container.querySelectorAll<HTMLElement>('[data-part="head"]'),
+  ];
+
+  expect(withSwitch!.querySelector('[data-slot="segmented-control"]')).not.toBeNull();
+  expect(without!.querySelector('[data-slot="segmented-control"]')).toBeNull();
+  expect(withSwitch!.getBoundingClientRect().height).toBe(without!.getBoundingClientRect().height);
+  expect(withSwitch!.querySelector("h2")!.getBoundingClientRect().top).toBe(
+    without!.querySelector("h2")!.getBoundingClientRect().top,
+  );
+  // It ends 24px in from the card's right edge, as the head's words do.
+  const card = withSwitch!.closest('[data-slot="section-card"]') as HTMLElement;
+  const control = withSwitch!.querySelector('[data-slot="segmented-control"]') as HTMLElement;
+  expect(card.getBoundingClientRect().right - control.getBoundingClientRect().right).toBe(24);
+});
+
+test.each(["list", "board"] as const)(
+  "on a phone the switch is the card's first line, 12px under the title, and the %s starts under it",
+  async (layout) => {
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, layout);
+    await page.viewport(375, 900);
+    // The width the Overview gives the card on a phone.
+    const screen = await render(
+      <div style={{ width: 283 }}>
+        <SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />
+      </div>,
+    );
+    const head = screen.container.querySelector('[data-part="head"]') as HTMLElement;
+    const title = head.querySelector("h2")!.getBoundingClientRect();
+    const control = screen.getByRole("radiogroup", { name: "Show sessions as" }).element();
+    const box = control.getBoundingClientRect();
+
+    expect(head.contains(control)).toBe(false);
+    // The head is as tall as any card's: 20px above the title's line, 12px under it.
+    expect(head.getBoundingClientRect().height).toBe(51.5);
+    expect(box.top).toBeGreaterThanOrEqual(title.bottom + 12);
+    expect(box.left).toBe(title.left);
+    const first = screen.container.querySelector(
+      layout === "list" ? '[data-slot="group-row"]' : '[data-slot="board-column"]',
+    )!;
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(box.bottom);
+    // It is still the first stop on the way into the card.
+    startAtTop();
+    await userEvent.tab();
+    expect(control.contains(document.activeElement)).toBe(true);
+  },
+);
+
+test("with no session there is nothing to lay out, so the switch is not offered and the empty state is the same", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+  const screen = await render(<SessionsCard sessions={[]} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(screen.container.querySelector('[data-slot="segmented-control"]')).toBeNull();
+  expect(screen.container.querySelector('[data-slot="session-board"]')).toBeNull();
+  expect(screen.container.textContent).toContain("No agents are running");
+});
+
+test("when every session needs the person, the board holds them in its Needs you column", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+  const waiting = MIXED.filter((s) => s.status === "needs-you");
+  const screen = await render(<SessionsCard sessions={waiting} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(screen.container.querySelector('[data-part="all-waiting"]')).toBeNull();
+  await expect.element(screen.getByRole("list", { name: "Needs you 2" })).toBeVisible();
+  expect(screen.container.querySelectorAll('[data-slot="board-card"]')).toHaveLength(2);
+});
+
+test("on the board the hint says what every card's Jump does, a waiting session's included", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+  // Only the waiting session can be jumped to, so the list has no Jump and no hint.
+  const sessions = [
+    session(1, {
+      name: "checkout-flow",
+      status: "needs-you",
+      surface: "vscode",
+      links: { open: jumpLink(1) },
+    }),
+    IN_TMUX,
+  ];
+  const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(screen.container.querySelector('[data-part="hint"]')?.textContent).toBe(
+    "Jump opens the session, or selects its pane in tmux",
+  );
+  await screen.getByRole("radio", { name: "List" }).click();
+  expect(screen.container.querySelector('[data-part="hint"]')?.textContent).toBe(
+    "Jump selects the session's pane in tmux",
+  );
+});
+
+test("a source that cannot be read is said above the board, as above the list", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+  const failed: SourceHealth = { ...SOURCE_OK, state: "error", detail: "Fell back to the folder." };
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[failed]} now={NOW} />);
+  const board = screen.container.querySelector('[data-slot="session-board"]') as HTMLElement;
+
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Fell back to the folder.");
+  expect(screen.getByRole("alert").element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    board.getBoundingClientRect().top,
+  );
+});
