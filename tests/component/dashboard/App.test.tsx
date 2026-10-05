@@ -346,14 +346,18 @@ test.each(["dark", "light"] as const)(
     expect(most(covered, empty)).toBeLessThanOrEqual(1);
 
     // At the top of the page nothing is under the inset, and there the ground
-    // laid over it cannot be told from the ground beneath.
+    // laid over it cannot be told from the ground beneath. The two are separate
+    // drawings of the same layers, and a browser need not round them alike:
+    // headless Chromium on Linux draws them up to 3 levels apart. The dither
+    // moves a pixel about two levels each way, so a difference of 4 or less is
+    // inside its swing and cannot be seen.
     window.scrollTo({ top: 0 });
     await vi.waitFor(() => expect(window.scrollY).toBe(0));
     const laid = await shot();
     above.style.visibility = "hidden";
     const beneath = await shot();
     above.style.visibility = "";
-    expect(most(laid, beneath)).toBeLessThanOrEqual(1);
+    expect(most(laid, beneath)).toBeLessThanOrEqual(4);
   },
 );
 
