@@ -6,6 +6,7 @@ import {
   FEED_INTERVAL_MS,
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
+import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import type { TmuxPane } from "@collector/tmux/panes";
 import { HOME, pids, registryFiles } from "@tests/fixtures/claudeCode";
 import {
@@ -210,5 +211,74 @@ describe("tmux panes", () => {
     }).poll();
 
     expect(a.health).toEqual(b.health);
+  });
+});
+
+describe("Terminal and iTerm2 tabs", () => {
+  const registryIo: RegistryIo = {
+    readdir: async () => Object.keys(registryFiles),
+    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+  };
+
+  /** A stand-in for the collector's tab finder: it knows some tabs, and writes down who it was asked about. */
+  function knownTabs(tabs: Record<number, TerminalTab>) {
+    const looked: number[][] = [];
+    return {
+      looked,
+      look: async (asked: readonly number[]) => {
+        looked.push([...asked].sort());
+      },
+      tabOf: (pid: number) => tabs[pid],
+    };
+  }
+
+  test("a live session whose process is in a tab is given the app, and the tab's terminal stays here", async () => {
+    const terminals = knownTabs({ [pids.idle]: { app: "Terminal", tty: "/dev/ttys004" } });
+    const { sessions } = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      terminals,
+    }).poll();
+
+    expect(terminals.looked).toEqual([[pids.busy, pids.permission, pids.question, pids.idle]]);
+    expect(sessions.find((session) => session.pid === pids.idle)?.jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    expect(sessions.filter((session) => session.jump !== undefined)).toHaveLength(1);
+    expect(JSON.stringify(sessions)).not.toContain("ttys004");
+  });
+
+  test("a session in a tmux pane is given the pane, and both finders are asked about the same processes", async () => {
+    const terminals = knownTabs({ [pids.question]: { app: "iTerm2", tty: "/dev/ttys007" } });
+    const looked: number[][] = [];
+    const panes = {
+      look: async (asked: readonly number[]) => {
+        looked.push([...asked].sort());
+      },
+      paneOf: (pid: number): TmuxPane | undefined =>
+        pid === pids.question ? { pid: 4100, id: "%3", place: "search-indexing:0.1" } : undefined,
+    };
+    const { sessions } = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      panes,
+      terminals,
+    }).poll();
+
+    expect(sessions.find((session) => session.pid === pids.question)?.jump).toEqual({
+      kind: "tmux",
+      place: "search-indexing:0.1",
+    });
+    expect(terminals.looked).toEqual(looked);
+  });
+
+  test("without a tab finder no tab is looked for, and the sessions are as they were", async () => {
+    const withFinder = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      terminals: knownTabs({}),
+    });
+    const without = adapterFor("/Users/example/elsewhere", { registryIo });
+
+    expect((await without.poll()).sessions).toEqual((await withFinder.poll()).sessions);
   });
 });

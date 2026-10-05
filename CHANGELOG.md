@@ -4,7 +4,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
-The first version. It shows Claude Code and Codex sessions, and those of any agent that writes a status file. The one thing it changes on the machine is which tmux pane is selected, when you press Jump.
+The first version. It shows Claude Code and Codex sessions, and those of any agent that writes a status file. The one thing it changes on the machine is which tmux pane, or which tab of Terminal or iTerm2, is in front, when you press Jump.
 
 ### Added
 
@@ -24,6 +24,8 @@ The first version. It shows Claude Code and Codex sessions, and those of any age
 - A Jump button opens a Claude Code session that runs in VS Code.
 - A Claude Code session that runs inside tmux has a Jump button too. It selects the session's pane, the pane's window and, on any attached terminal that is showing another tmux session, the pane's session. The row says what happened: Selected in tmux, That pane has closed or tmux has stopped. It does not bring your terminal to the front.
 - `AGENT_LOOKOUT_TMUX=off` stops Agent Lookout running tmux, and takes the Jump button off sessions in tmux.
+- On a Mac, a Claude Code session in a tab of Terminal or iTerm2, outside tmux, has a Jump button too. It brings that tab to the front, in its window, with the app. The first time, macOS asks once whether the program Agent Lookout runs in may control the app, and the row says so while it asks. If macOS did not allow it, the row says where to allow it: System Settings, Privacy & Security, Automation. Sessions in other terminals, such as Warp, Ghostty or the VS Code terminal, have no button.
+- `AGENT_LOOKOUT_TERMINAL_JUMP=off` stops Agent Lookout looking for tabs of Terminal and iTerm2, and takes the Jump button off sessions there.
 - A rail down the left edge moves between the Overview, Sources and Settings, and its mark lights up while any session needs you.
 - The browser tab's title shows how many sessions need you, so it can be read while the tab is in the background.
 - Turn on notifications in Settings, and your browser shows a system notification when a Claude Code session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.

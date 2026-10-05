@@ -271,10 +271,11 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   const ways = listed.map(jumpWay);
   const jumpColumn = ways.some((way) => way !== null);
   // What Jump does depends on where a session runs, and the head says only
-  // what the Jumps in this table do.
+  // what the Jumps in this table do. Bringing a terminal's tab forward is
+  // opening the session where it runs, as a link is.
   const jumpHint = !ways.some((way) => way?.by === "tmux")
     ? "Jump opens the session where it runs"
-    : ways.some((way) => way?.by === "link")
+    : ways.some((way) => way !== null && way.by !== "tmux")
       ? "Jump opens the session, or selects its pane in tmux"
       : "Jump selects the session's pane in tmux";
   const agents = showsAgents(sources, sessions);

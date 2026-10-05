@@ -5,22 +5,23 @@ import {
   type SendResult,
   type WebhookStatusResponse,
 } from "@core/api";
-import type {
-  EventKind,
-  EventSeverity,
-  GitHead,
-  HistoryPoint,
-  JumpTarget,
-  Session,
-  SessionEvent,
-  SessionsSnapshot,
-  SessionStatus,
-  SourceFact,
-  SourceHealth,
-  SourceId,
-  SourceState,
-  Surface,
-  WaitingReason,
+import {
+  TERMINAL_APPS,
+  type EventKind,
+  type EventSeverity,
+  type GitHead,
+  type HistoryPoint,
+  type JumpTarget,
+  type Session,
+  type SessionEvent,
+  type SessionsSnapshot,
+  type SessionStatus,
+  type SourceFact,
+  type SourceHealth,
+  type SourceId,
+  type SourceState,
+  type Surface,
+  type WaitingReason,
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
 
@@ -173,12 +174,16 @@ const MAX_PLACE_LENGTH = 200;
 
 /**
  * Where the collector can take the person, or null when the answer names no
- * kind of place this page knows, or names it with anything but a short text.
+ * kind of place this page knows, names a terminal app it does not know, or
+ * names the place with anything but a short text.
  */
 function readJump(value: unknown): JumpTarget | null {
-  if (!isRecord(value) || value.kind !== "tmux") return null;
+  if (!isRecord(value)) return null;
   const place = text(value.place);
-  return place && place.length <= MAX_PLACE_LENGTH ? { kind: "tmux", place } : null;
+  if (!place || place.length > MAX_PLACE_LENGTH) return null;
+  if (value.kind === "tmux") return { kind: "tmux", place };
+  const app = value.kind === "terminal" ? oneOf(TERMINAL_APPS, value.app) : null;
+  return app ? { kind: "terminal", app, place } : null;
 }
 
 /** One source's health, or null when it has no id. */

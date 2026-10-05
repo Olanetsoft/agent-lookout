@@ -5,8 +5,14 @@ import { render } from "vitest-browser-react";
 import { JUMP_INTERVAL_MS } from "@core/api";
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
-import { JUMP_NOTE_MS, useJump } from "@dashboard/hooks/data/useJump";
+import {
+  ASK_AFTER_MS,
+  JUMP_NOTE_MS,
+  JUMP_REFUSED_NOTE_MS,
+  useJump,
+} from "@dashboard/hooks/data/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
+import { AUTOMATION_NOTE_STORAGE_KEY } from "@dashboard/lib/api/automationNote";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -30,6 +36,23 @@ const IN_VSCODE = makeSession({
   links: { open: LINK },
 });
 const NOWHERE = makeSession({ id: ID, name: "search-indexing" });
+/** A session the collector found in a tab of Terminal. */
+const IN_TERMINAL = makeSession({
+  id: ID,
+  name: "billing-webhooks",
+  status: "working",
+  pid: 4243,
+  alive: true,
+  jump: { kind: "terminal", app: "Terminal", place: "Terminal" },
+});
+const IN_ITERM = makeSession({
+  id: `${ID}-iterm`,
+  name: "mobile-onboarding",
+  status: "working",
+  pid: 4244,
+  alive: true,
+  jump: { kind: "terminal", app: "iTerm2", place: "iTerm2" },
+});
 
 /** One session as a row draws it: its name, what Jump came to beside it, and its Jump. */
 function Row({
@@ -41,7 +64,7 @@ function Row({
   variant?: "quiet" | "needs-you";
   size?: "sm" | "hero";
 }) {
-  const jump = useJump(session.id);
+  const jump = useJump(session);
   return (
     <div data-slot='row' className='flex w-96 items-center gap-2 p-10'>
       <span className='flex-1'>{session.name}</span>
@@ -83,8 +106,29 @@ const TOO_SOON = json(429, { error: "x", reason: "too-soon" });
 /** Waits out the second in which the collector would refuse another jump. */
 const secondOver = () => new Promise((resolve) => setTimeout(resolve, JUMP_INTERVAL_MS));
 
+const SWITCHED = json(200, { ok: true, kind: "terminal", app: "Terminal", place: "Terminal" });
+const NOT_ALLOWED = json(403, { error: "x", reason: "not-allowed" });
+
+const ASK_LINE =
+  "macOS will ask once whether the app you started Agent Lookout from may control Terminal. Allow it to let Jump switch tabs.";
+const REFUSED_LINE =
+  "To let Jump switch tabs, allow it in System Settings, Privacy & Security, Automation.";
+
 const note = (root: ParentNode) => root.querySelector<HTMLElement>('[data-part="jump-note"]');
+const line = (root: ParentNode) => root.querySelector<HTMLElement>('[data-part="jump-line"]');
+
+/** A collector whose answers wait until the test gives them, as one does while macOS asks. */
+function heldCollector() {
+  const answers: ((response: Response) => void)[] = [];
+  const sent = collector(() => new Promise<Response>((resolve) => answers.push(resolve)));
+  return { sent, answer: (response: Response) => answers.shift()?.(response) };
+}
 const said = (root: ParentNode) => root.querySelector<HTMLElement>('[data-part="jump-said"]');
+
+/** Waits out the second after which a held first press says that macOS will ask. */
+const askWaitOver = () => new Promise((resolve) => setTimeout(resolve, ASK_AFTER_MS + 200));
+/** Long enough for the line about macOS to appear. */
+const UNTIL_ASKED = { timeout: ASK_AFTER_MS + 1_000 };
 
 beforeEach(() => {
   // A request no test answers would be a test that reached a real server.
@@ -96,6 +140,8 @@ beforeEach(() => {
 afterEach(() => {
   setApiHost();
   document.documentElement.removeAttribute("data-theme");
+  localStorage.removeItem(AUTOMATION_NOTE_STORAGE_KEY);
+  vi.restoreAllMocks();
 });
 
 test.each(["dark", "light"] as const)(
@@ -356,3 +402,211 @@ test.each(["dark", "light"] as const)(
     expect(elsewhere).toEqual([]);
   },
 );
+
+test("a session in a Terminal tab has a Jump that is a button, named for the session and the app, drawn as every Jump is", async () => {
+  const screen = await render(
+    <>
+      <Row session={IN_TERMINAL} />
+      <Row session={{ ...IN_TMUX, id: `${ID}-2` }} />
+    </>,
+  );
+  const jump = screen.getByRole("button", { name: "Jump to billing-webhooks in Terminal" });
+  const tmux = screen.getByRole("button", { name: "Jump to checkout-flow in tmux, work:2.1" });
+
+  expect(jump.element().getAttribute("data-way")).toBe("terminal");
+  expect(jump.element().textContent).toBe("Jump");
+  for (const property of ["height", "width", "backgroundColor", "color", "fontSize"] as const) {
+    expect([property, getComputedStyle(jump.element())[property]]).toEqual([
+      property,
+      getComputedStyle(tmux.element())[property],
+    ]);
+  }
+  await pointAway();
+  await jump.hover();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="tooltip"]')?.textContent).toContain("Terminal"),
+  );
+  // Before any press there is nothing to say, and nothing that says it.
+  expect(note(screen.container)).toBeNull();
+  expect(line(screen.container)).toBeNull();
+});
+
+test("the first press of a Terminal Jump on this browser says, once macOS has held it a second, that macOS will ask once, and the next press does not", async () => {
+  const held = heldCollector();
+  const screen = await render(<Row session={IN_TERMINAL} />);
+  const jump = screen.getByRole("button", { name: /^Jump to billing-webhooks/ });
+
+  await jump.click();
+  // Nothing at once, since a press macOS does not hold is answered well within the second.
+  expect(line(screen.container)).toBeNull();
+  expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBeNull();
+  await expect.element(screen.getByRole("status"), UNTIL_ASKED).toHaveTextContent(ASK_LINE);
+  const asked = line(screen.container) as HTMLElement;
+  expect(asked.textContent).toBe(ASK_LINE);
+  expect(asked.getAttribute("aria-hidden")).toBe("true");
+  // A calm line in the secondary ink, at the caption size: no box, no new colour, no dialog.
+  const style = getComputedStyle(asked);
+  expect(style.color).toBe(rgbOf("var(--ink-secondary)"));
+  expect(style.fontSize).toBe("12px");
+  expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(warmPaint(screen.container)).toEqual([]);
+  expect(
+    document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]'),
+  ).toBeNull();
+  expect(held.sent).toHaveLength(1);
+  expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBe("Terminal");
+
+  held.answer(SWITCHED());
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to Terminal");
+  expect(note(screen.container)?.textContent).toBe("Switched to Terminal");
+  expect(note(screen.container)?.getAttribute("data-tone")).toBe("neutral");
+  expect(line(screen.container)).toBeNull();
+
+  // Said once: the next press, and a press on a page loaded later, waits without it.
+  await secondOver();
+  await jump.click();
+  expect(held.sent).toHaveLength(2);
+  await askWaitOver();
+  expect(said(screen.container)?.textContent).toBe("");
+  expect(line(screen.container)).toBeNull();
+  held.answer(SWITCHED());
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to Terminal");
+});
+
+test("the line is said once for each app, since macOS asks about each", async () => {
+  localStorage.setItem(AUTOMATION_NOTE_STORAGE_KEY, "Terminal");
+  const held = heldCollector();
+  const screen = await render(
+    <>
+      <Row session={IN_TERMINAL} />
+      <Row session={IN_ITERM} />
+    </>,
+  );
+
+  await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+  expect(held.sent).toHaveLength(1);
+  await askWaitOver();
+  expect(line(screen.container)).toBeNull();
+  held.answer(SWITCHED());
+  await vi.waitFor(() => expect(note(screen.container)?.textContent).toBe("Switched to Terminal"));
+  await secondOver();
+
+  await screen.getByRole("button", { name: /^Jump to mobile-onboarding/ }).click();
+  await vi.waitFor(
+    () =>
+      expect(line(screen.container)?.textContent).toBe(
+        "macOS will ask once whether the app you started Agent Lookout from may control iTerm2. Allow it to let Jump switch tabs.",
+      ),
+    UNTIL_ASKED,
+  );
+  expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBe("Terminal,iTerm2");
+});
+
+test("a press of a tmux Jump says nothing about macOS", async () => {
+  const held = heldCollector();
+  const screen = await render(<Row session={IN_TMUX} />);
+  await screen.getByRole("button", { name: /^Jump to checkout-flow/ }).click();
+
+  expect(held.sent).toHaveLength(1);
+  await askWaitOver();
+  expect(line(screen.container)).toBeNull();
+  expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBeNull();
+  held.answer(SELECTED());
+});
+
+test.each([
+  ["refused because another Jump came just before", TOO_SOON, "Try again in a moment"],
+  ["answered that no tab is known", json(404, { error: "x", reason: "no-pane" }), "No tab found"],
+  ["answered at once, as when macOS did not need to ask", SWITCHED, "Switched to Terminal"],
+])(
+  "a first Terminal press %s neither shows nor uses up the line about macOS, so the next press macOS holds says it",
+  async (_what, first, words) => {
+    const held: ((response: Response) => void)[] = [];
+    let answered = false;
+    const sent = collector(() => {
+      if (answered) return new Promise<Response>((resolve) => held.push(resolve));
+      answered = true;
+      return first();
+    });
+    const screen = await render(<Row session={IN_TERMINAL} />);
+    const jump = screen.getByRole("button", { name: /^Jump to billing-webhooks/ });
+
+    await jump.click();
+    await expect.element(screen.getByRole("status")).toHaveTextContent(words);
+    // Past the second after which a held press would have said it.
+    await askWaitOver();
+    expect(line(screen.container)).toBeNull();
+    expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBeNull();
+
+    await jump.click();
+    expect(sent).toHaveLength(2);
+    await vi.waitFor(() => expect(line(screen.container)?.textContent).toBe(ASK_LINE), UNTIL_ASKED);
+    expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBe("Terminal");
+    held.shift()?.(SWITCHED());
+    await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to Terminal");
+  },
+);
+
+test("when macOS did not allow it, the row says so, and where to allow it, for longer than other outcomes", async () => {
+  localStorage.setItem(AUTOMATION_NOTE_STORAGE_KEY, "Terminal");
+  collector(NOT_ALLOWED);
+  const screen = await render(<Row session={IN_TERMINAL} />);
+  await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+
+  await expect
+    .element(screen.getByRole("status"))
+    .toHaveTextContent(`macOS did not allow it. ${REFUSED_LINE}`);
+  const badge = note(screen.container) as HTMLElement;
+  expect(badge.textContent).toBe("macOS did not allow it");
+  expect(badge.getAttribute("data-tone")).toBe("outline");
+  expect(line(screen.container)?.textContent).toBe(REFUSED_LINE);
+  expect(getComputedStyle(line(screen.container) as HTMLElement).color).toBe(
+    rgbOf("var(--ink-secondary)"),
+  );
+  expect(warmPaint(screen.container)).toEqual([]);
+  expect(
+    document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]'),
+  ).toBeNull();
+  expect(JUMP_REFUSED_NOTE_MS).toBeGreaterThan(JUMP_NOTE_MS);
+});
+
+test.each([
+  ["the tab has closed", 409, { error: "x", reason: "tab-gone" }, "That tab has closed"],
+  ["no tab is known", 404, { error: "x", reason: "no-pane" }, "No tab found"],
+  ["osascript could not be run", 500, { error: "x", reason: "failed" }, "Jump did not work"],
+])("when %s, a Terminal row says so in an outlined badge", async (_what, status, body, words) => {
+  localStorage.setItem(AUTOMATION_NOTE_STORAGE_KEY, "Terminal");
+  collector(json(status, body));
+  const screen = await render(<Row session={IN_TERMINAL} />);
+  await screen.getByRole("button", { name: /^Jump to billing-webhooks/ }).click();
+
+  await expect.element(screen.getByRole("status")).toHaveTextContent(words);
+  expect(note(screen.container)?.getAttribute("data-tone")).toBe("outline");
+  expect(line(screen.container)).toBeNull();
+});
+
+// Last, since a page that cannot store the line keeps it for as long as it is open.
+test("with storage blocked, the line is still said only once on the page", async () => {
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new DOMException("Blocked", "SecurityError");
+  });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Blocked", "SecurityError");
+  });
+  const held = heldCollector();
+  const screen = await render(<Row session={IN_TERMINAL} />);
+  const jump = screen.getByRole("button", { name: /^Jump to billing-webhooks/ });
+
+  await jump.click();
+  await vi.waitFor(() => expect(line(screen.container)?.textContent).toBe(ASK_LINE), UNTIL_ASKED);
+  held.answer(SWITCHED());
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to Terminal");
+
+  await secondOver();
+  await jump.click();
+  expect(held.sent).toHaveLength(2);
+  await askWaitOver();
+  expect(said(screen.container)?.textContent).toBe("");
+  expect(line(screen.container)).toBeNull();
+  held.answer(SWITCHED());
+});

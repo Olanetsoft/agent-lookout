@@ -8,6 +8,7 @@ import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import type { TerminalTab } from "../../terminal/terminalTabs.ts";
 import type { TmuxPane } from "../../tmux/panes.ts";
 import type { FeedEntry } from "./feed.ts";
 import type { RegistryEntry } from "./registry.ts";
@@ -23,6 +24,8 @@ export interface SessionContext {
   isAlive: (pid: number) => boolean;
   /** The tmux pane a process was last found in, when panes are looked for. */
   paneOf?: (pid: number) => TmuxPane | undefined;
+  /** The Terminal or iTerm2 tab a process was found in, when tabs are looked for. */
+  tabOf?: (pid: number) => TerminalTab | undefined;
 }
 
 /** Whether a process exists. A process owned by someone else still exists. */
@@ -94,10 +97,13 @@ function build(fields: Fields, origin: ClaudeCodeOrigin, context: SessionContext
   if (fields.pid !== undefined) {
     session.pid = fields.pid;
     session.alive = context.isAlive(fields.pid);
-    // Only the place's name goes to the dashboard. The pane's id stays with
-    // the collector, which is the one that acts on it.
+    // Only the place's name goes to the dashboard. The pane's id and the tab's
+    // terminal stay with the collector, which is the one that acts on them. A
+    // pane comes first: a session in tmux is reached through tmux.
     const pane = session.alive ? context.paneOf?.(fields.pid) : undefined;
+    const tab = session.alive && !pane ? context.tabOf?.(fields.pid) : undefined;
     if (pane) session.jump = { kind: "tmux", place: pane.place };
+    else if (tab) session.jump = { kind: "terminal", app: tab.app, place: tab.app };
   }
   return session;
 }

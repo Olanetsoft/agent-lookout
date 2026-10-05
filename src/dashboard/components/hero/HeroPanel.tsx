@@ -215,7 +215,7 @@ function waitedFor(session: Session, asOf: number): number | null {
  */
 function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
-  const jump = useJump(session.id);
+  const jump = useJump(session);
   return (
     <div
       data-slot='hero-session'
@@ -279,7 +279,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
 /** A wait after the longest, as one compact row with the same parts. */
 function Other({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
-  const jump = useJump(session.id);
+  const jump = useJump(session);
   return (
     <li
       data-slot='hero-session'

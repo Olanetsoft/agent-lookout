@@ -2,10 +2,12 @@ import { writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { createCollector } from "@collector/collector";
 import { MAX_JUMP_BODY_BYTES } from "@collector/jumpRoute";
+import { focusTabArgs, ITERM_SCRIPT, TERMINAL_SCRIPT } from "@collector/terminal/focusTab";
+import { TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFinder";
 import { PANE_LOOK_INTERVAL_MS } from "@collector/tmux/paneFinder";
 import { LIST_CLIENTS_ARGS, describePaneArgs } from "@collector/tmux/selectPane";
 import { JUMP_INTERVAL_MS } from "@core/api";
@@ -15,6 +17,16 @@ import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import {
+  fakeOsascript,
+  fakeProcesses,
+  ITERM_PATH,
+  MISSING,
+  NOT_ALLOWED,
+  TERMINAL_PATH,
+  TIMED_OUT,
+  type ProcessRow,
+} from "@tests/support/node/terminal";
 import { fakeTmux } from "@tests/support/node/tmux";
 
 const T0 = 1_700_000_100_000;
@@ -46,17 +58,36 @@ function registry(): Record<string, string> {
 }
 
 /**
- * The collector as every host builds it, with its real Claude Code adapter
- * reading a folder of the test's own, and a tmux that runs nothing: it lists
- * one pane, whose process is this test's, and writes down what it is asked.
- * Served over real HTTP on a free loopback port.
+ * The processes `ps` would list with both sessions in one tab of the app: the
+ * app, a login and a shell on the tab's terminal, this test's parent, the
+ * docs-site session, and this test, the checkout-flow session, which is in a
+ * tmux pane as well.
  */
-async function serve(env: Record<string, string> = {}) {
+function inOneTab(app: string): ProcessRow[] {
+  return [
+    [600, 1, "??", app],
+    [601, 600, "ttys004", "/usr/bin/login"],
+    [602, 601, "ttys004", "-zsh"],
+    [process.ppid, 602, "ttys004", "node"],
+    [process.pid, process.ppid, "ttys004", "node"],
+  ];
+}
+
+/**
+ * The collector as every host builds it, with its real Claude Code adapter
+ * reading a folder of the test's own, a tmux that runs nothing: it lists one
+ * pane, whose process is this test's, and writes down what it is asked, a
+ * table of processes of the test's own, and an osascript that runs nothing and
+ * writes down what it is asked. Served over real HTTP on a free loopback port.
+ */
+async function serve(env: Record<string, string> = {}, processes: ProcessRow[] = []) {
   const tmux = fakeTmux({
     panes: [`${process.pid} %7 2 1 checkout-flow`],
     where: "$0 2 1 checkout-flow",
     clients: ["$0 /dev/ttys003", "$4 /dev/ttys004"],
   });
+  const osascript = fakeOsascript();
+  const ps = fakeProcesses(processes);
   const clock = { now: T0 };
   const collector = createCollector({
     version: "9.9.9-test",
@@ -68,6 +99,8 @@ async function serve(env: Record<string, string> = {}) {
     },
     notifier: fakeSystemNotifier(),
     tmux: tmux.run,
+    osascript: osascript.run,
+    readProcesses: ps.read,
     now: () => clock.now,
   });
   const port = await listen(createServer(collector.handler));
@@ -91,7 +124,7 @@ async function serve(env: Record<string, string> = {}) {
   /** What tmux was asked after the first look for panes. */
   const asked = () => tmux.ran.slice(1);
 
-  return { port, tmux, clock, collector, jump, sessions, asked };
+  return { port, tmux, osascript, ps, clock, collector, jump, sessions, asked };
 }
 
 const named = (sessions: Session[], name: string) =>
@@ -165,6 +198,8 @@ describe("what the dashboard is told", () => {
         AGENT_LOOKOUT_TMUX: "off",
       },
       notifier: fakeSystemNotifier(),
+      osascript: fakeOsascript().run,
+      readProcesses: fakeProcesses().read,
       now: () => T0,
     });
     const port = await listen(createServer(collector.handler));
@@ -227,7 +262,7 @@ describe("POST /api/jump", () => {
 
     expect(response.status).toBe(404);
     expect(response.json()).toEqual({
-      error: "No tmux pane is known for that session.",
+      error: "No tmux pane or terminal tab is known for that session.",
       reason: "no-pane",
     });
     expect(server.asked()).toEqual([]);
@@ -316,6 +351,133 @@ describe("POST /api/jump", () => {
     server.clock.now = T0 + PANE_LOOK_INTERVAL_MS;
     await server.collector.poller.pollOnce();
     expect(server.tmux.names()).toEqual(["list-panes", "list-panes"]);
+  });
+});
+
+describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
+  test("a session in a tab names the app, and the tab's terminal stays with the collector, with tmux first", async () => {
+    const server = await serve({}, inOneTab(TERMINAL_PATH));
+    const response = await request(server.port, "/api/sessions");
+    const { sessions } = response.json<SessionsSnapshot>();
+
+    expect(named(sessions, "docs-site")?.jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    // The session in a tmux pane is reached through tmux, though its pane is in a tab too.
+    expect(named(sessions, "checkout-flow")?.jump).toEqual({
+      kind: "tmux",
+      place: "checkout-flow:2.1",
+    });
+    expect(response.body).not.toContain("ttys004");
+    // One ps for both sessions.
+    expect(server.ps.runs).toBe(1);
+  });
+
+  test.each([
+    ["Terminal", TERMINAL_PATH, TERMINAL_SCRIPT],
+    ["iTerm2", ITERM_PATH, ITERM_SCRIPT],
+  ] as const)(
+    "brings the %s tab forward: osascript with the app's fixed script, a -- and the terminal alone",
+    async (app, program, script) => {
+      const server = await serve({}, inOneTab(program));
+      const response = await server.jump(ELSEWHERE);
+
+      expect(response.status).toBe(200);
+      expect(response.json()).toEqual({ ok: true, kind: "terminal", app, place: app });
+      expect(server.osascript.ran).toEqual([focusTabArgs({ app, tty: "/dev/ttys004" })]);
+      const [args] = server.osascript.ran as [string[]];
+      expect(args.slice(-2)).toEqual(["--", "/dev/ttys004"]);
+      expect(args.filter((_arg, index) => args[index - 1] === "-e")).toEqual([...script]);
+      // tmux was not asked to do anything.
+      expect(server.asked()).toEqual([]);
+    },
+  );
+
+  test.each([
+    ["a terminal", "/dev/ttys004"],
+    ["a script", 'tell application "Terminal" to activate'],
+    ["an option", "-e"],
+    ["the app", "Terminal"],
+  ])("a body that names %s finds no tab, and osascript is not run", async (_what, sessionId) => {
+    const server = await serve({}, inOneTab(TERMINAL_PATH));
+    const response = await server.jump(sessionId);
+
+    expect(response.status).toBe(404);
+    expect(response.json()).toMatchObject({ reason: "no-pane" });
+    expect(server.osascript.ran).toEqual([]);
+  });
+
+  test("when no tab shows that terminal, it is a 409, and the tab is looked for again", async () => {
+    const server = await serve({}, inOneTab(TERMINAL_PATH));
+    server.osascript.answer = MISSING;
+    const response = await server.jump(ELSEWHERE);
+
+    expect(response.status).toBe(409);
+    expect(response.json()).toEqual({ error: "That tab has closed.", reason: "tab-gone" });
+
+    server.clock.now += TAB_LOOK_SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    expect(server.ps.runs).toBe(2);
+  });
+
+  test("when macOS has not allowed it, it is a 403 that says where to allow it", async () => {
+    const server = await serve({}, inOneTab(TERMINAL_PATH));
+    server.osascript.answer = NOT_ALLOWED;
+    const response = await server.jump(ELSEWHERE);
+
+    expect(response.status).toBe(403);
+    expect(response.json()).toEqual({
+      error:
+        "macOS has not allowed Agent Lookout to control Terminal. Allow it in System Settings, Privacy & Security, Automation.",
+      reason: "not-allowed",
+    });
+  });
+
+  test("when osascript runs out of time, it is a 500 in plain words", async () => {
+    const server = await serve({}, inOneTab(ITERM_PATH));
+    server.osascript.answer = TIMED_OUT;
+    const response = await server.jump(ELSEWHERE);
+
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({
+      error: "iTerm2 could not be asked to bring the tab forward.",
+      reason: "failed",
+    });
+  });
+
+  test("while a tab's jump waits on macOS, no other jump is made", async () => {
+    const server = await serve({}, inOneTab(TERMINAL_PATH));
+    let answer: () => void = () => {};
+    server.osascript.holdUntil = new Promise<void>((resolve) => (answer = resolve));
+    const first = server.jump(ELSEWHERE);
+    await vi.waitFor(() => expect(server.osascript.ran).toHaveLength(1));
+
+    server.clock.now += 30_000;
+    const second = await server.jump(SESSION);
+    expect(second.status).toBe(429);
+    expect(server.asked()).toEqual([]);
+
+    answer();
+    expect((await first).status).toBe(200);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, ps is not asked and no session has a tab", async () => {
+    const server = await serve({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" }, inOneTab(TERMINAL_PATH));
+
+    expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
+    expect(server.ps.runs).toBe(0);
+    expect((await server.jump(ELSEWHERE)).status).toBe(404);
+    expect(server.osascript.ran).toEqual([]);
+  });
+
+  test("a session in a terminal of another app has no jump", async () => {
+    const server = await serve({}, inOneTab("/Applications/Warp.app/Contents/MacOS/stable"));
+
+    expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
+    expect((await server.jump(ELSEWHERE)).status).toBe(404);
+    expect(server.osascript.ran).toEqual([]);
   });
 });
 

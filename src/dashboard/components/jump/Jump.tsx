@@ -3,7 +3,11 @@ import { Button } from "@dashboard/components/ui/controls/Button";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
 import type { JumpPress } from "@dashboard/hooks/data/useJump";
-import { JUMP_OUTCOME_WORDS } from "@dashboard/lib/api/jump";
+import {
+  AUTOMATION_REFUSED_LINE,
+  automationAskLine,
+  jumpOutcomeWords,
+} from "@dashboard/lib/api/jump";
 import { jumpWay } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
@@ -22,9 +26,11 @@ interface JumpProps {
  *
  * A session with a link, one in VS Code, gets a link the browser opens. A
  * session the collector found in a tmux pane gets a button that asks the
- * collector to select that pane. The two look the same and sit in the same
- * place. Each is named for the session and where it goes, and the tmux one
- * says where when pointed at or reached with Tab: "tmux, work:2.1".
+ * collector to select that pane, and one it found in a tab of Terminal or
+ * iTerm2 a button that asks it to bring that tab forward. They look the same
+ * and sit in the same place. Each is named for the session and where it goes,
+ * and a button says where when pointed at or reached with Tab:
+ * "tmux, work:2.1", or "Terminal".
  */
 export function Jump({ session, jump, variant, size = "sm", className }: JumpProps) {
   const way = jumpWay(session);
@@ -49,7 +55,7 @@ export function Jump({ session, jump, variant, size = "sm", className }: JumpPro
         size={size}
         className={look}
         data-part='jump'
-        data-way='tmux'
+        data-way={way.by}
         aria-label={label}
         onClick={jump.press}
       >
@@ -66,8 +72,14 @@ export function Jump({ session, jump, variant, size = "sm", className }: JumpPro
  * stays a few seconds. Neither is warm, since neither is a session needing the
  * person.
  *
+ * Two things need a sentence, which goes on a line of its own under the name
+ * in the secondary ink: while the first press of a Jump to a Terminal or iTerm2
+ * tab on this browser is held by macOS's question, that macOS will ask once,
+ * and when macOS did not allow it, where to change that.
+ *
  * A screen reader is told through a line that is in the page before there is
- * anything to say, so that the change is heard. The badge is for the eye only.
+ * anything to say, so that the change is heard. The badge and the sentence are
+ * for the eye only.
  */
 export function JumpNote({
   session,
@@ -78,13 +90,21 @@ export function JumpNote({
   jump: JumpPress;
   className?: string;
 }) {
-  const { outcome } = jump;
-  if (outcome === null && jumpWay(session)?.by !== "tmux") return null;
-  const words = outcome === null ? null : JUMP_OUTCOME_WORDS[outcome];
+  const { outcome, asking } = jump;
+  const way = jumpWay(session);
+  if (outcome === null && asking === null && (way === null || way.by === "link")) return null;
+  const words =
+    outcome === null ? null : jumpOutcomeWords(outcome, way?.by === "terminal" ? way.app : null);
+  const line =
+    outcome === "not-allowed"
+      ? AUTOMATION_REFUSED_LINE
+      : outcome === null && asking !== null
+        ? automationAskLine(asking)
+        : null;
   return (
     <>
       <span role='status' data-part='jump-said' className='sr-only'>
-        {words}
+        {words !== null && line !== null ? `${words}. ${line}` : (words ?? line)}
       </span>
       {words !== null && (
         <Badge
@@ -96,6 +116,15 @@ export function JumpNote({
         >
           {words}
         </Badge>
+      )}
+      {line !== null && (
+        <span
+          aria-hidden
+          data-part='jump-line'
+          className='basis-full text-caption text-ink-secondary'
+        >
+          {line}
+        </span>
       )}
     </>
   );

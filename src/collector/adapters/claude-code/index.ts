@@ -8,6 +8,7 @@ import {
 import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
+import type { TabFinder } from "../../terminal/tabFinder.ts";
 import type { PaneFinder } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import {
@@ -81,6 +82,12 @@ export interface ClaudeCodeAdapterOptions {
    * pane is looked for and tmux is never run.
    */
   panes?: Pick<PaneFinder, "look" | "paneOf">;
+  /**
+   * Finds the Terminal or iTerm2 tab each live session's process runs in, for
+   * a session in no tmux pane. The collector passes the one the jump route
+   * reads. Left out, no tab is looked for and `ps` is not asked.
+   */
+  terminals?: Pick<TabFinder, "look" | "tabOf">;
   /** How long `claude agents --json` gets. Defaults to 5 seconds. */
   feedTimeoutMs?: number;
   /** How often the command is run. Defaults to 30 seconds. */
@@ -178,7 +185,10 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  *
  * A live session whose process runs inside a tmux pane is given a `jump` that
  * names the place, when the adapter is handed something to find panes with.
- * The finder keeps its own slow beat, so tmux is not asked on every poll.
+ * The finder keeps its own slow beat, so tmux is not asked on every poll. One
+ * in no pane whose process runs in a tab of Terminal or iTerm2 is given a
+ * `jump` that names the app, when the adapter is handed something to find
+ * tabs with, which asks `ps` once about each new process.
  */
 export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Adapter {
   const env = options.env ?? process.env;
@@ -329,6 +339,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       now: checkedAt,
       isAlive,
       paneOf: (pid) => options.panes?.paneOf(pid),
+      tabOf: (pid) => options.terminals?.tabOf(pid),
     };
 
     // How often the command is due depends on whether the registry can be relied
@@ -363,14 +374,14 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     const problem = problemWith(reading, read);
     const { registry, live } = reading;
 
-    if (options.panes) {
+    if (options.panes || options.terminals) {
       // Every process a session below can have: the registry's, and the ones
       // the command listed, for when sessions come from its answer.
       const pids = new Set(live.map((entry) => entry.pid));
       for (const entry of answer ?? []) {
         if (entry.pid !== undefined && isAlive(entry.pid)) pids.add(entry.pid);
       }
-      await options.panes.look([...pids]);
+      await Promise.all([options.panes?.look([...pids]), options.terminals?.look([...pids])]);
     }
 
     const fallbackEvery = every(feedFallbackIntervalMs);

@@ -5,6 +5,7 @@ import {
   type SessionStatus,
   type SourceId,
   type SourceState,
+  type TerminalApp,
 } from "@core/sessions/session";
 import { formatDuration } from "@dashboard/lib/format";
 
@@ -104,15 +105,20 @@ export function safeJumpLink(session: Pick<Session, "source" | "links">): string
 /**
  * How Jump reaches a session, with where it goes in words for its label.
  *
- * link  an address the browser opens, which hands the session to its own app
- * tmux  a pane the collector selects when the page asks it to
+ * link      an address the browser opens, which hands the session to its own app
+ * tmux      a pane the collector selects when the page asks it to
+ * terminal  a tab of Terminal or iTerm2 the collector brings forward when the page asks it to
  */
-export type JumpWay = { by: "link"; href: string; where: string } | { by: "tmux"; where: string };
+export type JumpWay =
+  | { by: "link"; href: string; where: string }
+  | { by: "tmux"; where: string }
+  | { by: "terminal"; app: TerminalApp; where: string };
 
 /**
  * The way Jump reaches this session, or null when it has none and gets no
  * button. A session with a safe link keeps it. Otherwise a session the
- * collector found in a tmux pane is reached there: "tmux, work:2.1".
+ * collector found in a tmux pane is reached there, "tmux, work:2.1", and one
+ * it found in a tab of Terminal or iTerm2 there, "Terminal".
  */
 export function jumpWay(
   session: Pick<Session, "source" | "surface" | "links" | "jump">,
@@ -120,5 +126,8 @@ export function jumpWay(
   const href = safeJumpLink(session);
   if (href !== null) return { by: "link", href, where: SURFACE_LABEL[session.surface] };
   if (session.jump?.kind === "tmux") return { by: "tmux", where: `tmux, ${session.jump.place}` };
+  if (session.jump?.kind === "terminal") {
+    return { by: "terminal", app: session.jump.app, where: session.jump.place };
+  }
   return null;
 }

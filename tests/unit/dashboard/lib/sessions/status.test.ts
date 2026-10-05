@@ -127,6 +127,11 @@ test("Jump reaches a session the collector found in tmux by its pane, and names 
   expect(jumpWay(session)).toEqual({ by: "tmux", where: "tmux, work:2.1" });
 });
 
+test("Jump reaches a session the collector found in a tab of Terminal or iTerm2 there, and names the app", () => {
+  const session = makeSession({ jump: { kind: "terminal", app: "iTerm2", place: "iTerm2" } });
+  expect(jumpWay(session)).toEqual({ by: "terminal", app: "iTerm2", where: "iTerm2" });
+});
+
 test("a session with both keeps its link", () => {
   const session = makeSession({
     surface: "vscode",

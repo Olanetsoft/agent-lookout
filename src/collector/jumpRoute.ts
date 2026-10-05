@@ -8,9 +8,15 @@ import {
   type JumpRefusal,
   type JumpResponse,
 } from "../core/api.ts";
+import type { Session } from "../core/sessions/session.ts";
 import { isLoopbackOrigin, type ApiAnswer } from "./handler.ts";
 import type { Poller } from "./poller.ts";
+import { focusTab } from "./terminal/focusTab.ts";
+import type { RunOsascript } from "./terminal/program.ts";
+import type { TabFinder } from "./terminal/tabFinder.ts";
+import type { TerminalTab } from "./terminal/terminalTabs.ts";
 import type { PaneFinder } from "./tmux/paneFinder.ts";
+import type { TmuxPane } from "./tmux/panes.ts";
 import type { RunTmux } from "./tmux/program.ts";
 import { selectPane } from "./tmux/selectPane.ts";
 
@@ -29,7 +35,36 @@ export interface JumpRouteOptions {
   /** The panes the collector found for its sessions' processes. */
   panes: Pick<PaneFinder, "paneOf" | "lookAgain">;
   run: RunTmux;
+  /** The Terminal and iTerm2 tabs the collector found for its sessions' processes. */
+  tabs: Pick<TabFinder, "tabOf" | "forget">;
+  /** Runs osascript, to bring a tab forward. */
+  osascript: RunOsascript;
   now?: () => number;
+}
+
+/** Where the collector found a session: the pane or the tab it acts on. */
+type Found = { kind: "tmux"; pane: TmuxPane } | { kind: "terminal"; pid: number; tab: TerminalTab };
+
+/**
+ * The pane or the tab the collector found for a session it lists, going by the
+ * kind of jump it gave the session, or undefined when it found neither.
+ */
+function foundFor(
+  session: Session | undefined,
+  panes: Pick<PaneFinder, "paneOf">,
+  tabs: Pick<TabFinder, "tabOf">,
+): Found | undefined {
+  const pid = session?.pid;
+  if (pid === undefined) return undefined;
+  if (session?.jump?.kind === "tmux") {
+    const pane = panes.paneOf(pid);
+    return pane && { kind: "tmux", pane };
+  }
+  if (session?.jump?.kind === "terminal") {
+    const tab = tabs.tabOf(pid);
+    return tab && { kind: "terminal", pid, tab };
+  }
+  return undefined;
 }
 
 const refuse = (
@@ -60,8 +95,9 @@ function header(req: Pick<IncomingMessage, "headers">, name: string): string | u
  * when it may proceed.
  *
  * Every other route only reads. This one changes which tmux pane is selected,
- * so on top of the checks every request has already passed (`refusalFor` in
- * `handler.ts`) it must be one only the dashboard's own page can send:
+ * or which Terminal or iTerm2 tab is in front, so on top of the checks every
+ * request has already passed (`refusalFor` in `handler.ts`) it must be one
+ * only the dashboard's own page can send:
  *
  * - A POST, so that no link, image or address typed into a browser sends it.
  * - With an `Origin` that is a page served from this machine. A browser puts
@@ -153,22 +189,48 @@ function readBody(req: IncomingMessage, limit: number): Promise<Body> {
 }
 
 /**
- * Answers `POST /api/jump`: selects the tmux pane a session runs in.
+ * Answers `POST /api/jump`: selects the tmux pane a session runs in, or brings
+ * forward the Terminal or iTerm2 tab it runs in.
  *
  * The request names a session and nothing else. The session is looked up in
- * the collector's own list, and the pane is the one the collector found for
- * that session's process when it last asked tmux. So nothing a request holds
- * reaches a command: not a pane, not a name, not an argument. The most a
- * request can do is choose which of the panes already found is selected.
+ * the collector's own list, and the pane or tab is the one the collector found
+ * for that session's process: the pane when it last asked tmux, the tab's
+ * terminal when it asked `ps`. So nothing a request holds reaches a command:
+ * not a pane, not a terminal, not a name, not an argument. The most a request
+ * can do is choose which of the places already found is brought forward.
  *
- * One jump is made a second, and one at a time.
+ * One jump is made a second, and one at a time. A tab's can take as long as a
+ * person takes to answer macOS the first time, and no other is made meanwhile.
  */
 export function createJumpRoute(options: JumpRouteOptions) {
-  const { poller, panes, run } = options;
+  const { poller, panes, run, tabs, osascript } = options;
   const now = options.now ?? Date.now;
 
   let lastAt: number | null = null;
   let underWay = false;
+
+  async function bringForward(pid: number, tab: TerminalTab): Promise<ApiAnswer> {
+    const outcome = await focusTab(tab, osascript);
+    if (outcome.ok) {
+      return {
+        status: 200,
+        body: { ok: true, kind: "terminal", app: tab.app, place: tab.app } satisfies JumpResponse,
+      };
+    }
+    if (outcome.reason === "tab-gone") {
+      // What was found may be out of date, so it is looked for again.
+      tabs.forget(pid);
+      return failed(409, "tab-gone", "That tab has closed.");
+    }
+    if (outcome.reason === "not-allowed") {
+      return failed(
+        403,
+        "not-allowed",
+        `macOS has not allowed Agent Lookout to control ${tab.app}. Allow it in System Settings, Privacy & Security, Automation.`,
+      );
+    }
+    return failed(500, "failed", `${tab.app} could not be asked to bring the tab forward.`);
+  }
 
   return async function answerJump(req: IncomingMessage): Promise<ApiAnswer> {
     const refusal = jumpRefusalFor(req);
@@ -190,11 +252,10 @@ export function createJumpRoute(options: JumpRouteOptions) {
     }
 
     const session = poller.getSnapshot().sessions.find((candidate) => candidate.id === sessionId);
-    const pane =
-      session?.jump?.kind === "tmux" && session.pid !== undefined
-        ? panes.paneOf(session.pid)
-        : undefined;
-    if (!pane) return failed(404, "no-pane", "No tmux pane is known for that session.");
+    const found = foundFor(session, panes, tabs);
+    if (!found) {
+      return failed(404, "no-pane", "No tmux pane or terminal tab is known for that session.");
+    }
 
     const at = now();
     const tooSoon = lastAt !== null && at >= lastAt && at - lastAt < JUMP_INTERVAL_MS;
@@ -207,6 +268,8 @@ export function createJumpRoute(options: JumpRouteOptions) {
     lastAt = at;
     underWay = true;
     try {
+      if (found.kind === "terminal") return await bringForward(found.pid, found.tab);
+      const { pane } = found;
       const outcome = await selectPane(pane.id, run);
       if (outcome.ok) {
         return {

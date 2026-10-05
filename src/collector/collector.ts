@@ -20,6 +20,9 @@ import {
 } from "./notifications/serverNotifications.ts";
 import { createSystemNotifier, type SystemNotifier } from "./notifications/systemNotifier.ts";
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
+import type { ReadProcessTable } from "./terminal/processTable.ts";
+import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
+import { createTabFinder } from "./terminal/tabFinder.ts";
 import { createPaneFinder } from "./tmux/paneFinder.ts";
 import { createTmuxRunner, type RunTmux } from "./tmux/program.ts";
 import {
@@ -54,6 +57,18 @@ export interface CollectorOptions {
    * one and `AGENT_LOOKOUT_TMUX` is not `off`. Tests pass one that runs nothing.
    */
   tmux?: RunTmux;
+  /**
+   * What runs `/usr/bin/osascript` to bring a session's Terminal or iTerm2 tab
+   * forward when the dashboard asks. Defaults to running it on macOS, unless
+   * `AGENT_LOOKOUT_TERMINAL_JUMP` is `off`. Tests pass one that runs nothing.
+   */
+  osascript?: RunOsascript;
+  /**
+   * Reads every process's parent, terminal and program, to find the Terminal
+   * or iTerm2 tab a session runs in. Defaults to asking `ps`. Tests pass a
+   * table of their own.
+   */
+  readProcesses?: ReadProcessTable;
   /**
    * Makes what sends an email, once email has been set up in the environment.
    * Defaults to the mail server named there. With email not set up it is never
@@ -93,9 +108,10 @@ export interface Collector {
 /**
  * The collector in one piece: adapters, poller, stores, its own notifications,
  * the email and webhook notifications when they are set up, what finds and
- * selects a tmux pane, what reads each session's git branch, and the request
- * handler. Every host builds it the same way: the dev server, the standalone
- * server, and later a desktop app.
+ * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
+ * what reads each session's git branch, and the request handler. Every host
+ * builds it the same way: the dev server, the standalone server, and later a
+ * desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -107,6 +123,10 @@ export function createCollector(options: CollectorOptions): Collector {
   // so the two share one finder and one way of running tmux.
   const tmux = options.tmux ?? createTmuxRunner({ env });
   const panes = createPaneFinder({ run: tmux, now });
+  // The same for the tabs of Terminal and iTerm2: the adapter finds them and
+  // the jump route brings them forward.
+  const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
+  const osascript = options.osascript ?? createOsascriptRunner({ env });
   const notifications = createServerNotifications({
     notifier: options.notifier ?? createSystemNotifier(),
     onAtStart: notificationsOnAtStart(env),
@@ -148,7 +168,13 @@ export function createCollector(options: CollectorOptions): Collector {
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
     adapters: options.adapters ?? [
-      createClaudeCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, panes }),
+      createClaudeCodeAdapter({
+        env: options.env,
+        now,
+        pollIntervalMs: intervalMs,
+        panes,
+        terminals: tabs,
+      }),
       createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
       createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     ],
@@ -174,7 +200,7 @@ export function createCollector(options: CollectorOptions): Collector {
     notifications,
     email: () => email?.status() ?? emailOff,
     webhook: () => webhook?.status() ?? webhookOff,
-    jump: createJumpRoute({ poller, panes, run: tmux, now }),
+    jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
     now,
   });
 

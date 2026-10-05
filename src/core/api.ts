@@ -41,21 +41,32 @@ export interface JumpRequest {
   sessionId: string;
 }
 
-/** `POST /api/jump`, when the place was selected. `place` is where, as tmux gives it now. */
-export interface JumpResponse extends JumpTarget {
-  ok: true;
-}
+/**
+ * `POST /api/jump`, when the place was selected. For a tmux pane, `place` is
+ * where, as tmux gives it now. For a terminal tab, it is the app.
+ */
+export type JumpResponse = JumpTarget & { ok: true };
 
 /**
  * Why a jump was not made, for the dashboard to say in its own words.
  *
- * no-pane       404: the session is not listed, or no pane is known for it
+ * no-pane       404: the session is not listed, or no pane or tab is known for it
  * pane-gone     409: tmux says the pane is no longer there
  * tmux-stopped  409: no tmux server answered
- * too-soon      429: another jump was made less than a second ago
- * failed        500: tmux could not be run, or did not answer in time
+ * tab-gone      409: Terminal or iTerm2 has no tab on the session's terminal
+ * not-allowed   403: macOS did not allow Agent Lookout to control the app
+ * too-soon      429: another jump was made less than a second ago, or one is under way
+ * failed        500: tmux or osascript could not be run, or did not answer in time
  */
-export type JumpFailure = "no-pane" | "pane-gone" | "tmux-stopped" | "too-soon" | "failed";
+export type JumpFailure =
+  "no-pane" | "pane-gone" | "tmux-stopped" | "tab-gone" | "not-allowed" | "too-soon" | "failed";
+
+/**
+ * How long the collector waits for Terminal or iTerm2 to bring a tab forward.
+ * The first time, macOS asks the person whether it may, and the app does not
+ * answer until they have, so this is long enough to read the question.
+ */
+export const TERMINAL_JUMP_TIMEOUT_MS = 60_000;
 
 /** The body of an answer of `POST /api/jump` that says why no jump was made. */
 export interface JumpRefusal extends ErrorResponse {

@@ -49,6 +49,24 @@ These change which pane, window and tmux session are selected, and nothing else.
 
 tmux is started directly, never through a shell, with stdin closed and a 2 second timeout, and never on Windows. Agent Lookout looks for it in each `PATH` directory, then at `/opt/homebrew/bin/tmux`, `/usr/local/bin/tmux`, `/opt/local/bin/tmux` and `/usr/bin/tmux`, and runs nothing when it is not there. tmux is given the environment Agent Lookout was started with, so it reaches the tmux server the `tmux` command would reach from there. None of these commands starts a tmux server. When the folder tmux keeps its sockets in is not there yet, `/tmp/tmux-` followed by your user number, tmux itself makes it, empty, the first time it is asked. With `AGENT_LOOKOUT_TMUX=off`, Agent Lookout runs neither tmux nor that `ps`.
 
+### Terminal and iTerm2
+
+On a Mac, a Claude Code session that runs in a tab of Terminal or iTerm2 gets a Jump button, and for that Agent Lookout has to know which app the session's process runs in and which terminal it has. When a Claude Code session's process appears, it runs:
+
+```sh
+ps -A -o pid=,ppid=,tty=,comm=
+```
+
+That prints four things about every process on this machine: its ID, its parent's ID, its terminal, such as `ttys004`, and the name its program gives itself, which for an app is the path of its program, such as `/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal`, and for a shell can be `-zsh`. It asks for no other argument, no owner and no environment. Agent Lookout follows each new session's process up through its parents, looking for Terminal's program or iTerm2's, and keeps two things about the session: which of the two apps it is in, and the session's own terminal, such as `/dev/ttys004`. The rest of the list is dropped as soon as that is done. One run covers every session that appeared since the last, and it runs no more than once every 5 seconds. A session is asked about once for as long as its process runs, and once more after a Jump has found its tab closed. With no Claude Code session running, it does not run this.
+
+For a session found in a tab, the dashboard is sent the app's name, `Terminal` or `iTerm2`, to show on the Jump button. The terminal stays in the server, in memory.
+
+When you press Jump on such a session, the page sends the server the session's ID, and the server runs `/usr/bin/osascript` with a script that never changes, one for each app, then `--` and the terminal it found itself. The script asks the app for the tab or pane that shows that terminal, makes it the selected one, brings its window to the front and brings the app to the front. It reads each tab's terminal to find it, and nothing else of any tab: no title, no contents and no command. It sends no keys and no text. It prints `found` or `missing`, and that is all Agent Lookout reads from it, with the error macOS gives when it has not allowed it.
+
+macOS asks you once whether the program Agent Lookout runs in may control the app, and keeps your answer in its own settings, under Privacy & Security, Automation. Agent Lookout does not see or change that setting.
+
+`ps` and `osascript` are started directly, never through a shell, with stdin closed. `ps` is run from `/usr/bin` or `/bin` with a 2 second timeout, and `osascript` by its full path with a timeout of one minute, which leaves time to answer macOS's question. Neither is run on any other system. With `AGENT_LOOKOUT_TERMINAL_JUMP=off`, Agent Lookout runs neither for this.
+
 ### Whether a process exists
 
 Agent Lookout asks the operating system whether each Claude Code session's process still exists with a signal-0 check on the process ID, which sends nothing to the process. It does the same for each status file that names a process.
@@ -100,11 +118,11 @@ It reads nothing else in a repository: no other branch or reference, no `packed-
 
 With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a session starts waiting for you, or, if you chose those too, finishes, fails or ends. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason, or what happened. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
 
-`osascript` is started directly, by that full path, never through a shell, with stdin closed and a 5 second timeout. It is not run on any other system, and never while notifications are off. While it runs, for a fraction of a second, the name is one of that program's arguments, which other programs on this machine can read from the list of running processes. [Notifications](#notifications) says when notifications are on and what one holds.
+`osascript` is started directly, by that full path, never through a shell, with stdin closed and a 5 second timeout. It is not run on any other system, and never while notifications are off. [Terminal and iTerm2](#terminal-and-iterm2) says when it is also run for Jump. While it runs, for a fraction of a second, the name is one of that program's arguments, which other programs on this machine can read from the list of running processes. [Notifications](#notifications) says when notifications are on and what one holds.
 
 ### Settings
 
-It reads eighteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`, and the three webhook settings, `AGENT_LOOKOUT_WEBHOOK_URL`, `AGENT_LOOKOUT_WEBHOOK_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_AFTER`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept, and [Webhook](#webhook) how the webhook's are. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads nineteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_TERMINAL_JUMP`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`, and the three webhook settings, `AGENT_LOOKOUT_WEBHOOK_URL`, `AGENT_LOOKOUT_WEBHOOK_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_AFTER`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept, and [Webhook](#webhook) how the webhook's are. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -115,7 +133,7 @@ It reads eighteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `A
 - In a git repository, anything but the `.git` file and `HEAD` described under [Git repositories](#git-repositories).
 - The files of any other application.
 
-It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It runs no git command. It never writes to `~/.claude`, to the Codex folder, to the folder of status files, to any git repository or to any agent tool's files, and it never sends input to a session. It never makes, renames or deletes a status file. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
+It runs no program but the `claude` binary, `ps`, `tmux` and, on macOS, `osascript`, to show a notification and to bring a tab of Terminal or iTerm2 forward. It runs no git command. It never writes to `~/.claude`, to the Codex folder, to the folder of status files, to any git repository or to any agent tool's files, and it never sends input to a session. It never makes, renames or deletes a status file. The one thing it changes outside itself is which tmux pane, window and session are selected, or which tab of Terminal or iTerm2 is in front, and only when you press Jump.
 
 ## Network
 
@@ -127,11 +145,11 @@ The `claude agents` command is Claude Code's own program, and it may contact Ant
 
 The API refuses any request whose `Host` header is not `localhost`, `127.0.0.1` or `[::1]`, any request whose `Origin` header names another site, and any request the browser marks as cross-site. It sends no CORS headers. Together these stop a website you visit from reading your session names and paths through your browser.
 
-Each request the dashboard makes carries one header of Agent Lookout's own, `X-Agent-Lookout-Notifications`, which says which events that page has notifications on for: `off`, `on`, which means a session starting to wait, or `on; events=` followed by the names of the events, such as `on; events=needs-you,finished`. It holds nothing else. It goes to Agent Lookout's own server and nowhere else. [Notifications](#notifications) says what the server does with it. The request the Jump button sends for a session in tmux carries one more, `X-Agent-Lookout-Action: jump`, which names what is asked for.
+Each request the dashboard makes carries one header of Agent Lookout's own, `X-Agent-Lookout-Notifications`, which says which events that page has notifications on for: `off`, `on`, which means a session starting to wait, or `on; events=` followed by the names of the events, such as `on; events=needs-you,finished`. It holds nothing else. It goes to Agent Lookout's own server and nowhere else. [Notifications](#notifications) says what the server does with it. The request the Jump button sends for a session in tmux, Terminal or iTerm2 carries one more, `X-Agent-Lookout-Action: jump`, which names what is asked for.
 
-The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account. Such a program can also send that header, and so turn the notifications the server shows on or off. It can also ask the server to select a tmux pane, as the Jump button does.
+The local server has no password. While Agent Lookout is running, another program on the same machine can request the same data, and on a shared computer so can another user account. Such a program can also send that header, and so turn the notifications the server shows on or off. It can also ask the server to select a tmux pane, or bring a tab of Terminal or iTerm2 forward, as the Jump button does.
 
-For a session in VS Code, the Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code. For a session in tmux, the Jump button sends a request that holds the session's ID to Agent Lookout's own server, which selects the pane as described under [`tmux`](#tmux). That request is the only one that changes anything, and the server answers it only for a page served from this machine. [SECURITY.md](SECURITY.md) lists its checks.
+For a session in VS Code, the Jump button opens a `vscode://` address that contains the session ID. Your operating system hands it to VS Code. For a session in tmux, the Jump button sends a request that holds the session's ID to Agent Lookout's own server, which selects the pane as described under [`tmux`](#tmux). For a session in Terminal or iTerm2 it sends the same request, and the server brings the tab forward as described under [Terminal and iTerm2](#terminal-and-iterm2). That request is the only one that changes anything, and the server answers it only for a page served from this machine. [SECURITY.md](SECURITY.md) lists its checks.
 
 ## Notifications
 
@@ -270,7 +288,7 @@ Once a post has been sent, Agent Lookout has no hold on it. The service at the a
 
 ## Storage
 
-Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, the branches it last read, and what the dashboard pages last said about notifications.
+Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes and terminal tabs it last found, the branches it last read, and what the dashboard pages last said about notifications.
 
 With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says. With a webhook set up, each post holds the same, and the service it went to keeps it, as [Webhook](#webhook) says.
 
@@ -281,7 +299,7 @@ The tools that run it write files of their own. None of these holds session data
 - `npm run dev` runs through Vite, which keeps pre-bundled copies of the dependencies in `node_modules/.vite/`.
 - `npm run build` writes the built dashboard to `dist/` and the type checker's records to `node_modules/.tmp/`.
 
-The dashboard saves three values in your browser's local storage. Your theme choice is under the key `agent-lookout-theme`. Whether notifications are on is under the key `agent-lookout-notifications`, as `on` or `off`, and is written only when you turn them on or off. The events that send one are under the key `agent-lookout-notification-events`, as their names separated by commas, such as `needs-you,finished`, and are written only when you switch one. All three belong to one browser at one address.
+The dashboard saves four values in your browser's local storage. Your theme choice is under the key `agent-lookout-theme`. Whether notifications are on is under the key `agent-lookout-notifications`, as `on` or `off`, and is written only when you turn them on or off. The events that send one are under the key `agent-lookout-notification-events`, as their names separated by commas, such as `needs-you,finished`, and are written only when you switch one. The apps the page has said macOS will ask about, when you first jumped to a tab of one, are under the key `agent-lookout-automation-note`, as `Terminal`, `iTerm2` or both separated by a comma. All four belong to one browser at one address.
 
 ## What is on screen
 

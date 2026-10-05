@@ -24,7 +24,7 @@ The Overview has five parts. The Needs you panel and the Last hour chart share t
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -62,7 +62,7 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 
 When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
-A Claude Code session in VS Code or inside tmux has a Jump button here too.
+A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too.
 
 #### Quiet for
 
@@ -294,7 +294,7 @@ To turn the webhook off, start Agent Lookout again without `AGENT_LOOKOUT_WEBHOO
 
 ## Jump
 
-A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, or when its process runs inside a tmux pane. The button is in the Needs you panel and in the Sessions list. No other session has one.
+A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, when its process runs inside a tmux pane, or when it runs in a tab of Terminal or iTerm2 on a Mac. The button is in the Needs you panel and in the Sessions list. No other session has one.
 
 ### A session in VS Code
 
@@ -331,10 +331,53 @@ Jump for tmux has these limits.
 - It knows one tmux server: the one the `tmux` command reaches from where Agent Lookout was started. That is the default server, or the one Agent Lookout was itself started inside. A session in another tmux server, such as one started with `tmux -L`, gets no button.
 - It asks tmux where its panes are when it first finds a Claude Code session, then every 30 seconds, and within about 5 seconds of a new session appearing. So a session that has just started can be a few seconds without its button. After you move a pane, the place named on the button can be up to 30 seconds out of date. The press still selects the right pane, because it goes by the pane's own ID.
 - When a window is linked into more than one tmux session, tmux chooses which of them is switched to.
-- It is for Claude Code sessions. A session in a terminal that is not running tmux has no button: Jump does not reach a tab of iTerm2 or Terminal.
+- It is for Claude Code sessions. A session in a terminal that is not running tmux is reached through its tab when that is a tab of Terminal or iTerm2, as the next part says, and has no button otherwise.
 - It needs the `tmux` program, on your `PATH` or at `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` or `/usr/bin`. Without it, or while no tmux server is running, no session has the button and nothing else changes.
 
 To stop Agent Lookout running tmux at all, start it with `AGENT_LOOKOUT_TMUX=off`. [PRIVACY.md](../PRIVACY.md#tmux) lists each command it runs and what it reads from tmux.
+
+### A session in a tab of Terminal or iTerm2
+
+Jump is a button here too. Point at it, or move to it with Tab, to read which app it goes to: `Terminal` or `iTerm2`.
+
+Press it, and the page asks Agent Lookout to bring that tab forward. Agent Lookout runs `osascript`, the program for AppleScript that comes with macOS, with a short script that never changes, one for each app. It finds the tab by the session's terminal device, such as `/dev/ttys004`, which no other open tab has.
+
+- In Terminal, the tab becomes the selected tab of its window, the window comes back from the Dock if it was minimised and in front of Terminal's other windows, and Terminal comes to the front.
+- In iTerm2, the window, the tab and the pane are selected, and iTerm2 comes to the front.
+
+It sends nothing to the session: no keys and no text. When the app is not running, it is not started.
+
+#### The first time
+
+The first time you press it, macOS asks whether the app Agent Lookout runs in may control Terminal, or iTerm2. That is the program you started Agent Lookout from, such as Terminal, iTerm2 or your editor, so the question names that program and not Agent Lookout. It reads like this: “iTerm” wants access to control “Terminal”. macOS gives this to that program as a whole, not to Agent Lookout alone, so anything else you run from it can then control Terminal too, including running commands in its tabs. If you would rather not allow that, choose Don't Allow: only Jump to a tab of that app stops working.
+
+While macOS waits for your answer, the row says: "macOS will ask once whether the app you started Agent Lookout from may control Terminal. Allow it to let Jump switch tabs." The page says this once on each browser, for each of the two apps. It waits a second before saying it, so it is not said when macOS does not ask.
+
+Choose Allow, and the tab comes forward. macOS remembers the answer and does not ask again. When that program may already control the app, macOS does not ask at all, and the tab comes forward at once. Choose Don't Allow, and the row says "macOS did not allow it", with a line under it saying where to allow it. Nothing else changes.
+
+To change the answer later, open System Settings, choose Privacy & Security, then Automation. Under the program you start Agent Lookout from, turn Terminal or iTerm2 on to let Jump switch tabs, or off to stop it. If you start Agent Lookout from another program, macOS asks again, for that program.
+
+#### What the row says
+
+| It says                                  | What happened                                                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Switched to Terminal, Switched to iTerm2 | The tab is in front.                                                                                                              |
+| That tab has closed                      | No tab of the app shows the session's terminal. Nothing was changed.                                                              |
+| macOS did not allow it                   | macOS has not allowed the program Agent Lookout runs in to control the app. The line under it says where to allow it.             |
+| No tab found                             | The session has ended since the page last heard of it.                                                                            |
+| Try again in a moment                    | Another Jump was pressed less than a second before, or one is still waiting for your answer to macOS.                             |
+| Jump did not work                        | Agent Lookout did not answer, or the app gave no answer within a minute, as when macOS's question is left unanswered for so long. |
+
+#### Which sessions have the button
+
+- A Claude Code session on a Mac whose process runs in a tab of Terminal or iTerm2, and is not inside tmux. A session inside tmux is reached through tmux, as above, even when tmux runs in a Terminal tab.
+- Agent Lookout tells which app it is by following the session's process up through its parents to Terminal, at `/System/Applications/Utilities/Terminal.app`, or to iTerm2, at `/Applications/iTerm.app`, or to the server iTerm2 runs its shells under, which it keeps in `~/Library/Application Support/iTerm2`. Every process on the way must have the session's terminal.
+- A session in Warp, Ghostty, Alacritty, kitty or WezTerm has no button, and nor does one in the terminal of VS Code or another editor. A session of the Claude Code extension in VS Code keeps its own Jump, which opens it in VS Code.
+- A session whose terminal could not be read has no button, and nor does a Codex session.
+- It asks once about each session, within about 5 seconds of it appearing, so a session that has just started can be a few seconds without its button.
+- With two copies of iTerm2 running at once, macOS chooses which of them is asked.
+
+To stop Agent Lookout looking for tabs at all, start it with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. It then runs neither `ps` for this nor `osascript` for Jump, and sessions in Terminal and iTerm2 have no button. [PRIVACY.md](../PRIVACY.md#terminal-and-iterm2) lists what it reads and runs.
 
 ## In the terminal
 
@@ -527,7 +570,7 @@ A Codex session never shows as needing you. Codex's session files do not record 
 
 A Claude Code background job is shown as finished or failed, and its row stays for 24 hours. A Codex session is shown as finished once no Codex program has it open, and its row stays until 24 hours after Codex last wrote to it. A session started by a Codex older than 0.155 is never shown as finished. Any other session that ends leaves the list. The Events log records that it ended, without saying whether it finished or failed.
 
-Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
+Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal other than Terminal and iTerm2 that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a session in a tab of Terminal or iTerm2, it brings the tab forward, after macOS has asked you once. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
 Email and a webhook are the two ways it can tell you of a session away from this computer, and each sends to one address. A post is one line of text, with no buttons, and nothing can be answered from it. An email or a post that could not be sent is not tried again. The events are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_EVENTS`, and not in Settings.
 
@@ -557,6 +600,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 | `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                             |
 | `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. |
 | `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                               |
+| `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                   |
 | `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                         |
 | `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                  |
 | `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                      |
@@ -568,7 +612,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code, Codex, status file, notification, tmux, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -661,7 +705,7 @@ For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the 
 
 For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seconds, when that folder exists. Each file in it is one session, written by the agent itself, as [Your own agents](#your-own-agents) describes. When each file was last written says how long a working session has been quiet.
 
-While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button.
+While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button. On a Mac it also asks `ps`, once for each new Claude Code session, which terminal the session's process has and which programs are its parents. A session in a tab of Terminal or iTerm2 gets a Jump button too.
 
 For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. It reads nothing else in the repository.
 

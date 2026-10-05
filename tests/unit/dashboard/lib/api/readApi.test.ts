@@ -70,10 +70,35 @@ test("a place the collector can take the person to is read when it is a tmux pan
   expect(readSession(padded)?.jump).toEqual({ kind: "tmux", place: "work:2.1" });
 });
 
+test("a tab of Terminal or iTerm2 is read when it names an app this page knows", () => {
+  for (const app of ["Terminal", "iTerm2"] as const) {
+    const sent = makeSession({
+      pid: 4242,
+      alive: true,
+      jump: { kind: "terminal", app, place: app },
+    });
+    expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  }
+
+  // A terminal device beside the app is not kept, should one ever be sent.
+  const padded = {
+    ...makeSession(),
+    jump: { kind: "terminal", app: "Terminal", place: "Terminal", tty: "/dev/ttys004" },
+  };
+  expect(readSession(padded)?.jump).toEqual({
+    kind: "terminal",
+    app: "Terminal",
+    place: "Terminal",
+  });
+});
+
 test.each([
   ["nothing", undefined],
   ["null", null],
   ["a text", "tmux, work:2.1"],
+  ["a tab of an app this page does not know", { kind: "terminal", app: "Warp", place: "Warp" }],
+  ["a tab that names no app", { kind: "terminal", place: "Terminal" }],
+  ["a tab with no place", { kind: "terminal", app: "Terminal" }],
   ["a list", [{ kind: "tmux", place: "work:2.1" }]],
   ["a kind this page does not know", { kind: "iterm", place: "work:2.1" }],
   ["no kind", { place: "work:2.1" }],

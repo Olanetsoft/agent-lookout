@@ -311,6 +311,42 @@ describe("sessionFromFeed", () => {
     expect("jump" in unasked).toBe(false);
   });
 
+  test("a session whose process was found in a Terminal or iTerm2 tab names the app, and only the app", () => {
+    const tab = { app: "iTerm2", tty: "/dev/ttys007" } as const;
+    const inTab: SessionContext = {
+      ...context,
+      tabOf: (pid) => (pid === pids.busy ? tab : undefined),
+    };
+    const found = sessionFromRegistry(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy", entrypoint: "cli" },
+      inTab,
+    );
+    expect(found.jump).toEqual({ kind: "terminal", app: "iTerm2", place: "iTerm2" });
+    expect(JSON.stringify(found)).not.toContain("ttys007");
+    expect(
+      sessionFromFeed({ pid: pids.busy, sessionId: ids.busy, status: "busy" }, undefined, inTab)
+        .jump,
+    ).toEqual({ kind: "terminal", app: "iTerm2", place: "iTerm2" });
+  });
+
+  test("a session found in a tmux pane is reached through tmux, whatever tab it is in", () => {
+    const both: SessionContext = {
+      ...context,
+      paneOf: () => ({ pid: 4100, id: "%7", place: "checkout-flow:2.1" }),
+      tabOf: () => ({ app: "Terminal", tty: "/dev/ttys004" }),
+    };
+    const session = sessionFromRegistry({ pid: pids.busy, sessionId: ids.busy }, both);
+    expect(session.jump).toEqual({ kind: "tmux", place: "checkout-flow:2.1" });
+  });
+
+  test("a session whose process has gone is not said to be in a tab", () => {
+    const session = sessionFromRegistry(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy" },
+      { now, isAlive: () => false, tabOf: () => ({ app: "Terminal", tty: "/dev/ttys004" }) },
+    );
+    expect("jump" in session).toBe(false);
+  });
+
   test("a session whose process has gone is not said to be in a pane", () => {
     const session = sessionFromRegistry(
       { pid: pids.busy, sessionId: ids.busy, status: "busy" },

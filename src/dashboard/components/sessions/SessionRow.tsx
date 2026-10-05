@@ -80,11 +80,13 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * The tool is never a logo or a colour.
  *
  * The sessions that need the person are the hero's, not the table's, so the
- * Jump here is always the quiet one. What a press of a tmux session's Jump
- * came to is said for a few seconds in a badge beside the name. Where the line
- * cannot hold both, the badge goes under the name, so the name is never cut
- * for it, and the row's height holds the two lines. In a narrow window it is
- * always under the name.
+ * Jump here is always the quiet one. What a press of a Jump to a tmux pane or
+ * a terminal tab came to is said for a few seconds in a badge beside the name.
+ * Where the line cannot hold both, the badge goes under the name, so the name
+ * is never cut for it, and the row's height holds the two lines. In a narrow
+ * window it is always under the name. The two sentences about macOS that a
+ * terminal tab's Jump can say take a line of their own under the name, and the
+ * row grows for as long as one is said.
  */
 export function SessionRow({
   session,
@@ -104,7 +106,7 @@ export function SessionRow({
   const quiet = stale || ended || gone;
   const mark: MarkKind = stale ? "stale" : session.status;
   const statusWord = stale ? "Stale" : STATUS_LABEL[session.status];
-  const jump = useJump(session.id);
+  const jump = useJump(session);
   const since = session.statusSince;
   const surface = SURFACE_LABEL[session.surface];
   const lasted = since !== null ? now - since : null;

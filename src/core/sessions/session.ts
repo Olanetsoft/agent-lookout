@@ -23,18 +23,31 @@ export type SessionStatus = "needs-you" | "working" | "idle" | "finished" | "fai
 
 export type WaitingReason = "permission" | "question" | "other";
 
+/** The terminal apps whose tabs the collector can bring forward, as they are named. */
+export const TERMINAL_APPS = ["Terminal", "iTerm2"] as const;
+
+export type TerminalApp = (typeof TERMINAL_APPS)[number];
+
 /**
  * A place the collector can take the person to itself, when the dashboard asks
- * it to with `POST /api/jump`. Today that is a tmux pane.
+ * it to with `POST /api/jump`: a tmux pane, or a tab of Terminal or iTerm2.
  *
  * It names the place in words, for a label, and holds nothing a command could
- * be made of. What the collector acts on, the pane it found, never leaves it.
+ * be made of. What the collector acts on, the pane or the tab's terminal device
+ * it found, never leaves it.
  */
-export interface JumpTarget {
-  kind: "tmux";
-  /** The session, window and pane as tmux writes them, for example `work:2.1`. */
-  place: string;
-}
+export type JumpTarget =
+  | {
+      kind: "tmux";
+      /** The session, window and pane as tmux writes them, for example `work:2.1`. */
+      place: string;
+    }
+  | {
+      kind: "terminal";
+      app: TerminalApp;
+      /** The app, in words for the button: `Terminal` or `iTerm2`. */
+      place: string;
+    };
 
 /**
  * Where a session's folder stands in git: the branch it has checked out, or,

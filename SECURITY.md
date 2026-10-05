@@ -20,9 +20,11 @@ Email notifications are off unless they are set up in the environment Agent Look
 
 Webhook posts are off unless `AGENT_LOOKOUT_WEBHOOK_URL` is set in the environment Agent Lookout starts with. Then, for each event chosen, the collector sends one short JSON post to that one address, over HTTPS with the certificate checked, or over plain HTTP only to `127.0.0.1` or `localhost`. It holds the session's name, what happened, when, the name of its project folder, its app and its agent. It follows no redirect and tries nothing twice. The address is itself a secret: whoever has a Slack incoming webhook's address can post to its channel. So it lives in the environment of the Agent Lookout process and nowhere else: it is never written to a file, sent to the dashboard or printed. `GET /api/webhook` tells the dashboard only whether the webhook is on, the host, the events, the delay and how the last post went. [PRIVACY.md](PRIVACY.md#webhook) has the details.
 
-One route of the local API changes something: `POST /api/jump`, which the Jump button of a session in tmux sends. Every other route only reads. It can change three things, all inside tmux: which pane is selected in its window, which window is selected in its tmux session, and which tmux session each attached terminal is showing. It sends no keys, runs nothing inside a pane and starts no tmux server.
+One route of the local API changes something: `POST /api/jump`, which the Jump button of a session in tmux, Terminal or iTerm2 sends. Every other route only reads. For a session in tmux it can change three things, all inside tmux: which pane is selected in its window, which window is selected in its tmux session, and which tmux session each attached terminal is showing. For a session in a tab of Terminal or iTerm2, on macOS, it can bring that tab forward: select it in its window, bring the window back from the Dock if it was minimised and in front of the app's others, and bring the app to the front. It sends no keys, runs nothing inside a pane or a tab, starts no tmux server and starts no app.
 
 A request to it names a session by its ID and nothing else. The server looks that session up in its own list and takes the pane it found for that session's process when it last asked tmux. It checks that the pane's ID is a `%` followed by digits, and gives it to a fixed list of tmux commands: `select-window`, `select-pane`, `display-message -p`, `list-clients` and `switch-client`. Nothing from the request is passed to tmux, and tmux is started directly, never through a shell. So the route can never be made to run another program, another tmux command or a command with other arguments. The most a request can do is choose which of the panes already found for a listed session is selected.
+
+For a session in a tab, the server takes the terminal it found for that session's process when it last asked `ps`. It checks that the terminal is `/dev/ttys` followed by digits, and runs `/usr/bin/osascript` with a fixed script for the app, then `--`, then that terminal and nothing else. The script reads the terminal as an argument, so it is never read as AppleScript, and the `--` keeps it from being read as an option. Nothing from the request reaches the script or its arguments. macOS itself asks the person once whether the program Agent Lookout runs in may control the app, and until they allow it, the route can do nothing to the app. That permission belongs to the program Agent Lookout was started from, not to Agent Lookout: once it is allowed, anything run from that program can script the app, which includes running commands in its tabs.
 
 On top of the checks every route makes, the route answers only a request that:
 
@@ -32,7 +34,7 @@ On top of the checks every route makes, the route answers only a request that:
 - carries `X-Agent-Lookout-Action: jump` and `Content-Type: application/json`. A page at another origin can send neither without a preflight, which is never granted.
 - has a body of 1,024 bytes or less that is exactly `{"sessionId": "..."}`.
 
-It makes one jump a second, and one at a time. `AGENT_LOOKOUT_TMUX=off` stops Agent Lookout running tmux, and the route then finds no pane for any session. [PRIVACY.md](PRIVACY.md#tmux) lists each command.
+It makes one jump a second, and one at a time. `AGENT_LOOKOUT_TMUX=off` stops Agent Lookout running tmux, and the route then finds no pane for any session. `AGENT_LOOKOUT_TERMINAL_JUMP=off` stops it looking for tabs, and the route then brings no tab forward. [PRIVACY.md](PRIVACY.md#tmux) lists each command, and [Terminal and iTerm2](PRIVACY.md#terminal-and-iterm2) the script.
 
 Session names and folder paths can be sensitive. The main risk is that something other than your own browser reads them.
 
@@ -60,9 +62,10 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Agent Lookout making the folder of status files, or creating, writing, renaming or deleting anything in it.
 - A status file that stops its polls, or makes Agent Lookout read more than 200 files or more than 16 KB of one: by its size, its contents, or by being a pipe or a device.
 - A way to make the app run anything other than the `claude` binary it found, `ps`, the `tmux` binary it found and `/usr/bin/osascript`, or to pass any of them arguments they should not get.
-- A website, or a page served from anywhere but this machine, making the app select a tmux pane.
+- A website, or a page served from anywhere but this machine, making the app select a tmux pane or bring a tab of Terminal or iTerm2 forward.
 - A request to `POST /api/jump` that makes tmux do anything but select a pane found for a listed session, its window and its tmux session: running a command, sending keys, or reaching any other pane.
 - A session's name, a tmux session's name, or anything else from a session or from tmux, that `tmux` reads as a command, a target or an option.
+- A request to `POST /api/jump` that makes `osascript` run any script but the fixed one for Terminal or iTerm2, or with any argument but a terminal found for a listed session, or that makes Terminal or iTerm2 do anything but bring a tab forward: running a command, sending keys or text, or reading what a tab shows.
 - A session name, or anything else from a session, that `osascript` reads as AppleScript or as one of its options instead of showing it as text.
 - A Jump link that opens anything other than the intended `vscode://` address.
 - A notification, or the browser's question about allowing them, appearing when you have not turned notifications on, in Settings or with `AGENT_LOOKOUT_NOTIFICATIONS=on`.
@@ -71,7 +74,8 @@ Session names and folder paths can be sensitive. The main risk is that something
 
 ## Out of scope
 
-- Other programs on the same machine reading the local API, sending it the header that turns the server's notifications on or off, or asking it to select a tmux pane. The API has no authentication, so any local process can request it, and on a shared computer that includes other user accounts. This is a known limit of this version.
+- Other programs on the same machine reading the local API, sending it the header that turns the server's notifications on or off, or asking it to select a tmux pane or bring a tab forward. The API has no authentication, so any local process can request it, and on a shared computer that includes other user accounts. This is a known limit of this version.
+- A program on this machine that names itself after Terminal or iTerm2 in the list of processes, and so gives a session under it a Jump button. Pressing it asks the real app for a tab on that session's terminal, which it does not have.
 - A notification the server showed staying in Notification Centre after its session has moved on. The server cannot take one down, and PRIVACY.md says so.
 - The dev server started with Vite's `--host` flag, which makes it listen on the network. `npm start` refuses to listen on anything but loopback.
 - Attacks that need control of your user account first. Someone with that control can read `~/.claude` and `~/.codex` directly.
