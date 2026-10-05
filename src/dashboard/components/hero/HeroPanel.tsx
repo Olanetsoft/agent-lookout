@@ -5,6 +5,7 @@ import { waitingLabel } from "@core/sessions/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { Branch } from "@dashboard/components/sessions/Branch";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { DurationFigure } from "@dashboard/components/ui/status/DurationFigure";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
@@ -130,7 +131,9 @@ function Reason({ session, className }: { session: Session; className?: string }
 
 /**
  * Where it runs: the folder, whose whole path is one hover or one Tab away, the
- * app, and the tool when more than one is found.
+ * branch or commit it has checked out when it is in a git repository, the app,
+ * and the tool when more than one is found: "storefront on checkout-flow in
+ * VS Code · Claude Code".
  *
  * It is positioned, so a cut line also clips the words only a screen reader
  * meets, which would otherwise sit past its end and widen the page.
@@ -161,6 +164,18 @@ function Place({
               {session.project}
             </span>
           </Tooltip>{" "}
+          {session.git && (
+            <>
+              <span data-part='git'>
+                {/* Cut at the line's width, a branch keeps the line's baseline. */}
+                <Branch
+                  git={session.git}
+                  inSentence
+                  className='inline-block max-w-full align-top font-medium text-ink'
+                />
+              </span>{" "}
+            </>
+          )}
           in <span data-part='app'>{surface}</span>
         </>
       ) : (
@@ -286,7 +301,8 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
           className='mt-1 flex min-w-0 flex-wrap items-baseline gap-x-3 text-body'
         >
           <Reason session={session} className='font-medium' />
-          <Place session={session} agent={agent} className='truncate' />
+          {/* It wraps as the lead's does. Cut as one line, it would hide a long branch whole. */}
+          <Place session={session} agent={agent} className='block min-w-0 wrap-anywhere' />
         </p>
       </div>
       <p

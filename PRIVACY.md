@@ -1,6 +1,6 @@
 # Privacy
 
-Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
 
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
@@ -80,7 +80,21 @@ Every 2 seconds Agent Lookout lists that folder and reads each file directly in 
 
 From each file it keeps these fields and drops the rest: `agent`, `name`, `cwd`, `status`, `reason`, `since` and `pid`. `agent` is the agent's name, `cwd` the folder the session works in, `since` when its status began and `pid` the ID of its process. It also keeps each file's name, which tells one session from another, and the time the file was last written, which says how long a finished session stays. The Sources card names the first file it skipped, so you can find it.
 
-For a file that names a `pid`, Agent Lookout asks the operating system whether that process still exists, with the same signal-0 check it makes for Claude Code, which sends nothing to the process. Nothing from a file is run, opened or followed: the `cwd` is shown, never read, and nothing in a file is used as a link.
+For a file that names a `pid`, Agent Lookout asks the operating system whether that process still exists, with the same signal-0 check it makes for Claude Code, which sends nothing to the process. Nothing from a file is run or used as a link. The `cwd` is shown, and is looked in for a git repository as it is for every session, as [Git repositories](#git-repositories) describes. Nothing else in it is read.
+
+### Git repositories
+
+For every session that has a folder, whatever its agent, Agent Lookout finds the git repository the folder is in and reads which branch is checked out there. It runs no git command, and writes nothing in any repository.
+
+It looks for an entry named `.git` in the session's folder, then in each folder above it in turn, and stops at the first it finds. It does not look in your home folder or the root, nor above them, nor in more than 24 folders in all, and it looks nowhere for a folder that does not exist. Looking means asking the system what is at that name, without following a symbolic link: it lists no folder.
+
+- When `.git` is a folder, it reads `.git/HEAD`.
+- When `.git` is a file, as in a worktree or a submodule, it reads that file, which names the repository's git folder in one line, `gitdir: <path>`, and then reads `HEAD` in the folder it names.
+- When `.git` is anything else, such as a symbolic link, it reads nothing, and the session has no branch.
+
+It reads only ordinary files of 4 KB or less, and on macOS and Linux it does not follow a `HEAD` that is a symbolic link. `HEAD` says either the name of the branch that is checked out, which Agent Lookout keeps, cleaned of control characters and of the characters that change the direction of text, and cut to 200 characters, or the ID of a commit when no branch is, of which it keeps the first seven characters. It keeps nothing else from either file. For each session's folder it reads `HEAD` at most once every 10 seconds, and it forgets a folder when no session is in it.
+
+It reads nothing else in a repository: no other branch or reference, no `packed-refs`, no configuration, no index, no logs, no objects, and none of the files you work on.
 
 ### `osascript`
 
@@ -98,9 +112,10 @@ It reads fifteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AG
 - Claude Code's transcripts, in `~/.claude/projects/` or anywhere else. For Claude Code, Agent Lookout never sees your prompts, the agent's replies, your code or the output of tools.
 - Claude Code's settings, credentials, history and memory files.
 - Codex's `auth.json`, `config.toml`, `history.jsonl`, its SQLite files (`*.sqlite`), its `log/` folder, `archived_sessions/` and compressed session files (`*.jsonl.zst`), and the Codex desktop app's `external_agent_session_imports.json` and `.codex-global-state.json`.
+- In a git repository, anything but the `.git` file and `HEAD` described under [Git repositories](#git-repositories).
 - The files of any other application.
 
-It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It never writes to `~/.claude`, to the Codex folder, to the folder of status files or to any agent tool's files, and it never sends input to a session. It never makes, renames or deletes a status file. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
+It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notification on macOS, `osascript`. It runs no git command. It never writes to `~/.claude`, to the Codex folder, to the folder of status files, to any git repository or to any agent tool's files, and it never sends input to a session. It never makes, renames or deletes a status file. The one thing it changes outside itself is which tmux pane, window and session are selected, and only when you press Jump.
 
 ## Network
 
@@ -200,7 +215,7 @@ Once an email has been handed to the mail server, Agent Lookout has no hold on i
 
 ## Storage
 
-Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, and what the dashboard pages last said about notifications.
+Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, the branches it last read, and what the dashboard pages last said about notifications.
 
 With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says.
 
@@ -215,7 +230,7 @@ The dashboard saves three values in your browser's local storage. Your theme cho
 
 ## What is on screen
 
-Session names and folder paths can show what you are working on. Check a screenshot before you share it.
+Session names, folder paths and branch names can show what you are working on. Check a screenshot before you share it.
 
 With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made for a wait stays there until the session stops waiting or you clear it, and one that says Finished, Failed or Ended stays until you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it.
 

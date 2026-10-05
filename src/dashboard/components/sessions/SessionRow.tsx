@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { Branch } from "@dashboard/components/sessions/Branch";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
@@ -57,6 +58,12 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  *
  * A stale row, and a row that has finished, failed or lost its process, is
  * quiet: its name and time are in the secondary ink.
+ *
+ * A session in a git repository has its branch, or the commit when no branch
+ * is checked out, under its folder's name, in the muted ink: the Folder column
+ * is too narrow to hold both on one line, and beside the folder a branch would
+ * be cut to a letter or two. Where the Folder column gives way, the branch
+ * goes with it.
  *
  * In a narrow window every row has two lines: the name, and under it the status
  * and its time, led by the tool when the table names one: "Codex · Working".
@@ -232,11 +239,20 @@ export function SessionRow({
             <span
               data-part='project'
               tabIndex={session.cwd ? 0 : undefined}
-              className='block truncate rounded-bar text-ink-secondary'
+              className={cn(
+                "block truncate rounded-bar text-ink-secondary",
+                session.git && "leading-tight",
+              )}
             >
               {session.project ?? "–"}
             </span>
           </Tooltip>
+          {/* Under the folder, the branch has the column's whole width. */}
+          {session.git && (
+            <span data-part='git' className='flex min-w-0 leading-tight text-ink-muted'>
+              <Branch git={session.git} className='min-w-0' />
+            </span>
+          )}
         </td>
       )}
 

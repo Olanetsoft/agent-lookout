@@ -2,6 +2,7 @@ import type { EmailOutcome, EmailStatusResponse, HistoryResponse } from "@core/a
 import type {
   EventKind,
   EventSeverity,
+  GitHead,
   HistoryPoint,
   JumpTarget,
   Session,
@@ -133,7 +134,30 @@ export function readSession(value: unknown): Session | null {
   }
   const jump = readJump(value.jump);
   if (jump) session.jump = jump;
+  const git = readGit(value.git);
+  if (git) session.git = git;
   return session;
+}
+
+/** The longest branch shown. The collector cuts one at 200 characters. */
+const MAX_BRANCH_LENGTH = 200;
+
+/** A commit's ID in short, as the collector sends it, or longer. */
+const COMMIT_ID = /^[0-9a-f]{7,64}$/;
+
+/**
+ * What a session's folder has checked out: a branch, as text, or a commit, as
+ * an ID. Null for anything else, and for both at once.
+ */
+function readGit(value: unknown): GitHead | null {
+  if (!isRecord(value)) return null;
+  if (value.commit === undefined) {
+    const branch = text(value.branch);
+    return branch !== null && Array.from(branch).length <= MAX_BRANCH_LENGTH ? { branch } : null;
+  }
+  if (value.branch !== undefined) return null;
+  const { commit } = value;
+  return typeof commit === "string" && COMMIT_ID.test(commit) ? { commit } : null;
 }
 
 /** The longest place a label carries. The collector cuts a long name well short of this. */

@@ -10,6 +10,7 @@ import {
 import { emailProblemLine, readEmailSetup } from "./email/emailSettings.ts";
 import { createSmtpSender, type CreateEmailSender } from "./email/smtpSender.ts";
 import { createEventStore } from "./eventStore.ts";
+import { createBranchFinder } from "./git/branchFinder.ts";
 import { createApiHandler, type ApiHandler } from "./handler.ts";
 import { createHistoryStore } from "./historyStore.ts";
 import { createJumpRoute } from "./jumpRoute.ts";
@@ -76,8 +77,9 @@ export interface Collector {
 /**
  * The collector in one piece: adapters, poller, stores, its own notifications,
  * the email notifications when they are set up, what finds and selects a tmux
- * pane, and the request handler. Every host builds it the same way: the dev
- * server, the standalone server, and later a desktop app.
+ * pane, what reads each session's git branch, and the request handler. Every
+ * host builds it the same way: the dev server, the standalone server, and later
+ * a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -108,6 +110,7 @@ export function createCollector(options: CollectorOptions): Collector {
       })
     : null;
   const emailOff = emailOffStatus(emailSetup.on ? null : emailSetup.problem);
+  const branches = createBranchFinder({ now });
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
     adapters: options.adapters ?? [
@@ -119,6 +122,8 @@ export function createCollector(options: CollectorOptions): Collector {
     history,
     intervalMs,
     now,
+    // Every source's sessions alike are given the branch of their folder.
+    annotate: (sessions) => branches.annotate(sessions),
     // The poller runs for as long as the app does, with a dashboard open or
     // not, so a wait that begins with no page open is still seen here.
     onSnapshot: (snapshot) => {

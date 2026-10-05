@@ -24,7 +24,7 @@ The Overview has five parts. The Needs you panel and the Last hour chart share t
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the app, and the agent once more than one is found. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code or inside tmux has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -55,13 +55,21 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 
 - the session's name
 - the agent it belongs to, such as Claude Code, Codex or the name a [status file](#your-own-agents) gives, once there is more than one
-- its project folder
+- its project folder and, under it, the [git branch](#branches) when the folder is in a repository
 - the app it runs in: Terminal, VS Code or Desktop app
 - its status, and how long it has had that status
 
-When the list is too narrow for every column, the app is left out first and then the folder, so names keep their room. In a narrow window both are left out and the status moves under the name.
+When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
 A Claude Code session in VS Code or inside tmux has a Jump button here too.
+
+#### Branches
+
+Sessions that run in worktrees of one repository often have folder names that say little. The branch says which piece of work each one is. When a session's folder is in a git repository, the Sessions list shows the branch that is checked out under the folder's name, and the Needs you panel after it: `storefront on checkout-flow`. This works the same for every agent.
+
+When no branch is checked out, as in the middle of a rebase or after checking out a commit or a tag, the first seven characters of the commit's ID take the branch's place, such as `3f9a2c1`, set in the typeface used for commands. In the Needs you panel it reads `docs at 3f9a2c1`. A branch too long for its space is cut, and the whole name is shown when you hover over it or move to it with Tab. A session in no repository shows neither.
+
+Agent Lookout reads the branch from the repository's own files, and runs no git command. It reads each session's branch at most every 10 seconds, so after you switch branches the session shows the new one within about 10 seconds. [How it finds sessions](#how-it-finds-sessions) says where it looks.
 
 #### Events
 
@@ -459,6 +467,8 @@ Email is the one way it can tell you of a session away from this computer, and i
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
+Sessions are not grouped by repository. A session's branch shows in the Sessions list and the Needs you panel, and nowhere else: not in the Timeline, a notification, an email or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
+
 The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list what is planned.
 
 ## Settings you can change
@@ -577,7 +587,9 @@ For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seco
 
 While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button.
 
-Agent Lookout never writes to `~/.claude`, `~/.codex` or `~/.agent-lookout`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
+For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. It reads nothing else in the repository.
+
+Agent Lookout never writes to `~/.claude`, `~/.codex`, `~/.agent-lookout` or any git repository. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
 
 ## For contributors
 

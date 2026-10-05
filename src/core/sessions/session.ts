@@ -36,6 +36,20 @@ export interface JumpTarget {
   place: string;
 }
 
+/**
+ * Where a session's folder stands in git: the branch it has checked out, or,
+ * when it has none checked out, the commit it is on, as the first seven
+ * characters of its ID. One or the other, never both.
+ *
+ * The collector reads it from the repository's `HEAD` file, for the sessions of
+ * every source alike. The branch is cleaned and cut to a length as any text
+ * from a file is, and is shown as plain text.
+ */
+export interface GitHead {
+  branch?: string;
+  commit?: string;
+}
+
 export interface Session {
   /** Stable across polls: `${source}:${vendor session id, or pid when there is none}`. */
   id: string;
@@ -54,6 +68,8 @@ export interface Session {
   cwd: string | null;
   /** Last path segment of cwd. */
   project: string | null;
+  /** Present when cwd is in a git repository whose `HEAD` could be read: see `GitHead`. */
+  git?: GitHead;
   status: SessionStatus;
   /** Present only when status is "needs-you". */
   waitingReason?: WaitingReason;

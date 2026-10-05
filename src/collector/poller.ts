@@ -36,6 +36,13 @@ export interface PollerOptions {
    * can never stop a poll.
    */
   onSnapshot?: (snapshot: SessionsSnapshot) => void;
+  /**
+   * Adds to each poll's sessions, from every source alike, what no source knows
+   * itself: the collector gives each the git branch of its folder. It answers
+   * quickly and never rejects. If it does anyway, the sessions go as they are.
+   * Events are worked out from the sessions as their sources gave them.
+   */
+  annotate?: (sessions: readonly Session[]) => Promise<Session[]>;
 }
 
 export interface Poller {
@@ -197,8 +204,18 @@ export function createPoller(options: PollerOptions): Poller {
     return anyOk && !missed;
   }
 
+  async function annotated(sessions: Session[]): Promise<Session[]> {
+    if (!options.annotate) return sessions;
+    try {
+      return await options.annotate(sessions);
+    } catch {
+      return sessions;
+    }
+  }
+
   async function poll(): Promise<SessionsSnapshot> {
     const results = await Promise.all(adapters.map((adapter) => ask(adapter)));
+    const found = await annotated(results.flatMap((result) => result.sessions));
     const at = now();
 
     const changes: SessionEvent[] = [];
@@ -241,7 +258,7 @@ export function createPoller(options: PollerOptions): Poller {
       sources: results.map((result) =>
         result.basis === undefined ? result.health : { ...result.health, basis: result.basis },
       ),
-      sessions: sortSessions(results.flatMap((result) => result.sessions)),
+      sessions: sortSessions(found),
     };
 
     latest = snapshot;

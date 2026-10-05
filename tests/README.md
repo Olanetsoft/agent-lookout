@@ -60,7 +60,7 @@ One block of tests is skipped in every ordinary run: "the real claude binary, ru
 AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1 npx vitest run --project integration tests/integration/collector/adapters/claude-code/feed.test.ts -t "real claude binary"
 ```
 
-No other test reads the real `~/.claude` folder or runs the real `claude` command. No test reads the real `~/.codex` folder or the real `~/.agent-lookout` folder: every test that builds the collector names a Codex folder and a folder of status files of its own.
+No other test reads the real `~/.claude` folder or runs the real `claude` command. No test reads the real `~/.codex` folder or the real `~/.agent-lookout` folder: every test that builds the collector names a Codex folder and a folder of status files of its own. No test reads a real git repository either. The branch finder's tests make repositories of plain files in a temporary folder, writing `.git/HEAD` themselves, so they need no git, and the sessions in the fixtures work in folders under `/Users/example`, which is in none.
 
 ### The tests against the real tmux
 

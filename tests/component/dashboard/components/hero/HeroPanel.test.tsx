@@ -274,6 +274,153 @@ test("with two tools found, the hero names the session's tool beside where it ru
   expect(part(hero(screen.container), "agent")).toBeNull();
 });
 
+/** Waiting sessions in a worktree on a branch, in a repository at a commit, and in no repository. */
+function inRepositories(): Session[] {
+  return [
+    {
+      ...WAITING,
+      cwd: "/Users/example/code/storefront-checkout",
+      project: "storefront",
+      git: { branch: "checkout-flow" },
+    },
+    session(5, {
+      name: "docs-site",
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - 2 * MINUTE,
+      cwd: "/Users/example/code/docs",
+      project: "docs",
+      git: { commit: "3f9a2c1" },
+    }),
+    session(6, {
+      name: "mobile-onboarding",
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - MINUTE,
+      cwd: "/Users/example/code/mobile-app",
+      project: "mobile-app",
+    }),
+  ];
+}
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme where a session runs says its branch, or its commit with no branch checked out, and nothing in no repository",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    const screen = await renderHero({ sessions: inRepositories() });
+    const [lead, docs, mobile] = [
+      ...hero(screen.container).querySelectorAll<HTMLElement>('[data-slot="hero-session"]'),
+    ].map((row) => part(row, "place"));
+
+    // "storefront on checkout-flow in VS Code", read as "on branch checkout-flow".
+    expect(lead?.textContent).toBe("storefront on branch checkout-flow in VS Code");
+    const branch = part(lead!, "branch");
+    expect(branch.textContent).toBe("checkout-flow");
+    // A word, like the folder: the sans, in ink at 500, on the folder's line.
+    const project = part(lead!, "project").getBoundingClientRect();
+    const box = branch.getBoundingClientRect();
+    expect(box.top).toBeLessThan(project.bottom);
+    expect(box.bottom).toBeGreaterThan(project.top);
+    for (const style of [getComputedStyle(branch), getComputedStyle(part(lead!, "project"))]) {
+      expect(style.fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+      expect(style.color).toBe(rgbOf("var(--ink)"));
+      expect(style.fontWeight).toBe("500");
+    }
+
+    // With no branch checked out, the commit, a string read character by character.
+    expect(docs?.textContent).toBe("docs at commit 3f9a2c1 in Terminal");
+    const commit = part(docs!, "commit");
+    expect(commit.textContent).toBe("3f9a2c1");
+    expect(getComputedStyle(commit).fontFamily).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    expect(getComputedStyle(commit).color).toBe(rgbOf("var(--ink)"));
+
+    // In no repository, the place is as it always was.
+    expect(mobile?.textContent).toBe("mobile-app in Terminal");
+    expect(part(mobile!, "git")).toBeNull();
+
+    // None of it is warm, and none of it is in the muted ink the hero never uses.
+    for (const place of [lead, docs, mobile]) {
+      expect(warmPaint(place!)).toEqual([]);
+      for (const { text, colour } of wordColours(place!)) {
+        expect(colour, text).not.toBe(rgbOf("var(--ink-muted)"));
+      }
+    }
+  },
+);
+
+test("a branch too long for its line is cut there, and stays one hover or one Tab away", async () => {
+  await page.viewport(375, 800);
+  const long = `fix/${"rate-limits-".repeat(30)}end`;
+  const waiting = { ...inRepositories()[0]!, git: { branch: long } };
+  const screen = await render(
+    <div style={{ width: 283 }}>
+      <HeroPanel sessions={[waiting, inRepositories()[1]!]} sources={[CLAUDE]} now={NOW} />
+    </div>,
+  );
+  const panel = hero(screen.container);
+  const [lead, other] = [...panel.querySelectorAll<HTMLElement>('[data-part="place"]')];
+  const branch = part(lead!, "branch");
+
+  expect(branch.textContent).toBe(long);
+  expect(getComputedStyle(branch).textOverflow).toBe("ellipsis");
+  expect(branch.getBoundingClientRect().right).toBeLessThanOrEqual(
+    lead!.getBoundingClientRect().right + 0.5,
+  );
+  expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+    document.documentElement.clientWidth,
+  );
+  expect(part(other!, "commit").textContent).toBe("3f9a2c1");
+
+  await vi.waitFor(() => expect(branch.dataset.cut).toBe("true"));
+  startAtTop();
+  await tabTo(part(lead!, "project"));
+  await userEvent.keyboard("{Escape}");
+  await tabTo(branch);
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(long);
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme at the width of a phone, a later wait's long branch is cut by its own ellipsis, and the app and the agent still show",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    await page.viewport(375, 800);
+    const long = "feature/checkout-retry-on-gateway-timeout";
+    const later = {
+      ...inRepositories()[1]!,
+      cwd: "/Users/example/code/infra",
+      project: "infra",
+      git: { branch: long },
+    };
+    const screen = await render(
+      <div style={{ width: 283 }}>
+        <HeroPanel sessions={[inRepositories()[0]!, later]} sources={[CLAUDE, CODEX]} now={NOW} />
+      </div>,
+    );
+    const panel = hero(screen.container);
+    const place = part(panel.querySelector(`[data-session="${later.id}"]`) as HTMLElement, "place");
+    const branch = part(place, "branch");
+    const bounds = place.getBoundingClientRect();
+
+    expect(branch.textContent).toBe(long);
+    expect(getComputedStyle(branch).textOverflow).toBe("ellipsis");
+    await vi.waitFor(() => expect(branch.dataset.cut).toBe("true"));
+    // The branch, the app and the agent each show inside the place: none is hidden past its end.
+    for (const name of ["branch", "app", "agent"]) {
+      const box = part(place, name).getBoundingClientRect();
+      expect(box.width, name).toBeGreaterThan(0);
+      expect(box.left, name).toBeGreaterThanOrEqual(bounds.left - 0.5);
+      expect(box.right, name).toBeLessThanOrEqual(bounds.right + 0.5);
+      expect(box.bottom, name).toBeLessThanOrEqual(bounds.bottom + 0.5);
+    }
+    expect(part(place, "app").textContent).toBe("Terminal");
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+      document.documentElement.clientWidth,
+    );
+  },
+);
+
 test("Jump is there only when the session's link is one its source is known to build", async () => {
   for (const links of [
     {},

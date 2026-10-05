@@ -141,6 +141,61 @@ describe("a listener to the snapshots", () => {
   });
 });
 
+describe("what the collector adds to every session", () => {
+  test("the snapshot holds the sessions as the collector gave them more, from every source", async () => {
+    const codex: Adapter = {
+      id: "codex",
+      label: "Codex",
+      poll: async () => ({
+        health: { id: "codex", label: "Codex", state: "ok", checkedAt: T0 },
+        sessions: [makeSession({ id: "codex:a", source: "codex", status: "working" })],
+      }),
+    };
+    const { adapter } = scriptedAdapter(result([makeSession({ id: "claude-code:a" })]));
+    const given: string[][] = [];
+    const poller = createPoller({
+      adapters: [adapter, codex],
+      events: createEventStore(),
+      history: createHistoryStore(),
+      annotate: async (sessions) => {
+        given.push(sessions.map((session) => session.id));
+        return sessions.map((session) => ({ ...session, git: { branch: "checkout-flow" } }));
+      },
+    });
+
+    const snapshot = await poller.pollOnce();
+
+    expect(given).toEqual([["claude-code:a", "codex:a"]]);
+    expect(snapshot.sessions.map((session) => [session.id, session.git])).toEqual([
+      ["codex:a", { branch: "checkout-flow" }],
+      ["claude-code:a", { branch: "checkout-flow" }],
+    ]);
+  });
+
+  test("a branch that changes is no event, and one that fails to be added stops nothing", async () => {
+    const a = makeSession({ id: "claude-code:a", status: "working" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const events = createEventStore();
+    let poll = 0;
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      annotate: async (sessions) => {
+        poll += 1;
+        if (poll === 3) throw new Error("The branches could not be read.");
+        return sessions.map((session) => ({ ...session, git: { branch: `branch-${poll}` } }));
+      },
+    });
+
+    expect((await poller.pollOnce()).sessions[0]?.git).toEqual({ branch: "branch-1" });
+    expect((await poller.pollOnce()).sessions[0]?.git).toEqual({ branch: "branch-2" });
+    const third = await poller.pollOnce();
+    expect(third.sessions).toEqual([a]);
+    expect(events.list()).toEqual([]);
+  });
+});
+
 describe("the schedule", () => {
   test("the interval is two seconds", () => {
     expect(POLL_INTERVAL_MS).toBe(2_000);

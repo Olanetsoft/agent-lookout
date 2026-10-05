@@ -137,6 +137,53 @@ describe("createCollector", () => {
     );
   });
 
+  test("a session whose folder is in a git repository has its branch, whatever its source", async () => {
+    const code = await tempDir();
+    const folder = path.join(code, "sessions");
+    await mkdir(folder);
+    await mkdir(path.join(code, "storefront", ".git", "worktrees", "checkout-flow"), {
+      recursive: true,
+    });
+    await writeFile(path.join(code, "storefront", ".git", "HEAD"), "ref: refs/heads/main\n");
+    await writeFile(
+      path.join(code, "storefront", ".git", "worktrees", "checkout-flow", "HEAD"),
+      "ref: refs/heads/checkout-flow\n",
+    );
+    await mkdir(path.join(code, "storefront-checkout"));
+    await writeFile(
+      path.join(code, "storefront-checkout", ".git"),
+      "gitdir: ../storefront/.git/worktrees/checkout-flow\n",
+    );
+    await mkdir(path.join(code, "mobile-app"));
+    const session = (name: string, cwd: string) =>
+      writeFile(
+        path.join(folder, `${name}.json`),
+        JSON.stringify({
+          agent: "Night Shift",
+          name,
+          cwd: path.join(code, cwd),
+          status: "working",
+        }),
+      );
+    await session("billing-webhooks", "storefront");
+    await session("checkout-flow", "storefront-checkout");
+    await session("mobile-onboarding", "mobile-app");
+
+    const snapshot = await serve({
+      AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME,
+      AGENT_LOOKOUT_STATUS_DIR: folder,
+    });
+
+    const git = (name: string) => snapshot.sessions.find((found) => found.name === name)?.git;
+    expect(git("billing-webhooks")).toEqual({ branch: "main" });
+    expect(git("checkout-flow")).toEqual({ branch: "checkout-flow" });
+    expect(
+      snapshot.sessions.find((found) => found.name === "mobile-onboarding"),
+    ).not.toHaveProperty("git");
+    // The Codex sessions' folders are in no repository on this machine.
+    expect(snapshot.sessions.filter((found) => found.git !== undefined)).toHaveLength(2);
+  });
+
   test("a session in a folder of status files made after it started is logged as appearing", async () => {
     const folder = path.join(await tempDir(), "sessions");
     const clock = { now: Date.now() };

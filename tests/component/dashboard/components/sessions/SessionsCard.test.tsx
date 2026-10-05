@@ -304,6 +304,129 @@ test("a session with no folder has nothing to show and no stop for Tab", async (
   expect(project.hasAttribute("tabindex")).toBe(false);
 });
 
+/** Sessions in a worktree on a branch, in a repository at a commit, and in no repository. */
+const IN_REPOSITORIES: Session[] = [
+  session(1, {
+    name: "checkout-flow",
+    status: "working",
+    statusSince: NOW - 12 * MINUTE,
+    cwd: "/Users/example/code/storefront-checkout",
+    project: "storefront-checkout",
+    git: { branch: "checkout-flow" },
+  }),
+  session(2, {
+    name: "docs-site",
+    status: "idle",
+    statusSince: NOW - 26 * MINUTE,
+    cwd: "/Users/example/code/docs",
+    project: "docs",
+    git: { commit: "3f9a2c1" },
+  }),
+  session(3, {
+    name: "mobile-onboarding",
+    status: "idle",
+    statusSince: NOW - 41 * MINUTE,
+    cwd: "/Users/example/code/mobile-app",
+    project: "mobile-app",
+  }),
+];
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme a session in a git repository has its branch under its folder, or its commit with no branch checked out, and one in no repository neither",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    const screen = await render(
+      <SessionsCard sessions={IN_REPOSITORIES} sources={[SOURCE_OK]} now={NOW} />,
+    );
+    const checkout = rowOf(screen.container, "checkout-flow");
+    const docs = rowOf(screen.container, "docs-site");
+    const mobile = rowOf(screen.container, "mobile-onboarding");
+
+    // Read as "storefront-checkout on branch checkout-flow".
+    const folder = checkout.querySelector('[data-part="project"]') as HTMLElement;
+    const git = checkout.querySelector('[data-part="git"]') as HTMLElement;
+    expect(git.textContent).toBe("on branch checkout-flow");
+    expect(git.closest("td")).toBe(folder.closest("td"));
+    // A quiet second line under the folder's name, with its left edge.
+    const branch = git.querySelector('[data-part="branch"]') as HTMLElement;
+    expect(branch.textContent).toBe("checkout-flow");
+    expect(branch.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      folder.getBoundingClientRect().bottom - 1,
+    );
+    expect(branch.getBoundingClientRect().left).toBe(folder.getBoundingClientRect().left);
+    // The whole branch has the column's width: it is not cut.
+    await vi.waitFor(() => expect(branch.dataset.cut).toBe("false"));
+    const style = getComputedStyle(branch);
+    expect(style.fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+    expect(style.fontSize).toBe("13px");
+    expect(style.color).toBe(rgbOf("var(--ink-muted)"));
+    expect(getComputedStyle(folder).color).toBe(rgbOf("var(--ink-secondary)"));
+
+    // With no branch checked out, the commit, in the mono beside 13px words.
+    expect(docs.querySelector('[data-part="git"]')?.textContent).toBe("at commit 3f9a2c1");
+    const commit = docs.querySelector('[data-part="commit"]') as HTMLElement;
+    expect(getComputedStyle(commit).fontFamily).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    expect(getComputedStyle(commit).fontSize).toBe("12.5px");
+    expect(getComputedStyle(commit).color).toBe(rgbOf("var(--ink-muted)"));
+
+    // In no repository, the folder alone, as always.
+    expect(mobile.querySelector('[data-part="git"]')).toBeNull();
+    expect(mobile.querySelector('[data-part="project"]')?.textContent).toBe("mobile-app");
+
+    // The two lines fit the row, so every row is still 44px, and none of it is warm.
+    for (const row of [checkout, docs, mobile]) {
+      expect(row.getBoundingClientRect().height).toBe(44);
+    }
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+test("a branch too long for the Folder column is cut, and stays one hover or one Tab away", async () => {
+  const long = `fix/${"rate-limits-".repeat(6)}end`;
+  const sessions = [{ ...IN_REPOSITORIES[0]!, git: { branch: long } }];
+  const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
+  const branch = screen.container.querySelector('[data-part="branch"]') as HTMLElement;
+  const cell = branch.closest("td") as HTMLElement;
+
+  expect(branch.textContent).toBe(long);
+  expect(getComputedStyle(branch).textOverflow).toBe("ellipsis");
+  expect(branch.getBoundingClientRect().right).toBeLessThanOrEqual(
+    cell.getBoundingClientRect().right,
+  );
+  await vi.waitFor(() => expect(branch.dataset.cut).toBe("true"));
+
+  // Tab reaches the folder and then the branch, each with its whole text.
+  const folder = screen.container.querySelector('[data-part="project"]') as HTMLElement;
+  startAtTop();
+  for (let presses = 0; presses < 20 && document.activeElement !== folder; presses += 1) {
+    await userEvent.tab();
+  }
+  await userEvent.tab();
+  expect(document.activeElement).toBe(branch);
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(long);
+});
+
+test("a branch leaves with its Folder column, in a narrow window and in a narrow card", async () => {
+  await page.viewport(375, 900);
+  const narrow = await render(
+    <div style={{ width: 279 }}>
+      <SessionsCard sessions={IN_REPOSITORIES} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const git = narrow.container.querySelector('[data-part="git"]') as HTMLElement;
+  expect(getComputedStyle(git.closest("td") as HTMLElement).display).toBe("none");
+  narrow.unmount();
+
+  await page.viewport(1280, 900);
+  const card = await render(
+    <div style={{ width: 440 }}>
+      <SessionsCard sessions={IN_REPOSITORIES} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  await vi.waitFor(() => expect(card.container.querySelector('[data-part="project"]')).toBeNull());
+  expect(card.container.querySelector('[data-part="git"]')).toBeNull();
+});
+
 test("time in status says when it began, with the date once that is not today", async () => {
   const startedToday = new Date(2026, 9, 3, 9, 4, 7).getTime();
   const startedDaysAgo = new Date(2026, 8, 27, 14, 12, 7).getTime();

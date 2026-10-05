@@ -87,6 +87,37 @@ test.each([
   expect(read && "jump" in read).toBe(false);
 });
 
+test("a branch or a commit a session's folder has checked out is read as it was sent", () => {
+  for (const git of [
+    { branch: "checkout-flow" },
+    { branch: "<b>fix/rate-limits</b>" },
+    { branch: "b".repeat(200) },
+    { commit: "3f9a2c1" },
+  ]) {
+    const sent = makeSession({ git });
+    expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  }
+});
+
+test.each([
+  ["nothing", undefined],
+  ["null", null],
+  ["a text", "checkout-flow"],
+  ["an empty branch", { branch: "  " }],
+  ["a branch that is not text", { branch: 7 }],
+  ["a branch too long to be one", { branch: "b".repeat(201) }],
+  ["a commit that is not an ID", { commit: "checkout" }],
+  ["a commit too short", { commit: "3f9a2c" }],
+  ["a commit in capitals", { commit: "3F9A2C1" }],
+  ["both at once", { branch: "main", commit: "3f9a2c1" }],
+  ["neither", { tag: "v1.0.0" }],
+])("a git head that is %s is none, and the session is still read", (_what, git) => {
+  const read = readSession({ ...makeSession(), git });
+
+  expect(read?.id).toBe(makeSession().id);
+  expect(read && "git" in read).toBe(false);
+});
+
 test("a surface or status the page does not know is read as unknown, not dropped", () => {
   const read = readSession({ ...makeSession(), surface: "tmux", status: "paused" });
 
