@@ -1,13 +1,14 @@
 import { SURFACE_LABEL, type Session } from "../../core/sessions/session.ts";
-import { sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
+import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
+import { overPhrase, sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
 import { EMAIL_TO_ENV } from "./emailSettings.ts";
 
 /**
  * What one email says. It is plain text and short: a subject that names the
- * session and what happened, and a body with how long it has waited, the
- * project folder's name, the app, the agent, when the wait began and how to
- * stop these emails. Nothing else goes in it: no path, no prompt, none of the
- * agent's own words, no link and no markup.
+ * session and what happened, and a body with how long it has waited and since
+ * when, or when it finished, failed or ended, then the project folder's name,
+ * the app, the agent and how to stop these emails. Nothing else goes in it: no
+ * path, no prompt, none of the agent's own words, no link and no markup.
  */
 export interface EmailContent {
   subject: string;
@@ -92,27 +93,59 @@ export function clockTime(at: number, now: number): string {
   return sameDay ? time : `${MONTHS[date.getMonth()]} ${date.getDate()}, ${time}`;
 }
 
-/** The email for a wait that has lasted the delay and is still open. */
-export function waitEmail(facts: WaitFacts): EmailContent {
-  const { session, begunAt, now } = facts;
-  const name = oneLine(sessionTitle(session));
-  const happened = `${name} ${waitingPhrase(session)}`;
-
-  const lines = [
-    `${happened}.`,
-    "",
-    `It has waited ${waitedInWords(now - begunAt)}, since ${clockTime(begunAt, now)}.`,
-    "",
-  ];
+/** The email: the sentence of what happened, a line on when, then the facts every email ends with. */
+function emailOf(
+  happened: string,
+  when: string,
+  session: Pick<Session, "project" | "surface">,
+  agentName: string | null,
+): EmailContent {
+  const lines = [`${happened}.`, "", when, ""];
   const folder = session.project ? oneLine(session.project) : "";
   if (folder) lines.push(`Folder: ${folder}`);
   if (session.surface !== "unknown") lines.push(`App: ${SURFACE_LABEL[session.surface]}`);
-  const agent = facts.agent ? oneLine(facts.agent) : "";
+  const agent = agentName ? oneLine(agentName) : "";
   if (agent) lines.push(`Agent: ${agent}`);
   lines.push(
     "",
     `Sent by Agent Lookout on your computer. To stop these emails, start it again without ${EMAIL_TO_ENV}.`,
   );
-
   return { subject: happened, text: `${lines.join("\n")}\n` };
+}
+
+/** The email for a wait that has lasted the delay and is still open. */
+export function waitEmail(facts: WaitFacts): EmailContent {
+  const { session, begunAt, now } = facts;
+  return emailOf(
+    `${oneLine(sessionTitle(session))} ${waitingPhrase(session)}`,
+    `It has waited ${waitedInWords(now - begunAt)}, since ${clockTime(begunAt, now)}.`,
+    session,
+    facts.agent,
+  );
+}
+
+export interface OverFacts {
+  event: Exclude<NoticeEvent, "needs-you">;
+  session: Pick<Session, "id" | "name" | "project" | "surface">;
+  /** The agent, as its source calls itself: "Claude Code". Null when not known. */
+  agent: string | null;
+  /** When the collector saw it happen. */
+  seenAt: number;
+  /** When the email is written. */
+  now: number;
+}
+
+/**
+ * The email for a session that finished, failed or ended: "billing-webhooks
+ * finished". It is sent as soon as that is seen, so it says when that was,
+ * for an email the hourly limit held back.
+ */
+export function overEmail(facts: OverFacts): EmailContent {
+  const { session, seenAt, now } = facts;
+  return emailOf(
+    `${oneLine(sessionTitle(session))} ${overPhrase(facts.event)}`,
+    `Agent Lookout saw this at ${clockTime(seenAt, now)}.`,
+    session,
+    facts.agent,
+  );
 }

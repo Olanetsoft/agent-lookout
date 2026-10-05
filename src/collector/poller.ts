@@ -236,7 +236,11 @@ export function createPoller(options: PollerOptions): Poller {
 
     const snapshot: SessionsSnapshot = {
       generatedAt: at,
-      sources: results.map((result) => result.health),
+      // The way each was read goes with it, so what follows the snapshots
+      // compares answers the way the event log does.
+      sources: results.map((result) =>
+        result.basis === undefined ? result.health : { ...result.health, basis: result.basis },
+      ),
       sessions: sortSessions(results.flatMap((result) => result.sessions)),
     };
 

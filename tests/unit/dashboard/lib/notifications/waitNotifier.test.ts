@@ -1,6 +1,7 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
+import type { NoticeEvent } from "@core/sessions/waitChanges";
 import { createWaitNotifier } from "@dashboard/lib/notifications/waitNotifier";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeNotificationHost } from "@tests/support/notifications";
@@ -674,4 +675,196 @@ test("a session shown again has one notification, in place of the one this page 
     [`agent-lookout:${id(1)}`, true],
   ]);
   expect(notifier.closeAll().sort()).toEqual([id(1), id(2)]);
+});
+
+describe("finished, failed and ended", () => {
+  /** A notifier with the events the test chooses on, over a fake host. */
+  function choosing(...events: NoticeEvent[]) {
+    const host = fakeNotificationHost({ permission: "granted" });
+    const chosen = new Set<NoticeEvent>(events);
+    const notifier = createWaitNotifier({ host, isOn: (event) => chosen.has(event) });
+    return { host, chosen, notifier };
+  }
+
+  test.each([
+    ["finished", "Finished"],
+    ["failed", "Failed"],
+  ] as const)(
+    "a session that becomes %s is shown once, by its name, with what happened and its tag",
+    (status, body) => {
+      const { host, notifier } = choosing("finished", "failed");
+      notifier.handle(snapshot([session(1, { name: "billing-webhooks", status: "working" })]));
+      notifier.handle(snapshot([session(1, { name: "billing-webhooks", status })]));
+      notifier.handle(snapshot([session(1, { name: "billing-webhooks", status })]));
+
+      expect(host.shown).toHaveLength(1);
+      expect(host.shown[0]).toMatchObject({
+        title: "billing-webhooks",
+        body,
+        tag: `agent-lookout:${id(1)}`,
+        open: true,
+      });
+    },
+  );
+
+  test("a session that leaves the list is shown as ended, by the name it last had", () => {
+    const { host, notifier } = choosing("ended");
+    notifier.handle(snapshot([session(1, { name: "search-indexing", status: "idle" })]));
+    notifier.handle(snapshot([]));
+
+    expect(host.shown.map(({ title, body }) => [title, body])).toEqual([
+      ["search-indexing", "Ended"],
+    ]);
+  });
+
+  test("they stay on show until the person clears them: nothing the session does later closes them", () => {
+    const { host, notifier } = choosing("finished");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+    notifier.handle(snapshot([]));
+    notifier.handle(snapshot([], "error"));
+
+    expect(host.shown.map(({ body, open, closes }) => [body, open, closes])).toEqual([
+      ["Finished", true, 0],
+    ]);
+  });
+
+  test("closeAll and the page leaving take down a wait's notification, and leave these to the person", () => {
+    const { host, notifier } = choosing("needs-you", "finished");
+    notifier.handle(
+      snapshot([session(1, { status: "working" }), session(2, { status: "working" })]),
+    );
+    notifier.handle(snapshot([session(1, { status: "finished" }), waiting(2)]));
+
+    expect(notifier.closeAll()).toEqual([id(2)]);
+    expect(host.shown.map(({ body, open }) => [body, open])).toEqual([
+      ["Finished", true],
+      ["Waiting for permission", false],
+    ]);
+  });
+
+  test("a session that waits and then finishes has its wait's notification closed, and the finish takes its place", () => {
+    const { host, notifier } = choosing("needs-you", "finished");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([waiting(1)]));
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+
+    expect(host.shown.map(({ body, open, closes, tag }) => [body, open, closes, tag])).toEqual([
+      ["Waiting for permission", false, 1, `agent-lookout:${id(1)}`],
+      ["Finished", true, 0, `agent-lookout:${id(1)}`],
+    ]);
+  });
+
+  test("a later event for the same session takes the place of the earlier one", () => {
+    const { host, notifier } = choosing("needs-you", "finished", "failed");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([session(1, { status: "failed" })]));
+
+    // One tag for the session, so the browser keeps the last.
+    expect(host.open().map(({ body }) => body)).toEqual(["Failed"]);
+    expect(host.shown.map(({ body }) => body)).toEqual(["Finished", "Failed"]);
+  });
+
+  // A browser that puts a notification in the place of another with the same
+  // tag does it silently. Taken down first, the next is a new one, and alerts.
+  test("a later notification for a session takes down the one still on show first, so it is not shown in its place silently", () => {
+    const { host, notifier } = choosing("needs-you", "finished");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([waiting(1)]));
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    expect(host.shown.map(({ body, open, closes }) => [body, open, closes])).toEqual([
+      ["Waiting for permission", false, 1],
+      ["Finished", true, 0],
+    ]);
+
+    // The session is resumed and asks again while Finished is still on show.
+    notifier.handle(snapshot([waiting(1, { statusSince: T0 + 9_000 })]));
+    expect(host.shown.map(({ body, open, closes }) => [body, open, closes])).toEqual([
+      ["Waiting for permission", false, 1],
+      ["Finished", false, 1],
+      ["Waiting for permission", true, 0],
+    ]);
+  });
+
+  test("a notification the person cleared is not taken down again by the next", () => {
+    const { host, notifier } = choosing("finished", "failed");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+    host.shown[0]?.dismiss();
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([session(1, { status: "failed" })]));
+
+    expect(host.shown.map(({ body, open, closes }) => [body, open, closes])).toEqual([
+      ["Finished", false, 0],
+      ["Failed", true, 0],
+    ]);
+  });
+
+  test("only the events chosen are shown, each asked at the moment it happens", () => {
+    const { host, chosen, notifier } = choosing("finished");
+    notifier.handle(
+      snapshot([
+        session(1, { status: "working" }),
+        session(2, { status: "working" }),
+        session(3, { status: "working" }),
+        session(4, { status: "working" }),
+      ]),
+    );
+    notifier.handle(
+      snapshot([
+        waiting(1),
+        session(2, { status: "finished" }),
+        session(3, { status: "failed" }),
+        session(4, { status: "working" }),
+      ]),
+    );
+    expect(host.shown.map(({ title, body }) => [title, body])).toEqual([
+      ["demo-project-2", "Finished"],
+    ]);
+
+    chosen.add("ended");
+    // The third had failed, so its leaving is not an end. The fourth had not.
+    notifier.handle(snapshot([waiting(1), session(2, { status: "finished" })]));
+    expect(host.shown.map(({ title, body }) => [title, body])).toEqual([
+      ["demo-project-2", "Finished"],
+      ["demo-project-4", "Ended"],
+    ]);
+  });
+
+  test("with a wait alone chosen, as by default, a session that finishes sends nothing", () => {
+    const { host, notifier } = choosing("needs-you");
+    notifier.handle(
+      snapshot([session(1, { status: "working" }), session(2, { status: "working" })]),
+    );
+    notifier.handle(snapshot([session(1, { status: "finished" })]));
+    expect(host.shown).toEqual([]);
+  });
+
+  test("nothing is said of what was already over when the page began, or when a new collector began", () => {
+    const { host, notifier } = choosing("finished", "failed", "ended");
+    notifier.handle(
+      snapshot([session(1, { status: "finished" }), session(2, { status: "failed" })]),
+      T0,
+    );
+    // Those two leave the list having said what happened, and a third appears.
+    notifier.handle(snapshot([session(3, { status: "working" })]), T0);
+    expect(host.shown).toEqual([]);
+
+    // A new collector: its first answer is a baseline, whatever has gone from it.
+    notifier.handle(snapshot([session(4, { status: "finished" })]), T0 + 60_000);
+    expect(host.shown).toEqual([]);
+    notifier.handle(snapshot([session(4, { status: "finished" })]), T0 + 60_000);
+    expect(host.shown).toEqual([]);
+  });
+
+  test("a session of a source that stops answering has not ended", () => {
+    const { host, notifier } = choosing("ended");
+    notifier.handle(snapshot([session(1, { status: "working" })]));
+    notifier.handle(snapshot([], "error"));
+    notifier.handle(snapshot([], "unavailable"));
+    expect(host.shown).toEqual([]);
+  });
 });

@@ -59,7 +59,7 @@ To see which sessions need you without opening the browser, run `npm run --silen
 
 ## Privacy
 
-By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, through the mail server you name, to the address you name, and nothing else. The [guide](docs/GUIDE.md#email) says how to set them up and how to turn them off. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does. Codex's session files hold your conversations. Agent Lookout opens them only to read a few details, such as each session's folder and when each turn started and ended, and keeps none of your prompts, Codex's replies or the commands it ran. [PRIVACY.md](PRIVACY.md) lists everything it reads and runs, and what an email holds.
+By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. The [guide](docs/GUIDE.md#email) says how to set them up and how to turn them off. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does. Codex's session files hold your conversations. Agent Lookout opens them only to read a few details, such as each session's folder and when each turn started and ended, and keeps none of your prompts, Codex's replies or the commands it ran. [PRIVACY.md](PRIVACY.md) lists everything it reads and runs, and what an email holds.
 
 ## Contributing
 

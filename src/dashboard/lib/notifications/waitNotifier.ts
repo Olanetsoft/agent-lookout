@@ -1,6 +1,12 @@
 import type { Session, SessionsSnapshot, SourceId } from "@core/sessions/session";
-import { waitNotice } from "@core/sessions/waiting";
-import { EMPTY_WAIT_MEMORY, waitChanges, type WaitMemory } from "@core/sessions/waitChanges";
+import { changeNotice } from "@core/sessions/waiting";
+import {
+  EMPTY_CHANGE_MEMORY,
+  sessionChanges,
+  type ChangeMemory,
+  type NoticeEvent,
+  type SessionChange,
+} from "@core/sessions/waitChanges";
 import type {
   NotificationHost,
   ShownNotification,
@@ -8,15 +14,19 @@ import type {
 
 /**
  * Turns the snapshots the page receives into notifications: one when a session
- * starts waiting for the person, taken down when that session moves on.
+ * starts waiting for the person, taken down when that session moves on, and
+ * one when a session finishes, fails or ends, which stays until the person
+ * clears it. A session has one notification at a time: a later one for it
+ * takes the place of the earlier.
  *
- * Which change deserves a notification, and which notification to take down,
- * is decided by `waitChanges` in the core. This only carries it out. It has no
- * DOM in it, so it runs the same under any notification host.
+ * What happened, and which wait's notification to take down, is decided by
+ * `sessionChanges` in the core. This only carries it out. It has no DOM in it,
+ * so it runs the same under any notification host.
  *
- * A session of a source that stops answering keeps its notification, because
- * nobody knows whether it still waits. It is taken down when the source answers
- * again without it, when notifications are turned off, or when the page closes.
+ * A session of a source that stops answering keeps the notification of its
+ * wait, because nobody knows whether it still waits. It is taken down when the
+ * source answers again without it, when notifications are turned off, or when
+ * the page closes.
  *
  * A collector that has been stopped and started again under a page left open is
  * a new beginning. What it finds waiting was waiting before it began, so
@@ -26,8 +36,8 @@ import type {
 
 export interface WaitNotifierOptions {
   host: Pick<NotificationHost, "show">;
-  /** Whether a notification may be sent, asked at the moment one would be. */
-  isOn: () => boolean;
+  /** Whether a notification of this event may be sent, asked at the moment one would be. */
+  isOn: (event: NoticeEvent) => boolean;
 }
 
 export interface WaitNotifier {
@@ -41,7 +51,11 @@ export interface WaitNotifier {
    * its answers.
    */
   handle(snapshot: SessionsSnapshot | null, collectorStartedAt?: number | null): void;
-  /** Takes down every notification still on show, and says which sessions they were for. */
+  /**
+   * Takes down every notification of a wait still on show, and says which
+   * sessions they were for. A notification that a session finished, failed or
+   * ended is the person's to clear, and is left.
+   */
   closeAll(): string[];
   /**
    * Shows the notifications of these sessions again, for those that are still
@@ -52,13 +66,16 @@ export interface WaitNotifier {
   showAgain(sessionIds: readonly string[]): void;
 }
 
-/** A notification on show, and the source its session came from. */
+/** A notification of a wait on show, and the source its session came from. */
 interface OpenNotification {
   notification: ShownNotification;
   source: SourceId;
 }
 
-/** One notification per session, so the same wait seen from two tabs shows once. */
+/**
+ * One notification per session, so the same wait seen from two tabs shows
+ * once, and a session that finishes after it waited has the one notification.
+ */
 function tagFor(session: Session): string {
   return `agent-lookout:${session.id}`;
 }
@@ -72,13 +89,19 @@ function closeSafely(notification: ShownNotification): void {
 }
 
 export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNotifier {
-  let memory: WaitMemory = EMPTY_WAIT_MEMORY;
+  let memory: ChangeMemory = EMPTY_CHANGE_MEMORY;
   /** When the collector whose answers are remembered began. Null until that is known. */
   let collector: number | null = null;
   /** The last snapshot taken: the name and the reason of a session shown again come from it. */
   let latest: SessionsSnapshot | null = null;
-  /** The notifications on show, by session id. */
+  /** The notifications of waits on show, by session id. */
   const open = new Map<string, OpenNotification>();
+  /**
+   * The last notification that a session finished, failed or ended, by session
+   * id, while it is on show. Only a later notification for the same session
+   * takes it down.
+   */
+  const over = new Map<string, ShownNotification>();
 
   function close(id: string): void {
     const shown = open.get(id);
@@ -87,20 +110,38 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     closeSafely(shown.notification);
   }
 
-  function show(session: Session): void {
-    // A session has one notification at a time.
+  function show(change: SessionChange): void {
+    const { session } = change;
+    // A session has one notification at a time. The one on show is taken down
+    // first, because a browser that puts a notification in the place of
+    // another with the same tag does it silently, and the new one would make
+    // no sound.
     close(session.id);
+    const earlier = over.get(session.id);
+    if (earlier) {
+      over.delete(session.id);
+      closeSafely(earlier);
+    }
     let shown: ShownNotification | null;
     try {
-      // The name, and the reason in the words the Needs you panel uses. The
-      // collector's own notification of a wait says the same.
-      shown = host.show({ ...waitNotice(session), tag: tagFor(session) });
+      // The name, and the reason in the words the Needs you panel uses, or
+      // what happened. The collector's own notification says the same.
+      shown = host.show({ ...changeNotice(change), tag: tagFor(session) });
     } catch {
       // A host should not throw. One that does must not stop the next notification.
       shown = null;
     }
     if (!shown) return;
     const notification = shown;
+    if (change.event !== "needs-you") {
+      // Left for the person to clear, unless the session has news again first.
+      over.set(session.id, notification);
+      notification.onClosed(() => {
+        if (over.get(session.id) === notification) over.delete(session.id);
+      });
+      return;
+    }
+    // A wait's notification is also taken down when the wait ends.
     open.set(session.id, { notification, source: session.source });
     // Once the person has dismissed it there is nothing left to take down.
     notification.onClosed(() => {
@@ -115,23 +156,23 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       if (collectorStartedAt !== null) {
         // Another collector. Forgetting what the last one said makes each
         // source's next answer its first, which announces nothing.
-        if (collector !== null && collector !== collectorStartedAt) memory = EMPTY_WAIT_MEMORY;
+        if (collector !== null && collector !== collectorStartedAt) memory = EMPTY_CHANGE_MEMORY;
         collector = collectorStartedAt;
       }
 
-      // Waits are followed while notifications are off as well. Turning them on
-      // then says nothing about a wait that had already begun.
-      const changes = waitChanges(memory, snapshot);
-      memory = changes.memory;
-      for (const id of changes.stopped) close(id);
+      // Changes are followed while notifications are off as well. Turning them
+      // on then says nothing about what had already happened.
+      const result = sessionChanges(memory, snapshot);
+      memory = result.memory;
+      for (const id of result.stopped) close(id);
       // A notification left from before a new collector began is not among
       // those. It goes once its source has answered without its session waiting.
       for (const [id, { source }] of open) {
-        const waiting = memory.get(source);
+        const waiting = memory.waits.get(source);
         if (waiting && !waiting.has(id)) close(id);
       }
-      for (const session of changes.started) {
-        if (isOn()) show(session);
+      for (const change of result.changes) {
+        if (isOn(change.event)) show(change);
       }
     },
 
@@ -149,9 +190,9 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       for (const session of latest.sessions) {
         if (!wanted.has(session.id) || session.status !== "needs-you") continue;
         // Waiting at its source's last answer, which is what would keep it on show here.
-        if (!memory.get(session.source)?.has(session.id)) continue;
+        if (!memory.waits.get(session.source)?.has(session.id)) continue;
         wanted.delete(session.id);
-        if (isOn()) show(session);
+        if (isOn("needs-you")) show({ event: "needs-you", session });
       }
     },
   };

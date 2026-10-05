@@ -137,6 +137,7 @@ describe("npm start, as a real process", () => {
     expect((await request(port, "/api/email")).json<EmailStatusResponse>()).toEqual({
       on: false,
       to: null,
+      events: null,
       afterMs: null,
       problem: null,
       last: null,

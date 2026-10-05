@@ -1590,6 +1590,48 @@ test("pressing the button in Settings tells the app at once, in one request that
   expect(told).toHaveLength(3);
 });
 
+test("finished switched on in Settings tells the app at once, and a session that waits and then finishes has its wait's notification replaced by one that says so", async () => {
+  const host = notificationsFor(true);
+  const told: [string, string | null][] = [];
+  setApiHost(async (path, init) => {
+    if (path === "/api/email") return new Response("{}");
+    told.push([path, new Headers(init?.headers).get(NOTIFICATIONS_HEADER)]);
+    return new Response(JSON.stringify({ ok: true, version: "0.0.0" }));
+  });
+  atView("settings");
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+
+  const finished = screen
+    .getByRole("region", { name: "Notifications" })
+    .getByRole("radiogroup", { name: "Finished" });
+  await finished.getByRole("radio", { name: "On" }).click();
+  await vi.waitFor(() => expect(told).toEqual([["/api/health", "on; events=needs-you,finished"]]));
+
+  store.set(liveState());
+  expect(host.open().map(({ title, body }) => [title, body])).toEqual([
+    ["blocked-one", "Waiting for permission"],
+  ]);
+
+  const done = snapshot();
+  done.sessions = done.sessions.map((s) =>
+    s.status === "needs-you" ? { ...s, status: "finished", waitingReason: undefined } : s,
+  );
+  store.set(liveState({ snapshot: done }));
+  expect(host.shown.map(({ body, open, tag }) => [body, open, tag])).toEqual([
+    ["Waiting for permission", false, `agent-lookout:${BLOCKED_ID}`],
+    ["Finished", true, `agent-lookout:${BLOCKED_ID}`],
+  ]);
+
+  // Turning notifications off takes down a wait's notification, and leaves this one to the person.
+  await screen
+    .getByRole("region", { name: "Notifications" })
+    .getByRole("button", { name: "Turn off notifications" })
+    .click();
+  await vi.waitFor(() => expect(told.at(-1)).toEqual(["/api/health", "off"]));
+  expect(host.open().map(({ body }) => body)).toEqual(["Finished"]);
+});
+
 test("a request to say the setting has changed that fails is left to the next poll, and breaks nothing", async () => {
   notificationsFor(true);
   setApiHost(() => Promise.reject(new TypeError("Failed to fetch")));

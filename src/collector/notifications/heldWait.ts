@@ -11,6 +11,9 @@
  * asking on time, and a wait with no page open is still announced. A page that
  * goes more than about four seconds between two fetches of the sessions is not
  * waited for, and shows the wait as well when it next fetches.
+ *
+ * A session that finishes, fails or ends is held back by the same rule, so
+ * "wait" below stands for any of those.
  */
 
 /**

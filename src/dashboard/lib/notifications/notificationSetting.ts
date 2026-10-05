@@ -1,29 +1,44 @@
 import {
+  DEFAULT_NOTICE_EVENTS,
+  NOTICE_EVENTS,
+  readNoticeEvents,
+  writeNoticeEvents,
+  type NoticeEvent,
+} from "@core/sessions/waitChanges";
+import {
   notificationHost,
   type NotificationPermissionState,
 } from "@dashboard/lib/notifications/notificationHost";
 
 /**
- * Whether a session that starts waiting sends a notification: a small store
- * outside React, like the theme.
+ * Whether notifications are sent, and for which events: a small store outside
+ * React, like the theme.
  *
- * Two things decide it. The person's choice, "on" or "off", is kept in local
- * storage, so it belongs to this browser at this address. The browser's
- * permission belongs to the browser, and can change without this page being
- * told. Notifications are on only while the choice is on and the permission is
- * granted, and the permission is read again every time that is asked.
+ * Two things decide whether they are on. The person's choice, "on" or "off",
+ * is kept in local storage, so it belongs to this browser at this address. The
+ * browser's permission belongs to the browser, and can change without this
+ * page being told. Notifications are on only while the choice is on and the
+ * permission is granted, and the permission is read again every time that is
+ * asked.
  *
  * They are off until the person turns them on, and turning them on is the only
  * thing that ever asks the browser for permission.
  *
+ * The events, a session starting to wait, finishing, failing or ending, are
+ * chosen one by one and kept in local storage beside the choice. Until the
+ * person changes them, a wait alone sends one.
+ *
  * The collector's own notifications, shown when no page is open, follow this
- * setting too: `apiRequest` tells the collector whether it is on with every
+ * setting too: `apiRequest` tells the collector which events are on with every
  * request.
  */
 
 export type NotificationChoice = "on" | "off";
 
 export const NOTIFICATIONS_STORAGE_KEY = "agent-lookout-notifications";
+
+/** Where the events are kept, as names separated by commas: `needs-you,finished`. */
+export const NOTIFICATION_EVENTS_STORAGE_KEY = "agent-lookout-notification-events";
 
 export interface NotificationSettingState {
   /** What the person chose here. */
@@ -32,6 +47,8 @@ export interface NotificationSettingState {
   permission: NotificationPermissionState;
   /** Whether a notification is sent: the choice is on and the permission is granted. */
   on: boolean;
+  /** The events the person chose, in the order of `NOTICE_EVENTS`. Kept while notifications are off. */
+  events: readonly NoticeEvent[];
 }
 
 function readStoredChoice(): NotificationChoice {
@@ -43,7 +60,19 @@ function readStoredChoice(): NotificationChoice {
   }
 }
 
+/** The events, from storage. Nothing stored, or anything that cannot be read, is the default. */
+function readStoredEvents(): readonly NoticeEvent[] {
+  try {
+    const stored = localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY);
+    return (stored === null ? null : readNoticeEvents(stored)) ?? DEFAULT_NOTICE_EVENTS;
+  } catch {
+    // Storage can be blocked. Keep the default.
+    return DEFAULT_NOTICE_EVENTS;
+  }
+}
+
 let choice: NotificationChoice | null = null;
+let events: readonly NoticeEvent[] | null = null;
 let state: NotificationSettingState | null = null;
 /** The state listeners were last told of, or have read for themselves on subscribing. */
 let announced: NotificationSettingState | null = null;
@@ -57,11 +86,23 @@ let stopWatching: (() => void) | null = null;
  */
 export function getNotificationSetting(): NotificationSettingState {
   choice ??= readStoredChoice();
+  events ??= readStoredEvents();
   const permission = notificationHost().permission();
-  if (!state || state.choice !== choice || state.permission !== permission) {
-    state = { choice, permission, on: choice === "on" && permission === "granted" };
+  if (
+    !state ||
+    state.choice !== choice ||
+    state.permission !== permission ||
+    state.events !== events
+  ) {
+    state = { choice, permission, on: choice === "on" && permission === "granted", events };
   }
   return state;
+}
+
+/** The events a notification is sent for now: those chosen while notifications are on, and none while they are off. */
+export function notificationEventsInForce(): readonly NoticeEvent[] {
+  const current = getNotificationSetting();
+  return current.on ? current.events : [];
 }
 
 /**
@@ -95,8 +136,16 @@ function watch(): void {
   if (stopWatching) return;
   const onStorage = (event: StorageEvent) => {
     // A null key means the whole of storage was cleared.
-    if (event.key !== null && event.key !== NOTIFICATIONS_STORAGE_KEY) return;
-    choice = readStoredChoice();
+    if (event.key === null || event.key === NOTIFICATIONS_STORAGE_KEY) {
+      choice = readStoredChoice();
+    }
+    if (event.key === null || event.key === NOTIFICATION_EVENTS_STORAGE_KEY) {
+      const stored = readStoredEvents();
+      // The same list read again is not a change.
+      if (events === null || writeNoticeEvents(stored) !== writeNoticeEvents(events)) {
+        events = stored;
+      }
+    }
     refresh();
   };
   window.addEventListener("storage", onStorage);
@@ -157,9 +206,24 @@ export function turnOffNotifications(): void {
   refresh();
 }
 
+/** Switches one event on or off, and keeps the choice. It asks the browser nothing. */
+export function chooseNotificationEvent(event: NoticeEvent, chosen: boolean): void {
+  const current = getNotificationSetting().events;
+  if (current.includes(event) === chosen) return;
+  const next = NOTICE_EVENTS.filter((each) => (each === event ? chosen : current.includes(each)));
+  events = next;
+  try {
+    localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, writeNoticeEvents(next));
+  } catch {
+    // Storage can be blocked. The choice still applies until the page is closed.
+  }
+  refresh();
+}
+
 /** For tests: forget the cached state so the next read comes from storage. */
 export function resetNotificationSettingForTests(): void {
   choice = null;
+  events = null;
   state = null;
   announced = null;
   asking = null;

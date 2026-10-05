@@ -4,6 +4,7 @@ import {
   clockTime,
   MOST_NAME_LENGTH,
   oneLine,
+  overEmail,
   waitEmail,
   waitedInWords,
   type WaitFacts,
@@ -149,6 +150,53 @@ describe("waitEmail", () => {
     expect(waitEmail(facts({ name: "café-ünïcode-名前-🚀" })).subject).toBe(
       "café-ünïcode-名前-🚀 is waiting for permission",
     );
+  });
+});
+
+describe("overEmail", () => {
+  const over = (event: "finished" | "failed" | "ended", overrides: Partial<Session> = {}) =>
+    overEmail({
+      event,
+      session: makeSession({
+        name: "billing-webhooks",
+        cwd: "/Users/example/code/billing-webhooks",
+        project: "billing-webhooks",
+        surface: "terminal",
+        ...overrides,
+      }),
+      agent: "Claude Code",
+      seenAt: BEGUN,
+      now: BEGUN + 2_000,
+    });
+
+  test("names the session and what happened, says when it was seen, where it ran, and how to stop", () => {
+    expect(over("finished")).toEqual({
+      subject: "billing-webhooks finished",
+      text: [
+        "billing-webhooks finished.",
+        "",
+        "Agent Lookout saw this at 14:01.",
+        "",
+        "Folder: billing-webhooks",
+        "App: Terminal",
+        "Agent: Claude Code",
+        "",
+        "Sent by Agent Lookout on your computer. To stop these emails, start it again without AGENT_LOOKOUT_EMAIL_TO.",
+        "",
+      ].join("\n"),
+    });
+  });
+
+  test("says each event in the words the app uses everywhere", () => {
+    expect(over("failed").subject).toBe("billing-webhooks failed");
+    expect(over("ended").subject).toBe("billing-webhooks ended");
+    expect(over("ended").text.startsWith("billing-webhooks ended.\n")).toBe(true);
+  });
+
+  test("holds no path and no link, and a name cannot begin another line", () => {
+    const email = over("failed", { name: "docs-site\r\nBcc: other@example.test" });
+    expect(email.subject).toBe("docs-site Bcc: other@example.test failed");
+    expect(`${email.subject}\n${email.text}`).not.toContain("/Users/example");
   });
 });
 

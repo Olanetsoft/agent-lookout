@@ -1,3 +1,5 @@
+import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
+import { NOTICE_EVENT_LABEL } from "@core/sessions/waiting";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
@@ -19,22 +21,63 @@ const THEME_OPTIONS = [
   { value: "system", label: "System", name: "Follow the computer's setting" },
 ] as const satisfies readonly { value: ThemePreference; label: string; name: string }[];
 
+const EVENT_SWITCH = [
+  { value: "off", label: "Off" },
+  { value: "on", label: "On" },
+] as const satisfies readonly { value: "on" | "off"; label: string }[];
+
 /**
- * Whether a session that starts waiting sends a notification. They are off
- * until the person turns them on here, and pressing the button is the only
- * thing in the app that asks the browser for permission.
+ * The events that send a notification, each with its own switch, under the
+ * one that turns notifications on. Nothing can refuse one of these, so each is
+ * the segmented control the theme uses. Shown only while notifications are on:
+ * a list of switches that do nothing would be one more thing to read.
+ */
+function EventSwitches({
+  events,
+  chooseEvent,
+}: {
+  events: readonly NoticeEvent[];
+  chooseEvent: (event: NoticeEvent, chosen: boolean) => void;
+}) {
+  return (
+    <ul data-part='events' aria-label='What sends a notification' className='mt-3 flex flex-col'>
+      {NOTICE_EVENTS.map((event) => (
+        <li
+          key={event}
+          className='flex items-center justify-between gap-6 border-b border-hairline py-2 last:border-b-0'
+        >
+          {/* The switch carries the same name, so this is not read twice. */}
+          <span aria-hidden className='text-body text-ink'>
+            {NOTICE_EVENT_LABEL[event]}
+          </span>
+          <SegmentedControl
+            label={NOTICE_EVENT_LABEL[event]}
+            value={events.includes(event) ? "on" : "off"}
+            onValueChange={(value) => chooseEvent(event, value === "on")}
+            options={EVENT_SWITCH}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Whether notifications are sent, and for which events. They are off until
+ * the person turns them on here, and pressing the button is the only thing in
+ * the app that asks the browser for permission.
  *
  * The state is said in words beside a button that changes it. It is not the
  * switch the theme uses, because that chooses as soon as it has focus, and the
  * browser can refuse "on". When it does, or cannot show notifications at all,
- * the state stays off and a note says why and what to do.
+ * the state stays off and a note says why and what to do. While they are on,
+ * the events are listed under it, each with a switch of its own.
  *
- * There is one switch. Every request the page makes tells the app what it is
- * set to, and the notifications the app shows itself, when no page is open,
- * follow it.
+ * Every request the page makes tells the app what these are set to, and the
+ * notifications the app shows itself, when no page is open, follow them.
  */
 function NotificationsCard() {
-  const { on, permission, turnOn, turnOff } = useNotificationSetting();
+  const { on, permission, events, turnOn, turnOff, chooseEvent } = useNotificationSetting();
 
   return (
     <SectionCard title='Notifications'>
@@ -52,6 +95,13 @@ function NotificationsCard() {
           )}
         </div>
 
+        {on && <EventSwitches events={events} chooseEvent={chooseEvent} />}
+        {on && events.length === 0 && (
+          <p className='mt-3 text-body text-ink-secondary'>
+            No event is switched on, so none is sent.
+          </p>
+        )}
+
         {permission === "denied" && (
           <Callout title='Notifications are blocked' className='mt-3'>
             <p>
@@ -68,13 +118,18 @@ function NotificationsCard() {
 
         {/* Says what turning them on does, and nothing of what this browser can do. */}
         <p className='mt-3 text-body text-ink-secondary'>
-          When notifications are on, one appears each time a session starts waiting for you. It
+          With Needs you on, a notification appears each time a session starts waiting for you. It
           names the session and the reason, and is cleared when the session moves on.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
+          Once they are on, you can also be told when a session finishes or fails, or ends without
+          saying whether it finished, as when its process stops. Those name the session and what
+          happened, and stay until you clear them.
+        </p>
+        <p className='mt-2 text-body text-ink-secondary'>
           On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout
-          keeps running, and those stay until you clear them. Only Claude Code sessions can be seen
-          waiting, so a Codex session never sends one.
+          keeps running, and those stay until you clear them. Only Claude Code sessions and sessions
+          from a status file can be seen waiting, so a Codex session never sends Needs you.
         </p>
       </div>
     </SectionCard>
@@ -82,7 +137,7 @@ function NotificationsCard() {
 }
 
 /**
- * Whether the app emails the person when a wait lasts, and how the last email
+ * Whether the app emails the person, for which events, and how the last email
  * went. It is only read here. Email is set up in the environment Agent Lookout
  * starts with, so the card has no control, and the button for notifications
  * does not cover it. Before the app has answered, the card says nothing.
@@ -114,8 +169,8 @@ function EmailCard({ reading }: { reading: EmailStatusReading | null }) {
 /**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified when a session starts waiting, whether email has
- * been set up, and a few facts about this copy of the app.
+ * whether to be notified and of what, whether email has been set up, and a
+ * few facts about this copy of the app.
  */
 export function SettingsView() {
   const { preference, setPreference } = useTheme();

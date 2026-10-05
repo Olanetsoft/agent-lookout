@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
+  chooseNotificationEvent,
   getNotificationSetting,
+  NOTIFICATION_EVENTS_STORAGE_KEY,
+  notificationEventsInForce,
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
   subscribeToNotificationSetting,
@@ -29,7 +32,12 @@ afterEach(() => {
 });
 
 test("notifications are off when nothing is stored", () => {
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "default", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "default",
+    on: false,
+    events: ["needs-you"],
+  });
 });
 
 test("the choice is read under the agent-lookout-notifications key", () => {
@@ -37,7 +45,12 @@ test("the choice is read under the agent-lookout-notifications key", () => {
   host.state = "granted";
   localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
 
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
 });
 
 test.each(["yes", "true", "ON", "", "granted"])(
@@ -56,7 +69,12 @@ test.each(["default", "denied", "unsupported"] as const)(
     host.state = permission;
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
 
-    expect(getNotificationSetting()).toEqual({ choice: "on", permission, on: false });
+    expect(getNotificationSetting()).toEqual({
+      choice: "on",
+      permission,
+      on: false,
+      events: ["needs-you"],
+    });
   },
 );
 
@@ -89,7 +107,12 @@ test("turning on asks once when the browser has not been asked, and stores on wh
 
   expect(host.asked).toBe(1);
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
   expect(listener).toHaveBeenCalledTimes(1);
   stop();
 });
@@ -118,7 +141,12 @@ test("a refusal leaves notifications off, with the permission reported as denied
 
   expect(host.asked).toBe(1);
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "denied", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "denied",
+    on: false,
+    events: ["needs-you"],
+  });
   // Listeners are told, because the page now has to say that they are blocked.
   expect(listener).toHaveBeenCalledTimes(1);
   stop();
@@ -130,7 +158,12 @@ test("a question the person closes without answering leaves notifications off", 
   await turnOnNotifications();
 
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "default", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "default",
+    on: false,
+    events: ["needs-you"],
+  });
 });
 
 test("with the permission already granted, turning on asks nothing", async () => {
@@ -139,7 +172,12 @@ test("with the permission already granted, turning on asks nothing", async () =>
   await turnOnNotifications();
 
   expect(host.asked).toBe(0);
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
 });
 
 test.each(["denied", "unsupported"] as const)(
@@ -151,7 +189,12 @@ test.each(["denied", "unsupported"] as const)(
 
     expect(host.asked).toBe(0);
     expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
-    expect(getNotificationSetting()).toEqual({ choice: "off", permission, on: false });
+    expect(getNotificationSetting()).toEqual({
+      choice: "off",
+      permission,
+      on: false,
+      events: ["needs-you"],
+    });
   },
 );
 
@@ -164,7 +207,12 @@ test("turning off stores off and tells listeners", async () => {
   turnOffNotifications();
 
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("off");
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "granted", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "granted",
+    on: false,
+    events: ["needs-you"],
+  });
   expect(listener).toHaveBeenCalledTimes(1);
 
   stop();
@@ -206,7 +254,12 @@ test("a permission taken away in the browser's settings is seen at the next read
   host.state = "granted";
   document.dispatchEvent(new Event("visibilitychange"));
   expect(listener).toHaveBeenCalledTimes(2);
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
   stop();
 });
 
@@ -295,7 +348,12 @@ test("after a question the person closed without answering, the next press asks 
   await turnOnNotifications();
 
   expect(host.asked).toBe(2);
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
 });
 
 test("a question that fails leaves notifications off, and turning on does not fail with it", async () => {
@@ -306,7 +364,12 @@ test("a question that fails leaves notifications off, and turning on does not fa
   await expect(turnOnNotifications()).resolves.toBeUndefined();
 
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "default", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "default",
+    on: false,
+    events: ["needs-you"],
+  });
   // Nothing changed, so nobody is told.
   expect(listener).not.toHaveBeenCalled();
   stop();
@@ -320,7 +383,12 @@ test("a question that fails after the person allowed them turns them on, by the 
 
   await turnOnNotifications();
 
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
 });
 
 test("turning on when they are already on asks nothing and tells nobody", async () => {
@@ -355,7 +423,12 @@ test("with two listening, one leaving does not stop the other hearing the page",
   host.state = "granted";
   window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATIONS_STORAGE_KEY }));
   expect(second).toHaveBeenCalledTimes(2);
-  expect(getNotificationSetting()).toEqual({ choice: "off", permission: "granted", on: false });
+  expect(getNotificationSetting()).toEqual({
+    choice: "off",
+    permission: "granted",
+    on: false,
+    events: ["needs-you"],
+  });
   stopSecond();
 });
 
@@ -414,5 +487,112 @@ test("a second press while the question is still open joins the first, and asks 
   await Promise.all([first, second]);
 
   expect(host.asked).toBe(1);
-  expect(getNotificationSetting()).toEqual({ choice: "on", permission: "granted", on: true });
+  expect(getNotificationSetting()).toEqual({
+    choice: "on",
+    permission: "granted",
+    on: true,
+    events: ["needs-you"],
+  });
+});
+
+describe("the events", () => {
+  test("until the person chooses, a wait alone sends a notification, and nothing is stored", () => {
+    expect(NOTIFICATION_EVENTS_STORAGE_KEY).toBe("agent-lookout-notification-events");
+    expect(getNotificationSetting().events).toEqual(["needs-you"]);
+    expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBeNull();
+  });
+
+  test("choosing one stores the list beside the choice, tells listeners, and asks the browser nothing", () => {
+    const listener = vi.fn();
+    const stop = subscribeToNotificationSetting(listener);
+
+    chooseNotificationEvent("finished", true);
+    expect(getNotificationSetting().events).toEqual(["needs-you", "finished"]);
+    expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("needs-you,finished");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    chooseNotificationEvent("needs-you", false);
+    chooseNotificationEvent("ended", true);
+    expect(getNotificationSetting().events).toEqual(["finished", "ended"]);
+    expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("finished,ended");
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    // Choosing what is already chosen changes nothing and tells nobody.
+    chooseNotificationEvent("ended", true);
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    // Every one off is a choice too, and is kept.
+    chooseNotificationEvent("finished", false);
+    chooseNotificationEvent("ended", false);
+    expect(getNotificationSetting().events).toEqual([]);
+    expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("");
+    expect(host.asked).toBe(0);
+    // Only the events were written. Notifications themselves are still off.
+    expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
+    stop();
+  });
+
+  test("the choice is still there when the page is opened again", () => {
+    chooseNotificationEvent("failed", true);
+    resetNotificationSettingForTests();
+    expect(getNotificationSetting().events).toEqual(["needs-you", "failed"]);
+  });
+
+  test.each(["finished;failed", "sometimes", "needs-you,,ended", "on"])(
+    "a stored list that cannot be read, %j, is the default",
+    (stored) => {
+      localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, stored);
+      expect(getNotificationSetting().events).toEqual(["needs-you"]);
+    },
+  );
+
+  test("the events are kept while notifications are off, and are in force only while they are on", async () => {
+    chooseNotificationEvent("finished", true);
+    expect(getNotificationSetting()).toMatchObject({
+      on: false,
+      events: ["needs-you", "finished"],
+    });
+    expect(notificationEventsInForce()).toEqual([]);
+
+    host.state = "granted";
+    await turnOnNotifications();
+    expect(notificationEventsInForce()).toEqual(["needs-you", "finished"]);
+
+    turnOffNotifications();
+    expect(notificationEventsInForce()).toEqual([]);
+    expect(getNotificationSetting().events).toEqual(["needs-you", "finished"]);
+  });
+
+  test("a choice made in another tab at this address is followed, and the same list again is no change", () => {
+    const listener = vi.fn();
+    const stop = subscribeToNotificationSetting(listener);
+    const before = getNotificationSetting();
+
+    localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "needs-you");
+    window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATION_EVENTS_STORAGE_KEY }));
+    expect(getNotificationSetting()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+
+    localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "failed,ended");
+    window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATION_EVENTS_STORAGE_KEY }));
+    expect(getNotificationSetting().events).toEqual(["failed", "ended"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Storage cleared altogether: back to the default.
+    localStorage.clear();
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    expect(getNotificationSetting().events).toEqual(["needs-you"]);
+    expect(listener).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  test("when storage is blocked the choice still holds until the page is closed", () => {
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Blocked.", "SecurityError");
+    });
+    onTestFinished(() => write.mockRestore());
+
+    expect(() => chooseNotificationEvent("ended", true)).not.toThrow();
+    expect(getNotificationSetting().events).toEqual(["needs-you", "ended"]);
+  });
 });

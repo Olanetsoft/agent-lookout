@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   BASIS,
+  BASIS_WITHOUT_LOCKS,
   CODEX_HOME_ENV,
   CODEX_OWN_HOME_ENV,
   NEEDS_YOU_NOTE,
@@ -11,6 +12,7 @@ import {
 import type { CodexIo } from "@collector/adapters/codex/io";
 import { INDEX_PROMPT_REFRESH_MS, INDEX_REFRESH_MS } from "@collector/adapters/codex/rollouts";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/sessions/waitChanges";
 import {
   CODEX_HOME,
   DAY,
@@ -424,6 +426,51 @@ describe("when Codex cannot be read", () => {
       `${healthy()} The list of open sessions at ~/.codex/thread-writer-locks could not be read, so a session that has ended cannot be told from one that is idle, and none is shown as finished.`,
     );
     expect(statuses(sessions)).toEqual({ [ids.finished]: "idle" });
+  });
+
+  test("one poll whose folder of locks cannot be listed is read another way, so nothing seems to finish when it can be again", async () => {
+    const files = emptyCodex();
+    addSession(files, {
+      thread: ids.finished,
+      lines: linesFor("docs-site", ids.finished, [[NOW - 2 * 60 * MINUTE, "task_complete"]]),
+    });
+    addSession(files, {
+      thread: ids.idle,
+      created: "2026-10-01T10-00-00",
+      lines: linesFor("search-indexing", ids.idle, [[NOW - MINUTE, "task_complete"]]),
+      lock: true,
+    });
+    const clock = handClock();
+    const adapter = codexAdapterFor(files, { now: clock.now });
+
+    let memory = EMPTY_CHANGE_MEMORY;
+    const changes: string[] = [];
+    const read: { basis: string | undefined; statuses: Record<string, string> }[] = [];
+    for (let poll = 0; poll < 4; poll += 1) {
+      clock.set(NOW + poll * 2_000);
+      if (poll === 2) files.fail(LOCKS, "EMFILE");
+      if (poll === 3) files.heal(LOCKS);
+      const result = await adapter.poll();
+      read.push({ basis: result.basis, statuses: statuses(result.sessions) });
+      // As the poller puts it in the snapshot.
+      const health = { ...result.health, basis: result.basis };
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [health],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      changes.push(...next.changes.map(({ event, session }) => `${session.name} ${event}`));
+    }
+
+    const usual = { [ids.finished]: "finished", [ids.idle]: "idle" };
+    expect(read).toEqual([
+      { basis: BASIS, statuses: usual },
+      { basis: BASIS, statuses: usual },
+      { basis: BASIS_WITHOUT_LOCKS, statuses: { [ids.finished]: "idle", [ids.idle]: "idle" } },
+      { basis: BASIS, statuses: usual },
+    ]);
+    expect(changes).toEqual([]);
   });
 
   test("one session file that cannot be opened does not keep the others from being listed", async () => {

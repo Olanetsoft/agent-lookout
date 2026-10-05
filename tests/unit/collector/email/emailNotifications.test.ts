@@ -15,6 +15,7 @@ const SECOND = 1_000;
 const SETTINGS: EmailSettings = {
   to: "notify@example.com",
   from: "notify@example.com",
+  events: ["needs-you"],
   afterMs: 60 * SECOND,
   server: {
     host: "smtp.example.com",
@@ -437,6 +438,7 @@ describe("the status", () => {
     expect(status).toEqual({
       on: true,
       to: "n…@example.com",
+      events: ["needs-you"],
       afterMs: 60_000,
       problem: null,
       last: null,
@@ -457,6 +459,7 @@ describe("the status", () => {
     expect(emailOffStatus(null)).toEqual({
       on: false,
       to: null,
+      events: null,
       afterMs: null,
       problem: null,
       last: null,
@@ -465,5 +468,144 @@ describe("the status", () => {
     expect(emailOffStatus("AGENT_LOOKOUT_SMTP_URL is not set.").problem).toBe(
       "AGENT_LOOKOUT_SMTP_URL is not set.",
     );
+  });
+});
+
+describe("finished, failed and ended", () => {
+  function over(n: number, status: "finished" | "failed", name = `session-${n}`): Session {
+    return makeSession({ id: id(n), name, status, statusSince: null });
+  }
+
+  test("a wait alone is emailed unless the setting names others", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({}, sender);
+    await poll(0, [working(1), working(2)]);
+    await poll(2 * SECOND, [over(1, "finished")]);
+    await poll(HOUR_MS, []);
+    expect(sender.sent).toEqual([]);
+  });
+
+  test("each event chosen is emailed at once, without the delay a wait has, with its own subject", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({ events: ["finished", "failed", "ended"] }, sender);
+    await poll(0, [
+      working(1, "billing-webhooks"),
+      working(2, "search-indexing"),
+      working(3, "docs-site"),
+    ]);
+    await poll(2 * SECOND, [over(1, "finished", "billing-webhooks"), working(3, "docs-site")]);
+    expect(subjects(sender)).toEqual(["billing-webhooks finished", "search-indexing ended"]);
+
+    await poll(4 * SECOND, [
+      over(1, "finished", "billing-webhooks"),
+      over(3, "failed", "docs-site"),
+    ]);
+    expect(subjects(sender)).toEqual([
+      "billing-webhooks finished",
+      "search-indexing ended",
+      "docs-site failed",
+    ]);
+    expect(sender.sent[0]?.text).toContain("Agent Lookout saw this at ");
+    expect(sender.sent[0]?.text).toContain("Agent: Claude Code");
+  });
+
+  test("an event not chosen is not emailed, and a wait is not when needs-you is left out", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({ events: ["failed"], afterMs: 0 }, sender);
+    await poll(0, [working(1), working(2), working(3)]);
+    await poll(2 * SECOND, [over(1, "finished"), waiting(2), over(3, "failed")]);
+    await poll(HOUR_MS, []);
+    expect(subjects(sender)).toEqual(["session-3 failed"]);
+  });
+
+  test("nothing is emailed for what was already over when the collector started, nor for it leaving", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({ events: ["finished", "failed", "ended"] }, sender);
+    await poll(0, [over(1, "finished"), over(2, "failed")]);
+    await poll(2 * SECOND, []);
+    expect(sender.sent).toEqual([]);
+  });
+
+  test("a source that stops answering ends nothing", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({ events: ["ended"] }, sender);
+    await poll(0, [working(1)]);
+    await poll(2 * SECOND, [], "error");
+    expect(sender.sent).toEqual([]);
+    // It answers again without the session: that is an end.
+    await poll(4 * SECOND, []);
+    expect(subjects(sender)).toEqual(["session-1 ended"]);
+  });
+
+  test("a wait and a finish are emailed together under one hourly limit, and a finish it held goes once the hour lets it", async () => {
+    const sender = fakeSender();
+    const { email, poll } = setUp({ events: ["needs-you", "finished"], afterMs: 0 }, sender);
+    const many = (count: number, make: (n: number) => Session) =>
+      Array.from({ length: count }, (_, index) => make(index + 1));
+    await poll(
+      0,
+      many(25, (n) => working(n)),
+    );
+    await poll(2 * SECOND, [
+      ...many(18, (n) => waiting(n)),
+      ...many(25, (n) => working(n)).slice(18),
+    ]);
+    expect(sender.sent).toHaveLength(18);
+
+    // Five finish: two can go, and three are held by the limit.
+    await poll(4 * SECOND, [
+      ...many(18, (n) => waiting(n)),
+      ...many(23, (n) => over(n, "finished")).slice(18),
+      ...many(25, (n) => working(n)).slice(23),
+    ]);
+    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(subjects(sender).slice(18)).toEqual(["session-19 finished", "session-20 finished"]);
+    expect(email.status().limitedUntil).toBe(T0 + 2 * SECOND + HOUR_MS);
+
+    // The hour has passed. The three held go, in the order they finished.
+    await poll(
+      HOUR_MS + 4 * SECOND,
+      many(18, (n) => waiting(n)),
+    );
+    expect(subjects(sender).slice(20, 23)).toEqual([
+      "session-21 finished",
+      "session-22 finished",
+      "session-23 finished",
+    ]);
+    expect(sender.sent[20]?.text).toMatch(/Agent Lookout saw this at \d\d:\d\d\./);
+    await email.settled();
+  });
+
+  test("when the hourly limit lets one go, a finish held back goes before a wait held longer", async () => {
+    const sender = fakeSender();
+    const { poll } = setUp({ events: ["needs-you", "finished"], afterMs: 0 }, sender);
+    const sessions = (waits: number, last: Session) => [
+      ...Array.from({ length: waits }, (_, index) => waiting(index + 1)),
+      ...Array.from({ length: 21 - waits }, (_, index) => working(waits + index + 1)),
+      last,
+    ];
+    await poll(0, sessions(0, working(22)));
+    // One goes first, and nineteen a moment later: the hour is full.
+    await poll(2 * SECOND, sessions(1, working(22)));
+    await poll(4 * SECOND, sessions(20, working(22)));
+    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+
+    await poll(10 * 60 * SECOND, sessions(21, working(22)));
+    await poll(20 * 60 * SECOND, sessions(21, over(22, "finished")));
+    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+
+    // The first email of the hour is an hour old, so one more can go.
+    await poll(HOUR_MS + 2 * SECOND, sessions(21, over(22, "finished")));
+    expect(subjects(sender).slice(EMAILS_PER_HOUR)).toEqual(["session-22 finished"]);
+    await poll(HOUR_MS + 4 * SECOND, sessions(21, over(22, "finished")));
+    expect(subjects(sender).slice(EMAILS_PER_HOUR)).toEqual([
+      "session-22 finished",
+      "session-21 is waiting for permission",
+    ]);
+  });
+
+  test("the status names the events that are emailed", () => {
+    const { email } = setUp({ events: ["needs-you", "ended"] });
+    expect(email.status().events).toEqual(["needs-you", "ended"]);
   });
 });

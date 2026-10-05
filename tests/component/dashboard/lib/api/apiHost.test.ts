@@ -4,6 +4,8 @@ import { NOTIFICATIONS_HEADER } from "@core/api";
 import { apiRequest, setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
+  chooseNotificationEvent,
+  NOTIFICATION_EVENTS_STORAGE_KEY,
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
   turnOffNotifications,
@@ -82,6 +84,32 @@ test("a permission taken away in the browser's settings is said at the next requ
 
   notifications.state = "denied";
   expect(await said()).toBe("off");
+});
+
+test("with other events chosen the page names them, and on alone still means a wait alone", async () => {
+  notifications.state = "granted";
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  expect(await said()).toBe("on");
+
+  chooseNotificationEvent("finished", true);
+  expect(await said()).toBe("on; events=needs-you,finished");
+
+  chooseNotificationEvent("needs-you", false);
+  chooseNotificationEvent("ended", true);
+  expect(await said()).toBe("on; events=finished,ended");
+
+  // None chosen is the same as off.
+  chooseNotificationEvent("finished", false);
+  chooseNotificationEvent("ended", false);
+  expect(await said()).toBe("off");
+});
+
+test("events chosen while notifications are off say nothing until they are on", async () => {
+  localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "failed");
+  expect(await said()).toBe("off");
+
+  await turnOnNotifications();
+  expect(await said()).toBe("on; events=failed");
 });
 
 test("a request that is refused for naming another machine says nothing to anyone", async () => {

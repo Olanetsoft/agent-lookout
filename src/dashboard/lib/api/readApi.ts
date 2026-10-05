@@ -15,6 +15,7 @@ import type {
   Surface,
   WaitingReason,
 } from "@core/sessions/session";
+import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
 
 /**
  * Reads what the API sent into the shapes the page draws.
@@ -173,6 +174,8 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   }
   const advice = text(value.advice);
   if (advice) source.advice = advice;
+  const basis = text(value.basis);
+  if (basis) source.basis = basis;
   return source;
 }
 
@@ -270,19 +273,29 @@ function readEmailOutcome(value: unknown): EmailOutcome | null {
   return { at, sent: false, reason: shortText(value.reason) ?? "the email could not be sent" };
 }
 
+/** The events that are emailed, in their own order. A name the page does not know is passed over. Null when none is known. */
+function readEmailEvents(value: unknown): NoticeEvent[] | null {
+  if (!Array.isArray(value)) return null;
+  const named = value.filter((name): name is string => typeof name === "string");
+  const events = NOTICE_EVENTS.filter((event) => named.includes(event));
+  return events.length > 0 ? events : null;
+}
+
 /**
  * The answer of `/api/email`. Email counts as on only when the answer says so
- * and gives the address and the delay, so a broken answer never claims that
- * emails are going out.
+ * and gives the address, the events and the delay, so a broken answer never
+ * claims that emails are going out.
  */
 export function readEmailStatus(data: unknown): EmailStatusResponse | null {
   if (!isRecord(data) || typeof data.on !== "boolean") return null;
   const to = shortText(data.to);
+  const events = readEmailEvents(data.events);
   const afterMs = number(data.afterMs);
-  const on = data.on && to !== null && afterMs !== null && afterMs >= 0;
+  const on = data.on && to !== null && events !== null && afterMs !== null && afterMs >= 0;
   return {
     on,
     to: on ? to : null,
+    events: on ? events : null,
     afterMs: on ? afterMs : null,
     problem: on ? null : shortText(data.problem),
     last: on ? readEmailOutcome(data.last) : null,

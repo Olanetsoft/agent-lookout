@@ -17,9 +17,13 @@ export interface AdapterResult {
    *   command.
    * - `feed`: the command's answer, while the registry cannot be relied on.
    *
-   * The Codex adapter has one, `files`: Codex's session files, its folder of
-   * open-session locks and its file of session names. So has the status-file
-   * adapter: the folder of status files.
+   * The Codex adapter has two:
+   * - `files`: Codex's session files, its folder of open-session locks and its
+   *   file of session names. The usual one.
+   * - `files-without-locks`: the same while the folder of locks is missing or
+   *   cannot be listed, when no session can be shown as finished.
+   *
+   * The status-file adapter has one, `files`: the folder of status files.
    */
   basis?: string;
 }

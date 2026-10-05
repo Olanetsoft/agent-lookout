@@ -83,6 +83,8 @@ A crash leaves the lock behind. The next Codex to start removes locks no process
 
 Only a Codex of 0.155.0 or later writes locks, and the folder is shared by every Codex that uses the same Codex folder: the Codex CLI, the IDE extension and the desktop app may each bundle a different version. So a missing lock means a session has ended only when the session was created by a Codex that writes locks. For a session whose `cli_version` is older than 0.155.0, a pre-release of 0.155.0, `0.0.0` (a build from source) or missing, a missing lock says nothing: the status follows the file, as it does when there is no lock folder, and the Sources view says some sessions come from an older Codex. A lock that is there means open, whatever the version.
 
+While the folder is missing or cannot be listed, no session is shown as finished, so one that had finished shows as idle. Such a poll is named apart for the poller (`files-without-locks`, not `files`), and is compared only with polls read the same way. So a listing that fails once does not make every finished session seem to start again and finish, in the Events log or in a notification.
+
 ### The names file
 
 `session_index.jsonl`: one line per name given to a session, `{"id":"<thread id>","thread_name":"<name>","updated_at":"<time>"}`. Codex appends a line on each rename, and the newest line for an id wins. It rewrites the file only to remove a session's names (`codex-rs/rollout/src/session_index.rs`). Only `id` and `thread_name` are kept.

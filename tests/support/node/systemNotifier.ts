@@ -4,11 +4,11 @@
 // machine it runs on.
 
 import type { SystemNotifier } from "@collector/notifications/systemNotifier";
-import type { WaitNotice } from "@core/sessions/waiting";
+import type { Notice } from "@core/sessions/waiting";
 
 export interface FakeSystemNotifier extends SystemNotifier {
   /** Everything it was asked to show, in order. */
-  shown: WaitNotice[];
+  shown: Notice[];
   /** Makes the next `show` throw, as a notifier never should. */
   throwsNext: boolean;
 }

@@ -1,8 +1,10 @@
 import type { Session, WaitingReason } from "./session.ts";
+import type { NoticeEvent } from "./waitChanges.ts";
 
-// What is said about a session that waits for the person. The dashboard and the
-// collector both say it, in the Needs you panel, in a notification and in an
-// email, so the words are kept here and none of them has a copy.
+// What is said about a session that waits for the person, or that finished,
+// failed or ended. The dashboard and the collector both say it, in the Needs
+// you panel, in a notification and in an email, so the words are kept here and
+// none of them has a copy.
 
 const WAITING_LABEL: Record<WaitingReason, string> = {
   permission: "Waiting for permission",
@@ -35,8 +37,8 @@ export function sessionTitle(session: Pick<Session, "id" | "name" | "project">):
   return session.name.trim() !== "" ? session.name : session.project || session.id;
 }
 
-/** What a notification of a wait says. */
-export interface WaitNotice {
+/** What a notification says. */
+export interface Notice {
   title: string;
   body: string;
 }
@@ -48,6 +50,39 @@ export interface WaitNotice {
  */
 export function waitNotice(
   session: Pick<Session, "id" | "name" | "project" | "waitingReason">,
-): WaitNotice {
+): Notice {
   return { title: sessionTitle(session), body: waitingLabel(session) };
+}
+
+/** Each event as Settings lists it, and as a notification of any but a wait says it. */
+export const NOTICE_EVENT_LABEL: Record<NoticeEvent, string> = {
+  "needs-you": "Needs you",
+  finished: "Finished",
+  failed: "Failed",
+  ended: "Ended",
+};
+
+/** The same events, said of a session by its name: "billing-webhooks finished". */
+const OVER_PHRASE: Record<Exclude<NoticeEvent, "needs-you">, string> = {
+  finished: "finished",
+  failed: "failed",
+  ended: "ended",
+};
+
+/** What happened to a session that is over, as the words that follow its name. */
+export function overPhrase(event: Exclude<NoticeEvent, "needs-you">): string {
+  return OVER_PHRASE[event];
+}
+
+/**
+ * The notification for one change: the session's name as the title, and what
+ * happened as the text. A wait gives its reason, as `waitNotice` does, and the
+ * others say Finished, Failed or Ended.
+ */
+export function changeNotice(change: {
+  event: NoticeEvent;
+  session: Pick<Session, "id" | "name" | "project" | "waitingReason">;
+}): Notice {
+  if (change.event === "needs-you") return waitNotice(change.session);
+  return { title: sessionTitle(change.session), body: NOTICE_EVENT_LABEL[change.event] };
 }

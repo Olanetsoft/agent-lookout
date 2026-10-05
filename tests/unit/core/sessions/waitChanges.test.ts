@@ -8,7 +8,17 @@ import type {
   SourceId,
   SourceState,
 } from "@core/sessions/session";
-import { EMPTY_WAIT_MEMORY, waitChanges, type WaitMemory } from "@core/sessions/waitChanges";
+import {
+  EMPTY_CHANGE_MEMORY,
+  EMPTY_WAIT_MEMORY,
+  readNoticeEvents,
+  sessionChanges,
+  waitChanges,
+  writeNoticeEvents,
+  type ChangeMemory,
+  type SessionChange,
+  type WaitMemory,
+} from "@core/sessions/waitChanges";
 import { makeSession } from "@tests/fixtures/session";
 
 const at = 1_700_000_060_000;
@@ -741,4 +751,414 @@ describe("over a long run of snapshots", () => {
     expect(waitingAtAFirstAnswer).toBeGreaterThan(100);
     expect(begunAgain).toBeGreaterThan(100);
   });
+});
+
+describe("sessionChanges: what happened to each session", () => {
+  const D = "claude-code:00000000-0000-4000-8000-00000000000d";
+
+  function withStatus(id: string, status: SessionStatus, overrides: Partial<Session> = {}) {
+    return makeSession({ id, status, ...overrides });
+  }
+
+  /** The memory after each snapshot in turn, starting from nothing. */
+  function seenAfter(...snapshots: SessionsSnapshot[]): ChangeMemory {
+    return snapshots.reduce(
+      (memory, each) => sessionChanges(memory, each).memory,
+      EMPTY_CHANGE_MEMORY,
+    );
+  }
+
+  /** The changes as plain data: the event and the session's id. */
+  function said(changes: SessionChange[]): [string, string][] {
+    return changes.map(({ event, session }) => [event, session.id]);
+  }
+
+  describe("each event", () => {
+    test("a session that starts waiting is needs-you, with the session as it is now", () => {
+      const memory = seenAfter(snapshot([working(A)]));
+      const now = waiting(A, { name: "checkout-flow", waitingReason: "question" });
+      const result = sessionChanges(memory, snapshot([now]));
+      expect(result.changes).toEqual([{ event: "needs-you", session: now }]);
+      expect(result.stopped).toEqual([]);
+    });
+
+    test.each<SessionStatus>(["working", "idle", "needs-you", "unknown", "failed"])(
+      "a session that was %s and is now finished has finished",
+      (before) => {
+        const memory = seenAfter(snapshot([withStatus(A, before)]));
+        const now = withStatus(A, "finished", { name: "billing-webhooks" });
+        const result = sessionChanges(memory, snapshot([now]));
+        expect(result.changes).toEqual([{ event: "finished", session: now }]);
+      },
+    );
+
+    test.each<SessionStatus>(["working", "idle", "needs-you", "unknown", "finished"])(
+      "a session that was %s and is now failed has failed",
+      (before) => {
+        const memory = seenAfter(snapshot([withStatus(A, before)]));
+        const result = sessionChanges(memory, snapshot([withStatus(A, "failed")]));
+        expect(said(result.changes)).toEqual([["failed", A]]);
+      },
+    );
+
+    test.each<SessionStatus>(["working", "idle", "needs-you", "unknown"])(
+      "a session that was %s and is gone from the list has ended, as it was last seen",
+      (before) => {
+        const last = withStatus(A, before, { name: "search-indexing" });
+        const memory = seenAfter(snapshot([last, working(B)]));
+        const result = sessionChanges(memory, snapshot([working(B)]));
+        expect(result.changes).toEqual([{ event: "ended", session: last }]);
+      },
+    );
+
+    test("a waiting session that ends has its wait stopped as well", () => {
+      const memory = seenAfter(snapshot([working(A)]), snapshot([waiting(A)]));
+      const result = sessionChanges(memory, snapshot([]));
+      expect(said(result.changes)).toEqual([["ended", A]]);
+      expect(result.stopped).toEqual([A]);
+    });
+
+    test("nothing else is an event: a session going on, appearing, or changing between other statuses", () => {
+      const memory = seenAfter(snapshot([working(A), withStatus(B, "idle")]));
+      const result = sessionChanges(
+        memory,
+        snapshot([
+          withStatus(A, "idle", { name: "a new name" }),
+          working(B),
+          working(C),
+          withStatus(D, "unknown"),
+        ]),
+      );
+      expect(result.changes).toEqual([]);
+      expect(result.stopped).toEqual([]);
+    });
+  });
+
+  describe("the baseline", () => {
+    test("a source's first answer says nothing, whatever is in it", () => {
+      const result = sessionChanges(
+        EMPTY_CHANGE_MEMORY,
+        snapshot([waiting(A), withStatus(B, "finished"), withStatus(C, "failed"), working(D)]),
+      );
+      expect(result.changes).toEqual([]);
+      expect(result.stopped).toEqual([]);
+    });
+
+    test("what was already true at the first answer is never announced later", () => {
+      const first = snapshot([waiting(A), withStatus(B, "finished"), withStatus(C, "failed")]);
+      const memory = seenAfter(first, first);
+      // The finished and failed sessions leave the list: they had said what happened.
+      const result = sessionChanges(memory, snapshot([waiting(A)]));
+      expect(result.changes).toEqual([]);
+    });
+
+    test("a source that was searching at first has its first real answer as the baseline", () => {
+      const searching = snapshot([], [source("claude-code", "searching")]);
+      const memory = seenAfter(searching);
+      const first = sessionChanges(memory, snapshot([withStatus(A, "finished"), waiting(B)]));
+      expect(first.changes).toEqual([]);
+
+      const next = sessionChanges(first.memory, snapshot([withStatus(B, "failed")]));
+      expect(said(next.changes)).toEqual([["failed", B]]);
+    });
+
+    test("a session first seen already over says nothing, after the baseline too", () => {
+      const memory = seenAfter(snapshot([working(A)]));
+      const result = sessionChanges(
+        memory,
+        snapshot([working(A), withStatus(B, "finished"), withStatus(C, "failed")]),
+      );
+      expect(result.changes).toEqual([]);
+    });
+
+    test("a source that was not set up has a baseline of no sessions, so a session in it that later finishes is news", () => {
+      const F = "status-files:night-shift.json";
+      const custom = (status: SessionStatus) =>
+        makeSession({ id: F, source: "status-files", agent: "Night Shift", status });
+      const notSetUp = snapshot([], [source("status-files", "not-set-up")]);
+      const memory = seenAfter(notSetUp, snapshot([custom("working")], [source("status-files")]));
+      const result = sessionChanges(
+        memory,
+        snapshot([custom("finished")], [source("status-files")]),
+      );
+      expect(said(result.changes)).toEqual([["finished", F]]);
+    });
+
+    test("each source has a baseline of its own", () => {
+      const X = "codex:00000000-0000-4000-8000-00000000000e";
+      const codexWorking = makeSession({ id: X, source: "codex", status: "working" });
+      const both = [source("claude-code"), source("codex")];
+      const memory = seenAfter(snapshot([working(A)], [source("claude-code")]));
+      // Codex answers for the first time with a session that has finished: a baseline.
+      const result = sessionChanges(
+        memory,
+        snapshot([withStatus(A, "finished"), { ...codexWorking, status: "finished" }], both),
+      );
+      expect(said(result.changes)).toEqual([["finished", A]]);
+    });
+  });
+
+  describe("a source that stops answering", () => {
+    test.each<SourceState>(["searching", "unavailable", "error"])(
+      "while it is %s, nothing about its sessions is said, and nothing ends",
+      (state) => {
+        const memory = seenAfter(snapshot([working(A), waiting(B)]));
+        const result = sessionChanges(memory, snapshot([], [source("claude-code", state)]));
+        expect(result.changes).toEqual([]);
+        expect(result.stopped).toEqual([]);
+        expect(result.memory.seen).toEqual(memory.seen);
+      },
+    );
+
+    test("a source missing from the snapshot altogether says nothing either", () => {
+      const memory = seenAfter(snapshot([working(A)]));
+      const result = sessionChanges(memory, snapshot([], [source("codex")]));
+      expect(result.changes).toEqual([]);
+    });
+
+    test("when it answers again, what changed meanwhile is said once", () => {
+      const memory = seenAfter(
+        snapshot([working(A), working(B), working(C)]),
+        snapshot([], [source("claude-code", "error")]),
+      );
+      const result = sessionChanges(memory, snapshot([withStatus(A, "finished"), working(C)]));
+      expect(said(result.changes)).toEqual([
+        ["finished", A],
+        ["ended", B],
+      ]);
+      expect(
+        sessionChanges(result.memory, snapshot([withStatus(A, "finished"), working(C)])).changes,
+      ).toEqual([]);
+    });
+  });
+
+  describe("a source read in more than one way", () => {
+    /** An answer of Claude Code read one way, as the poller names it. */
+    function readAs(basis: string, sessions: Session[]): SessionsSnapshot {
+      return snapshot(sessions, [{ ...source("claude-code"), basis }]);
+    }
+
+    /** Every change over the snapshots in turn, starting from nothing. */
+    function saidOver(...snapshots: SessionsSnapshot[]): [string, string][] {
+      let memory = EMPTY_CHANGE_MEMORY;
+      const all: SessionChange[] = [];
+      for (const each of snapshots) {
+        const result = sessionChanges(memory, each);
+        memory = result.memory;
+        all.push(...result.changes);
+      }
+      return said(all);
+    }
+
+    test("a job the fallback cannot see has not ended, and its finish is told once when the command answers again", () => {
+      const job = (status: SessionStatus) => withStatus(B, status, { name: "billing-webhooks" });
+      expect(
+        saidOver(
+          readAs("registry+feed", [working(A), job("working")]),
+          readAs("registry+feed", [working(A), job("working")]),
+          // The command failed: the registry alone, which has no such job.
+          readAs("registry", [working(A)]),
+          readAs("registry", [working(A)]),
+          readAs("registry+feed", [working(A), job("finished")]),
+        ),
+      ).toEqual([["finished", B]]);
+    });
+
+    test("the first answer read another way is a baseline, whatever it lacks or holds", () => {
+      expect(
+        saidOver(
+          readAs("registry+feed", [working(A), working(B)]),
+          readAs("registry", [withStatus(C, "finished")]),
+        ),
+      ).toEqual([]);
+    });
+
+    test("a session that ends while the other way is in use is told once, when the first way answers again", () => {
+      const result = saidOver(
+        readAs("registry+feed", [working(A), working(B)]),
+        readAs("registry", [working(A), working(B)]),
+        readAs("registry", [working(B)]),
+        readAs("registry+feed", [working(B)]),
+      );
+      expect(result).toEqual([["ended", A]]);
+    });
+
+    test("a session told to have ended is not told to have finished when the other way lists it so", () => {
+      expect(
+        saidOver(
+          readAs("registry+feed", [working(A)]),
+          readAs("registry", [working(A)]),
+          readAs("registry", []),
+          readAs("registry+feed", [withStatus(A, "finished")]),
+        ),
+      ).toEqual([["ended", A]]);
+    });
+
+    test("a session listed as over is not told to have ended when an older answer read another way is compared", () => {
+      expect(
+        saidOver(
+          readAs("registry", [working(A)]),
+          // Already finished at this way's first answer: a baseline.
+          readAs("registry+feed", [withStatus(A, "finished")]),
+          readAs("registry", []),
+        ),
+      ).toEqual([]);
+    });
+
+    test("one answer read without what tells a finished session apart says nothing, before or after", () => {
+      const X = "codex:00000000-0000-4000-8000-00000000000e";
+      const Y = "codex:00000000-0000-4000-8000-00000000000f";
+      const codex = (id: string, status: SessionStatus) =>
+        makeSession({ id, source: "codex", status });
+      const readCodex = (basis: string, sessions: Session[]) =>
+        snapshot(sessions, [{ ...source("codex"), basis }]);
+      expect(
+        saidOver(
+          readCodex("files", [codex(X, "finished"), codex(Y, "idle")]),
+          readCodex("files", [codex(X, "finished"), codex(Y, "idle")]),
+          readCodex("files-without-locks", [codex(X, "idle"), codex(Y, "idle")]),
+          readCodex("files", [codex(X, "finished"), codex(Y, "idle")]),
+        ),
+      ).toEqual([]);
+    });
+
+    test("a session known to be over is forgotten once no answer of its source lists it", () => {
+      let memory = EMPTY_CHANGE_MEMORY;
+      for (const each of [
+        readAs("registry+feed", [working(A)]),
+        readAs("registry+feed", [withStatus(A, "finished")]),
+        readAs("registry+feed", []),
+      ]) {
+        memory = sessionChanges(memory, each).memory;
+      }
+      expect(memory.over.get("claude-code")?.size).toBe(0);
+    });
+  });
+
+  test("a session that finishes and then leaves the list has finished, and has not ended", () => {
+    const memory = seenAfter(snapshot([working(A)]));
+    const finished = sessionChanges(memory, snapshot([withStatus(A, "finished")]));
+    expect(said(finished.changes)).toEqual([["finished", A]]);
+
+    const gone = sessionChanges(finished.memory, snapshot([]));
+    expect(gone.changes).toEqual([]);
+  });
+
+  test("a session that fails and then leaves the list has not ended either", () => {
+    const memory = seenAfter(snapshot([working(A)]), snapshot([withStatus(A, "failed")]));
+    expect(sessionChanges(memory, snapshot([])).changes).toEqual([]);
+  });
+
+  test("two changes in one snapshot are two events: those in the list in its order, then those that ended", () => {
+    const memory = seenAfter(snapshot([working(A), working(B), working(C), working(D)]));
+    const result = sessionChanges(
+      memory,
+      snapshot([withStatus(C, "failed"), working(B), waiting(D)]),
+    );
+    expect(said(result.changes)).toEqual([
+      ["failed", C],
+      ["needs-you", D],
+      ["ended", A],
+    ]);
+  });
+
+  test("a session that waits and then finishes is announced twice, and its wait stops when it finishes", () => {
+    const memory = seenAfter(snapshot([working(A)]));
+    const waits = sessionChanges(memory, snapshot([waiting(A)]));
+    expect(said(waits.changes)).toEqual([["needs-you", A]]);
+
+    const finishes = sessionChanges(waits.memory, snapshot([withStatus(A, "finished")]));
+    expect(said(finishes.changes)).toEqual([["finished", A]]);
+    expect(finishes.stopped).toEqual([A]);
+  });
+
+  test("a session that waits and finishes between two snapshots has only its finish seen", () => {
+    const memory = seenAfter(snapshot([working(A)]));
+    const result = sessionChanges(memory, snapshot([withStatus(A, "finished")]));
+    expect(said(result.changes)).toEqual([["finished", A]]);
+    expect(result.stopped).toEqual([]);
+  });
+
+  test("a session that finishes, runs again and finishes again has finished twice", () => {
+    const memory = seenAfter(snapshot([working(A)]));
+    const once = sessionChanges(memory, snapshot([withStatus(A, "finished")]));
+    const running = sessionChanges(once.memory, snapshot([working(A)]));
+    expect(running.changes).toEqual([]);
+    const twice = sessionChanges(running.memory, snapshot([withStatus(A, "finished")]));
+    expect(said(twice.changes)).toEqual([["finished", A]]);
+  });
+
+  test("a session listed twice counts once", () => {
+    const memory = seenAfter(snapshot([working(A)]));
+    const result = sessionChanges(
+      memory,
+      snapshot([withStatus(A, "finished"), withStatus(A, "finished")]),
+    );
+    expect(said(result.changes)).toEqual([["finished", A]]);
+  });
+
+  test("the same snapshot again reports nothing, and neither argument is changed", () => {
+    const memory = seenAfter(snapshot([working(A), waiting(B), working(C)]));
+    const next = snapshot([withStatus(A, "finished"), working(B)]);
+    const frozen = JSON.stringify(next);
+    const listed = (kept: ChangeMemory) => [
+      ...(kept.seen.get("claude-code")?.get("")?.keys() ?? []),
+    ];
+    const seenBefore = listed(memory);
+
+    const result = sessionChanges(memory, next);
+    expect(said(result.changes)).toEqual([
+      ["finished", A],
+      ["ended", C],
+    ]);
+    expect(JSON.stringify(next)).toBe(frozen);
+    expect(listed(memory)).toEqual(seenBefore);
+
+    const again = sessionChanges(result.memory, next);
+    expect(again.changes).toEqual([]);
+    expect(again.stopped).toEqual([]);
+  });
+
+  test("the waits it follows are the ones waitChanges follows", () => {
+    const snapshots = [
+      snapshot([working(A), waiting(B)]),
+      snapshot([waiting(A), working(B)]),
+      snapshot([], [source("claude-code", "error")]),
+      snapshot([waiting(A, { statusSince: at + 5_000 }), waiting(C)]),
+    ];
+    let waits: WaitMemory = EMPTY_WAIT_MEMORY;
+    let changes: ChangeMemory = EMPTY_CHANGE_MEMORY;
+    for (const each of snapshots) {
+      const byWaits = waitChanges(waits, each);
+      const bySessions = sessionChanges(changes, each);
+      waits = byWaits.memory;
+      changes = bySessions.memory;
+      expect(bySessions.stopped).toEqual(byWaits.stopped);
+      expect(
+        bySessions.changes.filter((change) => change.event === "needs-you").map((c) => c.session),
+      ).toEqual(byWaits.started);
+    }
+  });
+});
+
+describe("a list of events as it is written", () => {
+  test("is read whatever its spaces, case, order or repeats, and written in the one order", () => {
+    expect(readNoticeEvents("needs-you")).toEqual(["needs-you"]);
+    expect(readNoticeEvents(" Ended, needs-you ,FAILED,ended")).toEqual([
+      "needs-you",
+      "failed",
+      "ended",
+    ]);
+    expect(readNoticeEvents("")).toEqual([]);
+    expect(readNoticeEvents("  ")).toEqual([]);
+    expect(writeNoticeEvents(["ended", "needs-you", "finished"])).toBe("needs-you,finished,ended");
+    expect(writeNoticeEvents([])).toBe("");
+  });
+
+  test.each([",", "finished,", "finished,,failed", "finish", "needs you", "on", "finished;failed"])(
+    "is not read when any part is not one of the four names: %j",
+    (text) => {
+      expect(readNoticeEvents(text)).toBeNull();
+    },
+  );
 });

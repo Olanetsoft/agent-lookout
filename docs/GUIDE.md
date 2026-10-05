@@ -87,7 +87,7 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 ### Settings
 
-Settings has four cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself. Email says whether Agent Lookout emails you when a session has waited, which is set up when you start it, not here. This copy shows the version you are running.
+Settings has four cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, which is set up when you start it, not here. This copy shows the version you are running.
 
 #### Notifications
 
@@ -97,17 +97,32 @@ Notifications are off until you turn them on. The card says "Notifications are o
 
 If you refuse, the card shows Notifications are blocked and they stay off. Allow notifications for this address in the browser's site settings, then press the button again. In a browser with no way to show them, the card says This browser cannot show notifications and has no button.
 
-Nothing is sent for a session that was already waiting when you opened or reloaded the page, when you turned notifications on, or when Agent Lookout started. Each wait that begins after that sends one notification, and a session that is answered and later waits again sends another. A Codex session never sends one, because a Codex session never shows as needing you.
+While notifications are on, the card lists four events under the button, each with an Off and On switch:
 
-While a dashboard tab is open, the page makes each notification. Closing or reloading the page clears the notifications it showed, and a wait that is still open is not announced again. If Agent Lookout stops while a notification is showing, or can no longer read Claude Code's sessions (Sources then shows Claude Code as Not found or Not working), the page cannot tell when the session moves on. The notification then stays until you clear it, close the page, turn notifications off, or start Agent Lookout again and it finds the session no longer waiting.
+| Event     | Sends a notification when                                                                                         | Its text                                                        |
+| --------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Needs you | A session starts waiting for you                                                                                  | Waiting for permission, Asked you a question or Waiting for you |
+| Finished  | A session's status becomes finished                                                                               | Finished                                                        |
+| Failed    | A session's status becomes failed                                                                                 | Failed                                                          |
+| Ended     | A session that had not finished or failed leaves the list, as when its process ends or its status file is deleted | Ended                                                           |
+
+Needs you is on and the other three are off until you change them, so if you never touch the switches you are told of waits alone. A switch takes effect at once and asks your browser nothing. The list is hidden while notifications are off, and your choice is kept for when you turn them on again. Like the button's, it belongs to one browser at one address, and two tabs at the same address share it.
+
+A session shows as finished or failed when its agent says so: a Claude Code background job, a [status file](#your-own-agents) that says `finished` or `failed`, and a Codex session, which is finished once no Codex program has it open. Other Claude Code sessions do not say how they ended, so when one is closed it leaves the list and sends Ended. A session that leaves the list after it finished or failed sends nothing more.
+
+Each of these notifications has the session's name as its title. One that says Finished, Failed or Ended stays until you clear it. A session has one notification at a time, so a later one for the same session takes the place of the earlier: when a session that was waiting finishes, the notification of its wait is cleared and Finished takes its place.
+
+Nothing is sent for what was already true when you opened or reloaded the page, when you turned notifications on, or when Agent Lookout started: a session already waiting, or one that had already finished or failed. Each change after that sends one notification, and a session that is answered and later waits again sends another. A session whose agent cannot be read for a while, as when Sources shows Claude Code as Not working, has not ended: nothing is sent for it until it can be read again. Nor has a session that Agent Lookout cannot see while it reads an agent another way for a while, as when the `claude` command fails and Claude Code's sessions are read from its registry alone, which does not list background jobs: when the command answers again, what changed meanwhile is sent once. A Codex session never sends Needs you, because a Codex session never shows as needing you.
+
+While a dashboard tab is open, the page makes each notification. Closing or reloading the page, or switching Needs you off, clears the notifications of waits it showed, and a wait that is still open is not announced again. If Agent Lookout stops while a notification is showing, or can no longer read Claude Code's sessions (Sources then shows Claude Code as Not found or Not working), the page cannot tell when the session moves on. The notification then stays until you clear it, close the page, turn notifications off, or start Agent Lookout again and it finds the session no longer waiting.
 
 Your choice and the browser's permission belong to one browser at one address. `http://localhost:5173` and `http://127.0.0.1:4777` are different addresses, so notifications turned on at one are still off at the other. Two tabs at the same address share one notification for a wait. When you close one of them, the other shows the notification again, so it can appear a second time. With notifications on at two addresses, or in two browsers, each sends its own.
 
-With no dashboard tab open, Agent Lookout shows the notification itself, on a Mac. It checks the sessions every 2 seconds for as long as it runs, with a page open or not. When a wait begins and no page is there to show it, Agent Lookout runs `osascript`, a program that is part of macOS, to show a notification with the same title and text. Nothing is sent anywhere for this.
+With no dashboard tab open, Agent Lookout shows the notification itself, on a Mac. It checks the sessions every 2 seconds for as long as it runs, with a page open or not. When one of the events you chose happens and no page is there to show it, Agent Lookout runs `osascript`, a program that is part of macOS, to show a notification with the same title and text. Nothing is sent anywhere for this.
 
-The button in Settings covers these too. Every request a dashboard page makes tells Agent Lookout whether that page has notifications on, and Agent Lookout goes by the last thing a page said. Turn notifications off in Settings and Agent Lookout's own are off within a couple of seconds. If pages that are open at once disagree, it goes by whichever asked last. It keeps what it was told in memory only. Each time Agent Lookout starts, its own notifications are off until a dashboard page that has notifications on has been open once.
+The button and the switches in Settings cover these too. Every request a dashboard page makes tells Agent Lookout which events that page has notifications on for, and Agent Lookout goes by the last thing a page said. Turn notifications off in Settings, or switch an event off, and Agent Lookout's own follow within a couple of seconds. If pages that are open at once disagree, it goes by whichever asked last. It keeps what it was told in memory only. Each time Agent Lookout starts, its own notifications are off until a dashboard page that has notifications on has been open once.
 
-To have them from the moment it starts, without opening the dashboard, start Agent Lookout with `AGENT_LOOKOUT_NOTIFICATIONS=on`:
+To have them from the moment it starts, without opening the dashboard, start Agent Lookout with `AGENT_LOOKOUT_NOTIFICATIONS=on`. That turns on Needs you alone, until a page says otherwise:
 
 ```sh
 AGENT_LOOKOUT_NOTIFICATIONS=on npm start
@@ -115,12 +130,12 @@ AGENT_LOOKOUT_NOTIFICATIONS=on npm start
 
 A dashboard page still has the last word. Opening one that has notifications off turns Agent Lookout's own off too, until a page says they are on or Agent Lookout is started again.
 
-One wait sends one notification. While a tab with notifications on is open, the page shows each wait and Agent Lookout shows nothing. To make sure of that, when such a page has asked Agent Lookout for anything in the last 5 seconds, Agent Lookout holds its own notification back. If the page then fetches the sessions, the page has the wait and shows it, and Agent Lookout drops its own. If it does not, Agent Lookout shows the notification itself a few seconds later, at most about 6 seconds after the wait began. A wait that ends before then is not announced. Nor is a wait that begins in the couple of seconds around a reload of the page: the page that loads takes the session as already waiting, and Agent Lookout drops its own because a page has fetched the sessions. Two can still arrive for one wait when a page goes more than about 4 seconds between two fetches of the sessions, as when a browser slows a background tab down or the Mac has just woken.
+One wait sends one notification, and so does each finish, failure or end. While a tab with notifications on is open, the page shows each one and Agent Lookout shows nothing. To make sure of that, when such a page has asked Agent Lookout for anything in the last 5 seconds, Agent Lookout holds its own notification back. If the page then fetches the sessions, the page has the news and shows it, and Agent Lookout drops its own. If it does not, Agent Lookout shows the notification itself a few seconds later, at most about 6 seconds after it was seen. A wait that ends before then is not announced. Nor is a wait that begins in the couple of seconds around a reload of the page: the page that loads takes the session as already waiting, and Agent Lookout drops its own because a page has fetched the sessions. Two can still arrive for one wait, finish, failure or end when a page goes more than about 4 seconds between two fetches of the sessions, as when a browser slows a background tab down or the Mac has just woken. For a finish, a failure or an end two always arrive then, because the page still has the news when it next fetches.
 
 A notification that Agent Lookout shows itself is not the browser's, and differs from it:
 
 - macOS shows it as coming from Script Editor, which is how it labels whatever `osascript` shows.
-- It holds the session's name and the reason, and nothing that could open the session or bring the dashboard forward.
+- It holds the session's name and the reason, or Finished, Failed or Ended, and nothing that could open the session or bring the dashboard forward.
 - Agent Lookout cannot take it down. It stays in Notification Centre after the session moves on, until you clear it.
 
 These were checked on macOS 26.5 in the system's log, with the screen locked. There macOS filed each one under Script Editor and kept it in Notification Centre, without first asking whether Script Editor may show notifications. How one looks on screen, and what a click on it does, have not been checked. On any other system Agent Lookout shows none itself, and the browser's notifications work as described above.
@@ -133,7 +148,7 @@ The browser gives its permission to the address, not to Agent Lookout. Another p
 
 #### Email
 
-Agent Lookout can also email you when a session has waited for a while, for when you are away from the computer. It is off unless you set it up. With it off, which is the default, Agent Lookout sends nothing anywhere and opens no connection to a mail server.
+Agent Lookout can also email you when a session has waited for a while, for when you are away from the computer, and, if you choose, when a session finishes, fails or ends. It is off unless you set it up. With it off, which is the default, Agent Lookout sends nothing anywhere and opens no connection to a mail server.
 
 It is set up with settings in the environment when you start Agent Lookout, not on this page, and it has its own off switch: leaving those settings out. The button for notifications does not turn emails on or off.
 
@@ -146,7 +161,7 @@ Two settings turn email on:
 | `AGENT_LOOKOUT_EMAIL_TO` | The one address emails go to                                          |
 | `AGENT_LOOKOUT_SMTP_URL` | The mail server, as `smtps://name:password@server:port`, or `smtp://` |
 
-Two more can be left out. `AGENT_LOOKOUT_EMAIL_FROM` is the address emails come from, which is the address they go to unless you set it. If emails go to an address other than the one you sign in to the mail server with, set `AGENT_LOOKOUT_EMAIL_FROM` to the address you sign in with. Most providers refuse to send from any other. `AGENT_LOOKOUT_EMAIL_AFTER` is how many seconds a wait lasts before it is emailed: 60 unless you set it, and 0 for at once.
+Three more can be left out. `AGENT_LOOKOUT_EMAIL_FROM` is the address emails come from, which is the address they go to unless you set it. If emails go to an address other than the one you sign in to the mail server with, set `AGENT_LOOKOUT_EMAIL_FROM` to the address you sign in with. Most providers refuse to send from any other. `AGENT_LOOKOUT_EMAIL_AFTER` is how many seconds a wait lasts before it is emailed: 60 unless you set it, and 0 for at once. `AGENT_LOOKOUT_EMAIL_EVENTS` is what is emailed: one or more of `needs-you`, `finished`, `failed` and `ended`, the four events described under [Notifications](#notifications), separated by commas, such as `needs-you,finished`. Unless you set it, it is `needs-you`, a wait alone. The switches in Settings choose notifications only, not emails, because the page cannot change how Agent Lookout was started.
 
 In `AGENT_LOOKOUT_SMTP_URL`, write any `@`, `:`, `/`, `?`, `#` or `%` in the user name or the password as `%40`, `%3A`, `%2F`, `%3F`, `%23` or `%25`. A user name that is an email address is the usual case: `name@example.com` is written `name%40example.com`.
 
@@ -186,18 +201,21 @@ Then start Agent Lookout with them, brackets included:
 
 The brackets keep the settings to this one run, so the terminal does not keep them afterwards, and no program you start from it later is handed the password. For the development server, use `npm run dev` in place of `npm start`, inside the same brackets.
 
-To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or why it could not be, such as "The last email could not be sent: the mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
+To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." With other events set, it names each one, such as "Emails go to Y…@gmail.com when a session has waited 1 minute or finishes." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or why it could not be, such as "The last email could not be sent: the mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
 
 The card can say where emails go before any has been tried, so a wrong password or port shows only once a wait has lasted the delay. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_EMAIL_AFTER=0` as well, and let a session ask for permission. The card then says whether the email went. Start it again without that setting afterwards.
 
-An email's subject names the session and what happened: "checkout-flow is waiting for permission", "checkout-flow asked you a question" or "checkout-flow is waiting for you". Its text says how long the session has waited and since when, the name of its project folder, its app and its agent, and how to stop these emails. It holds no path, no prompt and no link. [PRIVACY.md](../PRIVACY.md#email) lists all it holds.
+An email's subject names the session and what happened: "checkout-flow is waiting for permission", "checkout-flow asked you a question" or "checkout-flow is waiting for you", and "billing-webhooks finished", "billing-webhooks failed" or "billing-webhooks ended". Its text says how long the session has waited and since when, or when Agent Lookout saw it finish, fail or end, then the name of its project folder, its app and its agent, and how to stop these emails. It holds no path, no prompt and no link. [PRIVACY.md](../PRIVACY.md#email) lists all it holds.
 
 - One email goes for a wait that has lasted the delay and is still open. A wait you answer before then sends nothing.
 - Each wait sends one email at most. A session you answer that waits again later sends another.
-- A session already waiting when Agent Lookout starts sends nothing, so starting it again does not send again.
-- At most 20 emails are tried in any hour, and a try that fails counts. Past that, none goes until the hour has passed, and the card says when the next can. A wait still open then is emailed then.
+- A session that finishes, fails or ends is emailed as soon as it is seen, with no delay.
+- Nothing is sent for what was already true when Agent Lookout starts, such as a session already waiting or one that had already finished, so starting it again does not send again.
+- At most 20 emails are tried in any hour, whatever they are for, and a try that fails counts. Past that, none goes until the hour has passed, and the card says when the next can. Then a finish, failure or end that was held back goes first, oldest first, and after those the waits still open.
 - An email that could not be sent is not tried again. The card says why, and the next wait sends its own.
-- A Codex session never sends one, because a Codex session never shows as needing you.
+- A Codex session never sends one for a wait, because a Codex session never shows as needing you. With `finished` or `ended` set, it sends one when it finishes or leaves the list.
+
+If `AGENT_LOOKOUT_EMAIL_EVENTS` holds anything other than those four names, email stays off, and the card and the terminal name the setting, as for any other setting that cannot be read.
 
 To turn email off, start Agent Lookout again without `AGENT_LOOKOUT_EMAIL_TO`. If you keep the settings in a file, start it without reading the file in. If you read the file in without the brackets, run `unset AGENT_LOOKOUT_EMAIL_TO AGENT_LOOKOUT_SMTP_URL` or open a new terminal first.
 
@@ -429,7 +447,7 @@ Agent Lookout only reads the folder. It never makes it, and never writes, rename
 
 It cannot stop, resume or answer a session. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
 
-A notification is sent only when a Claude Code session, or a session from a status file, starts waiting. Nothing is sent when a session finishes or fails. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
+A notification or an email is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 
 A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
@@ -437,7 +455,7 @@ A Claude Code background job is shown as finished or failed, and its row stays f
 
 Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
-Email is the one way it can tell you of a wait away from this computer, and it sends to one address. There are no webhooks or chat messages yet. An email that could not be sent is not tried again, and nothing is emailed when a session finishes or fails.
+Email is the one way it can tell you of a session away from this computer, and it sends to one address. There are no webhooks or chat messages yet. An email that could not be sent is not tried again. The events emailed are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS`, and not in Settings.
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
@@ -451,22 +469,23 @@ Put a setting in front of the command that starts Agent Lookout:
 AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 ```
 
-| Setting                       | What it does                                                                                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AGENT_LOOKOUT_PORT`          | The port `npm start` uses. The default is 4777.                                                                                                                    |
-| `AGENT_LOOKOUT_HOST`          | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.               |
-| `AGENT_LOOKOUT_CLAUDE_BIN`    | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                         |
-| `AGENT_LOOKOUT_CLAUDE_HOME`   | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                  |
-| `AGENT_LOOKOUT_CLAUDE_FEED`   | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed. |
-| `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                   |
-| `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                   |
-| `AGENT_LOOKOUT_STATUS_DIR`    | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                      |
-| `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications itself from the moment it starts. A dashboard page that has notifications off turns them off again.   |
-| `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                        |
-| `AGENT_LOOKOUT_EMAIL_TO`      | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                  |
-| `AGENT_LOOKOUT_SMTP_URL`      | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                           |
-| `AGENT_LOOKOUT_EMAIL_FROM`    | The address emails come from. The default is the address they go to.                                                                                               |
-| `AGENT_LOOKOUT_EMAIL_AFTER`   | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                            |
+| Setting                       | What it does                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_LOOKOUT_PORT`          | The port `npm start` uses. The default is 4777.                                                                                                                           |
+| `AGENT_LOOKOUT_HOST`          | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                      |
+| `AGENT_LOOKOUT_CLAUDE_BIN`    | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                |
+| `AGENT_LOOKOUT_CLAUDE_HOME`   | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                         |
+| `AGENT_LOOKOUT_CLAUDE_FEED`   | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.        |
+| `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                          |
+| `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                          |
+| `AGENT_LOOKOUT_STATUS_DIR`    | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                             |
+| `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. |
+| `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                               |
+| `AGENT_LOOKOUT_EMAIL_TO`      | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                         |
+| `AGENT_LOOKOUT_SMTP_URL`      | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                  |
+| `AGENT_LOOKOUT_EMAIL_FROM`    | The address emails come from. The default is the address they go to.                                                                                                      |
+| `AGENT_LOOKOUT_EMAIL_AFTER`   | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                                   |
+| `AGENT_LOOKOUT_EMAIL_EVENTS`  | What is emailed: `needs-you`, `finished`, `failed` and `ended`, any of them, separated by commas. The default is `needs-you`.                                             |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
@@ -530,12 +549,12 @@ Use port 4777 if you started it with `npm start`. It prints the sessions it foun
 
 ### No notification appears
 
-1. Open Settings in the same browser, at the same address, where you turned notifications on. If the card says "Notifications are off.", press Turn on notifications. If it shows Notifications are blocked, allow notifications for this address in the browser's site settings first.
+1. Open Settings in the same browser, at the same address, where you turned notifications on. If the card says "Notifications are off.", press Turn on notifications. If it shows Notifications are blocked, allow notifications for this address in the browser's site settings first. Check that the event you expected is switched on in the list under the button.
 2. If the card says "Notifications are on.", your browser is allowed to show them, and macOS may be holding them back. The card reads the browser's permission and cannot see the system's. Open System Settings, then Notifications, choose your browser and check that Allow notifications is on.
 3. Check Focus. While a Focus such as Do Not Disturb is on, notifications go to Notification Centre without appearing on screen.
 4. With a dashboard tab open, check that the page does not say Agent Lookout has stopped updating.
 5. With no dashboard tab open, Agent Lookout shows notifications itself on a Mac only, and only once a page that has notifications on has been open since Agent Lookout started, or when it was started with `AGENT_LOOKOUT_NOTIFICATIONS=on`. Those arrive as Script Editor's notifications, not your browser's.
-6. A session that was already waiting when you opened the page, or when Agent Lookout started, sends nothing. Wait for the next one, or check the Needs you panel.
+6. A session that was already waiting when you opened the page, or when Agent Lookout started, sends nothing, nor does one that had already finished. Wait for the next one, or check the Needs you panel.
 
 ### No email arrives
 

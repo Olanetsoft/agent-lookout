@@ -260,6 +260,14 @@ test("a source that sends no facts and no advice has none, and neither is made u
   expect(readSource({ id: "claude-code", advice: "   " }, T)).not.toHaveProperty("advice");
 });
 
+test("the way a source was read is kept, so notifications compare answers read the same way", () => {
+  expect(readSource({ id: "claude-code", state: "ok", basis: "registry" }, T)?.basis).toBe(
+    "registry",
+  );
+  expect(readSource({ id: "claude-code", state: "ok" }, T)).not.toHaveProperty("basis");
+  expect(readSource({ id: "claude-code", state: "ok", basis: 2 }, T)).not.toHaveProperty("basis");
+});
+
 test("events with no id or no time are left out, and unknown words become the plain ones", () => {
   const events = readEvents({
     events: [
@@ -328,6 +336,7 @@ test("the email status is read as it was sent, on and off", () => {
   const on = {
     on: true,
     to: "n…@example.com",
+    events: ["needs-you", "finished"],
     afterMs: 60_000,
     problem: null,
     last: { at: T, sent: false, reason: "the mail server did not answer in time" },
@@ -342,6 +351,7 @@ test("the email status is read as it was sent, on and off", () => {
   const off = {
     on: false,
     to: null,
+    events: null,
     afterMs: null,
     problem: "AGENT_LOOKOUT_SMTP_URL is not set.",
     last: null,
@@ -354,12 +364,28 @@ test("an email status that cannot be read never claims that emails are going out
   expect(readEmailStatus(null)).toBeNull();
   expect(readEmailStatus({})).toBeNull();
   expect(readEmailStatus({ on: "yes" })).toBeNull();
-  // On, but with no address or no delay to show: off.
-  expect(readEmailStatus({ on: true, afterMs: 60_000 })?.on).toBe(false);
-  expect(readEmailStatus({ on: true, to: "n…@example.com" })?.on).toBe(false);
-  expect(readEmailStatus({ on: true, to: "n…@example.com", afterMs: -1 })?.on).toBe(false);
+  // On, but with no address, no events or no delay to show: off.
+  const events = ["needs-you"];
+  expect(readEmailStatus({ on: true, events, afterMs: 60_000 })?.on).toBe(false);
+  expect(readEmailStatus({ on: true, to: "n…@example.com", events })?.on).toBe(false);
+  expect(readEmailStatus({ on: true, to: "n…@example.com", events, afterMs: -1 })?.on).toBe(false);
+  expect(readEmailStatus({ on: true, to: "n…@example.com", afterMs: 0 })?.on).toBe(false);
+  for (const unread of [[], ["sometimes"], "needs-you", [42]]) {
+    expect(
+      readEmailStatus({ on: true, to: "n…@example.com", events: unread, afterMs: 0 })?.on,
+    ).toBe(false);
+  }
+  // A name the page does not know is passed over, and the rest are kept in their own order.
+  expect(
+    readEmailStatus({
+      on: true,
+      to: "n…@example.com",
+      events: ["ended", "sometimes", "needs-you"],
+      afterMs: 0,
+    })?.events,
+  ).toEqual(["needs-you", "ended"]);
   // An outcome with no time is no outcome, and a failure with no reason gets a plain one.
-  const base = { on: true, to: "n…@example.com", afterMs: 0 };
+  const base = { on: true, to: "n…@example.com", events, afterMs: 0 };
   expect(readEmailStatus({ ...base, last: { sent: true } })?.last).toBeNull();
   expect(readEmailStatus({ ...base, last: { at: T, sent: false } })?.last).toEqual({
     at: T,

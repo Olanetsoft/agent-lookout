@@ -1,11 +1,12 @@
 import { EMAILS_PER_HOUR, type EmailStatusResponse } from "@core/api";
+import type { NoticeEvent } from "@core/sessions/waitChanges";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { readEmailStatus } from "@dashboard/lib/api/readApi";
 import { formatClockMinutes, formatDay, startOfDay } from "@dashboard/lib/format";
 
 /**
- * Whether the app sends an email for a wait, as Settings says it. The page
- * only reads this. Email is set up in the environment Agent Lookout starts
+ * Whether the app sends emails, and for which events, as Settings says it. The
+ * page only reads this. Email is set up in the environment Agent Lookout starts
  * with, and nothing on the page can turn it on or off.
  */
 
@@ -40,6 +41,36 @@ function clockAt(at: number, now: number): string {
   return startOfDay(at) === startOfDay(now) ? time : `${time} on ${formatDay(at, now)}`;
 }
 
+/** "a, b or c". */
+function eitherOf(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}`;
+}
+
+/** What each event is, said of "a session": "finishes". A wait has its delay. */
+function happens(event: NoticeEvent, afterMs: number): string {
+  switch (event) {
+    case "needs-you":
+      return afterMs === 0 ? "starts waiting" : `has waited ${delayInWords(afterMs)}`;
+    case "finished":
+      return "finishes";
+    case "failed":
+      return "fails";
+    case "ended":
+      return "ends";
+  }
+}
+
+/** Where emails go and when, naming each event that sends one. */
+function whereAndWhen(to: string, events: readonly NoticeEvent[], afterMs: number): string {
+  if (events.length === 1 && events[0] === "needs-you") {
+    return afterMs === 0
+      ? `Emails go to ${to} as soon as a session waits.`
+      : `Emails go to ${to} after a wait of ${delayInWords(afterMs)}.`;
+  }
+  return `Emails go to ${to} when a session ${eitherOf(events.map((event) => happens(event, afterMs)))}.`;
+}
+
 /** What Settings says about email: one line of state, and a line under it when there is more to say. */
 export interface EmailWords {
   state: string;
@@ -47,7 +78,7 @@ export interface EmailWords {
 }
 
 export function emailWords(status: EmailStatusResponse, now: number): EmailWords {
-  if (!status.on || status.to === null || status.afterMs === null) {
+  if (!status.on || status.to === null || status.events === null || status.afterMs === null) {
     return {
       state: "Email is off.",
       detail:
@@ -57,10 +88,7 @@ export function emailWords(status: EmailStatusResponse, now: number): EmailWords
     };
   }
 
-  const state =
-    status.afterMs === 0
-      ? `Emails go to ${status.to} as soon as a session waits.`
-      : `Emails go to ${status.to} after a wait of ${delayInWords(status.afterMs)}.`;
+  const state = whereAndWhen(status.to, status.events, status.afterMs);
   const { last, limitedUntil } = status;
   if (limitedUntil !== null) {
     // Tries that failed count toward the limit, so a failure is said first:

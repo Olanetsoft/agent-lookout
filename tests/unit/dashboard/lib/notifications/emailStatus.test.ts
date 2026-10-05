@@ -19,6 +19,7 @@ const AT_1402 = new Date(2026, 9, 5, 14, 2).getTime();
 const ON: EmailStatusResponse = {
   on: true,
   to: "n…@example.com",
+  events: ["needs-you"],
   afterMs: 60_000,
   problem: null,
   last: null,
@@ -28,6 +29,7 @@ const ON: EmailStatusResponse = {
 const OFF: EmailStatusResponse = {
   on: false,
   to: null,
+  events: null,
   afterMs: null,
   problem: null,
   last: null,
@@ -55,6 +57,22 @@ test("with email on, it says where emails go and after how long", () => {
   });
   expect(emailWords({ ...ON, afterMs: 0 }, NOW).state).toBe(
     "Emails go to n…@example.com as soon as a session waits.",
+  );
+});
+
+test("with other events chosen, it names each one that sends an email", () => {
+  expect(emailWords({ ...ON, events: ["needs-you", "finished"] }, NOW).state).toBe(
+    "Emails go to n…@example.com when a session has waited 1 minute or finishes.",
+  );
+  expect(
+    emailWords({ ...ON, events: ["needs-you", "finished", "failed", "ended"], afterMs: 0 }, NOW)
+      .state,
+  ).toBe("Emails go to n…@example.com when a session starts waiting, finishes, fails or ends.");
+  expect(emailWords({ ...ON, events: ["failed"] }, NOW).state).toBe(
+    "Emails go to n…@example.com when a session fails.",
+  );
+  expect(emailWords({ ...ON, events: ["finished", "ended"], afterMs: 90_000 }, NOW).state).toBe(
+    "Emails go to n…@example.com when a session finishes or ends.",
   );
 });
 

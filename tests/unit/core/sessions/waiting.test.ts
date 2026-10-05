@@ -1,6 +1,14 @@
 import { expect, test } from "vitest";
 
-import { sessionTitle, waitingLabel, waitingPhrase, waitNotice } from "@core/sessions/waiting";
+import {
+  changeNotice,
+  NOTICE_EVENT_LABEL,
+  overPhrase,
+  sessionTitle,
+  waitingLabel,
+  waitingPhrase,
+  waitNotice,
+} from "@core/sessions/waiting";
 import { makeSession } from "@tests/fixtures/session";
 
 test("a waiting reason is said in plain words", () => {
@@ -50,4 +58,52 @@ test("a session with no name is called by its folder, then by its id", () => {
   expect(waitNotice(makeSession({ id: "claude-code:4242", name: "", project: null })).title).toBe(
     "claude-code:4242",
   );
+});
+
+test("each event has a name for Settings, and the events but a wait are said of a session by its name", () => {
+  expect(NOTICE_EVENT_LABEL).toEqual({
+    "needs-you": "Needs you",
+    finished: "Finished",
+    failed: "Failed",
+    ended: "Ended",
+  });
+  expect(overPhrase("finished")).toBe("finished");
+  expect(overPhrase("failed")).toBe("failed");
+  expect(overPhrase("ended")).toBe("ended");
+});
+
+test("a notification of any event names the session and says what happened", () => {
+  const session = makeSession({
+    name: "billing-webhooks",
+    cwd: "/Users/example/code/billing-webhooks",
+    project: "billing-webhooks",
+    status: "finished",
+  });
+  expect(changeNotice({ event: "finished", session })).toEqual({
+    title: "billing-webhooks",
+    body: "Finished",
+  });
+  expect(changeNotice({ event: "failed", session })).toEqual({
+    title: "billing-webhooks",
+    body: "Failed",
+  });
+  expect(changeNotice({ event: "ended", session })).toEqual({
+    title: "billing-webhooks",
+    body: "Ended",
+  });
+  // A wait gives its reason, as it always has.
+  const waiting = {
+    ...session,
+    status: "needs-you" as const,
+    waitingReason: "permission" as const,
+  };
+  expect(changeNotice({ event: "needs-you", session: waiting })).toEqual({
+    title: "billing-webhooks",
+    body: "Waiting for permission",
+  });
+  // With no name it is called by its folder, then by its id.
+  expect(
+    changeNotice({ event: "ended", session: makeSession({ name: " ", project: "docs-site" }) })
+      .title,
+  ).toBe("docs-site");
 });

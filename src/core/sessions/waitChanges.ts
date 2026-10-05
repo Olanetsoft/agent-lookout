@@ -122,3 +122,221 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
 
   return { memory: next, started, stopped };
 }
+
+/**
+ * What can send a notification or an email.
+ *
+ * - `needs-you`: a session starts waiting for the person, by `waitChanges`.
+ * - `finished`: a session's status becomes finished.
+ * - `failed`: a session's status becomes failed.
+ * - `ended`: a session that had not finished or failed is gone from the list,
+ *   as when its process ends.
+ */
+export type NoticeEvent = "needs-you" | "finished" | "failed" | "ended";
+
+/** Every event, in the order they are listed and written. */
+export const NOTICE_EVENTS: readonly NoticeEvent[] = ["needs-you", "finished", "failed", "ended"];
+
+/** The events announced until the person chooses others: a wait, as before there was a choice. */
+export const DEFAULT_NOTICE_EVENTS: readonly NoticeEvent[] = ["needs-you"];
+
+export function isNoticeEvent(value: string): value is NoticeEvent {
+  return (NOTICE_EVENTS as readonly string[]).includes(value);
+}
+
+/**
+ * A list of events as it is written in a header, in storage and in the
+ * environment: names separated by commas, such as `needs-you,finished`. Spaces
+ * and case do not matter, nor does the order or a name given twice. Nothing at
+ * all is the empty list. Null when any name is not one of the four.
+ */
+export function readNoticeEvents(text: string): NoticeEvent[] | null {
+  const trimmed = text.trim().toLowerCase();
+  if (trimmed === "") return [];
+  const names = trimmed.split(",").map((name) => name.trim());
+  if (!names.every(isNoticeEvent)) return null;
+  return NOTICE_EVENTS.filter((event) => names.includes(event));
+}
+
+/** A list of events as `readNoticeEvents` reads one, in the order of `NOTICE_EVENTS`. */
+export function writeNoticeEvents(events: readonly NoticeEvent[]): string {
+  return NOTICE_EVENTS.filter((event) => events.includes(event)).join(",");
+}
+
+/** What a session that is over was said, or seen, to have done. */
+type OverEvent = Exclude<NoticeEvent, "needs-you">;
+
+/** What `sessionChanges` remembers from one snapshot to the next. */
+export interface ChangeMemory {
+  /** The waits, as `waitChanges` keeps them. */
+  waits: WaitMemory;
+  /**
+   * For each source that has answered, and each way it has been read (its
+   * `basis`), every session at the last answer read that way, by id. A source,
+   * or a way of reading, that has never answered so is absent.
+   */
+  seen: ReadonlyMap<SourceId, ReadonlyMap<string, ReadonlyMap<string, Session>>>;
+  /**
+   * For each source, the sessions known to be over, and how: listed as
+   * finished or failed, or said to have ended. One listed in any other status
+   * since is not over, and one that none of the source's lists holds any more
+   * is forgotten. Each way of reading is compared with its own last answer,
+   * which can be older than another's, so this is what keeps one end from
+   * being told twice.
+   */
+  over: ReadonlyMap<SourceId, ReadonlyMap<string, OverEvent>>;
+}
+
+/** The memory to start from, before any snapshot has been seen. */
+export const EMPTY_CHANGE_MEMORY: ChangeMemory = {
+  waits: EMPTY_WAIT_MEMORY,
+  seen: new Map(),
+  over: new Map(),
+};
+
+/** One thing that happened to one session. */
+export interface SessionChange {
+  event: NoticeEvent;
+  /** The session as it is now, or, when it has ended, as it was last seen. */
+  session: Session;
+}
+
+export interface SessionChanges {
+  /** What to hand back with the next snapshot. */
+  memory: ChangeMemory;
+  /**
+   * What happened, one for each change: first the sessions in the snapshot,
+   * in its order, then those that ended.
+   */
+  changes: SessionChange[];
+  /** The ids of the sessions whose wait ended, as `waitChanges` gives them. */
+  stopped: string[];
+}
+
+/** The statuses a session is over in. */
+function isOverStatus(status: Session["status"]): status is "finished" | "failed" {
+  return status === "finished" || status === "failed";
+}
+
+/**
+ * Whether a session already known to be over in one way has nothing new to
+ * tell by this event: an end after any end, or a finish or failure after an
+ * end or after the same again.
+ */
+function toldAlready(event: OverEvent, known: OverEvent | undefined): boolean {
+  if (known === undefined) return false;
+  return event === "ended" || known === "ended" || known === event;
+}
+
+/**
+ * Compares a snapshot with what was remembered from the one before, and says
+ * what happened to each session that deserves a notification: it started
+ * waiting, finished, failed or ended. It decides nothing about who is told or
+ * how.
+ *
+ * A wait is decided by `waitChanges`. The rest follow the same rules, with
+ * one more, which the poller follows for the event log: a source read in more
+ * than one way is compared only with its last answer read the same way.
+ *
+ * - Only a source that could be read in this snapshot is compared. What is
+ *   remembered of any other is kept, and nothing is said about its sessions,
+ *   so a source that stops answering ends nothing.
+ * - A source's first answer read one way is a baseline for that way. Whatever
+ *   is true in it was already true, so nothing in it has happened. Claude
+ *   Code's adapter reads its registry alone while the claude command fails,
+ *   and the background jobs only the command knows are missing from that
+ *   answer without having ended. Its first answer read so is a baseline, and
+ *   when the command answers again it is compared with its own last answer.
+ * - After that, a session remembered in another status that is now finished
+ *   has finished, and one that is now failed has failed. A session first seen
+ *   already over says nothing: nobody saw it change, and a source that lists
+ *   the jobs of the last day all at once, as Claude Code's command does when
+ *   it starts answering late, would otherwise announce every one.
+ * - A remembered session that is gone from the list has ended, unless it was
+ *   finished or failed. A session that is over and later leaves the list has
+ *   said what happened already.
+ * - A session known to be over is not told of again: an end seen in one way
+ *   of reading shows up again when the other is next compared with its own,
+ *   older, answer.
+ *
+ * One change is one event. A session can wait and then finish between two
+ * snapshots, and only the finish is seen.
+ *
+ * Neither argument is changed. Called again with the memory it returned and
+ * the same snapshot, it reports nothing.
+ */
+export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot): SessionChanges {
+  const waits = waitChanges(memory.waits, snapshot);
+  const startedWaiting = new Set(waits.started);
+
+  /** Each source that could be read, with the way it was read and its sessions by id. */
+  const answers = new Map<SourceId, { basis: string; sessions: Map<string, Session> }>();
+  for (const source of snapshot.sources) {
+    if (source.state === "ok" || source.state === "not-set-up") {
+      answers.set(source.id, { basis: source.basis ?? "", sessions: new Map() });
+    }
+  }
+
+  const found: SessionChange[] = [];
+  for (const session of snapshot.sessions) {
+    const answer = answers.get(session.source);
+    // No answer means the source did not answer. An id already in it was counted.
+    if (!answer || answer.sessions.has(session.id)) continue;
+    answer.sessions.set(session.id, session);
+
+    if (startedWaiting.has(session)) {
+      found.push({ event: "needs-you", session });
+      continue;
+    }
+    const before = memory.seen.get(session.source)?.get(answer.basis)?.get(session.id);
+    if (before && before.status !== session.status && isOverStatus(session.status)) {
+      found.push({ event: session.status, session });
+    }
+  }
+
+  for (const [source, { basis, sessions }] of answers) {
+    for (const [id, before] of memory.seen.get(source)?.get(basis) ?? []) {
+      if (!sessions.has(id) && !isOverStatus(before.status)) {
+        found.push({ event: "ended", session: before });
+      }
+    }
+  }
+
+  // What is known to be over, less the sessions listed running again.
+  const overNow = new Map<SourceId, Map<string, OverEvent>>();
+  for (const [source, { sessions }] of answers) {
+    const over = new Map(memory.over.get(source));
+    for (const [id, session] of sessions) {
+      if (!isOverStatus(session.status)) over.delete(id);
+    }
+    overNow.set(source, over);
+  }
+
+  const changes = found.filter(({ event, session }) => {
+    const over = overNow.get(session.source);
+    if (event === "needs-you" || !over) return true;
+    if (toldAlready(event, over.get(session.id))) return false;
+    over.set(session.id, event);
+    return true;
+  });
+
+  const seen = new Map(memory.seen);
+  const over = new Map(memory.over);
+  for (const [source, { basis, sessions }] of answers) {
+    const ways = new Map(memory.seen.get(source));
+    ways.set(basis, sessions);
+    seen.set(source, ways);
+
+    const known = overNow.get(source) as Map<string, OverEvent>;
+    for (const [id, session] of sessions) {
+      if (isOverStatus(session.status) && !known.has(id)) known.set(id, session.status);
+    }
+    // Only a session some way of reading still lists can be told of again.
+    for (const id of known.keys()) {
+      if (![...ways.values()].some((listed) => listed.has(id))) known.delete(id);
+    }
+    over.set(source, known);
+  }
+
+  return { memory: { waits: waits.memory, seen, over }, changes, stopped: waits.stopped };
+}

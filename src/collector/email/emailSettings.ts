@@ -1,3 +1,10 @@
+import {
+  DEFAULT_NOTICE_EVENTS,
+  NOTICE_EVENTS,
+  readNoticeEvents,
+  type NoticeEvent,
+} from "../../core/sessions/waitChanges.ts";
+
 /**
  * The settings for email notifications, read from the environment the
  * collector starts with. Nothing else sets them: they are never written to a
@@ -18,6 +25,8 @@ export const SMTP_URL_ENV = "AGENT_LOOKOUT_SMTP_URL";
 export const EMAIL_FROM_ENV = "AGENT_LOOKOUT_EMAIL_FROM";
 /** How many seconds a wait lasts before it is emailed. */
 export const EMAIL_AFTER_ENV = "AGENT_LOOKOUT_EMAIL_AFTER";
+/** The events that are emailed, as names separated by commas: `needs-you,finished`. */
+export const EMAIL_EVENTS_ENV = "AGENT_LOOKOUT_EMAIL_EVENTS";
 
 /** How long a wait lasts before it is emailed when the setting is left out. */
 export const DEFAULT_EMAIL_AFTER_SECONDS = 60;
@@ -47,6 +56,8 @@ export interface MailServer {
 export interface EmailSettings {
   to: string;
   from: string;
+  /** The events that are emailed, at least one, in the order of `NOTICE_EVENTS`. */
+  events: readonly NoticeEvent[];
   /** How long a wait lasts before it is emailed, in milliseconds. */
   afterMs: number;
   server: MailServer;
@@ -162,6 +173,18 @@ function readAfter(value: string | undefined): number {
   return seconds * 1_000;
 }
 
+/** The events, from names separated by commas. Left out, a wait alone. */
+function readEvents(value: string | undefined): readonly NoticeEvent[] {
+  if (value === undefined) return DEFAULT_NOTICE_EVENTS;
+  const events = readNoticeEvents(value);
+  if (events === null || events.length === 0) {
+    throw new SettingProblem(
+      `${EMAIL_EVENTS_ENV} must be one or more of ${NOTICE_EVENTS.join(", ")}, separated by commas, such as needs-you,finished.`,
+    );
+  }
+  return events;
+}
+
 function readAddress(name: string, value: string): string {
   if (!isOneAddress(value)) {
     throw new SettingProblem(`${name} must be one email address, such as you@example.com.`);
@@ -178,6 +201,7 @@ export function readEmailSetup(env: NodeJS.ProcessEnv): EmailSetup {
   const url = valueOf(env, SMTP_URL_ENV);
   const from = valueOf(env, EMAIL_FROM_ENV);
   const after = valueOf(env, EMAIL_AFTER_ENV);
+  const events = valueOf(env, EMAIL_EVENTS_ENV);
 
   // Without an address email is off, and there is nothing to say. That is the
   // default, and the way to turn it off, which the guide and every email give,
@@ -191,6 +215,7 @@ export function readEmailSetup(env: NodeJS.ProcessEnv): EmailSetup {
       settings: {
         to: readAddress(EMAIL_TO_ENV, to),
         from: from === undefined ? to : readAddress(EMAIL_FROM_ENV, from),
+        events: readEvents(events),
         afterMs: readAfter(after),
         server: readServer(url),
       },

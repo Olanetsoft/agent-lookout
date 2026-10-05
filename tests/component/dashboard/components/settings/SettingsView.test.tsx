@@ -7,6 +7,7 @@ import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
+  NOTIFICATION_EVENTS_STORAGE_KEY,
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
 } from "@dashboard/lib/notifications/notificationSetting";
@@ -27,6 +28,7 @@ let host: FakeNotificationHost;
 const EMAIL_OFF: EmailStatusResponse = {
   on: false,
   to: null,
+  events: null,
   afterMs: null,
   problem: null,
   last: null,
@@ -339,24 +341,272 @@ test.each(["denied", "unsupported"] as const)(
     expect(words).not.toMatch(/browser can\b/i);
     // What turning them on does is still said, as what happens once they are on.
     expect(words).toContain(
-      "When notifications are on, one appears each time a session starts waiting for you.",
+      "With Needs you on, a notification appears each time a session starts waiting for you.",
     );
   },
 );
 
-test("the card says what a notification holds, that on a Mac they arrive with no tab open while the app keeps running, and that only Claude Code sessions can be seen waiting", async () => {
+test("the card says what a notification holds, that on a Mac they arrive with no tab open while the app keeps running, and which sessions can be seen waiting", async () => {
   const screen = await render(<SettingsView />);
   const words = notifications(screen).element().textContent ?? "";
 
   expect(words).toContain(
-    "When notifications are on, one appears each time a session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.",
+    "With Needs you on, a notification appears each time a session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.",
   );
   expect(words).toContain(
-    "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them. Only Claude Code sessions can be seen waiting, so a Codex session never sends one.",
+    "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them. Only Claude Code sessions and sessions from a status file can be seen waiting, so a Codex session never sends Needs you.",
   );
   // One switch covers the page's notifications and the app's own.
   expect(notifications(screen).getByRole("button").elements()).toHaveLength(1);
 });
+
+/**
+ * Notifications on, as when the person turned them on here before and the
+ * browser allows them. Read afresh, as a page that has just loaded reads it: a
+ * view from the test before can draw once more after the store was reset.
+ */
+function notificationsOn() {
+  host.state = "granted";
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+  resetNotificationSettingForTests();
+}
+
+/** The list of events, or null while it is not shown. */
+const eventList = (screen: Awaited<ReturnType<typeof render>>) =>
+  notifications(screen).element().querySelector('[data-part="events"]');
+
+/** Each event's name and whether its switch is on, as the person reads them. */
+const switches = (screen: Awaited<ReturnType<typeof render>>) =>
+  [...(eventList(screen)?.querySelectorAll('[role="radiogroup"]') ?? [])].map((group) => [
+    group.getAttribute("aria-label"),
+    group.querySelector('[role="radio"][aria-checked="true"]')?.textContent,
+  ]);
+
+test("while notifications are off the events are not listed, and nothing says they can be switched yet", async () => {
+  const screen = await render(<SettingsView />);
+  await expect.element(notifications(screen)).toBeVisible();
+
+  expect(eventList(screen)).toBeNull();
+  expect(notifications(screen).getByRole("radiogroup").elements()).toEqual([]);
+  expect(notifications(screen).element().textContent).toContain(
+    "Once they are on, you can also be told when a session finishes or fails, or ends without saying whether it finished, as when its process stops. Those name the session and what happened, and stay until you clear them.",
+  );
+});
+
+test.each(["denied", "unsupported"] as const)(
+  "when the browser's answer is %s the events are not listed",
+  async (state) => {
+    host.state = state;
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
+    const screen = await render(<SettingsView />);
+    await expect.element(notifications(screen).getByRole("status")).toBeVisible();
+    expect(eventList(screen)).toBeNull();
+  },
+);
+
+test("once notifications are on, the four events are listed under the button, a wait alone switched on", async () => {
+  const screen = await render(<SettingsView />);
+  await notifications(screen).getByRole("button", { name: "Turn on notifications" }).click();
+  await expect
+    .element(notifications(screen).getByRole("radiogroup", { name: "Ended" }))
+    .toBeVisible();
+
+  const list = eventList(screen) as HTMLElement;
+  expect(list.getAttribute("aria-label")).toBe("What sends a notification");
+  expect([...list.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
+    "Needs youOffOn",
+    "FinishedOffOn",
+    "FailedOffOn",
+    "EndedOffOn",
+  ]);
+  expect(switches(screen)).toEqual([
+    ["Needs you", "On"],
+    ["Finished", "Off"],
+    ["Failed", "Off"],
+    ["Ended", "Off"],
+  ]);
+  // Showing them stores nothing.
+  expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBeNull();
+
+  // Turning notifications off takes the list away again.
+  await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
+  await expect.element(notifications(screen).getByRole("radiogroup")).not.toBeInTheDocument();
+});
+
+test("an event switched here is kept, and is there when the page is drawn again", async () => {
+  notificationsOn();
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await card
+    .getByRole("radiogroup", { name: "Finished" })
+    .getByRole("radio", { name: "On" })
+    .click();
+  await card
+    .getByRole("radiogroup", { name: "Needs you" })
+    .getByRole("radio", { name: "Off" })
+    .click();
+
+  expect(switches(screen)).toEqual([
+    ["Needs you", "Off"],
+    ["Finished", "On"],
+    ["Failed", "Off"],
+    ["Ended", "Off"],
+  ]);
+  expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("finished");
+  expect(host.asked).toBe(0);
+
+  await screen.unmount();
+  resetNotificationSettingForTests();
+  const again = await render(<SettingsView />);
+  await expect
+    .element(notifications(again).getByRole("radiogroup", { name: "Ended" }))
+    .toBeVisible();
+  expect(switches(again)).toEqual([
+    ["Needs you", "Off"],
+    ["Finished", "On"],
+    ["Failed", "Off"],
+    ["Ended", "Off"],
+  ]);
+});
+
+test("with every event switched off, the card says that none is sent, and says nothing of it otherwise", async () => {
+  notificationsOn();
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+  const none = "No event is switched on, so none is sent.";
+  await expect.element(card.getByRole("radiogroup", { name: "Ended" })).toBeVisible();
+  expect(card.element().textContent).not.toContain(none);
+
+  await card
+    .getByRole("radiogroup", { name: "Needs you" })
+    .getByRole("radio", { name: "Off" })
+    .click();
+  await expect.element(card.getByText(none)).toBeVisible();
+  expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("");
+
+  await card.getByRole("radiogroup", { name: "Failed" }).getByRole("radio", { name: "On" }).click();
+  await expect.element(card.getByText(none)).not.toBeInTheDocument();
+
+  // Nor while notifications are off, when the events are not listed.
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "off");
+  localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "");
+  await screen.unmount();
+  resetNotificationSettingForTests();
+  const off = await render(<SettingsView />);
+  await expect.element(notifications(off).getByRole("button")).toBeVisible();
+  expect(notifications(off).element().textContent).not.toContain(none);
+});
+
+test("the events are kept while notifications are off, and come back as they were", async () => {
+  notificationsOn();
+  localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "failed,ended");
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await card.getByRole("button", { name: "Turn off notifications" }).click();
+  await expect.element(card.getByRole("radiogroup")).not.toBeInTheDocument();
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("radiogroup", { name: "Ended" })).toBeVisible();
+
+  expect(switches(screen)).toEqual([
+    ["Needs you", "Off"],
+    ["Finished", "Off"],
+    ["Failed", "On"],
+    ["Ended", "On"],
+  ]);
+});
+
+test("events switched in another tab at this address show here without a reload", async () => {
+  notificationsOn();
+  const screen = await render(<SettingsView />);
+  await expect
+    .element(notifications(screen).getByRole("radiogroup", { name: "Ended" }))
+    .toBeVisible();
+
+  localStorage.setItem(NOTIFICATION_EVENTS_STORAGE_KEY, "needs-you,ended");
+  window.dispatchEvent(new StorageEvent("storage", { key: NOTIFICATION_EVENTS_STORAGE_KEY }));
+
+  await vi.waitFor(() =>
+    expect(switches(screen)).toEqual([
+      ["Needs you", "On"],
+      ["Finished", "Off"],
+      ["Failed", "Off"],
+      ["Ended", "On"],
+    ]),
+  );
+});
+
+test("each switch is one Tab stop after the button, and the arrow keys switch it", async () => {
+  notificationsOn();
+  const screen = await render(<SettingsView />);
+  const button = notifications(screen).getByRole("button").element();
+  await expect
+    .element(notifications(screen).getByRole("radiogroup", { name: "Ended" }))
+    .toBeVisible();
+
+  startAtTop();
+  const stops: Element[] = [];
+  for (let presses = 0; presses < 6; presses += 1) {
+    await userEvent.tab();
+    if (document.activeElement) stops.push(document.activeElement);
+  }
+  // The theme, the button, then the switch of each event in turn, on its chosen option.
+  expect(stops[1]).toBe(button);
+  expect(
+    stops.slice(2).map((stop) => stop.closest('[role="radiogroup"]')?.getAttribute("aria-label")),
+  ).toEqual(["Needs you", "Finished", "Failed", "Ended"]);
+  expect(stops[3]?.textContent).toBe("Off");
+
+  // Focus is on Finished's Off. The right arrow switches it on.
+  (stops[3] as HTMLElement).focus();
+  await userEvent.keyboard("{ArrowRight}");
+  await vi.waitFor(() =>
+    expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBe("needs-you,finished"),
+  );
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme the events are rows of body words in ink, each with the theme's switch, a hairline between them, and nothing warm",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    notificationsOn();
+    const screen = await render(<SettingsView />);
+    await expect
+      .element(notifications(screen).getByRole("radiogroup", { name: "Ended" }))
+      .toBeVisible();
+    await pointAway();
+
+    const rows = [...(eventList(screen)?.querySelectorAll("li") ?? [])];
+    expect(rows).toHaveLength(4);
+    for (const [index, row] of rows.entries()) {
+      const name = row.querySelector("span") as HTMLElement;
+      expect(getComputedStyle(name).fontSize).toBe("13px");
+      expect(getComputedStyle(name).color).toBe(rgbOf("var(--ink)"));
+      const well = row.querySelector('[data-slot="segmented-control"]') as HTMLElement;
+      expect(getComputedStyle(well).backgroundColor).toBe(rgbOf("var(--well)"));
+      expect(well.querySelector('[data-part="thumb"]')).not.toBeNull();
+      // Name and switch on one line, the switch at the right.
+      expect(name.getBoundingClientRect().left).toBe(row.getBoundingClientRect().left);
+      expect(Math.round(well.getBoundingClientRect().right)).toBe(
+        Math.round(row.getBoundingClientRect().right),
+      );
+      const rule = getComputedStyle(row).borderBottomWidth;
+      expect(rule).toBe(index === rows.length - 1 ? "0px" : "1px");
+      if (index < rows.length - 1) {
+        expect(getComputedStyle(row).borderBottomColor).toBe(rgbOf("var(--hairline)"));
+      }
+    }
+    // The list sits 12px under the button's row, and the words 12px under the list.
+    const list = eventList(screen) as HTMLElement;
+    const row = stateOf(screen).parentElement as HTMLElement;
+    expect(list.getBoundingClientRect().top - row.getBoundingClientRect().bottom).toBe(12);
+    const words = list.nextElementSibling as HTMLElement;
+    expect(words.tagName).toBe("P");
+    expect(words.getBoundingClientRect().top - list.getBoundingClientRect().bottom).toBe(12);
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
 
 test("the notifications button is reached by Tab after the theme, and shows the focus ring", async () => {
   const screen = await render(<SettingsView />);
@@ -404,7 +654,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
     expect(getComputedStyle(sentence).color).toBe(rgbOf("var(--ink-secondary)"));
     expect(getComputedStyle(sentence).fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
   }
-  expect(card.element().querySelectorAll(":scope > div > p")).toHaveLength(2);
+  expect(card.element().querySelectorAll(":scope > div > p")).toHaveLength(3);
 
   // The note is the quiet one, not the error.
   const note = card.getByRole("status").element();
@@ -525,6 +775,7 @@ const today = (hours: number, minutes: number) => {
 const EMAIL_ON: EmailStatusResponse = {
   on: true,
   to: "n…@example.com",
+  events: ["needs-you"],
   afterMs: 60_000,
   problem: null,
   last: null,
@@ -606,6 +857,15 @@ test.each<[string, Partial<EmailStatusResponse>, string]>([
   expect(await emailLines(screen)).toEqual([
     "Emails go to n…@example.com after a wait of 1 minute.",
     line,
+  ]);
+});
+
+test("the Email card names every event it sends an email for", async () => {
+  email = { ...EMAIL_ON, events: ["needs-you", "finished", "failed"] };
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Emails go to n…@example.com when a session has waited 1 minute, finishes or fails.",
   ]);
 });
 

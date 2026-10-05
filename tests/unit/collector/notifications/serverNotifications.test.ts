@@ -6,6 +6,7 @@ import {
   notificationsOnAtStart,
 } from "@collector/notifications/serverNotifications";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
+import type { NoticeEvent } from "@core/sessions/waitChanges";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 
@@ -50,10 +51,11 @@ function setUp(onAtStart: boolean) {
       clock.now = T0 + atOffsetMs;
       notifications.handle(snapshot(sessions, state));
     },
-    /** A page's request arrives this long after the start. */
-    page(atOffsetMs: number, said: "on" | "off", fetchedSessions = true) {
+    /** A page's request arrives this long after the start, saying on, off, or the events it chose. */
+    page(atOffsetMs: number, said: "on" | "off" | NoticeEvent[], fetchedSessions = true) {
       clock.now = T0 + atOffsetMs;
-      notifications.pageSaid(said, fetchedSessions);
+      const events: NoticeEvent[] = said === "on" ? ["needs-you"] : said === "off" ? [] : said;
+      notifications.pageSaid(events, fetchedSessions);
     },
   };
 }
@@ -286,6 +288,135 @@ describe("never twice", () => {
     page(5_000, "on", false);
     poll(60_000, [waiting(1, "checkout-flow")]);
 
+    expect(notifier.shown).toEqual([]);
+  });
+});
+
+describe("finished, failed and ended", () => {
+  function over(n: number, name: string, status: "finished" | "failed"): Session {
+    return makeSession({ id: id(n), name, status });
+  }
+
+  /** As `setUp`, with `choose` for a page that names the events it chose. */
+  function choosing(onAtStart = false) {
+    const set = setUp(onAtStart);
+    return { ...set, choose: set.page };
+  }
+
+  test("with no page open, each event chosen is shown at once, by the session's name and what happened", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [
+      working(1, "billing-webhooks"),
+      working(2, "search-indexing"),
+      working(3, "docs-site"),
+    ]);
+    // A page chose the events, then closed.
+    choose(1_000, ["finished", "failed", "ended"]);
+
+    poll(60_000, [over(1, "billing-webhooks", "finished"), over(2, "search-indexing", "failed")]);
+
+    expect(notifier.shown).toEqual([
+      { title: "billing-webhooks", body: "Finished" },
+      { title: "search-indexing", body: "Failed" },
+      { title: "docs-site", body: "Ended" },
+    ]);
+  });
+
+  test("an event the page did not choose is not shown, and on alone is a wait alone", () => {
+    const { notifier, poll, page, choose } = choosing();
+    poll(0, [working(1, "checkout-flow"), working(2, "api-rate-limits")]);
+    page(1_000, "on");
+    poll(60_000, [over(1, "checkout-flow", "finished")]);
+    expect(notifier.shown).toEqual([]);
+
+    choose(61_000, ["ended"]);
+    poll(120_000, [over(1, "checkout-flow", "finished"), waiting(3, "email-templates")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("the environment turns on a wait alone", () => {
+    const { notifier, poll } = choosing(true);
+    poll(0, [working(1, "infra-terraform")]);
+    poll(2_000, [over(1, "infra-terraform", "failed")]);
+    poll(10_000, []);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("never twice: with a page that chose it still asking, a finish is held, and dropped when the page fetches the sessions", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [working(1, "mobile-onboarding")]);
+    choose(1_000, ["needs-you", "finished"]);
+
+    poll(2_000, [over(1, "mobile-onboarding", "finished")]);
+    expect(notifier.shown).toEqual([]);
+    // The page's next turn: it has the finish, and shows it itself.
+    choose(3_000, ["needs-you", "finished"]);
+    poll(4_000, [over(1, "mobile-onboarding", "finished")]);
+    poll(60_000, [over(1, "mobile-onboarding", "finished")]);
+
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("an end the page never comes for is shown when the grace period is over", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [working(1, "docs-site")]);
+    choose(1_900, ["ended"]);
+
+    poll(2_000, []);
+    choose(3_000, ["ended"], false);
+    poll(4_000, []);
+    expect(notifier.shown).toEqual([]);
+
+    choose(5_000, ["ended"], false);
+    poll(2_000 + HANDOVER_GRACE_MS + 1_000, []);
+    expect(notifier.shown).toEqual([{ title: "docs-site", body: "Ended" }]);
+    poll(10_000, []);
+    expect(notifier.shown).toHaveLength(1);
+  });
+
+  test("a finish held when the page switches that event off is dropped", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [working(1, "billing-webhooks")]);
+    choose(1_900, ["finished"]);
+
+    poll(2_000, [over(1, "billing-webhooks", "finished")]);
+    choose(3_000, ["needs-you"], false);
+    poll(4_000, [over(1, "billing-webhooks", "finished")]);
+    poll(60_000, [over(1, "billing-webhooks", "finished")]);
+
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("a wait held when its session finishes is dropped, and the finish is held in its place", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [working(1, "search-indexing")]);
+    choose(1_900, ["needs-you", "finished"]);
+
+    poll(2_000, [waiting(1, "search-indexing")]);
+    choose(3_000, ["needs-you", "finished"], false);
+    poll(4_000, [over(1, "search-indexing", "finished")]);
+    choose(5_000, ["needs-you", "finished"], false);
+    poll(6_000, [over(1, "search-indexing", "finished")]);
+    choose(7_000, ["needs-you", "finished"], false);
+    poll(8_000, [over(1, "search-indexing", "finished")]);
+
+    expect(notifier.shown).toEqual([{ title: "search-indexing", body: "Finished" }]);
+  });
+
+  test("nothing is said of what was already over when the collector started, nor of it leaving", () => {
+    const { notifier, poll, choose } = choosing();
+    choose(0, ["finished", "failed", "ended"]);
+    poll(0, [over(1, "checkout-flow", "finished"), over(2, "api-rate-limits", "failed")]);
+    poll(60_000, []);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("a source that stops answering ends nothing", () => {
+    const { notifier, poll, choose } = choosing();
+    poll(0, [working(1, "email-templates")]);
+    choose(1_000, ["ended"]);
+    poll(60_000, [], "error");
+    poll(62_000, [], "unavailable");
     expect(notifier.shown).toEqual([]);
   });
 });

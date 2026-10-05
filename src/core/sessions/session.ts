@@ -110,6 +110,13 @@ export interface SourceHealth {
   watching?: SourceFact[];
   /** One plain sentence saying what the person can do about a problem, when the collector knows. */
   advice?: string;
+  /**
+   * Names the way the sessions were read, for a source that has more than one,
+   * such as Claude Code's registry alone while its command fails. Two ways of
+   * reading do not see exactly the same sessions, so answers are compared only
+   * with answers read the same way.
+   */
+  basis?: string;
   checkedAt: number;
 }
 

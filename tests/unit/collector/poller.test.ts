@@ -393,6 +393,16 @@ describe("events when an adapter changes how it reads its source", () => {
     expect(events.list()).toEqual([]);
   });
 
+  test("the snapshot says how each source was read, so its listeners can compare the same way", async () => {
+    const { adapter } = scriptedAdapter(registry([]), result([]));
+    const { poller } = setUp(adapter);
+
+    await poller.pollOnce();
+    expect(poller.getSnapshot().sources).toEqual([{ ...health(), basis: "registry" }]);
+    await poller.pollOnce();
+    expect(poller.getSnapshot().sources[0]).not.toHaveProperty("basis");
+  });
+
   test("polls read the same way are still compared, in the fallback as in the feed", async () => {
     const a = makeSession({ id: "claude-code:a", status: "working" });
     const { adapter } = scriptedAdapter(

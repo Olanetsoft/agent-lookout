@@ -212,7 +212,7 @@ async function watch(source = standInSource(), env: Record<string, string> = {})
       await collector.poller.pollOnce();
     },
     /** A dashboard page's request, with what it says of its notifications. */
-    async page(atOffsetMs: number, said: "on" | "off", target = "/api/sessions") {
+    async page(atOffsetMs: number, said: string, target = "/api/sessions") {
       state.now = T0 + atOffsetMs;
       const response = await request(port, target, { headers: { [NOTIFICATIONS_HEADER]: said } });
       expect(response.status).toBe(200);
@@ -367,6 +367,51 @@ describe("the collector's own notifications", () => {
     await server.poll(6_000, [waiting("checkout-flow")]);
     expect(server.notifier.shown).toHaveLength(1);
   });
+
+  test("a page that names the events in the header has the collector show those, and only those, once it has gone", async () => {
+    const server = await watch();
+    const other = "claude-code:00000000-0000-4000-8000-000000000002";
+    const failing = (status: "working" | "failed") =>
+      makeSession({ id: other, name: "infra-terraform", status });
+    await server.poll(0, [working("billing-webhooks"), failing("working")]);
+    await server.page(1_000, "on; events=finished,failed", "/api/health");
+
+    await server.poll(60_000, [
+      makeSession({ id, name: "billing-webhooks", status: "finished" }),
+      failing("failed"),
+    ]);
+    expect(server.notifier.shown).toEqual([
+      { title: "billing-webhooks", body: "Finished" },
+      { title: "infra-terraform", body: "Failed" },
+    ]);
+
+    // Ended was not chosen, and nor was a wait.
+    await server.poll(62_000, [waiting("billing-webhooks")]);
+    await server.poll(64_000, []);
+    expect(server.notifier.shown).toHaveLength(2);
+  });
+
+  test("an open page that names an event shows it itself, so the collector shows nothing", async () => {
+    const server = await watch();
+    await server.poll(0, [working("search-indexing")]);
+    await server.page(1_000, "on; events=needs-you,ended");
+
+    await server.poll(2_000, []);
+    await server.page(3_000, "on; events=needs-you,ended");
+    await server.poll(4_000, []);
+    await server.poll(60_000, []);
+
+    expect(server.notifier.shown).toEqual([]);
+  });
+
+  test("a header that cannot be read changes nothing", async () => {
+    const server = await watch();
+    await server.poll(0, [working("docs-site")]);
+    await server.page(1_000, "on; events=sometimes", "/api/health");
+
+    await server.poll(60_000, [makeSession({ id, name: "docs-site", status: "finished" })]);
+    expect(server.notifier.shown).toEqual([]);
+  });
 });
 
 describe("email notifications", () => {
@@ -454,6 +499,7 @@ describe("email notifications", () => {
     expect(await server.status()).toEqual({
       on: false,
       to: null,
+      events: null,
       afterMs: null,
       problem: null,
       last: null,
@@ -471,6 +517,7 @@ describe("email notifications", () => {
     expect(await server.status()).toMatchObject({
       on: true,
       to: "n…@example.test",
+      events: ["needs-you"],
       afterMs: 60_000,
     });
 
@@ -506,6 +553,50 @@ describe("email notifications", () => {
     expect(text).toContain("Folder: checkout-flow\nApp: VS Code\nAgent: Claude Code\n");
     expect(text).not.toContain("/Users/example");
     expect(text).not.toContain("permission prompt");
+  });
+
+  test("with AGENT_LOOKOUT_EMAIL_EVENTS, a session that finishes is emailed on the poll that sees it, with its own subject", async () => {
+    const mail = await startSmtpServer({ auth: CREDENTIALS });
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(CREDENTIALS),
+      AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,finished,ended",
+    });
+    expect((await server.status()).events).toEqual(["needs-you", "finished", "ended"]);
+
+    await server.poll(0, [busy(1, "billing-webhooks"), busy(2, "docs-site")]);
+    await server.poll(2_000, [
+      makeSession({
+        id: mailId(1),
+        name: "billing-webhooks",
+        project: "billing-webhooks",
+        status: "finished",
+      }),
+    ]);
+    await server.settled();
+
+    expect(mail.received.map((email) => headerValues(email.data, "Subject"))).toEqual([
+      ["billing-webhooks finished"],
+      ["docs-site ended"],
+    ]);
+    const text = textOf(mail.received[0]?.data ?? "");
+    expect(text).toContain("billing-webhooks finished.\n");
+    expect(text).toContain("Agent Lookout saw this at ");
+    expect(text).toContain("Folder: billing-webhooks\n");
+  });
+
+  test("a list of events that cannot be read turns email off, and says so in one line", async () => {
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: "smtp://127.0.0.1:2525",
+      AGENT_LOOKOUT_EMAIL_EVENTS: "finished,sometimes",
+    });
+    expect(server.collector.email).toBeNull();
+    expect(server.sendersMade()).toBe(0);
+    expect(server.warnings).toEqual([
+      "Email notifications are off: AGENT_LOOKOUT_EMAIL_EVENTS must be one or more of needs-you, finished, failed, ended, separated by commas, such as needs-you,finished.",
+    ]);
+    expect((await server.status()).on).toBe(false);
   });
 
   test("a collector that is started again does not send again for a wait it finds open", async () => {

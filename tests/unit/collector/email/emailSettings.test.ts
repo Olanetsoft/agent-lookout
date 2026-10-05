@@ -40,6 +40,7 @@ describe("readEmailSetup", () => {
         settings: {
           to: TO,
           from: TO,
+          events: ["needs-you"],
           afterMs: 60_000,
           server: {
             host: "smtp.example.com",
@@ -70,6 +71,46 @@ describe("readEmailSetup", () => {
         AGENT_LOOKOUT_EMAIL_AFTER: " 300 ",
       }),
     ).toMatchObject({ settings: { afterMs: 300_000 } });
+  });
+
+  test("the events emailed are a wait alone unless AGENT_LOOKOUT_EMAIL_EVENTS names others", () => {
+    const base = { AGENT_LOOKOUT_EMAIL_TO: TO, AGENT_LOOKOUT_SMTP_URL: "smtps://smtp.example.com" };
+    const events = (value?: string) =>
+      read(value === undefined ? base : { ...base, AGENT_LOOKOUT_EMAIL_EVENTS: value });
+
+    expect(events()).toMatchObject({ settings: { events: ["needs-you"] } });
+    // Only spaces is the same as leaving it out.
+    expect(events("  ")).toMatchObject({ settings: { events: ["needs-you"] } });
+    expect(events("finished")).toMatchObject({ settings: { events: ["finished"] } });
+    // Spaces, case, order and a name given twice do not matter.
+    expect(events(" Ended , needs-you,FAILED,ended ")).toMatchObject({
+      settings: { events: ["needs-you", "failed", "ended"] },
+    });
+    expect(events("needs-you,finished,failed,ended")).toMatchObject({
+      settings: { events: ["needs-you", "finished", "failed", "ended"] },
+    });
+  });
+
+  test.each([
+    ",",
+    "finished,",
+    "finished,,failed",
+    "finish",
+    "needs you",
+    "all",
+    "finished;failed",
+  ])("a list of events that cannot be read turns email off, and names the setting: %j", (value) => {
+    const env = {
+      AGENT_LOOKOUT_EMAIL_TO: TO,
+      AGENT_LOOKOUT_SMTP_URL: URL_WITH_PASSWORD,
+      AGENT_LOOKOUT_EMAIL_EVENTS: value,
+    };
+    expect(problemOf(read(env))).toBe(
+      "AGENT_LOOKOUT_EMAIL_EVENTS must be one or more of needs-you, finished, failed, ended, separated by commas, such as needs-you,finished.",
+    );
+    expect(emailProblemLine(problemOf(read(env)) as string)).toBe(
+      "Email notifications are off: AGENT_LOOKOUT_EMAIL_EVENTS must be one or more of needs-you, finished, failed, ended, separated by commas, such as needs-you,finished.",
+    );
   });
 
   test("smtps:// is TLS from the start, and smtp:// must be upgraded with STARTTLS, on the usual ports", () => {

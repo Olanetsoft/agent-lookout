@@ -23,8 +23,17 @@ export const CODEX_OWN_HOME_ENV = "CODEX_HOME";
 /** How long a Codex folder that was not there is taken to be still missing before it is looked for again. */
 export const RECHECK_MS = 60_000;
 
-/** The one way this adapter reads, named for the poller. */
+/** The usual way this adapter reads, named for the poller. */
 export const BASIS = "files";
+
+/**
+ * The way it reads while its folder of locks is missing or cannot be listed.
+ * Then no session can be shown as finished, so a session that had finished
+ * shows as idle. Named apart, so that one poll without the locks is not
+ * compared with one that had them, and every finished session does not seem
+ * to start again and then finish.
+ */
+export const BASIS_WITHOUT_LOCKS = "files-without-locks";
 
 const LABEL = "Codex";
 
@@ -328,7 +337,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
       detail += ` ${OLDER_CODEX_NOTE}`;
     }
     const answer = result("ok", detail, every(pollIntervalMs), checkedAt);
-    return { ...answer, sessions };
+    return { ...answer, sessions, basis: locks.supported ? BASIS : BASIS_WITHOUT_LOCKS };
   }
 
   return {

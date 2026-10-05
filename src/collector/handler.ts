@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   NOTIFICATIONS_HEADER,
+  readNotificationsHeader,
   type EmailStatusResponse,
   type ErrorResponse,
   type EventsResponse,
@@ -137,14 +138,14 @@ function fail(res: ServerResponse, status: number, error: string, headers = {}):
 }
 
 /**
- * What a page said about its notifications, or null when the request carries no
- * such header or one with any other value. Node gives header names in lower case.
+ * What a page said about its notifications, the events it shows them of, or
+ * null when the request carries no such header or one that cannot be read.
+ * Node gives header names in lower case.
  */
 export function notificationsSaid(req: IncomingMessage): NotificationsSaid | null {
   const value = req.headers[NOTIFICATIONS_HEADER.toLowerCase()];
   if (typeof value !== "string") return null;
-  const said = value.trim().toLowerCase();
-  return said === "on" || said === "off" ? said : null;
+  return readNotificationsHeader(value);
 }
 
 /** Reads a query value that must be a plain non-negative number. */
@@ -200,7 +201,7 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
     // Only a request that passed every check above is listened to, so a page
     // at another address can no more steer the notifications than read a session.
     const said = notificationsSaid(req);
-    if (said) notifications?.pageSaid(said, url.pathname === "/api/sessions");
+    if (said !== null) notifications?.pageSaid(said, url.pathname === "/api/sessions");
 
     switch (url.pathname) {
       case "/api/health": {

@@ -1,5 +1,5 @@
-import { NOTIFICATIONS_HEADER, type NotificationsSaid } from "@core/api";
-import { getNotificationSetting } from "@dashboard/lib/notifications/notificationSetting";
+import { NOTIFICATIONS_HEADER, notificationsHeaderValue } from "@core/api";
+import { notificationEventsInForce } from "@dashboard/lib/notifications/notificationSetting";
 
 /**
  * The one seam between the dashboard and its data.
@@ -10,11 +10,11 @@ import { getNotificationSetting } from "@dashboard/lib/notifications/notificatio
  * not same-origin installs its own transport with `setApiHost` before React
  * renders.
  *
- * Every request also says whether this page's notifications are on, in a
- * header. The collector shows a notification itself when no page is open to,
- * and what the pages say is all it knows of the setting, so turning
- * notifications off here turns the collector's off at the next request. It is
- * added here, at the seam, so no request can go without it.
+ * Every request also says whether this page's notifications are on, and for
+ * which events, in a header. The collector shows a notification itself when no
+ * page is open to, and what the pages say is all it knows of the setting, so
+ * turning notifications off here turns the collector's off at the next
+ * request. It is added here, at the seam, so no request can go without it.
  */
 
 /** Fetch-shaped on purpose, so a call site only swaps `fetch(` for `apiRequest(`. */
@@ -48,12 +48,12 @@ function staysOnThisServer(path: string): boolean {
 }
 
 /**
- * What this page says of its notifications: "on" only while the person has
- * turned them on and the browser allows them, which is when the page shows
- * them itself. Read at each request, because either can change in between.
+ * What this page says of its notifications: the events it shows them of, which
+ * is none unless the person has turned them on and the browser allows them.
+ * Read at each request, because either can change in between.
  */
-function notificationsSaid(): NotificationsSaid {
-  return getNotificationSetting().on ? "on" : "off";
+function notificationsSaid(): string {
+  return notificationsHeaderValue(notificationEventsInForce());
 }
 
 /**

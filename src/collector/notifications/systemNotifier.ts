@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 
-import type { WaitNotice } from "../../core/sessions/waiting.ts";
+import type { Notice } from "../../core/sessions/waiting.ts";
 
 /**
  * The one seam between the collector and the system's notifications.
@@ -17,7 +17,7 @@ export interface SystemNotifier {
    * Shows a notification on this machine. It never throws, and a notification
    * that could not be shown is dropped without a word.
    */
-  show(notice: WaitNotice): void;
+  show(notice: Notice): void;
 }
 
 /** Where macOS keeps `osascript`. It is never looked for on `PATH`. */
@@ -49,7 +49,7 @@ function withoutNul(text: string): string {
  * dash as one of its own options, and a session named `-e` would have the
  * argument after it run as a script.
  */
-export function osascriptArgs(notice: WaitNotice): string[] {
+export function osascriptArgs(notice: Notice): string[] {
   return [
     ...SCRIPT.flatMap((line) => ["-e", line]),
     "--",
