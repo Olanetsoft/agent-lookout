@@ -12,6 +12,15 @@ import type { CollectorState } from "@dashboard/lib/collectorStore";
 import { problemTitle, sourceLine } from "@dashboard/lib/connection";
 import { formatAgo, formatClock, formatFullTime } from "@dashboard/lib/format";
 
+/**
+ * Whether a fact's value is a literal string: a folder, a file or a command.
+ * Those are set in the mono. A phrase such as "every 2 seconds" or "not run" is
+ * words, and words are never set in the mono.
+ */
+function isLiteral(value: string): boolean {
+  return value.includes("/") || value.startsWith("~") || / --?\w/.test(value);
+}
+
 interface SourcesViewProps {
   state: CollectorState;
   now: number;
@@ -63,7 +72,7 @@ function SourceCard({
 
         <FactList className='mt-2'>
           {source.watching?.map((fact, index) => (
-            <FactRow key={`${index}-${fact.label}`} label={fact.label} mono>
+            <FactRow key={`${index}-${fact.label}`} label={fact.label} mono={isLiteral(fact.value)}>
               {/* A folder can be any length and has no spaces to break at. */}
               <span data-part='watching' className='wrap-anywhere'>
                 {fact.value}

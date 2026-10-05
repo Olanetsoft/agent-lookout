@@ -5,8 +5,8 @@ export const DEFAULT_HISTORY_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Counts one poll's sessions into a history point. A stale session is idle, but
- * it is counted on its own and not as idle, as the dashboard's tiles count it,
- * so the Idle tile's line ends at the Idle tile's figure.
+ * it is counted on its own and not as idle, as the dashboard's counts have it,
+ * so the Idle chart's line ends at the Idle count's figure.
  */
 export function historyPointFor(sessions: readonly Session[], at: number): HistoryPoint {
   let needsYou = 0;

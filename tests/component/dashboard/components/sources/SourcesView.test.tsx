@@ -60,12 +60,14 @@ afterEach(() => {
 });
 
 /**
- * A source's fact rows: what it reads and runs in the mono, as literal strings,
- * and the last two, the count and the age, as figures in the sans with figures
- * that keep their width.
+ * A source's fact rows: a folder, a file or a command in the mono, as a literal
+ * string; a phrase such as "every 2 seconds" in the sans, because words are
+ * never set in the mono; and the last two, the count and the age, as figures in
+ * the sans with figures that keep their width.
  */
 function expectFactFonts(rows: Element[]): void {
   const figures = rows.slice(-2);
+  const literal = /^(Registry folder|Command|Sessions folder|Open-sessions folder|Names file)$/;
   for (const row of rows) {
     const value = row.querySelector("dd") as Element;
     const label = row.querySelector("dt")?.textContent ?? "";
@@ -73,8 +75,10 @@ function expectFactFonts(rows: Element[]): void {
       expect(getComputedStyle(value).fontFamily, label).toMatch(/^"?Atkinson Hyperlegible Next/);
       const figure = value.querySelector(".tabular-nums") ?? value;
       expect(getComputedStyle(figure).fontVariantNumeric, label).toContain("tabular-nums");
-    } else {
+    } else if (literal.test(label)) {
       expect(getComputedStyle(value).fontFamily, label).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    } else {
+      expect(getComputedStyle(value).fontFamily, label).toMatch(/^"?Atkinson Hyperlegible Next/);
     }
   }
   expect(figures.map((row) => row.querySelector("dt")?.textContent)).toEqual([
@@ -113,8 +117,8 @@ test("each source is a card that says its state in words, how it is read, and wh
     "2",
     "2s ago",
   ]);
-  // What it reads and runs is a literal string, in the mono. The count and the
-  // age are figures, in the sans with figures that keep their width.
+  // A folder and a command are literal strings, in the mono. How often is
+  // words, and the count and the age are figures: all three in the sans.
   expectFactFonts(rows);
   // The sentence stays above the rows, and nothing is picked out of it.
   const detail = source.element().querySelector('[data-part="detail"]') as HTMLElement;

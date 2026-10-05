@@ -26,7 +26,7 @@ interface CalloutProps {
   title: string;
   /** What happened and what to do about it. */
   children?: ReactNode;
-  /** A button on the right, such as "Try again". */
+  /** A button on the right. */
   action?: ReactNode;
   className?: string;
 }

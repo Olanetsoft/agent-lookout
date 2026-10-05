@@ -13,7 +13,7 @@ export function FactList({ children, className }: { children: ReactNode; classNa
 
 interface FactRowProps {
   label: string;
-  /** The value. Set `mono` when it is a machine fact: a time, a count, a path. */
+  /** The value. Set `mono` when it is a literal string: a folder, a file or a command. */
   children: ReactNode;
   mono?: boolean;
 }

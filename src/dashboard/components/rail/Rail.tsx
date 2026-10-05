@@ -17,7 +17,7 @@ interface RailProps {
   /**
    * How many sessions need the person, as of the last answer, or null before the
    * first one. The lamp in the mark is lit only while it is above zero. Once
-   * answers stop it keeps the last count, as the tiles and the list do, while
+   * answers stop it keeps the last count, as the counts and the list do, while
    * the page says above them that the data is no longer current.
    */
   needsYou: number | null;

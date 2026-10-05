@@ -50,7 +50,7 @@ interface StatusMarkProps {
   breathing?: boolean;
   /**
    * The needs-you mark with its light out, in the ink colour: the shape stays, so
-   * the Needs you tile keeps its mark, and no warm colour is on the screen.
+   * the Needs you panel keeps its mark, and no warm colour is on the screen.
    */
   unlit?: boolean;
   className?: string;
