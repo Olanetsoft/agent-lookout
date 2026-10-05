@@ -121,9 +121,15 @@ function describesSameSession(entry: FeedEntry, registry: RegistryEntry): boolea
 /**
  * A session from the supported feed, enriched from its registry file when there
  * is one that describes the same session. The feed decides what the session is
- * and what it is doing; the registry only adds the app and the time of the last
- * status change. Used for the background jobs only the feed knows, and for
- * every session while the registry cannot be relied on.
+ * and what it is doing; the registry only adds the app and, unless it gives a
+ * different status, the time that status began. Used for the background jobs only
+ * the feed knows, and for every session while the registry cannot be relied on.
+ *
+ * The feed's answer can be a few seconds old. When the registry has already
+ * moved to another status, its time is when that one began, not the one the
+ * feed still reports. Passing it on would move a waiting session's status time
+ * while the feed still calls it waiting, which reads as a new wait. So the time
+ * is left unknown until the two agree.
  */
 export function sessionFromFeed(
   entry: FeedEntry,
@@ -132,6 +138,12 @@ export function sessionFromFeed(
 ): Session {
   const enrichment =
     registry !== undefined && describesSameSession(entry, registry) ? registry : undefined;
+  // A file with no status of its own contradicts nothing.
+  const sameStatus =
+    enrichment !== undefined &&
+    (enrichment.status === undefined ||
+      mapClaudeCodeStatus(enrichment, "registry").status ===
+        mapClaudeCodeStatus(entry, "feed").status);
   return build(
     {
       pid: entry.pid,
@@ -144,7 +156,7 @@ export function sessionFromFeed(
       state: entry.state,
       waitingFor: entry.waitingFor,
       entrypoint: enrichment?.entrypoint,
-      statusUpdatedAt: enrichment?.statusUpdatedAt,
+      statusUpdatedAt: sameStatus ? enrichment.statusUpdatedAt : undefined,
     },
     "feed",
     context,

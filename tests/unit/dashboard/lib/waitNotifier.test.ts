@@ -41,9 +41,9 @@ test("a session that starts waiting is shown once, by its name, with a tag of it
   expect(host.shown).toEqual([]);
 
   notifier.handle(snapshot([waiting(1, { name: "demo-project" })]));
-  // The same answer again, and a later one with the wait still open.
+  // The same answer again, twice more, with the wait still open.
   notifier.handle(snapshot([waiting(1, { name: "demo-project" })]));
-  notifier.handle(snapshot([waiting(1, { name: "demo-project", statusSince: T0 + 4_000 })]));
+  notifier.handle(snapshot([waiting(1, { name: "demo-project" })]));
 
   expect(host.shown).toHaveLength(1);
   expect(host.shown[0]).toMatchObject({

@@ -7,6 +7,8 @@ import {
   uniqueById,
   type SessionContext,
 } from "@collector/adapters/claude-code/toSession";
+import type { Session, SessionsSnapshot } from "@core/session";
+import { EMPTY_WAIT_MEMORY, waitChanges } from "@core/waitChanges";
 import { ids, pids } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -76,8 +78,7 @@ describe("sessionFromFeed", () => {
         sessionId: ids.busy,
         name: "a-different-name",
         cwd: "/Users/example/code/elsewhere",
-        status: "waiting",
-        waitingFor: "permission prompt",
+        status: "busy",
         entrypoint: "claude-desktop",
         statusUpdatedAt: 1_700_000_030_000,
       },
@@ -91,7 +92,64 @@ describe("sessionFromFeed", () => {
       surface: "desktop",
       statusSince: 1_700_000_030_000,
     });
+  });
+
+  test("a registry file that gives another status adds the surface, and not its time", () => {
+    const session = sessionFromFeed(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy" },
+      {
+        pid: pids.busy,
+        sessionId: ids.busy,
+        status: "waiting",
+        waitingFor: "permission prompt",
+        entrypoint: "claude-desktop",
+        statusUpdatedAt: 1_700_000_030_000,
+      },
+      context,
+    );
+    expect(session).toMatchObject({ status: "working", surface: "desktop", statusSince: null });
     expect(session.waitingReason).toBeUndefined();
+  });
+
+  // The feed's answer is a few seconds old. The person answers, the registry
+  // moves on at once, and the feed still says waiting until its next run.
+  test("a wait answered while the feed still reports it is not read as a new wait", () => {
+    const feed = {
+      pid: pids.permission,
+      sessionId: ids.permission,
+      status: "waiting",
+      waitingFor: "permission prompt",
+    };
+    const asked = sessionFromFeed(
+      feed,
+      {
+        pid: pids.permission,
+        sessionId: ids.permission,
+        status: "waiting",
+        statusUpdatedAt: now - 6_000,
+      },
+      context,
+    );
+    const answered = sessionFromFeed(
+      feed,
+      {
+        pid: pids.permission,
+        sessionId: ids.permission,
+        status: "busy",
+        statusUpdatedAt: now - 1_000,
+      },
+      context,
+    );
+    expect(asked).toMatchObject({ status: "needs-you", statusSince: now - 6_000 });
+    expect(answered).toMatchObject({ status: "needs-you", statusSince: null });
+
+    const snapshot = (session: Session): SessionsSnapshot => ({
+      generatedAt: now,
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: now }],
+      sessions: [session],
+    });
+    const { memory } = waitChanges(EMPTY_WAIT_MEMORY, snapshot(asked));
+    expect(waitChanges(memory, snapshot(answered))).toMatchObject({ started: [], stopped: [] });
   });
 
   test("a file for the same session whose status time is before the start keeps its surface", () => {
