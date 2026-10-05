@@ -1,6 +1,6 @@
 # Codex adapter notes
 
-These notes record what Agent Lookout reads from OpenAI Codex, where each value comes from, and what breaks when Codex changes. The files Codex writes are undocumented and change often, so when the adapter stops working, start here.
+These notes record what Agent Lookout reads from Codex, where each value comes from, and what breaks when Codex changes. The files Codex writes are undocumented and change often, so when the adapter stops working, start here.
 
 Checked on 2026-10-04 against Codex `rust-v0.160.0`, released 2026-10-01 (commit `79b1b66` of [openai/codex](https://github.com/openai/codex)), and the Codex documentation at learn.chatgpt.com. Codex was not installed on the machine where the adapter was written. Everything below comes from Codex's source and documentation and from hand-written files laid out the same way, except the section on the Codex desktop app, which was installed on that machine later the same day and checked against the adapter. **The adapter has not been checked against the Codex CLI or the IDE extension, and the dashboard has not yet been compared with Codex's own list of sessions.**
 
@@ -61,7 +61,7 @@ Each line is `{"timestamp":"YYYY-MM-DDTHH:MM:SS.mmmZ","ordinal"?:n,"type":"<item
 
 The adapter uses two kinds of line and parses no other.
 
-The first `session_meta` line. Kept: `id`, `timestamp` (when the session was created), `cwd`, `source`, `thread_source`, `parent_thread_id`, `originator` (the program that created the session: `codex_cli_rs` for the terminal app, `Codex Desktop` for the desktop app) and `cli_version` (the Codex version that created it). `originator` and `cli_version` are kept only when they are at most 64 characters. Dropped: everything else, including `base_instructions`, `dynamic_tools`, `git`, `creator_user_id`, `creator_account_id`, `model_provider` and `session_id`. The session's id in Agent Lookout is `codex:<thread id>`, with the thread id taken from the file name, which is also how Codex names the lock file and the names file.
+The first `session_meta` line. Kept: `id`, `timestamp` (when the session was created), `cwd`, `source`, `thread_source`, `parent_thread_id`, `originator` (the program that created the session: `codex_cli_rs` for the Codex CLI, `Codex Desktop` for the desktop app) and `cli_version` (the Codex version that created it). `originator` and `cli_version` are kept only when they are at most 64 characters. Dropped: everything else, including `base_instructions`, `dynamic_tools`, `git`, `creator_user_id`, `creator_account_id`, `model_provider` and `session_id`. The session's id in Agent Lookout is `codex:<thread id>`, with the thread id taken from the file name, which is also how Codex names the lock file and the names file.
 
 Turn lines: `"type":"event_msg"` with `payload.type` of
 
@@ -81,7 +81,7 @@ The adapter lists the folder and never opens, locks or examines its files: openi
 
 A crash leaves the lock behind. The next Codex to start removes locks no process holds.
 
-Only a Codex of 0.155.0 or later writes locks, and the folder is shared by every Codex that uses the same Codex folder: the terminal app, the IDE extension and the desktop app may each bundle a different version. So a missing lock means a session has ended only when the session was created by a Codex that writes locks. For a session whose `cli_version` is older than 0.155.0, a pre-release of 0.155.0, `0.0.0` (a build from source) or missing, a missing lock says nothing: the status follows the file, as it does when there is no lock folder, and the Sources view says some sessions come from an older Codex. A lock that is there means open, whatever the version.
+Only a Codex of 0.155.0 or later writes locks, and the folder is shared by every Codex that uses the same Codex folder: the Codex CLI, the IDE extension and the desktop app may each bundle a different version. So a missing lock means a session has ended only when the session was created by a Codex that writes locks. For a session whose `cli_version` is older than 0.155.0, a pre-release of 0.155.0, `0.0.0` (a build from source) or missing, a missing lock says nothing: the status follows the file, as it does when there is no lock folder, and the Sources view says some sessions come from an older Codex. A lock that is there means open, whatever the version.
 
 ### The names file
 

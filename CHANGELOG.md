@@ -17,11 +17,13 @@ The first version. It shows Claude Code and Codex sessions and changes nothing o
 - Background sessions that finished or failed stay on the dashboard for 24 hours, marked Finished or Failed.
 - Sessions that need you sit in the Needs you panel at the top of the Overview, longest wait first, each with a timer of how long it has waited. When none does, the panel says so and shows the last wait that ended in the last hour.
 - Bars in that panel show how long each session has waited on you, going back at most an hour, and a row under them counts the sessions that are working, idle and stale, and every session found.
-- A Last hour chart shows how many sessions were waiting on you, working and idle, on average, in each five minutes of the last hour.
+- The Last hour chart shows how many sessions were waiting on you, working and idle, on average, in each five minutes of the last hour.
 - The Needs you panel's heading and its Working and Idle counts open a chart of up to six hours.
-- An event log records when a session appears, changes status or ends, and when Agent Lookout started watching again after a break.
-- A timeline shows each session's status over the last hour, with the time Agent Lookout did not measure hatched.
+- The Events log records when a session appears, changes status or ends, and when Agent Lookout started watching again after a break.
+- The Timeline shows each session's status over the last hour, with the time Agent Lookout did not measure hatched.
 - A Jump button opens a Claude Code session that runs in VS Code.
-- A Sources view says whether Claude Code and Codex were found and where Agent Lookout looked for them.
+- A rail down the left edge moves between the Overview, Sources and Settings, and its mark lights up while any session needs you.
+- The browser tab's title shows how many sessions need you, so it can be read while the tab is in the background.
+- The Sources view says whether Claude Code and Codex were found, what Agent Lookout reads and runs for each, and how often.
 - Night and Day themes: panels of tinted glass over a warm black at Night or a warm stone by Day, with amber kept for the sessions that need you. Settings can make the theme follow the computer's setting.
 - `npm run build` followed by `npm start` serves the dashboard from one local process at `127.0.0.1:4777`.

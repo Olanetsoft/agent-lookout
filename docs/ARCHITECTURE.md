@@ -13,7 +13,7 @@ Agent Lookout has two halves and a shared middle. The collector is Node code tha
 | `tests/`               | Every test, in `unit/`, `integration/` and `component/`, with `fixtures/` and `support/`                       | Node and headless Chromium |
 | `scripts/`             | The layout check that `npm run check` runs first                                                               | Node                       |
 | `public/`              | Static files served as they are                                                                                | The browser                |
-| `docs/`                | This file, the user guide, the adapter notes in `adapters/` and the README's screenshots                       | GitHub                     |
+| `docs/`                | This file, the user guide, the adapter notes in `adapters/` and the screenshots in `images/`                   | GitHub                     |
 
 It is one npm package with no workspaces. `index.html`, `package.json` and the config files are at the root.
 
@@ -21,7 +21,7 @@ It is one npm package with no workspaces. `index.html`, `package.json` and the c
 
 Production code never imports from `tests/`. ESLint refuses the import, the build has no `@tests` alias, and `scripts/check-layout.mjs` checks the same rule with nothing but Node.
 
-The dashboard and the tests import through the aliases `@core`, `@collector`, `@dashboard` and `@tests`. The collector and `src/core/` use relative imports with the `.ts` extension, because `npm start` runs them without a bundler.
+[CONTRIBUTING.md](../CONTRIBUTING.md) has the rules for names and imports.
 
 ## The session model
 
@@ -33,7 +33,7 @@ Every tool's own states map onto six statuses: `needs-you`, `working`, `idle`, `
 
 Each poll produces a `SessionsSnapshot`: the sessions, and a `SourceHealth` for each adapter that says whether it is `ok`, `searching`, `unavailable` or in `error`, with a plain-language detail and a list of what the adapter reads and runs.
 
-The poller compares each source's sessions with the last list that source reported successfully in the same way of reading. A session that appeared, changed status or ended becomes a `SessionEvent`. A change to `needs-you` is a warning, a change to `failed` is critical, and the rest are advisory. The first successful poll is the baseline and produces no events, because the sessions in it were already running. Each poll also appends a `HistoryPoint` with the counts per status. Its idle count leaves out stale sessions, as the Idle count on the Overview does, so the chart behind that count ends at its figure. The Last hour chart and the history charts behind the Overview's counts draw these points, and the timeline, the bars of waits and the Events log use the points to tell the time that was measured from the time that was not.
+The poller compares each source's sessions with the last list that source reported successfully in the same way of reading. A session that appeared, changed status or ended becomes a `SessionEvent`. A change to `needs-you` is a warning, a change to `failed` is critical, and the rest are advisory. The first successful poll is the baseline and produces no events, because the sessions in it were already running. Each poll also appends a `HistoryPoint` with the counts per status. Its idle count leaves out stale sessions, as the Idle count on the Overview does, so the chart behind that count ends at its figure. The Last hour chart and the history charts behind the Overview's counts draw these points, and the Timeline, the Waited on you bars and the Events log use the points to tell the time that was measured from the time that was not.
 
 Fields can be added to these types. Existing fields are never renamed or removed.
 
@@ -76,7 +76,7 @@ The command's answer outranks the registry.
 
 When the command cannot be found, or fails, the registry is used alone and the health detail says so. If the registry cannot be read either, the source is `unavailable` and the detail names where the adapter looked.
 
-The adapter looks for the `claude` binary on `PATH`, then at `~/.local/bin/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. The fixed locations are there because an app started from the Finder does not inherit the shell's `PATH`. When `AGENT_LOOKOUT_CLAUDE_BIN` is set, that path is the only place it looks.
+The adapter looks for the `claude` binary on `PATH`, then at `~/.local/bin/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. The fixed locations are there because an app started from the Finder does not inherit the shell's `PATH`.
 
 It starts the command directly, with no shell, with stdin closed and a five second timeout. Shell wrappers and hooks can print before or after the list, so the adapter takes the first JSON array on stdout that holds a session and ignores the rest. A Claude Code too old to know `--all` is asked without it, and its finished jobs are not listed.
 
@@ -88,28 +88,21 @@ A background job that is finished or failed, with no process left, stays in the 
 
 A session in VS Code gets a `links.open` of `vscode://anthropic.claude-code/open?session=<sessionId>`. Other surfaces have no link.
 
-Three environment variables change where the adapter looks. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude`. When it is set, a `claude` found on the machine is not run, because it would list the sessions of the usual folder. Setting `AGENT_LOOKOUT_CLAUDE_BIN` as well names a program to run. `AGENT_LOOKOUT_CLAUDE_FEED=off` stops the command being run at all, and sessions then come from the registry alone.
+The [guide](GUIDE.md#settings-you-can-change) lists the settings that change where the adapter looks. One of them needs a reason: when `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude`, a `claude` found on the machine is not run, because it would list the sessions of the usual folder.
 
 ## The Codex adapter
 
-The adapter lives in `src/collector/adapters/codex/`. [adapters/codex.md](adapters/codex.md) records where each value comes from, the Codex version it was checked against and what breaks when Codex changes.
+The adapter lives in `src/collector/adapters/codex/`. [adapters/codex.md](adapters/codex.md) is its reference: every file it reads and how often, which sessions are listed, the full status table, the Codex version it was checked against and what breaks when Codex changes.
 
-Codex documents no way to list its sessions that works without starting Codex's own server, which writes to its folder, or without editing its config to add hooks. So the adapter reads files alone and runs no program. Nothing it reads is documented. The Codex folder is `AGENT_LOOKOUT_CODEX_HOME` if set, then Codex's own `CODEX_HOME`, then `~/.codex`. When it is missing, the source is `unavailable`, and the adapter looks for it again once a minute with one `stat`. Polls in between touch nothing. A folder named by `AGENT_LOOKOUT_CODEX_HOME` that holds no `sessions/` is an answer instead: the source is `ok` with no sessions.
+Codex documents no way to list its sessions that works without starting Codex's own server, which writes to its folder, or without editing its config to add hooks. So the adapter reads files alone and runs no program. Nothing it reads is documented.
 
-Each poll lists the day folders `sessions/YYYY/MM/DD/` for today and yesterday, by local date, as Codex names them, and reads the `rollout-*.jsonl` files in them. From each file it reads the first `session_meta` line, for the session's folder, start time, source, the program that created it and its Codex version, and the last line that says a turn started or ended. After that it reads only what was appended. It lists `thread-writer-locks/`, where Codex keeps a `<thread id>.lock` for each session a Codex process has open, and never opens those files. It reads `session_index.jsonl` for the names people give sessions. An open session whose file sits in an older day folder, as a resumed session's can, is found by listing every day folder: soon after Codex opens it, but not within 5 seconds of the last listing, and then at most every 30 seconds while it is not found. `io.ts` opens only ordinary files, never a link or a pipe, and `rolloutFile.ts` bounds every read: 2 MiB from the start of a file and 8 MiB from its end.
+Each poll lists the day folders for today and yesterday under `sessions/` and reads the `rollout-*.jsonl` files in them. From each file it reads the first `session_meta` line, for the session's folder, start time and source, and the last line that says a turn started or ended. After that it reads only what was appended. It lists `thread-writer-locks/`, where Codex keeps a lock for each session a Codex process has open, and never opens those files. It reads `session_index.jsonl` for the names people give sessions. `io.ts` opens only ordinary files, never a link or a pipe, and `rolloutFile.ts` bounds every read.
 
-`src/core/codexMapping.ts` holds the mapping.
+`src/core/codexMapping.ts` maps the last turn line and the lock to a status. A turn under way is `working`, a turn that is over is `idle`, and a session whose lock has gone is `finished`. Codex does not write approval waits to these files, so a Codex session is never `needs-you`: one that is waiting for approval is in a turn that has started, and shows as `working`. Codex older than 0.155 keeps no locks, so a session it created is never `finished`. The health detail states each limit when it applies.
 
-| Last turn line                                   | Lock present, no lock folder, or made by a Codex before 0.155 | Lock gone  |
-| ------------------------------------------------ | ------------------------------------------------------------- | ---------- |
-| `task_started`, `turn_started`                   | `working`                                                     | `finished` |
-| `task_complete`, `turn_complete`, `turn_aborted` | `idle`                                                        | `finished` |
-| None yet                                         | `idle`                                                        | `finished` |
-| Anything else, or none within the last 8 MiB     | `unknown`                                                     | `unknown`  |
+The Codex folder is `AGENT_LOOKOUT_CODEX_HOME` if set, then Codex's own `CODEX_HOME`, then `~/.codex`. When it is missing, the source is `unavailable`, and the adapter looks for it again once a minute with one `stat`. Polls in between touch nothing. A folder named by `AGENT_LOOKOUT_CODEX_HOME` that holds no `sessions/` is an answer instead: the source is `ok` with no sessions.
 
-Codex does not write approval waits to these files, so a Codex session is never `needs-you`. One that is waiting for approval is in a turn that has started, and shows as `working`. The health detail says so. Codex older than 0.155 keeps no locks, so a session it created that has ended cannot be told from one that is idle, and none is `finished`. That holds whether the lock folder is missing or a newer Codex sharing the folder created it. The detail says that too.
-
-A session is listed while its lock exists, and otherwise until 24 hours after the last line in its file. Subagents, Codex's internal threads and threads run for another program are left out, as are sessions the Codex desktop app imported from another agent, until Codex runs a turn in one. The desktop app is told from the IDE extension by the `originator` it records. The id is `codex:<thread id>`. A Codex session has no process ID and no link, so it has no Jump button.
+A session's id is `codex:<thread id>`. A Codex session has no process ID and no link, so it has no Jump button.
 
 ## Hosts
 
@@ -123,9 +116,9 @@ On the dashboard side, every request goes through `apiRequest(path, init)` in `s
 
 `src/dashboard/App.tsx` puts a rail down the left edge and, beside it, the header over the current view. The rail, in `components/rail/Rail.tsx`, links to three views: Overview, Sources and Settings. Each view has its own address in the URL fragment, `#overview`, `#sources` or `#settings`, which `lib/view.ts` reads, so the back button, a reload and a bookmark land on the same view. Choosing one replaces the view in `<main>` and moves focus there, and the rail and the header stay. A fault inside a view is caught there and leaves the rail and the header standing.
 
-The Overview holds the Needs you panel, the Last hour chart, the Sessions table, the Events log and the Timeline. It leaves out a tool that was not found, unless none was, so someone who uses one tool sees what they would if only that one were watched. The Sources view shows each source's health and the facts it reports about what it reads and runs. Settings holds the theme.
+The Overview holds the Needs you panel, the Last hour chart, the Sessions list, the Events log and the Timeline. It leaves out a tool that was not found, unless none was, so someone who uses one tool sees what they would if only that one were watched. The Sources view shows each source's health and the facts it reports about what it reads and runs. Settings holds the theme.
 
-The Needs you panel, in `components/hero/`, lists the sessions that need you, longest wait first, and the Sessions table leaves them out. Under them it draws how long each session waited, which `lib/waits.ts` works out from the timeline over the time the page holds, and it ends with the counts of sessions working, idle and stale, and of every session. The Last hour chart, built in `lib/lastHour.ts`, takes the mean of the history's counts over each five minutes of the clock. Once more than one tool is found, each row of the Sessions table names its tool in plain text, from the source's `label`, in an Agent column. When the card is too narrow for every column, the App column gives way first, then the Folder column. The Events log, built in `lib/events.ts`, adds a row wherever the history shows a break in the polls. The Timeline, built in `lib/timeline.ts`, draws each session's status over the last hour from the snapshot, the events and the history, and hatches each row where that session's status is not known. The timeline, the Last hour chart and the bars of waits all take the time that was measured from `lib/measured.ts`, so they agree on it.
+The Needs you panel, in `components/hero/`, lists the sessions that need you, longest wait first, and the Sessions list leaves them out. Under them the Waited on you bars draw how long each session waited, which `lib/waits.ts` works out with `lib/timeline.ts` over the time the page holds, and the panel ends with the counts of sessions working, idle and stale, and of every session. The Last hour chart, built in `lib/lastHour.ts`, takes the mean of the history's counts over each five minutes of the clock. Once more than one tool is found, each row of the Sessions list names its tool in plain text, from the source's `label`, in an Agent column. When the card is too narrow for every column, the App column gives way first, then the Folder column. The Events log, built in `lib/events.ts`, adds a row wherever the history shows a break in the polls. The Timeline, built in `lib/timeline.ts`, draws each session's status over the last hour from the snapshot, the events and the history, and hatches each row where that session's status is not known. The Timeline, the Last hour chart and the Waited on you bars all take the time that was measured from `lib/measured.ts`, so they agree on it.
 
 `src/dashboard/lib/collectorStore.ts` polls `/api/sessions`, `/api/events` and `/api/history` every two seconds and never starts a poll while the last one is still running. It holds the last hour of history: it asks for the whole hour at first, then for the last 15 minutes on each beat, which it joins to what it holds. If the collector stops answering for more than five seconds, the last good data stays on screen under a notice that says when it was read. Durations tick every second from the clock in `src/dashboard/hooks/useNow.ts`, using the timestamps already loaded, without another request.
 

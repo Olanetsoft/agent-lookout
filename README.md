@@ -4,14 +4,14 @@ Agent Lookout puts every Claude Code and Codex session running on your Mac on on
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/dashboard-day.png">
-  <img alt="The Agent Lookout dashboard. At the top, a panel for the one session waiting for permission, with its timer and a Jump button, bars of how long sessions waited on you, and counts of working, idle and stale sessions. Beside it, a bar chart of the last hour. Below, the other sessions grouped by status, an events log and a timeline of the last hour." src="docs/images/dashboard-night.png">
+  <img alt="The Agent Lookout dashboard. A rail on the left links to Overview, Sources and Settings. At the top, the Needs you panel shows the one session waiting for permission, with its timer and a Jump button, bars of how long sessions waited on you, and counts of working, idle and stale sessions. Beside it is the Last hour chart. Below are the Sessions list, grouped by status, the Events log and the Timeline." src="docs/images/dashboard-night.png">
 </picture>
 
 <sub>The dashboard with sample data. None of these sessions are real.</sub>
 
 It reads the list of sessions Claude Code keeps on your computer, so it finds sessions in a terminal, in VS Code or in the Claude Code desktop app with no setup. For Codex it reads the session files Codex saves in `~/.codex`, also with no setup. It only watches. It cannot start, stop or answer a session yet.
 
-Today it watches Claude Code and Codex on macOS. Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as waiting for you. Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
+Today it watches Claude Code and Codex on macOS. Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as needing you. Codex support is new: it has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
 
 ## Install
 
@@ -63,4 +63,4 @@ Agent Lookout itself sends nothing anywhere. It does run Claude Code's own listi
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the checks to run and how to add another agent.
 
-Agent Lookout is [MIT licensed](LICENSE). It is an unofficial project, not affiliated with or endorsed by Anthropic or any other agent maker. See [DISCLAIMER.md](DISCLAIMER.md).
+Agent Lookout is [MIT licensed](LICENSE). It is an unofficial project, not affiliated with or endorsed by Anthropic, OpenAI or any other agent maker. See [DISCLAIMER.md](DISCLAIMER.md).

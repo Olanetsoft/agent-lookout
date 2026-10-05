@@ -12,7 +12,7 @@ The project has one maintainer, so replies are best effort. There are no tagged 
 
 ## What the app handles
 
-Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on `127.0.0.1`. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and the fields [PRIVACY.md](PRIVACY.md) lists. It writes to no agent's files. PRIVACY.md lists everything it reads.
+Agent Lookout reads metadata about the Claude Code and Codex sessions on your machine: names, working directories, statuses and, for Claude Code, process IDs. It serves that to the dashboard over HTTP on a loopback address. It reads no Claude Code transcripts. It does open Codex's session files, which hold whole conversations, and keeps only when turns started and ended and a few fields. It writes to no agent's files. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and keeps.
 
 Session names and folder paths can be sensitive. The main risk is that something other than your own browser reads them.
 
@@ -33,6 +33,6 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Other programs on the same machine reading the local API. The API has no authentication, so any local process can request it, and on a shared computer that includes other user accounts. This is a known limit of this version.
 - The dev server started with Vite's `--host` flag, which makes it listen on the network. `npm start` refuses to listen on anything but loopback.
 - Attacks that need control of your user account first. Someone with that control can read `~/.claude` and `~/.codex` directly.
-- Vulnerabilities in Claude Code or in another agent tool. Report those to the vendor.
+- Vulnerabilities in Claude Code, Codex or another agent tool. Report those to the vendor.
 - Traffic from Claude Code's own `claude agents` command while Agent Lookout runs it. It may contact Anthropic the way Claude Code normally does.
 - Vulnerabilities in a dependency that cannot be shown to affect Agent Lookout. Report those upstream.

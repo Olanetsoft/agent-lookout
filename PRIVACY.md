@@ -47,11 +47,9 @@ From the `session_meta` line it keeps `id`, `timestamp`, `cwd`, `source`, `threa
 
 A session file or `session_index.jsonl` that is a link, a named pipe or a device is never opened. The Codex folder and the folders inside it are followed when they are links.
 
-Codex's session files do not record when Codex is waiting for your approval. A Codex session that is waiting for you shows as working, and never as needing you.
-
 ### Settings
 
-It reads seven settings from the environment. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. `AGENT_LOOKOUT_CLAUDE_BIN` names the `claude` binary. `AGENT_LOOKOUT_CLAUDE_FEED` set to `off` stops the command being run. `AGENT_LOOKOUT_CODEX_HOME` replaces the Codex folder. `CODEX_HOME` is Codex's own setting for its folder, read so that Agent Lookout reads the folder Codex uses. `AGENT_LOOKOUT_PORT` and `AGENT_LOOKOUT_HOST` set where `npm start` listens.
+It reads seven settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST` and Codex's own `CODEX_HOME`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -65,7 +63,7 @@ It runs no program but the `claude` binary and `ps`. It never writes to `~/.clau
 
 ## Network
 
-Agent Lookout itself sends nothing anywhere. The only network traffic its own code makes is between the dashboard in your browser and Agent Lookout's own server on the same machine. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
+The only network traffic Agent Lookout's own code makes is between the dashboard in your browser and its own server on the same machine. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
 
 The `claude agents` command is Claude Code's own program, and it may contact Anthropic the way it does for anyone who runs it. Agent Lookout sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` for each run, to ask Claude Code to skip its update check, usage reporting and error reporting, and runs the command seldom. Anything else that program does is governed by Claude Code's settings and terms. To stop Agent Lookout running it, set `AGENT_LOOKOUT_CLAUDE_FEED=off`. Sessions then come from the registry alone, and background jobs whose process has ended are not listed.
 

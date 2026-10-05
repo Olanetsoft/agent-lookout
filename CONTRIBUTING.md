@@ -27,14 +27,14 @@ The Playwright step downloads the Chromium build that the component tests run in
 
 `npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code and Codex sessions on your own machine.
 
-To see the dashboard with no sessions, point it away from your own. Set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder:
+To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
 AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty npm run dev
 ```
 
-That shows the empty state. With both set, Agent Lookout reads only that folder, does not run the `claude` command and does not read `~/.codex`. Set only the first on a machine with Codex and your Codex sessions still appear, so do not take a screenshot that way.
+With both set, Agent Lookout reads only that folder, does not run the `claude` command and does not read `~/.codex`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
 
 ## Checks
 
@@ -46,54 +46,17 @@ npm run check
 
 It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five and `npm run build`. Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
 
-The layout check is `scripts/check-layout.mjs`. It fails, and says where the file belongs, if a test file is outside `tests/`, names no module at its mirrored path or has the wrong ending for that module; if a file in `tests/unit/`, `tests/integration/` or `tests/component/` is not a test; if anything under `src/` is test material, such as a fixture, a mock, a snapshot or a test helper, or sits in a folder named for one; or if a file under `src/` imports from `tests/` or from a test library.
+A change in behaviour comes with a test. Every test lives under `tests/`, in `unit/`, `integration/` or `component/`, at the path that mirrors the module it covers. Nothing under `src/` is a test or imports from `tests/`. The layout check fails, and says where the file belongs, when one of those rules is broken.
 
-A change in behaviour comes with a test.
+[tests/README.md](tests/README.md) says what belongs in each group, how to run one group or one file, how fixtures are written and how to run the opt-in check against the real `claude`.
 
-## Tests
+## Where code goes
 
-Every test lives under `tests/`, in one of three groups. The folder decides how a test is run.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the map of folders and explains how the parts fit together. In short, `src/core/` is logic with no DOM and no Node APIs, `src/collector/` is the Node code that finds sessions, `src/dashboard/` is the React app, and `tests/` holds every test, fixture and test helper.
 
-| Command                    | Runs                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `npm test`                 | All three groups                                                                             |
-| `npm run test:unit`        | `tests/unit/`: one module at a time, in Node, with no sockets, child processes or real files |
-| `npm run test:integration` | `tests/integration/`: real sockets, servers, child processes and files, in Node              |
-| `npm run test:component`   | `tests/component/`: React components rendered in headless Chromium                           |
-| `npm run test:watch`       | All three groups, again after each edit                                                      |
+In the dashboard, primitives are in `src/dashboard/components/ui/` and features in `src/dashboard/components/<feature>/`. The interface follows a fixed system of tokens and primitives, and the tokens are in `src/dashboard/styles/index.css`. Read both before you add or change anything under `src/dashboard/`.
 
-A test that only calls functions goes in `tests/unit/`, even when the module would touch files or start programs if it were not handed stand-ins. It goes in `tests/integration/` as soon as it needs something real from the operating system.
-
-A test file is named for a module that exists, and sits at that module's path, with `tests/<group>/` in place of `src/`. It ends in `.test.tsx` when the module is a `.tsx` file and in `.test.ts` otherwise. The test of `src/core/diff.ts` is `tests/unit/core/diff.test.ts`, and the test of `src/dashboard/styles/index.css` is `tests/component/dashboard/styles/index.test.ts`. Two sets of tests of one module in one group are two `describe` blocks in one file.
-
-No test reads the project's `dist/` folder, so the counts are the same whether or not `npm run build` has been run. The standalone server is tested by calling `runStandalone` in `src/collector/hosts/standalone.ts` against a temporary folder.
-
-One block in `tests/integration/collector/adapters/claude-code/feed.test.ts` runs the real `claude` binary. It is skipped unless `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1` is set, and runs on macOS only. Run it after a Claude Code update, or after changing how the command is started.
-
-[tests/README.md](tests/README.md) says what belongs in each group, how to run the check against the real `claude` and how fixtures are written.
-
-## Layout
-
-| Folder                 | Holds                                                                                                                  |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `src/core/`            | Logic with no DOM and no Node APIs: the session model, status mapping, staleness, snapshot diffing                     |
-| `src/collector/`       | Node code: one adapter per agent tool under `adapters/`, the poller, the event and history stores, the request handler |
-| `src/collector/hosts/` | The two things that mount the collector: the standalone server behind `npm start`, and the Vite plugin for dev         |
-| `src/dashboard/`       | The React app: `main.tsx`, `App.tsx`, `components/`, `hooks/`, `lib/`, `assets/` and `styles/`                         |
-| `tests/`               | Every test, fixture and test helper                                                                                    |
-| `scripts/`             | The layout check                                                                                                       |
-| `public/`              | Static files served as they are                                                                                        |
-| `docs/`                | The user guide, the architecture, the adapter notes in `adapters/` and the README's screenshots                        |
-
-`index.html`, `package.json` and the config files are at the root.
-
-In the dashboard, primitives are in `src/dashboard/components/ui/` and features in `src/dashboard/components/<feature>/`.
-
-No test, fixture or test helper lives under `src/`, and nothing under `src/` imports from `tests/`.
-
-The dashboard and the tests import through the aliases `@core`, `@collector`, `@dashboard` and `@tests`. Only tests can use `@tests`. The collector and `src/core/` import by relative path with the `.ts` extension, because `npm start` runs them without a bundler. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the parts fit together.
-
-The interface follows a fixed system of tokens and primitives. The tokens are in `src/dashboard/styles/index.css` and the primitives in `src/dashboard/components/ui/`. Read both before you add or change anything under `src/dashboard/`.
+The dashboard and the tests import through the aliases `@core`, `@collector`, `@dashboard` and `@tests`. Only tests can use `@tests`. The collector and `src/core/` import by relative path with the `.ts` extension, because `npm start` runs them without a bundler.
 
 ## Names
 

@@ -42,7 +42,7 @@ body:
       options:
         - Terminal
         - VS Code
-        - Claude Code or Codex desktop app
+        - Desktop app
         - Not sure
         - Not about one session
     validations:
