@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
 import { useCollector } from "@dashboard/hooks/data/useCollector";
 import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
 import { useDocumentTitle } from "@dashboard/hooks/shell/useDocumentTitle";
+import { useNewSince } from "@dashboard/hooks/data/useNewSince";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useView } from "@dashboard/hooks/shell/useView";
 import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
@@ -84,6 +85,11 @@ function Ground() {
  *
  * A session that starts waiting sends a notification from here, whichever view
  * is showing, once the person has turned that on in Settings.
+ *
+ * Coming back to the page after it was out of sight, the events log draws a
+ * line under what arrived meanwhile. Where it goes is worked out here, on every
+ * view, because the time the log was last on screen has to outlast the
+ * Overview while another view shows.
  */
 export default function App({ store: providedStore }: AppProps) {
   const [store] = useState(() => providedStore ?? createCollectorStore({ beat: workerBeat }));
@@ -95,6 +101,7 @@ export default function App({ store: providedStore }: AppProps) {
   const [history, setHistory] = useState<HistoryMetric | null>(null);
   const main = useRef<HTMLElement>(null);
   const shownView = useRef(view);
+  const newSince = useNewSince(state.events, view === "overview", state.snapshot !== null);
 
   const needsYou = countNeedingYou(state.snapshot?.sessions);
   useDocumentTitle(needsYou);
@@ -160,6 +167,8 @@ export default function App({ store: providedStore }: AppProps) {
                       now={now}
                       onRetry={store.refresh}
                       onOpenHistory={setHistory}
+                      newSince={newSince.since}
+                      onNewLineInView={newSince.onLineInView}
                     />
                   </motion.div>
                 </AnimatePresence>

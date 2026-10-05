@@ -173,7 +173,7 @@ The page closes the notification of a wait when its session stops waiting, when 
 
 When a dashboard tab is closed or reloaded, it tells the other dashboard tabs open at the same address, in the same browser, which sessions' notifications it closed, so that one of them can show them again. That message holds session IDs, goes over the browser's `BroadcastChannel` and does not leave the browser.
 
-The browser gives its permission to the address, such as `localhost:5173`, not to Agent Lookout. Another program served at the same address later can show notifications without asking, and can read or change the three values listed under Storage. To take the permission back, remove it for that address in the browser's site settings.
+The browser gives its permission to the address, such as `localhost:5173`, not to Agent Lookout. Another program served at the same address later can show notifications without asking, and can read or change the values listed under Storage. To take the permission back, remove it for that address in the browser's site settings.
 
 ### From the server
 
@@ -299,7 +299,7 @@ The tools that run it write files of their own. None of these holds session data
 - `npm run dev` runs through Vite, which keeps pre-bundled copies of the dependencies in `node_modules/.vite/`.
 - `npm run build` writes the built dashboard to `dist/` and the type checker's records to `node_modules/.tmp/`.
 
-The dashboard saves four values in your browser's local storage. Your theme choice is under the key `agent-lookout-theme`. Whether notifications are on is under the key `agent-lookout-notifications`, as `on` or `off`, and is written only when you turn them on or off. The events that send one are under the key `agent-lookout-notification-events`, as their names separated by commas, such as `needs-you,finished`, and are written only when you switch one. The apps the page has said macOS will ask about, when you first jumped to a tab of one, are under the key `agent-lookout-automation-note`, as `Terminal`, `iTerm2` or both separated by a comma. All four belong to one browser at one address.
+The dashboard saves five values in your browser's local storage. Your theme choice is under the key `agent-lookout-theme`. Whether notifications are on is under the key `agent-lookout-notifications`, as `on` or `off`, and is written only when you turn them on or off. The events that send one are under the key `agent-lookout-notification-events`, as their names separated by commas, such as `needs-you,finished`, and are written only when you switch one. The apps the page has said macOS will ask about, when you first jumped to a tab of one, are under the key `agent-lookout-automation-note`, as `Terminal`, `iTerm2` or both separated by a comma. The last time the Events log was on screen is under the key `agent-lookout-last-looked`, as a number of milliseconds since 1970, and is written when the page goes out of sight or is closed. It is what the line in the Events log that marks where you left off is drawn from, and while that line still shows, the time kept is the line's own. It holds nothing about any session or event. All four belong to one browser at one address.
 
 ## What is on screen
 

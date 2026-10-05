@@ -1,4 +1,13 @@
-import { memo, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
 
 import type { Session, SessionEvent } from "@core/sessions/session";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
@@ -7,6 +16,7 @@ import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/Statu
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import { logEntries, logRows, logStart, watchGaps } from "@dashboard/lib/sessions/events";
+import { countNew } from "@dashboard/lib/sessions/newSince";
 import {
   formatClock,
   formatClockMinutes,
@@ -30,6 +40,13 @@ interface EventsCardProps {
   history?:
     (Pick<CollectorHistory, "startedAt"> & Partial<Pick<CollectorHistory, "points">>) | null;
   now: number;
+  /**
+   * Events after this moment arrived while the page was out of sight. The log
+   * draws a line under them and its head counts them. Null for no line.
+   */
+  newSince?: number | null;
+  /** Told whether the line is in view, within the window and the log's own scrolling. */
+  onNewLineInView?: (inView: boolean) => void;
   className?: string;
 }
 
@@ -185,6 +202,48 @@ function DayHeading({ day, now, thread }: { day: number; now: number; thread: Th
 }
 
 /**
+ * The line where the person left off: under what arrived while the page was out
+ * of sight, over what they had seen. It says since when to the second, as every
+ * row does, so a row from the same minute under it does not read as new, and
+ * gives the day as well when that was before today. A rule runs on from its
+ * words to the edge.
+ *
+ * It is quiet, because new is not the same as needing the person: a wait among
+ * the new events keeps its own lamp, and nothing else here is warm. A screen
+ * reader meets it in its place in the list.
+ */
+function NewLine({
+  since,
+  now,
+  thread,
+  ref,
+}: {
+  since: number;
+  now: number;
+  thread: Thread;
+  ref: Ref<HTMLLIElement>;
+}) {
+  const clock = formatClock(since);
+  const when = startOfDay(since) === startOfDay(now) ? clock : `${formatDay(since, now)} ${clock}`;
+  return (
+    <li ref={ref} data-slot='event-new' className='flex shrink-0 items-stretch gap-3.5 px-6'>
+      <span aria-hidden className={TIME} />
+      <MarkColumn thread={thread} />
+      <span className='flex min-w-0 flex-1 items-center gap-3 py-2'>
+        <span data-part='words' className='min-w-0 text-caption font-medium text-ink-muted'>
+          New since{" "}
+          <time dateTime={new Date(since).toISOString()} className='whitespace-nowrap tabular-nums'>
+            {when}
+          </time>
+        </span>
+        {/* In a narrow window the words fill the row, and the rule would be a stub. */}
+        <span aria-hidden data-part='rule' className='h-px min-w-4 flex-1 bg-rule max-mid:hidden' />
+      </span>
+    </li>
+  );
+}
+
+/**
  * The height at which a log longer than its room shows only whole rows, or null
  * while every row fits.
  *
@@ -245,6 +304,35 @@ function useWholeRows(
   return fit;
 }
 
+/**
+ * Says whether the line where the person left off is in view: at least half of
+ * it within the window, and within the log where the log scrolls. Out of view,
+ * gone or not drawn, it says no.
+ */
+function useNewLineInView(
+  lined: boolean,
+  onInView: ((inView: boolean) => void) | undefined,
+): RefObject<HTMLLIElement | null> {
+  const line = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const element = line.current;
+    if (!lined || !element || !onInView) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.at(-1);
+        if (entry) onInView(entry.isIntersecting && entry.intersectionRatio >= 0.5);
+      },
+      { threshold: [0, 0.5, 1] },
+    );
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      onInView(false);
+    };
+  }, [lined, onInView]);
+  return line;
+}
+
 /** What a row of the log is, before the thread past it is known. */
 type Item =
   | { kind: "day"; key: string; day: number }
@@ -257,7 +345,8 @@ type Item =
       waitedMs: number | null;
     }
   | { kind: "resumed"; key: string; at: number; unmeasuredMs: number }
-  | { kind: "started"; key: string; at: number };
+  | { kind: "started"; key: string; at: number }
+  | { kind: "new"; key: string; since: number };
 
 /**
  * What changed, newest first, each with the mark of the status it moved to, on
@@ -277,6 +366,11 @@ type Item =
  * under it that says nothing has changed since. Only when the start is not known
  * either does it say there are no events yet.
  *
+ * With `newSince`, the events after it arrived while the page was out of sight:
+ * a line sits under them, over the first row from before, and the head counts
+ * them, "3 new". The card says when the line is in view, and the page decides
+ * when it goes.
+ *
  * Beside the Sessions card it takes that card's height and scrolls inside it
  * once its rows are many. Stacked under it, it scrolls within a fixed height of
  * about twelve rows. Either way, at rest it shows whole rows only, ending a
@@ -288,6 +382,8 @@ export function EventsCard({
   sessions = [],
   history = null,
   now,
+  newSince = null,
+  onNewLineInView,
   className,
 }: EventsCardProps) {
   const today = startOfDay(now);
@@ -295,11 +391,20 @@ export function EventsCard({
   const start = logStart(events, history, events.length >= MAX_EVENTS);
   // Breaks older than the start of the log would sit past what it vouches for.
   const gaps = watchGaps(history).filter((gap) => !start || gap.at >= start.at);
+  const newCount = countNew(events, newSince);
 
   // Today's events come first and need no heading. Each earlier day gets one.
+  // The line where the person left off goes over the first row from before,
+  // and over that row's day heading, since the heading belongs to what is under
+  // it. With nothing from before, it is last.
   const items: Item[] = [];
+  let lineAt = newCount > 0 ? newSince : null;
   let day = today;
   const dayOf = (at: number) => {
+    if (lineAt !== null && at <= lineAt) {
+      items.push({ kind: "new", key: "new", since: lineAt });
+      lineAt = null;
+    }
     const eventDay = startOfDay(at);
     if (eventDay !== day) {
       day = eventDay;
@@ -324,19 +429,24 @@ export function EventsCard({
     dayOf(start.at);
     items.push({ kind: "started", key: "started", at: start.at });
   }
+  if (lineAt !== null) items.push({ kind: "new", key: "new", since: lineAt });
+  const lined = newCount > 0;
 
   const scrolls = events.length > 0 || gaps.length > 0;
   const frame = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const fit = useWholeRows(frame, list, scrolls ? items.map((item) => item.key).join(" ") : "");
+  const line = useNewLineInView(lined, onNewLineInView);
 
   // The thread runs between every two rows, and is dotted below a row that
   // says watching resumed: the stretch down to the row before it was not watched.
+  // A day heading and the line where the person left off are not moments of
+  // their own, so the thread runs past them as it was.
+  let dotted = false;
   const rows = items.map((item, index) => {
-    const previous = items[index - 1];
-    const above: Thread["above"] = !previous ? null : previous.kind === "resumed" ? "dots" : "line";
-    const below: Thread["below"] =
-      index === items.length - 1 ? null : item.kind === "resumed" ? "dots" : "line";
+    const above: Thread["above"] = index === 0 ? null : dotted ? "dots" : "line";
+    dotted = item.kind === "resumed" || ((item.kind === "day" || item.kind === "new") && dotted);
+    const below: Thread["below"] = index === items.length - 1 ? null : dotted ? "dots" : "line";
     const thread = { above, below };
     switch (item.kind) {
       case "day":
@@ -380,6 +490,8 @@ export function EventsCard({
             <span>Started watching</span>
           </Row>
         );
+      case "new":
+        return <NewLine key={item.key} ref={line} since={item.since} now={now} thread={thread} />;
     }
   });
 
@@ -433,6 +545,15 @@ export function EventsCard({
   return (
     <SectionCard
       title='Events'
+      count={
+        lined ? (
+          <>
+            {newCount} new
+            {/* So "3 new" and the aside's "since 17:00" are not heard as one phrase. */}
+            <span className='sr-only'>, the log</span>
+          </>
+        ) : undefined
+      }
       aside={
         start ? (
           <span data-part='since'>

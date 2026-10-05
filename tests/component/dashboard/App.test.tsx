@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
+import { LAST_LOOKED_STORAGE_KEY } from "@dashboard/hooks/data/useNewSince";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   createCollectorStore,
@@ -2100,4 +2101,219 @@ test("with notifications on, its own store and its tab out of sight, a wait is n
   const fetched = performance.getEntriesByType("resource").map((entry) => new URL(entry.name));
   expect(fetched.filter((url) => url.origin !== location.origin)).toEqual([]);
   expect(fetched.some((url) => /beatWorker/.test(url.pathname))).toBe(true);
+});
+
+/** The page goes out of sight, as far as it can tell, or comes back, until the test finishes. */
+function pageHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+function restoreVisibility() {
+  delete (document as { hidden?: boolean }).hidden;
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+/** Events that arrive now, newest first, on top of what the state held. */
+function arrive(state: CollectorState, names: readonly string[]): CollectorState {
+  const now = Date.now();
+  const arrived = names.map((name, index): SessionEvent => ({
+    id: `arrived-${now}-${index}`,
+    at: now - index,
+    sessionId: `claude-code:00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+    sessionName: name,
+    kind: "status-changed",
+    from: "working",
+    to: "idle",
+    severity: "advisory",
+  }));
+  return { ...state, events: [...arrived, ...state.events] };
+}
+
+const newLine = () => document.querySelector<HTMLElement>('[data-slot="event-new"]');
+const eventsCard = () =>
+  [...document.querySelectorAll<HTMLElement>('[data-slot="section-card"]')].find(
+    (card) => card.querySelector("h2")?.textContent === "Events",
+  ) as HTMLElement;
+
+test("back in sight after the page was hidden, the Events log draws a line under what arrived meanwhile and counts it, and both go once the line has been in view for ten seconds", async () => {
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+
+  pageHidden(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  store.set(arrive(calmState(), ["checkout-flow", "billing-webhooks", "search-indexing"]));
+  pageHidden(false);
+
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  const line = newLine() as HTMLElement;
+  expect(line.textContent).toMatch(/^New since \d\d:\d\d:\d\d$/);
+  // Under the three that arrived, over what was there before.
+  const items = [...(line.parentElement as HTMLElement).children];
+  expect(items.indexOf(line)).toBe(3);
+  expect(eventsCard().querySelector('[data-part="count"]')?.textContent).toBe("3 new, the log");
+  expect(warmPaint(line)).toEqual([]);
+  expect(warmPaint(eventsCard().querySelector('[data-part="head"]')!)).toEqual([]);
+
+  // In view, it stays a while, then the line and the count go together.
+  line.scrollIntoView({ block: "center" });
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  expect(newLine()).not.toBeNull();
+  await vi.waitFor(() => expect(newLine()).toBeNull(), { timeout: 8_000 });
+  expect(eventsCard().querySelector('[data-part="count"]')).toBeNull();
+});
+
+test("with the page in sight the whole time no line is drawn, and moving to another view and back takes one away", async () => {
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+
+  // Events arrive while the person is looking: nothing marks them.
+  store.set(arrive(calmState(), ["docs-site", "mobile-onboarding"]));
+  await expect.element(screen.getByText("mobile-onboarding")).toBeVisible();
+  expect(newLine()).toBeNull();
+  expect(eventsCard().querySelector('[data-part="count"]')).toBeNull();
+
+  pageHidden(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  store.set(arrive(store.getState(), ["infra-terraform"]));
+  pageHidden(false);
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  expect(eventsCard().querySelector('[data-part="count"]')?.textContent).toBe("1 new, the log");
+
+  await screen.getByRole("link", { name: "Sources", exact: true }).click();
+  await vi.waitFor(() => expect(main().dataset.view).toBe("sources"));
+  await screen.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  expect(newLine()).toBeNull();
+  expect(eventsCard().querySelector('[data-part="count"]')).toBeNull();
+});
+
+test("hidden while Sources showed, the line waits for the Overview and sits where the Overview was left", async () => {
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+
+  const leaving = Date.now();
+  await screen.getByRole("link", { name: "Sources", exact: true }).click();
+  await vi.waitFor(() => expect(main().dataset.view).toBe("sources"));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Arrives while Sources shows, and the page is then hidden and comes back.
+  store.set(arrive(calmState(), ["api-rate-limits"]));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const hiding = Date.now();
+  pageHidden(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  pageHidden(false);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(newLine()).toBeNull();
+
+  await screen.getByRole("link", { name: "Overview", exact: true }).click();
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  expect(eventsCard().querySelector('[data-part="count"]')?.textContent).toBe("1 new, the log");
+  // Since the Overview was left, to the clock's second, and not since the page was hidden.
+  const since = Date.parse(newLine()!.querySelector("time")!.getAttribute("datetime")!);
+  expect(since).toBeGreaterThanOrEqual(leaving - 1_000);
+  expect(since).toBeLessThan(hiding);
+});
+
+test("only a time is kept: written to local storage as the page goes out of sight, and a page loaded again starts from it", async () => {
+  const setItem = vi.spyOn(Storage.prototype, "setItem");
+  onTestFinished(() => setItem.mockRestore());
+  const screen = await render(<App store={fixedStore(calmState())} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+  expect(setItem).not.toHaveBeenCalled();
+
+  const before = Date.now();
+  pageHidden(true);
+  expect(setItem.mock.calls).toHaveLength(1);
+  const [key, value] = setItem.mock.calls[0] as [string, string];
+  expect(key).toBe(LAST_LOOKED_STORAGE_KEY);
+  expect(LAST_LOOKED_STORAGE_KEY).toBe("agent-lookout-last-looked");
+  // One number: when the log was last on screen, which was until now.
+  expect(value).toMatch(/^\d+$/);
+  expect(Number(value)).toBeGreaterThanOrEqual(before - 1_000);
+  expect(Number(value)).toBeLessThanOrEqual(Date.now());
+  pageHidden(false);
+  await screen.unmount();
+
+  // Loaded again, with the last look two minutes ago and one event since.
+  localStorage.setItem(LAST_LOOKED_STORAGE_KEY, String(Date.now() - 2 * MINUTE));
+  await render(<App store={fixedStore(calmState())} />);
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  expect(eventsCard().querySelector('[data-part="count"]')?.textContent).toBe("1 new, the log");
+});
+
+test("away again before the line has gone, the time kept is the line's own, so a page loaded again marks the same events", async () => {
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+  const lineAt = () => Date.parse(newLine()!.querySelector("time")!.getAttribute("datetime")!);
+
+  pageHidden(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  store.set(arrive(calmState(), ["checkout-flow", "billing-webhooks"]));
+  pageHidden(false);
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  const since = lineAt();
+
+  // Away again at once, and one more event arrives meanwhile.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  pageHidden(true);
+  expect(Number(localStorage.getItem(LAST_LOOKED_STORAGE_KEY))).toBe(since);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const meanwhile = arrive(store.getState(), ["search-indexing"]);
+  await screen.unmount();
+
+  // The browser put the tab away, and loads it again on the way back.
+  pageHidden(false);
+  await render(<App store={fixedStore(meanwhile)} />);
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  expect(lineAt()).toBe(since);
+  expect(eventsCard().querySelector('[data-part="count"]')?.textContent).toBe("3 new, the log");
+});
+
+test("back in sight after the browser held the page's timers back, the line still stays ten seconds in view", async () => {
+  // Only the clock's timer and the time are faked, so the clock ticks only when
+  // the test says. A hidden tab's timers may run only once a minute.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const store = fixedStore(calmState());
+  const screen = await render(<App store={store} />);
+  await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+  onTestFinished(restoreVisibility);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Away a minute with no tick, and back to a line, which comes into view.
+  pageHidden(true);
+  await settle();
+  vi.setSystemTime(Date.now() + MINUTE);
+  store.set(arrive(calmState(), ["checkout-flow"]));
+  pageHidden(false);
+  await vi.waitFor(() => expect(newLine()).not.toBeNull());
+  newLine()!.scrollIntoView({ block: "center" });
+  await settle();
+  vi.advanceTimersByTime(1_000);
+  await settle();
+  expect(newLine()).not.toBeNull();
+
+  // Away another minute with the line in view. Back, its ten seconds start again.
+  pageHidden(true);
+  await settle();
+  vi.setSystemTime(Date.now() + MINUTE);
+  pageHidden(false);
+  await settle();
+  vi.advanceTimersByTime(1_000);
+  await settle();
+  expect(newLine()).not.toBeNull();
+  vi.advanceTimersByTime(9_000);
+  await vi.waitFor(() => expect(newLine()).toBeNull());
+  await screen.unmount();
 });

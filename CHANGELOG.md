@@ -20,6 +20,7 @@ The first version. It shows Claude Code and Codex sessions, and those of any age
 - The Last hour chart shows how many sessions were waiting on you, working and idle, on average, in each five minutes of the last hour.
 - The Needs you panel's heading and its Working and Idle counts open a chart of up to six hours.
 - The Events log records when a session appears, changes status or ends, and when Agent Lookout started watching again after a break.
+- Come back to the dashboard's tab after it was in the background, or open the dashboard again, and a line in the Events log marks where you left off, such as New since 14:02:37, with the number of events since beside the log's title, such as 3 new. Both go once the line has been in view for 10 seconds, or when you open another view. With the tab in front all the time, nothing is marked. The only thing kept for it is the time you left off, in the browser.
 - The Timeline shows each session's status over the last hour, with the time Agent Lookout did not measure hatched.
 - A Jump button opens a Claude Code session that runs in VS Code.
 - A Claude Code session that runs inside tmux has a Jump button too. It selects the session's pane, the pane's window and, on any attached terminal that is showing another tmux session, the pane's session. The row says what happened: Selected in tmux, That pane has closed or tmux has stopped. It does not bring your terminal to the front.

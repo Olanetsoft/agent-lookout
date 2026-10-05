@@ -90,6 +90,8 @@ Agent Lookout reads the branch from the repository's own files, and runs no git 
 
 The Events log records each session appearing, changing status and ending, newest first. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep, a row says when watching resumed and how long was not measured. While the log still holds everything since Agent Lookout started, it ends with Started watching.
 
+When you come back to the tab after it was in the background or minimised, or open the dashboard again, a line in the log marks where you left off, such as New since 14:02:37, and the log's heading says how many events arrived since, such as 3 new. The events above the line are the new ones. The line and the count go once the line has been in view for 10 seconds, or when you open Sources or Settings. If more arrived than the log shows at once, scroll down the log to the line. With the tab in front all the time there is never a line. Events that arrive while the line is showing join the new ones above it. A wait among the new events has its usual mark, and nothing else changes colour. The one thing kept for this is the time you left off, in your browser.
+
 #### Timeline
 
 The Timeline draws each session's status over the last hour, one row for each session. Hatched stretches are time Agent Lookout did not measure, such as the time before it started. The legend at the top of the card names each mark.

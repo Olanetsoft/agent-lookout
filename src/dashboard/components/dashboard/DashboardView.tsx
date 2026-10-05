@@ -18,6 +18,10 @@ interface DashboardViewProps {
   onRetry: () => void;
   /** Opens the history behind Needs you, Working or Idle. */
   onOpenHistory?: (metric: HistoryMetric) => void;
+  /** Where the events log draws the line under what arrived while the page was out of sight. */
+  newSince?: number | null;
+  /** Told whether that line is in view. */
+  onNewLineInView?: (inView: boolean) => void;
 }
 
 /** Every row that stands for one session, in the hero or in the Sessions table. */
@@ -53,7 +57,14 @@ const PLACE = {
  * somewhere else: to another group of the table, or up into the hero when the
  * session starts waiting.
  */
-export function DashboardView({ state, now, onRetry, onOpenHistory }: DashboardViewProps) {
+export function DashboardView({
+  state,
+  now,
+  onRetry,
+  onOpenHistory,
+  newSince = null,
+  onNewLineInView,
+}: DashboardViewProps) {
   const { snapshot, phase } = state;
   const [grid, followFocus] = useFocusFollowsRow<HTMLDivElement>(SESSION_ROWS, "data-session");
 
@@ -124,6 +135,8 @@ export function DashboardView({ state, now, onRetry, onOpenHistory }: DashboardV
               sessions={snapshot.sessions}
               history={state.history}
               now={now}
+              newSince={newSince}
+              onNewLineInView={onNewLineInView}
               className={cn("z-1", PLACE.events)}
             />
           </>

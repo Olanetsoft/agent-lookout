@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import type { EventSeverity, Session, SessionEvent, SessionStatus } from "@core/sessions/session";
 import { EventsCard } from "@dashboard/components/events/EventsCard";
 import { MAX_EVENTS } from "@dashboard/lib/api/collectorStore";
+import { formatDay } from "@dashboard/lib/format";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
@@ -760,4 +761,224 @@ test("in a narrow window, what happened goes under the name when the two do not 
   expect(length.getClientRects()).toHaveLength(1);
   const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+});
+
+/** Three events after 17:40 and two before, with the wait among the new ones still open. */
+const AWAY_SINCE = at(17, 40, 30);
+const WHILE_AWAY: SessionEvent[] = [
+  event(21, at(17, 58, 4), "checkout-flow", "needs-you", "warning"),
+  event(22, at(17, 51, 40), "billing-webhooks", "finished"),
+  event(23, at(17, 44, 12), "search-indexing", "idle"),
+  event(24, at(17, 39, 55), "docs-site", "working"),
+  event(25, at(17, 31, 0), "api-rate-limits", "idle"),
+];
+
+/** The line where the person left off, if it is drawn. */
+const newLine = (container: HTMLElement) =>
+  container.querySelector<HTMLElement>('[data-slot="event-new"]');
+
+test.each([
+  ["dark", 1440, 420],
+  ["light", 1440, 420],
+  ["dark", 375, 279],
+  ["light", 375, 279],
+] as const)(
+  "in the %s theme at %i pixels, a line sits under what arrived while the page was away, the head counts it, and neither is warm",
+  async (theme, width, cardWidth) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    onTestFinished(() => page.viewport(414, 896));
+    await page.viewport(width, 900);
+    const screen = await render(
+      <div style={{ width: cardWidth }}>
+        <EventsCard
+          events={WHILE_AWAY}
+          sessions={[listed(21, "needs-you"), listed(23, "idle")]}
+          history={{ startedAt: at(17, 0, 0) }}
+          newSince={AWAY_SINCE}
+          now={NOW}
+        />
+      </div>,
+    );
+    const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    const line = newLine(screen.container) as HTMLElement;
+
+    // Between the newest event seen before and the first that is new.
+    expect([...list.children].map((item) => item.getAttribute("data-slot"))).toEqual([
+      "event-row",
+      "event-row",
+      "event-row",
+      "event-new",
+      "event-row",
+      "event-row",
+      "event-start",
+    ]);
+    expect(line.textContent).toBe("New since 17:40:30");
+    expect(line.querySelector("time")?.getAttribute("datetime")).toBe(
+      new Date(AWAY_SINCE).toISOString(),
+    );
+    // A screen reader meets it in its place in the list, in the same words.
+    await expect
+      .element(screen.getByRole("listitem").filter({ hasText: "New since 17:40:30" }))
+      .toBeVisible();
+
+    // Quiet words, as a card's note.
+    const words = line.querySelector('[data-part="words"]') as HTMLElement;
+    const wordsStyle = getComputedStyle(words);
+    expect(wordsStyle.color).toBe(rgbOf("var(--ink-muted)"));
+    expect(wordsStyle.fontSize).toBe("12px");
+    expect(wordsStyle.fontWeight).toBe("500");
+    expect(getComputedStyle(line.querySelector("time")!).fontVariantNumeric).toBe("tabular-nums");
+    // The words begin where every event's words begin, stay on one line and
+    // inside the row's inset.
+    const eventWords = rows(screen.container)[0]!.querySelector("div")!.getBoundingClientRect();
+    expect(words.getBoundingClientRect().left).toBeCloseTo(eventWords.left, 0);
+    expect(words.getClientRects()).toHaveLength(1);
+    const inset = line.getBoundingClientRect().right - 24;
+    expect(words.getBoundingClientRect().right).toBeLessThanOrEqual(inset + 0.5);
+    // Wide, a rule in the thread's colour runs on to the inset. Narrow, the words
+    // fill the row, and there is no stub of a rule.
+    const rule = line.querySelector('[data-part="rule"]') as HTMLElement;
+    if (width > 760) {
+      expect(getComputedStyle(rule).backgroundColor).toBe(rgbOf("var(--rule)"));
+      expect(rule.getBoundingClientRect().height).toBe(1);
+      expect(rule.getBoundingClientRect().right).toBeCloseTo(inset, 0);
+    } else {
+      expect(getComputedStyle(rule).display).toBe("none");
+    }
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+
+    // The count beside the title, in the card's quiet count. "3 new" to the eye.
+    // A screen reader hears ", the log" after it, so the aside's "since 17:00"
+    // is not taken for since when they are new.
+    const count = card.querySelector('[data-part="count"]') as HTMLElement;
+    expect(count.textContent).toBe("3 new, the log");
+    expect(count.querySelector(".sr-only")?.textContent).toBe(", the log");
+    expect(card.querySelector('[data-part="aside"]')?.textContent).toBe("since 17:00");
+    expect(getComputedStyle(count).color).toBe(rgbOf("var(--ink-muted)"));
+    expect(getComputedStyle(count).fontSize).toBe("15px");
+    expect(getComputedStyle(count).fontVariantNumeric).toBe("tabular-nums");
+    await expect.element(screen.getByRole("region", { name: "Events" })).toBeVisible();
+
+    // The wait that is still open keeps its lamp. Nothing else turns warm.
+    const [open, ...others] = rows(screen.container);
+    expect(warmPaint(open!).length).toBeGreaterThan(0);
+    for (const row of others) expect(warmPaint(row)).toEqual([]);
+    expect(warmPaint(line)).toEqual([]);
+    expect(warmPaint(card.querySelector('[data-part="head"]')!)).toEqual([]);
+  },
+);
+
+test("with nothing newer than the line, or no line asked for, the log is as it was", async () => {
+  const screen = await render(<EventsCard events={WHILE_AWAY} now={NOW} />);
+  expect(newLine(screen.container)).toBeNull();
+  expect(screen.container.querySelector('[data-part="count"]')).toBeNull();
+
+  await screen.rerender(<EventsCard events={WHILE_AWAY} newSince={at(17, 58, 4)} now={NOW} />);
+  expect(newLine(screen.container)).toBeNull();
+  expect(screen.container.querySelector('[data-part="count"]')).toBeNull();
+
+  // And the line goes when the page takes it away.
+  await screen.rerender(<EventsCard events={WHILE_AWAY} newSince={AWAY_SINCE} now={NOW} />);
+  expect(newLine(screen.container)).not.toBeNull();
+  await screen.rerender(<EventsCard events={WHILE_AWAY} newSince={null} now={NOW} />);
+  expect(newLine(screen.container)).toBeNull();
+  expect(screen.container.querySelector('[data-part="count"]')).toBeNull();
+  expect(rows(screen.container)).toHaveLength(5);
+});
+
+test("away overnight, the line names the day it was left on and sits over that day's heading, and a break stays dotted past both", async () => {
+  const evening = new Date(2026, 0, 4, 22, 15, 0).getTime();
+  const history = {
+    startedAt: new Date(2026, 0, 4, 20, 0, 0).getTime(),
+    // Polled until 22:16, asleep, and polled again from 07:30.
+    points: [
+      ...polls(new Date(2026, 0, 4, 20, 0, 0).getTime(), new Date(2026, 0, 4, 22, 16, 0).getTime()),
+      ...polls(at(7, 30, 0), NOW),
+    ],
+  };
+  const screen = await render(
+    <EventsCard
+      events={[
+        event(31, at(7, 31, 2), "mobile-onboarding", "working"),
+        event(32, new Date(2026, 0, 4, 22, 10, 0).getTime(), "infra-terraform", "idle"),
+      ]}
+      history={history}
+      newSince={evening}
+      now={NOW}
+    />,
+  );
+
+  const line = newLine(screen.container) as HTMLElement;
+  // The day as the day heading under it writes it, then the clock.
+  expect(line.textContent).toBe(`New since ${formatDay(evening, NOW)} 22:15:00`);
+  expect(line.nextElementSibling?.textContent).toBe(formatDay(evening, NOW));
+  expect(threadOf(screen.container)).toEqual([
+    ["event-row", null, "line"],
+    ["event-resumed", "line", "dots"],
+    // Nobody watched from 22:16 to 07:30: the dots run on past the line and the day.
+    ["event-new", "dots", "dots"],
+    ["event-day", "dots", "dots"],
+    ["event-row", "dots", "line"],
+    ["event-start", "line", null],
+  ]);
+  expect(screen.container.querySelector('[data-part="count"]')?.textContent).toBe("1 new, the log");
+});
+
+test("when everything the log holds is new, the line is last", async () => {
+  const screen = await render(
+    <EventsCard
+      events={WHILE_AWAY.slice(0, 3)}
+      history={{ startedAt: at(17, 42, 0) }}
+      newSince={AWAY_SINCE}
+      now={NOW}
+    />,
+  );
+  const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+
+  expect(list.lastElementChild?.getAttribute("data-slot")).toBe("event-new");
+  expect(screen.container.querySelector('[data-part="count"]')?.textContent).toBe("3 new, the log");
+});
+
+test("the card says whether the line is in view, and that it is not once it has gone", async () => {
+  onTestFinished(() => page.viewport(414, 896));
+  await page.viewport(1440, 900);
+  const said: boolean[] = [];
+  const onNewLineInView = (inView: boolean) => said.push(inView);
+  const many = Array.from({ length: 40 }, (_, index) =>
+    event(100 + index, at(17, 50, 0) - index * 60_000, `email-templates-${index}`, "idle"),
+  );
+  const card = (since: number | null) => (
+    <div style={{ width: 420, height: 400, display: "flex" }}>
+      <EventsCard
+        events={many}
+        newSince={since}
+        onNewLineInView={onNewLineInView}
+        now={NOW}
+        className='flex-1'
+      />
+    </div>
+  );
+
+  // Three new events: the line is near the top, in view.
+  const screen = await render(card(at(17, 47, 30)));
+  await vi.waitFor(() => expect(said.at(-1)).toBe(true));
+
+  // Scrolled down the log, it is out of view.
+  const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+  list.scrollTop = list.scrollHeight;
+  await vi.waitFor(() => expect(said.at(-1)).toBe(false));
+  list.scrollTop = 0;
+  await vi.waitFor(() => expect(said.at(-1)).toBe(true));
+
+  // Thirty new: the line is below what the log shows, so not in view.
+  await screen.rerender(card(at(17, 20, 30)));
+  await vi.waitFor(() => expect(said.at(-1)).toBe(false));
+
+  // Gone, it is not in view either.
+  await screen.rerender(card(at(17, 47, 30)));
+  await vi.waitFor(() => expect(said.at(-1)).toBe(true));
+  await screen.rerender(card(null));
+  expect(said.at(-1)).toBe(false);
+  expect(newLine(screen.container)).toBeNull();
 });
