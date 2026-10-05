@@ -4,6 +4,7 @@ import path from "node:path";
 import { codexLiveness, isCodexSessionSource } from "../../../core/mapping/codexMapping.ts";
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
 import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
+import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { tildify } from "../claude-code/findBinary.ts";
@@ -89,7 +90,8 @@ function every(ms: number): string {
  * adapter reads three things, all undocumented, all read-only:
  *
  * - The session files under `<codex home>/sessions`, for each session's folder,
- *   app and turns. See `rolloutFile.ts`.
+ *   app and turns, and, from the modified time the adapter already looks at,
+ *   when Codex last wrote to each. See `rolloutFile.ts`.
  * - The lock folder `<codex home>/thread-writer-locks`, listed and never
  *   opened, for which sessions a Codex process has open. See `writerLocks.ts`.
  * - `<codex home>/session_index.jsonl`, for the names people give sessions.
@@ -268,8 +270,10 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
     const cutoff = checkedAt - FINISHED_RETENTION_MS;
     /** The files read this poll, whose cache is worth keeping. */
     const read = new Set<string>();
-    /** The file to show for each thread: a reverted session has more than one. */
-    const chosen = new Map<string, { state: RolloutState; at: number | null }>();
+    /** The file to show for each thread, with its modified time: a reverted session has more than one. */
+    const chosen = new Map<string, { state: RolloutState; at: number | null; writtenAt: number }>();
+    /** When each session's subagents last wrote to their own files, by the session's thread. */
+    const subagentWrites = new Map<string, number>();
 
     for (const ref of [...candidates.values()].sort((a, b) => (a.path < b.path ? -1 : 1))) {
       const open = locked(ref.threadId);
@@ -298,7 +302,19 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
       }
       read.add(ref.path);
 
-      if (state.meta === null || !isCodexSessionSource(state.meta.source, state.meta)) continue;
+      if (state.meta === null) continue;
+      if (!isCodexSessionSource(state.meta.source, state.meta)) {
+        // A subagent writes to its own file while the session that started it
+        // waits on it and writes nothing, so its writes count as that session's.
+        // A time that could not be right is left out, so that it cannot hide the
+        // session's own. A subagent's own subagents are not counted.
+        const parent = state.meta.parentThreadId?.toLowerCase();
+        const writtenAt = plausibleTime(Math.floor(info.mtimeMs), checkedAt);
+        if (parent !== undefined && writtenAt !== null) {
+          subagentWrites.set(parent, Math.max(subagentWrites.get(parent) ?? writtenAt, writtenAt));
+        }
+        continue;
+      }
       // Another agent's past session, copied in by the Codex desktop app: it did
       // not run in Codex, and its lines carry the time of the import. It is
       // listed once Codex runs a turn in it.
@@ -310,21 +326,28 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
       }
       const kept = chosen.get(ref.threadId);
       if (!kept || (at ?? -Infinity) > (kept.at ?? -Infinity)) {
-        chosen.set(ref.threadId, { state, at });
+        chosen.set(ref.threadId, { state, at, writtenAt: info.mtimeMs });
       }
     }
     reader.keepOnly(read);
 
     /** Whether a session made by a Codex that keeps no locks is listed beside ones that do. */
     let olderCodex = false;
-    const sessions = [...chosen.entries()].map(([threadId, { state }]) => {
+    const sessions = [...chosen.entries()].map(([threadId, { state, writtenAt }]) => {
       const live = codexLiveness({
         lockFolder: locks.supported,
         locked: locked(threadId),
         cliVersion: state.meta?.cliVersion,
       });
       if (locks.supported && live === "unknown") olderCodex = true;
-      return codexSession({ threadId, state, name: names.get(threadId), live, now: checkedAt });
+      return codexSession({
+        threadId,
+        state,
+        name: names.get(threadId),
+        live,
+        writtenAt: Math.max(writtenAt, subagentWrites.get(threadId) ?? -Infinity),
+        now: checkedAt,
+      });
     });
 
     let detail = `Sessions are read from the files Codex saves in ${sessionsName}. ${NEEDS_YOU_NOTE}`;

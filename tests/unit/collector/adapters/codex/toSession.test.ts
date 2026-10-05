@@ -126,6 +126,44 @@ describe("codexSession", () => {
     expect(since(START - 1_001)).toBeNull();
   });
 
+  test("the last write is the file's modified time, to the millisecond, and is left out when not given", () => {
+    const written = (writtenAt?: number, meta?: RolloutState["meta"]) =>
+      codexSession({
+        threadId: ids.working,
+        state: meta === undefined ? state() : state({ meta }),
+        live: true,
+        writtenAt,
+        now: NOW,
+      });
+    expect(written(NOW - 12 * MINUTE + 0.75).lastWriteAt).toBe(NOW - 12 * MINUTE);
+    expect(written()).not.toHaveProperty("lastWriteAt");
+
+    // Ahead of the clock by more than the slack, or before 2020: not a time to believe.
+    expect(written(NOW + CLOCK_SLACK_MS + 1)).not.toHaveProperty("lastWriteAt");
+    expect(written(NOW + CLOCK_SLACK_MS).lastWriteAt).toBe(NOW + CLOCK_SLACK_MS);
+    expect(written(Date.UTC(2019, 11, 31))).not.toHaveProperty("lastWriteAt");
+
+    // Before the session began, as a copied file can be, but a moment before is the same moment.
+    expect(written(START - 1_001)).not.toHaveProperty("lastWriteAt");
+    expect(written(START - 1_000).lastWriteAt).toBe(START - 1_000);
+    // With no start to compare with, any time that could be right is kept.
+    expect(written(START - 1_001, { source: "cli" }).lastWriteAt).toBe(START - 1_001);
+  });
+
+  test("the last write changes nothing else: the status and its time are the file's lines", () => {
+    const session = codexSession({
+      threadId: ids.working,
+      state: state(),
+      live: true,
+      writtenAt: NOW - 25 * MINUTE,
+      now: NOW,
+    });
+    expect(session.lastWriteAt).toBe(NOW - 25 * MINUTE);
+    expect(session.status).toBe("working");
+    expect(session.statusSince).toBe(NOW - 10 * MINUTE);
+    expect(session.stale).toBe(false);
+  });
+
   test("an idle session is stale after a day idle, and a working one never", () => {
     const idleFor = (ms: number) =>
       codexSession({

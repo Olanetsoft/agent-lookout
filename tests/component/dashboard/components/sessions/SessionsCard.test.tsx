@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { formatSince } from "@dashboard/lib/format";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -1683,3 +1684,228 @@ test("in a narrow window a tmux session keeps its Jump, and what it came to has 
   );
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
 });
+
+/**
+ * Sessions whose agents last wrote at different times: a Codex session quiet
+ * past the threshold, a session from a status file quiet for less, a Claude
+ * Code session that gives no time, and an idle and a finished one whose files
+ * have not been written to for longer.
+ */
+const LAST_WRITES: Session[] = [
+  makeSession({
+    id: `codex:${uuid(41)}`,
+    source: "codex",
+    name: "billing-webhooks",
+    status: "working",
+    statusSince: NOW - 34 * MINUTE,
+    lastWriteAt: NOW - 12 * MINUTE,
+  }),
+  custom(42, {
+    name: "search-indexing",
+    links: {},
+    statusSince: NOW - 20 * MINUTE,
+    lastWriteAt: NOW - 4 * MINUTE,
+  }),
+  session(43, { name: "checkout-flow", status: "working", statusSince: NOW - 15 * MINUTE }),
+  makeSession({
+    id: `codex:${uuid(44)}`,
+    source: "codex",
+    name: "docs-site",
+    status: "idle",
+    statusSince: NOW - 26 * MINUTE,
+    lastWriteAt: NOW - 26 * MINUTE,
+  }),
+  makeSession({
+    id: `codex:${uuid(45)}`,
+    source: "codex",
+    name: "api-rate-limits",
+    status: "finished",
+    statusSince: NOW - 2 * HOUR,
+    lastWriteAt: NOW - 2 * HOUR,
+    alive: false,
+  }),
+];
+
+const ALL_SOURCES = [SOURCE_OK, CODEX_OK, STATUS_FILES_OK];
+
+/** What a row says of its agent's quiet stretch: what is shown and what is read out. Null when it says nothing. */
+function quietOf(row: HTMLElement): { shown: string; read: string } | null {
+  const quiet = row.querySelector<HTMLElement>('[data-part="quiet"]');
+  if (!quiet) return null;
+  return {
+    shown: quiet.querySelector("[aria-hidden]")?.textContent ?? "",
+    read: quiet.querySelector(".sr-only")?.textContent ?? "",
+  };
+}
+
+test.each(["dark", "light"] as const)(
+  "at 1440 in the %s theme, a working session quiet for 5 minutes or more says how long under its status and time, in the muted ink, and stays working",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <SessionsCard sessions={LAST_WRITES} sources={ALL_SOURCES} now={NOW} />,
+    );
+    const billing = rowOf(screen.container, "billing-webhooks");
+
+    expect(quietOf(billing)).toEqual({ shown: "quiet for 12m", read: "quiet for 12 minutes" });
+    // Read after "Working for 34 minutes", in the cell that holds the status and its time.
+    const quiet = billing.querySelector('[data-part="quiet"]') as HTMLElement;
+    const status = billing.querySelector('[data-part="status"]') as HTMLElement;
+    const duration = billing.querySelector('[data-part="duration"]') as HTMLElement;
+    expect(quiet.closest("td")).toBe(status.closest("td"));
+    expect(quiet.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      status.getBoundingClientRect().bottom - 1,
+    );
+    expect(quiet.getBoundingClientRect().left).toBe(status.getBoundingClientRect().left);
+    expect(quiet.getBoundingClientRect().right).toBeLessThanOrEqual(
+      duration.getBoundingClientRect().right,
+    );
+    const style = getComputedStyle(quiet);
+    expect(style.color).toBe(rgbOf("var(--ink-muted)"));
+    expect(style.fontSize).toBe("13px");
+    expect(style.fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+    expect(style.fontVariantNumeric).toContain("tabular-nums");
+
+    // The status keeps its word, its mark, its group and its colours: those of
+    // a working row that says nothing of the kind.
+    const plain = rowOf(screen.container, "checkout-flow");
+    expect(status.textContent).toBe("Working");
+    expect(duration.querySelector("[aria-hidden]")?.textContent).toBe("34m");
+    expect(billing.dataset.status).toBe("working");
+    expect(billing.closest("tbody")?.dataset.group).toBe("working");
+    expect(billing.querySelector('[data-slot="status-mark"]')?.getAttribute("data-kind")).toBe(
+      "working",
+    );
+    const look = (row: HTMLElement, part: string) => {
+      const element = row.querySelector(`[data-part="${part}"]`) as HTMLElement;
+      return [getComputedStyle(element).color, getComputedStyle(element).fontWeight];
+    };
+    for (const part of ["status", "duration", "name"]) {
+      expect(look(billing, part), part).toEqual(look(plain, part));
+    }
+    const markColour = (row: HTMLElement) =>
+      getComputedStyle(row.querySelector('[data-slot="status-mark"]') as HTMLElement).color;
+    expect(markColour(billing)).toBe(markColour(plain));
+
+    // Under the threshold, without a time, and in any other status, nothing is said.
+    for (const name of ["search-indexing", "checkout-flow", "docs-site", "api-rate-limits"]) {
+      expect(quietOf(rowOf(screen.container, name)), name).toBeNull();
+    }
+    // The two lines fit the row, so every row is still 44px, and none of it is warm.
+    for (const row of screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')) {
+      expect(row.getBoundingClientRect().height).toBe(44);
+    }
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+test("the time of the last write is one hover or one Tab away", async () => {
+  await page.viewport(1440, 900);
+  const screen = await render(
+    <SessionsCard sessions={LAST_WRITES} sources={ALL_SOURCES} now={NOW} />,
+  );
+  const quiet = rowOf(screen.container, "billing-webhooks").querySelector(
+    '[data-part="quiet"]',
+  ) as HTMLElement;
+  const tooltip = page.getByRole("tooltip");
+  const said = `Last write at ${formatSince(NOW - 12 * MINUTE, NOW)}`;
+
+  await userEvent.hover(quiet);
+  await expect.element(tooltip).toHaveTextContent(said);
+  await pointAway();
+  await expect.element(tooltip).not.toBeInTheDocument();
+
+  startAtTop();
+  for (let presses = 0; presses < 20 && document.activeElement !== quiet; presses += 1) {
+    await userEvent.tab();
+  }
+  expect(document.activeElement).toBe(quiet);
+  await expect.element(tooltip).toHaveTextContent(said);
+  // It is the only stop of its kind: the rows that say nothing have none.
+  expect(screen.container.querySelectorAll('[data-part="quiet"]')).toHaveLength(1);
+});
+
+test("it comes once the quiet stretch reaches 5 minutes, counts with the clock, and goes when the agent writes again", async () => {
+  const quietAt = (now: number, sessions = LAST_WRITES) =>
+    render(<SessionsCard sessions={sessions} sources={ALL_SOURCES} now={now} />);
+  const indexing = (container: HTMLElement) =>
+    quietOf(rowOf(container, "search-indexing"))?.shown ?? null;
+
+  const screen = await quietAt(NOW + MINUTE - 1);
+  expect(indexing(screen.container)).toBeNull();
+  await screen.rerender(
+    <SessionsCard sessions={LAST_WRITES} sources={ALL_SOURCES} now={NOW + MINUTE} />,
+  );
+  expect(indexing(screen.container)).toBe("quiet for 5m");
+  await screen.rerender(
+    <SessionsCard sessions={LAST_WRITES} sources={ALL_SOURCES} now={NOW + 61 * MINUTE} />,
+  );
+  expect(indexing(screen.container)).toBe("quiet for 1h 05m");
+
+  // The agent writes to its file: the next answer carries the new time, and the row says nothing.
+  const written = LAST_WRITES.map((s) =>
+    s.name === "search-indexing" ? { ...s, lastWriteAt: NOW + 60 * MINUTE } : s,
+  );
+  await screen.rerender(
+    <SessionsCard sessions={written} sources={ALL_SOURCES} now={NOW + 61 * MINUTE} />,
+  );
+  expect(indexing(screen.container)).toBeNull();
+  expect(
+    rowOf(screen.container, "search-indexing").querySelector('[data-part="status"]')?.textContent,
+  ).toBe("Working");
+});
+
+test.each(["dark", "light"] as const)(
+  "at 375 in the %s theme, it joins the line under the name, on a line of its own under the status and its time, and nothing is cut or runs past the card",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    await page.viewport(375, 900);
+    const screen = await render(
+      <div style={{ width: 279 }}>
+        <SessionsCard sessions={LAST_WRITES} sources={ALL_SOURCES} now={NOW} />
+      </div>,
+    );
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    const billing = rowOf(screen.container, "billing-webhooks");
+    const name = billing.querySelector('[data-part="name"]') as HTMLElement;
+    const line = billing.querySelector('[data-part="status-under"]') as HTMLElement;
+    const status = line.querySelector('[data-part="status"]') as HTMLElement;
+    const quiet = line.querySelector('[data-part="quiet"]') as HTMLElement;
+
+    expect(quietOf(billing)).toEqual({ shown: "quiet for 12m", read: "quiet for 12 minutes" });
+    // Read as "Codex, Working for 34 minutes, quiet for 12 minutes".
+    expect(line.textContent).toBe(
+      "Codex, ·Workingfor 34 minutes34m, quiet for 12 minutesquiet for 12m",
+    );
+    expect(status.textContent).toBe("Working");
+    expect(billing.dataset.status).toBe("working");
+    // Under the status and its time, at the line's left edge, every word of it whole.
+    const duration = line.querySelector('[data-part="duration"]') as HTMLElement;
+    expect(name.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      status.getBoundingClientRect().top + 1,
+    );
+    expect(quiet.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      Math.max(status.getBoundingClientRect().bottom, duration.getBoundingClientRect().bottom) - 1,
+    );
+    expect(quiet.getBoundingClientRect().left).toBe(line.getBoundingClientRect().left);
+    expect(quiet.getBoundingClientRect().right).toBeLessThanOrEqual(
+      line.getBoundingClientRect().right + 0.5,
+    );
+    expect(quiet.scrollWidth).toBeLessThanOrEqual(quiet.clientWidth);
+    expect(getComputedStyle(quiet).color).toBe(rgbOf("var(--ink-muted)"));
+    expect(getComputedStyle(quiet).fontSize).toBe("13px");
+    // The time keeps its place at the right edge, where every other row's time stands.
+    const rights = [...screen.container.querySelectorAll('[data-part="duration"]')].map((d) =>
+      Math.round(d.getBoundingClientRect().right),
+    );
+    expect(new Set(rights).size).toBe(1);
+
+    for (const other of ["search-indexing", "checkout-flow", "docs-site", "api-rate-limits"]) {
+      expect(quietOf(rowOf(screen.container, other)), other).toBeNull();
+    }
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);

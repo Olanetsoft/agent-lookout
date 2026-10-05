@@ -83,6 +83,16 @@ export interface Session {
    * time on a session still waiting is read as a new wait.
    */
   statusSince: number | null;
+  /**
+   * When the agent last wrote to the file this session is read from, in epoch
+   * milliseconds: the file's own modified time, and nothing read from inside
+   * it. Present only for a source whose file is written as the session works,
+   * and only when the time could be right. It is a measurement, not a status:
+   * a working session that has written nothing for a while may be waiting for
+   * an approval its agent does not record, or may have hung, and the page says
+   * how long, not which.
+   */
+  lastWriteAt?: number;
   pid?: number;
   /** Whether the process still exists, when a pid is known. */
   alive?: boolean;

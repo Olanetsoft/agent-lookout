@@ -115,6 +115,9 @@ function counted(count: number, one: string, many: string): string {
  * move while the status stands. A session that was already in the folder when
  * Agent Lookout first read it has no such moment, so its time is not known
  * until its status changes.
+ *
+ * When the file was last written, from the open file it was read through, is
+ * the session's last write.
  */
 export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}): Adapter {
   const env = options.env ?? process.env;
@@ -321,6 +324,7 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
         file,
         statusSince: since,
         alive,
+        writtenAt: mtimeMs,
         now: checkedAt,
       });
       if (over && !isWithinRetention(since ?? mtimeMs, checkedAt)) {

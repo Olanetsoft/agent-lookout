@@ -607,6 +607,8 @@ describe("when Codex is read", () => {
         messageLine(NOW - MINUTE, "A reply.", "assistant"),
       ],
       lock: true,
+      // Written when its last line was, with the fraction of a millisecond a system gives.
+      mtimeMs: NOW - MINUTE + 0.25,
     });
     const { sessions } = await codexAdapterFor(files).poll();
     expect(sessions).toEqual([
@@ -620,10 +622,90 @@ describe("when Codex is read", () => {
         status: "working",
         startedAt: NOW - 60 * MINUTE,
         statusSince: NOW - 3 * MINUTE,
+        lastWriteAt: NOW - MINUTE,
         links: {},
         stale: false,
       },
     ]);
+  });
+
+  test("the last write is the session file's modified time, and moves only when Codex writes to it", async () => {
+    const clock = handClock();
+    const files = emptyCodex();
+    const file = addSession(files, {
+      thread: ids.working,
+      lines: linesFor("demo", ids.working, [[NOW - 20 * MINUTE, "task_started"]]),
+      lock: true,
+      mtimeMs: NOW - 12 * MINUTE,
+    });
+    const adapter = codexAdapterFor(files, { now: clock.now });
+    const lastWrite = async () => (await adapter.poll()).sessions[0]?.lastWriteAt;
+
+    expect(await lastWrite()).toBe(NOW - 12 * MINUTE);
+    // Polls that find nothing new leave it where it was, however long they go on.
+    clock.advance(5 * MINUTE);
+    expect(await lastWrite()).toBe(NOW - 12 * MINUTE);
+    // A line that is still being written moves it, though the reader leaves the line for later.
+    files.append(file, '{"timestamp":"', { mtimeMs: clock.now() });
+    expect(await lastWrite()).toBe(clock.now());
+  });
+
+  test("a modified time that could not be right, or is before the session began, is not known", async () => {
+    const lastWrite = async (mtimeMs: number) => {
+      const files = emptyCodex();
+      addSession(files, {
+        thread: ids.working,
+        lines: linesFor("demo", ids.working, [[NOW - 20 * MINUTE, "task_started"]]),
+        lock: true,
+        mtimeMs,
+      });
+      return (await codexAdapterFor(files).poll()).sessions[0];
+    };
+
+    // The session began an hour ago, as its first line says.
+    expect((await lastWrite(NOW - 60 * MINUTE))?.lastWriteAt).toBe(NOW - 60 * MINUTE);
+    for (const mtimeMs of [NOW + 2 * MINUTE, NOW - 2 * 60 * MINUTE, Date.UTC(2019, 0, 1)]) {
+      const session = await lastWrite(mtimeMs);
+      expect(session?.status, String(mtimeMs)).toBe("working");
+      expect(session, String(mtimeMs)).not.toHaveProperty("lastWriteAt");
+    }
+  });
+
+  test("a session waiting on a subagent it started last wrote when the subagent last wrote to its own file", async () => {
+    const poll = async (subagentMtimeMs: number) => {
+      const files = emptyCodex();
+      addSession(files, {
+        thread: ids.working,
+        lines: linesFor("demo", ids.working, [[NOW - 30 * MINUTE, "task_started"]]),
+        lock: true,
+        mtimeMs: NOW - 20 * MINUTE,
+      });
+      addSession(files, {
+        thread: ids.subagent,
+        created: "2026-10-01T10-00-00",
+        lines: [
+          metaLine(NOW - 25 * MINUTE, {
+            id: ids.subagent,
+            source: { subagent: { thread_spawn: { parent_thread_id: ids.working, depth: 1 } } },
+            thread_source: "subagent",
+            parent_thread_id: ids.working,
+          }),
+          turnLine(NOW - 25 * MINUTE, "task_started"),
+        ],
+        lock: true,
+        mtimeMs: subagentMtimeMs,
+      });
+      return (await codexAdapterFor(files).poll()).sessions;
+    };
+
+    const waiting = await poll(NOW - 10_000);
+    expect(waiting.map((session) => [session.id, session.status, session.lastWriteAt])).toEqual([
+      [`codex:${ids.working}`, "working", NOW - 10_000],
+    ]);
+    // A subagent that wrote less lately, or at a time that could not be right, leaves the session's own.
+    for (const mtimeMs of [NOW - 40 * MINUTE, NOW + 2 * MINUTE]) {
+      expect((await poll(mtimeMs))[0]?.lastWriteAt, String(mtimeMs)).toBe(NOW - 20 * MINUTE);
+    }
   });
 
   test("names come from Codex's names file, the newest for each session", async () => {

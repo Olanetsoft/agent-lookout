@@ -462,6 +462,28 @@ describe("sessionFromRegistry", () => {
     );
     expect(session).toMatchObject({ startedAt: now - 60_000, statusSince: null, stale: false });
   });
+
+  test("a working session has no last write: its registry file is written when its status changes, not as it works", () => {
+    const fromRegistry = sessionFromRegistry(
+      {
+        pid: pids.busy,
+        sessionId: ids.busy,
+        status: "busy",
+        startedAt: now - 60 * 60_000,
+        statusUpdatedAt: now - 40 * 60_000,
+      },
+      context,
+    );
+    const fromFeed = sessionFromFeed(
+      { pid: pids.busy, sessionId: ids.busy, status: "busy" },
+      { pid: pids.busy, sessionId: ids.busy, status: "busy", statusUpdatedAt: now - 40 * 60_000 },
+      context,
+    );
+    for (const session of [fromRegistry, fromFeed]) {
+      expect(session.status).toBe("working");
+      expect(session).not.toHaveProperty("lastWriteAt");
+    }
+  });
 });
 
 describe("projectOf", () => {

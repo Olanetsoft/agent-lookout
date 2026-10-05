@@ -579,6 +579,57 @@ describe("when a status began", () => {
   });
 });
 
+describe("when the agent last wrote", () => {
+  test("is the file's modified time, and moves each time the agent writes it, whatever it says", async () => {
+    const { files, first, poll, clock } = setUp();
+    put(files, "a.json", statusFile(), NOW - 7 * MINUTE + 0.5);
+    expect((await first()).sessions[0]?.lastWriteAt).toBe(NOW - 7 * MINUTE);
+
+    // Nothing written: it stays, poll after poll.
+    expect((await poll(5 * MINUTE)).sessions[0]?.lastWriteAt).toBe(NOW - 7 * MINUTE);
+    // Written again with the same words, as an agent that touches its file does.
+    files.rewrite(`${STATUS_DIR}/a.json`, statusFile());
+    const session = (await poll()).sessions[0];
+    expect(session?.lastWriteAt).toBe(clock.now - 2 * SECOND);
+    expect(session?.status).toBe("working");
+  });
+
+  test("is not known when the time could not be right, or is before the since the file holds", async () => {
+    const { files, first } = setUp();
+    put(files, "a.json", statusFile({ name: "ahead" }), NOW + 2 * MINUTE);
+    put(files, "b.json", statusFile({ name: "in-2019" }), Date.UTC(2019, 0, 1));
+    put(files, "c.json", statusFile({ name: "copied", since: NOW - MINUTE }), NOW - 3 * MINUTE);
+    put(
+      files,
+      "d.json",
+      statusFile({ name: "after-since", since: NOW - 3 * MINUTE }),
+      NOW - MINUTE,
+    );
+    const result = await first();
+    expect(result.sessions.map((session) => [session.name, session.lastWriteAt])).toEqual([
+      ["ahead", undefined],
+      ["in-2019", undefined],
+      ["copied", undefined],
+      ["after-since", NOW - MINUTE],
+    ]);
+    // Each still has its status: a time that is not known changes nothing else.
+    expect(result.sessions.map((session) => session.status)).toEqual([
+      "working",
+      "working",
+      "working",
+      "working",
+    ]);
+  });
+
+  test("a file caught half written keeps the time it was last read whole", async () => {
+    const { files, first, poll } = setUp();
+    put(files, "a.json", statusFile(), NOW - 6 * MINUTE);
+    await first();
+    files.rewrite(`${STATUS_DIR}/a.json`, statusFile().slice(0, 20));
+    expect((await poll()).sessions[0]?.lastWriteAt).toBe(NOW - 6 * MINUTE);
+  });
+});
+
 describe("a file caught half written", () => {
   test("keeps what it said a poll ago, for that one poll, and is then skipped", async () => {
     const { files, first, poll } = setUp();

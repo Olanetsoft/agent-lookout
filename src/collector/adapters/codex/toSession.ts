@@ -34,6 +34,8 @@ export interface CodexSessionInput {
   /** The name from `session_index.jsonl`, when the session has one. */
   name?: string;
   live: CodexLiveness;
+  /** The file's modified time, as the `lstat` made before reading it gave it. */
+  writtenAt?: number;
   now: number;
 }
 
@@ -47,6 +49,9 @@ export interface CodexSessionInput {
  * - The status time is the last turn line's time while the session is open.
  *   A session that has ended, or has not begun a turn, has been so since its
  *   last line. An unknown status has no time.
+ * - The last write is the file's modified time: every line Codex adds moves
+ *   it on. A time that could not be right, or that is before the session
+ *   began, is not known.
  * - There is no pid, no `alive` and no link: Codex's files name no process, and
  *   its deep link into the desktop app is undocumented.
  */
@@ -73,7 +78,7 @@ export function codexSession(input: CodexSessionInput): Session {
     statusSince = null;
   }
 
-  return {
+  const session: Session = {
     id,
     source: SOURCE_ID,
     surface: mapCodexSurface(state.meta?.source, state.meta?.originator),
@@ -87,4 +92,12 @@ export function codexSession(input: CodexSessionInput): Session {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
+  // The system gives the time with a fraction of a millisecond. A file cannot
+  // have been written to before its session began.
+  const writtenAt =
+    input.writtenAt === undefined ? null : plausibleTime(Math.floor(input.writtenAt), now);
+  const beforeStart =
+    writtenAt !== null && startedAt !== null && writtenAt < startedAt - WRITE_ORDER_SLACK_MS;
+  if (writtenAt !== null && !beforeStart) session.lastWriteAt = writtenAt;
+  return session;
 }

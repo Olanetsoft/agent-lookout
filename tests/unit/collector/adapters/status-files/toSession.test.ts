@@ -3,7 +3,8 @@ import { expect, test } from "vitest";
 import { MAX_NAME_LENGTH, type StatusFile } from "@collector/adapters/status-files/statusFile";
 import { SOURCE_ID, statusFileSession } from "@collector/adapters/status-files/toSession";
 import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
-import { MINUTE, NOW } from "@tests/fixtures/statusFiles";
+import { CLOCK_SLACK_MS } from "@core/time";
+import { DAY, MINUTE, NOW } from "@tests/fixtures/statusFiles";
 
 const FILE: StatusFile = {
   agent: "Night Shift",
@@ -14,13 +15,14 @@ const FILE: StatusFile = {
 
 function session(
   file: Partial<StatusFile> = {},
-  extra: { statusSince?: number | null; alive?: boolean } = {},
+  extra: { statusSince?: number | null; alive?: boolean; writtenAt?: number } = {},
 ) {
   return statusFileSession({
     fileName: "night-shift.json",
     file: { ...FILE, ...file },
     statusSince: extra.statusSince === undefined ? NOW - MINUTE : extra.statusSince,
     alive: extra.alive,
+    writtenAt: extra.writtenAt,
     now: NOW,
   });
 }
@@ -112,4 +114,22 @@ test("an idle session is stale after a day in that status, by the time it is giv
   );
   // Without a time, how long it has been idle was not measured.
   expect(session({ status: "idle" }, { statusSince: null }).stale).toBe(false);
+});
+
+test("the last write is the file's modified time, to the millisecond, and is left out when not given", () => {
+  expect(session({}, { writtenAt: NOW - 9 * MINUTE + 0.5 }).lastWriteAt).toBe(NOW - 9 * MINUTE);
+  expect(session()).not.toHaveProperty("lastWriteAt");
+  // Ahead of the clock by more than the slack, or before 2020: not a time to believe.
+  expect(session({}, { writtenAt: NOW + CLOCK_SLACK_MS + 1 })).not.toHaveProperty("lastWriteAt");
+  expect(session({}, { writtenAt: Date.UTC(2019, 11, 31) })).not.toHaveProperty("lastWriteAt");
+});
+
+test("a last write before the since the file holds is not known, but a moment before is", () => {
+  const since = NOW - 10 * MINUTE;
+  expect(session({ since }, { writtenAt: since - 1_001 })).not.toHaveProperty("lastWriteAt");
+  expect(session({ since }, { writtenAt: since - 1_000 }).lastWriteAt).toBe(since - 1_000);
+  // A since that cannot be right is no time to compare with.
+  expect(session({ since: NOW + DAY }, { writtenAt: since }).lastWriteAt).toBe(since);
+  // The time Agent Lookout first saw the status is not the file's, and is not compared.
+  expect(session({}, { statusSince: NOW, writtenAt: since }).lastWriteAt).toBe(since);
 });

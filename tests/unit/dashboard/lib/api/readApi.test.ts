@@ -119,6 +119,17 @@ test.each([
   expect(read && "git" in read).toBe(false);
 });
 
+test("when the agent last wrote is read as it was sent, and is none when it is not a number", () => {
+  const sent = makeSession({ status: "working", lastWriteAt: T - 12 * 60_000 });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+
+  for (const lastWriteAt of [undefined, null, "12m", Number.NaN, {}]) {
+    const read = readSession({ ...makeSession({ status: "working" }), lastWriteAt });
+    expect(read?.status).toBe("working");
+    expect(read && "lastWriteAt" in read).toBe(false);
+  }
+});
+
 test("a surface or status the page does not know is read as unknown, not dropped", () => {
   const read = readSession({ ...makeSession(), surface: "tmux", status: "paused" });
 

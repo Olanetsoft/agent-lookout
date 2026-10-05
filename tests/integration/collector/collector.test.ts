@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
 import path from "node:path";
@@ -21,7 +21,18 @@ import {
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
-import { fixtureSessions, NOW } from "@tests/fixtures/codex";
+import { readSnapshot } from "@dashboard/lib/api/readApi";
+import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
+import {
+  fixtureSessions,
+  messageLine,
+  metaLine,
+  MINUTE,
+  NOW,
+  rollout,
+  rolloutPath,
+  turnLine,
+} from "@tests/fixtures/codex";
 import { makeSession } from "@tests/fixtures/session";
 import { listen, request } from "@tests/support/node/http";
 import {
@@ -31,7 +42,12 @@ import {
   type SmtpBehaviour,
 } from "@tests/support/node/smtp";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
-import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import {
+  CODEX_FIXTURE_HOME,
+  makeClaudeHome,
+  makeCodexHome,
+  tempDir,
+} from "@tests/support/node/tempFiles";
 import { startWebhookServer } from "@tests/support/node/webhook";
 
 /**
@@ -221,6 +237,107 @@ describe("createCollector", () => {
     expect(events.map((event) => [event.sessionId, event.sessionName, event.kind])).toEqual([
       ["status-files:my-agent.json", "my-agent", "appeared"],
     ]);
+  });
+
+  test("a working Codex session and a working status file whose files stop changing are said to be quiet, for as long as they stay so", async () => {
+    const start = Date.now();
+    const clock = { now: start };
+    const thread = "00000000-0000-4000-8000-0000000000e1";
+    // Codex names its day folder and the file by the local time the session began.
+    const began = new Date(start - 30 * MINUTE);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const day = `${began.getFullYear()}-${pad(began.getMonth() + 1)}-${pad(began.getDate())}`;
+    const created = `${day}T${pad(began.getHours())}-${pad(began.getMinutes())}-${pad(began.getSeconds())}`;
+    const codexHome = await makeCodexHome({
+      [`thread-writer-locks/${thread}.lock`]: "",
+    });
+    const rolloutFile = rolloutPath(codexHome, created, thread);
+    await mkdir(path.dirname(rolloutFile), { recursive: true });
+    await writeFile(
+      rolloutFile,
+      rollout(
+        metaLine(start - 30 * MINUTE, { id: thread, cwd: "/Users/example/code/billing-webhooks" }),
+        turnLine(start - 20 * MINUTE, "task_started"),
+      ),
+    );
+    const statusDir = path.join(await tempDir(), "sessions");
+    await mkdir(statusDir);
+    const statusFile = path.join(statusDir, "night-shift.json");
+    const said = JSON.stringify({
+      agent: "Night Shift",
+      name: "search-indexing",
+      status: "working",
+    });
+    await writeFile(statusFile, said);
+    // Neither file has been written for six minutes. A whole second, which the
+    // file system keeps exactly: a time given in seconds can come back a
+    // millisecond short.
+    const sixMinutesAgo = new Date(Math.floor((start - 6 * MINUTE) / 1000) * 1000);
+    await utimes(rolloutFile, sixMinutesAgo, sixMinutesAgo);
+    await utimes(statusFile, sixMinutesAgo, sixMinutesAgo);
+
+    const collector = createCollector({
+      version: "9.9.9-test",
+      env: {
+        AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+        AGENT_LOOKOUT_CODEX_HOME: codexHome,
+        AGENT_LOOKOUT_STATUS_DIR: statusDir,
+        AGENT_LOOKOUT_TMUX: "off",
+      },
+      notifier: fakeSystemNotifier(),
+      now: () => clock.now,
+    });
+    const port = await listen(createServer(collector.handler));
+    /**
+     * Polls, and reads the answer as the page does: each session's status, its
+     * last write and what its row says of it, or null when it says nothing.
+     */
+    const rows = async () => {
+      await collector.poller.pollOnce();
+      const snapshot = readSnapshot((await request(port, "/api/sessions")).json());
+      return Object.fromEntries(
+        (snapshot?.sessions ?? []).map((session) => {
+          const quietMs = quietFor(session, clock.now);
+          return [
+            session.name,
+            {
+              status: session.status,
+              lastWriteAt: session.lastWriteAt,
+              says: quietMs === null ? null : quietPhrase(quietMs),
+            },
+          ];
+        }),
+      );
+    };
+
+    expect(await rows()).toEqual({
+      "billing-webhooks": {
+        status: "working",
+        lastWriteAt: sixMinutesAgo.getTime(),
+        says: "quiet for 6m",
+      },
+      "search-indexing": {
+        status: "working",
+        lastWriteAt: sixMinutesAgo.getTime(),
+        says: "quiet for 6m",
+      },
+    });
+
+    // Two minutes on, with nothing written, it has grown, and both are still working.
+    clock.now += 2 * MINUTE;
+    const later = await rows();
+    expect(later["billing-webhooks"]).toMatchObject({ status: "working", says: "quiet for 8m" });
+    expect(later["search-indexing"]).toMatchObject({ status: "working", says: "quiet for 8m" });
+
+    // Codex writes a line, and the agent rewrites its status file with the same words.
+    await appendFile(rolloutFile, `${messageLine(clock.now)}\n`);
+    await writeFile(statusFile, said);
+    const written = await rows();
+    for (const name of ["billing-webhooks", "search-indexing"]) {
+      expect(written[name]?.status, name).toBe("working");
+      expect(written[name]?.lastWriteAt, name).toBeGreaterThan(sixMinutesAgo.getTime());
+      expect(written[name]?.says, name).toBeNull();
+    }
   });
 });
 

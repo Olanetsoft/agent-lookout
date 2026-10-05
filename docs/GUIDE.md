@@ -58,10 +58,25 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 - its project folder and, under it, the [git branch](#branches) when the folder is in a repository
 - the app it runs in: Terminal, VS Code or Desktop app
 - its status, and how long it has had that status
+- for a working session whose agent has written nothing for a while, how long, as in `quiet for 12m`: see [Quiet for](#quiet-for)
 
 When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
 A Claude Code session in VS Code or inside tmux has a Jump button here too.
+
+#### Quiet for
+
+A session can say it is working while nothing is happening. A Codex session that is waiting for your approval shows as working, because Codex does not record those waits, and any agent can hang. So when a working session's agent has not written to its session file for 5 minutes or more, its row says how long, under its status and time: `quiet for 12m`. Hover over it, or move to it with Tab, to read when the agent last wrote. In a narrow window it has a line of its own under the status and its time.
+
+It is a measurement, not a status. The session is still listed as working, with the same mark and word, and it does not move to the Needs you panel or send a notification or an email. A long quiet stretch is the sign to go and look: the session may be waiting for you, or may have stopped. Some work is quiet too, such as a long build or test run the agent is waiting on, so it does not say which.
+
+| Agent        | What the time is                                                                                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex        | When Codex last wrote to the session's file in `~/.codex/sessions`, or to the file of a subagent the session started. Codex adds a line to each as it works. A subagent's own subagents are not counted |
+| Status files | When the status file was last written. An agent that wants this should write its file now and then while it works                                                                                       |
+| Claude Code  | None, so nothing is shown. The file Agent Lookout reads for a Claude Code session is not rewritten as the session works: it can stay hours old while the session is busy                                |
+
+For Claude Code, the time its file was written would make a session busy on one long task look quiet for as long as the task lasts. The transcripts would say when it last did anything, and Agent Lookout does not read them. For every agent, Agent Lookout reads only when the file was last changed, from the file system, and nothing more of the file than it already reads.
 
 #### Branches
 
@@ -493,6 +508,7 @@ The session appears in Sessions as `docs-site`, moves to Needs you as Asked you 
 - One file is one session. Its name can be anything that ends in `.json`, and it is what tells one session from another, so keep it for as long as the session lasts.
 - When the process named by `pid` has gone, a session that is working, waiting or idle is not shown, because its agent stopped without deleting the file. A finished or failed session is expected to have no process, and stays. Without `pid`, a session stays until its file is deleted.
 - A finished or failed session stays for 24 hours after its `since`, or after its file was last written.
+- A working session whose file has not been written for 5 minutes or more says how long, as [Quiet for](#quiet-for) describes. So while the agent works, have it write its file now and then, even when nothing in it changes: writing it again with the same words, or `touch "$dir/my-agent.json"`, is enough. A file whose time is earlier than its own `since`, as a copy that kept an older time can be, gives no time.
 - Without `since`, the time is when Agent Lookout first saw that status. For a file that was already there when Agent Lookout started, it is not known until the status changes, and a dash is shown.
 - A name that starts with a dot is not read. To change a file without Agent Lookout ever reading half of it, write the new one under such a name and rename it over the old one with `mv`. A file caught half written is shown as it was for one more read.
 - Agent Lookout reads at most 200 files, each 16 KB or less, directly in the folder. When there are more, it reads the 200 written most recently. It does not follow a symbolic link in the folder, and it does not look in folders inside it. A file over a limit, or one that is not JSON with an `agent` and a `status`, is skipped, and the Sources card counts it and names the first one, with why. Fields it does not know are ignored.
@@ -507,7 +523,7 @@ It cannot stop, resume or answer a session. It covers Claude Code and Codex, and
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 
-A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
+A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. Once it has written nothing for 5 minutes, its row says how long it has been [quiet](#quiet-for), which is the sign to look. A Claude Code session never says how long it has been quiet. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
 A Claude Code background job is shown as finished or failed, and its row stays for 24 hours. A Codex session is shown as finished once no Codex program has it open, and its row stays until 24 hours after Codex last wrote to it. A session started by a Codex older than 0.155 is never shown as finished. Any other session that ends leaves the list. The Events log records that it ended, without saying whether it finished or failed.
 
@@ -641,9 +657,9 @@ The program serving the page has stopped. The page keeps the last thing it saw, 
 
 For Claude Code, Agent Lookout reads the small file Claude Code keeps for each running session in `~/.claude/sessions/`, every 2 seconds. That starts no program and uses no network. When it starts, and every 30 seconds after that, it also runs `claude agents --json --all`, the command Claude Code [documents](https://code.claude.com/docs/en/agent-view) for listing its sessions. That answer decides which sessions exist, and it adds background jobs that have finished or failed. If the command cannot be found or fails, Agent Lookout uses the files alone.
 
-For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder. Codex documents none of these files, so a new Codex version can change them.
+For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder, and when each file was last changed, which says how long a working session has been [quiet](#quiet-for). Codex documents none of these files, so a new Codex version can change them.
 
-For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seconds, when that folder exists. Each file in it is one session, written by the agent itself, as [Your own agents](#your-own-agents) describes.
+For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seconds, when that folder exists. Each file in it is one session, written by the agent itself, as [Your own agents](#your-own-agents) describes. When each file was last written says how long a working session has been quiet.
 
 While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button.
 

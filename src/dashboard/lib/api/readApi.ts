@@ -131,6 +131,8 @@ export function readSession(value: unknown): Session | null {
   }
   const agent = text(value.agent);
   if (agent) session.agent = agent;
+  const lastWriteAt = number(value.lastWriteAt);
+  if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
   const pid = number(value.pid);
   if (pid !== null) session.pid = pid;
   if (typeof value.alive === "boolean") session.alive = value.alive;

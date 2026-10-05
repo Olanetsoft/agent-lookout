@@ -8,6 +8,7 @@ import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/Statu
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { formatShortDuration, formatSince, shortDurationInWords } from "@dashboard/lib/format";
+import { quietFor, quietPhrase, quietPhraseInWords } from "@dashboard/lib/sessions/quiet";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
@@ -59,6 +60,12 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * A stale row, and a row that has finished, failed or lost its process, is
  * quiet: its name and time are in the secondary ink.
  *
+ * A working session whose agent has written nothing to its file for 5 minutes
+ * or more says so under its status and time, in the muted ink: "quiet for
+ * 12m", with the time of the last write in a tooltip. It is a measurement
+ * beside the status, not a status: the word, the mark and their colour stay
+ * Working's, and nothing about it is warm.
+ *
  * A session in a git repository has its branch, or the commit when no branch
  * is checked out, under its folder's name, in the muted ink: the Folder column
  * is too narrow to hold both on one line, and beside the folder a branch would
@@ -67,7 +74,9 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  *
  * In a narrow window every row has two lines: the name, and under it the status
  * and its time, led by the tool when the table names one: "Codex · Working".
- * When that line is too short, it goes on to a third rather than cut a word.
+ * When that line is too short, it goes on to a third rather than cut a word,
+ * and how long the agent has been quiet, when it says so, has a line of its own
+ * under it.
  * The tool is never a logo or a colour.
  *
  * The sessions that need the person are the hero's, not the table's, so the
@@ -99,6 +108,7 @@ export function SessionRow({
   const since = session.statusSince;
   const surface = SURFACE_LABEL[session.surface];
   const lasted = since !== null ? now - since : null;
+  const quietForMs = quietFor(session, now);
 
   const duration = (
     <Tooltip
@@ -138,12 +148,34 @@ export function SessionRow({
   );
 
   /**
+   * How long the agent has written nothing, when the row says so: "quiet for
+   * 12m", in the table's short form. The last write's time is one hover or one
+   * Tab away.
+   */
+  const quietLine = quietForMs !== null && session.lastWriteAt !== undefined && (
+    <Tooltip content={`Last write at ${formatSince(session.lastWriteAt, now)}`} mono align='end'>
+      <span
+        data-part='quiet'
+        tabIndex={0}
+        className='block w-fit rounded-bar leading-tight whitespace-nowrap text-ink-muted tabular-nums'
+      >
+        <span className='sr-only'>{quietPhraseInWords(quietForMs)}</span>
+        <span aria-hidden>{quietPhrase(quietForMs)}</span>
+      </span>
+    </Tooltip>
+  );
+
+  /**
    * Narrow, the line under the name: the tool when the table names one, then
    * the status and its time, "Codex · Working 12m". Nothing on it is cut while
    * a line can hold it: when the line is too short for all of it, the status
    * and its time go to a line of their own under the tool, and when that line
    * is too short as well, the time goes under the status. Only a tool's name
    * wider than the whole line is cut, and it stays a hover or a Tab away.
+   *
+   * How long the agent has been quiet always has a line of its own under the
+   * status and its time, as it does in the wide row. Beside them it would pull
+   * the time in from the right edge, where every other row's time stands.
    *
    * The dot that sets the tool apart belongs to the status. It sits in the gap
    * before it, and the line clips it once the status starts a line of its own.
@@ -174,6 +206,13 @@ export function SessionRow({
         {status}
         {duration}
       </span>
+      {quietLine && (
+        <>
+          {/* Read as "status and time, quiet for 12 minutes". */}
+          <span className='sr-only'>, </span>
+          <span className='basis-full'>{quietLine}</span>
+        </>
+      )}
     </p>
   );
 
@@ -265,10 +304,17 @@ export function SessionRow({
       {!narrow && (
         <td className={CELL}>
           {/* Read as one phrase: "Working 8m". */}
-          <div className='flex items-baseline justify-between gap-2 whitespace-nowrap'>
+          <div
+            className={cn(
+              "flex items-baseline justify-between gap-2 whitespace-nowrap",
+              quietLine && "leading-tight",
+            )}
+          >
             <span data-part='status'>{statusWord}</span>
             {duration}
           </div>
+          {/* Under the phrase, as a branch is under its folder: the two lines fit the row. */}
+          {quietLine}
         </td>
       )}
 
