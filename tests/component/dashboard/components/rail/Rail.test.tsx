@@ -3,8 +3,8 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { Rail } from "@dashboard/components/rail/Rail";
-import type { ViewId } from "@dashboard/lib/view";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import type { ViewId } from "@dashboard/lib/shell/view";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 beforeEach(async () => {
   await page.viewport(1280, 900);

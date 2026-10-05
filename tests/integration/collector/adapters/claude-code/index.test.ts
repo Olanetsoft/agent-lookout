@@ -19,7 +19,7 @@ import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
-import { FINISHED_RETENTION_MS } from "@core/retention";
+import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
 import {
   feedEntries,
   feedJson,
@@ -39,8 +39,8 @@ import {
   prints,
   watching,
   WITHHELD,
-} from "@tests/support/claudeCodeAdapter";
-import { makeClaudeHome, makeUserHome, tempDir, writeStub } from "@tests/support/tempFiles";
+} from "@tests/support/adapters/claudeCodeAdapter";
+import { makeClaudeHome, makeUserHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 /**
  * An adapter on a machine where no claude binary can be found. Nothing in its

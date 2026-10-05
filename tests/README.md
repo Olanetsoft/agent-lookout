@@ -43,7 +43,7 @@ The browser tests write failure screenshots and attachments to `.artifacts/`, wh
 
 `npm run check` runs the layout check, the typecheck, the linter and the format check, then `npm test`.
 
-To run one file, name it: `npx vitest run tests/unit/core/diff.test.ts`.
+To run one file, name it: `npx vitest run tests/unit/core/sessions/diff.test.ts`.
 
 The component tests need the Chromium build that Playwright downloads. Install it once with `npx playwright install chromium`. On Linux, add `--with-deps`.
 
@@ -63,13 +63,13 @@ No other test reads the real `~/.claude` folder or runs the real `claude` comman
 
 A test file is named for the module it covers and sits at that module's path, with `tests/<group>/` in place of `src/`. It ends in `.test.tsx` when the module is a `.tsx` file, and in `.test.ts` otherwise. There are no exceptions: every test file names a module that exists.
 
-| Module                                       | Test                                                      |
-| -------------------------------------------- | --------------------------------------------------------- |
-| `src/core/diff.ts`                           | `tests/unit/core/diff.test.ts`                            |
-| `src/collector/hosts/standalone.ts`          | `tests/integration/collector/hosts/standalone.test.ts`    |
-| `src/dashboard/components/ui/Button.tsx`     | `tests/component/dashboard/components/ui/Button.test.tsx` |
-| `src/dashboard/lib/theme.ts`, in a real page | `tests/component/dashboard/lib/theme.test.ts`             |
-| `src/dashboard/styles/index.css`, the theme  | `tests/component/dashboard/styles/index.test.ts`          |
+| Module                                             | Test                                                               |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/core/sessions/diff.ts`                        | `tests/unit/core/sessions/diff.test.ts`                            |
+| `src/collector/hosts/standalone.ts`                | `tests/integration/collector/hosts/standalone.test.ts`             |
+| `src/dashboard/components/ui/controls/Button.tsx`  | `tests/component/dashboard/components/ui/controls/Button.test.tsx` |
+| `src/dashboard/lib/shell/theme.ts`, in a real page | `tests/component/dashboard/lib/shell/theme.test.ts`                |
+| `src/dashboard/styles/index.css`, the theme        | `tests/component/dashboard/styles/index.test.ts`                   |
 
 A module can have a file in more than one group, but only one in each. `src/collector/adapters/claude-code/index.ts` has a unit test, which hands the adapter stand-ins for everything, and an integration test, which gives it real folders and real programs. Two sets of tests of one module in one group are two `describe` blocks in one file, as the opt-in check is in `feed.test.ts`.
 
@@ -82,7 +82,7 @@ Tests import through the aliases `@core`, `@collector`, `@dashboard` and `@tests
 `npm run check:layout` runs first in `npm run check`. It fails, and says where the file belongs, when:
 
 - a test file is outside `tests/`, or in a folder no project runs;
-- a test file names no module at its mirrored path, such as `nothing.test.ts` or `diff.extra.test.ts` beside `src/core/diff.ts`;
+- a test file names no module at its mirrored path, such as `nothing.test.ts` or `diff.extra.test.ts` beside `src/core/sessions/diff.ts`;
 - a test file has the wrong ending for its module: `.test.tsx` for a `.ts` module, `.test.ts` for a `.tsx` one, or a `.tsx` test in `unit/` or `integration/`, which run only `.test.ts`;
 - a code file in `unit/`, `integration/` or `component/` is not a test, such as a helper;
 - anything under `src/` sits in a folder named `fixtures`, `__fixtures__`, `mocks`, `__mocks__`, `__tests__`, `__snapshots__`, `__screenshots__`, `test`, `tests` or `testing`, or has `.fixture.`, `.mock.`, `.stub.` or `.snap` in its name, or is named as a test setup or helper file, such as `setupTests.ts`, `test-utils.ts` or `vitest.setup.ts`;

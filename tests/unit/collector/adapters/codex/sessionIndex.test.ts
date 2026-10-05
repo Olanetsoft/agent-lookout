@@ -7,7 +7,7 @@ import {
   SESSION_INDEX_LIMIT_BYTES,
 } from "@collector/adapters/codex/sessionIndex";
 import { CODEX_HOME, ids, indexLine, threadId } from "@tests/fixtures/codex";
-import { memoryFiles } from "@tests/support/codexAdapter";
+import { memoryFiles } from "@tests/support/adapters/codexAdapter";
 
 const FILE = `${CODEX_HOME}/${SESSION_INDEX_FILE}`;
 const lines = (...all: string[]) => all.map((line) => `${line}\n`).join("");

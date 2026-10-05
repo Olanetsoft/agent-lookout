@@ -1,32 +1,42 @@
 import { useId, useMemo, type ReactNode } from "react";
 
-import type { Session, SessionEvent, SourceHealth } from "@core/session";
+import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
-import { Badge } from "@dashboard/components/ui/Badge";
-import { Button } from "@dashboard/components/ui/Button";
-import { DurationFigure } from "@dashboard/components/ui/DurationFigure";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { StatusMark } from "@dashboard/components/ui/StatusMark";
-import { Tooltip, Truncated } from "@dashboard/components/ui/Tooltip";
-import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/collectorStore";
+import { Badge } from "@dashboard/components/ui/status/Badge";
+import { Button } from "@dashboard/components/ui/controls/Button";
+import { DurationFigure } from "@dashboard/components/ui/status/DurationFigure";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
+import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
+import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import {
   durationInWords,
   durationParts,
   formatClockMinutes,
   formatDuration,
 } from "@dashboard/lib/format";
-import type { HistoryMetric } from "@dashboard/lib/historyChart";
-import { countState, heroLight, waitingSessions, type CountState } from "@dashboard/lib/sessions";
-import { agentLabel, showsAgents } from "@dashboard/lib/sources";
-import { safeJumpLink, SURFACE_LABEL, waitingDetail, waitingLabel } from "@dashboard/lib/status";
+import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
+import {
+  countState,
+  heroLight,
+  waitingSessions,
+  type CountState,
+} from "@dashboard/lib/sessions/sessions";
+import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
+import {
+  safeJumpLink,
+  SURFACE_LABEL,
+  waitingDetail,
+  waitingLabel,
+} from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 import {
   unmeasuredNote,
   waitedOnYou,
   type LastWait,
   type WaitedOnYou as Waits,
-} from "@dashboard/lib/waits";
+} from "@dashboard/lib/sessions/waits";
 
 interface HeroPanelProps {
   /** Null until the first answer arrives. The hero then holds its place. */

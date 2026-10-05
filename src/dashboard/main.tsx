@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import "./styles/index.css";
 import App from "@dashboard/App";
-import { ErrorBoundary } from "@dashboard/components/ui/ErrorBoundary";
+import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
 
 const container = document.getElementById("root");
 if (!container) {

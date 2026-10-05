@@ -1,7 +1,7 @@
 // Test fixtures only. Product code never imports this file: the product never
 // shows invented data.
 
-import type { Session } from "@core/session";
+import type { Session } from "@core/sessions/session";
 
 /** A generic session for tests. Every value is invented. */
 export function makeSession(overrides: Partial<Session> = {}): Session {

@@ -1,4 +1,4 @@
-import type { Session, SourceHealth, SourceId } from "../../core/session.ts";
+import type { Session, SourceHealth, SourceId } from "../../core/sessions/session.ts";
 
 /** What one poll of one agent tool found. */
 export interface AdapterResult {

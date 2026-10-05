@@ -5,10 +5,10 @@ import { describe, expect, test } from "vitest";
 
 import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
-import type { SessionsSnapshot } from "@core/session";
+import type { SessionsSnapshot } from "@core/sessions/session";
 import { fixtureSessions, NOW } from "@tests/fixtures/codex";
-import { listen, request } from "@tests/support/http";
-import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/tempFiles";
+import { listen, request } from "@tests/support/node/http";
+import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 /**
  * A collector built the way every host builds it, with its default adapters,

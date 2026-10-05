@@ -3,8 +3,8 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
-import type { WaitedOnYou as Waits } from "@dashboard/lib/waits";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import type { WaitedOnYou as Waits } from "@dashboard/lib/sessions/waits";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;

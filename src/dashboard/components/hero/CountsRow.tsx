@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
-import { STALE_THRESHOLD_MS } from "@core/staleness";
-import { StatusMark } from "@dashboard/components/ui/StatusMark";
+import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
+import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { formatDuration } from "@dashboard/lib/format";
-import type { HistoryMetric } from "@dashboard/lib/historyChart";
-import type { CountState, Longest, SessionsSummary } from "@dashboard/lib/sessions";
+import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
+import type { CountState, Longest, SessionsSummary } from "@dashboard/lib/sessions/sessions";
 
 /** "a day", or "36 hours" if the threshold is ever not a whole number of days. */
 const STALE_AFTER =

@@ -10,8 +10,8 @@ import type { Adapter } from "@collector/adapters/adapter";
 import { createCollector, type Collector } from "@collector/collector";
 import { collectorPlugin } from "@collector/hosts/collectorPlugin";
 import { makeSession } from "@tests/fixtures/session";
-import { listen, request } from "@tests/support/http";
-import { tempDir } from "@tests/support/tempFiles";
+import { listen, request } from "@tests/support/node/http";
+import { tempDir } from "@tests/support/node/tempFiles";
 
 /**
  * A plugin whose collectors read nothing from this machine: each one polls a

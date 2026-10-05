@@ -1,12 +1,12 @@
 import { memo, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import type { Session, SessionEvent } from "@core/session";
-import { EmptyState } from "@dashboard/components/ui/EmptyState";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/StatusMark";
-import { Tooltip, Truncated } from "@dashboard/components/ui/Tooltip";
-import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/collectorStore";
-import { logEntries, logRows, logStart, watchGaps } from "@dashboard/lib/events";
+import type { Session, SessionEvent } from "@core/sessions/session";
+import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
+import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
+import { logEntries, logRows, logStart, watchGaps } from "@dashboard/lib/sessions/events";
 import {
   formatClock,
   formatClockMinutes,
@@ -15,7 +15,7 @@ import {
   formatFullTime,
   startOfDay,
 } from "@dashboard/lib/format";
-import { eventPhrase, STOPPED_WAITING } from "@dashboard/lib/status";
+import { eventPhrase, STOPPED_WAITING } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface EventsCardProps {

@@ -16,7 +16,7 @@ import {
 import { findClaudeBinary } from "@collector/adapters/claude-code/findBinary";
 import { isProcessAlive } from "@collector/adapters/claude-code/toSession";
 import { feedEntries, feedJsonWithTrailingText } from "@tests/fixtures/claudeCode";
-import { tempDir, writeStub } from "@tests/support/tempFiles";
+import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 const env = { PATH: "/usr/bin:/bin" };
 

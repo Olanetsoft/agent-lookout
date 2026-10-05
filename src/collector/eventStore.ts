@@ -1,5 +1,5 @@
 import { MAX_EVENTS_PER_RESPONSE } from "../core/api.ts";
-import type { SessionEvent } from "../core/session.ts";
+import type { SessionEvent } from "../core/sessions/session.ts";
 
 /** How many events are kept. Older ones are dropped. */
 export const EVENT_CAPACITY = 1_000;

@@ -2,11 +2,11 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { SessionsSnapshot, SourceHealth } from "@core/session";
+import type { SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { SourcesView } from "@dashboard/components/sources/SourcesView";
-import type { CollectorState } from "@dashboard/lib/collectorStore";
+import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
 

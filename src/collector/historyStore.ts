@@ -1,4 +1,4 @@
-import type { HistoryPoint } from "../core/session.ts";
+import type { HistoryPoint } from "../core/sessions/session.ts";
 
 /** How many points are kept: six hours of polls at one every two seconds. */
 export const HISTORY_CAPACITY = 10_800;

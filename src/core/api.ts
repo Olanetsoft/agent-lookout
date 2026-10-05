@@ -1,7 +1,7 @@
 // The shapes the API returns, shared by the collector that writes them and the
 // dashboard that reads them. `/api/sessions` returns a `SessionsSnapshot`.
 
-import type { HistoryPoint, SessionEvent } from "./session.ts";
+import type { HistoryPoint, SessionEvent } from "./sessions/session.ts";
 
 /** `GET /api/health` */
 export interface HealthResponse {

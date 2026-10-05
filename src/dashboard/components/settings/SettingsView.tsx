@@ -1,11 +1,11 @@
-import { Button } from "@dashboard/components/ui/Button";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { FactList, FactRow } from "@dashboard/components/ui/FactRow";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { SegmentedControl } from "@dashboard/components/ui/SegmentedControl";
-import { useNotificationSetting } from "@dashboard/hooks/useNotificationSetting";
-import { useTheme } from "@dashboard/hooks/useTheme";
-import type { ThemePreference } from "@dashboard/lib/theme";
+import { Button } from "@dashboard/components/ui/controls/Button";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
+import { useTheme } from "@dashboard/hooks/shell/useTheme";
+import type { ThemePreference } from "@dashboard/lib/shell/theme";
 
 const THEME_OPTIONS = [
   { value: "dark", label: "Night", name: "Dark theme" },

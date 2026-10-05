@@ -19,7 +19,7 @@ import {
   metaLine,
   threadId,
 } from "@tests/fixtures/codex";
-import { inTimeZone, memoryFiles, type MemoryFiles } from "@tests/support/codexAdapter";
+import { inTimeZone, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
 const SESSIONS = `${CODEX_HOME}/sessions`;
 

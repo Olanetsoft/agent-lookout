@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { RolloutState } from "@collector/adapters/codex/rolloutFile";
 import { codexSession, lastActivity, SOURCE_ID } from "@collector/adapters/codex/toSession";
-import { STALE_THRESHOLD_MS } from "@core/staleness";
+import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
 import { CLOCK_SLACK_MS } from "@core/time";
 import { at, DAY, ids, MINUTE, NOW } from "@tests/fixtures/codex";
 

@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 
-import type { Session } from "@core/session";
-import { Badge } from "@dashboard/components/ui/Badge";
-import { Button } from "@dashboard/components/ui/Button";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/StatusMark";
-import { Tooltip, Truncated } from "@dashboard/components/ui/Tooltip";
+import type { Session } from "@core/sessions/session";
+import { Badge } from "@dashboard/components/ui/status/Badge";
+import { Button } from "@dashboard/components/ui/controls/Button";
+import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { formatShortDuration, formatSince, shortDurationInWords } from "@dashboard/lib/format";
-import { isStaleIdle } from "@dashboard/lib/sessions";
-import { safeJumpLink, STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/status";
+import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
+import { safeJumpLink, STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionRowProps {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { nodeIo, openRegularFile } from "@collector/adapters/codex/io";
-import { tempDir } from "@tests/support/tempFiles";
+import { tempDir } from "@tests/support/node/tempFiles";
 
 const text = (data: Uint8Array) => Buffer.from(data).toString("utf8");
 

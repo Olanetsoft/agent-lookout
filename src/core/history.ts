@@ -1,4 +1,4 @@
-import type { HistoryPoint, Session } from "./session.ts";
+import type { HistoryPoint, Session } from "./sessions/session.ts";
 
 /** The default window the dashboard charts: the last 15 minutes. */
 export const DEFAULT_HISTORY_WINDOW_MS = 15 * 60 * 1000;

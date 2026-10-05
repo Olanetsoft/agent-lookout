@@ -1,9 +1,9 @@
-import { Button } from "@dashboard/components/ui/Button";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { FactList, FactRow } from "@dashboard/components/ui/FactRow";
-import { FactText } from "@dashboard/components/ui/FactText";
-import { POLL_INTERVAL_MS, type ProblemKind } from "@dashboard/lib/collectorStore";
-import { problemTitle } from "@dashboard/lib/connection";
+import { Button } from "@dashboard/components/ui/controls/Button";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
+import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { POLL_INTERVAL_MS, type ProblemKind } from "@dashboard/lib/api/collectorStore";
+import { problemTitle } from "@dashboard/lib/sources/connection";
 import { formatAgo, formatClock } from "@dashboard/lib/format";
 
 const RETRY_SECONDS = POLL_INTERVAL_MS / 1_000;

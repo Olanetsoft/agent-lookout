@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 
-import type { Session, SourceHealth } from "@core/session";
+import type { Session, SourceHealth } from "@core/sessions/session";
 import { ProblemAdvice } from "@dashboard/components/dashboard/ConnectionNotices";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { FactList, FactRow } from "@dashboard/components/ui/FactRow";
-import { FactText } from "@dashboard/components/ui/FactText";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { Tooltip } from "@dashboard/components/ui/Tooltip";
-import type { CollectorState } from "@dashboard/lib/collectorStore";
-import { problemTitle, sourceLine } from "@dashboard/lib/connection";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
+import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
+import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { problemTitle, sourceLine } from "@dashboard/lib/sources/connection";
 import { formatAgo, formatClock, formatFullTime } from "@dashboard/lib/format";
 
 /**

@@ -1,15 +1,20 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
-import type { Session, SourceHealth } from "@core/session";
+import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionRow } from "@dashboard/components/sessions/SessionRow";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { EmptyState } from "@dashboard/components/ui/EmptyState";
-import { FactText } from "@dashboard/components/ui/FactText";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { useNarrow } from "@dashboard/hooks/useMediaQuery";
-import { countState, tableGroups, type SessionGroup } from "@dashboard/lib/sessions";
-import { agentLabel, overviewSources, showsAgents, sourceNames } from "@dashboard/lib/sources";
-import { safeJumpLink } from "@dashboard/lib/status";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
+import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
+import { countState, tableGroups, type SessionGroup } from "@dashboard/lib/sessions/sessions";
+import {
+  agentLabel,
+  overviewSources,
+  showsAgents,
+  sourceNames,
+} from "@dashboard/lib/sources/sources";
+import { safeJumpLink } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionsCardProps {

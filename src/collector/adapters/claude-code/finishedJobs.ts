@@ -1,5 +1,9 @@
-import { FINISHED_RETENTION_MS, isOver, isWithinRetention } from "../../../core/retention.ts";
-import type { Session } from "../../../core/session.ts";
+import {
+  FINISHED_RETENTION_MS,
+  isOver,
+  isWithinRetention,
+} from "../../../core/sessions/retention.ts";
+import type { Session } from "../../../core/sessions/session.ts";
 
 /**
  * Ages out background sessions that are over.

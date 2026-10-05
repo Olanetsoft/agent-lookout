@@ -32,7 +32,7 @@ import { validPid } from "./feed.ts";
  *   while the status stands. In entries written by 2.1.282 to 2.1.286 it was
  *   the moment the file itself was last written, hours or days earlier for a
  *   session that had stayed in one status. The rule that tells one wait from
- *   the next relies on this (`src/core/waitChanges.ts`): were the time to move
+ *   the next relies on this (`src/core/sessions/waitChanges.ts`): were the time to move
  *   during a wait, every move would be taken for a new wait. Whether it moves
  *   when only `waitingFor` changes has not been seen either way.
  */

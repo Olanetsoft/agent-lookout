@@ -10,7 +10,7 @@ import {
 } from "@collector/adapters/codex/index";
 import type { CodexIo } from "@collector/adapters/codex/io";
 import { INDEX_PROMPT_REFRESH_MS, INDEX_REFRESH_MS } from "@collector/adapters/codex/rollouts";
-import { FINISHED_RETENTION_MS } from "@core/retention";
+import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
 import {
   CODEX_HOME,
   DAY,
@@ -37,7 +37,7 @@ import {
   noLockFolder,
   watching,
   type MemoryFiles,
-} from "@tests/support/codexAdapter";
+} from "@tests/support/adapters/codexAdapter";
 
 const SESSIONS = `${CODEX_HOME}/sessions`;
 const LOCKS = `${CODEX_HOME}/thread-writer-locks`;

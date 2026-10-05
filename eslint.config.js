@@ -62,7 +62,7 @@ export default defineConfig(
       "src/dashboard/**/*.{ts,tsx}",
       "tests/component/**/*.{ts,tsx}",
       "tests/unit/dashboard/**/*.{ts,tsx}",
-      "tests/support/browser.ts",
+      "tests/support/browser/browser.ts",
     ],
     extends: [reactHooks.configs.flat.recommended],
     plugins: { "react-refresh": reactRefresh },

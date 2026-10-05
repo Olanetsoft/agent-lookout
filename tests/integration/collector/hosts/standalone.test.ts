@@ -5,8 +5,8 @@ import path from "node:path";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { runStandalone } from "@collector/hosts/standalone";
-import { request } from "@tests/support/http";
-import { makeClaudeHome, tempDir, writeStub } from "@tests/support/tempFiles";
+import { request } from "@tests/support/node/http";
+import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // The standalone host, run inside this process against a temporary folder, so
 // what it does with a built dashboard, and without one, is checked on every run

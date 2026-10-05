@@ -10,7 +10,7 @@ import {
   type RegistryIo,
 } from "@collector/adapters/claude-code/registry";
 import { pids, registryFile, registryFiles } from "@tests/fixtures/claudeCode";
-import { makeClaudeHome, tempDir } from "@tests/support/tempFiles";
+import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 /** Real file access that records every path it is asked to open. */
 function recordingIo() {

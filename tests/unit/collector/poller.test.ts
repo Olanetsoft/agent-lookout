@@ -4,7 +4,7 @@ import type { Adapter, AdapterResult } from "@collector/adapters/adapter";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller, POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@collector/poller";
-import type { Session, SourceHealth, SourceId, SourceState } from "@core/session";
+import type { Session, SourceHealth, SourceId, SourceState } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;

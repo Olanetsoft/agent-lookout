@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from Codex, where each value comes f
 
 Checked on 2026-10-04 against Codex `rust-v0.160.0`, released 2026-10-01 (commit `79b1b66` of [openai/codex](https://github.com/openai/codex)), and the Codex documentation at learn.chatgpt.com. Codex was not installed on the machine where the adapter was written. Everything below comes from Codex's source and documentation and from hand-written files laid out the same way, except the section on the Codex desktop app, which was installed on that machine later the same day and checked against the adapter. **The adapter has not been checked against the Codex CLI or the IDE extension, and the dashboard has not yet been compared with Codex's own list of sessions.**
 
-The code is in `src/collector/adapters/codex/`, and the status mapping is in `src/core/codexMapping.ts`.
+The code is in `src/collector/adapters/codex/`, and the status mapping is in `src/core/mapping/codexMapping.ts`.
 
 ## How it reads Codex, and why
 
@@ -159,17 +159,17 @@ The adapter uses the first of these. A session whose last turn line has an impor
 
 ## What breaks when Codex changes
 
-| Change in Codex                                              | What the dashboard shows                                                            | Where to fix it                 |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------- |
-| A turn line is renamed                                       | Sessions whose last turn line has the new name show as Unknown                      | `src/core/codexMapping.ts`      |
-| The lock folder moves or is renamed                          | No session is finished, and the Sources view says there is no list of open sessions | `writerLocks.ts`                |
-| The names file is renamed or its fields change               | Sessions are named after their folder                                               | `sessionIndex.ts`               |
-| The `sessions/YYYY/MM/DD/rollout-*.jsonl` layout changes     | No sessions are found, or only those in older folders                               | `rollouts.ts`                   |
-| `session_meta` moves out of the first 2 MiB or changes shape | Those sessions are left out                                                         | `rolloutFile.ts`                |
-| Live files are compressed, or written to SQLite only         | Those sessions are left out                                                         | `rollouts.ts`, `rolloutFile.ts` |
-| `CODEX_HOME` stops being the root of Codex's state           | Codex is not found, or found empty                                                  | `index.ts`                      |
-| Imported turns get another kind of turn id                   | Imported sessions are listed as finished Codex sessions for a day after the import  | `src/core/codexMapping.ts`      |
-| The desktop app's `originator` changes                       | Its sessions show as VS Code                                                        | `src/core/codexMapping.ts`      |
-| `cli_version` is no longer written, or changes form          | No session is finished, and the Sources view says they come from an older Codex     | `src/core/codexMapping.ts`      |
+| Change in Codex                                              | What the dashboard shows                                                            | Where to fix it                    |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------------- |
+| A turn line is renamed                                       | Sessions whose last turn line has the new name show as Unknown                      | `src/core/mapping/codexMapping.ts` |
+| The lock folder moves or is renamed                          | No session is finished, and the Sources view says there is no list of open sessions | `writerLocks.ts`                   |
+| The names file is renamed or its fields change               | Sessions are named after their folder                                               | `sessionIndex.ts`                  |
+| The `sessions/YYYY/MM/DD/rollout-*.jsonl` layout changes     | No sessions are found, or only those in older folders                               | `rollouts.ts`                      |
+| `session_meta` moves out of the first 2 MiB or changes shape | Those sessions are left out                                                         | `rolloutFile.ts`                   |
+| Live files are compressed, or written to SQLite only         | Those sessions are left out                                                         | `rollouts.ts`, `rolloutFile.ts`    |
+| `CODEX_HOME` stops being the root of Codex's state           | Codex is not found, or found empty                                                  | `index.ts`                         |
+| Imported turns get another kind of turn id                   | Imported sessions are listed as finished Codex sessions for a day after the import  | `src/core/mapping/codexMapping.ts` |
+| The desktop app's `originator` changes                       | Its sessions show as VS Code                                                        | `src/core/mapping/codexMapping.ts` |
+| `cli_version` is no longer written, or changes form          | No session is finished, and the Sources view says they come from an older Codex     | `src/core/mapping/codexMapping.ts` |
 
 To check a new Codex version, read `codex-rs/rollout/src/policy.rs`, `writer_lock.rs`, `rollout_file_name.rs`, `session_index.rs` and `recorder.rs`, and `codex-rs/external-agent-migration/src/sessions/export.rs`, at its tag, then compare the dashboard with the sessions in Codex's own `/resume` list.

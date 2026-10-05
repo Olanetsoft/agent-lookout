@@ -7,8 +7,8 @@ import {
   uniqueById,
   type SessionContext,
 } from "@collector/adapters/claude-code/toSession";
-import type { Session, SessionsSnapshot } from "@core/session";
-import { EMPTY_WAIT_MEMORY, waitChanges } from "@core/waitChanges";
+import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { EMPTY_WAIT_MEMORY, waitChanges } from "@core/sessions/waitChanges";
 import { ids, pids } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 

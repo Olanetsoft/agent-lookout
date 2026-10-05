@@ -2,11 +2,11 @@ import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { EventSeverity, Session, SessionEvent, SessionStatus } from "@core/session";
+import type { EventSeverity, Session, SessionEvent, SessionStatus } from "@core/sessions/session";
 import { EventsCard } from "@dashboard/components/events/EventsCard";
-import { MAX_EVENTS } from "@dashboard/lib/collectorStore";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import { MAX_EVENTS } from "@dashboard/lib/api/collectorStore";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 // Local times, so the clock the card prints is the same on every machine.
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();

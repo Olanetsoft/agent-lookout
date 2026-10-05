@@ -3,13 +3,16 @@
 //   1. Every test file lives under tests/, in the folder of the Vitest project
 //      that runs it: tests/unit, tests/integration or tests/component.
 //   2. A test is named for a module at its mirrored path, with tests/<group>/ in
-//      place of src/: tests/unit/core/diff.test.ts covers src/core/diff.ts. It
+//      place of src/: tests/unit/core/sessions/diff.test.ts covers src/core/sessions/diff.ts. It
 //      ends in .test.tsx when that module is a .tsx file, and .test.ts otherwise.
 //   3. Those three folders hold tests and nothing else. A helper goes in
 //      tests/support/ and shared data in tests/fixtures/.
 //   4. Nothing under src/ is test material: no fixture, mock, stub, snapshot,
 //      test setup or test helper, and no folder named for one.
 //   5. Nothing under src/ imports from tests/, or from a test library.
+//   6. No folder under src/, and not tests/support/, holds a long flat list of
+//      code files. Related modules are grouped into a folder named for what they
+//      are about, as src/dashboard/lib/api/ and src/dashboard/lib/charts/ are.
 //
 // `npm run check` runs this first. It needs nothing but Node.
 
@@ -211,6 +214,24 @@ for (const file of sourceFiles) {
         `${file}: imports "${specifier}", a test library. Test helpers and fixtures live under tests/.`,
       );
     }
+  }
+}
+
+/** The most code files one folder holds before they are grouped into folders by area. */
+const MOST_LOOSE_FILES = 8;
+
+const looseFiles = new Map();
+for (const file of files) {
+  if (!CODE_FILE.test(file)) continue;
+  if (!file.startsWith("src/") && !file.startsWith("tests/support/")) continue;
+  const folder = path.posix.dirname(file);
+  looseFiles.set(folder, (looseFiles.get(folder) ?? 0) + 1);
+}
+for (const [folder, count] of looseFiles) {
+  if (count > MOST_LOOSE_FILES) {
+    problems.push(
+      `${folder}/: holds ${count} code files side by side. Group the related ones into folders named for what they are about, and move each test to the mirrored path.`,
+    );
   }
 }
 

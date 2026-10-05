@@ -14,7 +14,7 @@ import type {
   NotificationContent,
   NotificationHost,
   NotificationPermissionState,
-} from "@dashboard/lib/notificationHost";
+} from "@dashboard/lib/notifications/notificationHost";
 
 /** One notification the fake was asked to show. */
 export interface FakeNotification extends NotificationContent {

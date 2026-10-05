@@ -7,7 +7,7 @@ import {
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { HOME } from "@tests/fixtures/claudeCode";
-import { adapterFor, now, watching, WITHHELD } from "@tests/support/claudeCodeAdapter";
+import { adapterFor, now, watching, WITHHELD } from "@tests/support/adapters/claudeCodeAdapter";
 
 // The adapter with every outside thing handed in: the registry folder is a
 // stand-in that is never on disk, and no command or process is real. The tests

@@ -4,12 +4,12 @@ import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { LastHourCard } from "@dashboard/components/last-hour/LastHourCard";
 import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
 import { TimelineCard } from "@dashboard/components/timeline/TimelineCard";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { useFocusFollowsRow } from "@dashboard/hooks/useFocusFollowsRow";
-import type { CollectorState } from "@dashboard/lib/collectorStore";
-import type { HistoryMetric } from "@dashboard/lib/historyChart";
-import { countState, heroLight } from "@dashboard/lib/sessions";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { useFocusFollowsRow } from "@dashboard/hooks/dom/useFocusFollowsRow";
+import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
+import { countState, heroLight } from "@dashboard/lib/sessions/sessions";
 import { cn } from "@dashboard/lib/utils";
 
 interface DashboardViewProps {

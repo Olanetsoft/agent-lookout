@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { findClaudeBinary, isExecutableFile } from "@collector/adapters/claude-code/findBinary";
 import { HOME } from "@tests/fixtures/claudeCode";
-import { tempDir, writeStub } from "@tests/support/tempFiles";
+import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 describe("findClaudeBinary", () => {
   test("on a real disk, the named binary is found and run-checked for real", async () => {

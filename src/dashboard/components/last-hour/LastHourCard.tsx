@@ -1,21 +1,21 @@
 import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import type { Session, SessionEvent, SourceHealth } from "@core/session";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { EmptyState } from "@dashboard/components/ui/EmptyState";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { useElementWidth } from "@dashboard/hooks/useElementWidth";
-import type { CollectorHistory } from "@dashboard/lib/collectorStore";
+import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { useElementWidth } from "@dashboard/hooks/dom/useElementWidth";
+import type { CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import { formatClockMinutes, formatDuration } from "@dashboard/lib/format";
-import { timeTicks } from "@dashboard/lib/historyChart";
+import { timeTicks } from "@dashboard/lib/charts/historyChart";
 import {
   buildLastHour,
   type LastHour,
   type LastHourBucket,
   type LastHourMeans,
-} from "@dashboard/lib/lastHour";
-import { quietPhrase } from "@dashboard/lib/measured";
+} from "@dashboard/lib/charts/lastHour";
+import { quietPhrase } from "@dashboard/lib/charts/measured";
 import { cn } from "@dashboard/lib/utils";
 
 interface LastHourCardProps {

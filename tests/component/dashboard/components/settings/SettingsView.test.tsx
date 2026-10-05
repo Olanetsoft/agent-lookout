@@ -3,15 +3,15 @@ import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
-import { setNotificationHost } from "@dashboard/lib/notificationHost";
+import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
-} from "@dashboard/lib/notificationSetting";
-import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/theme";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmPaint } from "@tests/support/colours";
-import { preferColorScheme } from "@tests/support/media";
+} from "@dashboard/lib/notifications/notificationSetting";
+import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/theme";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
+import { preferColorScheme } from "@tests/support/browser/media";
 import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/notifications";
 
 /**

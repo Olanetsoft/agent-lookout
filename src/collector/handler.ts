@@ -7,7 +7,7 @@ import type {
   HistoryResponse,
 } from "../core/api.ts";
 import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
-import type { SessionsSnapshot } from "../core/session.ts";
+import type { SessionsSnapshot } from "../core/sessions/session.ts";
 import type { EventStore } from "./eventStore.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";

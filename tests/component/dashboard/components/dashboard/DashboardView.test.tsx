@@ -2,12 +2,12 @@ import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@core/session";
+import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
-import type { CollectorState } from "@dashboard/lib/collectorStore";
+import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
-import { rgbOf, warmPaint } from "@tests/support/colours";
-import { atFullSize, contrastOf, textBackdrops } from "@tests/support/pixels";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
+import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
 const MINUTE = 60_000;

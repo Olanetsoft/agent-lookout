@@ -1,4 +1,4 @@
-import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/diff.ts";
+import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/sessions/diff.ts";
 import { historyPointFor } from "../core/history.ts";
 import type {
   Session,
@@ -6,8 +6,8 @@ import type {
   SessionsSnapshot,
   SourceId,
   SourceState,
-} from "../core/session.ts";
-import { sortSessions } from "../core/sorting.ts";
+} from "../core/sessions/session.ts";
+import { sortSessions } from "../core/sessions/sorting.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
 import type { EventStore } from "./eventStore.ts";
 import type { HistoryStore } from "./historyStore.ts";

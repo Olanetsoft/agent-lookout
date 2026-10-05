@@ -7,8 +7,8 @@ import { describe, expect, test } from "vitest";
 
 import type { ApiHandler } from "@collector/handler";
 import { createAppServer, listenOnLoopback, portAnswers, urlFor } from "@collector/hosts/server";
-import { listen, request } from "@tests/support/http";
-import { tempDir } from "@tests/support/tempFiles";
+import { listen, request } from "@tests/support/node/http";
+import { tempDir } from "@tests/support/node/tempFiles";
 
 const SECRET = "secret-outside-dist";
 

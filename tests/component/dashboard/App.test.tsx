@@ -2,32 +2,32 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { Session, SessionEvent, SessionsSnapshot } from "@core/session";
+import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
-import { setApiHost, type ApiHost } from "@dashboard/lib/apiHost";
+import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   createCollectorStore,
   type CollectorState,
   type CollectorStore,
-} from "@dashboard/lib/collectorStore";
-import { NOTIFICATION_HANDOVER_CHANNEL } from "@dashboard/lib/notificationHandover";
-import { setNotificationHost } from "@dashboard/lib/notificationHost";
+} from "@dashboard/lib/api/collectorStore";
+import { NOTIFICATION_HANDOVER_CHANNEL } from "@dashboard/lib/notifications/notificationHandover";
+import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
-} from "@dashboard/lib/notificationSetting";
-import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/theme";
-import type { ViewId } from "@dashboard/lib/view";
+} from "@dashboard/lib/notifications/notificationSetting";
+import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/theme";
+import type { ViewId } from "@dashboard/lib/shell/view";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmElements, warmPaint } from "@tests/support/colours";
-import { preferColorScheme, preferReducedMotion } from "@tests/support/media";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
+import { preferColorScheme, preferReducedMotion } from "@tests/support/browser/media";
 import {
   fakeNotificationHost,
   installStubNotification,
   StubNotification,
 } from "@tests/support/notifications";
-import { atFullSize, pixelsOf } from "@tests/support/pixels";
+import { atFullSize, pixelsOf } from "@tests/support/browser/pixels";
 
 const MINUTE = 60_000;
 

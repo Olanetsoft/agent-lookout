@@ -1,8 +1,8 @@
-import type { SessionsSnapshot } from "@core/session";
+import type { SessionsSnapshot } from "@core/sessions/session";
 import { ThemeToggle } from "@dashboard/components/dashboard/ThemeToggle";
-import { useNarrow } from "@dashboard/hooks/useMediaQuery";
-import type { CollectorPhase } from "@dashboard/lib/collectorStore";
-import { statusSentence } from "@dashboard/lib/connection";
+import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
+import type { CollectorPhase } from "@dashboard/lib/api/collectorStore";
+import { statusSentence } from "@dashboard/lib/sources/connection";
 import { cn } from "@dashboard/lib/utils";
 
 interface HeaderProps {

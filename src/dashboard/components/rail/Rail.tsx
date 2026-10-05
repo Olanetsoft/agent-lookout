@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { OverviewIcon, SettingsIcon, SourcesIcon } from "@dashboard/assets/Icons";
 import { LookoutMark } from "@dashboard/assets/LookoutMark";
 import { cn } from "@dashboard/lib/utils";
-import { VIEWS, type ViewId } from "@dashboard/lib/view";
+import { VIEWS, type ViewId } from "@dashboard/lib/shell/view";
 
 const ICON: Record<ViewId, ComponentType<{ className?: string }>> = {
   overview: OverviewIcon,

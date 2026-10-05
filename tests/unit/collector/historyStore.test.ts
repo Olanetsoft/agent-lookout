@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { createHistoryStore, HISTORY_CAPACITY } from "@collector/historyStore";
-import type { HistoryPoint } from "@core/session";
+import type { HistoryPoint } from "@core/sessions/session";
 
 const T0 = 1_700_000_000_000;
 

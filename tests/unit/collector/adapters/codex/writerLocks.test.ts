@@ -6,7 +6,7 @@ import {
   WRITER_LOCK_DIR,
 } from "@collector/adapters/codex/writerLocks";
 import { CODEX_HOME, ids, lockPath, threadId } from "@tests/fixtures/codex";
-import { memoryFiles } from "@tests/support/codexAdapter";
+import { memoryFiles } from "@tests/support/adapters/codexAdapter";
 
 const LOCKS = `${CODEX_HOME}/${WRITER_LOCK_DIR}`;
 

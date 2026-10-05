@@ -6,18 +6,18 @@ import { Header } from "@dashboard/components/dashboard/Header";
 import { Rail } from "@dashboard/components/rail/Rail";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { SourcesView } from "@dashboard/components/sources/SourcesView";
-import { ErrorBoundary } from "@dashboard/components/ui/ErrorBoundary";
-import { useCollector } from "@dashboard/hooks/useCollector";
-import { useDocumentHidden } from "@dashboard/hooks/useDocumentHidden";
-import { useDocumentTitle } from "@dashboard/hooks/useDocumentTitle";
-import { useNow } from "@dashboard/hooks/useNow";
-import { useView } from "@dashboard/hooks/useView";
-import { useWaitNotifications } from "@dashboard/hooks/useWaitNotifications";
-import { workerBeat } from "@dashboard/lib/beat";
-import { createCollectorStore, type CollectorStore } from "@dashboard/lib/collectorStore";
-import type { HistoryMetric } from "@dashboard/lib/historyChart";
-import { countNeedingYou } from "@dashboard/lib/sessions";
-import { viewLabel } from "@dashboard/lib/view";
+import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
+import { useCollector } from "@dashboard/hooks/data/useCollector";
+import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
+import { useDocumentTitle } from "@dashboard/hooks/shell/useDocumentTitle";
+import { useNow } from "@dashboard/hooks/data/useNow";
+import { useView } from "@dashboard/hooks/shell/useView";
+import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
+import { workerBeat } from "@dashboard/lib/api/beat";
+import { createCollectorStore, type CollectorStore } from "@dashboard/lib/api/collectorStore";
+import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
+import { countNeedingYou } from "@dashboard/lib/sessions/sessions";
+import { viewLabel } from "@dashboard/lib/shell/view";
 
 /*
  * The history dialogs are not part of the first screen, so they are not part of

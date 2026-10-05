@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createFinishedTracker } from "@collector/adapters/claude-code/finishedJobs";
-import { FINISHED_RETENTION_MS } from "@core/retention";
+import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;

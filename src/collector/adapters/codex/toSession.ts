@@ -1,7 +1,11 @@
-import { mapCodexStatus, mapCodexSurface, type CodexLiveness } from "../../../core/codexMapping.ts";
-import { projectOf } from "../../../core/project.ts";
-import type { Session, SourceId } from "../../../core/session.ts";
-import { isStale } from "../../../core/staleness.ts";
+import {
+  mapCodexStatus,
+  mapCodexSurface,
+  type CodexLiveness,
+} from "../../../core/mapping/codexMapping.ts";
+import { projectOf } from "../../../core/sessions/project.ts";
+import type { Session, SourceId } from "../../../core/sessions/session.ts";
+import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { parseCodexTime, type RolloutState } from "./rolloutFile.ts";
 

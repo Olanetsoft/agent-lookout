@@ -44,7 +44,7 @@ interface EmulatedMedia {
 /**
  * Sets what `prefers-color-scheme` and `prefers-reduced-motion` report to the
  * test page. `null` puts a feature back to the browser's own. Component tests
- * reach it through `tests/support/media.ts`.
+ * reach it through `tests/support/browser/media.ts`.
  */
 const emulateMedia: BrowserCommand<[EmulatedMedia]> = async (context, media) => {
   await context.page.emulateMedia(media);
@@ -116,7 +116,7 @@ export default defineConfig({
           // A component is tested in a .test.tsx file; a plain module that needs a
           // real page, such as the theme or the stylesheet, in a .test.ts file.
           include: ["tests/component/**/*.test.{ts,tsx}"],
-          setupFiles: ["./tests/support/componentSetup.ts"],
+          setupFiles: ["./tests/support/browser/componentSetup.ts"],
           sequence: { groupOrder: 2 },
           browser: {
             enabled: true,

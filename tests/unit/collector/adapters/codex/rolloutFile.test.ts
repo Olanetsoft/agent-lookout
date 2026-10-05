@@ -22,7 +22,7 @@ import {
   rolloutPath,
   turnLine,
 } from "@tests/fixtures/codex";
-import { memoryFiles, type MemoryFiles } from "@tests/support/codexAdapter";
+import { memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
 const FILE = rolloutPath(CODEX_HOME, "2026-10-01T09-00-00", ids.working);
 const START = NOW - 60 * MINUTE;

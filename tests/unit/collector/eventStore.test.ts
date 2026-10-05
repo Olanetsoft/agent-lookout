@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { createEventStore, EVENT_CAPACITY } from "@collector/eventStore";
-import type { SessionEvent } from "@core/session";
+import type { SessionEvent } from "@core/sessions/session";
 
 function event(at: number, label = "a"): SessionEvent {
   return {

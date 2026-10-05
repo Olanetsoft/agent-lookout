@@ -1,8 +1,11 @@
 import os from "node:os";
 import path from "node:path";
 
-import { isClaudeCodeSessionKind, mapClaudeCodeStatus } from "../../../core/claudeCodeMapping.ts";
-import type { SourceFact, SourceHealth, SourceState } from "../../../core/session.ts";
+import {
+  isClaudeCodeSessionKind,
+  mapClaudeCodeStatus,
+} from "../../../core/mapping/claudeCodeMapping.ts";
+import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";

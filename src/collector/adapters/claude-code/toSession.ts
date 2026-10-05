@@ -3,10 +3,10 @@ import {
   mapClaudeCodeStatus,
   mapClaudeCodeSurface,
   type ClaudeCodeOrigin,
-} from "../../../core/claudeCodeMapping.ts";
-import { projectOf } from "../../../core/project.ts";
-import type { Session, SourceId } from "../../../core/session.ts";
-import { isStale } from "../../../core/staleness.ts";
+} from "../../../core/mapping/claudeCodeMapping.ts";
+import { projectOf } from "../../../core/sessions/project.ts";
+import type { Session, SourceId } from "../../../core/sessions/session.ts";
+import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import type { FeedEntry } from "./feed.ts";
 import type { RegistryEntry } from "./registry.ts";

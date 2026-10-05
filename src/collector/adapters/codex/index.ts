@@ -1,9 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 
-import { codexLiveness, isCodexSessionSource } from "../../../core/codexMapping.ts";
-import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/retention.ts";
-import type { SourceFact, SourceHealth, SourceState } from "../../../core/session.ts";
+import { codexLiveness, isCodexSessionSource } from "../../../core/mapping/codexMapping.ts";
+import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
+import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { tildify } from "../claude-code/findBinary.ts";

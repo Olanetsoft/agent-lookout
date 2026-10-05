@@ -10,10 +10,10 @@ import {
   rgbOf,
   tokenColours,
   type Rgba,
-} from "@tests/support/colours";
-import { startAtTop } from "@tests/support/browser";
-import { preferReducedMotion } from "@tests/support/media";
-import { contrastOf } from "@tests/support/pixels";
+} from "@tests/support/browser/colours";
+import { startAtTop } from "@tests/support/browser/browser";
+import { preferReducedMotion } from "@tests/support/browser/media";
+import { contrastOf } from "@tests/support/browser/pixels";
 
 // The stylesheet, src/dashboard/styles/index.css, read as the app reads it: the
 // colour tokens in both themes, the ground and the glass they make, the contrast

@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 import { MoonIcon, SunIcon } from "@dashboard/assets/Icons";
-import { SegmentedControl } from "@dashboard/components/ui/SegmentedControl";
-import { useNarrow } from "@dashboard/hooks/useMediaQuery";
-import { useTheme } from "@dashboard/hooks/useTheme";
-import type { ResolvedTheme } from "@dashboard/lib/theme";
+import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
+import { useTheme } from "@dashboard/hooks/shell/useTheme";
+import type { ResolvedTheme } from "@dashboard/lib/shell/theme";
 
 const OPTIONS = [
   { value: "dark", label: "Night", name: "Dark theme", icon: <MoonIcon /> },

@@ -38,6 +38,6 @@
     "tests/unit/dashboard",
     "tests/unit/core",
     // Vitest loads this by path and no test imports it, so it is named here.
-    "tests/support/componentSetup.ts"
+    "tests/support/browser/componentSetup.ts"
   ]
 }

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { makeClaudeHome, tempDir, writeStub } from "@tests/support/tempFiles";
+import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // These tests run the real entry point, `src/collector/hosts/serve.ts`, the way
 // `npm start` does: as a process of its own, started by tsx. Each one is refused

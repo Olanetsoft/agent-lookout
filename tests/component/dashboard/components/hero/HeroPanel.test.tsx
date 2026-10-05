@@ -3,11 +3,11 @@ import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import type { HistoryResponse } from "@core/api";
-import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/session";
+import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/sessions/session";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;

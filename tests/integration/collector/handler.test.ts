@@ -7,11 +7,11 @@ import { createClaudeCodeAdapter } from "@collector/adapters/claude-code/index";
 import { createCollector } from "@collector/collector";
 import { MAX_HISTORY_WINDOW_MS } from "@collector/handler";
 import type { EventsResponse, HistoryResponse } from "@core/api";
-import type { Session, SessionsSnapshot } from "@core/session";
+import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
-import { listen, request } from "@tests/support/http";
-import { makeClaudeHome, tempDir } from "@tests/support/tempFiles";
+import { listen, request } from "@tests/support/node/http";
+import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 const T0 = 1_700_000_000_000;
 

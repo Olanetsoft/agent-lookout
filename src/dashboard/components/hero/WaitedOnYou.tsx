@@ -1,7 +1,11 @@
-import { Truncated } from "@dashboard/components/ui/Tooltip";
+import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { durationInWords, formatDuration } from "@dashboard/lib/format";
 import { cn } from "@dashboard/lib/utils";
-import { measuredNote, waitedHeading, type WaitedOnYou as Waits } from "@dashboard/lib/waits";
+import {
+  measuredNote,
+  waitedHeading,
+  type WaitedOnYou as Waits,
+} from "@dashboard/lib/sessions/waits";
 
 /** The bars' scale never falls below seven minutes, so a short wait reads as short. */
 const LEAST_SCALE_MS = 7 * 60_000;

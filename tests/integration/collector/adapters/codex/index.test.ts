@@ -17,7 +17,7 @@ import { describe, expect, test } from "vitest";
 
 import { createCodexAdapter, type CodexAdapterOptions } from "@collector/adapters/codex/index";
 import { nodeIo, type CodexIo } from "@collector/adapters/codex/io";
-import type { Session } from "@core/session";
+import type { Session } from "@core/sessions/session";
 import {
   fixtureSessions,
   HOME,
@@ -31,8 +31,8 @@ import {
   threadId,
   turnLine,
 } from "@tests/fixtures/codex";
-import { handClock, healthy, inTimeZone, noLockFolder } from "@tests/support/codexAdapter";
-import { CODEX_FIXTURE_HOME, makeCodexHome, tempDir } from "@tests/support/tempFiles";
+import { handClock, healthy, inTimeZone, noLockFolder } from "@tests/support/adapters/codexAdapter";
+import { CODEX_FIXTURE_HOME, makeCodexHome, tempDir } from "@tests/support/node/tempFiles";
 
 /** An adapter pointed at this folder, with the clock at the fixture's `NOW`. */
 function adapterFor(home: string, options: CodexAdapterOptions = {}) {

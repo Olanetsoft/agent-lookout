@@ -1,19 +1,19 @@
 import { useMemo, type ReactNode } from "react";
 
-import type { Session, SessionEvent, SourceHealth } from "@core/session";
-import { Callout } from "@dashboard/components/ui/Callout";
-import { EmptyState } from "@dashboard/components/ui/EmptyState";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { SectionCard } from "@dashboard/components/ui/SectionCard";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/StatusMark";
-import { StatusTrack, type TrackKind } from "@dashboard/components/ui/StatusTrack";
-import { Truncated } from "@dashboard/components/ui/Tooltip";
-import { useElementWidth } from "@dashboard/hooks/useElementWidth";
-import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/collectorStore";
+import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { StatusTrack, type TrackKind } from "@dashboard/components/ui/charts/StatusTrack";
+import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
+import { useElementWidth } from "@dashboard/hooks/dom/useElementWidth";
+import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import { formatClockMinutes } from "@dashboard/lib/format";
-import { timeTicks } from "@dashboard/lib/historyChart";
-import { quietPhrase } from "@dashboard/lib/measured";
-import { buildTimeline, type Timeline, type TimelineRow } from "@dashboard/lib/timeline";
+import { timeTicks } from "@dashboard/lib/charts/historyChart";
+import { quietPhrase } from "@dashboard/lib/charts/measured";
+import { buildTimeline, type Timeline, type TimelineRow } from "@dashboard/lib/charts/timeline";
 import { cn } from "@dashboard/lib/utils";
 
 interface TimelineCardProps {

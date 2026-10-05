@@ -2,12 +2,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { Session, SourceHealth } from "@core/session";
+import type { Session, SourceHealth } from "@core/sessions/session";
 import { CountsRow } from "@dashboard/components/hero/CountsRow";
-import { countState } from "@dashboard/lib/sessions";
+import { countState } from "@dashboard/lib/sessions/sessions";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmPaint } from "@tests/support/colours";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
 const MINUTE = 60_000;

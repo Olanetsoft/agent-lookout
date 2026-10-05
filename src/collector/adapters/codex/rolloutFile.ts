@@ -1,4 +1,4 @@
-import { isImportedCodexTurn } from "../../../core/codexMapping.ts";
+import { isImportedCodexTurn } from "../../../core/mapping/codexMapping.ts";
 import type { CodexIo, FileInfo, OpenFile } from "./io.ts";
 
 /**

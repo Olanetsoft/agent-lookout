@@ -1,20 +1,20 @@
 import { useState } from "react";
 
-import { Callout } from "@dashboard/components/ui/Callout";
-import { DetailsModal } from "@dashboard/components/ui/DetailsModal";
-import { HistoryChart } from "@dashboard/components/ui/HistoryChart";
-import { Loading } from "@dashboard/components/ui/Loading";
-import { SegmentedControl } from "@dashboard/components/ui/SegmentedControl";
-import { useHistoryWindow } from "@dashboard/hooks/useHistoryWindow";
-import type { CollectorState } from "@dashboard/lib/collectorStore";
+import { Callout } from "@dashboard/components/ui/feedback/Callout";
+import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
+import { HistoryChart } from "@dashboard/components/ui/charts/HistoryChart";
+import { Loading } from "@dashboard/components/ui/feedback/Loading";
+import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { useHistoryWindow } from "@dashboard/hooks/data/useHistoryWindow";
+import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import {
   HISTORY_WINDOWS,
   samplesOf,
   type HistoryMetric,
   type HistoryWindowId,
-} from "@dashboard/lib/historyChart";
-import { countNeedingYou } from "@dashboard/lib/sessions";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/sparkline";
+} from "@dashboard/lib/charts/historyChart";
+import { countNeedingYou } from "@dashboard/lib/sessions/sessions";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
 
 interface MetricCopy {
   title: string;

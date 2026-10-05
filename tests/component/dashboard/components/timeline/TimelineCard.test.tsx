@@ -8,13 +8,13 @@ import type {
   SessionEvent,
   SessionStatus,
   SourceHealth,
-} from "@core/session";
+} from "@core/sessions/session";
 import { TimelineCard } from "@dashboard/components/timeline/TimelineCard";
-import type { CollectorHistory } from "@dashboard/lib/collectorStore";
+import type { CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, startAtTop } from "@tests/support/browser";
-import { rgbOf, warmPaint } from "@tests/support/colours";
-import { atFullSize, hatchedAlong, pixelsOf } from "@tests/support/pixels";
+import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
+import { atFullSize, hatchedAlong, pixelsOf } from "@tests/support/browser/pixels";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
 const MINUTE = 60_000;

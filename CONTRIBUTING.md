@@ -56,17 +56,19 @@ A change in behaviour comes with a test. Every test lives under `tests/`, in `un
 
 In the dashboard, primitives are in `src/dashboard/components/ui/` and features in `src/dashboard/components/<feature>/`. The interface follows a fixed system of tokens and primitives, and the tokens are in `src/dashboard/styles/index.css`. Read both before you add or change anything under `src/dashboard/`.
 
+Modules are grouped by what they are about, not left in one long folder: `src/dashboard/lib/` has `api/`, `sessions/`, `sources/`, `charts/`, `notifications/` and `shell/`, and the hooks, the primitives and `src/core/` are grouped the same way. Put a new module in the folder for its area, and its test at the mirrored path under `tests/`. `npm run check` fails when a folder holds more than eight code files side by side.
+
 The dashboard and the tests import through the aliases `@core`, `@collector`, `@dashboard` and `@tests`. Only tests can use `@tests`. The collector and `src/core/` import by relative path with the `.ts` extension, because `npm start` runs them without a bundler.
 
 ## Names
 
-| Kind                 | Named                 | Example                    |
-| -------------------- | --------------------- | -------------------------- |
-| Folder               | kebab-case            | `adapters/claude-code/`    |
-| React component file | `PascalCase.tsx`      | `components/ui/Button.tsx` |
-| Hook                 | `useThing.ts`         | `hooks/useNow.ts`          |
-| Every other module   | `camelCase.ts`        | `lib/collectorStore.ts`    |
-| Test                 | The module's own name | `collectorStore.test.ts`   |
+| Kind                 | Named                 | Example                             |
+| -------------------- | --------------------- | ----------------------------------- |
+| Folder               | kebab-case            | `adapters/claude-code/`             |
+| React component file | `PascalCase.tsx`      | `components/ui/controls/Button.tsx` |
+| Hook                 | `useThing.ts`         | `hooks/data/useNow.ts`              |
+| Every other module   | `camelCase.ts`        | `lib/api/collectorStore.ts`         |
+| Test                 | The module's own name | `collectorStore.test.ts`            |
 
 A primitive under `components/ui/` is a component file like any other. The entry file `main.tsx` is the one `.tsx` file that is not a component.
 
@@ -77,8 +79,8 @@ An adapter finds one agent tool's sessions and reports them in the shared sessio
 An adapter implements the interface in `src/collector/adapters/adapter.ts`. It has an `id`, a `label` and a `poll()` that resolves to `{ health, sessions }`. The poller calls `poll()` every 2 seconds. `poll()` never throws. A failure becomes `health.state`, with a plain-language `detail` that says where the adapter looked. A tool that is not installed is `unavailable`, which is not an error. Once that is known, do not look again on every poll: the Codex adapter looks once a minute. `health.watching` lists what the adapter reads and runs, and the Sources view shows it.
 
 1. Write down what the tool exposes in `docs/adapters/<tool>.md`: the commands or paths, which fields mean what, the version you checked and what breaks when it changes. [docs/adapters/codex.md](docs/adapters/codex.md) is an example.
-2. Add the tool's id to `SourceId` in `src/core/session.ts`. You may add optional fields to `Session`. Do not rename or remove existing ones.
-3. Map the tool's own states onto `SessionStatus` in a pure function in `src/core/`, as `src/core/claudeCodeMapping.ts` and `src/core/codexMapping.ts` do. Anything unrecognised becomes `unknown`. A state the tool does not record is not guessed: Codex's files never say it is waiting for approval, so a Codex session is never `needs-you`. If the tool can be `needs-you`, keep the session's `statusSince` at the moment the wait began for as long as the wait lasts: a later time on a session that is still waiting is announced as a new wait.
+2. Add the tool's id to `SourceId` in `src/core/sessions/session.ts`. You may add optional fields to `Session`. Do not rename or remove existing ones.
+3. Map the tool's own states onto `SessionStatus` in a pure function in `src/core/`, as `src/core/mapping/claudeCodeMapping.ts` and `src/core/mapping/codexMapping.ts` do. Anything unrecognised becomes `unknown`. A state the tool does not record is not guessed: Codex's files never say it is waiting for approval, so a Codex session is never `needs-you`. If the tool can be `needs-you`, keep the session's `statusSince` at the moment the wait began for as long as the wait lasts: a later time on a session that is still waiting is announced as a new wait.
 4. Write the adapter. Read the tool's cheap local state, such as files it keeps on disk, on every poll, and expect any field in it to be missing. Check what it says against a listing command or API that the vendor documents for outside tools, run seldom, and let that answer win. The Claude Code adapter reads the registry folder every 2 seconds and runs `claude agents --json --all` every 30 seconds. When the local state cannot be read or relied on, take sessions from the documented command. When the command cannot be run, use the local state alone and say so in `detail`. When the tool documents nothing that can be used without changing its settings or writing to its files, as with Codex, read its files alone, say so in `detail` and in the notes from step 1, and open only the files those notes list.
 5. Start a program directly, never through a shell, with stdin closed and a timeout. `runProgram` in `src/collector/adapters/claude-code/feed.ts` does this.
 6. Add the adapter to the default list in `createCollector`, in `src/collector/collector.ts`.
