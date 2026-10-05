@@ -14,8 +14,6 @@ The [README](../README.md#install) has the steps to install and start it.
 
 ![The Overview in the Night theme with one session waiting. A rail on the left links to Overview, Sources and Settings. The header says 8 sessions are watched from Claude Code and Codex. The Needs you panel shows a session that has waited just over 4 minutes for permission, with a Jump button, two bars of how long sessions waited on you, and counts of working, idle and stale sessions. The Last hour chart is beside it. Below are the Sessions list, the Events log and the Timeline.](images/dashboard-night.png)
 
-<sub>The Overview with sample data. None of these sessions are real.</sub>
-
 A rail down the left edge moves between three views: Overview, Sources and Settings. The mark at the top of the rail lights up while any session needs you, so you can see it from every view. The browser tab's title gives the number that need you, as in `(2) Agent Lookout`.
 
 The header over each view says how many sessions are being watched and, in a wide window, when they were last checked. Click that line to open Sources. The switch on the right moves between the Night and Day themes.
@@ -47,8 +45,6 @@ When nothing needs you, the panel says Nothing needs you and shows the last wait
 
 ![The top of the Overview with nothing waiting. The panel says Nothing needs you and gives the last wait, 3 minutes 30 seconds, and when it was answered. Its two bars of earlier waits are outlined, and the Last hour chart beside it has no amber.](images/quiet-night.png)
 
-<sub>The Needs you panel and the Last hour chart with nothing waiting. Sample data.</sub>
-
 #### Last hour
 
 The Last hour chart has a bar for each five minutes of the last hour, on the clock's five-minute marks. Each bar shows how many sessions were waiting on you, working and idle in those five minutes, on average: waiting at the bottom, working above it, and idle as the empty part at the top. A wait still open is amber and a wait already answered is outlined. Hatched stretches were not measured, and five minutes with nothing measured have no bar. Point at a bar, or select the chart and press the arrow keys, to read its numbers. The line above the chart says how long sessions waited on you in all.
@@ -78,8 +74,6 @@ The Timeline draws each session's status over the last hour, one row for each se
 ### Sources
 
 ![The Sources view in the Night theme. A card for Claude Code and a card for Codex, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. A third card, About sources, says what a source is.](images/sources-night.png)
-
-<sub>The Sources view with sample data. None of these sessions are real.</sub>
 
 Sources has a card for Claude Code and one for Codex. Each says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 
