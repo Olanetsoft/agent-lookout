@@ -35,9 +35,11 @@
  * Tailwind makes a class for every name it finds in the files it reads. The docs
  * name classes to explain them, often without the guard they are used with, so
  * reading them would add rules the app never uses: the lamp's breathing without
- * its reduced-motion guard, for one. They are not read.
+ * its reduced-motion guard, for one. They are not read. Nor is the landing page
+ * in site/, which has a stylesheet of its own.
  */
 @source not "../../../docs";
+@source not "../../../site";
 
 /*
  * Fonts are bundled with the app. Nothing is fetched from the network. Only the

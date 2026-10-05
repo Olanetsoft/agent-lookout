@@ -1,0 +1,1979 @@
+/*
+ * Agent Lookout, the landing page.
+ *
+ * The tokens, the ground and the glass are copied from the app's own
+ * stylesheet, src/dashboard/styles/index.css, so the page is made of the same
+ * material as the app. Nothing is fetched from another host: the fonts and the
+ * pictures are in assets/.
+ *
+ * The lamp rule holds here too. Amber means a session needs you right now, and
+ * nothing else. The page opens with nothing waiting and no warm colour. When
+ * the lamp lights, the only amber outside the pictures is the lamp's own light
+ * behind the top edge of the frame. One more amber thing is on the page by
+ * choice: the lit mark in the second fact, beside the same mark with its lamp
+ * out. That pair is the page's explanation of what amber means.
+ */
+
+/* Fonts, bundled. Only the weights the page uses. */
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/atkinson-hyperlegible-next-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/assets/fonts/atkinson-hyperlegible-next-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/assets/fonts/atkinson-hyperlegible-next-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/atkinson-hyperlegible-mono-latin-400-normal.woff2") format("woff2");
+}
+
+/*
+ * What stands in until a font arrives: a local face scaled to the same width
+ * and set on the same baseline, so nothing moves when the real one swaps in.
+ */
+@font-face {
+  font-family: "Lookout Fallback";
+  font-weight: 400;
+  src: local("Helvetica Neue"), local("HelveticaNeue"), local("Arial");
+  size-adjust: 97.8%;
+  ascent-override: 100.2%;
+  descent-override: 32.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Lookout Fallback";
+  font-weight: 500;
+  src: local("Helvetica Neue Medium"), local("HelveticaNeue-Medium"), local("Arial");
+  size-adjust: 97.7%;
+  ascent-override: 100.3%;
+  descent-override: 32.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Lookout Fallback";
+  font-weight: 600;
+  src: local("Helvetica Neue Bold"), local("HelveticaNeue-Bold"), local("Arial Bold");
+  size-adjust: 96.9%;
+  ascent-override: 101.1%;
+  descent-override: 33%;
+  line-gap-override: 0%;
+}
+
+/* ------------------------------------------------------------------ tokens */
+
+/* What does not change with the theme. */
+:root {
+  --field-main-width: 1760px;
+  --field-main-height: 470px;
+  --field-main-right: -420px;
+  --field-main-top: -150px;
+  --field-main-turn: -13deg;
+  --glass-blur: 30px;
+
+  --font-sans: "Atkinson Hyperlegible Next", "Lookout Fallback", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-panel: 24px;
+  --radius-chrome: 22px;
+  --radius-inner: 14px;
+  --radius-row: 10px;
+  --radius-capsule: 999px;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* The lit picture spreading from the lamp: it blooms, sweeps and settles. */
+  --ease-wipe: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* The page's own measures. One gap between panels, as in the app. */
+  --gap: 16px;
+  --gutter: 24px;
+  --section: 136px;
+  --pad: 28px;
+
+  /*
+   * The frame: a screen seated in a bezel of glass. The picture is the app's
+   * whole window, whose rail sits 12px in with a 22px corner, so the screen's
+   * own corner is 34px at the picture's full size and scales with it. The
+   * bezel's corner is that plus its own width. Every corner stays concentric.
+   */
+  --bezel: 10px;
+  --shot-width: 1280;
+  --shot-ratio: 1280 / 800;
+  --radius-screen: calc((100cqw - 2 * var(--bezel)) * 34 / var(--shot-width));
+  --radius-frame: calc(var(--radius-screen) + var(--bezel));
+  /* Where the lamp is in the picture. The lit picture is let in from here. */
+  --lamp-at: 10.7% 14.6%;
+  /* How far the floating plate rises over the frame's lower edge. */
+  --lift: calc(6.4cqw + var(--bezel));
+}
+
+/* Night, the default. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ground-top: #090908;
+  --ground: linear-gradient(180deg, #090908 0%, #0b0a09 46%, #11100e 100%);
+  --field: 218 214 207;
+  --field-deep: 142 137 130;
+  --field-strength: 0.23;
+  --grain: 0.5;
+
+  /* The lamp's light, and the light that holds the frame when nothing waits. */
+  --lamp: 255 166 60;
+  --lamp-strength: 0.48;
+  --rest: 226 221 213;
+  --rest-strength: 0.34;
+  /* How much of the lamp's strength reaches the page outside the frame. */
+  --halo-strength: 0.8;
+
+  --glass-chrome: rgba(16, 15, 14, 0.6);
+  --glass-card: rgba(19, 18, 17, 0.62);
+  --glass-raised: rgba(33, 31, 29, 0.66);
+  --glass-float: rgba(30, 28, 26, 0.84);
+  --saturate: 118%;
+  --saturate-hero: 185%;
+
+  --rim: linear-gradient(
+    205deg,
+    rgba(255, 248, 238, 0.3) 0%,
+    rgba(255, 248, 238, 0.09) 20%,
+    rgba(255, 248, 238, 0.03) 58%,
+    rgba(255, 248, 238, 0.08) 100%
+  );
+  --rim-raised: linear-gradient(
+    205deg,
+    rgba(255, 248, 238, 0.42) 0%,
+    rgba(255, 248, 238, 0.13) 20%,
+    rgba(255, 248, 238, 0.045) 58%,
+    rgba(255, 248, 238, 0.12) 100%
+  );
+  --rim-lamp: linear-gradient(
+    135deg,
+    rgba(255, 184, 96, 0.55) 0%,
+    rgba(255, 184, 96, 0.16) 22%,
+    rgba(255, 184, 96, 0) 46%
+  );
+  --rim-rest: linear-gradient(
+    135deg,
+    rgba(240, 234, 224, 0.34) 0%,
+    rgba(240, 234, 224, 0.09) 24%,
+    rgba(240, 234, 224, 0) 48%
+  );
+  --sheen: linear-gradient(
+    180deg,
+    rgba(255, 248, 238, 0.065),
+    rgba(255, 248, 238, 0.012) 120px,
+    rgba(255, 248, 238, 0) 260px
+  );
+  --elev-1:
+    0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 1px rgba(0, 0, 0, 0.35),
+    0 14px 34px -18px rgba(0, 0, 0, 0.8);
+  --elev-2:
+    0 0 0 1px rgba(0, 0, 0, 0.58), 0 1px 1px rgba(0, 0, 0, 0.38),
+    0 26px 52px -26px rgba(0, 0, 0, 0.88);
+  --elev-3:
+    0 0 0 1px rgba(0, 0, 0, 0.62), 0 2px 2px rgba(0, 0, 0, 0.42),
+    0 44px 90px -34px rgba(0, 0, 0, 0.95);
+
+  --fill-quiet: rgba(255, 248, 238, 0.055);
+  --fill-hover: rgba(255, 248, 238, 0.045);
+  --fill-selected: rgba(255, 248, 238, 0.1);
+  --control-rim: rgba(255, 248, 238, 0.1);
+  --control-top: rgba(255, 248, 238, 0.1);
+  --well: rgba(0, 0, 0, 0.3);
+  --well-shade: rgba(0, 0, 0, 0.35);
+  --thumb: rgba(255, 248, 238, 0.11);
+  --thumb-drop: rgba(0, 0, 0, 0.35);
+
+  --hairline: rgba(255, 248, 238, 0.075);
+  --rule: rgba(255, 248, 238, 0.12);
+  --rule-strong: rgba(255, 248, 238, 0.22);
+
+  --ink: #f3f0ea;
+  --ink-secondary: #c3beb5;
+  --ink-muted: #9e988f;
+
+  /* The lamp. On this page, only in the lit mark of the second fact. */
+  --status-needs-you: #ffb547;
+  --status-needs-you-edge: #ffb547;
+
+  --status-working: #a9bcd4;
+  --status-idle: #948e85;
+
+  --focus: #c3d3e6;
+
+  /*
+   * Page only. The one solid button is drawn in ink, the colour of the rest
+   * light, because the lamp's amber is not the page's to spend.
+   */
+  --on-ink: #11100e;
+  --solid-top: rgba(255, 255, 255, 0.7);
+  --solid-drop: rgba(0, 0, 0, 0.7);
+  --solid-hover: #ffffff;
+  /* The line that seats a picture in its bezel. */
+  --screen-line: 0 0 0 1px rgba(0, 0, 0, 0.62);
+
+  /* Which of a pair is shown. */
+  --at-night: inline;
+  --by-day: none;
+}
+
+/*
+ * Day: the same material in daylight. The block is written twice, once for a
+ * system that prefers light and once for the switch, because plain CSS cannot
+ * share one set of declarations between a media query and an attribute. Keep
+ * the two the same.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --ground-top: #d4d0ca;
+    --ground: linear-gradient(180deg, #d4d0ca, #ebe9e5);
+    --field: 255 255 255;
+    --field-deep: 240 235 227;
+    --field-strength: 0.72;
+    --grain: 0.3;
+
+    --lamp: 255 176 80;
+    --lamp-strength: 0.46;
+    --rest: 255 255 255;
+    --rest-strength: 0.7;
+    --halo-strength: 0.7;
+
+    --glass-chrome: rgba(252, 251, 249, 0.52);
+    --glass-card: rgba(255, 255, 254, 0.56);
+    --glass-raised: rgba(255, 255, 255, 0.66);
+    --glass-float: rgba(253, 252, 250, 0.84);
+    --saturate: 160%;
+    --saturate-hero: 190%;
+
+    --rim: linear-gradient(
+      205deg,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(255, 255, 255, 0.62) 20%,
+      rgba(255, 255, 255, 0.42) 60%,
+      rgba(255, 255, 255, 0.8) 100%
+    );
+    --rim-raised: linear-gradient(
+      205deg,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(255, 255, 255, 0.75) 20%,
+      rgba(255, 255, 255, 0.52) 60%,
+      rgba(255, 255, 255, 0.9) 100%
+    );
+    --rim-lamp: linear-gradient(
+      135deg,
+      rgba(232, 150, 40, 0.55) 0%,
+      rgba(232, 150, 40, 0.14) 22%,
+      rgba(232, 150, 40, 0) 46%
+    );
+    --rim-rest: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 40%);
+    --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 96px);
+    --elev-1:
+      0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+      0 14px 30px -18px rgba(38, 32, 26, 0.3);
+    --elev-2:
+      0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+      0 24px 46px -26px rgba(38, 32, 26, 0.36);
+    --elev-3:
+      0 0 0 0.5px rgba(38, 32, 26, 0.14), 0 2px 3px rgba(38, 32, 26, 0.07),
+      0 40px 80px -34px rgba(38, 32, 26, 0.45);
+
+    --fill-quiet: rgba(255, 255, 255, 0.62);
+    --fill-hover: rgba(255, 255, 255, 0.55);
+    --fill-selected: rgba(255, 255, 255, 0.85);
+    --control-rim: rgba(38, 32, 26, 0.13);
+    --control-top: rgba(255, 255, 255, 0.9);
+    --well: rgba(38, 32, 26, 0.055);
+    --well-shade: rgba(38, 32, 26, 0.06);
+    --thumb: #ffffff;
+    --thumb-drop: rgba(38, 32, 26, 0.3);
+
+    --hairline: rgba(38, 32, 26, 0.08);
+    --rule: rgba(38, 32, 26, 0.13);
+    --rule-strong: rgba(38, 32, 26, 0.28);
+
+    --ink: #181613;
+    --ink-secondary: #3f3b36;
+    --ink-muted: #5b564f;
+
+    --status-needs-you: #f4a62a;
+    --status-needs-you-edge: #a35a00;
+
+    --status-working: #36577e;
+    --status-idle: #6f6961;
+
+    --focus: #36577e;
+
+    --on-ink: #f3f0ea;
+    --solid-top: rgba(255, 255, 255, 0.18);
+    --solid-drop: rgba(38, 32, 26, 0.5);
+    --solid-hover: #2b2823;
+    --screen-line: 0 0 0 0.5px rgba(38, 32, 26, 0.2);
+
+    --at-night: none;
+    --by-day: inline;
+  }
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ground-top: #d4d0ca;
+  --ground: linear-gradient(180deg, #d4d0ca, #ebe9e5);
+  --field: 255 255 255;
+  --field-deep: 240 235 227;
+  --field-strength: 0.72;
+  --grain: 0.3;
+
+  --lamp: 255 176 80;
+  --lamp-strength: 0.46;
+  --rest: 255 255 255;
+  --rest-strength: 0.7;
+  --halo-strength: 0.7;
+
+  --glass-chrome: rgba(252, 251, 249, 0.52);
+  --glass-card: rgba(255, 255, 254, 0.56);
+  --glass-raised: rgba(255, 255, 255, 0.66);
+  --glass-float: rgba(253, 252, 250, 0.84);
+  --saturate: 160%;
+  --saturate-hero: 190%;
+
+  --rim: linear-gradient(
+    205deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.62) 20%,
+    rgba(255, 255, 255, 0.42) 60%,
+    rgba(255, 255, 255, 0.8) 100%
+  );
+  --rim-raised: linear-gradient(
+    205deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.75) 20%,
+    rgba(255, 255, 255, 0.52) 60%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  --rim-lamp: linear-gradient(
+    135deg,
+    rgba(232, 150, 40, 0.55) 0%,
+    rgba(232, 150, 40, 0.14) 22%,
+    rgba(232, 150, 40, 0) 46%
+  );
+  --rim-rest: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 40%);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 96px);
+  --elev-1:
+    0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+    0 14px 30px -18px rgba(38, 32, 26, 0.3);
+  --elev-2:
+    0 0 0 0.5px rgba(38, 32, 26, 0.12), 0 1px 2px rgba(38, 32, 26, 0.06),
+    0 24px 46px -26px rgba(38, 32, 26, 0.36);
+  --elev-3:
+    0 0 0 0.5px rgba(38, 32, 26, 0.14), 0 2px 3px rgba(38, 32, 26, 0.07),
+    0 40px 80px -34px rgba(38, 32, 26, 0.45);
+
+  --fill-quiet: rgba(255, 255, 255, 0.62);
+  --fill-hover: rgba(255, 255, 255, 0.55);
+  --fill-selected: rgba(255, 255, 255, 0.85);
+  --control-rim: rgba(38, 32, 26, 0.13);
+  --control-top: rgba(255, 255, 255, 0.9);
+  --well: rgba(38, 32, 26, 0.055);
+  --well-shade: rgba(38, 32, 26, 0.06);
+  --thumb: #ffffff;
+  --thumb-drop: rgba(38, 32, 26, 0.3);
+
+  --hairline: rgba(38, 32, 26, 0.08);
+  --rule: rgba(38, 32, 26, 0.13);
+  --rule-strong: rgba(38, 32, 26, 0.28);
+
+  --ink: #181613;
+  --ink-secondary: #3f3b36;
+  --ink-muted: #5b564f;
+
+  --status-needs-you: #f4a62a;
+  --status-needs-you-edge: #a35a00;
+
+  --status-working: #36577e;
+  --status-idle: #6f6961;
+
+  --focus: #36577e;
+
+  --on-ink: #f3f0ea;
+  --solid-top: rgba(255, 255, 255, 0.18);
+  --solid-drop: rgba(38, 32, 26, 0.5);
+  --solid-hover: #2b2823;
+  --screen-line: 0 0 0 0.5px rgba(38, 32, 26, 0.2);
+
+  --at-night: none;
+  --by-day: inline;
+}
+
+/* -------------------------------------------------------------------- base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: var(--ground-top);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 92px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+pre {
+  margin: 0;
+}
+
+/* Three weights and no bold: 400 for running text, 500 for labels, 600 for names. */
+h1,
+h2,
+h3,
+strong {
+  font-weight: 600;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+img,
+svg {
+  display: block;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  word-spacing: -0.22em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus treatment for everything. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--focus) 32%, transparent);
+}
+
+/* Shown only by one light. A flex or grid parent makes these blocks. */
+.at-night {
+  display: var(--at-night);
+}
+.by-day {
+  display: var(--by-day);
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 50;
+  padding: 10px 16px;
+  border-radius: var(--radius-capsule);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip:focus-visible {
+  transform: none;
+}
+
+.wrap {
+  width: min(1200px, 100% - 2 * var(--gutter));
+  margin-inline: auto;
+}
+
+/* A link in running text: ink, on a rule. */
+.link {
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ------------------------------------------------------------------ ground */
+
+.ground {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background-image: var(--ground);
+}
+
+.ground > i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.ground-main {
+  top: var(--field-main-top);
+  right: var(--field-main-right);
+  width: var(--field-main-width);
+  height: var(--field-main-height);
+  transform: rotate(var(--field-main-turn));
+  background-image: radial-gradient(
+    closest-side,
+    rgb(var(--field) / var(--field-strength)),
+    rgb(var(--field) / calc(var(--field-strength) * 0.4)) 52%,
+    transparent 100%
+  );
+}
+
+.ground-deep {
+  top: 520px;
+  left: -300px;
+  width: 1180px;
+  height: 880px;
+  background-image: radial-gradient(
+    closest-side,
+    rgb(var(--field-deep) / calc(var(--field-strength) * 0.85)),
+    rgb(var(--field-deep) / calc(var(--field-strength) * 0.3)) 55%,
+    transparent 100%
+  );
+}
+
+.ground-far {
+  top: 820px;
+  left: 46%;
+  width: 900px;
+  height: 600px;
+  background-image: radial-gradient(
+    closest-side,
+    rgb(var(--field) / calc(var(--field-strength) * 0.45)),
+    transparent 100%
+  );
+}
+
+/* The dither, so the dark gradients do not band. Not visible as texture. */
+.ground::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--grain);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+  .ground-main {
+    animation: drift-main 96s ease-in-out infinite alternate;
+  }
+  .ground-deep {
+    animation: drift-deep 124s ease-in-out infinite alternate;
+  }
+  .ground-far {
+    animation: drift-far 150s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes drift-main {
+  to {
+    transform: rotate(var(--field-main-turn)) translate3d(-90px, 70px, 0) scale(1.06);
+  }
+}
+@keyframes drift-deep {
+  to {
+    transform: translate3d(120px, -60px, 0) scale(1.04);
+  }
+}
+@keyframes drift-far {
+  to {
+    transform: translate3d(-140px, -40px, 0);
+  }
+}
+
+/* ------------------------------------------------------------------- glass */
+
+.glass-chrome,
+.glass-card,
+.glass-raised,
+.glass-float {
+  position: relative;
+  isolation: isolate;
+}
+
+.glass-chrome {
+  --rim-paint: var(--rim);
+  border-radius: var(--radius-chrome);
+  background-color: var(--glass-chrome);
+  box-shadow: var(--elev-1);
+}
+
+.glass-card {
+  --rim-paint: var(--rim);
+  border-radius: var(--radius-panel);
+  background-color: var(--glass-card);
+  box-shadow: var(--elev-2);
+}
+
+.glass-raised {
+  --rim-paint: var(--rim-raised);
+  border-radius: var(--radius-panel);
+  background-color: var(--glass-raised);
+  box-shadow: var(--elev-3);
+}
+
+.glass-float {
+  --rim-paint: var(--rim-raised);
+  border-radius: var(--radius-panel);
+  background-color: var(--glass-float);
+  box-shadow: var(--elev-3);
+}
+
+/* The rim: a 1px edge of light, cut from a gradient by a mask. */
+:is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::before,
+.frame-lamp {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--rim-paint);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* The sheen, under the top edge, behind the content. */
+:is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--sheen);
+}
+
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  :is(.glass-chrome, .glass-card, .glass-raised, .glass-float)::before {
+    padding: 0;
+    background: none;
+    -webkit-mask: none;
+    mask: none;
+    box-shadow:
+      inset 0 1px 0 var(--control-top),
+      inset 0 0 0 1px var(--rule);
+  }
+  .frame-lamp {
+    display: none;
+  }
+}
+
+/* Real blur, only where something passes behind the glass. */
+.glass-blur {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--saturate));
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--radius-capsule);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.006em;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+/* The one solid button: ink, never amber. */
+.btn-solid {
+  background-color: var(--ink);
+  color: var(--on-ink);
+  box-shadow:
+    inset 0 1px 0 var(--solid-top),
+    0 10px 24px -12px var(--solid-drop);
+}
+.btn-solid:hover {
+  background-color: var(--solid-hover);
+}
+
+/* Every other button is quiet: a capsule of fill inside a rim. */
+.btn-quiet {
+  background-color: var(--fill-quiet);
+  color: var(--ink-secondary);
+  box-shadow:
+    inset 0 0 0 1px var(--control-rim),
+    inset 0 1px 0 var(--control-top);
+}
+.btn-quiet:hover {
+  background-color: var(--fill-selected);
+  color: var(--ink);
+}
+
+.btn-small {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/*
+ * The segmented switch, as in the app: a recessed well, and a thumb that
+ * slides under the choice. It is a pair of radio buttons, so the arrow keys
+ * move between the two and Tab passes it in one stop.
+ */
+.seg {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  flex: none;
+  padding: 3px;
+  border-radius: var(--radius-capsule);
+  background-color: var(--well);
+  box-shadow:
+    inset 0 0 0 1px var(--control-rim),
+    inset 0 1px 2px var(--well-shade);
+}
+
+.seg input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  padding-inline: 15px;
+  border-radius: var(--radius-capsule);
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.seg label:has(svg) {
+  padding-inline: 12px 14px;
+}
+.seg label:hover,
+.seg input:checked + label {
+  color: var(--ink);
+}
+.seg input:focus-visible + label {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.seg svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--radius-capsule);
+  background-color: var(--thumb);
+  box-shadow:
+    inset 0 0 0 1px var(--control-rim),
+    inset 0 1px 0 var(--control-top),
+    0 2px 6px -2px var(--thumb-drop);
+  pointer-events: none;
+}
+/* Only once the page has settled, so a switch never slides into place as it loads. */
+.ready .seg-thumb {
+  transition: transform 220ms var(--ease-out);
+}
+.seg input:nth-of-type(2):checked ~ .seg-thumb {
+  transform: translateX(100%);
+}
+
+/* The switches need script. Without it the page shows no dead control. */
+html:not(.js) :is(.seg, [data-turn]) {
+  display: none;
+}
+
+/* The mark: a round lens, a horizon across it, and the lamp above the horizon. */
+.lookout {
+  flex: none;
+  color: var(--ink);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+}
+.lookout .sea {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0.13;
+}
+.lookout .lamp {
+  stroke-width: 1.4;
+}
+.lookout-lit .lamp {
+  fill: var(--status-needs-you);
+  stroke: var(--status-needs-you-edge);
+  stroke-width: 1;
+}
+.lookout-lit .glint {
+  stroke: var(--status-needs-you-edge);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.bar {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  margin-top: 12px;
+  padding: 0 10px 0 18px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-row);
+  text-decoration: none;
+}
+
+.wordmark {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+.bar-rule {
+  width: 1px;
+  height: 22px;
+  margin: 0 18px;
+  background-color: var(--rule);
+}
+
+.bar-status {
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.bar-status span {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.bar-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 12px;
+}
+.bar-nav a {
+  padding: 8px 12px;
+  border-radius: var(--radius-capsule);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  transition:
+    color 120ms,
+    background-color 120ms;
+}
+.bar-nav a:hover {
+  color: var(--ink);
+  background-color: var(--fill-hover);
+}
+
+/* -------------------------------------------------------------------- hero */
+
+/*
+ * The opening. On the left the one large line, which is the app's own
+ * sentence for the state the picture is in. On the right what the thing is.
+ * The large line and the last line of the pitch stand on one baseline.
+ */
+.hero {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gap);
+  align-items: end;
+  align-items: last baseline;
+  padding-top: clamp(36px, 7.2vh, 88px);
+}
+
+.state {
+  grid-column: 1 / 8;
+  margin-left: -0.04em;
+  font-size: clamp(44px, 6.4vw, 76px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+/* Its second line never moves. Only the first one turns. */
+.state-turn {
+  display: grid;
+}
+.state-turn > span {
+  grid-area: 1 / 1;
+  justify-self: start;
+  white-space: nowrap;
+}
+.state-still {
+  display: block;
+}
+
+/* One is gone before the other arrives, so the two never show through each other. */
+.when-lit {
+  transition: opacity 500ms ease 240ms;
+}
+.when-out {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 240ms ease,
+    visibility 0s 240ms;
+}
+.lamp-out .when-out {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 500ms ease 240ms;
+}
+.lamp-out .when-lit {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 240ms ease,
+    visibility 0s 240ms;
+}
+
+.pitch {
+  grid-column: 8 / 13;
+}
+
+/* The page's heading is the sentence that says what the thing is. */
+.pitch h1 {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.pitch h1 span {
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-top: 24px;
+}
+
+.fine {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+}
+
+/* -------------------------------------------------------------- instrument */
+
+.instrument {
+  position: relative;
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gap);
+  margin-top: clamp(26px, 4.4vh, 44px);
+}
+
+/* The lamp's own switch, above the frame's right corner and clear of its light. */
+.lamp-switch {
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-bottom: 14px;
+}
+
+.stage {
+  grid-column: 1 / -1;
+  position: relative;
+  container-type: inline-size;
+}
+
+/*
+ * The light behind the frame. It is the app's own recipe for the light behind
+ * its top panel: a broad wash with a hotter core, each full at the centre, 35%
+ * at 55% and then nothing. Here the core sits on the frame's top edge, over
+ * the panel, so the light rises above the frame the way the lamp sits above
+ * the horizon in the mark. Every measure is a share of the frame's width.
+ *
+ * As in the app, the light belongs to the glass. Warm light spilt on bare
+ * black reads as a brown haze, so the mask draws nothing left of the frame.
+ */
+.light {
+  position: absolute;
+  z-index: 0;
+  top: -18.75cqw;
+  left: -5cqw;
+  width: 75cqw;
+  height: 43.75cqw;
+  border-radius: 50%;
+  pointer-events: none;
+  background-image: radial-gradient(
+    closest-side,
+    rgb(var(--light) / calc(var(--strength) * 0.3)),
+    rgb(var(--light) / calc(var(--strength) * 0.09)) 50%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(to right, transparent 3.3%, #000 6.67%);
+  mask-image: linear-gradient(to right, transparent 3.3%, #000 6.67%);
+}
+.light::before {
+  content: "";
+  position: absolute;
+  top: 21.4%;
+  left: 10.3%;
+  width: 62%;
+  height: 46%;
+  border-radius: 50%;
+  background-image: radial-gradient(
+    closest-side,
+    rgb(var(--light) / var(--strength)),
+    rgb(var(--light) / calc(var(--strength) * 0.35)) 55%,
+    transparent 100%
+  );
+}
+
+/*
+ * The one moment. When a wait begins the lamp's light rises from 90% of its
+ * size and fades in over 1.2s. Going out, it only fades.
+ */
+.light-lamp {
+  --light: var(--lamp);
+  --strength: calc(var(--lamp-strength) * var(--halo-strength));
+  filter: saturate(var(--saturate-hero));
+  transition:
+    opacity 1200ms var(--ease-out),
+    transform 1200ms var(--ease-out);
+}
+.light-rest {
+  --light: var(--rest);
+  --strength: var(--rest-strength);
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.lamp-out .light-lamp {
+  opacity: 0;
+  transform: translate3d(0, 7.5cqw, 0) scale(0.9);
+  transition:
+    opacity 400ms ease,
+    transform 0s 400ms;
+}
+.lamp-out .light-rest {
+  opacity: 1;
+}
+
+.frame {
+  z-index: 1;
+  padding: var(--bezel);
+  border-radius: var(--radius-frame);
+  --rim-paint: var(--rim-rest), var(--rim-raised);
+}
+
+/* The frame's top left edge catching the lamp. */
+.frame-lamp {
+  --rim-paint: var(--rim-lamp);
+  transition: opacity 900ms var(--ease-out);
+}
+.lamp-out .frame-lamp {
+  opacity: 0;
+  transition-duration: 400ms;
+}
+
+/* A picture seated in glass. */
+.screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-screen);
+  background-color: var(--ground-top);
+  box-shadow: var(--screen-line);
+  aspect-ratio: var(--shot-ratio);
+}
+
+.shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * The lit picture lies over the quiet one and is let in from the lamp
+ * outwards: a soft-edged circle, centred on the light in the picture, that
+ * grows until it covers the screen. So the panel lights first, and the two
+ * pictures only ever meet along the circle's edge, never as a double exposure.
+ * Whichever picture is not showing is hidden once that is done, so only one is
+ * ever described. Going out, the lit picture only fades.
+ */
+.shot-lit {
+  -webkit-mask: radial-gradient(farthest-corner at var(--lamp-at), #000 50%, transparent 64%)
+    var(--lamp-at) / 240% 240% no-repeat;
+  mask: radial-gradient(farthest-corner at var(--lamp-at), #000 50%, transparent 64%)
+    var(--lamp-at) / 240% 240% no-repeat;
+  transition:
+    -webkit-mask-size 1000ms var(--ease-wipe),
+    mask-size 1000ms var(--ease-wipe);
+}
+.shot-out {
+  visibility: hidden;
+  transition: visibility 0s 1000ms;
+}
+.lamp-out .shot-lit {
+  opacity: 0;
+  visibility: hidden;
+  -webkit-mask-size: 0% 0%;
+  mask-size: 0% 0%;
+  transition:
+    opacity 240ms ease,
+    visibility 0s 240ms,
+    -webkit-mask-size 0s 240ms,
+    mask-size 0s 240ms;
+}
+.lamp-out .shot-out {
+  visibility: visible;
+  transition: none;
+}
+
+/*
+ * A Night or Day choice kept from an earlier visit can differ from the
+ * system's. The pictures follow the system until the script has pointed them
+ * at the kept choice, so they are held back for that moment.
+ */
+.unsettled .shot {
+  visibility: hidden;
+}
+
+/*
+ * The other light: the head of the same panel on a plate of floating glass,
+ * over the frame's lower right corner. It is the only glass on the page with
+ * something behind it besides the header, so it is the only other one that
+ * blurs. The plate is in the other theme; its shadow falls on this one, so the
+ * slot that holds it casts the shadow.
+ */
+.plate-slot {
+  grid-column: 7 / 13;
+  grid-row: 3;
+  z-index: 2;
+  align-self: start;
+  margin-top: calc(var(--lift) * -1);
+  margin-right: calc(var(--bezel) + var(--gap));
+  border-radius: var(--radius-chrome);
+  box-shadow: var(--elev-3);
+}
+
+.plate {
+  --lamp-at: 6.2% 25.6%;
+  padding: 8px;
+  border-radius: var(--radius-chrome);
+  box-shadow: none;
+  color: var(--ink);
+}
+.plate .screen {
+  border-radius: var(--radius-inner);
+  aspect-ratio: 1506 / 336;
+}
+.plate figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 8px 4px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.plate figcaption strong {
+  font-weight: 600;
+}
+.plate figcaption span {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.about {
+  grid-column: 1 / 7;
+  grid-row: 3;
+  padding-top: 30px;
+}
+.lights {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+.lights span {
+  display: block;
+}
+.about .btn {
+  margin-top: 18px;
+}
+
+/* ------------------------------------------------------------------- facts */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--gap);
+  margin-top: var(--section);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  padding: var(--pad);
+}
+.fact h3 {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+.fact p {
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.fact h3 + p {
+  max-width: 54ch;
+  margin-top: 12px;
+}
+
+.fact-finds {
+  grid-column: 1 / 8;
+}
+.fact-shows {
+  grid-column: 8 / 13;
+}
+.fact-sends {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  column-gap: 48px;
+  align-items: center;
+}
+
+/* Fact one: the sessions it found, drawn as the app lists them. */
+.found {
+  margin-top: 26px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+.group {
+  margin: 16px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink-secondary);
+}
+.group span {
+  margin-left: 5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+.rows li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) 56px;
+  column-gap: 14px;
+  align-items: center;
+  min-height: 40px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+}
+.rows .name {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rows .time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* The agent and the app are two columns here, and one line on a phone. */
+.rows .where {
+  display: contents;
+}
+.mark {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.mark path {
+  fill: currentColor;
+  stroke: none;
+}
+.mark-working {
+  color: var(--status-working);
+}
+.mark-idle {
+  color: var(--status-idle);
+}
+
+/* Fact two: the mark with its lamp out, and lit. The page's one amber. */
+.fact-shows code {
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.lamp-pair {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: center;
+  margin-top: 26px;
+  border-block: 1px solid var(--hairline);
+}
+.lamp-pair::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background-color: var(--hairline);
+}
+.lamp-pair > div {
+  display: flex;
+  flex-direction: column;
+  padding: 26px 0;
+}
+.lamp-pair > div + div {
+  padding-left: 24px;
+}
+.lamp-pair strong {
+  margin-top: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.006em;
+}
+.lamp-pair span {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-secondary);
+}
+.fact-shows .limit {
+  padding-top: 18px;
+  font-size: 14px;
+}
+
+/* Fact three: four counts in a row with no boxes, and every one is nought. */
+.counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px 16px;
+}
+.counts li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+}
+.counts .figure {
+  grid-row: 1 / 3;
+  align-self: center;
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.counts .label {
+  align-self: end;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.counts .note {
+  align-self: start;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-muted);
+}
+
+/* ---------------------------------------------------- install and the rest */
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gap);
+  align-items: start;
+  margin-top: var(--section);
+}
+.split .intro {
+  grid-column: 1 / 5;
+  padding-right: 24px;
+}
+.split .body {
+  grid-column: 5 / 13;
+}
+
+h2 {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.intro p {
+  margin-top: 14px;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.intro .actions {
+  margin-top: 24px;
+}
+
+@media (width >= 901px) {
+  .intro-sticky {
+    position: sticky;
+    top: 104px;
+  }
+}
+
+.steps {
+  padding: 6px var(--pad);
+}
+.steps li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 16px;
+  padding: 24px 0 26px;
+}
+.steps li + li {
+  border-top: 1px solid var(--hairline);
+}
+.steps .n {
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.steps h3 {
+  padding-top: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.006em;
+}
+.steps p {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.steps p code {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/*
+ * Commands: literal strings in a recessed well, one to a line. A line too long
+ * for a narrow well wraps, and what wraps hangs indented so it still reads as
+ * one command.
+ */
+.steps pre {
+  margin-top: 14px;
+  padding: 13px 16px;
+  border-radius: var(--radius-row);
+  background-color: var(--well);
+  box-shadow:
+    inset 0 0 0 1px var(--control-rim),
+    inset 0 1px 2px var(--well-shade);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.steps pre span {
+  display: block;
+  padding-left: 1.5em;
+  text-indent: -1.5em;
+}
+
+.after {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+
+/* What it does today: a sheet of plain rows on the ground. */
+.sheet {
+  border-top: 1px solid var(--rule);
+}
+.sheet > div {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  column-gap: var(--gap);
+  padding: 15px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.sheet dt {
+  color: var(--ink-secondary);
+}
+.sheet dd {
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------------- close */
+
+.closing {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: var(--section);
+  padding: 12px 12px 12px 18px;
+}
+.closing p {
+  margin-right: auto;
+  color: var(--ink-secondary);
+}
+.closing p strong {
+  margin-right: 6px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 24px 48px;
+  padding: 28px 0 64px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+.foot p {
+  max-width: 62ch;
+}
+.foot nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+.foot a {
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.foot a:hover {
+  color: var(--ink);
+}
+.foot p a {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------- the lost page */
+
+.lost {
+  min-height: calc(100vh - 220px);
+}
+.lost .hero {
+  padding-top: clamp(64px, 18vh, 200px);
+}
+
+/* --------------------------------------------------------------- narrower */
+
+/* Under 1101px the four counts become two rows of two. */
+@media (width < 1101px) {
+  .fact-sends {
+    column-gap: 40px;
+  }
+  .counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bar-status span {
+    display: none;
+  }
+}
+
+/* Under 901px everything is one column, in reading order. */
+@media (width < 901px) {
+  :root {
+    --section: 104px;
+  }
+
+  .bar-rule,
+  .bar-status {
+    display: none;
+  }
+
+  .hero {
+    row-gap: 22px;
+  }
+  .state,
+  .pitch {
+    grid-column: 1 / -1;
+  }
+  .pitch {
+    max-width: 560px;
+  }
+
+  .plate-slot {
+    grid-column: 6 / 13;
+  }
+  .about {
+    grid-column: 1 / 6;
+  }
+  .lights {
+    font-size: 17px;
+  }
+
+  .fact-finds,
+  .fact-shows {
+    grid-column: 1 / -1;
+  }
+  .fact-sends {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 28px;
+  }
+  .counts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .split .intro,
+  .split .body {
+    grid-column: 1 / -1;
+  }
+  .split .intro {
+    padding-right: 0;
+    margin-bottom: 28px;
+  }
+}
+
+/* Under 761px: a phone, or a narrow window. The plate is put away. */
+@media (width < 761px) {
+  :root {
+    --gutter: 16px;
+    --section: 84px;
+    --pad: 20px;
+    --bezel: 6px;
+  }
+
+  .bar {
+    padding: 0 8px 0 14px;
+  }
+  .bar-nav {
+    display: none;
+  }
+  .theme-switch {
+    margin-left: auto;
+  }
+
+  .pitch h1 {
+    font-size: 16px;
+  }
+  /* Tighter, so the waiting session is in the first screen of a phone's browser. */
+  .hero {
+    padding-top: 24px;
+    row-gap: 18px;
+  }
+  .actions {
+    margin-top: 20px;
+  }
+  .fine {
+    margin-top: 12px;
+  }
+  .instrument {
+    margin-top: 20px;
+  }
+
+  .plate-slot {
+    display: none;
+  }
+  .about {
+    grid-column: 1 / -1;
+    padding-top: 26px;
+  }
+  .lights {
+    font-size: 22px;
+  }
+
+  .fact h3 {
+    font-size: 24px;
+  }
+  h2 {
+    font-size: 28px;
+  }
+
+  /* A row is two lines: the name, then where it runs. */
+  .rows li {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "mark name time"
+      ".    where time";
+    column-gap: 12px;
+    padding: 7px 0;
+  }
+  .rows .mark {
+    grid-area: mark;
+  }
+  .rows .name {
+    grid-area: name;
+  }
+  .rows .time {
+    grid-area: time;
+  }
+  .rows .where {
+    grid-area: where;
+    display: flex;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .rows .agent::after {
+    content: "·";
+    margin-left: 6px;
+    color: var(--ink-muted);
+  }
+
+  .counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .steps {
+    padding: 2px var(--pad);
+  }
+  .steps li {
+    grid-template-columns: 26px minmax(0, 1fr);
+    column-gap: 12px;
+  }
+  .steps .n {
+    font-size: 22px;
+    padding-top: 2px;
+  }
+  .steps pre {
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+
+  .sheet > div {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+    padding: 13px 0;
+  }
+  .sheet dt {
+    font-size: 13px;
+    color: var(--ink-secondary);
+  }
+
+  .closing {
+    flex-wrap: wrap;
+    padding: 16px;
+    row-gap: 14px;
+  }
+  .closing p {
+    flex: 1 1 200px;
+  }
+  .closing .btn {
+    width: 100%;
+  }
+
+  .foot {
+    flex-direction: column;
+    padding-bottom: 48px;
+  }
+}
+
+/*
+ * Under 641px the frame shows the app's own one-column layout, as a phone
+ * draws it, in place of the wide window. Its rail keeps the same 12px inset
+ * and 22px corner, so the screen's corner is still 34px at the picture's full
+ * size. The frame is never drawn wider than a large phone.
+ */
+@media (width < 641px) {
+  :root {
+    --shot-width: 390;
+    --shot-ratio: 390 / 844;
+    --lamp-at: 28% 13.9%;
+  }
+
+  .stage {
+    width: min(100%, 492px);
+    justify-self: center;
+  }
+
+  /*
+   * The frame is narrow here and its switch is right above it, so the light
+   * is smaller and keeps to the frame's top left, under the rail's own lamp.
+   * It has faded out before it reaches the switch: a control is never tinted
+   * by the lamp.
+   */
+  .lamp-switch {
+    /* Over the frame's right corner, also where the frame stops short of the column. */
+    margin-right: max(0px, (100% - 492px) / 2);
+    margin-bottom: 12px;
+  }
+  .light {
+    top: -20cqw;
+    left: -8cqw;
+    width: 60cqw;
+    height: 44cqw;
+    -webkit-mask-image: linear-gradient(to right, transparent 10%, #000 14%);
+    mask-image: linear-gradient(to right, transparent 10%, #000 14%);
+  }
+  .light::before {
+    top: 23%;
+    left: 14%;
+    width: 56%;
+    height: 46%;
+  }
+}
+
+/* The theme switch keeps its words while there is room for them. */
+@media (width < 400px) {
+  .theme-switch label {
+    padding-inline: 11px;
+  }
+  .theme-switch label span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation: none !important;
+  }
+}

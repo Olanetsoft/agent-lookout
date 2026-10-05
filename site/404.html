@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nothing is here · Agent Lookout</title>
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#090908" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#d4d0ca" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="/assets/fonts/atkinson-hyperlegible-next-latin-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/assets/fonts/atkinson-hyperlegible-next-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/site.js"></script>
+  </head>
+
+  <body>
+    <a class="skip" href="#main">Skip to the content</a>
+
+    <div class="ground" aria-hidden="true">
+      <i class="ground-main"></i><i class="ground-deep"></i><i class="ground-far"></i>
+    </div>
+
+    <header class="bar wrap glass-chrome glass-blur">
+      <a class="brand" href="/" aria-label="Agent Lookout, the front page">
+        <svg class="lookout" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+          <path class="sea" d="M3.63 20a13 13 0 0 0 24.74 0z" />
+          <circle cx="16" cy="16" r="13" />
+          <path d="M3.63 20h24.74" />
+          <circle class="lamp" cx="20.6" cy="15.1" r="2.7" />
+        </svg>
+        <span class="wordmark">Agent Lookout</span>
+      </a>
+
+      <nav class="bar-nav" aria-label="Agent Lookout">
+        <a href="/#install">Install</a>
+        <a href="https://github.com/Olanetsoft/agent-lookout/milestones">Roadmap</a>
+        <a href="https://github.com/Olanetsoft/agent-lookout">GitHub</a>
+      </nav>
+
+      <div class="seg theme-switch" role="radiogroup" aria-label="Theme">
+        <input type="radio" name="theme" id="theme-night" value="dark" autocomplete="off" checked />
+        <label for="theme-night">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M13.3 9.7A5.7 5.7 0 0 1 6.3 2.7a5.7 5.7 0 1 0 7 7z" />
+          </svg>
+          <span>Night</span>
+        </label>
+        <input type="radio" name="theme" id="theme-day" value="light" autocomplete="off" />
+        <label for="theme-day">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.7" />
+            <path
+              d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"
+            />
+          </svg>
+          <span>Day</span>
+        </label>
+        <i class="seg-thumb" aria-hidden="true"></i>
+      </div>
+    </header>
+
+    <main id="main" class="wrap lost">
+      <section class="hero" aria-labelledby="lost-title">
+        <p class="state" aria-hidden="true">
+          <span class="state-still">Nothing</span>
+          <span class="state-still">is here.</span>
+        </p>
+
+        <div class="pitch">
+          <h1 id="lost-title">
+            <span>There is no page at this address.</span> Agent Lookout has one page, and it is the
+            front one.
+          </h1>
+          <div class="actions">
+            <a class="btn btn-solid" href="/">Go to the front page</a>
+            <a class="link" href="https://github.com/Olanetsoft/agent-lookout">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot wrap">
+      <p>
+        Agent Lookout is
+        <a href="https://github.com/Olanetsoft/agent-lookout/blob/main/LICENSE">MIT licensed</a>. It
+        is an unofficial project, not affiliated with or endorsed by Anthropic, OpenAI or any other
+        agent maker.
+      </p>
+      <nav aria-label="Project">
+        <a href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md">Guide</a>
+        <a href="https://github.com/Olanetsoft/agent-lookout/blob/main/PRIVACY.md">Privacy</a>
+        <a href="https://github.com/Olanetsoft/agent-lookout/milestones">Roadmap</a>
+        <a href="https://github.com/Olanetsoft/agent-lookout">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>
