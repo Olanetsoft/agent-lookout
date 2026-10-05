@@ -7,6 +7,8 @@ Agent Lookout puts every Claude Code and Codex session running on your Mac on on
   <img alt="The Agent Lookout dashboard. A rail on the left links to Overview, Sources and Settings. At the top, the Needs you panel shows the one session waiting for permission, with its timer and a Jump button, bars of how long sessions waited on you, and counts of working, idle and stale sessions. Beside it is the Last hour chart. Below are the Sessions list, grouped by status, the Events log and the Timeline." src="docs/images/dashboard-night.png">
 </picture>
 
+The website is [agent-lookout.vercel.app](https://agent-lookout.vercel.app).
+
 It reads the list of sessions Claude Code keeps on your computer, so it finds sessions in a terminal, in VS Code or in the Claude Code desktop app with no setup. For Codex it reads the session files Codex saves in `~/.codex`, also with no setup. It only watches. It cannot start, stop or answer a session yet. Turn on notifications in Settings and your browser tells you when a Claude Code session starts waiting, as long as the dashboard is open in a tab.
 
 Today it watches Claude Code and Codex on macOS. Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as needing you. Codex support is new: it has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
