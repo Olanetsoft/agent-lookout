@@ -1,4 +1,10 @@
-import type { EmailOutcome, EmailStatusResponse, HistoryResponse } from "@core/api";
+import {
+  isWebhookHost,
+  type EmailStatusResponse,
+  type HistoryResponse,
+  type SendResult,
+  type WebhookStatusResponse,
+} from "@core/api";
 import type {
   EventKind,
   EventSeverity,
@@ -289,16 +295,17 @@ function shortText(value: unknown): string | null {
   return words && words.length <= MAX_EMAIL_WORDS ? words : null;
 }
 
-function readEmailOutcome(value: unknown): EmailOutcome | null {
+/** How the last email or post went. A reason that cannot be read is the plain one given. */
+function readSendResult(value: unknown, plainReason: string): SendResult | null {
   if (!isRecord(value)) return null;
   const at = number(value.at);
   if (at === null) return null;
   if (value.sent === true) return { at, sent: true };
-  return { at, sent: false, reason: shortText(value.reason) ?? "the email could not be sent" };
+  return { at, sent: false, reason: shortText(value.reason) ?? plainReason };
 }
 
-/** The events that are emailed, in their own order. A name the page does not know is passed over. Null when none is known. */
-function readEmailEvents(value: unknown): NoticeEvent[] | null {
+/** The events that are emailed or posted, in their own order. A name the page does not know is passed over. Null when none is known. */
+function readSentEvents(value: unknown): NoticeEvent[] | null {
   if (!Array.isArray(value)) return null;
   const named = value.filter((name): name is string => typeof name === "string");
   const events = NOTICE_EVENTS.filter((event) => named.includes(event));
@@ -313,7 +320,7 @@ function readEmailEvents(value: unknown): NoticeEvent[] | null {
 export function readEmailStatus(data: unknown): EmailStatusResponse | null {
   if (!isRecord(data) || typeof data.on !== "boolean") return null;
   const to = shortText(data.to);
-  const events = readEmailEvents(data.events);
+  const events = readSentEvents(data.events);
   const afterMs = number(data.afterMs);
   const on = data.on && to !== null && events !== null && afterMs !== null && afterMs >= 0;
   return {
@@ -322,7 +329,37 @@ export function readEmailStatus(data: unknown): EmailStatusResponse | null {
     events: on ? events : null,
     afterMs: on ? afterMs : null,
     problem: on ? null : shortText(data.problem),
-    last: on ? readEmailOutcome(data.last) : null,
+    last: on ? readSendResult(data.last, "the email could not be sent") : null,
+    limitedUntil: on ? number(data.limitedUntil) : null,
+  };
+}
+
+/**
+ * The answer of `/api/webhook`. The webhook counts as on only when the answer
+ * says so and gives a host, the events and the delay, so a broken answer never
+ * claims that posts are going out. A host that is more than a host is not
+ * shown: the page never shows a path. The collector takes a host by the same
+ * rule, `isWebhookHost`, so it never posts to one that this reads as off.
+ */
+export function readWebhookStatus(data: unknown): WebhookStatusResponse | null {
+  if (!isRecord(data) || typeof data.on !== "boolean") return null;
+  const host = shortText(data.host);
+  const events = readSentEvents(data.events);
+  const afterMs = number(data.afterMs);
+  const on =
+    data.on &&
+    host !== null &&
+    isWebhookHost(host) &&
+    events !== null &&
+    afterMs !== null &&
+    afterMs >= 0;
+  return {
+    on,
+    host: on ? host : null,
+    events: on ? events : null,
+    afterMs: on ? afterMs : null,
+    problem: on ? null : shortText(data.problem),
+    last: on ? readSendResult(data.last, "the post could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,
   };
 }

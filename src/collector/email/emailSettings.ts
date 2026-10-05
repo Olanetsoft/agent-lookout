@@ -1,9 +1,5 @@
-import {
-  DEFAULT_NOTICE_EVENTS,
-  NOTICE_EVENTS,
-  readNoticeEvents,
-  type NoticeEvent,
-} from "../../core/sessions/waitChanges.ts";
+import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
+import { readAfter, readEvents, SettingProblem, valueOf } from "../outbound/outboundSettings.ts";
 
 /**
  * The settings for email notifications, read from the environment the
@@ -27,12 +23,6 @@ export const EMAIL_FROM_ENV = "AGENT_LOOKOUT_EMAIL_FROM";
 export const EMAIL_AFTER_ENV = "AGENT_LOOKOUT_EMAIL_AFTER";
 /** The events that are emailed, as names separated by commas: `needs-you,finished`. */
 export const EMAIL_EVENTS_ENV = "AGENT_LOOKOUT_EMAIL_EVENTS";
-
-/** How long a wait lasts before it is emailed when the setting is left out. */
-export const DEFAULT_EMAIL_AFTER_SECONDS = 60;
-
-/** The longest delay that can be set: a day. */
-const MOST_EMAIL_AFTER_SECONDS = 86_400;
 
 /**
  * How the connection to the mail server is kept private.
@@ -94,15 +84,6 @@ export function isOneAddress(value: string): boolean {
   return value.length <= MOST_ADDRESS_LENGTH && ADDRESS.test(value);
 }
 
-/** A setting's value, or undefined when it is not set or holds only spaces. */
-function valueOf(env: NodeJS.ProcessEnv, name: string): string | undefined {
-  const value = env[name]?.trim();
-  return value ? value : undefined;
-}
-
-/** Thrown inside this module for a setting that cannot be read, with the sentence to say. */
-class SettingProblem extends Error {}
-
 const URL_UNREADABLE = `${SMTP_URL_ENV} could not be read. Write it as smtps://name:password@server:port, with any @, :, /, ?, # or % in the name or the password written as %40, %3A, %2F, %3F, %23 or %25.`;
 
 /** `decodeURIComponent`, with a malformed escape counted as a setting that cannot be read. */
@@ -161,30 +142,6 @@ function readServer(value: string): MailServer {
   return { host, port, security, auth: user === "" ? null : { user, pass } };
 }
 
-/** The delay in milliseconds, from a whole number of seconds. */
-function readAfter(value: string | undefined): number {
-  if (value === undefined) return DEFAULT_EMAIL_AFTER_SECONDS * 1_000;
-  const seconds = /^\d{1,6}$/.test(value) ? Number(value) : Number.NaN;
-  if (!(seconds <= MOST_EMAIL_AFTER_SECONDS)) {
-    throw new SettingProblem(
-      `${EMAIL_AFTER_ENV} must be a whole number of seconds from 0 to ${MOST_EMAIL_AFTER_SECONDS}, such as 60.`,
-    );
-  }
-  return seconds * 1_000;
-}
-
-/** The events, from names separated by commas. Left out, a wait alone. */
-function readEvents(value: string | undefined): readonly NoticeEvent[] {
-  if (value === undefined) return DEFAULT_NOTICE_EVENTS;
-  const events = readNoticeEvents(value);
-  if (events === null || events.length === 0) {
-    throw new SettingProblem(
-      `${EMAIL_EVENTS_ENV} must be one or more of ${NOTICE_EVENTS.join(", ")}, separated by commas, such as needs-you,finished.`,
-    );
-  }
-  return events;
-}
-
 function readAddress(name: string, value: string): string {
   if (!isOneAddress(value)) {
     throw new SettingProblem(`${name} must be one email address, such as you@example.com.`);
@@ -215,8 +172,8 @@ export function readEmailSetup(env: NodeJS.ProcessEnv): EmailSetup {
       settings: {
         to: readAddress(EMAIL_TO_ENV, to),
         from: from === undefined ? to : readAddress(EMAIL_FROM_ENV, from),
-        events: readEvents(events),
-        afterMs: readAfter(after),
+        events: readEvents(EMAIL_EVENTS_ENV, events),
+        afterMs: readAfter(EMAIL_AFTER_ENV, after),
         server: readServer(url),
       },
     };

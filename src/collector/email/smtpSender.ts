@@ -2,11 +2,9 @@
 // is loaded by `createSmtpSender`, and only when email has been set up.
 import type { SMTPTransportOptions } from "nodemailer";
 
+import type { SendOutcome } from "../outbound/outboundChannel.ts";
 import type { EmailContent } from "./emailMessage.ts";
 import type { EmailSettings } from "./emailSettings.ts";
-
-/** How one email went: sent, or not sent, with a short reason in plain words. */
-export type SendOutcome = { sent: true } | { sent: false; reason: string };
 
 /**
  * The one seam between the collector and a mail server. `send` never rejects:

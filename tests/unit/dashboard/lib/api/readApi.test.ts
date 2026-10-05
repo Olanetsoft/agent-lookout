@@ -7,6 +7,7 @@ import {
   readSession,
   readSnapshot,
   readSource,
+  readWebhookStatus,
 } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -429,5 +430,66 @@ test("an email status that cannot be read never claims that emails are going out
     at: T,
     sent: false,
     reason: "the email could not be sent",
+  });
+});
+
+test("the webhook status is read as it was sent, on and off", () => {
+  const on = {
+    on: true,
+    host: "hooks.example.com",
+    events: ["needs-you", "finished"],
+    afterMs: 60_000,
+    problem: null,
+    last: { at: T, sent: false, reason: "the address refused the post (status 403)" },
+    limitedUntil: T + 3_600_000,
+  };
+  expect(readWebhookStatus(JSON.parse(JSON.stringify(on)))).toEqual(on);
+
+  const off = {
+    on: false,
+    host: null,
+    events: null,
+    afterMs: null,
+    problem:
+      "AGENT_LOOKOUT_WEBHOOK_AFTER must be a whole number of seconds from 0 to 86400, such as 60.",
+    last: null,
+    limitedUntil: null,
+  };
+  expect(readWebhookStatus(off)).toEqual(off);
+});
+
+test("a webhook status that cannot be read never claims that posts are going out, and never shows more than a host", () => {
+  expect(readWebhookStatus(null)).toBeNull();
+  expect(readWebhookStatus({})).toBeNull();
+  const events = ["needs-you"];
+  expect(readWebhookStatus({ on: true, events, afterMs: 0 })?.on).toBe(false);
+  expect(readWebhookStatus({ on: true, host: "hooks.example.com", afterMs: 0 })?.on).toBe(false);
+  expect(readWebhookStatus({ on: true, host: "hooks.example.com", events })?.on).toBe(false);
+  // A host with a path, a scheme or a token after it is not a host.
+  for (const host of [
+    "hooks.example.com/services/T0000/s3cret",
+    "https://hooks.example.com",
+    "hooks.example.com?token=s3cret",
+    "name@hooks.example.com",
+  ]) {
+    const read = readWebhookStatus({ on: true, host, events, afterMs: 0 });
+    expect(read?.on).toBe(false);
+    expect(JSON.stringify(read)).not.toContain("s3cret");
+  }
+  expect(readWebhookStatus({ on: true, host: "127.0.0.1", events, afterMs: 0 })?.host).toBe(
+    "127.0.0.1",
+  );
+  // Read by the rule the collector takes an address by, so a host it posts to is shown as on.
+  for (const host of ["relay_one.example.test", "hooks.example.com."]) {
+    expect(readWebhookStatus({ on: true, host, events, afterMs: 0 })?.on, host).toBe(true);
+  }
+  for (const host of ["a*b.example.com", `${"a".repeat(250)}.com`]) {
+    expect(readWebhookStatus({ on: true, host, events, afterMs: 0 })?.on, host).toBe(false);
+  }
+  const base = { on: true, host: "hooks.example.com", events, afterMs: 0 };
+  expect(readWebhookStatus({ ...base, last: { at: T, sent: false } })?.last).toEqual({
+    at: T,
+    sent: false,
+    reason: "the post could not be sent",
   });
 });

@@ -1,14 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  clockTime,
-  MOST_NAME_LENGTH,
-  oneLine,
-  overEmail,
-  waitEmail,
-  waitedInWords,
-  type WaitFacts,
-} from "@collector/email/emailMessage";
+import { clockTime, overEmail, waitEmail, waitedInWords } from "@collector/email/emailMessage";
+import type { WaitFacts } from "@collector/outbound/outboundChannel";
+import { MOST_NAME_LENGTH, oneLine } from "@collector/outbound/outboundText";
 import type { Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 

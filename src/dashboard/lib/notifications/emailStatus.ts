@@ -1,8 +1,12 @@
 import { EMAILS_PER_HOUR, type EmailStatusResponse } from "@core/api";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { readEmailStatus } from "@dashboard/lib/api/readApi";
-import { formatClockMinutes, formatDay, startOfDay } from "@dashboard/lib/format";
+import {
+  clockAt,
+  STATUS_TIMEOUT_MS,
+  whereAndWhen,
+  type SendingWords,
+} from "@dashboard/lib/notifications/sendingWords";
 
 /**
  * Whether the app sends emails, and for which events, as Settings says it. The
@@ -10,14 +14,11 @@ import { formatClockMinutes, formatDay, startOfDay } from "@dashboard/lib/format
  * with, and nothing on the page can turn it on or off.
  */
 
-/** A read is not left waiting on a server that has stopped answering. */
-export const EMAIL_STATUS_TIMEOUT_MS = 4_000;
-
 /** Asks the app whether email is set up. Null when it did not answer, or answered with something else. */
 export async function fetchEmailStatus(): Promise<EmailStatusResponse | null> {
   try {
     const response = await apiRequest("/api/email", {
-      signal: AbortSignal.timeout(EMAIL_STATUS_TIMEOUT_MS),
+      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     return readEmailStatus(await response.json());
@@ -26,58 +27,8 @@ export async function fetchEmailStatus(): Promise<EmailStatusResponse | null> {
   }
 }
 
-/** The delay in words: "1 minute", "90 seconds", "2 hours". */
-export function delayInWords(ms: number): string {
-  const seconds = Math.round(ms / 1_000);
-  const counted = (count: number, unit: string) => `${count} ${unit}${count === 1 ? "" : "s"}`;
-  if (seconds >= 3_600 && seconds % 3_600 === 0) return counted(seconds / 3_600, "hour");
-  if (seconds >= 60 && seconds % 60 === 0) return counted(seconds / 60, "minute");
-  return counted(seconds, "second");
-}
-
-/** A time on the clock, with the day when it is not today: "14:02", or "14:02 on Oct 4". */
-function clockAt(at: number, now: number): string {
-  const time = formatClockMinutes(at);
-  return startOfDay(at) === startOfDay(now) ? time : `${time} on ${formatDay(at, now)}`;
-}
-
-/** "a, b or c". */
-function eitherOf(parts: readonly string[]): string {
-  if (parts.length <= 1) return parts.join("");
-  return `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}`;
-}
-
-/** What each event is, said of "a session": "finishes". A wait has its delay. */
-function happens(event: NoticeEvent, afterMs: number): string {
-  switch (event) {
-    case "needs-you":
-      return afterMs === 0 ? "starts waiting" : `has waited ${delayInWords(afterMs)}`;
-    case "finished":
-      return "finishes";
-    case "failed":
-      return "fails";
-    case "ended":
-      return "ends";
-  }
-}
-
-/** Where emails go and when, naming each event that sends one. */
-function whereAndWhen(to: string, events: readonly NoticeEvent[], afterMs: number): string {
-  if (events.length === 1 && events[0] === "needs-you") {
-    return afterMs === 0
-      ? `Emails go to ${to} as soon as a session waits.`
-      : `Emails go to ${to} after a wait of ${delayInWords(afterMs)}.`;
-  }
-  return `Emails go to ${to} when a session ${eitherOf(events.map((event) => happens(event, afterMs)))}.`;
-}
-
-/** What Settings says about email: one line of state, and a line under it when there is more to say. */
-export interface EmailWords {
-  state: string;
-  detail: string | null;
-}
-
-export function emailWords(status: EmailStatusResponse, now: number): EmailWords {
+/** What the Email card in Settings says. */
+export function emailWords(status: EmailStatusResponse, now: number): SendingWords {
   if (!status.on || status.to === null || status.events === null || status.afterMs === null) {
     return {
       state: "Email is off.",
@@ -88,7 +39,7 @@ export function emailWords(status: EmailStatusResponse, now: number): EmailWords
     };
   }
 
-  const state = whereAndWhen(status.to, status.events, status.afterMs);
+  const state = whereAndWhen("Emails", status.to, status.events, status.afterMs);
   const { last, limitedUntil } = status;
   if (limitedUntil !== null) {
     // Tries that failed count toward the limit, so a failure is said first:

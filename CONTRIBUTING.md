@@ -4,7 +4,7 @@ Agent Lookout has one maintainer. Bug reports, fixes and adapters for other agen
 
 ## Two rules
 
-By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
+By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, or a webhook, whose posts go only to the address they set. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
 
 No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Sample sessions, placeholder numbers and demo modes stay out of the product. Fixtures exist only under `tests/`.
 

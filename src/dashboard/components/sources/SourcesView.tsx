@@ -192,9 +192,9 @@ export function SourcesView({ state, now }: SourcesViewProps) {
             sessions in a folder that Agent Lookout reads.
           </p>
           <p>
-            Unless you set up email, Agent Lookout itself sends nothing anywhere. A command listed
-            under a source is that tool&apos;s own program, and may reach the tool&apos;s own
-            servers, as it does whenever it runs.
+            Unless you set up email or a webhook, Agent Lookout itself sends nothing anywhere. A
+            command listed under a source is that tool&apos;s own program, and may reach the
+            tool&apos;s own servers, as it does whenever it runs.
           </p>
         </div>
       </SectionCard>

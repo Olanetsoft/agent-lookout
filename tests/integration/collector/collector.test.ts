@@ -8,10 +8,18 @@ import { describe, expect, test, vi } from "vitest";
 import type { Adapter } from "@collector/adapters/adapter";
 import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
-import { HOUR_MS } from "@collector/email/emailTiming";
 import { createSmtpSender } from "@collector/email/smtpSender";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
-import { EMAILS_PER_HOUR, NOTIFICATIONS_HEADER, type EmailStatusResponse } from "@core/api";
+import { HOUR_MS } from "@collector/outbound/outboundTiming";
+import type { WebhookPost } from "@collector/webhook/webhookMessage";
+import { createHttpSender } from "@collector/webhook/webhookSender";
+import {
+  EMAILS_PER_HOUR,
+  NOTIFICATIONS_HEADER,
+  SENDS_PER_HOUR,
+  type EmailStatusResponse,
+  type WebhookStatusResponse,
+} from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { fixtureSessions, NOW } from "@tests/fixtures/codex";
 import { makeSession } from "@tests/fixtures/session";
@@ -24,6 +32,7 @@ import {
 } from "@tests/support/node/smtp";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { startWebhookServer } from "@tests/support/node/webhook";
 
 /**
  * A collector built the way every host builds it, with its default adapters,
@@ -761,5 +770,324 @@ describe("email notifications", () => {
     }
     expect(server.sendersMade()).toBe(0);
     expect(mail.connections).toBe(0);
+  });
+});
+
+describe("webhook notifications", () => {
+  /**
+   * A collector over a stand-in source, served over real HTTP, with the
+   * webhook settings in `env`. A sender it makes waits at most 300
+   * milliseconds for an answer, and every line it would print is written down.
+   */
+  async function posting(env: Record<string, string>, source = standInSource()) {
+    const { state, adapter } = source;
+    const warnings: string[] = [];
+    let sendersMade = 0;
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [adapter],
+      env,
+      notifier: fakeSystemNotifier(),
+      now: () => state.now,
+      warn: (line) => warnings.push(line),
+      createEmailSender: (settings) => createSmtpSender(settings, { timeoutMs: 300 }),
+      createWebhookSender: (settings) => {
+        sendersMade += 1;
+        return createHttpSender(settings, { version: "9.9.9-test", timeoutMs: 300 });
+      },
+    });
+    const port = await listen(createServer(collector.handler));
+
+    return {
+      collector,
+      warnings,
+      sendersMade: () => sendersMade,
+      /** Moves the clock, replaces the sessions and polls once. */
+      async poll(atOffsetMs: number, sessions: Session[]) {
+        state.now = T0 + atOffsetMs;
+        state.sessions = sessions;
+        await collector.poller.pollOnce();
+      },
+      /** Waits until every post and email handed over so far has been tried. */
+      async settled() {
+        await collector.webhook?.settled();
+        await collector.email?.settled();
+      },
+      async status() {
+        const response = await request(port, "/api/webhook");
+        expect(response.status).toBe(200);
+        return response.json<WebhookStatusResponse>();
+      },
+    };
+  }
+
+  const hookId = (n: number) =>
+    `claude-code:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const busy = (n: number, name: string) =>
+    makeSession({ id: hookId(n), name, project: name, status: "working", statusSince: null });
+  /** Waiting for permission since `atOffsetMs`, as the registry says. */
+  const asking = (n: number, name: string, atOffsetMs: number) =>
+    makeSession({
+      id: hookId(n),
+      name,
+      project: name,
+      surface: "vscode",
+      cwd: `/Users/example/code/${name}`,
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingDetail: "permission prompt",
+      statusSince: T0 + atOffsetMs,
+    });
+  const bodies = (hook: { received: { body: string }[] }) =>
+    hook.received.map((post) => JSON.parse(post.body) as WebhookPost);
+
+  test("with nothing set, nothing is posted, nothing that could post is made, and no connection is opened", async () => {
+    const server = await posting({ AGENT_LOOKOUT_NOTIFICATIONS: "on" });
+    // Every connection this process opens, to any address, while the polls run.
+    const connects = vi.spyOn(Socket.prototype, "connect");
+    try {
+      await server.poll(0, [busy(1, "checkout-flow")]);
+      await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+      await server.poll(HOUR_MS, [asking(1, "checkout-flow", 2_000)]);
+      await server.settled();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(connects).not.toHaveBeenCalled();
+    } finally {
+      connects.mockRestore();
+    }
+
+    expect(server.collector.webhook).toBeNull();
+    expect(server.sendersMade()).toBe(0);
+    expect(server.warnings).toEqual([]);
+    expect(await server.status()).toEqual({
+      on: false,
+      host: null,
+      events: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    });
+  });
+
+  test("a wait shorter than the delay posts nothing, and one that lasts it posts once, with the session's name, what happened and when", async () => {
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url("/services/T0000/B0000/s3cret-token"),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "60",
+    });
+    expect(await server.status()).toEqual({
+      on: true,
+      host: "127.0.0.1",
+      events: ["needs-you"],
+      afterMs: 60_000,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    });
+
+    await server.poll(0, [busy(1, "checkout-flow")]);
+    await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(50_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(52_000, [busy(1, "checkout-flow")]);
+    await server.settled();
+    expect(hook.connections).toBe(0);
+
+    await server.poll(70_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.poll(130_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.settled();
+    await server.poll(132_000, [asking(1, "checkout-flow", 70_000)]);
+    await server.poll(HOUR_MS, [asking(1, "checkout-flow", 70_000)]);
+    await server.settled();
+
+    expect(hook.received).toHaveLength(1);
+    expect(hook.received[0]?.path).toBe("/services/T0000/B0000/s3cret-token");
+    expect(hook.received[0]?.headers["content-type"]).toBe("application/json");
+    expect(hook.received[0]?.headers["user-agent"]).toBe("Agent Lookout/9.9.9-test");
+    expect(bodies(hook)).toEqual([
+      {
+        text: "checkout-flow is waiting for permission (1m 00s, checkout-flow, VS Code, Claude Code)",
+        event: "needs-you",
+        reason: "permission",
+        session: {
+          name: "checkout-flow",
+          agent: "Claude Code",
+          folder: "checkout-flow",
+          app: "VS Code",
+        },
+        at: new Date(T0 + 70_000).toISOString(),
+        waitedSeconds: 60,
+      },
+    ]);
+    expect(hook.received[0]?.body).not.toContain("/Users/example");
+    expect(hook.received[0]?.body).not.toContain("permission prompt");
+    expect((await server.status()).last).toEqual({ at: T0 + 130_000, sent: true });
+    // The page is told the host, and nothing of the path.
+    expect(JSON.stringify(await server.status())).not.toContain("s3cret");
+  });
+
+  test("with AGENT_LOOKOUT_WEBHOOK_EVENTS, a session that finishes is posted on the poll that sees it", async () => {
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,finished",
+    });
+    await server.poll(0, [busy(1, "billing-webhooks")]);
+    await server.poll(2_000, [
+      makeSession({
+        id: hookId(1),
+        name: "billing-webhooks",
+        project: "billing-webhooks",
+        status: "finished",
+      }),
+    ]);
+    await server.settled();
+
+    expect(bodies(hook)).toEqual([
+      {
+        text: "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)",
+        event: "finished",
+        session: {
+          name: "billing-webhooks",
+          agent: "Claude Code",
+          folder: "billing-webhooks",
+          app: "Terminal",
+        },
+        at: new Date(T0 + 2_000).toISOString(),
+      },
+    ]);
+  });
+
+  test("a redirect is not followed, and the status says so", async () => {
+    const elsewhere = await startWebhookServer();
+    const hook = await startWebhookServer({
+      behaviour: "redirect",
+      redirectTo: elsewhere.url("/stolen"),
+    });
+    const server = await posting({
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+    });
+    await server.poll(0, [busy(1, "search-indexing")]);
+    await server.poll(2_000, [asking(1, "search-indexing", 2_000)]);
+    await server.settled();
+
+    expect(hook.received).toHaveLength(1);
+    expect(elsewhere.connections).toBe(0);
+    expect((await server.status()).last).toEqual({
+      at: T0 + 2_000,
+      sent: false,
+      reason: "the address answered with a redirect, which is not followed",
+    });
+  });
+
+  test.each([
+    ["silent", "the address did not answer in time"],
+    ["fail", "the receiving service had a problem (status 500)"],
+  ] as const)(
+    "an address that is %s leaves the poll unharmed, and the status says what happened",
+    async (behaviour, reason) => {
+      const hook = await startWebhookServer({ behaviour });
+      const server = await posting({
+        AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+        AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+      });
+      await server.poll(0, [busy(1, "mobile-onboarding")]);
+
+      const started = Date.now();
+      await server.poll(2_000, [asking(1, "mobile-onboarding", 2_000)]);
+      // The poll did not wait for the address.
+      expect(Date.now() - started).toBeLessThan(250);
+      expect(server.collector.poller.getSnapshot().sessions[0]?.status).toBe("needs-you");
+
+      await server.settled();
+      expect(hook.connections).toBe(1);
+      expect((await server.status()).last).toEqual({ at: T0 + 2_000, sent: false, reason });
+
+      // The polls go on, and that wait is not tried again.
+      await server.poll(4_000, [asking(1, "mobile-onboarding", 2_000)]);
+      await server.poll(6_000, [busy(1, "mobile-onboarding")]);
+      await server.settled();
+      expect(hook.connections).toBe(1);
+      expect(server.collector.poller.getSnapshot().sessions[0]?.status).toBe("working");
+    },
+  );
+
+  test(`no more than ${SENDS_PER_HOUR} go in an hour, and the status says when the next can`, async () => {
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+    });
+    const sessions = (make: (n: number) => Session) =>
+      Array.from({ length: SENDS_PER_HOUR + 3 }, (_, index) => make(index + 1));
+
+    await server.poll(
+      0,
+      sessions((n) => busy(n, `docs-site-${n}`)),
+    );
+    await server.poll(
+      2_000,
+      sessions((n) => asking(n, `docs-site-${n}`, 2_000)),
+    );
+    await server.poll(
+      60_000,
+      sessions((n) => asking(n, `docs-site-${n}`, 2_000)),
+    );
+    await server.settled();
+
+    expect(hook.received).toHaveLength(SENDS_PER_HOUR);
+    expect((await server.status()).limitedUntil).toBe(T0 + 2_000 + HOUR_MS);
+  });
+
+  test("with email and the webhook both set, one wait sends one email and one post, each counted on its own", async () => {
+    const mail = await startSmtpServer();
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_AFTER: "0",
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+    });
+    await server.poll(0, [busy(1, "api-rate-limits")]);
+    await server.poll(2_000, [asking(1, "api-rate-limits", 2_000)]);
+    await server.settled();
+    expect((await server.status()).last).toEqual({ at: T0 + 2_000, sent: true });
+    await server.poll(4_000, [asking(1, "api-rate-limits", 2_000)]);
+    await server.settled();
+
+    expect(mail.received).toHaveLength(1);
+    expect(headerValues(mail.received[0]?.data ?? "", "Subject")).toEqual([
+      "api-rate-limits is waiting for permission",
+    ]);
+    expect(bodies(hook).map((post) => post.text)).toEqual([
+      "api-rate-limits is waiting for permission (0s, api-rate-limits, VS Code, Claude Code)",
+    ]);
+  });
+
+  test("a setting that is wrong turns the webhook off, with one line that names it and never the address", async () => {
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_WEBHOOK_URL: hook
+        .url("/services/T0000/s3cret-token")
+        .replace("127.0.0.1", "example.test"),
+    });
+    await server.poll(0, [busy(1, "infra-terraform")]);
+    await server.poll(2_000, [asking(1, "infra-terraform", 2_000)]);
+    await server.poll(HOUR_MS, [asking(1, "infra-terraform", 2_000)]);
+
+    expect(server.warnings).toEqual([
+      "Webhook notifications are off: AGENT_LOOKOUT_WEBHOOK_URL must begin with https://, or with http:// for an address on this computer, 127.0.0.1 or localhost.",
+    ]);
+    const status = await server.status();
+    expect(status).toMatchObject({ on: false, host: null });
+    const said = `${server.warnings.join("\n")}${JSON.stringify(status)}`;
+    for (const secret of ["s3cret", "T0000", "example.test", "/services"]) {
+      expect(said).not.toContain(secret);
+    }
+    expect(server.collector.webhook).toBeNull();
+    expect(server.sendersMade()).toBe(0);
+    expect(hook.connections).toBe(0);
   });
 });

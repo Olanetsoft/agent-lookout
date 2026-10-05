@@ -8,7 +8,12 @@ import { createCollector } from "@collector/collector";
 import { createEventStore } from "@collector/eventStore";
 import { createApiHandler, MAX_HISTORY_WINDOW_MS, type ApiAnswer } from "@collector/handler";
 import { createHistoryStore } from "@collector/historyStore";
-import { NOTIFICATIONS_HEADER, type EventsResponse, type HistoryResponse } from "@core/api";
+import {
+  NOTIFICATIONS_HEADER,
+  type EventsResponse,
+  type HistoryResponse,
+  type WebhookStatusResponse,
+} from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
@@ -308,6 +313,45 @@ describe("routes", () => {
     });
     const bare = await listen(createServer(handler));
     expect((await request(bare, "/api/email")).json()).toEqual(off);
+  });
+
+  test("/api/webhook says whether a webhook is set up, which with nothing set it is not, and can only be read", async () => {
+    const { port } = await serve();
+    const off = {
+      on: false,
+      host: null,
+      events: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    };
+    expect((await request(port, "/api/webhook")).json()).toEqual(off);
+    expect((await request(port, "/api/webhook", { method: "POST", body: "{}" })).status).toBe(405);
+    expect(
+      (await request(port, "/api/webhook", { headers: { Host: "evil.example" } })).status,
+    ).toBe(403);
+
+    // A handler given what answers it says what that says.
+    const on: WebhookStatusResponse = {
+      ...off,
+      on: true,
+      host: "hooks.example.com",
+      events: ["needs-you"],
+      afterMs: 0,
+    };
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+      webhook: () => on,
+    });
+    const answering = await listen(createServer(handler));
+    expect((await request(answering, "/api/webhook")).json()).toEqual(on);
   });
 });
 

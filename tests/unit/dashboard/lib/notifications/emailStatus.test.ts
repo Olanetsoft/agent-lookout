@@ -2,11 +2,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { NOTIFICATIONS_HEADER, type EmailStatusResponse } from "@core/api";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
-import {
-  delayInWords,
-  emailWords,
-  fetchEmailStatus,
-} from "@dashboard/lib/notifications/emailStatus";
+import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 
 afterEach(() => {
   setApiHost();
@@ -112,17 +108,6 @@ test("while the limit holds and the last email failed, the failure is said, so f
   expect(emailWords({ ...ON, last, limitedUntil: until }, NOW).detail).toBe(
     "The last email could not be sent: the mail server did not accept the user name and password. No more will be tried until 15:02, as 20 were tried in the last hour.",
   );
-});
-
-test("a delay is said in the largest whole unit", () => {
-  expect(delayInWords(0)).toBe("0 seconds");
-  expect(delayInWords(1_000)).toBe("1 second");
-  expect(delayInWords(5_000)).toBe("5 seconds");
-  expect(delayInWords(60_000)).toBe("1 minute");
-  expect(delayInWords(90_000)).toBe("90 seconds");
-  expect(delayInWords(300_000)).toBe("5 minutes");
-  expect(delayInWords(3_600_000)).toBe("1 hour");
-  expect(delayInWords(5_400_000)).toBe("90 minutes");
 });
 
 test("the status is read through the app's own seam, with what every request carries", async () => {

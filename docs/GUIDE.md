@@ -95,7 +95,7 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 ### Settings
 
-Settings has four cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, which is set up when you start it, not here. This copy shows the version you are running.
+Settings has five cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running.
 
 #### Notifications
 
@@ -226,6 +226,56 @@ An email's subject names the session and what happened: "checkout-flow is waitin
 If `AGENT_LOOKOUT_EMAIL_EVENTS` holds anything other than those four names, email stays off, and the card and the terminal name the setting, as for any other setting that cannot be read.
 
 To turn email off, start Agent Lookout again without `AGENT_LOOKOUT_EMAIL_TO`. If you keep the settings in a file, start it without reading the file in. If you read the file in without the brackets, run `unset AGENT_LOOKOUT_EMAIL_TO AGENT_LOOKOUT_SMTP_URL` or open a new terminal first.
+
+#### Webhook
+
+Agent Lookout can also post to a webhook: an address a chat service such as Slack gives you, so that a program can post messages to one channel. It posts for the same events email can, one short message for each. A Slack incoming webhook takes the posts as they are, with nothing more to set up. It is off unless you set it up. With it off, which is the default, Agent Lookout posts nothing and opens no connection for it.
+
+It is set up with a setting in the environment when you start Agent Lookout, not on this page, and turned off by leaving that setting out. The button for notifications does not turn posts on or off.
+
+| Setting                     | What it holds                                          |
+| --------------------------- | ------------------------------------------------------ |
+| `AGENT_LOOKOUT_WEBHOOK_URL` | The one address posts go to, beginning with `https://` |
+
+Two more can be left out. `AGENT_LOOKOUT_WEBHOOK_EVENTS` is what is posted, written as for email: one or more of `needs-you`, `finished`, `failed` and `ended`, separated by commas, and `needs-you` unless you set it. `AGENT_LOOKOUT_WEBHOOK_AFTER` is how many seconds a wait lasts before it is posted: 60 unless you set it, and 0 for at once. A finish, a failure or an end is posted at once. These are separate from the email settings, so email and the webhook can send different events.
+
+The address is a secret. Anyone who has it can post to the channel, so keep it out of screenshots, issues and shared files. Agent Lookout never shows it: Settings shows its host alone, and that in full, so with a service that puts its secret in the host, keep Settings out of screenshots too.
+
+For Slack:
+
+1. Open your Slack apps at <https://api.slack.com/apps> and choose Create New App, then From scratch. Name it, for example Agent Lookout, and choose your workspace. Some workspaces need an admin to approve a new app.
+2. Under Features, choose Incoming Webhooks and switch on Activate Incoming Webhooks.
+3. Choose Add New Webhook, pick the channel the posts should go to and allow it.
+4. Copy the Webhook URL it shows. It begins `https://hooks.slack.com/services/`.
+5. Keep it in a file that only you can read, so it stays out of your shell's history:
+
+   ```sh
+   touch ~/.agent-lookout-webhook && chmod 600 ~/.agent-lookout-webhook
+   ```
+
+   In an editor, put this line in that file, with the address you copied:
+
+   ```sh
+   export AGENT_LOOKOUT_WEBHOOK_URL='https://hooks.slack.com/services/YOUR/WEBHOOK/ADDRESS'
+   ```
+
+6. Start Agent Lookout with it, brackets included:
+
+   ```sh
+   (source ~/.agent-lookout-webhook && npm start)
+   ```
+
+   For the development server, use `npm run dev` in place of `npm start`, inside the same brackets. To use email as well, read both files in: `(source ~/.agent-lookout-email && source ~/.agent-lookout-webhook && npm start)`.
+
+For Discord, create a webhook in the channel's settings, under Integrations, copy its address and add `/slack` to the end of it: Discord then takes the same posts.
+
+To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or why it did not, such as "The last post failed: the address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npm start)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
+
+A post shows in the channel as one line, such as "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)" or "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)": the session's name, what happened, and in brackets how long it has waited, its project folder's name, its app and its agent. The post also carries the same in fields of its own, for a program to read. It holds no path and no prompt, and a link only where a session's name has a web address written out in it. [PRIVACY.md](../PRIVACY.md#webhook) lists all it holds.
+
+Posts follow the rules emails do. One goes for a wait that has lasted the delay and is still open, and one at most for each wait. A finish, a failure or an end goes as soon as it is seen. Nothing is sent for what was already true when Agent Lookout starts. At most 20 posts are tried in any hour, counted apart from emails. A post that could not be sent is not tried again, and a redirect is never followed.
+
+To turn the webhook off, start Agent Lookout again without `AGENT_LOOKOUT_WEBHOOK_URL`: start it without reading the file in, or, if you read the file in without the brackets, run `unset AGENT_LOOKOUT_WEBHOOK_URL` or open a new terminal first. To make the address useless to anyone who has it, remove the webhook in Slack's app settings, or in the Discord channel's.
 
 ## Jump
 
@@ -455,7 +505,7 @@ Agent Lookout only reads the folder. It never makes it, and never writes, rename
 
 It cannot stop, resume or answer a session. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
 
-A notification or an email is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
+A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 
 A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
@@ -463,7 +513,7 @@ A Claude Code background job is shown as finished or failed, and its row stays f
 
 Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
-Email is the one way it can tell you of a session away from this computer, and it sends to one address. There are no webhooks or chat messages yet. An email that could not be sent is not tried again. The events emailed are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS`, and not in Settings.
+Email and a webhook are the two ways it can tell you of a session away from this computer, and each sends to one address. A post is one line of text, with no buttons, and nothing can be answered from it. An email or a post that could not be sent is not tried again. The events are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_EVENTS`, and not in Settings.
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
@@ -479,27 +529,30 @@ Put a setting in front of the command that starts Agent Lookout:
 AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 ```
 
-| Setting                       | What it does                                                                                                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_LOOKOUT_PORT`          | The port `npm start` uses. The default is 4777.                                                                                                                           |
-| `AGENT_LOOKOUT_HOST`          | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                      |
-| `AGENT_LOOKOUT_CLAUDE_BIN`    | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                |
-| `AGENT_LOOKOUT_CLAUDE_HOME`   | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                         |
-| `AGENT_LOOKOUT_CLAUDE_FEED`   | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.        |
-| `AGENT_LOOKOUT_CODEX_HOME`    | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                          |
-| `CODEX_HOME`                  | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                          |
-| `AGENT_LOOKOUT_STATUS_DIR`    | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                             |
-| `AGENT_LOOKOUT_NOTIFICATIONS` | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. |
-| `AGENT_LOOKOUT_TMUX`          | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                               |
-| `AGENT_LOOKOUT_EMAIL_TO`      | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                         |
-| `AGENT_LOOKOUT_SMTP_URL`      | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                  |
-| `AGENT_LOOKOUT_EMAIL_FROM`    | The address emails come from. The default is the address they go to.                                                                                                      |
-| `AGENT_LOOKOUT_EMAIL_AFTER`   | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                                   |
-| `AGENT_LOOKOUT_EMAIL_EVENTS`  | What is emailed: `needs-you`, `finished`, `failed` and `ended`, any of them, separated by commas. The default is `needs-you`.                                             |
+| Setting                        | What it does                                                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_LOOKOUT_PORT`           | The port `npm start` uses. The default is 4777.                                                                                                                           |
+| `AGENT_LOOKOUT_HOST`           | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                      |
+| `AGENT_LOOKOUT_CLAUDE_BIN`     | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                |
+| `AGENT_LOOKOUT_CLAUDE_HOME`    | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                         |
+| `AGENT_LOOKOUT_CLAUDE_FEED`    | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.        |
+| `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                          |
+| `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                          |
+| `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                             |
+| `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. |
+| `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                               |
+| `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                         |
+| `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                  |
+| `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                      |
+| `AGENT_LOOKOUT_EMAIL_AFTER`    | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                                   |
+| `AGENT_LOOKOUT_EMAIL_EVENTS`   | What is emailed: `needs-you`, `finished`, `failed` and `ended`, any of them, separated by commas. The default is `needs-you`.                                             |
+| `AGENT_LOOKOUT_WEBHOOK_URL`    | The one address [webhook](#webhook) posts go to, beginning with `https://`. It turns the webhook on.                                                                      |
+| `AGENT_LOOKOUT_WEBHOOK_EVENTS` | What is posted, as for `AGENT_LOOKOUT_EMAIL_EVENTS`. The default is `needs-you`.                                                                                          |
+| `AGENT_LOOKOUT_WEBHOOK_AFTER`  | How many seconds a wait lasts before it is posted, from 0 to 86400. The default is 60.                                                                                    |
 
 To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
 
-The Claude Code, Codex, status file, notification, tmux and email settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, status file, notification, tmux, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -572,6 +625,13 @@ Use port 4777 if you started it with `npm start`. It prints the sessions it foun
 2. If it says the last email could not be sent, the reason says what went wrong: the user name and password, a server that did not answer, or one that refused the connection or the email. Check the server's name and port, that the address begins `smtps://` or `smtp://` as your provider says, and that the password is an app password, with its special characters written as described under [Email](#email). A server that refused the email often refuses the sender: if emails go to an address other than the one you sign in with, set `AGENT_LOOKOUT_EMAIL_FROM` to the address you sign in with.
 3. If it says where emails go and nothing more, no wait has lasted the delay since Agent Lookout started. A session that was already waiting when it started sends nothing.
 4. If it says when the last email was sent, the mail server took it. Look in the spam folder of the address the card shows.
+
+### No post arrives
+
+1. Open Settings. If the Webhook card says "The webhook is off.", it names the setting to correct, or says to set `AGENT_LOOKOUT_WEBHOOK_URL`. Set it in the terminal you start Agent Lookout from, then start it again.
+2. If it says the last post failed, the reason says what went wrong. An address that refused the post most often was copied wrong, or its webhook was removed or its channel archived: copy the address again from the service's settings. A redirect means the address is not the webhook's own. An address that did not answer in time, could not be found or had nothing answering is a problem with the network or with the service. A secure connection that failed most often means something on the network, such as a company proxy, stands between this computer and the service, or that this computer's clock is wrong. A connection that failed otherwise was cut off on the way: try again on another network.
+3. If it says where posts go and nothing more, no wait has lasted the delay since Agent Lookout started. A session that was already waiting when it started sends nothing.
+4. If it says when the last post went, the service took it. Check the channel the webhook was made for, and that the app is still allowed to post there.
 
 ### The page says Agent Lookout has stopped updating
 

@@ -9,6 +9,7 @@ import {
   type HealthResponse,
   type HistoryResponse,
   type NotificationsSaid,
+  type WebhookStatusResponse,
 } from "../core/api.ts";
 import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
@@ -17,6 +18,7 @@ import type { EventStore } from "./eventStore.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import type { ServerNotifications } from "./notifications/serverNotifications.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
+import { webhookOffStatus } from "./webhook/webhookNotifications.ts";
 
 /**
  * Answers `/api/*`. The signature is Node's own, so the Vite dev server, the
@@ -49,6 +51,12 @@ export interface ApiHandlerOptions {
    * the delay and how the last email went. Left out, it answers that email is off.
    */
   email?: () => EmailStatusResponse;
+  /**
+   * What `GET /api/webhook` answers: whether a webhook is set up, its host and
+   * never the rest of its address, the delay and how the last post went. Left
+   * out, it answers that the webhook is off.
+   */
+  webhook?: () => WebhookStatusResponse;
   /**
    * Answers `POST /api/jump`, with checks of its own on top of the ones every
    * request passes: `createJumpRoute` in `jumpRoute.ts`. Left out, there is no
@@ -157,7 +165,7 @@ function numberParam(value: string | null): number | undefined | "invalid" {
 }
 
 export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
-  const { version, poller, events, history, notifications, email, jump } = options;
+  const { version, poller, events, history, notifications, email, webhook, jump } = options;
   const now = options.now ?? Date.now;
 
   function route(req: IncomingMessage, res: ServerResponse): void {
@@ -223,6 +231,14 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
       }
       case "/api/email": {
         send(res, 200, (email ? email() : emailOffStatus(null)) satisfies EmailStatusResponse);
+        return;
+      }
+      case "/api/webhook": {
+        send(
+          res,
+          200,
+          (webhook ? webhook() : webhookOffStatus(null)) satisfies WebhookStatusResponse,
+        );
         return;
       }
       case "/api/history": {

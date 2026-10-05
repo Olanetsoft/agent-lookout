@@ -22,6 +22,13 @@ import { createSystemNotifier, type SystemNotifier } from "./notifications/syste
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
 import { createPaneFinder } from "./tmux/paneFinder.ts";
 import { createTmuxRunner, type RunTmux } from "./tmux/program.ts";
+import {
+  createWebhookNotifications,
+  webhookOffStatus,
+  type WebhookNotifications,
+} from "./webhook/webhookNotifications.ts";
+import { createHttpSender, type CreateWebhookSender } from "./webhook/webhookSender.ts";
+import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.ts";
 
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
@@ -31,8 +38,8 @@ export interface CollectorOptions {
   /**
    * Where the default adapters read their settings, such as
    * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS` and
-   * the email settings are read. Defaults to `process.env`.
+   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
+   * email settings and the webhook settings are read. Defaults to `process.env`.
    */
   env?: NodeJS.ProcessEnv;
   /**
@@ -54,8 +61,15 @@ export interface CollectorOptions {
    */
   createEmailSender?: CreateEmailSender;
   /**
-   * Where the one line goes that says email is off because a setting is wrong.
-   * Defaults to the console's errors.
+   * Makes what posts to the webhook, once its address has been set in the
+   * environment. Defaults to posting there over HTTPS. With no address set it
+   * is never called. Tests pass one with a short timeout, aimed at a server of
+   * their own on 127.0.0.1.
+   */
+  createWebhookSender?: CreateWebhookSender;
+  /**
+   * Where the one line goes that says email or the webhook is off because a
+   * setting is wrong. Defaults to the console's errors.
    */
   warn?: (line: string) => void;
   intervalMs?: number;
@@ -72,14 +86,16 @@ export interface Collector {
   poller: Poller;
   /** The email notifications, or null while email is not set up. */
   email: EmailNotifications | null;
+  /** The webhook notifications, or null while no webhook address is set. */
+  webhook: WebhookNotifications | null;
 }
 
 /**
  * The collector in one piece: adapters, poller, stores, its own notifications,
- * the email notifications when they are set up, what finds and selects a tmux
- * pane, what reads each session's git branch, and the request handler. Every
- * host builds it the same way: the dev server, the standalone server, and later
- * a desktop app.
+ * the email and webhook notifications when they are set up, what finds and
+ * selects a tmux pane, what reads each session's git branch, and the request
+ * handler. Every host builds it the same way: the dev server, the standalone
+ * server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -98,9 +114,10 @@ export function createCollector(options: CollectorOptions): Collector {
   });
   // Read once, here. With nothing set, nothing that could send an email is
   // made, and the mail library is never loaded.
+  const warn = options.warn ?? console.error;
   const emailSetup = readEmailSetup(env);
   if (!emailSetup.on && emailSetup.problem !== null) {
-    (options.warn ?? console.error)(emailProblemLine(emailSetup.problem));
+    warn(emailProblemLine(emailSetup.problem));
   }
   const email = emailSetup.on
     ? createEmailNotifications({
@@ -111,6 +128,23 @@ export function createCollector(options: CollectorOptions): Collector {
     : null;
   const emailOff = emailOffStatus(emailSetup.on ? null : emailSetup.problem);
   const branches = createBranchFinder({ now });
+  // The same for the webhook: with no address set, nothing that could post is
+  // made, and Node's HTTPS client is never loaded.
+  const webhookSetup = readWebhookSetup(env);
+  if (!webhookSetup.on && webhookSetup.problem !== null) {
+    warn(webhookProblemLine(webhookSetup.problem));
+  }
+  const createWebhookSender: CreateWebhookSender =
+    options.createWebhookSender ??
+    ((settings) => createHttpSender(settings, { version: options.version }));
+  const webhook = webhookSetup.on
+    ? createWebhookNotifications({
+        settings: webhookSetup.settings,
+        sender: createWebhookSender(webhookSetup.settings),
+        now,
+      })
+    : null;
+  const webhookOff = webhookOffStatus(webhookSetup.on ? null : webhookSetup.problem);
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
     adapters: options.adapters ?? [
@@ -128,6 +162,7 @@ export function createCollector(options: CollectorOptions): Collector {
     // not, so a wait that begins with no page open is still seen here.
     onSnapshot: (snapshot) => {
       email?.handle(snapshot);
+      webhook?.handle(snapshot);
       notifications.handle(snapshot);
     },
   });
@@ -138,6 +173,7 @@ export function createCollector(options: CollectorOptions): Collector {
     history,
     notifications,
     email: () => email?.status() ?? emailOff,
+    webhook: () => webhook?.status() ?? webhookOff,
     jump: createJumpRoute({ poller, panes, run: tmux, now }),
     now,
   });
@@ -148,5 +184,6 @@ export function createCollector(options: CollectorOptions): Collector {
     handler,
     poller,
     email,
+    webhook,
   };
 }

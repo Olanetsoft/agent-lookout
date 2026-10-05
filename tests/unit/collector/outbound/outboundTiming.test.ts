@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  emailTiming,
+  sendTiming as emailTiming,
   HOUR_MS,
   limitLiftsAt,
   sendsInLastHour,
   waitBegan,
-} from "@collector/email/emailTiming";
+} from "@collector/outbound/outboundTiming";
 import { EMAILS_PER_HOUR } from "@core/api";
 
 const T0 = 1_700_000_000_000;

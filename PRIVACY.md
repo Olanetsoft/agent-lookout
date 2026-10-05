@@ -1,6 +1,6 @@
 # Privacy
 
-Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. Webhook posts are off unless you set an address for them. Once you do, it sends the same notices as short JSON posts to that one address, such as a Slack channel's incoming webhook, and nowhere else. [Webhook](#webhook) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
 
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
@@ -104,7 +104,7 @@ With notifications on, and no dashboard page open to show one, Agent Lookout sho
 
 ### Settings
 
-It reads fifteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, and the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads eighteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`, and the three webhook settings, `AGENT_LOOKOUT_WEBHOOK_URL`, `AGENT_LOOKOUT_WEBHOOK_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_AFTER`. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept, and [Webhook](#webhook) how the webhook's are. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
@@ -119,7 +119,7 @@ It runs no program but the `claude` binary, `ps`, `tmux` and, to show a notifica
 
 ## Network
 
-With email off, which is the default, the only network traffic Agent Lookout's own code makes is between its own server and the dashboard in your browser, or the `agent-lookout status` command, on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
+With email and the webhook off, which is the default, the only network traffic Agent Lookout's own code makes is between its own server and the dashboard in your browser, or the `agent-lookout status` command, on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. With a webhook address set, it also connects to that address, once for each post, as [Webhook](#webhook) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
 
 The `claude agents` command is Claude Code's own program, and it may contact Anthropic the way it does for anyone who runs it. Agent Lookout sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` for each run, to ask Claude Code to skip its update check, usage reporting and error reporting, and runs the command seldom. Anything else that program does is governed by Claude Code's settings and terms. To stop Agent Lookout running it, set `AGENT_LOOKOUT_CLAUDE_FEED=off`. Sessions then come from the registry alone, and background jobs whose process has ended are not listed.
 
@@ -213,11 +213,66 @@ Through `GET /api/email`, the dashboard learns whether email is on, the address 
 
 Once an email has been handed to the mail server, Agent Lookout has no hold on it. The mail server you named and the mailbox it is delivered to keep the email, and whatever they record about it, for as long as their own settings and terms say. Agent Lookout cannot recall or delete it.
 
+## Webhook
+
+Webhook posts are off until you set them up, and they can be set up only in the environment Agent Lookout starts with: `AGENT_LOOKOUT_WEBHOOK_URL`, the one address posts go to. `AGENT_LOOKOUT_WEBHOOK_EVENTS`, what is posted, and `AGENT_LOOKOUT_WEBHOOK_AFTER`, how long a wait lasts before it is posted, can be left out. While the address is unset, nothing is posted and no connection is opened. The same holds when any of the three is set to something Agent Lookout cannot read. The [guide](docs/GUIDE.md#webhook) says how to set it up and how to turn it off.
+
+### What a post holds
+
+A post is one request with a body of JSON, such as:
+
+```json
+{
+  "text": "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)",
+  "event": "needs-you",
+  "reason": "permission",
+  "session": {
+    "name": "checkout-flow",
+    "agent": "Claude Code",
+    "folder": "storefront",
+    "app": "VS Code"
+  },
+  "at": "2026-10-05T14:01:05.000Z",
+  "waitedSeconds": 252
+}
+```
+
+It holds:
+
+- `text`: one line for a person to read, which is the line Slack shows. It is the session's name and what happened, in the words the dashboard uses, then in brackets how long the session has waited, for a wait, the name of its project folder, its app and its agent, leaving out any that is not known.
+- `event`: what happened, `needs-you`, `finished`, `failed` or `ended`.
+- `reason`, for a wait only: `permission`, `question` or `other`.
+- `session`: the session's name, its agent, such as Claude Code or the agent a status file names, the name of its project folder, which is the last part of its path and never the path, and the app it runs in, such as VS Code. Any of the last three is `null` when it is not known.
+- `at`: when it happened, as a time in UTC: when the wait began, or when Agent Lookout saw the session finish, fail or end.
+- `waitedSeconds`, for a wait only: how long it had waited when it was posted.
+
+It holds no folder path, no prompt, none of Claude Code's own wording for the wait, no session ID or process ID, and nothing about this computer. Its headers are `Content-Type: application/json`, `Content-Length`, `User-Agent: Agent Lookout/` followed by the version, `Host` and `Connection: close`. It carries no cookie and no other header.
+
+A session's name, its folder's name and its agent's are each cut to 80 characters, and anything in them that would end a line becomes a space. In `text`, `<`, `>` and `&` are written as `&lt;`, `&gt;` and `&amp;`, which Slack shows as the characters themselves, and each `@` is followed by a space of no width, so nothing in a name can mention someone, ping a channel or make a link that shows other words than its address. The JSON is written whole by Node's own writer, so nothing in a name can add a field. Slack does show a web address written out in a name as a link to that address.
+
+### Where it goes, and how
+
+Each post goes to the one address in `AGENT_LOOKOUT_WEBHOOK_URL`, and to no other. For each post Agent Lookout looks up the address's host, opens a connection to it, sends the post, reads the status of the answer and closes the connection. The rest of the answer is read and dropped. A redirect is not followed, and a post is never tried again. The address must begin `https://`, so the connection is encrypted with TLS, and the certificate is always checked. Only to an address on this computer, at `127.0.0.1` or `localhost`, may it begin `http://`, since nothing leaves the machine on the way to it. The service at the address sees the network address the connection comes from, as any server you connect to does.
+
+### When
+
+`AGENT_LOOKOUT_WEBHOOK_EVENTS` names the events that are posted, from `needs-you`, `finished`, `failed` and `ended`, and is `needs-you` alone unless you set it. A post goes for a wait that begins after Agent Lookout started, once it has lasted the delay, which is one minute unless `AGENT_LOOKOUT_WEBHOOK_AFTER` says otherwise, if the session is still waiting then. A wait answered before then sends nothing, and so does a session that was already waiting when Agent Lookout started. Each wait sends one post at most. With the others set, a post goes as soon as a session is seen to finish, fail or end, and none for a session that had already finished or failed when Agent Lookout started. A post that could not be sent is not tried again. At most 20 posts are tried in any hour, whatever they are for, counted apart from emails. Past that, none goes until the hour has passed. These are the rules emails follow, and the two share one copy of them.
+
+The button and the switches for notifications in Settings do not turn posts on or off, or choose what is posted. To stop them, start Agent Lookout again without `AGENT_LOOKOUT_WEBHOOK_URL`.
+
+### What is kept
+
+Anyone who has the address can post to the channel behind it, so it is kept like a password. It lives in the environment of the Agent Lookout process, as every setting on this page does, and programs running as your user on this machine can read a process's environment. Agent Lookout never writes it to a file, never sends it to the dashboard, and never prints it. When a webhook setting cannot be read, it prints one line that names the setting and never its value. A setting typed in front of the command can be kept by your shell in its history file. The guide shows how to keep the address out of it.
+
+Through `GET /api/webhook`, the dashboard learns whether the webhook is on, the host the posts go to and nothing else of the address, such as `hooks.slack.com`, the events that are posted, the delay, and when the last post was tried, with whether it was sent or a short reason why not. That, and the times of the posts of the last hour, are held in memory and are gone when Agent Lookout stops. Settings shows the host in full, so with a service that puts its secret in the host, keep Settings out of screenshots too.
+
+Once a post has been sent, Agent Lookout has no hold on it. The service at the address, such as Slack or Discord, keeps the message, and whatever it records about it, for as long as its own settings and terms say, and shows it to everyone who can read that channel. Agent Lookout cannot recall or delete it.
+
 ## Storage
 
 Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes it last found, the branches it last read, and what the dashboard pages last said about notifications.
 
-With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says.
+With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says. With a webhook set up, each post holds the same, and the service it went to keeps it, as [Webhook](#webhook) says.
 
 The tools that run it write files of their own. None of these holds session data.
 
@@ -232,7 +287,7 @@ The dashboard saves three values in your browser's local storage. Your theme cho
 
 Session names, folder paths and branch names can show what you are working on. Check a screenshot before you share it.
 
-With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made for a wait stays there until the session stops waiting or you clear it, and one that says Finished, Failed or Ended stays until you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it.
+With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made for a wait stays there until the session stops waiting or you clear it, and one that says Finished, Failed or Ended stays until you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it. A webhook post shows them to everyone who can read the channel it goes to, and in the notifications their apps show for it.
 
 ## Changes
 

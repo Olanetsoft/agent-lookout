@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { EmailStatusResponse } from "@core/api";
+import type { EmailStatusResponse, WebhookStatusResponse } from "@core/api";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -35,6 +35,17 @@ const EMAIL_OFF: EmailStatusResponse = {
   limitedUntil: null,
 };
 let email: EmailStatusResponse | null;
+/** What the app says about the webhook, as `/api/webhook` would. Off unless a test says otherwise. */
+const WEBHOOK_OFF: WebhookStatusResponse = {
+  on: false,
+  host: null,
+  events: null,
+  afterMs: null,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+let webhook: WebhookStatusResponse | null;
 /** The paths the view asked the app for. */
 let asked: string[];
 
@@ -42,11 +53,15 @@ beforeEach(() => {
   host = fakeNotificationHost();
   setNotificationHost(host);
   email = EMAIL_OFF;
+  webhook = WEBHOOK_OFF;
   asked = [];
   setApiHost(async (path) => {
     asked.push(path);
-    if (email === null) throw new TypeError("Failed to fetch");
-    return new Response(JSON.stringify(email), { headers: { "Content-Type": "application/json" } });
+    const answer = path === "/api/webhook" ? webhook : email;
+    if (answer === null) throw new TypeError("Failed to fetch");
+    return new Response(JSON.stringify(answer), {
+      headers: { "Content-Type": "application/json" },
+    });
   });
 });
 
@@ -132,7 +147,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(5);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -153,6 +168,13 @@ const notifications = (screen: Awaited<ReturnType<typeof render>>) =>
 const emailState = (screen: Awaited<ReturnType<typeof render>>) =>
   screen
     .getByRole("region", { name: "Email" })
+    .element()
+    .querySelector('[data-part="state"]') as HTMLElement;
+
+/** The line that says whether the webhook is set up. */
+const webhookState = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen
+    .getByRole("region", { name: "Webhook" })
     .element()
     .querySelector('[data-part="state"]') as HTMLElement;
 
@@ -662,17 +684,19 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications and email share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications, email and the webhook share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
   await expect.element(emailState(screen)).toHaveTextContent("Email is off.");
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
-  const [theme, notes, mail, copy] = [
+  await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
+  const [theme, notes, mail, hook, copy] = [
     box("Theme"),
     box("Notifications"),
     box("Email"),
+    box("Webhook"),
     box("This copy"),
   ];
 
@@ -682,12 +706,15 @@ test("the theme, notifications and email share the wide column, with the facts b
   expect(mail.left).toBe(theme.left);
   expect(mail.width).toBe(theme.width);
   expect(mail.top - notes.bottom).toBe(16);
+  expect(hook.left).toBe(theme.left);
+  expect(hook.width).toBe(theme.width);
+  expect(hook.top - mail.bottom).toBe(16);
   expect(copy.top).toBe(theme.top);
   expect(copy.left - theme.right).toBe(16);
 });
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, Email, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, Email, Webhook, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -701,6 +728,7 @@ test.each([1000, 375])(
       "Theme",
       "Notifications",
       "Email",
+      "Webhook",
       "This copy",
     ]);
     const boxes = cards.map((card) => card.getBoundingClientRect());
@@ -797,7 +825,7 @@ test("with nothing set, the Email card says email is off and which two settings 
   ]);
   // Nothing on the page turns it on or off.
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
-  expect(asked).toEqual(["/api/email"]);
+  expect([...asked].sort()).toEqual(["/api/email", "/api/webhook"]);
   expect(emailState(screen).getAttribute("aria-live")).toBe("polite");
 });
 
@@ -893,6 +921,140 @@ test.each(["dark", "light"] as const)(
     expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
     const under = state.nextElementSibling as HTMLElement;
     expect(getComputedStyle(under).fontSize).toBe("13px");
+    expect(getComputedStyle(under).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(under.getBoundingClientRect().top - state.getBoundingClientRect().bottom).toBe(12);
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+/** The two lines of the Webhook card, once the app has answered. */
+async function webhookLines(screen: Awaited<ReturnType<typeof render>>) {
+  const card = screen.getByRole("region", { name: "Webhook" });
+  await vi.waitFor(() => expect(webhookState(screen).textContent).not.toBe(""));
+  return [...card.element().querySelectorAll(":scope > div > p")].map((line) => line.textContent);
+}
+
+const WEBHOOK_ON: WebhookStatusResponse = {
+  on: true,
+  host: "hooks.slack.com",
+  events: ["needs-you"],
+  afterMs: 60_000,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+
+/** What the facts about this copy say of the person's data. */
+const yourData = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen
+    .getByRole("region", { name: "This copy" })
+    .element()
+    .querySelector('[data-slot="fact-row"] + [data-slot="fact-row"] dd')?.textContent;
+
+test("with nothing set, the Webhook card says it is off and which setting turns it on, and only reads", async () => {
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "The webhook is off.",
+    "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
+  ]);
+  const card = screen.getByRole("region", { name: "Webhook" }).element();
+  expect([...card.querySelectorAll('[data-slot="fact"]')].map((fact) => fact.textContent)).toEqual([
+    "AGENT_LOOKOUT_WEBHOOK_URL",
+  ]);
+  expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+  expect(webhookState(screen).getAttribute("aria-live")).toBe("polite");
+  expect(yourData(screen)).toBe("Stays on this computer");
+});
+
+test("a webhook setting that is wrong is named, with what to do", async () => {
+  webhook = {
+    ...WEBHOOK_OFF,
+    problem: "AGENT_LOOKOUT_WEBHOOK_URL must not hold a user name or a password.",
+  };
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "The webhook is off.",
+    "AGENT_LOOKOUT_WEBHOOK_URL must not hold a user name or a password. Correct it and start Agent Lookout again.",
+  ]);
+});
+
+test("with the webhook on, it names the host and when, and the facts say posts leave this computer", async () => {
+  webhook = WEBHOOK_ON;
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "Posts go to hooks.slack.com after a wait of 1 minute.",
+  ]);
+  expect(yourData(screen)).toBe("Leaves only in the webhook posts you set up");
+});
+
+test("with email and the webhook both on, the facts name both", async () => {
+  email = EMAIL_ON;
+  webhook = { ...WEBHOOK_ON, events: ["needs-you", "finished"], afterMs: 0 };
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "Posts go to hooks.slack.com when a session starts waiting or finishes.",
+  ]);
+  await emailLines(screen);
+  expect(yourData(screen)).toBe("Leaves only in the emails and webhook posts you set up");
+});
+
+test.each<[string, Partial<WebhookStatusResponse>, string]>([
+  ["posted", { last: { at: today(14, 2), sent: true } }, "Last posted at 14:02."],
+  [
+    "not posted",
+    {
+      last: { at: today(14, 2), sent: false, reason: "the address refused the post (status 403)" },
+    },
+    "The last post failed: the address refused the post (status 403).",
+  ],
+  [
+    "held by the hourly limit",
+    { last: { at: today(14, 2), sent: true }, limitedUntil: today(15, 2) },
+    "20 posts were tried in the last hour, the most it tries. The next can go at 15:02.",
+  ],
+  [
+    "not posted, and the hourly limit is full",
+    {
+      last: { at: today(14, 2), sent: false, reason: "the address did not answer in time" },
+      limitedUntil: today(15, 2),
+    },
+    "The last post failed: the address did not answer in time. No more will be tried until 15:02, as 20 were tried in the last hour.",
+  ],
+])("when the last post was %s, the line under says so", async (_, status, line) => {
+  webhook = { ...WEBHOOK_ON, ...status };
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "Posts go to hooks.slack.com after a wait of 1 minute.",
+    line,
+  ]);
+});
+
+test("when the app does not answer about the webhook, the card says it could not be read, and claims nothing", async () => {
+  webhook = null;
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual(["Whether the webhook is set up could not be read."]);
+  expect(yourData(screen)).toBe("Stays on this computer");
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme the Webhook card is built like the Email card, and nothing is warm",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    webhook = { ...WEBHOOK_ON, last: { at: today(14, 2), sent: true } };
+    const screen = await render(<SettingsView />);
+    await webhookLines(screen);
+
+    const state = webhookState(screen);
+    expect(getComputedStyle(state).fontSize).toBe("13px");
+    expect(getComputedStyle(state).fontWeight).toBe("500");
+    expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
+    const under = state.nextElementSibling as HTMLElement;
     expect(getComputedStyle(under).color).toBe(rgbOf("var(--ink-secondary)"));
     expect(under.getBoundingClientRect().top - state.getBoundingClientRect().bottom).toBe(12);
     expect(warmPaint(screen.container)).toEqual([]);

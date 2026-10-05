@@ -135,13 +135,15 @@ test("each source is a card that says its state in words, how it is read, and wh
   expect(text).not.toContain("~/.claude/sessions");
 });
 
-test("the view says that Agent Lookout sends nothing unless email is set up, and that a listed command is the tool's own", async () => {
+test("the view says that Agent Lookout sends nothing unless email or a webhook is set up, and that a listed command is the tool's own", async () => {
   const screen = await render(<SourcesView state={state()} now={NOW} />);
   const about = screen.getByRole("region", { name: "About sources" });
 
   await expect
     .element(about)
-    .toHaveTextContent("Unless you set up email, Agent Lookout itself sends nothing anywhere.");
+    .toHaveTextContent(
+      "Unless you set up email or a webhook, Agent Lookout itself sends nothing anywhere.",
+    );
   await expect.element(about).toHaveTextContent("that tool's own program");
   await expect.element(about).toHaveTextContent("It only reads");
 });

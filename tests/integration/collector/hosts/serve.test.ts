@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
-import type { EmailStatusResponse } from "@core/api";
+import type { EmailStatusResponse, WebhookStatusResponse } from "@core/api";
 import type { SessionsSnapshot } from "@core/sessions/session";
 import { request } from "@tests/support/node/http";
 import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
@@ -100,7 +100,7 @@ describe("npm start, as a real process", () => {
     20_000,
   );
 
-  test("with no email settings, it never loads the mail library, and says email is off", async () => {
+  test("with no email or webhook settings, it never loads the mail library or the HTTPS client, and says both are off", async () => {
     // `serve.ts` with a stand-in for `dist/`, so the host gets as far as polling.
     const dir = await tempDir();
     const dist = path.join(dir, "dist");
@@ -143,11 +143,22 @@ describe("npm start, as a real process", () => {
       last: null,
       limitedUntil: null,
     });
+    expect((await request(port, "/api/webhook")).json<WebhookStatusResponse>()).toEqual({
+      on: false,
+      host: null,
+      events: null,
+      afterMs: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    });
     const loaded = await readFile(log, "utf8");
     // The log is known to work: it holds the collector itself.
     expect(loaded).toContain("/src/collector/collector.ts");
     expect(loaded).not.toContain("/node_modules/nodemailer/");
+    expect(loaded).not.toMatch(/^node:https$/m);
     expect(server.output()).not.toContain("Email notifications are off");
+    expect(server.output()).not.toContain("Webhook notifications are off");
   }, 30_000);
 
   test.each(["http", "-1", "70000", "50.5"])(

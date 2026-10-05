@@ -126,11 +126,21 @@ export function readNotificationsHeader(value: string): NotificationsSaid | null
   return list === undefined ? null : readNoticeEvents(list);
 }
 
-/** The most emails the collector sends in any hour. Past it, none go until the hour has passed. */
-export const EMAILS_PER_HOUR = 20;
+/**
+ * The most the collector sends off this computer in any hour, by each way of
+ * sending: emails, and posts to the webhook, each counted on its own. Past it,
+ * none go that way until the hour has passed.
+ */
+export const SENDS_PER_HOUR = 20;
 
-/** How the last email went: when it was tried, and whether it was sent or why it was not. */
-export type EmailOutcome = { at: number; sent: true } | { at: number; sent: false; reason: string };
+/** The most emails the collector sends in any hour. Past it, none go until the hour has passed. */
+export const EMAILS_PER_HOUR = SENDS_PER_HOUR;
+
+/** How the last email or post went: when it was tried, and whether it was sent or why it was not. */
+export type SendResult = { at: number; sent: true } | { at: number; sent: false; reason: string };
+
+/** How the last email went. */
+export type EmailOutcome = SendResult;
 
 /**
  * `GET /api/email`: whether the collector sends emails, to whom, for which
@@ -152,5 +162,43 @@ export interface EmailStatusResponse {
   /** The last email that was tried, or null when none has been. */
   last: EmailOutcome | null;
   /** While the hourly limit holds emails back, when the next may go. */
+  limitedUntil: number | null;
+}
+
+/** A host name of letters, digits, dashes and underscores separated by dots, perhaps ending in one, or an address in brackets. */
+const WEBHOOK_HOST = /^(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.?|\[[0-9A-Fa-f:.]+\])$/;
+
+/** The longest host name DNS allows. */
+const MOST_HOST_LENGTH = 253;
+
+/**
+ * Whether a host is one the collector posts to and the page shows. The
+ * collector takes no other at start, and the page counts the webhook as on
+ * only with one, so the page never says off while posts go out.
+ */
+export function isWebhookHost(host: string): boolean {
+  return host.length <= MOST_HOST_LENGTH && WEBHOOK_HOST.test(host);
+}
+
+/**
+ * `GET /api/webhook`: whether the collector posts to a webhook, to which host,
+ * for which events and after how long a wait, and how the last post went. It
+ * is read-only. The address lives in the environment the collector was started
+ * with, and this never holds more of it than the host: whoever has the whole
+ * address can post to the channel behind it.
+ */
+export interface WebhookStatusResponse {
+  on: boolean;
+  /** The host the posts go to, such as `hooks.slack.com`, and never the path. Null while off. */
+  host: string | null;
+  /** The events that are posted, in the order of `NOTICE_EVENTS`. Null while off. */
+  events: NoticeEvent[] | null;
+  /** How long a wait lasts before it is posted, in milliseconds. Null while off. */
+  afterMs: number | null;
+  /** While off because a setting is wrong: one sentence naming the setting, never its value. */
+  problem: string | null;
+  /** The last post that was tried, or null when none has been. */
+  last: SendResult | null;
+  /** While the hourly limit holds posts back, when the next may go. */
   limitedUntil: number | null;
 }

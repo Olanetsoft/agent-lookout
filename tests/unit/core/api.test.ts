@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { notificationsHeaderValue, readNotificationsHeader } from "@core/api";
+import { isWebhookHost, notificationsHeaderValue, readNotificationsHeader } from "@core/api";
 import type { NoticeEvent } from "@core/sessions/waitChanges";
 
 describe("the notifications header", () => {
@@ -68,5 +68,43 @@ describe("the notifications header", () => {
     "on; events=finished; more=1",
   ])("anything else says nothing: %j", (value) => {
     expect(readNotificationsHeader(value)).toBeNull();
+  });
+});
+
+describe("isWebhookHost", () => {
+  test("takes a host name, with underscores or a dot at the end, and an address in brackets", () => {
+    for (const host of [
+      "hooks.slack.com",
+      "hooks.slack.com.",
+      "relay_one.example.test",
+      "xn--caf-dma.example.com",
+      "127.0.0.1",
+      "localhost",
+      "[::1]",
+      `${"a".repeat(249)}.com`,
+    ]) {
+      expect(isWebhookHost(host), host).toBe(true);
+    }
+  });
+
+  test("takes nothing more than a host, no other character, and no name longer than DNS allows", () => {
+    for (const host of [
+      "",
+      ".",
+      "hooks..slack.com",
+      "hooks.slack.com/services/T0000/s3cret",
+      "https://hooks.slack.com",
+      "name@hooks.slack.com",
+      "hooks.slack.com?token=s3cret",
+      "hooks.slack.com:443",
+      "a*b.example.com",
+      "a!b.example.com",
+      "a~b.example.com",
+      "a,b.example.com",
+      "a$b.example.com",
+      `${"a".repeat(250)}.com`,
+    ]) {
+      expect(isWebhookHost(host), host).toBe(false);
+    }
   });
 });

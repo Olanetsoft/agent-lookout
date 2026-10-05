@@ -6,13 +6,15 @@ import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
-import {
-  useEmailStatus,
-  type EmailStatusReading,
-} from "@dashboard/hooks/notifications/useEmailStatus";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
+import {
+  useOutboundStatus,
+  type OutboundStatusReading,
+} from "@dashboard/hooks/notifications/useOutboundStatus";
 import { useTheme } from "@dashboard/hooks/shell/useTheme";
-import { emailWords } from "@dashboard/lib/notifications/emailStatus";
+import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
+import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
+import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
 import type { ThemePreference } from "@dashboard/lib/shell/theme";
 
 const THEME_OPTIONS = [
@@ -136,22 +138,27 @@ function NotificationsCard() {
   );
 }
 
-/**
- * Whether the app emails the person, for which events, and how the last email
- * went. It is only read here. Email is set up in the environment Agent Lookout
- * starts with, so the card has no control, and the button for notifications
- * does not cover it. Before the app has answered, the card says nothing.
- */
-function EmailCard({ reading }: { reading: EmailStatusReading | null }) {
-  const words =
-    reading === null
-      ? null
-      : reading.status === "unknown"
-        ? { state: "Whether email is set up could not be read.", detail: null }
-        : emailWords(reading.status, reading.readAt);
+/** A card's two lines from a reading: nothing before the app has answered. */
+function wordsOf<Status>(
+  reading: OutboundStatusReading<Status> | null,
+  unknown: string,
+  words: (status: Status, now: number) => SendingWords,
+): SendingWords | null {
+  if (reading === null) return null;
+  if (reading.status === "unknown") return { state: unknown, detail: null };
+  return words(reading.status, reading.readAt);
+}
 
+/**
+ * Whether the app sends something off this computer one way, by email or to
+ * a webhook, for which events, and how the last one went. It is only read
+ * here. Both are set up in the environment Agent Lookout starts with, so the
+ * card has no control, and the button for notifications does not cover them.
+ * Before the app has answered, the card says nothing.
+ */
+function SendingCard({ title, words }: { title: string; words: SendingWords | null }) {
   return (
-    <SectionCard title='Email'>
+    <SectionCard title={title}>
       <div className='px-6 pb-6'>
         <p data-part='state' aria-live='polite' className='text-body font-medium text-ink'>
           {words?.state}
@@ -166,17 +173,28 @@ function EmailCard({ reading }: { reading: EmailStatusReading | null }) {
   );
 }
 
+/** Where the person's data goes, as the facts about this copy say it. */
+function whereDataGoes(emailing: boolean, posting: boolean): string {
+  if (emailing && posting) return "Leaves only in the emails and webhook posts you set up";
+  if (emailing) return "Leaves only in the emails you set up";
+  if (posting) return "Leaves only in the webhook posts you set up";
+  return "Stays on this computer";
+}
+
 /**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified and of what, whether email has been set up, and a
- * few facts about this copy of the app.
+ * whether to be notified and of what, whether email and a webhook have been
+ * set up, and a few facts about this copy of the app.
  */
 export function SettingsView() {
   const { preference, setPreference } = useTheme();
-  const email = useEmailStatus();
-  // An email is the one thing Agent Lookout sends off this computer, and only once set up.
+  const email = useOutboundStatus(fetchEmailStatus);
+  const webhook = useOutboundStatus(fetchWebhookStatus);
+  // Emails and webhook posts are the only things Agent Lookout sends off this
+  // computer, and only once set up.
   const emailing = typeof email?.status === "object" && email.status.on;
+  const posting = typeof webhook?.status === "object" && webhook.status.on;
 
   return (
     <div
@@ -201,7 +219,14 @@ export function SettingsView() {
         </SectionCard>
 
         <NotificationsCard />
-        <EmailCard reading={email} />
+        <SendingCard
+          title='Email'
+          words={wordsOf(email, "Whether email is set up could not be read.", emailWords)}
+        />
+        <SendingCard
+          title='Webhook'
+          words={wordsOf(webhook, "Whether the webhook is set up could not be read.", webhookWords)}
+        />
       </div>
 
       <SectionCard title='This copy' className='col-span-4 max-wide:w-full'>
@@ -209,9 +234,7 @@ export function SettingsView() {
           <FactRow label='Version' mono>
             v{__APP_VERSION__}
           </FactRow>
-          <FactRow label='Your data'>
-            {emailing ? "Leaves only in the emails you set up" : "Stays on this computer"}
-          </FactRow>
+          <FactRow label='Your data'>{whereDataGoes(emailing, posting)}</FactRow>
         </FactList>
       </SectionCard>
     </div>
