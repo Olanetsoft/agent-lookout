@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import { Rail } from "@dashboard/components/rail/Rail";
 import type { ViewId } from "@dashboard/lib/shell/view";
+import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 beforeEach(async () => {
@@ -168,6 +169,9 @@ test("in a narrow window the rail narrows to its icons and stays, and each view 
 });
 
 test("the rail's contents stay in view on a long page, and nothing in it moves", async () => {
+  // A pointer left over a link by an earlier test would start its hover colour
+  // as the page scrolls under it, which is not the rail moving.
+  await pointAway();
   const screen = await render(
     <div style={{ display: "flex" }}>
       <Rail current='overview' needsYou={1} />
