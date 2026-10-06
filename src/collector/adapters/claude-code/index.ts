@@ -5,7 +5,12 @@ import {
   isClaudeCodeSessionKind,
   mapClaudeCodeStatus,
 } from "../../../core/mapping/claudeCodeMapping.ts";
-import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
+import type {
+  SourceCapabilities,
+  SourceFact,
+  SourceHealth,
+  SourceState,
+} from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { TabFinder } from "../../terminal/tabFinder.ts";
@@ -61,6 +66,43 @@ export const NEW_SESSION_GRACE_MS = 10_000;
 const DUE_SLACK_MS = 50;
 
 const LABEL = "Claude Code";
+
+/**
+ * What a Claude Code session can show, from what this adapter reads.
+ *
+ * - Working, idle and needs you are the registry's and the command's live
+ *   status, and a background job's state (`claudeCodeMapping.ts`).
+ * - Finished and failed are a background job's state, which only jobs have.
+ *   Any other session leaves the list when it ends, with no word on how.
+ * - Its name is the one Claude Code gives it (`toSession.ts`).
+ * - Jump is a link for VS Code, a pane for tmux, and a tab for Terminal or
+ *   iTerm2 on a Mac (`toSession.ts`). The desktop app documents no link to a
+ *   session, and no other terminal is found.
+ * - Quiet for needs a file the agent rewrites as it works, and the registry
+ *   file is not one: see `registry.ts`.
+ */
+export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "yes" },
+  "needs-you": { level: "yes" },
+  finished: {
+    level: "partly",
+    reason: "Only background jobs. Any other session leaves the list when it ends.",
+  },
+  failed: {
+    level: "partly",
+    reason: "Only background jobs. Any other session leaves the list without saying how it ended.",
+  },
+  names: { level: "yes" },
+  jump: {
+    level: "partly",
+    reason:
+      "In VS Code, in tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in the desktop app or another terminal.",
+  },
+  "quiet-for": {
+    level: "no",
+    reason: "The file Agent Lookout reads is not rewritten as a session works.",
+  },
+};
 
 /** What is said of a run that ended in a way `runProgram` promises it never will. */
 const COULD_NOT_RUN = "The claude agents --json command could not be run";
@@ -539,6 +581,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   return {
     id: SOURCE_ID,
     label: LABEL,
+    capabilities: CLAUDE_CODE_CAPABILITIES,
     lookingIn: neverRun
       ? `Looking for sessions in ${registryName}.`
       : `Looking for sessions in ${registryName} and with claude ${FEED_ARGS.join(" ")}.`,

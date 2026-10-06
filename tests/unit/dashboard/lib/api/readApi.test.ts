@@ -336,6 +336,42 @@ test("the way a source was read is kept, so notifications compare answers read t
   expect(readSource({ id: "claude-code", state: "ok", basis: 2 }, T)).not.toHaveProperty("basis");
 });
 
+test("what a source can report is kept whole, or not at all, so no cell is a guess", () => {
+  const capabilities = {
+    "working-and-idle": { level: "yes" },
+    "needs-you": { level: "no", reason: "The tool does not record waits." },
+    finished: { level: "partly", reason: "Only background jobs." },
+    failed: { level: "yes" },
+    names: { level: "yes" },
+    jump: { level: "no", reason: "The tool names no place to go." },
+    "quiet-for": { level: "yes" },
+  };
+  const read = (value: unknown) =>
+    readSource({ id: "claude-code", state: "ok", capabilities: value }, T);
+
+  expect(read(capabilities)?.capabilities).toEqual(capabilities);
+  // A field this page does not know is dropped, and a yes keeps no reason.
+  expect(
+    read({ ...capabilities, later: { level: "yes" }, names: { level: "yes", reason: "Extra." } })
+      ?.capabilities,
+  ).toEqual(capabilities);
+
+  // A cell missing, of a level this page does not know, or a no without its
+  // reason, and the source has no row at all rather than a row with a hole.
+  const { jump: _jump, ...missing } = capabilities;
+  for (const odd of [
+    missing,
+    { ...capabilities, jump: { level: "maybe", reason: "Who knows." } },
+    { ...capabilities, jump: { level: "no" } },
+    { ...capabilities, jump: { level: "partly", reason: "   " } },
+    { ...capabilities, jump: "no" },
+    "everything",
+    null,
+  ]) {
+    expect(read(odd)).not.toHaveProperty("capabilities");
+  }
+});
+
 test("events with no id or no time are left out, and unknown words become the plain ones", () => {
   const events = readEvents({
     events: [

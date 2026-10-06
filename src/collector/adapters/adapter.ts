@@ -1,4 +1,9 @@
-import type { Session, SourceHealth, SourceId } from "../../core/sessions/session.ts";
+import type {
+  Session,
+  SourceCapabilities,
+  SourceHealth,
+  SourceId,
+} from "../../core/sessions/session.ts";
 
 /** What one poll of one agent tool found. */
 export interface AdapterResult {
@@ -46,5 +51,11 @@ export interface Adapter {
    * still running, so the dashboard can say what it is searching.
    */
   readonly lookingIn?: string;
+  /**
+   * What the tool can report at all, and why not where it cannot, taken from
+   * what this adapter reads. Fixed: it does not change from one poll to the
+   * next. The poller passes it on with every health of this source.
+   */
+  readonly capabilities?: SourceCapabilities;
   poll(): Promise<AdapterResult>;
 }

@@ -6,7 +6,9 @@ import {
   type WebhookStatusResponse,
 } from "@core/api";
 import {
+  CAPABILITIES,
   TERMINAL_APPS,
+  type CapabilityCell,
   type EventKind,
   type EventSeverity,
   type GitHead,
@@ -16,6 +18,7 @@ import {
   type SessionEvent,
   type SessionsSnapshot,
   type SessionStatus,
+  type SourceCapabilities,
   type SourceFact,
   type SourceHealth,
   type SourceId,
@@ -213,7 +216,33 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   if (advice) source.advice = advice;
   const basis = text(value.basis);
   if (basis) source.basis = basis;
+  const capabilities = readCapabilities(value.capabilities);
+  if (capabilities) source.capabilities = capabilities;
   return source;
+}
+
+/** One cell of what a source can report: yes, or no or partly with the reason why. */
+function readCapability(value: unknown): CapabilityCell | null {
+  if (!isRecord(value)) return null;
+  if (value.level === "yes") return { level: "yes" };
+  const level = oneOf(["no", "partly"] as const, value.level);
+  const reason = text(value.reason);
+  return level && reason ? { level, reason } : null;
+}
+
+/**
+ * What a source can report, or null unless every capability this page knows
+ * reads as a cell. Half a row would leave blanks to be read as yes or as no.
+ */
+function readCapabilities(value: unknown): SourceCapabilities | null {
+  if (!isRecord(value)) return null;
+  const read: Partial<Record<keyof SourceCapabilities, CapabilityCell>> = {};
+  for (const capability of CAPABILITIES) {
+    const cell = readCapability(value[capability]);
+    if (!cell) return null;
+    read[capability] = cell;
+  }
+  return read as SourceCapabilities;
 }
 
 /** One thing a source reads or runs. Both halves must be text, or it says nothing. */

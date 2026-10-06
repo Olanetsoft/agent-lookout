@@ -138,6 +138,53 @@ export interface SourceFact {
   value: string;
 }
 
+/**
+ * The things a source can tell about its sessions, in the order the Sources
+ * view and docs/GUIDE.md list them. The branch is not among them: it is read
+ * from each session's folder, the same way for every source.
+ */
+export const CAPABILITIES = [
+  "working-and-idle",
+  "needs-you",
+  "finished",
+  "failed",
+  "names",
+  "jump",
+  "quiet-for",
+] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];
+
+/** What each capability is called, at the head of its column. */
+export const CAPABILITY_LABEL: Record<Capability, string> = {
+  "working-and-idle": "Working and idle",
+  "needs-you": "Needs you",
+  finished: "Finished",
+  failed: "Failed",
+  names: "Names",
+  jump: "Jump",
+  "quiet-for": "Quiet for",
+};
+
+/** How much of one thing a source can tell: all of it, none of it, or some. */
+export type CapabilityLevel = "yes" | "no" | "partly";
+
+/** The word for each level, in a cell. */
+export const CAPABILITY_LEVEL_LABEL: Record<CapabilityLevel, string> = {
+  yes: "Yes",
+  no: "No",
+  partly: "Partly",
+};
+
+/**
+ * What a source can tell of one thing. Anything short of yes carries one short
+ * plain sentence saying why, so a signal that never shows is not read as good news.
+ */
+export type CapabilityCell = { level: "yes" } | { level: "no" | "partly"; reason: string };
+
+/** What a source can tell of every capability. Each adapter declares its own, once. */
+export type SourceCapabilities = Readonly<Record<Capability, CapabilityCell>>;
+
 export interface SourceHealth {
   id: SourceId;
   /** Plain label, for example "Claude Code". */
@@ -156,6 +203,12 @@ export interface SourceHealth {
    * with answers read the same way.
    */
   basis?: string;
+  /**
+   * What the source's agent can report at all, whatever state the source is in:
+   * fixed for each adapter, which declares it. The Sources view draws its table
+   * of what each agent can report from this alone.
+   */
+  capabilities?: SourceCapabilities;
   checkedAt: number;
 }
 

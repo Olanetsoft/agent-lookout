@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { ProblemAdvice } from "@dashboard/components/dashboard/ConnectionNotices";
+import { CapabilitiesCard } from "@dashboard/components/sources/CapabilitiesCard";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
@@ -119,7 +120,8 @@ function MessageCard({ children }: { children: ReactNode }) {
 
 /**
  * Where the sessions come from: each source's health, and what it reads and
- * runs, in plain language. It sits in the main area in place of the Overview.
+ * runs, in plain language, and under them what each agent can report at all.
+ * It sits in the main area in place of the Overview.
  */
 export function SourcesView({ state, now }: SourcesViewProps) {
   const { snapshot, phase } = state;
@@ -179,6 +181,8 @@ export function SourcesView({ state, now }: SourcesViewProps) {
           </Callout>
         )}
         {sources}
+        {/* What each agent can report is fixed, so it stays true once updates stop. */}
+        {snapshot && <CapabilitiesCard sources={snapshot.sources} />}
       </div>
 
       <SectionCard title='About sources' className='col-span-1 max-wide:w-full'>

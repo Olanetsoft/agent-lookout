@@ -91,6 +91,47 @@ describe("the snapshot", () => {
     ]);
     expect(poller.getSnapshot()).toBe(snapshot);
   });
+
+  test("what an adapter declares it can report goes with every health of its source, and none is made up", async () => {
+    const capabilities = {
+      "working-and-idle": { level: "yes" },
+      "needs-you": { level: "no", reason: "This tool does not record waits." },
+      finished: { level: "yes" },
+      failed: { level: "yes" },
+      names: { level: "yes" },
+      jump: { level: "no", reason: "This tool names no place to go." },
+      "quiet-for": { level: "partly", reason: "Only while it writes its file." },
+    } as const;
+    let calls = 0;
+    const declaring: Adapter = {
+      id: "claude-code",
+      label: "Claude Code",
+      lookingIn: "Looking for sessions in a test.",
+      capabilities,
+      poll: async () => {
+        calls += 1;
+        if (calls === 2) throw new Error("boom");
+        return { ...result([]), basis: "registry" };
+      },
+    };
+    const { adapter: silent } = scriptedAdapter(result([]));
+    const poller = createPoller({
+      adapters: [declaring, { ...silent, id: "codex", label: "Codex" }],
+      events: createEventStore(),
+      history: createHistoryStore(),
+    });
+
+    // Searching, answered, and broken: the same declaration each time.
+    expect(poller.getSnapshot().sources[0]?.capabilities).toBe(capabilities);
+    const answered = await poller.pollOnce();
+    expect(answered.sources[0]).toEqual({ ...health(), basis: "registry", capabilities });
+    const broken = await poller.pollOnce();
+    expect(broken.sources[0]?.state).toBe("error");
+    expect(broken.sources[0]?.capabilities).toBe(capabilities);
+
+    // An adapter that declares nothing is given nothing.
+    expect(answered.sources[1]).not.toHaveProperty("capabilities");
+  });
 });
 
 describe("a listener to the snapshots", () => {

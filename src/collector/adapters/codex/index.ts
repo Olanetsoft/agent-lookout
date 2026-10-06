@@ -3,7 +3,12 @@ import path from "node:path";
 
 import { codexLiveness, isCodexSessionSource } from "../../../core/mapping/codexMapping.ts";
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
-import type { SourceFact, SourceHealth, SourceState } from "../../../core/sessions/session.ts";
+import type {
+  SourceCapabilities,
+  SourceFact,
+  SourceHealth,
+  SourceState,
+} from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
@@ -49,6 +54,44 @@ export const NEEDS_YOU_NOTE =
  */
 export const OLDER_CODEX_NOTE =
   "Some sessions were started by a Codex older than 0.155, which does not record which sessions are open, so those are never shown as finished.";
+
+/**
+ * What a Codex session can show, from the files this adapter reads. See
+ * docs/adapters/codex.md for each.
+ *
+ * - Working and idle are the last turn line (`codexMapping.ts`).
+ * - Needs you never: the approval events are never written to the files.
+ * - Finished is a session no Codex program has open, which only a Codex of
+ *   0.155 or later records, in its folder of locks.
+ * - Failed never: Codex writes no error to the files, and a stopped turn
+ *   reads as idle.
+ * - Its name comes from the names file, which the desktop app does not write.
+ * - No Jump: the files name no process, and the desktop app's link is
+ *   undocumented (`toSession.ts`).
+ * - Quiet for is the file's own modified time, moved on by every line.
+ */
+export const CODEX_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "yes" },
+  "needs-you": {
+    level: "no",
+    reason: "Codex does not record approval waits, so a session waiting for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason: "From Codex 0.155 on, once no Codex program has the session open.",
+  },
+  failed: { level: "no", reason: "Codex does not record errors in its files." },
+  names: {
+    level: "partly",
+    reason:
+      "The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.",
+  },
+  jump: {
+    level: "no",
+    reason: "Codex's files name no process to find, and Codex documents no link to a session.",
+  },
+  "quiet-for": { level: "yes" },
+};
 
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface CodexAdapterOptions {
@@ -366,6 +409,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
   return {
     id: SOURCE_ID,
     label: LABEL,
+    capabilities: CODEX_CAPABILITIES,
     lookingIn: `Looking for Codex sessions in ${sessionsName}.`,
     async poll() {
       try {

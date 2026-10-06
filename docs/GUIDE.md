@@ -121,7 +121,7 @@ The Timeline draws each session's status over the last hour, one row for each se
 
 ![The Sources view in the Night theme. A card for Claude Code and a card for Codex, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. A third card, About sources, says what a source is.](images/sources-night.png)
 
-Sources has a card for Claude Code, one for Codex and one for status files. Each says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
+Sources has a card for Claude Code, one for Codex and one for status files, and under them a table of [what each agent can report](#what-each-agent-can-report). Each card says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 
 For Claude Code the rows give the folder of session files it reads, normally `~/.claude/sessions`, how often it reads that folder, the Claude Code command it runs to list sessions, and how often it runs it, or "not run". For Codex they give the folder where Codex saves its sessions, normally `~/.codex/sessions`, how often it reads them, the folder where Codex marks the sessions it has open, normally `~/.codex/thread-writer-locks`, and the file where Codex keeps the names you give sessions, normally `~/.codex/session_index.jsonl`. Both cards end with Sessions found and Last checked.
 
@@ -130,6 +130,35 @@ The note on Codex's card also gives the limits of what Codex's files can show, w
 The card for status files gives the folder it reads, normally `~/.agent-lookout/sessions`, how often it reads it, and how many files it read and skipped. Until that folder exists, the card says Not set up, with one sentence on how to start, and nothing else on the screen mentions it. [Your own agents](#your-own-agents) has the rest.
 
 When an agent is not on this computer, its card says Not found, and after the first few seconds the Overview does not mention it, unless neither is found.
+
+#### What each agent can report
+
+Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
+
+| Agent        | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for |
+| ------------ | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- |
+| Claude Code  | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        |
+| Codex        | Yes              | No        | Partly   | No     | Partly | No     | Yes       |
+| Status files | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    |
+
+Why, for each No and Partly:
+
+- Claude Code, Finished: Only background jobs. Any other session leaves the list when it ends.
+- Claude Code, Failed: Only background jobs. Any other session leaves the list without saying how it ended.
+- Claude Code, Jump: In VS Code, in tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in the desktop app or another terminal.
+- Claude Code, Quiet for: The file Agent Lookout reads is not rewritten as a session works.
+- Codex, Needs you: Codex does not record approval waits, so a session waiting for you shows as working.
+- Codex, Finished: From Codex 0.155 on, once no Codex program has the session open.
+- Codex, Failed: Codex does not record errors in its files.
+- Codex, Names: The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.
+- Codex, Jump: Codex's files name no process to find, and Codex documents no link to a session.
+- Status files, Working and idle: If the agent writes working and idle.
+- Status files, Needs you: If the agent writes waiting.
+- Status files, Finished: If the agent writes finished.
+- Status files, Failed: If the agent writes failed.
+- Status files, Names: If the agent writes a name. Otherwise the folder's or the file's name is used.
+- Status files, Jump: Nothing in a status file is used to reach a session.
+- Status files, Quiet for: If the agent writes its file again as it works.
 
 ### Settings
 
@@ -618,7 +647,7 @@ Agent Lookout only reads the folder. It never makes it, and never writes, rename
 
 ## What it does not do yet
 
-It cannot stop, resume or answer a session. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear.
+It cannot stop, resume or answer a session. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
 

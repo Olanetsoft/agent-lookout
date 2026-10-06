@@ -6,6 +6,7 @@ import { isWithinRetention } from "../../../core/sessions/retention.ts";
 import type {
   Session,
   SessionStatus,
+  SourceCapabilities,
   SourceFact,
   SourceHealth,
   SourceState,
@@ -33,6 +34,26 @@ export const STATUS_DIR_ENV = "AGENT_LOOKOUT_STATUS_DIR";
 export const BASIS = "files";
 
 const LABEL = "Status files";
+
+/**
+ * What a session from a status file can show. The format has a word for every
+ * status and a field for a name (`statusFile.ts`), so each is there when the
+ * agent writes it and not otherwise. Quiet for is when the file was last
+ * written, which says something only of an agent that writes it as it works.
+ * Nothing in a file is used to reach a session, so there is no Jump.
+ */
+export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "partly", reason: "If the agent writes working and idle." },
+  "needs-you": { level: "partly", reason: "If the agent writes waiting." },
+  finished: { level: "partly", reason: "If the agent writes finished." },
+  failed: { level: "partly", reason: "If the agent writes failed." },
+  names: {
+    level: "partly",
+    reason: "If the agent writes a name. Otherwise the folder's or the file's name is used.",
+  },
+  jump: { level: "no", reason: "Nothing in a status file is used to reach a session." },
+  "quiet-for": { level: "partly", reason: "If the agent writes its file again as it works." },
+};
 
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface StatusFileAdapterOptions {
@@ -363,6 +384,7 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
   return {
     id: SOURCE_ID,
     label: LABEL,
+    capabilities: STATUS_FILE_CAPABILITIES,
     lookingIn: `Looking for status files in ${dirName}.`,
     async poll() {
       try {

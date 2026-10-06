@@ -135,6 +135,38 @@ test("each source is a card that says its state in words, how it is read, and wh
   expect(text).not.toContain("~/.claude/sessions");
 });
 
+test("what each agent can report sits under the source cards, from what each source declares, and stays once updates stop", async () => {
+  const capabilities = {
+    "working-and-idle": { level: "yes" },
+    "needs-you": { level: "yes" },
+    finished: { level: "partly", reason: "Only background jobs." },
+    failed: { level: "partly", reason: "Only background jobs." },
+    names: { level: "yes" },
+    jump: { level: "partly", reason: "Only where a place is found." },
+    "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
+  } as const;
+  const declared = snapshot([{ ...SOURCE, capabilities }]);
+  const screen = await render(<SourcesView state={state({ snapshot: declared })} now={NOW} />);
+
+  const table = screen.getByRole("region", { name: "What each agent can report" });
+  await expect.element(table).toBeVisible();
+  const source = screen.getByRole("region", { name: "Claude Code" }).element();
+  // In the column of source cards, after them, and not beside them with About sources.
+  expect(table.element().parentElement).toBe(source.parentElement);
+  expect(table.element().getBoundingClientRect().top).toBeGreaterThan(
+    source.getBoundingClientRect().bottom,
+  );
+  await expect.element(table).toHaveTextContent("No: Its file is not rewritten as it works.");
+
+  await screen.rerender(
+    <SourcesView
+      state={state({ snapshot: declared, phase: "stalled", lastOkAt: NOW - 1_000 })}
+      now={NOW}
+    />,
+  );
+  await expect.element(table).toBeVisible();
+});
+
 test("the view says that Agent Lookout sends nothing unless email or a webhook is set up, and that a listed command is the tool's own", async () => {
   const screen = await render(<SourcesView state={state()} now={NOW} />);
   const about = screen.getByRole("region", { name: "About sources" });

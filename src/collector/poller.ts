@@ -4,6 +4,7 @@ import type {
   Session,
   SessionEvent,
   SessionsSnapshot,
+  SourceHealth,
   SourceId,
   SourceState,
 } from "../core/sessions/session.ts";
@@ -59,6 +60,11 @@ export interface Poller {
   getSnapshot(): SessionsSnapshot;
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
+}
+
+/** What the adapter can report at all, to go with each health of its source. */
+function declared(adapter: Adapter): Pick<SourceHealth, "capabilities"> {
+  return adapter.capabilities === undefined ? {} : { capabilities: adapter.capabilities };
 }
 
 async function pollSafely(adapter: Adapter, now: () => number): Promise<AdapterResult> {
@@ -254,10 +260,13 @@ export function createPoller(options: PollerOptions): Poller {
     const snapshot: SessionsSnapshot = {
       generatedAt: at,
       // The way each was read goes with it, so what follows the snapshots
-      // compares answers the way the event log does.
-      sources: results.map((result) =>
-        result.basis === undefined ? result.health : { ...result.health, basis: result.basis },
-      ),
+      // compares answers the way the event log does. So does what its agent
+      // can report, whatever the answer was.
+      sources: results.map((result, index) => ({
+        ...result.health,
+        ...(result.basis !== undefined && { basis: result.basis }),
+        ...declared(adapters[index] as Adapter),
+      })),
       sessions: sortSessions(found),
     };
 
@@ -310,6 +319,7 @@ export function createPoller(options: PollerOptions): Poller {
           label: adapter.label,
           state: "searching" as const,
           detail: adapter.lookingIn,
+          ...declared(adapter),
           checkedAt: at,
         })),
         sessions: [],
