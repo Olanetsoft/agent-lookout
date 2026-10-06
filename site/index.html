@@ -138,7 +138,9 @@
             >
             <a class="link" href="#install">Install steps</a>
           </div>
-          <p class="fine">Free and open source. Start it with <code>npx agent-lookout</code>.</p>
+          <p class="fine">
+            Free and open source. Download the Mac app, or run <code>npx agent-lookout</code>.
+          </p>
         </div>
       </section>
 
@@ -502,8 +504,8 @@
         <div class="intro intro-sticky">
           <h2 id="install-title">How to get it</h2>
           <p>
-            Agent Lookout is on npm and runs with Node.js. Start it in one of these three ways, then
-            open it as a page in your browser. There is no Mac app yet. One is planned.
+            Download the Mac app, or start Agent Lookout with Node.js in one of the other three ways
+            and open it as a page in your browser.
           </p>
           <div class="actions">
             <a class="btn btn-solid" href="https://github.com/Olanetsoft/agent-lookout"
@@ -516,6 +518,24 @@
           <ol class="steps glass-card">
             <li>
               <span class="n" aria-hidden="true">1</span>
+              <div>
+                <h3>Download the Mac app</h3>
+                <p>
+                  Download the disk image for Apple silicon or for Intel from the
+                  <a class="link" href="https://github.com/Olanetsoft/agent-lookout/releases/latest"
+                    >latest release</a
+                  >
+                  on GitHub, open it and drag Agent Lookout to Applications. It needs no Node.js.
+                </p>
+                <p>
+                  The first time you open it, macOS says “Agent Lookout” Not Opened: press Done,
+                  then Open Anyway in System Settings › Privacy &amp; Security. Kept in
+                  Applications, it updates itself from later releases.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="n" aria-hidden="true">2</span>
               <div>
                 <h3>Start it with one command</h3>
                 <p>
@@ -534,7 +554,7 @@
               </div>
             </li>
             <li>
-              <span class="n" aria-hidden="true">2</span>
+              <span class="n" aria-hidden="true">3</span>
               <div>
                 <h3>Let your coding agent start it</h3>
                 <p>
@@ -552,7 +572,7 @@
               </div>
             </li>
             <li>
-              <span class="n" aria-hidden="true">3</span>
+              <span class="n" aria-hidden="true">4</span>
               <div>
                 <h3>Run it from the repository</h3>
                 <p>Run it this way to read or change its code. It needs the same Node.js.</p>
@@ -595,7 +615,7 @@
           <dl class="sheet">
             <div>
               <dt>Runs on</dt>
-              <dd>macOS and Linux, as a local page in your browser.</dd>
+              <dd>macOS and Linux, as a local page in your browser, and on a Mac as an app.</dd>
             </div>
             <div>
               <dt>Finds</dt>
@@ -634,8 +654,8 @@
               <dd>
                 Opens a Claude Code session that runs in VS Code, selects its pane when it runs
                 inside tmux, and brings its tab forward in Terminal or iTerm2 (macOS asks once
-                whether that is allowed). Codex sessions, sessions in the desktop app and sessions
-                in other terminals have no Jump button.
+                whether that is allowed). Codex sessions, sessions in Claude Code’s desktop app and
+                sessions in other terminals have no Jump button.
               </dd>
             </div>
             <div>
@@ -649,7 +669,7 @@
             <div>
               <dt>On the roadmap</dt>
               <dd>
-                Other coding agents, AI chat tabs in the browser and a Mac app. The
+                Other coding agents and AI chat tabs in the browser. The
                 <a class="link" href="https://github.com/Olanetsoft/agent-lookout/milestones"
                   >milestones</a
                 >
