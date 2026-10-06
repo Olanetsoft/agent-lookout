@@ -8,6 +8,8 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { Adapter } from "@collector/adapters/adapter";
 import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
+import type { AskGh } from "@collector/github/gh";
+import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
 import { createSmtpSender } from "@collector/email/smtpSender";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
 import { NOTIFICATIONS_NOT_SHOWN_LINE } from "@collector/notifications/serverNotifications";
@@ -20,6 +22,7 @@ import {
   type EmailStatusResponse,
   type EventsResponse,
   type HistoryResponse,
+  type PullRequestsStatusResponse,
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
@@ -1691,5 +1694,142 @@ describe("history kept on disk", () => {
     second.collector.stop();
     expect(await files(dir)).toBe(before);
     expect(await readFile(path.join(dir, "writer.lock"), "utf8")).toContain(String(process.ppid));
+  });
+});
+
+describe("pull requests", () => {
+  /**
+   * A repository of plain files in a temporary folder, with a remote on
+   * github.com and `main` its default, and a worktree folder on `branch`. No
+   * git is run to make it, and none is run to read it.
+   */
+  async function repositoryOn(branch: string): Promise<string> {
+    const folder = path.join(await tempDir(), "storefront");
+    await mkdir(path.join(folder, ".git", "refs", "remotes", "origin"), { recursive: true });
+    await writeFile(path.join(folder, ".git", "HEAD"), `ref: refs/heads/${branch}\n`);
+    await writeFile(
+      path.join(folder, ".git", "config"),
+      `[remote "origin"]\n\turl = git@github.com:example-org/storefront.git\n`,
+    );
+    await writeFile(
+      path.join(folder, ".git", "refs", "remotes", "origin", "HEAD"),
+      "ref: refs/remotes/origin/main\n",
+    );
+    return folder;
+  }
+
+  /** A gh that writes down each question and answers with pull request 51, failing. */
+  function standInGh() {
+    const asked: PullRequestTarget[] = [];
+    const ask: AskGh = async (target) => {
+      asked.push(target);
+      return {
+        kind: "found",
+        pullRequest: {
+          number: 51,
+          title: "Show the pull request and its checks",
+          state: "open",
+          checks: { state: "failing", passing: 4, failing: 2, pending: 0 },
+          url: "https://github.com/example-org/storefront/pull/51",
+        },
+      };
+    };
+    return { asked, ask };
+  }
+
+  async function pulling(env: Record<string, string>, folder: string) {
+    const source = standInSource([
+      makeSession({ id, name: "checkout-flow", cwd: folder, project: "storefront" }),
+    ]);
+    const gh = standInGh();
+    const warnings: string[] = [];
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [source.adapter],
+      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
+      notifier: fakeSystemNotifier(),
+      gh: gh.ask,
+      now: () => source.state.now,
+      warn: (line) => warnings.push(line),
+    });
+    const port = await listen(createServer(collector.handler));
+    return {
+      collector,
+      gh,
+      warnings,
+      async poll() {
+        await collector.poller.pollOnce();
+        await collector.pullRequests?.settled();
+        return (await request(port, "/api/sessions")).json<SessionsSnapshot>();
+      },
+      async status() {
+        return (await request(port, "/api/pull-requests")).json<PullRequestsStatusResponse>();
+      },
+    };
+  }
+
+  test("with AGENT_LOOKOUT_PULL_REQUESTS=on, a branch's pull request is asked for once and given to its sessions", async () => {
+    const server = await pulling(
+      { AGENT_LOOKOUT_PULL_REQUESTS: "on" },
+      await repositoryOn("checkout-flow"),
+    );
+
+    await server.poll();
+    const snapshot = await server.poll();
+    expect(snapshot.sessions[0]?.git).toMatchObject({
+      branch: "checkout-flow",
+      pullRequest: { number: 51, state: "open", checks: { state: "failing" } },
+    });
+    expect(server.gh.asked).toEqual([
+      { repository: { owner: "example-org", name: "storefront" }, head: "checkout-flow" },
+    ]);
+    // The page reads it as the collector sent it.
+    expect(readSnapshot(snapshot)?.sessions[0]?.git?.pullRequest?.number).toBe(51);
+    expect(await server.status()).toEqual({
+      on: true,
+      problem: null,
+      gh: "ready",
+      last: { at: T0, ok: true },
+    });
+    expect(server.warnings).toEqual([]);
+  });
+
+  test("the default branch is never asked about", async () => {
+    const server = await pulling({ AGENT_LOOKOUT_PULL_REQUESTS: "on" }, await repositoryOn("main"));
+    await server.poll();
+    const snapshot = await server.poll();
+    expect(snapshot.sessions[0]?.git).toEqual({ branch: "main", repository: expect.any(Object) });
+    expect(server.gh.asked).toEqual([]);
+    expect((await server.status()).gh).toBe("unknown");
+  });
+
+  test("with the setting left out, gh is never asked, and the answer says pull requests are off", async () => {
+    const server = await pulling({}, await repositoryOn("checkout-flow"));
+    await server.poll();
+    const snapshot = await server.poll();
+    expect(snapshot.sessions[0]?.git).not.toHaveProperty("pullRequest");
+    expect(server.gh.asked).toEqual([]);
+    expect(server.collector.pullRequests).toBeNull();
+    expect(await server.status()).toEqual({ on: false, problem: null, gh: null, last: null });
+    expect(server.warnings).toEqual([]);
+  });
+
+  test("a value that cannot be read leaves them off, with one line at start that names the setting", async () => {
+    const server = await pulling(
+      { AGENT_LOOKOUT_PULL_REQUESTS: "yes" },
+      await repositoryOn("checkout-flow"),
+    );
+    await server.poll();
+    await server.poll();
+    expect(server.gh.asked).toEqual([]);
+    expect(server.warnings).toEqual([
+      "Pull requests are off: AGENT_LOOKOUT_PULL_REQUESTS must be on or off.",
+    ]);
+    expect(await server.status()).toEqual({
+      on: false,
+      problem: "AGENT_LOOKOUT_PULL_REQUESTS must be on or off.",
+      gh: null,
+      last: null,
+    });
   });
 });

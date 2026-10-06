@@ -2,7 +2,12 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { EmailStatusResponse, HistoryResponse, WebhookStatusResponse } from "@core/api";
+import type {
+  EmailStatusResponse,
+  HistoryResponse,
+  PullRequestsStatusResponse,
+  WebhookStatusResponse,
+} from "@core/api";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -48,6 +53,14 @@ const WEBHOOK_OFF: WebhookStatusResponse = {
   limitedUntil: null,
 };
 let webhook: WebhookStatusResponse | null;
+/** What the app says about pull requests, as `/api/pull-requests` would. Off unless a test says otherwise. */
+const PULL_REQUESTS_OFF: PullRequestsStatusResponse = {
+  on: false,
+  problem: null,
+  gh: null,
+  last: null,
+};
+let pullRequests: PullRequestsStatusResponse | null;
 /** The paths the view asked the app for. */
 let asked: string[];
 
@@ -56,10 +69,12 @@ beforeEach(() => {
   setNotificationHost(host);
   email = EMAIL_OFF;
   webhook = WEBHOOK_OFF;
+  pullRequests = PULL_REQUESTS_OFF;
   asked = [];
   setApiHost(async (path) => {
     asked.push(path);
-    const answer = path === "/api/webhook" ? webhook : email;
+    const answer =
+      path === "/api/webhook" ? webhook : path === "/api/pull-requests" ? pullRequests : email;
     if (answer === null) throw new TypeError("Failed to fetch");
     return new Response(JSON.stringify(answer), {
       headers: { "Content-Type": "application/json" },
@@ -165,6 +180,7 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
     "Updates",
     "Email",
     "Webhook",
+    "Pull requests",
     "This copy",
   ]);
   // In the left column, with Theme, Notifications and History.
@@ -184,7 +200,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(6);
+    expect(cards).toHaveLength(7);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -727,7 +743,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications and the history share the wide column, with email, the webhook and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications and the history share the wide column, with email, the webhook, pull requests and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -735,12 +751,13 @@ test("the theme, notifications and the history share the wide column, with email
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
-  const [theme, notes, kept, mail, hook, copy] = [
+  const [theme, notes, kept, mail, hook, pulls, copy] = [
     box("Theme"),
     box("Notifications"),
     box("History"),
     box("Email"),
     box("Webhook"),
+    box("Pull requests"),
     box("This copy"),
   ];
 
@@ -755,9 +772,12 @@ test("the theme, notifications and the history share the wide column, with email
   expect(hook.left).toBe(mail.left);
   expect(hook.width).toBe(mail.width);
   expect(hook.top - mail.bottom).toBe(16);
+  expect(pulls.left).toBe(mail.left);
+  expect(pulls.width).toBe(mail.width);
+  expect(pulls.top - hook.bottom).toBe(16);
   expect(copy.left).toBe(mail.left);
   expect(copy.width).toBe(mail.width);
-  expect(copy.top - hook.bottom).toBe(16);
+  expect(copy.top - pulls.bottom).toBe(16);
 });
 
 /** The history as `/api/history` gives it while another copy writes the files. */
@@ -777,7 +797,7 @@ const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
 };
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, Pull requests, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -794,6 +814,7 @@ test.each([1000, 375])(
       "History",
       "Email",
       "Webhook",
+      "Pull requests",
       "This copy",
     ]);
     const boxes = cards.map((card) => card.getBoundingClientRect());
@@ -899,7 +920,7 @@ test("with nothing set, the Email card says email is off and which two settings 
   ]);
   // Nothing on the page turns it on or off.
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
-  expect([...asked].sort()).toEqual(["/api/email", "/api/webhook"]);
+  expect([...asked].sort()).toEqual(["/api/email", "/api/pull-requests", "/api/webhook"]);
   expect(emailState(screen).getAttribute("aria-live")).toBe("polite");
 });
 
@@ -1234,4 +1255,155 @@ test("while the webhook is off, the card says nothing of what a waiting session 
     "The webhook is off.",
     "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
   ]);
+});
+
+/** The line that says whether pull requests are shown. */
+const pullRequestsState = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen
+    .getByRole("region", { name: "Pull requests" })
+    .element()
+    .querySelector('[data-part="state"]') as HTMLElement;
+
+/** The lines of the Pull requests card, once the app has answered. */
+async function pullRequestsLines(screen: Awaited<ReturnType<typeof render>>) {
+  const card = screen.getByRole("region", { name: "Pull requests" });
+  await vi.waitFor(() => expect(pullRequestsState(screen).textContent).not.toBe(""));
+  return [...card.element().querySelectorAll(SENDING_LINES)].map((line) => line.textContent);
+}
+
+const PULL_REQUESTS_ON: PullRequestsStatusResponse = {
+  on: true,
+  problem: null,
+  gh: "ready",
+  last: { at: today(14, 2), ok: true },
+};
+
+const SENT_TO_GITHUB =
+  "Your own gh sends GitHub the name of each repository and branch it is asked about, with its own login.";
+
+test("with nothing set, the Pull requests card says they are off and which setting turns them on, and only reads", async () => {
+  const screen = await render(<SettingsView />);
+
+  expect(await pullRequestsLines(screen)).toEqual([
+    "Pull requests are off.",
+    "Set AGENT_LOOKOUT_PULL_REQUESTS=on to show each session's pull request and its checks, through your own gh.",
+  ]);
+  const card = screen.getByRole("region", { name: "Pull requests" }).element();
+  expect([...card.querySelectorAll('[data-slot="fact"]')].map((fact) => fact.textContent)).toEqual([
+    "AGENT_LOOKOUT_PULL_REQUESTS",
+    "gh",
+  ]);
+  expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+  expect(pullRequestsState(screen).getAttribute("aria-live")).toBe("polite");
+  expect(asked).toContain("/api/pull-requests");
+  expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
+});
+
+test("with them on, it says where they show, what goes to GitHub and when gh was last asked, and the facts say names go to GitHub", async () => {
+  pullRequests = PULL_REQUESTS_ON;
+  const screen = await render(<SettingsView />);
+
+  expect(await pullRequestsLines(screen)).toEqual([
+    "Pull requests are shown for branches of repositories on github.com.",
+    SENT_TO_GITHUB,
+    "Last checked at 14:02.",
+  ]);
+  expect(yourData(screen)).toBe("Sent only as repository and branch names, to GitHub through gh");
+  // gh is in the mono wherever the card and the facts name it.
+  const card = screen.getByRole("region", { name: "Pull requests" }).element();
+  const asking = card.querySelector('[data-part="asking"]') as HTMLElement;
+  expect(
+    [...asking.querySelectorAll('[data-slot="fact"]')].map((fact) => fact.textContent),
+  ).toEqual(["gh"]);
+  const facts = screen.getByRole("region", { name: "This copy" }).element();
+  expect(
+    [
+      ...facts.querySelectorAll(
+        '[data-slot="fact-row"] + [data-slot="fact-row"] [data-slot="fact"]',
+      ),
+    ].map((fact) => fact.textContent),
+  ).toEqual(["gh"]);
+});
+
+test("with them and email on, the facts name both", async () => {
+  pullRequests = PULL_REQUESTS_ON;
+  email = EMAIL_ON;
+  const screen = await render(<SettingsView />);
+  await pullRequestsLines(screen);
+  await emailLines(screen);
+  expect(yourData(screen)).toBe(
+    "Sent only in the emails you set up, and repository and branch names to GitHub",
+  );
+});
+
+test.each<[string, Partial<PullRequestsStatusResponse>]>([
+  ["with no gh", { gh: "not-found", last: null }],
+  ["with gh not signed in", { gh: "signed-out" }],
+])(
+  "%s, the card says no pull request is shown, why in a note with gh auth login in the mono, and the facts say nothing goes to GitHub",
+  async (_, change) => {
+    pullRequests = { ...PULL_REQUESTS_ON, ...change };
+    const screen = await render(<SettingsView />);
+
+    expect(await pullRequestsLines(screen)).toEqual([
+      "No pull request is shown.",
+      ...(change.gh === "not-found"
+        ? ["The GitHub CLI was not found", "Install gh, then sign in with gh auth login."]
+        : [
+            "The GitHub CLI is not signed in",
+            "Run gh auth login in a terminal to sign in to github.com.",
+          ]),
+    ]);
+    const card = screen.getByRole("region", { name: "Pull requests" }).element();
+    expect(card.querySelector('[data-slot="callout"]')).not.toBeNull();
+    expect(card.querySelector('[data-part="asking"]')).toBeNull();
+    expect(
+      [...card.querySelectorAll('[data-slot="fact"]')].map((fact) => fact.textContent),
+    ).toContain("gh auth login");
+    expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+test("when the last check did not work, the card says so in a note, and still says what goes to GitHub", async () => {
+  pullRequests = {
+    ...PULL_REQUESTS_ON,
+    last: { at: today(14, 2), ok: false, reason: "gh did not answer within 15 seconds" },
+  };
+  const screen = await render(<SettingsView />);
+
+  expect(await pullRequestsLines(screen)).toEqual([
+    "Pull requests are shown for branches of repositories on github.com.",
+    SENT_TO_GITHUB,
+    "The last check did not work",
+    "gh did not answer within 15 seconds. It is tried again within 2 minutes.",
+  ]);
+  const card = screen.getByRole("region", { name: "Pull requests" }).element();
+  expect(card.querySelector('[data-slot="callout"]')).not.toBeNull();
+  expect(yourData(screen)).toBe("Sent only as repository and branch names, to GitHub through gh");
+  expect(warmPaint(screen.container)).toEqual([]);
+});
+
+test("a setting that is wrong is named on the Pull requests card, with what to do", async () => {
+  pullRequests = {
+    ...PULL_REQUESTS_OFF,
+    problem: "AGENT_LOOKOUT_PULL_REQUESTS must be on or off.",
+  };
+  const screen = await render(<SettingsView />);
+
+  expect(await pullRequestsLines(screen)).toEqual([
+    "Pull requests are off.",
+    "Pull requests are not set up correctly",
+    "AGENT_LOOKOUT_PULL_REQUESTS must be on or off. Correct it and start Agent Lookout again.",
+  ]);
+});
+
+test("when the app does not answer about pull requests, the card says it could not be read, and claims nothing", async () => {
+  pullRequests = null;
+  const screen = await render(<SettingsView />);
+
+  expect(await pullRequestsLines(screen)).toEqual([
+    "Whether pull requests are shown could not be read.",
+  ]);
+  expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
 });

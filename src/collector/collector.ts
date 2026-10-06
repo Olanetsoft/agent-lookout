@@ -18,6 +18,13 @@ import { emailProblemLine, readEmailSetup } from "./email/emailSettings.ts";
 import { createSmtpSender, type CreateEmailSender } from "./email/smtpSender.ts";
 import { createEventStore, EVENT_CAPACITY } from "./eventStore.ts";
 import { createBranchFinder } from "./git/branchFinder.ts";
+import { createGhAsker, type AskGh } from "./github/gh.ts";
+import { createPullRequestFinder, type PullRequestFinder } from "./github/pullRequestFinder.ts";
+import {
+  pullRequestsOffStatus,
+  pullRequestsProblemLine,
+  readPullRequestsSetup,
+} from "./github/pullRequestSettings.ts";
 import { createApiHandler, type ApiHandler } from "./handler.ts";
 import { createClearHistoryRoute } from "./history/clearRoute.ts";
 import type { HistoryFs } from "./history/historyFiles.ts";
@@ -128,8 +135,14 @@ export interface CollectorOptions {
    */
   createWebhookSender?: CreateWebhookSender;
   /**
-   * Where the one line goes that says email or the webhook is off because a
-   * setting is wrong. Defaults to the console's errors.
+   * What asks the person's own gh for a branch's pull request, once
+   * `AGENT_LOOKOUT_PULL_REQUESTS=on` is set. Defaults to the gh on this
+   * machine. With the setting off it is never called. Tests pass a stand-in.
+   */
+  gh?: AskGh;
+  /**
+   * Where the one line goes that says email, the webhook or pull requests are
+   * off because a setting is wrong. Defaults to the console's errors.
    */
   warn?: (line: string) => void;
   /**
@@ -167,6 +180,8 @@ export interface Collector {
   email: EmailNotifications | null;
   /** The webhook notifications, or null while no webhook address is set. */
   webhook: WebhookNotifications | null;
+  /** What gives each branch its pull request, or null while `AGENT_LOOKOUT_PULL_REQUESTS` is not on. */
+  pullRequests: PullRequestFinder | null;
   /** What keeps the history on disk, or null with `AGENT_LOOKOUT_HISTORY=off`. */
   history: HistoryKeeper | null;
 }
@@ -177,9 +192,10 @@ export interface Collector {
  * the email and webhook notifications when they are set up, what finds and
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
  * what stops a Claude Code session when the person asks, unless
- * `AGENT_LOOKOUT_STOP` is off, what reads each session's git branch, and the
- * request handler. Every host builds it the same way: the dev server, the
- * standalone server, and later a desktop app.
+ * `AGENT_LOOKOUT_STOP` is off, what reads each session's git branch, with
+ * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
+ * and the request handler. Every host builds it the same way: the dev server,
+ * the standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -262,6 +278,22 @@ export function createCollector(options: CollectorOptions): Collector {
     : null;
   const emailOff = emailOffStatus(emailSetup.on ? null : emailSetup.problem);
   const branches = createBranchFinder({ now });
+  // Read once, here, as email's settings are. With pull requests off, gh is
+  // never looked for, and no repository's configuration is read.
+  const pullRequestsSetup = readPullRequestsSetup(env);
+  if (!pullRequestsSetup.on && pullRequestsSetup.problem !== null) {
+    warn(pullRequestsProblemLine(pullRequestsSetup.problem));
+  }
+  const pullRequests = pullRequestsSetup.on
+    ? createPullRequestFinder({
+        gitFolderOf: (cwd) => branches.gitFolderOf(cwd),
+        ask: options.gh ?? createGhAsker({ env }),
+        now,
+      })
+    : null;
+  const pullRequestsOff = pullRequestsOffStatus(
+    pullRequestsSetup.on ? null : pullRequestsSetup.problem,
+  );
   // The same for the webhook: with no address set, nothing that could post is
   // made, and Node's HTTPS client is never loaded.
   const webhookSetup = readWebhookSetup(env);
@@ -298,8 +330,12 @@ export function createCollector(options: CollectorOptions): Collector {
     history,
     intervalMs,
     now,
-    // Every source's sessions alike are given the branch of their folder.
-    annotate: (sessions) => branches.annotate(sessions),
+    // Every source's sessions alike are given the branch of their folder, and
+    // with pull requests on, the branch's pull request, as last learnt.
+    annotate: async (sessions) => {
+      const onBranches = await branches.annotate(sessions);
+      return pullRequests ? pullRequests.annotate(onBranches) : onBranches;
+    },
     // The poller runs for as long as the app does, with a dashboard open or
     // not, so a wait that begins with no page open is still seen here.
     onSnapshot: (snapshot) => {
@@ -331,6 +367,7 @@ export function createCollector(options: CollectorOptions): Collector {
     notifications,
     email: () => email?.status() ?? emailOff,
     webhook: () => webhook?.status() ?? webhookOff,
+    pullRequests: () => pullRequests?.status() ?? pullRequestsOff,
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
     stop: stopRoutes && createStopRoute(stopRoutes),
     cleanUp: stopRoutes && createCleanUpRoute(stopRoutes),
@@ -432,6 +469,7 @@ export function createCollector(options: CollectorOptions): Collector {
     poller,
     email,
     webhook,
+    pullRequests,
     history: keeper,
   };
 }

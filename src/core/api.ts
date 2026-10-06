@@ -488,3 +488,35 @@ export interface WebhookStatusResponse {
   /** While the hourly limit holds posts back, when the next may go. */
   limitedUntil: number | null;
 }
+
+/**
+ * What the GitHub CLI, gh, was last found to be:
+ *
+ * unknown     it has not been needed yet: no session is on a branch to ask about
+ * ready       it ran, signed in
+ * not-found   there is no gh on `PATH` or in the places it is usually installed
+ * signed-out  it is not signed in to github.com
+ */
+export const GH_STATES = ["unknown", "ready", "not-found", "signed-out"] as const;
+
+export type GhState = (typeof GH_STATES)[number];
+
+/** How the last question to gh went: when it was asked, and whether it answered or why not. */
+export type CheckResult = { at: number; ok: true } | { at: number; ok: false; reason: string };
+
+/**
+ * `GET /api/pull-requests`: whether the collector asks the person's own gh for
+ * each session's pull request, with `AGENT_LOOKOUT_PULL_REQUESTS=on`, what gh
+ * was last found to be, and how the last question went. It is read-only. It
+ * holds no token: gh signs in with its own login, which Agent Lookout never
+ * reads.
+ */
+export interface PullRequestsStatusResponse {
+  on: boolean;
+  /** While off because the setting is wrong: one sentence naming the setting. */
+  problem: string | null;
+  /** What gh was last found to be. Null while off. */
+  gh: GhState | null;
+  /** The last question to gh, or null while off and before the first. */
+  last: CheckResult | null;
+}

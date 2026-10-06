@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import type {
   HistoryPoint,
+  PullRequest,
   Session,
   SessionEvent,
   SessionStatus,
@@ -440,6 +441,175 @@ test.each([
     expect(getComputedStyle(reason).color).toBe(rgbOf("var(--ink-secondary)"));
   },
 );
+
+/** The pull request of api-rate-limits' branch, open, with a check failing. */
+const PULL_REQUEST: PullRequest = {
+  number: 51,
+  title: "Limit the rate of calls to the payments API",
+  state: "open",
+  checks: { state: "failing", passing: 4, failing: 2, pending: 1 },
+  url: "https://github.com/example-org/payments/pull/51",
+};
+
+/** The Codex session on a branch, with the pull request given, as with pull requests on. */
+function onPullRequest(pullRequest: PullRequest = PULL_REQUEST): CollectorState {
+  return state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CODEX_ID
+          ? {
+              ...session,
+              git: {
+                branch: "rate-limits",
+                repository: { id: "4c1f9e2d7a3b5c60", name: "payments" },
+                pullRequest,
+              },
+            }
+          : session,
+      ),
+    },
+  });
+}
+
+test.each([
+  ["dark", 1280],
+  ["dark", 375],
+  ["light", 1280],
+  ["light", 375],
+] as const)(
+  "in the %s theme at %i pixels, a branch's pull request is a fact: its number and title, a link to it on github.com, its state and its checks, and nothing of it is warm",
+  async (theme, width) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    await page.viewport(width, 900);
+    await renderPanel(CODEX_ID, onPullRequest());
+    const panel = dialog("api-rate-limits");
+    await expect.element(panel).toBeVisible();
+    await pointAway();
+    const root = panel.element();
+
+    // After the branch, before when it started.
+    const labels = [...root.querySelectorAll('[data-slot="fact-row"] dt')].map(
+      (label) => label.textContent,
+    );
+    expect(labels.slice(labels.indexOf("Branch"), labels.indexOf("Branch") + 3)).toEqual([
+      "Branch",
+      "Pull request",
+      "Started",
+    ]);
+    expect(facts(root)["Pull request"]).toBe(
+      "#51 Limit the rate of calls to the payments APIOpen, 2 checks failing, 1 pending, 4 passing",
+    );
+
+    // The link opens the pull request on github.com, in a tab of its own.
+    const link = page.getByRole("link", {
+      name: "#51 Limit the rate of calls to the payments API",
+    });
+    await expect.element(link).toHaveAttribute("href", PULL_REQUEST.url);
+    await expect.element(link).toHaveAttribute("target", "_blank");
+    expect(link.element().getAttribute("rel")?.split(" ").sort()).toEqual([
+      "noopener",
+      "noreferrer",
+    ]);
+    const style = getComputedStyle(link.element());
+    expect(style.color).toBe(rgbOf("var(--ink)"));
+    expect(style.textDecorationLine).toBe("underline");
+
+    // Its state and its checks, under it, in the caption a fact's second line takes.
+    const line = root.querySelector('[data-part="pull-request-state"]') as HTMLElement;
+    expect(line.textContent).toBe("Open, 2 checks failing, 1 pending, 4 passing");
+    expect(getComputedStyle(line).fontSize).toBe("12px");
+    expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+
+    // Nothing runs off the dialog's side or the window's, however long the title.
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    const value = link.element().closest("dd") as HTMLElement;
+    expect(value.getBoundingClientRect().right).toBeLessThanOrEqual(
+      root.getBoundingClientRect().right,
+    );
+    expect(warmBeyondTheSignals(root)).toEqual([]);
+
+    // Tab reaches it, with the one focus ring.
+    link.element().focus();
+    expect(document.activeElement).toBe(link.element());
+  },
+);
+
+test("a draft, a merged and a closed pull request say so, and one with no checks says that", async () => {
+  const lines: string[] = [];
+  for (const pullRequest of [
+    {
+      ...PULL_REQUEST,
+      state: "draft",
+      checks: { state: "none", passing: 0, failing: 0, pending: 0 },
+    },
+    {
+      ...PULL_REQUEST,
+      state: "merged",
+      checks: { state: "passing", passing: 6, failing: 0, pending: 0 },
+    },
+    {
+      ...PULL_REQUEST,
+      state: "closed",
+      checks: { state: "pending", passing: 2, failing: 0, pending: 1 },
+    },
+  ] as const) {
+    const screen = await renderPanel(CODEX_ID, onPullRequest(pullRequest));
+    await expect.element(dialog("api-rate-limits")).toBeVisible();
+    lines.push(
+      dialog("api-rate-limits").element().querySelector('[data-part="pull-request-state"]')
+        ?.textContent ?? "",
+    );
+    await screen.unmount();
+  }
+  expect(lines).toEqual([
+    "Draft, no checks",
+    "Merged, 6 checks passing",
+    "Closed, 1 check pending, 2 passing",
+  ]);
+});
+
+test.each([1280, 375])(
+  "at %i pixels a title as long as the collector lets one be takes two lines at most, and on a phone is whole one hover away on its link",
+  async (width) => {
+    await page.viewport(width, 800);
+    const title = "Limit the rate of calls to the payments API, and retry the ones refused later "
+      .repeat(3)
+      .slice(0, 200)
+      .trim();
+    await renderPanel(CODEX_ID, onPullRequest({ ...PULL_REQUEST, title }));
+    const panel = dialog("api-rate-limits");
+    await expect.element(panel).toBeVisible();
+    const root = panel.element();
+    const link = root.querySelector('[data-part="pull-request"]') as HTMLAnchorElement;
+    const lineHeight = Number.parseFloat(getComputedStyle(link).lineHeight);
+    expect(link.getBoundingClientRect().height).toBeLessThanOrEqual(2 * lineHeight + 1);
+    expect(getComputedStyle(link).webkitLineClamp).toBe("2");
+    // Its state and checks still follow it, whole.
+    const line = root.querySelector('[data-part="pull-request-state"]') as HTMLElement;
+    expect(line.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      link.getBoundingClientRect().bottom - 1,
+    );
+    expect(line.textContent).toBe("Open, 2 checks failing, 1 pending, 4 passing");
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+    if (width === 375) {
+      // On a phone it is cut, and the whole of it is in the link's tooltip.
+      await vi.waitFor(() => expect(link.dataset.cut).toBe("true"));
+      await userEvent.hover(link);
+      await expect.element(page.getByRole("tooltip")).toHaveTextContent(`#51 ${title}`);
+      await pointAway();
+    }
+  },
+);
+
+test("a session whose branch has no pull request, as with pull requests off, has no such fact", async () => {
+  await renderPanel(CLAUDE_ID);
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+  expect(facts(dialog("checkout-flow").element())).not.toHaveProperty("Pull request");
+});
 
 /** The Claude Code session, asking to run a command. */
 function asking(text = "Run: npm run deploy -- --env staging"): CollectorState {

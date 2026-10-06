@@ -525,6 +525,34 @@ describe("the finder", () => {
     expect(sessions[0]).not.toHaveProperty("git");
   });
 
+  test("keeps each folder's repository's own git folder for the pull request finder, and gives it to no session", async () => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    const common = `${CODE}/storefront/.git`;
+    worktreeIn(files, common, "storefront-checkout", "ref: refs/heads/checkout-flow\n");
+    files.write(
+      `${CODE}/storefront-checkout/.git`,
+      `gitdir: ${common}/worktrees/storefront-checkout\n`,
+    );
+    files.mkdir(`${CODE}/mobile-app`);
+    const { finder } = finderFor(files);
+
+    // Before a folder is read, nothing is known of it.
+    expect(finder.gitFolderOf(`${CODE}/storefront`)).toBeNull();
+    const annotated = await finder.annotate([
+      at(1, `${CODE}/storefront`),
+      at(2, `${CODE}/storefront-checkout`),
+      at(3, `${CODE}/mobile-app`),
+    ]);
+
+    // The main folder and its worktree share the repository's own git folder.
+    expect(finder.gitFolderOf(`${CODE}/storefront`)).toBe(common);
+    expect(finder.gitFolderOf(`${CODE}/storefront-checkout`)).toBe(common);
+    expect(finder.gitFolderOf(`${CODE}/mobile-app`)).toBeNull();
+    expect(JSON.stringify(annotated)).not.toContain(`${common}/`);
+    expect(JSON.stringify(annotated)).not.toContain(`"${common}"`);
+  });
+
   test(`reads a folder once however many sessions are in it, then not again for ${BRANCH_READ_MS / 1000} seconds`, async () => {
     const files = memoryFiles();
     repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");

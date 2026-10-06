@@ -13,6 +13,7 @@ import {
   type HistoryRestart,
   type HistorySince,
   type NotificationsSaid,
+  type PullRequestsStatusResponse,
   type WaitsResponse,
   type WebhookStatusResponse,
 } from "../core/api.ts";
@@ -23,6 +24,7 @@ import type { EventStore } from "./eventStore.ts";
 import { memoryOnlyStatus } from "./history/historyLimits.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import type { ServerNotifications } from "./notifications/serverNotifications.ts";
+import { pullRequestsOffStatus } from "./github/pullRequestSettings.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
 import { webhookOffStatus } from "./webhook/webhookNotifications.ts";
 
@@ -66,6 +68,12 @@ export interface ApiHandlerOptions {
    * out, it answers that the webhook is off.
    */
   webhook?: () => WebhookStatusResponse;
+  /**
+   * What `GET /api/pull-requests` answers: whether pull requests are shown,
+   * what gh was last found to be and how the last question to it went. Left
+   * out, it answers that pull requests are off.
+   */
+  pullRequests?: () => PullRequestsStatusResponse;
   /**
    * Answers `POST /api/jump`, with checks of its own on top of the ones every
    * request passes: `createJumpRoute` in `jumpRoute.ts`. Left out, there is no
@@ -400,6 +408,16 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
           res,
           200,
           (webhook ? webhook() : webhookOffStatus(null)) satisfies WebhookStatusResponse,
+        );
+        return;
+      }
+      case "/api/pull-requests": {
+        send(
+          res,
+          200,
+          (options.pullRequests
+            ? options.pullRequests()
+            : pullRequestsOffStatus(null)) satisfies PullRequestsStatusResponse,
         );
         return;
       }

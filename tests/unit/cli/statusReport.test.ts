@@ -314,6 +314,33 @@ describe("names from sessions", () => {
 });
 
 describe("--json", () => {
+  test("gives a waiting session's pull request, its number and how its checks stand, only when it has one", () => {
+    const json = JSON.parse(
+      statusJson(
+        report([
+          waiting("checkout-flow", {
+            id: "claude-code:1",
+            git: {
+              branch: "checkout-flow",
+              pullRequest: {
+                number: 51,
+                title: "Show the pull request",
+                state: "open",
+                checks: { state: "pending", passing: 3, failing: 0, pending: 1 },
+                url: "https://github.com/example-org/storefront/pull/51",
+              },
+            },
+          }),
+          waiting("docs-site", { id: "claude-code:2", git: { branch: "docs-site" } }),
+        ]),
+      ),
+    );
+
+    expect(json.waiting[0].pullRequest).toEqual({ number: 51, checks: "pending" });
+    expect(json.waiting[1]).not.toHaveProperty("pullRequest");
+    expect(JSON.stringify(json)).not.toContain("Show the pull request");
+  });
+
   test("gives the counts and each waiting session with its id, name, agent, reason and wait", () => {
     const json = JSON.parse(
       statusJson(

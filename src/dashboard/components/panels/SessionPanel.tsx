@@ -4,6 +4,7 @@ import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { PullRequestFact } from "@dashboard/components/panels/PullRequestFact";
 import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
 import { Button } from "@dashboard/components/ui/controls/Button";
@@ -303,6 +304,9 @@ function Details({
             </FactRow>
           )
         )}
+        {session.git?.pullRequest !== undefined && (
+          <PullRequestFact pullRequest={session.git.pullRequest} />
+        )}
         <FactRow label='Started'>
           <span className='tabular-nums'>
             {session.startedAt !== null ? formatSince(session.startedAt, now) : "Not reported"}
@@ -492,9 +496,10 @@ interface SessionPanelProps {
  * it asks first, at the top of the details, and says there what it came to.
  * A session in the desktop app has no Stop, and its process fact says why.
  * Under them, as facts: its status with how long and since when, its agent,
- * its app when known, its folder's whole path, its branch, when it started,
- * its process, and how often and how long it waited over the period the page
- * holds. Then its own events, newest first, as the Events log draws
+ * its app when known, its folder's whole path, its branch, with
+ * `AGENT_LOOKOUT_PULL_REQUESTS=on` the branch's pull request and its checks,
+ * when it started, its process, and how often and how long it waited over the
+ * period the page holds. Then its own events, newest first, as the Events log draws
  * them, and its row of the Timeline across the whole width.
  *
  * The only warm things are the needs-you signals the rest of the page has for

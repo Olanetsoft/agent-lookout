@@ -417,6 +417,35 @@ describe("routes", () => {
   });
 });
 
+describe("/api/pull-requests", () => {
+  test("says whether pull requests are shown, which with nothing set they are not, and can only be read", async () => {
+    const { port } = await serve();
+    const off = { on: false, problem: null, gh: null, last: null };
+    expect((await request(port, "/api/pull-requests")).json()).toEqual(off);
+    expect((await request(port, "/api/pull-requests", { method: "POST", body: "{}" })).status).toBe(
+      405,
+    );
+    expect(
+      (await request(port, "/api/pull-requests", { headers: { Host: "evil.example" } })).status,
+    ).toBe(403);
+
+    // A handler given what answers it says what that says.
+    const on = { on: true, problem: null, gh: "signed-out", last: null };
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+      pullRequests: () => ({ on: true, problem: null, gh: "signed-out", last: null }),
+    });
+    const answering = await listen(createServer(handler));
+    expect((await request(answering, "/api/pull-requests")).json()).toEqual(on);
+  });
+});
+
 describe("the route that acts", () => {
   /** The handler alone, with whatever answers `/api/jump`, or nothing that does. */
   async function handlerWith(jump?: () => Promise<ApiAnswer>) {

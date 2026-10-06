@@ -4,6 +4,7 @@ import {
   readEmailStatus,
   readEvents,
   readHistory,
+  readPullRequestsStatus,
   readSession,
   readSnapshot,
   readSource,
@@ -171,6 +172,69 @@ test.each([
   const read = readSession({ ...makeSession(), git: { branch: "checkout-flow", repository } });
 
   expect(read?.git).toEqual({ branch: "checkout-flow" });
+});
+
+const PULL_REQUEST = {
+  number: 51,
+  title: "Show the pull request and its checks",
+  state: "open",
+  checks: { state: "failing", passing: 4, failing: 2, pending: 1 },
+  url: "https://github.com/example-org/storefront/pull/51",
+} as const;
+
+test("a branch's pull request is read as it was sent", () => {
+  const sent = makeSession({
+    git: {
+      branch: "checkout-flow",
+      repository: { id: "9aaa5f0ab35a5f84", name: "storefront" },
+      pullRequest: PULL_REQUEST,
+    },
+  });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  for (const state of ["draft", "merged", "closed"] as const) {
+    const other = makeSession({
+      git: { branch: "checkout-flow", pullRequest: { ...PULL_REQUEST, state } },
+    });
+    expect(readSession(JSON.parse(JSON.stringify(other)))?.git?.pullRequest?.state).toBe(state);
+  }
+});
+
+test.each([
+  ["not a record", "51"],
+  ["without a number", { ...PULL_REQUEST, number: undefined }],
+  ["with a number that is not one", { ...PULL_REQUEST, number: 5.1 }],
+  ["with an empty title", { ...PULL_REQUEST, title: " " }],
+  ["with a title too long to be one", { ...PULL_REQUEST, title: "t".repeat(201) }],
+  ["with a state it cannot have", { ...PULL_REQUEST, state: "locked" }],
+  [
+    "with counts that are not counts",
+    { ...PULL_REQUEST, checks: { ...PULL_REQUEST.checks, failing: -1 } },
+  ],
+  [
+    "with checks failing that no count says failed",
+    { ...PULL_REQUEST, checks: { state: "failing", passing: 3, failing: 0, pending: 0 } },
+  ],
+  [
+    "with checks in a state it cannot have",
+    { ...PULL_REQUEST, checks: { ...PULL_REQUEST.checks, state: "red" } },
+  ],
+  ["with a link to another site", { ...PULL_REQUEST, url: "https://example.net/pull/51" }],
+  [
+    "with a link to another pull request",
+    { ...PULL_REQUEST, url: "https://github.com/example-org/storefront/pull/52" },
+  ],
+  ["with a link that runs script", { ...PULL_REQUEST, url: "javascript:alert(1)" }],
+])("a pull request %s is none, and the branch is still read", (_what, pullRequest) => {
+  const read = readSession({ ...makeSession(), git: { branch: "checkout-flow", pullRequest } });
+  expect(read?.git).toEqual({ branch: "checkout-flow" });
+});
+
+test("a commit has no pull request", () => {
+  const read = readSession({
+    ...makeSession(),
+    git: { commit: "3f9a2c1", pullRequest: PULL_REQUEST },
+  });
+  expect(read?.git).toEqual({ commit: "3f9a2c1" });
 });
 
 test("a repository with no branch or commit is no git at all", () => {
@@ -830,4 +894,31 @@ test("in an answer of the waits, a day or a session that cannot be read is left 
   expect(readWaits({ ...sent, today: { ...sent.today, waitedMs: "a lot" } })).toBeNull();
   expect(readWaits({ ...sent, sevenDays: null })).toBeNull();
   expect(readWaits("<!doctype html>")).toBeNull();
+});
+
+test("the answer of /api/pull-requests is read as it was sent, and counts as on only with what gh was found to be", () => {
+  const on = { on: true, problem: null, gh: "ready", last: { at: T, ok: true } };
+  expect(readPullRequestsStatus(on)).toEqual(on);
+  expect(
+    readPullRequestsStatus({ ...on, last: { at: T, ok: false, reason: "gh did not answer" } }),
+  ).toEqual({ ...on, last: { at: T, ok: false, reason: "gh did not answer" } });
+  expect(readPullRequestsStatus({ ...on, gh: "sleeping" })).toEqual({
+    on: false,
+    problem: null,
+    gh: null,
+    last: null,
+  });
+  expect(
+    readPullRequestsStatus({
+      on: false,
+      problem: "AGENT_LOOKOUT_PULL_REQUESTS must be on or off.",
+    }),
+  ).toEqual({
+    on: false,
+    problem: "AGENT_LOOKOUT_PULL_REQUESTS must be on or off.",
+    gh: null,
+    last: null,
+  });
+  expect(readPullRequestsStatus({ on: "yes" })).toBeNull();
+  expect(readPullRequestsStatus("on")).toBeNull();
 });

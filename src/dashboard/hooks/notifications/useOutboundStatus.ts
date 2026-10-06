@@ -10,10 +10,10 @@ export interface OutboundStatusReading<Status> {
 }
 
 /**
- * Whether the app sends something off this computer, by email or to a
- * webhook, read with `fetchStatus` when the component mounts and every few
- * seconds while it stays. Null until the first answer. `fetchStatus` is a
- * function that does not change, such as `fetchEmailStatus`.
+ * Whether the app sends something off this computer, by email, to a webhook
+ * or through gh for pull requests, read with `fetchStatus` when the component
+ * mounts and every few seconds while it stays. Null until the first answer.
+ * `fetchStatus` is a function that does not change, such as `fetchEmailStatus`.
  */
 export function useOutboundStatus<Status>(
   fetchStatus: () => Promise<Status | null>,

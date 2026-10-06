@@ -114,6 +114,56 @@ export interface GitHead {
   commit?: string;
   /** The repository, whenever the collector could tell it. */
   repository?: GitRepository;
+  /**
+   * The pull request on github.com for the branch, with
+   * `AGENT_LOOKOUT_PULL_REQUESTS=on` only: see `PullRequest`.
+   */
+  pullRequest?: PullRequest;
+}
+
+/** Where a pull request stands: open, open as a draft, merged, or closed without merging. */
+export const PULL_REQUEST_STATES = ["open", "draft", "merged", "closed"] as const;
+
+export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
+
+/**
+ * How a pull request's checks stand, from every check on its latest commit:
+ * failing when any failed, pending when none failed and some have not
+ * finished, passing when each one passed or was skipped, and none when it has
+ * no checks at all.
+ */
+export const CHECKS_STATES = ["failing", "pending", "passing", "none"] as const;
+
+export type ChecksState = (typeof CHECKS_STATES)[number];
+
+/** A pull request's checks: how they stand, and how many are in each state. */
+export interface PullRequestChecks {
+  state: ChecksState;
+  /** Checks that passed, were skipped or ended neutral. */
+  passing: number;
+  /** Checks that failed, timed out, were cancelled or need an action. */
+  failing: number;
+  /** Checks that have not finished. */
+  pending: number;
+}
+
+/**
+ * The pull request for a session's branch on github.com, as the person's own
+ * GitHub CLI, gh, gave it. The collector asks only with
+ * `AGENT_LOOKOUT_PULL_REQUESTS=on`, only for a repository whose remote is on
+ * github.com, and not for the repository's default branch.
+ */
+export interface PullRequest {
+  number: number;
+  /** Its title, from GitHub, cleaned and cut as a session's name is, and shown as plain text. */
+  title: string;
+  state: PullRequestState;
+  checks: PullRequestChecks;
+  /**
+   * Its page, `https://github.com/<owner>/<repository>/pull/<number>`, which
+   * the collector builds from the remote and the number, not from GitHub's text.
+   */
+  url: string;
 }
 
 /**
@@ -156,7 +206,8 @@ export interface Session {
   project: string | null;
   /**
    * Present when cwd is in a git repository whose `HEAD` could be read: the
-   * branch or commit, and the repository. See `GitHead`.
+   * branch or commit, the repository, and with `AGENT_LOOKOUT_PULL_REQUESTS=on`
+   * the branch's pull request. See `GitHead`.
    */
   git?: GitHead;
   status: SessionStatus;

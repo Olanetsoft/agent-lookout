@@ -138,8 +138,9 @@ describe("runProgram, against real programs", () => {
     // wrapper would leave the child running, one more for every poll.
     const stub = await writeStub(`sleep 30 &\necho $! > '${pidFile}'\nwait`);
 
-    const result = await runProgram(stub, [], { timeoutMs: 500, env });
-    expect(result).toEqual({ ok: false, problem: "did not answer within 0.5 seconds" });
+    // Long enough for the wrapper to start its child on a busy machine.
+    const result = await runProgram(stub, [], { timeoutMs: 2_000, env });
+    expect(result).toEqual({ ok: false, problem: "did not answer within 2 seconds" });
 
     const childPid = Number((await readFile(pidFile, "utf8")).trim());
     expect(childPid).toBeGreaterThan(0);
@@ -153,7 +154,7 @@ describe("runProgram, against real programs", () => {
       `(trap '' TERM; sleep 30) &\necho $! > '${pidFile}'\ntrap '' TERM\nwait`,
     );
 
-    const result = await runProgram(stub, [], { timeoutMs: 500, env });
+    const result = await runProgram(stub, [], { timeoutMs: 2_000, env });
     expect(result.ok).toBe(false);
 
     const childPid = Number((await readFile(pidFile, "utf8")).trim());

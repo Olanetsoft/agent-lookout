@@ -35,10 +35,14 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /**
  * One small file's text: an ordinary file, never a link, a pipe or a folder, of
- * no more than `MAX_GIT_FILE_BYTES` of UTF-8. Undefined when there is nothing
- * at all by that name, and null for anything else.
+ * no more than `maxBytes` of UTF-8, `MAX_GIT_FILE_BYTES` unless said. Undefined
+ * when there is nothing at all by that name, and null for anything else.
  */
-async function readSmall(io: GitIo, file: string): Promise<string | null | undefined> {
+export async function readGitFile(
+  io: Pick<GitIo, "openRegular">,
+  file: string,
+  maxBytes: number = MAX_GIT_FILE_BYTES,
+): Promise<string | null | undefined> {
   let open;
   try {
     open = await io.openRegular(file);
@@ -48,9 +52,9 @@ async function readSmall(io: GitIo, file: string): Promise<string | null | undef
   try {
     // The size is checked before a byte is read, and one byte over the limit
     // tells a file that grew after it was opened.
-    if (open.info.size > MAX_GIT_FILE_BYTES) return null;
-    const bytes = await open.read(0, MAX_GIT_FILE_BYTES + 1);
-    if (bytes.byteLength > MAX_GIT_FILE_BYTES) return null;
+    if (open.info.size > maxBytes) return null;
+    const bytes = await open.read(0, maxBytes + 1);
+    if (bytes.byteLength > maxBytes) return null;
     return decoder.decode(bytes);
   } catch {
     return null;
@@ -66,10 +70,21 @@ async function readSmall(io: GitIo, file: string): Promise<string | null | undef
  * has one that cannot be read, which says no repository.
  */
 async function commonDirOf(io: GitIo, gitDir: string): Promise<string | null | undefined> {
-  const content = await readSmall(io, path.join(gitDir, "commondir"));
+  const content = await readGitFile(io, path.join(gitDir, "commondir"));
   if (content === undefined) return null;
   const target = content === null ? null : parseCommonDir(content);
   return target === null ? undefined : path.resolve(gitDir, target);
+}
+
+/** What is checked out in a folder, and the repository's own git folder, which never leaves the collector. */
+interface FoundHead {
+  head: GitHead;
+  /**
+   * The repository's own git folder, which its worktrees share: a `.git`
+   * folder, what a worktree's `commondir` names, or the folder any other
+   * `.git` file names. Null when the repository could not be told.
+   */
+  gitFolder: string | null;
 }
 
 /**
@@ -79,26 +94,27 @@ async function commonDirOf(io: GitIo, gitDir: string): Promise<string | null | u
  * one, names the repository's own. Anything else, such as a link, gives
  * nothing. `repository.ts` works out the repository from those paths.
  */
-async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<GitHead | null> {
+async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<FoundHead | null> {
   const marker = path.join(dir, ".git");
   let gitDir: string;
   if (kind === "directory") {
     gitDir = marker;
   } else if (kind === "file") {
-    const content = await readSmall(io, marker);
+    const content = await readGitFile(io, marker);
     const target = typeof content === "string" ? parseGitFile(content) : null;
     if (target === null) return null;
     gitDir = path.resolve(dir, target);
   } else {
     return null;
   }
-  const content = await readSmall(io, path.join(gitDir, "HEAD"));
+  const content = await readGitFile(io, path.join(gitDir, "HEAD"));
   const head = typeof content === "string" ? parseHead(content) : null;
   if (head === null) return null;
   // Only a git folder a `.git` file names can be a worktree's.
   const commonDir = kind === "file" ? await commonDirOf(io, gitDir) : null;
   const repository = commonDir === undefined ? null : repositoryOf({ dir, gitDir, commonDir });
-  return repository === null ? head : { ...head, repository };
+  if (repository === null) return { head, gitFolder: null };
+  return { head: { ...head, repository }, gitFolder: commonDir ?? gitDir };
 }
 
 /**
@@ -112,7 +128,12 @@ async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<G
  * `.git` when that is a file, `HEAD`, and beside a `HEAD` that a `.git` file
  * leads to, `commondir`: `gitHead.ts` has what each holds.
  */
-export async function findGitHead(cwd: string, { io, homeDir }: Where): Promise<GitHead | null> {
+export async function findGitHead(cwd: string, where: Where): Promise<GitHead | null> {
+  return (await findHead(cwd, where))?.head ?? null;
+}
+
+/** What `findGitHead` gives, with the repository's own git folder. Never rejects. */
+async function findHead(cwd: string, { io, homeDir }: Where): Promise<FoundHead | null> {
   if (!path.isAbsolute(cwd)) return null;
   const home = path.resolve(homeDir);
   let dir = path.resolve(cwd);
@@ -153,11 +174,18 @@ export interface BranchFinder {
    * to what is checked out there. Never rejects, and answers within the wait.
    */
   annotate(sessions: readonly Session[]): Promise<Session[]>;
+  /**
+   * The repository's own git folder for a session's folder, as last read, or
+   * null when the folder is in no repository that could be told. It stays in
+   * the collector: the pull request finder reads the remote there, and no
+   * session carries it.
+   */
+  gitFolderOf(cwd: string): string | null;
 }
 
 /** What is known of one folder. */
 interface Known {
-  head: GitHead | null;
+  found: FoundHead | null;
   /** When it was last read. */
   readAt: number;
 }
@@ -200,8 +228,8 @@ export function createBranchFinder(options: BranchFinderOptions = {}): BranchFin
 
   async function readAll(folders: readonly string[]): Promise<void> {
     for (const folder of folders) {
-      const head = await findGitHead(folder, where).catch(() => null);
-      known.set(folder, { head, readAt: now() });
+      const found = await findHead(folder, where).catch(() => null);
+      known.set(folder, { found, readAt: now() });
     }
   }
 
@@ -228,9 +256,11 @@ export function createBranchFinder(options: BranchFinderOptions = {}): BranchFin
       }
 
       return sessions.map((session) => {
-        const head = session.cwd ? known.get(session.cwd)?.head : null;
+        const head = session.cwd ? known.get(session.cwd)?.found?.head : null;
         return head ? { ...session, git: head } : session;
       });
     },
+
+    gitFolderOf: (cwd) => known.get(cwd)?.found?.gitFolder ?? null,
   };
 }

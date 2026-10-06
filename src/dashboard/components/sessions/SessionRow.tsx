@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
+import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
@@ -72,7 +73,8 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * is checked out, under its folder's name, in the muted ink: the Folder column
  * is too narrow to hold both on one line, and beside the folder a branch would
  * be cut to a letter or two. Where the Folder column gives way, the branch
- * goes with it.
+ * goes with it. A branch whose open pull request has a check failing has a
+ * small cross after it, in a failed session's quiet colour: `ChecksMark`.
  *
  * In a narrow window every row has two lines: the name, and under it the status
  * and its time, led by the tool when the table names one: "Codex · Working".
@@ -248,10 +250,17 @@ export function SessionRow({
               {session.project ?? "–"}
             </span>
           </Tooltip>
-          {/* Under the folder, the branch has the column's whole width. */}
+          {/*
+           * Under the folder, the branch has the column's whole width, with the
+           * mark of a pull request whose checks are failing after it.
+           */}
           {session.git && (
-            <span data-part='git' className='flex min-w-0 leading-tight text-ink-muted'>
+            <span
+              data-part='git'
+              className='flex min-w-0 items-center gap-1 leading-tight text-ink-muted'
+            >
               <Branch git={session.git} className='min-w-0' />
+              <ChecksMark git={session.git} />
             </span>
           )}
         </td>

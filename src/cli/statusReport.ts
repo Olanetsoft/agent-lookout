@@ -5,6 +5,7 @@
 // dashboard's do, so a wait reads the same here as there.
 
 import { formatDuration } from "../core/duration.ts";
+import { pullRequestSummaryOf, type PullRequestSummary } from "../core/sessions/pullRequest.ts";
 import {
   agentName,
   WAITING_REASONS,
@@ -27,7 +28,10 @@ export type ReportedSession = Pick<
   | "waitingReason"
   | "statusSince"
   | "stale"
->;
+> & {
+  /** Read as the rest of the answer is not: field by field, and only for its pull request. */
+  git?: unknown;
+};
 
 /** The parts of an answer of `/api/sessions` the report reads. */
 export interface ReportedSnapshot {
@@ -47,6 +51,11 @@ export interface WaitingSession {
   waitingSince: number | null;
   /** How long it has waited, or null when the start of the wait is not known. */
   waitedMs: number | null;
+  /**
+   * Its branch's pull request on GitHub, its number and how its checks stand,
+   * only when Agent Lookout is set to show pull requests and the branch has one.
+   */
+  pullRequest?: PullRequestSummary;
 }
 
 /**
@@ -100,6 +109,11 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
       case "needs-you": {
         report.needsYou += 1;
         const since = session.statusSince;
+        const git = session.git;
+        const pullRequest =
+          typeof git === "object" && git !== null
+            ? pullRequestSummaryOf((git as { pullRequest?: unknown }).pullRequest)
+            : null;
         report.waiting.push({
           id: session.id,
           name: sessionTitle(session),
@@ -107,6 +121,7 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
           reason: reasonOf(session),
           waitingSince: since,
           waitedMs: since === null ? null : Math.max(0, now - since),
+          ...(pullRequest !== null && { pullRequest }),
         });
         break;
       }

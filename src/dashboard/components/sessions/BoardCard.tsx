@@ -1,6 +1,7 @@
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
+import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
@@ -39,7 +40,8 @@ interface BoardCardProps {
  * moves to another column on its own, when its session changes status.
  *
  * A long name, repository, folder, branch or tool is cut, and stays a hover or
- * a Tab away.
+ * a Tab away. A branch whose open pull request has a check failing has the
+ * small cross of `ChecksMark` after it, as in the list.
  * What a press of Jump came to is a badge beside the name, or under it where
  * the line cannot hold both, and the two sentences about macOS take a line of
  * their own, as in the list.
@@ -135,6 +137,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
                 className='inline-flex max-w-full gap-1 align-top whitespace-nowrap text-ink-muted'
               >
                 <Branch git={session.git} inSentence className='min-w-0' />
+                <ChecksMark git={session.git} />
               </span>
             </>
           )}

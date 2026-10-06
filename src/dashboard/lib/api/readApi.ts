@@ -1,11 +1,14 @@
 import {
+  GH_STATES,
   HISTORY_BEGINNINGS,
   isWebhookHost,
+  type CheckResult,
   type EmailStatusResponse,
   type HistoryKept,
   type HistoryResponse,
   type HistoryRestart,
   type HistorySince,
+  type PullRequestsStatusResponse,
   type SendResult,
   type SessionWaitTotal,
   type WaitDay,
@@ -14,11 +17,14 @@ import {
   type WaitTotal,
   type WebhookStatusResponse,
 } from "@core/api";
+import { checksStateOf, isPullRequestNumber, isPullRequestUrl } from "@core/sessions/pullRequest";
 import {
   CAPABILITIES,
+  CHECKS_STATES,
   EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
+  PULL_REQUEST_STATES,
   SESSION_STATUSES,
   SOURCE_STATES,
   STOP_WAYS,
@@ -30,6 +36,8 @@ import {
   type GitRepository,
   type HistoryPoint,
   type JumpTarget,
+  type PullRequest,
+  type PullRequestChecks,
   type Session,
   type SessionEvent,
   type SessionsSnapshot,
@@ -153,15 +161,65 @@ const REPOSITORY_ID = /^[0-9a-f]{16,64}$/;
 
 /**
  * What a session's folder has checked out: a branch, as text, or a commit, as
- * an ID, with the repository when that can be read. Null for anything else,
- * and for both at once. A repository that cannot be read leaves the branch.
+ * an ID, with the repository when that can be read, and a branch's pull
+ * request when the collector gives one. Null for anything else, and for both
+ * at once. A repository or a pull request that cannot be read leaves the branch.
  */
 function readGit(value: unknown): GitHead | null {
   if (!isRecord(value)) return null;
   const head = readHead(value);
   if (head === null) return null;
   const repository = readRepository(value.repository);
-  return repository === null ? head : { ...head, repository };
+  const pullRequest = head.branch === undefined ? null : readPullRequest(value.pullRequest);
+  return {
+    ...head,
+    ...(repository !== null && { repository }),
+    ...(pullRequest !== null && { pullRequest }),
+  };
+}
+
+/** The most checks counted in one state. A pull request has nowhere near so many. */
+const MAX_CHECKS = 10_000;
+
+/** A count of checks, or null. */
+function checkCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_CHECKS
+    ? value
+    : null;
+}
+
+/**
+ * A pull request's checks: the counts, and a state that agrees with them, so
+ * the page never marks checks as failing that no count says failed.
+ */
+function readChecks(value: unknown): PullRequestChecks | null {
+  if (!isRecord(value)) return null;
+  const passing = checkCount(value.passing);
+  const failing = checkCount(value.failing);
+  const pending = checkCount(value.pending);
+  const state = oneOf(CHECKS_STATES, value.state);
+  if (passing === null || failing === null || pending === null || state === null) return null;
+  const counts = { passing, failing, pending };
+  return checksStateOf(counts) === state ? { state, ...counts } : null;
+}
+
+/**
+ * A branch's pull request: its number, a title no longer than a session's
+ * name, its state, its checks, and its page on github.com in the one shape the
+ * collector writes, for that number. Null for anything else, so a link the
+ * page shows can lead nowhere but to that pull request.
+ */
+function readPullRequest(value: unknown): PullRequest | null {
+  if (!isRecord(value)) return null;
+  const { number, url } = value;
+  if (!isPullRequestNumber(number)) return null;
+  const title = text(value.title);
+  const state = oneOf(PULL_REQUEST_STATES, value.state);
+  const checks = readChecks(value.checks);
+  if (title === null || Array.from(title).length > MAX_NAME_LENGTH) return null;
+  if (state === null || checks === null) return null;
+  if (typeof url !== "string" || !isPullRequestUrl(url, number)) return null;
+  return { number, title, state, checks, url };
 }
 
 function readHead(value: Record<string, unknown>): GitHead | null {
@@ -548,6 +606,31 @@ export function readEmailStatus(data: unknown): EmailStatusResponse | null {
     problem: on ? null : shortText(data.problem),
     last: on ? readSendResult(data.last, "the email could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,
+  };
+}
+
+/** How the last question to gh went. A reason that cannot be read is the plain one given. */
+function readCheckResult(value: unknown): CheckResult | null {
+  if (!isRecord(value)) return null;
+  const at = number(value.at);
+  if (at === null) return null;
+  if (value.ok === true) return { at, ok: true };
+  return { at, ok: false, reason: shortText(value.reason) ?? "gh did not answer" };
+}
+
+/**
+ * The answer of `/api/pull-requests`. Pull requests count as on only when the
+ * answer says so and says what gh was found to be.
+ */
+export function readPullRequestsStatus(data: unknown): PullRequestsStatusResponse | null {
+  if (!isRecord(data) || typeof data.on !== "boolean") return null;
+  const gh = oneOf(GH_STATES, data.gh);
+  const on = data.on && gh !== null;
+  return {
+    on,
+    problem: on ? null : shortText(data.problem),
+    gh: on ? gh : null,
+    last: on ? readCheckResult(data.last) : null,
   };
 }
 

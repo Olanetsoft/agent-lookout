@@ -157,6 +157,8 @@ interface TruncatedProps extends Omit<ComponentProps<"span">, "children"> {
    * details. A link is always a stop on the way through the page.
    */
   href?: string;
+  /** With `href`, `_blank` opens a link that leaves the page in a tab of its own. */
+  target?: "_blank";
 }
 
 /**
@@ -173,6 +175,7 @@ export function Truncated({
   tooltip,
   mono = false,
   href,
+  target,
   className,
   ...props
 }: TruncatedProps) {
@@ -197,6 +200,7 @@ export function Truncated({
         <a
           ref={ref as RefObject<HTMLAnchorElement | null>}
           href={href}
+          target={target}
           data-cut={cut}
           className={look}
           {...(props as ComponentProps<"a">)}

@@ -12,6 +12,7 @@
 // nothing are taken out too, since a model reads them and a person does not.
 
 import { formatDuration } from "../../core/duration.ts";
+import { pullRequestSummaryOf, type PullRequestSummary } from "../../core/sessions/pullRequest.ts";
 import {
   agentName,
   CAPABILITIES,
@@ -72,7 +73,7 @@ const UNTRUSTED =
 export const TOOLS: Record<ToolName, { title: string; description: string }> = {
   list_sessions: {
     title: "List sessions",
-    description: `Lists the AI agent sessions Agent Lookout sees on this computer, from Claude Code, Codex and any agent that writes a status file: each one's id, name, agent, status (needs-you, working, idle, finished, failed or unknown), the reason when it needs the person, its folder's name, git branch, app, when its status began and, for a working session whose agent writes its file as it works, how long it has written nothing. Sessions that need the person come first, longest wait first. Give a status to list only those. Read-only: it changes nothing. ${UNTRUSTED}`,
+    description: `Lists the AI agent sessions Agent Lookout sees on this computer, from Claude Code, Codex and any agent that writes a status file: each one's id, name, agent, status (needs-you, working, idle, finished, failed or unknown), the reason when it needs the person, its folder's name, git branch, app, when its status began and, for a working session whose agent writes its file as it works, how long it has written nothing. When Agent Lookout is set to show pull requests, it also gives the number of the branch's pull request on GitHub and whether its checks are failing, pending or passing. Sessions that need the person come first, longest wait first. Give a status to list only those. Read-only: it changes nothing. ${UNTRUSTED}`,
   },
   sessions_needing_you: {
     title: "Sessions needing you",
@@ -117,6 +118,11 @@ export interface ListedSession {
   branch: string | null;
   /** The first seven characters of the commit, when the folder has no branch checked out. */
   commit: string | null;
+  /**
+   * The branch's pull request on GitHub, its number and how its checks stand,
+   * when Agent Lookout is set to show pull requests and the branch has one.
+   */
+  pullRequest: PullRequestSummary | null;
   /** "Terminal", "VS Code", "Desktop app", "Cloud" or "Browser". */
   app: string | null;
   /** When the status began, in ISO 8601, when the source says. */
@@ -154,6 +160,7 @@ export interface WaitingSession {
   folder: string | null;
   branch: string | null;
   commit: string | null;
+  pullRequest: PullRequestSummary | null;
   app: string | null;
   /** When the wait began, in ISO 8601, when the source says. */
   since: string | null;
@@ -266,6 +273,7 @@ function listed(
     folder: clean(session.project),
     branch: clean(git.branch),
     commit: clean(git.commit),
+    pullRequest: pullRequestSummaryOf(git.pullRequest),
     app: isOneOf(SURFACES, session.surface) ? surfaceLabel(session.surface) : null,
     since: iso(session.statusSince),
     quietFor: quietForMs === null ? null : formatDuration(quietForMs),
@@ -349,6 +357,7 @@ export function sessionsNeedingYou(snapshot: ToolSnapshot, now: number): WaitLis
         folder: session.folder,
         branch: session.branch,
         commit: session.commit,
+        pullRequest: session.pullRequest,
         app: session.app,
         since: session.since,
         waited: waitedMs === null ? null : formatDuration(waitedMs),

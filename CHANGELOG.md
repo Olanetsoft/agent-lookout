@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- A session's pull request on github.com, and how its checks stand, can be shown. Start Agent Lookout with `AGENT_LOOKOUT_PULL_REQUESTS=on` and it asks your own GitHub CLI, `gh`, with the login `gh` already has, so Agent Lookout never sees a token. A session's details then have a Pull request fact: its number and title, as a link that opens it on github.com in your browser, and whether it is open, a draft, merged or closed, with how many checks are failing, pending and passing. In the Sessions list and on the board, a branch whose open pull request has a failing check has a small cross after it, which says which pull request on hover or Tab. It asks only about a branch of a repository whose remote is on github.com, read from the repository's own `config`, never about the default branch or a branch named with digits alone, such as `51`, which `gh` would take for a pull request's number, and at most once every 2 minutes for each repository and branch. With it on, `gh` sends GitHub the repository's owner and name and the branch's name. Without `gh`, or with `gh` not signed in, the Pull requests card in Settings says so and nothing else changes. `agent-lookout mcp` and `agent-lookout status --json` give a branch's pull request as its number and the state of its checks, and only with the setting on. It is off by default, and any value but `on` or `off` leaves it off with one line at start that names the setting. [Pull requests](docs/GUIDE.md#pull-requests) has the details.
+
 ### Changed
 
 - `npx agent-lookout` installs about 4 MB, down from about 30 MB, and downloads under 2 MB. The parts of the MCP SDK and zod that `agent-lookout mcp` uses are now inside the package, so neither is installed, nor are the web servers that came with the SDK, and `mcp` works as before. The one package it installs besides itself is nodemailer, for email.

@@ -20,6 +20,11 @@ import { useTheme } from "@dashboard/hooks/shell/useTheme";
 import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
 import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
+import {
+  asksGitHub,
+  fetchPullRequestsStatus,
+  pullRequestsWords,
+} from "@dashboard/lib/pull-requests/pullRequestsStatus";
 import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 import type { ThemePreference } from "@dashboard/lib/shell/theme";
 
@@ -189,7 +194,7 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
         </p>
         {words?.asking && (
           <p data-part='asking' className='mt-3 text-body text-ink-secondary'>
-            {words.asking}
+            <FactText>{words.asking}</FactText>
           </p>
         )}
         {words?.detail &&
@@ -209,12 +214,27 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
   );
 }
 
-/** Where the person's data goes, as the facts about this copy say it. */
-function whereDataGoes(emailing: boolean, posting: boolean): string {
-  if (emailing && posting) return "Sent only in the emails and posts you set up";
-  if (emailing) return "Sent only in the emails you set up";
-  if (posting) return "Sent only in the webhook posts you set up";
-  return "Agent Lookout sends it nowhere";
+/**
+ * Where the person's data goes, as the facts about this copy say it. While gh
+ * is asked for pull requests, the names of repositories and branches go to
+ * GitHub through it. While gh is missing or signed out nothing goes, and the
+ * words say so.
+ */
+function whereDataGoes(emailing: boolean, posting: boolean, pullRequests: boolean): string {
+  const sent =
+    emailing && posting
+      ? "the emails and posts you set up"
+      : emailing
+        ? "the emails you set up"
+        : posting
+          ? "the webhook posts you set up"
+          : null;
+  if (pullRequests) {
+    return sent === null
+      ? "Sent only as repository and branch names, to GitHub through gh"
+      : `Sent only in ${sent}, and repository and branch names to GitHub`;
+  }
+  return sent === null ? "Agent Lookout sends it nowhere" : `Sent only in ${sent}`;
 }
 
 interface SettingsViewProps {
@@ -232,8 +252,9 @@ interface SettingsViewProps {
  * choice to follow the computer that the header's switch does not offer,
  * whether to be notified and of what, where the history is kept and the button
  * that clears it, in the Mac app whether it shows in the menu bar and its
- * updates, whether email and a webhook have been set up, and a few facts about
- * this copy of the app.
+ * updates, whether email and a webhook have been set up, whether pull requests
+ * are shown and gh can be asked for them, and a few facts about this copy of
+ * the app.
  *
  * The page knows it is in the app's window by its address. In a browser there
  * is no Menu bar card and no Updates card: a browser tab has no menu bar item,
@@ -251,10 +272,13 @@ export function SettingsView({
   const ticking = useNow();
   const email = useOutboundStatus(fetchEmailStatus);
   const webhook = useOutboundStatus(fetchWebhookStatus);
+  const pullRequests = useOutboundStatus(fetchPullRequestsStatus);
   // Emails and webhook posts are the only things Agent Lookout sends off this
-  // computer, and only once set up.
+  // computer, and only once set up, with the names gh sends GitHub for pull
+  // requests, once those are on and gh can be asked.
   const emailing = typeof email?.status === "object" && email.status.on;
   const posting = typeof webhook?.status === "object" && webhook.status.on;
+  const askingGh = typeof pullRequests?.status === "object" && asksGitHub(pullRequests.status);
 
   return (
     <div
@@ -263,7 +287,7 @@ export function SettingsView({
     >
       {/*
        * The settings on the left, and on the right what is only read: email,
-       * the webhook and the facts about this copy, as Sources keeps its
+       * the webhook, pull requests and the facts about this copy, as Sources keeps its
        * explanations in the right third. When the view narrows the right stacks
        * under the left.
        */}
@@ -301,12 +325,22 @@ export function SettingsView({
           title='Webhook'
           words={wordsOf(webhook, "Whether the webhook is set up could not be read.", webhookWords)}
         />
+        <SendingCard
+          title='Pull requests'
+          words={wordsOf(
+            pullRequests,
+            "Whether pull requests are shown could not be read.",
+            pullRequestsWords,
+          )}
+        />
         <SectionCard title='This copy'>
           <FactList className='px-6 pb-3'>
             <FactRow label='Version' mono>
               v{__APP_VERSION__}
             </FactRow>
-            <FactRow label='Your data'>{whereDataGoes(emailing, posting)}</FactRow>
+            <FactRow label='Your data'>
+              <FactText>{whereDataGoes(emailing, posting, askingGh)}</FactText>
+            </FactRow>
           </FactList>
         </SectionCard>
       </div>

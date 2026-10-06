@@ -44,6 +44,16 @@ test("a route in a connection problem is a fact", () => {
   ]);
 });
 
+test("gh, and the command that signs it in, are facts", () => {
+  expect(facts("Install gh, the GitHub CLI, and sign in with gh auth login.")).toEqual([
+    "gh",
+    "gh auth login",
+  ]);
+  expect(facts("gh did not answer within 15 seconds.")).toEqual(["gh"]);
+  // Inside a word it is no command.
+  expect(facts("The light was high and the night long.")).toEqual([]);
+});
+
 test("a flag on its own and a Windows path are facts", () => {
   expect(facts("Run it again with --json.")).toEqual(["--json"]);
   expect(facts("Looked in C:\\Users\\example\\.claude\\sessions, and found nothing.")).toEqual([

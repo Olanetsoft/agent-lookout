@@ -15,10 +15,11 @@ export interface TextRun {
 }
 
 /**
- * The commands the sources run. In lowercase and on its own, one of these is the
- * program, not the product: "the claude command", not "Claude Code".
+ * The commands the sources run, and gh, which the collector asks for pull
+ * requests. In lowercase and on its own, one of these is the program, not the
+ * product: "the claude command", not "Claude Code".
  */
-const COMMANDS = ["claude"];
+const COMMANDS = ["claude", "gh"];
 
 const FACT = new RegExp(
   [
@@ -28,6 +29,8 @@ const FACT = new RegExp(
     // A path: ~/.claude/sessions, /opt/homebrew/bin, /api/sessions, ./dist, C:\Users\example.
     String.raw`(?<![\w.:/~])(?:~|\.{1,2})?(?:/[\w.@%+~-]+)+/?`,
     String.raw`\b[A-Za-z]:\\[^\s,;]+`,
+    // The command that signs gh in, which takes no flag.
+    String.raw`\bgh auth login\b`,
     // A command, with its subcommands when flags follow: claude agents --json.
     String.raw`\b(?:${COMMANDS.join("|")})\b(?![\w-]|\.\w)(?:(?: [a-z][\w-]*)*(?: --?[a-z][\w-]*)+)?`,
     // A flag on its own: --json.
