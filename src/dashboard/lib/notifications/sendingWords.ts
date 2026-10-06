@@ -13,13 +13,16 @@ export { clockAt };
 export const STATUS_TIMEOUT_MS = 4_000;
 
 /**
- * What Settings says about email or the webhook: one line of state, and a line
- * under it when there is more to say. When something is wrong, a setting, the
- * last send or the hourly limit, the line under it has a title, and the card
+ * What Settings says about email or the webhook: one line of state, while it is
+ * on a line on whether what a waiting session is asking goes too, and a line
+ * under those when there is more to say. When something is wrong, a setting,
+ * the last send or the hourly limit, that last line has a title, and the card
  * shows the two as a note, as it shows that notifications are blocked.
  */
 export interface SendingWords {
   state: string;
+  /** Whether a wait's email or post says what the session is asking. Null while it is off. */
+  asking: string | null;
   /** What is wrong, in a few words. Null while nothing is. */
   title: string | null;
   detail: string | null;

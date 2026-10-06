@@ -3,6 +3,7 @@ import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
 import {
   LOCAL_HOSTS,
   readAfter,
+  readAsking,
   readEvents,
   SettingProblem,
   valueOf,
@@ -25,6 +26,8 @@ export const WEBHOOK_URL_ENV = "AGENT_LOOKOUT_WEBHOOK_URL";
 export const WEBHOOK_EVENTS_ENV = "AGENT_LOOKOUT_WEBHOOK_EVENTS";
 /** How many seconds a wait lasts before it is posted. */
 export const WEBHOOK_AFTER_ENV = "AGENT_LOOKOUT_WEBHOOK_AFTER";
+/** `on` to put what a waiting session is asking in the post for its wait. Off unless set. */
+export const WEBHOOK_ASKING_ENV = "AGENT_LOOKOUT_WEBHOOK_ASKING";
 
 export interface WebhookSettings {
   /** The whole address, path and query included. Never shown or printed. */
@@ -33,6 +36,8 @@ export interface WebhookSettings {
   events: readonly NoticeEvent[];
   /** How long a wait lasts before it is posted, in milliseconds. */
   afterMs: number;
+  /** Whether the post for a wait says what the session is asking. */
+  asking: boolean;
 }
 
 /**
@@ -86,7 +91,7 @@ function readUrl(value: string): URL {
 export function readWebhookSetup(env: NodeJS.ProcessEnv): WebhookSetup {
   const url = valueOf(env, WEBHOOK_URL_ENV);
   // Without an address the webhook is off, and there is nothing to say. That is
-  // the default and the way to turn it off, so the other two may stay set.
+  // the default and the way to turn it off, so the others may stay set.
   if (url === undefined) return { on: false, problem: null };
 
   try {
@@ -96,6 +101,7 @@ export function readWebhookSetup(env: NodeJS.ProcessEnv): WebhookSetup {
         url: readUrl(url),
         events: readEvents(WEBHOOK_EVENTS_ENV, valueOf(env, WEBHOOK_EVENTS_ENV)),
         afterMs: readAfter(WEBHOOK_AFTER_ENV, valueOf(env, WEBHOOK_AFTER_ENV)),
+        asking: readAsking(WEBHOOK_ASKING_ENV, valueOf(env, WEBHOOK_ASKING_ENV)),
       },
     };
   } catch (error) {

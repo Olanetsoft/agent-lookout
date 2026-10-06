@@ -2,7 +2,7 @@ import { formatDuration } from "../../core/duration.ts";
 import { surfaceLabel, type Session, type WaitingReason } from "../../core/sessions/session.ts";
 import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
 import { overPhrase, sessionTitle, waitingPhrase } from "../../core/notices/waiting.ts";
-import { oneLine } from "../../core/text.ts";
+import { oneLine, waitingText } from "../../core/text.ts";
 import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
 
 /**
@@ -10,15 +10,23 @@ import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
  * person, which is what Slack shows, so a Slack incoming webhook takes the
  * post as it is. The rest says the same for a program: the event, the reason
  * for a wait, the session's name, agent, project folder and app, when it
- * happened, and how long a wait had lasted when it was posted.
+ * happened, and how long a wait had lasted when it was posted. With
+ * `AGENT_LOOKOUT_WEBHOOK_ASKING=on`, the post for a wait also says what the
+ * session is asking, as the dashboard shows it, in `text` after the reason and
+ * in `asking`. That can hold a command, a web address or a file's full path.
  *
- * Nothing else goes in it: no path, no prompt, none of the agent's own words.
+ * Nothing else goes in it: no folder path, no prompt, none of the agent's own words.
  */
 export interface WebhookPost {
   text: string;
   event: NoticeEvent;
   /** Why the session waits. A wait only. */
   reason?: WaitingReason;
+  /**
+   * What the session is asking, as the dashboard shows it: "Run: npm test". A
+   * wait only, with `AGENT_LOOKOUT_WEBHOOK_ASKING=on`, and only when its agent says.
+   */
+  asking?: string;
   session: {
     name: string;
     /** The agent, such as "Claude Code". Null when not known. */
@@ -69,13 +77,23 @@ function lineOf(happened: string, facts: readonly (string | null)[]): string {
   return slackSafe(known.length === 0 ? happened : `${happened} (${known.join(", ")})`);
 }
 
-/** The post for a wait that has lasted the delay and is still open. */
+/**
+ * The post for a wait that has lasted the delay and is still open. What the
+ * session is asking follows the reason, as in the notification of a wait:
+ * "checkout-flow is waiting for permission: Run: npm test (4m 12s, ...)".
+ */
 export function waitPost(facts: WaitFacts): WebhookPost {
   const { begunAt, now } = facts;
+  // The channel has cleaned and cut it already, by the rule the dashboard's
+  // line is made by. It is put through that rule again, which leaves it as it
+  // was, so no line break handed in can reach `text`.
+  const asking = waitingText(facts.asking);
   const session = sessionOf(facts.session, facts.agent);
   const waitedMs = Math.max(0, now - begunAt);
+  const happened = `${session.name} ${waitingPhrase(facts.session)}`;
   return {
-    text: lineOf(`${session.name} ${waitingPhrase(facts.session)}`, [
+    // In `text` it is made safe for Slack with the rest.
+    text: lineOf(asking ? `${happened}: ${asking}` : happened, [
       formatDuration(waitedMs),
       session.folder,
       session.app,
@@ -83,6 +101,8 @@ export function waitPost(facts: WaitFacts): WebhookPost {
     ]),
     event: "needs-you",
     reason: facts.session.waitingReason ?? "other",
+    // Left out, not null, when it does not go, so a post without it is the post it always was.
+    ...(asking ? { asking } : {}),
     session,
     at: new Date(begunAt).toISOString(),
     waitedSeconds: Math.floor(waitedMs / 1_000),

@@ -39,6 +39,7 @@ function emailFor(name: string): EmailContent {
       waitingReason: "question",
     }),
     agent: "Claude Code",
+    asking: null,
     begunAt: BEGUN,
     now: BEGUN + 90_000,
   });

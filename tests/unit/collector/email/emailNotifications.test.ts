@@ -18,6 +18,7 @@ const SETTINGS: EmailSettings = {
   from: "notify@example.com",
   events: ["needs-you"],
   afterMs: 60 * SECOND,
+  asking: false,
   server: {
     host: "smtp.example.com",
     port: 465,
@@ -432,6 +433,44 @@ describe("a failure", () => {
   });
 });
 
+describe("what a waiting session is asking", () => {
+  const askingWait = (n: number, name: string) =>
+    waiting(n, name, { project: name, surface: "vscode", waitingText: "Run: npm test" });
+
+  test("with the setting off, which it is unless set, the email leaves it out", async () => {
+    const sender = fakeSender();
+    const { email, poll } = setUp({}, sender);
+    await poll(0, [working(1, "checkout-flow")]);
+    await poll(2 * SECOND, [askingWait(1, "checkout-flow")]);
+    await poll(62 * SECOND, [askingWait(1, "checkout-flow")]);
+
+    expect(sender.sent).toHaveLength(1);
+    expect(JSON.stringify(sender.sent)).not.toMatch(/Asking|npm test/);
+    expect(email.status().asking).toBe(false);
+  });
+
+  test("with it on, the email for the wait says it, under when, and the status says it is on", async () => {
+    const sender = fakeSender();
+    const { email, poll } = setUp({ asking: true, events: ["needs-you", "ended"] }, sender);
+    await poll(0, [working(1, "checkout-flow")]);
+    await poll(2 * SECOND, [askingWait(1, "checkout-flow")]);
+    await poll(62 * SECOND, [askingWait(1, "checkout-flow")]);
+    await poll(64 * SECOND, []);
+
+    expect(subjects(sender)).toEqual([
+      "checkout-flow is waiting for permission",
+      "checkout-flow ended",
+    ]);
+    expect(sender.sent[0]?.text).toMatch(
+      /^checkout-flow is waiting for permission\.\n\nIt has waited 1 minute, since \S+\.\n\nAsking: Run: npm test\nFolder: checkout-flow\nApp: VS Code\n/,
+    );
+    // Only the wait says it: the end of the same session does not.
+    expect(sender.sent[1]?.text).not.toMatch(/Asking|npm test/);
+    expect(email.status().asking).toBe(true);
+    expect(JSON.stringify(email.status())).not.toContain("npm test");
+  });
+});
+
 describe("the status", () => {
   test("says email is on, with the address masked and the delay, and nothing of the server", async () => {
     const { email } = setUp();
@@ -441,6 +480,7 @@ describe("the status", () => {
       to: "n…@example.com",
       events: ["needs-you"],
       afterMs: 60_000,
+      asking: false,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -462,6 +502,7 @@ describe("the status", () => {
       to: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,

@@ -551,6 +551,7 @@ test("the email status is read as it was sent, on and off", () => {
     to: "n…@example.com",
     events: ["needs-you", "finished"],
     afterMs: 60_000,
+    asking: true,
     problem: null,
     last: { at: T, sent: false, reason: "the mail server did not answer in time" },
     limitedUntil: T + 3_600_000,
@@ -566,11 +567,27 @@ test("the email status is read as it was sent, on and off", () => {
     to: null,
     events: null,
     afterMs: null,
+    asking: null,
     problem: "AGENT_LOOKOUT_SMTP_URL is not set.",
     last: null,
     limitedUntil: null,
   };
   expect(readEmailStatus(off)).toEqual(off);
+});
+
+test("whether a wait's email or post says what the session is asking is read as a plain yes, and only while it is on", () => {
+  const email = { on: true, to: "n…@example.com", events: ["needs-you"], afterMs: 0 };
+  const webhook = { on: true, host: "hooks.example.com", events: ["needs-you"], afterMs: 0 };
+  expect(readEmailStatus({ ...email, asking: true })?.asking).toBe(true);
+  expect(readWebhookStatus({ ...webhook, asking: true })?.asking).toBe(true);
+  // A version of the app that does not say never sends it.
+  for (const asking of [false, undefined, null, "true", "on", 1]) {
+    expect(readEmailStatus({ ...email, asking })?.asking, String(asking)).toBe(false);
+    expect(readWebhookStatus({ ...webhook, asking })?.asking, String(asking)).toBe(false);
+  }
+  // While off nothing is sent, so nothing is said of it.
+  expect(readEmailStatus({ ...email, on: false, asking: true })?.asking).toBeNull();
+  expect(readWebhookStatus({ ...webhook, on: false, asking: true })?.asking).toBeNull();
 });
 
 test("an email status that cannot be read never claims that emails are going out", () => {
@@ -620,6 +637,7 @@ test("the webhook status is read as it was sent, on and off", () => {
     host: "hooks.example.com",
     events: ["needs-you", "finished"],
     afterMs: 60_000,
+    asking: false,
     problem: null,
     last: { at: T, sent: false, reason: "the address refused the post (status 403)" },
     limitedUntil: T + 3_600_000,
@@ -631,6 +649,7 @@ test("the webhook status is read as it was sent, on and off", () => {
     host: null,
     events: null,
     afterMs: null,
+    asking: null,
     problem:
       "AGENT_LOOKOUT_WEBHOOK_AFTER must be a whole number of seconds from 0 to 86400, such as 60.",
     last: null,

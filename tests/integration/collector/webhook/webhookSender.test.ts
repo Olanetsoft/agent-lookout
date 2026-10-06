@@ -18,7 +18,12 @@ const POST: WebhookPost = {
 };
 
 function sender(url: string, timeoutMs = 500) {
-  const settings: WebhookSettings = { url: new URL(url), events: ["needs-you"], afterMs: 0 };
+  const settings: WebhookSettings = {
+    url: new URL(url),
+    events: ["needs-you"],
+    afterMs: 0,
+    asking: false,
+  };
   return createHttpSender(settings, { version: "9.9.9-test", timeoutMs });
 }
 

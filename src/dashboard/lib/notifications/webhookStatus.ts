@@ -35,35 +35,48 @@ export function webhookWords(status: WebhookStatusResponse, now: number): Sendin
     return status.problem === null
       ? {
           state: "The webhook is off.",
+          asking: null,
           title: null,
           detail: "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
         }
       : {
           state: "The webhook is off.",
+          asking: null,
           title: "The webhook is not set up correctly",
           detail: `${status.problem} Correct it and start Agent Lookout again.`,
         };
   }
 
-  const state = whereAndWhen("Posts", status.host, status.events, status.afterMs);
+  const said = {
+    state: whereAndWhen("Posts", status.host, status.events, status.afterMs),
+    asking: status.asking
+      ? "Posts for a wait say what the session is asking."
+      : "Posts leave out what a waiting session is asking.",
+  };
+  return { ...said, ...lastWords(status, now) };
+}
+
+/** The line under the others: how the last post went, or that the hourly limit holds them. */
+function lastWords(
+  status: WebhookStatusResponse,
+  now: number,
+): Pick<SendingWords, "title" | "detail"> {
   const { last, limitedUntil } = status;
   if (limitedUntil !== null) {
     // Tries that failed count toward the limit, so a failure is said first.
     const next = clockAt(limitedUntil, now);
     return last !== null && !last.sent
       ? {
-          state,
           title: "The last post failed",
           detail: `${sentenceStart(last.reason)}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`,
         }
       : {
-          state,
           title: "Posts are held back",
           detail: `${SENDS_PER_HOUR} posts were tried in the last hour, the most it tries. The next can go at ${next}.`,
         };
   }
-  if (last === null) return { state, title: null, detail: null };
+  if (last === null) return { title: null, detail: null };
   return last.sent
-    ? { state, title: null, detail: `Last posted at ${clockAt(last.at, now)}.` }
-    : { state, title: "The last post failed", detail: `${sentenceStart(last.reason)}.` };
+    ? { title: null, detail: `Last posted at ${clockAt(last.at, now)}.` }
+    : { title: "The last post failed", detail: `${sentenceStart(last.reason)}.` };
 }

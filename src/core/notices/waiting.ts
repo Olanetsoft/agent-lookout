@@ -52,8 +52,10 @@ export interface Notice {
  * file is outside the session's folder.
  *
  * It is shown on this machine alone, by the page or by the collector. An email
- * and a webhook post, which leave the machine, are written elsewhere and never
- * hold what the session is asking.
+ * and a webhook post, which leave the machine, are written elsewhere, and hold
+ * what the session is asking only for a wait, and only with
+ * `AGENT_LOOKOUT_EMAIL_ASKING=on` or `AGENT_LOOKOUT_WEBHOOK_ASKING=on`.
+ * `outboundChannel.ts` is the one place it is let through to them.
  */
 export function waitNotice(
   session: Pick<Session, "id" | "name" | "project" | "waitingReason" | "waitingText">,

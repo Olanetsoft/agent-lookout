@@ -2,6 +2,7 @@ import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
 import {
   LOCAL_HOSTS,
   readAfter,
+  readAsking,
   readEvents,
   SettingProblem,
   valueOf,
@@ -29,6 +30,8 @@ export const EMAIL_FROM_ENV = "AGENT_LOOKOUT_EMAIL_FROM";
 export const EMAIL_AFTER_ENV = "AGENT_LOOKOUT_EMAIL_AFTER";
 /** The events that are emailed, as names separated by commas: `needs-you,finished`. */
 export const EMAIL_EVENTS_ENV = "AGENT_LOOKOUT_EMAIL_EVENTS";
+/** `on` to put what a waiting session is asking in the email for its wait. Off unless set. */
+export const EMAIL_ASKING_ENV = "AGENT_LOOKOUT_EMAIL_ASKING";
 
 /**
  * How the connection to the mail server is kept private.
@@ -56,6 +59,8 @@ export interface EmailSettings {
   events: readonly NoticeEvent[];
   /** How long a wait lasts before it is emailed, in milliseconds. */
   afterMs: number;
+  /** Whether the email for a wait says what the session is asking. */
+  asking: boolean;
   server: MailServer;
 }
 
@@ -162,6 +167,7 @@ export function readEmailSetup(env: NodeJS.ProcessEnv): EmailSetup {
   const from = valueOf(env, EMAIL_FROM_ENV);
   const after = valueOf(env, EMAIL_AFTER_ENV);
   const events = valueOf(env, EMAIL_EVENTS_ENV);
+  const asking = valueOf(env, EMAIL_ASKING_ENV);
 
   // Without an address email is off, and there is nothing to say. That is the
   // default, and the way to turn it off, which the guide and every email give,
@@ -177,6 +183,7 @@ export function readEmailSetup(env: NodeJS.ProcessEnv): EmailSetup {
         from: from === undefined ? to : readAddress(EMAIL_FROM_ENV, from),
         events: readEvents(EMAIL_EVENTS_ENV, events),
         afterMs: readAfter(EMAIL_AFTER_ENV, after),
+        asking: readAsking(EMAIL_ASKING_ENV, asking),
         server: readServer(url),
       },
     };

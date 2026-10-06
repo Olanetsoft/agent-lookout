@@ -15,6 +15,7 @@ function settings(server: Partial<MailServer>): EmailSettings {
     from: "notify@example.com",
     events: ["needs-you"],
     afterMs: 60_000,
+    asking: false,
     server: { host: "smtp.example.com", port: 465, security: "tls", auth: null, ...server },
   };
 }

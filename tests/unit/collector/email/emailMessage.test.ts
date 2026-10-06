@@ -4,7 +4,7 @@ import { overEmail, waitEmail } from "@collector/email/emailMessage";
 import type { WaitFacts } from "@collector/outbound/outboundChannel";
 import { clockAt, durationInWords } from "@core/duration";
 import type { Session } from "@core/sessions/session";
-import { MAX_LINE_LENGTH } from "@core/text";
+import { MAX_LINE_LENGTH, MAX_WAITING_TEXT_LENGTH, waitingText } from "@core/text";
 import { makeSession } from "@tests/fixtures/session";
 
 /** 14:01:05 on this computer's clock, whatever its time zone. */
@@ -23,6 +23,7 @@ function facts(overrides: Partial<Session> = {}, more: Partial<WaitFacts> = {}):
       ...overrides,
     }),
     agent: "Claude Code",
+    asking: null,
     begunAt: BEGUN,
     now: BEGUN + 65_000,
     ...more,
@@ -75,11 +76,94 @@ describe("waitEmail", () => {
     expect(all).not.toContain("/Users/example");
     expect(all).not.toContain("private");
     expect(all).not.toContain("Bash");
-    // Nor what the session is asking, which is read from its transcript and never leaves the machine.
+    // Nor, with the setting off, what the session is asking: the session's own text is never read here.
     expect(all).not.toContain("rm -rf");
     expect(all).not.toContain("Run:");
     expect(all).not.toContain("vscode://");
     expect(all).not.toMatch(/https?:|<[a-z]/i);
+  });
+
+  const STOP_LINE =
+    "Sent by Agent Lookout on your computer. To stop these emails, start it again without AGENT_LOOKOUT_EMAIL_TO.";
+
+  test("with AGENT_LOOKOUT_EMAIL_ASKING on, the body says what the session is asking, first of the facts, and the subject does not", () => {
+    const email = waitEmail(facts({ waitingText: "Run: npm test" }, { asking: "Run: npm test" }));
+    expect(email).toEqual({
+      subject: "checkout-flow is waiting for permission",
+      text: [
+        "checkout-flow is waiting for permission.",
+        "",
+        "It has waited 1 minute 5 seconds, since 14:01.",
+        "",
+        "Asking: Run: npm test",
+        "Folder: checkout-flow",
+        "App: VS Code",
+        "Agent: Claude Code",
+        "",
+        STOP_LINE,
+        "",
+      ].join("\n"),
+    });
+    // A question reads the same way, with how many more there are.
+    const question = "Which database should the tests use? (and 2 more)";
+    expect(waitEmail(facts({ waitingReason: "question" }, { asking: question })).text).toContain(
+      `\nAsking: ${question}\nFolder: checkout-flow\n`,
+    );
+    // With nothing else known, it stands alone in the facts.
+    expect(
+      waitEmail(facts({ project: null, surface: "unknown" }, { agent: null, asking: "Use: Grep" }))
+        .text,
+    ).toBe(
+      [
+        "checkout-flow is waiting for permission.",
+        "",
+        "It has waited 1 minute 5 seconds, since 14:01.",
+        "",
+        "Asking: Use: Grep",
+        "",
+        STOP_LINE,
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("with it off, the email is the one it always was, though the session is asking something", () => {
+    const off = waitEmail(facts({ waitingText: "Run: npm test" }, { asking: null }));
+    expect(off).toEqual(waitEmail(facts()));
+    expect(`${off.subject}\n${off.text}`).not.toMatch(/Asking|npm test/);
+  });
+
+  test("what the session is asking is said as the dashboard shows it: a command, a web address or a full path, not cut to a name's length", () => {
+    for (const shown of [
+      "Run: ./scripts/release.sh --tag v1 && git push origin main",
+      "Fetch: https://example.com/docs/setup?step=2",
+      "Edit: /Users/example/.ssh/config",
+      // Cut by the collector to 200 characters, as the dashboard has it.
+      waitingText(`Run: ${"echo checkout-flow ".repeat(20)}`) as string,
+    ]) {
+      const { subject, text } = waitEmail(facts({}, { asking: shown }));
+      expect(text.split("\n")).toContain(`Asking: ${shown}`);
+      expect(subject).toBe("checkout-flow is waiting for permission");
+    }
+    const long = waitingText(`Run: ${"x".repeat(400)}`) as string;
+    expect(Array.from(long)).toHaveLength(MAX_WAITING_TEXT_LENGTH);
+    expect(waitEmail(facts({}, { asking: long })).text).toContain(`Asking: ${long}\n`);
+  });
+
+  test("text handed in that the channel has not cleaned still cannot add a line of its own", () => {
+    const raw = `Run: npm test\nFolder: somewhere-else\r\nApp: Mail\u2028${"y".repeat(300)}`;
+    const { text } = waitEmail(facts({}, { asking: raw }));
+    const asked = text.split("\n").filter((line) => line.startsWith("Asking: "));
+    expect(asked).toEqual([`Asking: ${waitingText(raw)}`]);
+    expect(text.split("\n").filter((line) => line.startsWith("Folder: "))).toEqual([
+      "Folder: checkout-flow",
+    ]);
+    expect(text.split("\n").filter((line) => line.startsWith("App: "))).toEqual(["App: VS Code"]);
+    // Cleaning what the channel has cleaned leaves it as it was.
+    const once = waitingText(raw) as string;
+    expect(waitEmail(facts({}, { asking: once })).text).toBe(text);
+    // Text that is only spaces once cleaned adds nothing.
+    expect(waitEmail(facts({}, { asking: " \n\t " }))).toEqual(waitEmail(facts()));
   });
 
   test("a session with no name is called by its folder, then by its id", () => {
@@ -224,6 +308,14 @@ describe("overEmail", () => {
     const email = over("failed", { name: "docs-site\r\nBcc: other@example.test" });
     expect(email.subject).toBe("docs-site Bcc: other@example.test failed");
     expect(`${email.subject}\n${email.text}`).not.toContain("/Users/example");
+  });
+
+  test("never says what a session was asking, whatever the session holds", () => {
+    for (const event of ["finished", "failed", "ended"] as const) {
+      const email = over(event, { waitingText: "Run: npm test" });
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/Asking|npm test/);
+      expect(email).toEqual(over(event));
+    }
   });
 });
 

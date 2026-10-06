@@ -305,6 +305,7 @@ describe("routes", () => {
       to: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -336,6 +337,7 @@ describe("routes", () => {
       host: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -353,6 +355,7 @@ describe("routes", () => {
       host: "hooks.example.com",
       events: ["needs-you"],
       afterMs: 0,
+      asking: false,
     };
     const handler = createApiHandler({
       version: "9.9.9-test",

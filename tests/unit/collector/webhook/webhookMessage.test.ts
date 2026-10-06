@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { WaitFacts } from "@collector/outbound/outboundChannel";
 import { overPost, slackSafe, waitPost } from "@collector/webhook/webhookMessage";
-import { MAX_LINE_LENGTH } from "@core/text";
+import { MAX_LINE_LENGTH, waitingText } from "@core/text";
 import type { Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -21,6 +21,7 @@ function facts(overrides: Partial<Session> = {}, more: Partial<WaitFacts> = {}):
       ...overrides,
     }),
     agent: "Claude Code",
+    asking: null,
     begunAt: BEGUN,
     // Four minutes and twelve seconds later.
     now: BEGUN + 252_000,
@@ -90,7 +91,7 @@ describe("waitPost", () => {
         facts({ pid: 4242, links: { open: "vscode://x" }, waitingText: "Run: rm -rf build" }),
       ),
     );
-    // What the session is asking is read from its transcript, and never leaves the machine.
+    // With the setting off, what the session is asking stays on the machine: the session's own text is never read here.
     for (const absent of [
       "/Users/example",
       "permission prompt",
@@ -102,6 +103,82 @@ describe("waitPost", () => {
     ]) {
       expect(said).not.toContain(absent);
     }
+  });
+});
+
+describe("what a waiting session is asking", () => {
+  test("with AGENT_LOOKOUT_WEBHOOK_ASKING on, it follows the reason in the line, and has a field of its own", () => {
+    const post = waitPost(facts({ waitingText: "Run: npm test" }, { asking: "Run: npm test" }));
+    expect(post).toEqual({
+      text: "checkout-flow is waiting for permission: Run: npm test (4m 12s, storefront, VS Code, Claude Code)",
+      event: "needs-you",
+      reason: "permission",
+      asking: "Run: npm test",
+      session: {
+        name: "checkout-flow",
+        agent: "Claude Code",
+        folder: "storefront",
+        app: "VS Code",
+      },
+      at: "2026-10-05T14:01:05.000Z",
+      waitedSeconds: 252,
+    });
+    expect(Object.keys(post)).toEqual([
+      "text",
+      "event",
+      "reason",
+      "asking",
+      "session",
+      "at",
+      "waitedSeconds",
+    ]);
+    const question = waitPost(
+      facts({ waitingReason: "question" }, { asking: "Which database should the tests use?" }),
+    );
+    expect(question.text).toBe(
+      "checkout-flow asked you a question: Which database should the tests use? (4m 12s, storefront, VS Code, Claude Code)",
+    );
+  });
+
+  test("with it off, the post is the one it always was, and has no field for it", () => {
+    const off = waitPost(facts({ waitingText: "Run: npm test" }, { asking: null }));
+    expect(off).toEqual(waitPost(facts()));
+    expect(Object.keys(off)).not.toContain("asking");
+    expect(JSON.stringify(off)).not.toMatch(/asking|npm test/);
+  });
+
+  test("it is said as the dashboard shows it, a command, a web address or a full path, and made safe for Slack in the line alone", () => {
+    const shown = "Fetch: https://example.com/a?b=1&c=<2> @everyone <!channel>";
+    const post = waitPost(facts({}, { asking: shown }));
+    expect(post.asking).toBe(shown);
+    expect(post.text).toBe(
+      "checkout-flow is waiting for permission: Fetch: https://example.com/a?b=1&amp;c=&lt;2&gt; @\u200beveryone &lt;!channel&gt; (4m 12s, storefront, VS Code, Claude Code)",
+    );
+    expect(post.text).not.toMatch(/[<>]|@[A-Za-z]/);
+
+    for (const line of [
+      "Edit: /Users/example/code/demo/src/app.ts",
+      waitingText(`Run: ${"npm run build && ".repeat(30)}`) as string,
+    ]) {
+      const posted = waitPost(facts({}, { asking: line }));
+      // Not cut again to a name's length: the whole line the dashboard shows.
+      expect(posted.asking).toBe(line);
+      expect(posted.text).toContain(`: ${slackSafe(line)} (4m 12s,`);
+      expect(JSON.parse(JSON.stringify(posted))).toEqual(posted);
+    }
+  });
+
+  test("text handed in that the channel has not cleaned still cannot break the line", () => {
+    const raw = `Run: npm test\n<!channel>\r\nsecond line\u2028${"y".repeat(300)}`;
+    const post = waitPost(facts({}, { asking: raw }));
+    const once = waitingText(raw) as string;
+    expect(post.asking).toBe(once);
+    expect(post.text).not.toMatch(/[\r\n\u2028]/);
+    expect(post.text).toContain(`: ${slackSafe(once)} (4m 12s,`);
+    // Cleaning what the channel has cleaned leaves it as it was.
+    expect(waitPost(facts({}, { asking: once }))).toEqual(post);
+    // Text that is only spaces once cleaned adds nothing.
+    expect(waitPost(facts({}, { asking: " \n\t " }))).toEqual(waitPost(facts()));
   });
 });
 
@@ -131,6 +208,15 @@ describe("overPost", () => {
       expect(overPost({ event, session, agent: null, seenAt, now: seenAt }).text).toBe(
         `billing-webhooks ${event} (billing-webhooks, Terminal)`,
       );
+    }
+  });
+
+  test("never says what a session was asking, whatever the session holds", () => {
+    const session = makeSession({ name: "billing-webhooks", waitingText: "Run: npm test" });
+    const seenAt = Date.UTC(2026, 9, 5, 9, 30);
+    for (const event of ["finished", "failed", "ended"] as const) {
+      const post = overPost({ event, session, agent: "Claude Code", seenAt, now: seenAt });
+      expect(JSON.stringify(post)).not.toMatch(/asking|npm test/);
     }
   });
 });

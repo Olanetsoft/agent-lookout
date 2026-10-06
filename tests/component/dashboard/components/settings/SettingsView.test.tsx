@@ -30,6 +30,7 @@ const EMAIL_OFF: EmailStatusResponse = {
   to: null,
   events: null,
   afterMs: null,
+  asking: null,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -41,6 +42,7 @@ const WEBHOOK_OFF: WebhookStatusResponse = {
   host: null,
   events: null,
   afterMs: null,
+  asking: null,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -845,8 +847,9 @@ test.each(
 
 /**
  * The lines of a card that says how sending goes, once the app has answered:
- * the state, and the line under it, or the title and the words of the note
- * that says what is wrong.
+ * the state, while it is on whether what a waiting session is asking goes too,
+ * and the line under those, or the title and the words of the note that says
+ * what is wrong.
  */
 const SENDING_LINES = ":scope > div > p, :scope > div > [data-slot='callout'] p";
 
@@ -869,6 +872,7 @@ const EMAIL_ON: EmailStatusResponse = {
   to: "n…@example.com",
   events: ["needs-you"],
   afterMs: 60_000,
+  asking: false,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -910,6 +914,7 @@ test("with email on, it says where emails go and after how long, and the facts s
 
   expect(await emailLines(screen)).toEqual([
     "Emails go to n…@example.com after a wait of 1 minute.",
+    "Emails leave out what a waiting session is asking.",
   ]);
   const copy = screen.getByRole("region", { name: "This copy" }).element();
   expect(
@@ -955,6 +960,7 @@ test.each<[string, Partial<EmailStatusResponse>, string[]]>([
 
   expect(await emailLines(screen)).toEqual([
     "Emails go to n…@example.com after a wait of 1 minute.",
+    "Emails leave out what a waiting session is asking.",
     ...lines,
   ]);
   // What is wrong is the info note that says notifications are blocked; all being well is a plain line.
@@ -971,6 +977,7 @@ test("the Email card names every event it sends an email for", async () => {
 
   expect(await emailLines(screen)).toEqual([
     "Emails go to n…@example.com when a session has waited 1 minute, finishes or fails.",
+    "Emails leave out what a waiting session is asking.",
   ]);
 });
 
@@ -996,13 +1003,51 @@ test.each(["dark", "light"] as const)(
     expect(getComputedStyle(state).fontSize).toBe("13px");
     expect(getComputedStyle(state).fontWeight).toBe("500");
     expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
+    // Under the state, whether what a waiting session is asking goes, then when the last one did.
     const under = state.nextElementSibling as HTMLElement;
-    expect(getComputedStyle(under).fontSize).toBe("13px");
-    expect(getComputedStyle(under).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(under.dataset.part).toBe("asking");
+    const last = under.nextElementSibling as HTMLElement;
+    for (const line of [under, last]) {
+      expect(getComputedStyle(line).fontSize).toBe("13px");
+      expect(getComputedStyle(line).fontWeight).toBe("400");
+      expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+    }
     expect(under.getBoundingClientRect().top - state.getBoundingClientRect().bottom).toBe(12);
+    expect(last.getBoundingClientRect().top - under.getBoundingClientRect().bottom).toBe(12);
+    expect(last.textContent).toBe("Last sent at 14:02.");
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
+
+test("with AGENT_LOOKOUT_EMAIL_ASKING on, the card says a wait's email says what the session is asking, and still only reads", async () => {
+  email = { ...EMAIL_ON, asking: true, last: { at: today(14, 2), sent: true } };
+  const screen = await render(<SettingsView />);
+
+  expect(await emailLines(screen)).toEqual([
+    "Emails go to n…@example.com after a wait of 1 minute.",
+    "Emails for a wait say what the session is asking.",
+    "Last sent at 14:02.",
+  ]);
+  const card = screen.getByRole("region", { name: "Email" }).element();
+  expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+  // It is set when Agent Lookout starts, so it is not news while the page is open.
+  expect(card.querySelector("[data-part='asking']")?.hasAttribute("aria-live")).toBe(false);
+});
+
+test("while email is off, or its answer cannot be read, the card says nothing of what a waiting session is asking", async () => {
+  email = { ...EMAIL_OFF, asking: true };
+  const off = await render(<SettingsView />);
+  expect(await emailLines(off)).toEqual([
+    "Email is off.",
+    "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on.",
+  ]);
+  await off.unmount();
+
+  email = null;
+  const unread = await render(<SettingsView />);
+  expect(await emailLines(unread)).toEqual(["Whether email is set up could not be read."]);
+  expect(unread.container.querySelector("[data-part='asking']")).toBeNull();
+});
 
 /** The two lines of the Webhook card, once the app has answered. */
 async function webhookLines(screen: Awaited<ReturnType<typeof render>>) {
@@ -1016,6 +1061,7 @@ const WEBHOOK_ON: WebhookStatusResponse = {
   host: "hooks.slack.com",
   events: ["needs-you"],
   afterMs: 60_000,
+  asking: false,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -1064,6 +1110,7 @@ test("with the webhook on, it names the host and when, and the facts say posts l
 
   expect(await webhookLines(screen)).toEqual([
     "Posts go to hooks.slack.com after a wait of 1 minute.",
+    "Posts leave out what a waiting session is asking.",
   ]);
   expect(yourData(screen)).toBe("Sent only in the webhook posts you set up");
 });
@@ -1075,6 +1122,7 @@ test("with email and the webhook both on, the facts name both", async () => {
 
   expect(await webhookLines(screen)).toEqual([
     "Posts go to hooks.slack.com when a session starts waiting or finishes.",
+    "Posts leave out what a waiting session is asking.",
   ]);
   await emailLines(screen);
   expect(yourData(screen)).toBe("Sent only in the emails and posts you set up");
@@ -1114,6 +1162,7 @@ test.each<[string, Partial<WebhookStatusResponse>, string[]]>([
 
   expect(await webhookLines(screen)).toEqual([
     "Posts go to hooks.slack.com after a wait of 1 minute.",
+    "Posts leave out what a waiting session is asking.",
     ...lines,
   ]);
 });
@@ -1139,8 +1188,44 @@ test.each(["dark", "light"] as const)(
     expect(getComputedStyle(state).fontWeight).toBe("500");
     expect(getComputedStyle(state).color).toBe(rgbOf("var(--ink)"));
     const under = state.nextElementSibling as HTMLElement;
-    expect(getComputedStyle(under).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(under.dataset.part).toBe("asking");
+    const last = under.nextElementSibling as HTMLElement;
+    for (const line of [under, last]) {
+      expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+    }
     expect(under.getBoundingClientRect().top - state.getBoundingClientRect().bottom).toBe(12);
+    expect(last.getBoundingClientRect().top - under.getBoundingClientRect().bottom).toBe(12);
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
+
+test("with AGENT_LOOKOUT_WEBHOOK_ASKING on, the card says a wait's post says what the session is asking, and still only reads", async () => {
+  webhook = { ...WEBHOOK_ON, asking: true };
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "Posts go to hooks.slack.com after a wait of 1 minute.",
+    "Posts for a wait say what the session is asking.",
+  ]);
+  const card = screen.getByRole("region", { name: "Webhook" }).element();
+  expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+});
+
+test("each card says it of its own channel: email can say it while posts leave it out", async () => {
+  email = { ...EMAIL_ON, asking: true };
+  webhook = WEBHOOK_ON;
+  const screen = await render(<SettingsView />);
+
+  expect((await emailLines(screen))[1]).toBe("Emails for a wait say what the session is asking.");
+  expect((await webhookLines(screen))[1]).toBe("Posts leave out what a waiting session is asking.");
+});
+
+test("while the webhook is off, the card says nothing of what a waiting session is asking", async () => {
+  webhook = { ...WEBHOOK_OFF, asking: true };
+  const screen = await render(<SettingsView />);
+
+  expect(await webhookLines(screen)).toEqual([
+    "The webhook is off.",
+    "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
+  ]);
+});

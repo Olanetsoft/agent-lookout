@@ -34,17 +34,32 @@ export function emailWords(status: EmailStatusResponse, now: number): SendingWor
     return status.problem === null
       ? {
           state: "Email is off.",
+          asking: null,
           title: null,
           detail: "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on.",
         }
       : {
           state: "Email is off.",
+          asking: null,
           title: "Email is not set up correctly",
           detail: `${status.problem} Correct it and start Agent Lookout again.`,
         };
   }
 
-  const state = whereAndWhen("Emails", status.to, status.events, status.afterMs);
+  const said = {
+    state: whereAndWhen("Emails", status.to, status.events, status.afterMs),
+    asking: status.asking
+      ? "Emails for a wait say what the session is asking."
+      : "Emails leave out what a waiting session is asking.",
+  };
+  return { ...said, ...lastWords(status, now) };
+}
+
+/** The line under the others: how the last email went, or that the hourly limit holds them. */
+function lastWords(
+  status: EmailStatusResponse,
+  now: number,
+): Pick<SendingWords, "title" | "detail"> {
   const { last, limitedUntil } = status;
   if (limitedUntil !== null) {
     // Tries that failed count toward the limit, so a failure is said first:
@@ -52,22 +67,16 @@ export function emailWords(status: EmailStatusResponse, now: number): SendingWor
     const next = clockAt(limitedUntil, now);
     return last !== null && !last.sent
       ? {
-          state,
           title: "The last email could not be sent",
           detail: `${sentenceStart(last.reason)}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`,
         }
       : {
-          state,
           title: "Emails are held back",
           detail: `${SENDS_PER_HOUR} emails were tried in the last hour, the most it tries. The next can go at ${next}.`,
         };
   }
-  if (last === null) return { state, title: null, detail: null };
+  if (last === null) return { title: null, detail: null };
   return last.sent
-    ? { state, title: null, detail: `Last sent at ${clockAt(last.at, now)}.` }
-    : {
-        state,
-        title: "The last email could not be sent",
-        detail: `${sentenceStart(last.reason)}.`,
-      };
+    ? { title: null, detail: `Last sent at ${clockAt(last.at, now)}.` }
+    : { title: "The last email could not be sent", detail: `${sentenceStart(last.reason)}.` };
 }

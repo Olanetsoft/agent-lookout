@@ -19,6 +19,7 @@ const SETTINGS: WebhookSettings = {
   url: new URL("https://hooks.example.com/services/T0000/B0000/s3cret-webhook-token"),
   events: ["needs-you"],
   afterMs: 60 * SECOND,
+  asking: false,
 };
 
 const id = (n: number) => `claude-code:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -140,6 +141,35 @@ describe("createWebhookNotifications", () => {
     });
   });
 
+  test("leaves out what a waiting session is asking unless its setting is on, and then says it for a wait alone", async () => {
+    const askingWait = (n: number, name: string): Session => ({
+      ...waiting(n, name),
+      waitingText: "Run: npm test",
+    });
+    const off = setUp();
+    await off.poll(0, [working(1, "checkout-flow")]);
+    await off.poll(2 * SECOND, [askingWait(1, "checkout-flow")]);
+    await off.poll(62 * SECOND, [askingWait(1, "checkout-flow")]);
+    expect(off.sender.posted).toHaveLength(1);
+    expect(JSON.stringify(off.sender.posted)).not.toMatch(/asking|npm test/);
+    expect(off.webhook.status().asking).toBe(false);
+
+    const on = setUp({ asking: true, events: ["needs-you", "ended"] });
+    await on.poll(0, [working(1, "checkout-flow")]);
+    await on.poll(2 * SECOND, [askingWait(1, "checkout-flow")]);
+    await on.poll(62 * SECOND, [askingWait(1, "checkout-flow")]);
+    await on.poll(64 * SECOND, []);
+    expect(on.sender.posted.map((post) => [post.text, post.asking])).toEqual([
+      [
+        "checkout-flow is waiting for permission: Run: npm test (1m 00s, checkout-flow, VS Code, Claude Code)",
+        "Run: npm test",
+      ],
+      ["checkout-flow ended (checkout-flow, VS Code, Claude Code)", undefined],
+    ]);
+    expect(on.webhook.status().asking).toBe(true);
+    expect(JSON.stringify(on.webhook.status())).not.toContain("npm test");
+  });
+
   test("the status gives the host and never the rest of the address", () => {
     const { webhook } = setUp({ events: ["needs-you", "ended"] });
     expect(webhook.status()).toEqual({
@@ -147,6 +177,7 @@ describe("createWebhookNotifications", () => {
       host: "hooks.example.com",
       events: ["needs-you", "ended"],
       afterMs: 60_000,
+      asking: false,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -163,6 +194,7 @@ describe("createWebhookNotifications", () => {
       host: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,

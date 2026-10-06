@@ -714,6 +714,7 @@ describe("email notifications", () => {
       to: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -796,6 +797,71 @@ describe("email notifications", () => {
     expect(text).toContain("billing-webhooks finished.\n");
     expect(text).toContain("Agent Lookout saw this at ");
     expect(text).toContain("Folder: billing-webhooks\n");
+  });
+
+  test("with AGENT_LOOKOUT_EMAIL_ASKING=on, the email for a wait says what the session is asking, and without it the email leaves it out", async () => {
+    const asked = (n: number, name: string, atOffsetMs: number): Session => ({
+      ...asking(n, name, atOffsetMs),
+      // As the Claude Code adapter reads it from the end of the transcript.
+      waitingText: "Run: npm test -- --runInBand",
+    });
+    const results: Record<string, { status: EmailStatusResponse; text: string }> = {};
+    for (const setting of ["on", "off", undefined]) {
+      const mail = await startSmtpServer();
+      const server = await mailing({
+        AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+        AGENT_LOOKOUT_SMTP_URL: mail.url(),
+        AGENT_LOOKOUT_EMAIL_AFTER: "0",
+        AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,ended",
+        ...(setting === undefined ? {} : { AGENT_LOOKOUT_EMAIL_ASKING: setting }),
+      });
+      await server.poll(0, [busy(1, "checkout-flow")]);
+      await server.poll(2_000, [asked(1, "checkout-flow", 2_000)]);
+      await server.poll(4_000, []);
+      await server.settled();
+
+      expect(mail.received.map((email) => headerValues(email.data, "Subject"))).toEqual([
+        ["checkout-flow is waiting for permission"],
+        ["checkout-flow ended"],
+      ]);
+      // Only the wait could say it: the email for the end of the same session never does.
+      expect(textOf(mail.received[1]?.data ?? "")).not.toContain("npm test");
+      results[String(setting)] = {
+        status: await server.status(),
+        text: textOf(mail.received[0]?.data ?? ""),
+      };
+    }
+
+    expect(results.on?.status.asking).toBe(true);
+    expect(results.on?.text).toContain(
+      "\n\nAsking: Run: npm test -- --runInBand\nFolder: checkout-flow\nApp: VS Code\nAgent: Claude Code\n",
+    );
+    for (const off of [results.off, results.undefined]) {
+      expect(off?.status.asking).toBe(false);
+      expect(off?.text).toContain("\n\nFolder: checkout-flow\nApp: VS Code\nAgent: Claude Code\n");
+      expect(off?.text).not.toMatch(/Asking|npm test/);
+    }
+    // The page is told whether it is on, and never what was asked.
+    expect(JSON.stringify(results.on?.status)).not.toContain("npm test");
+  });
+
+  test("an AGENT_LOOKOUT_EMAIL_ASKING that is not on or off turns email off, and says so in one line", async () => {
+    const mail = await startSmtpServer();
+    const server = await mailing({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_ASKING: "yes",
+    });
+    expect(server.collector.email).toBeNull();
+    expect(server.warnings).toEqual([
+      "Email notifications are off: AGENT_LOOKOUT_EMAIL_ASKING must be on or off.",
+    ]);
+    expect(await server.status()).toMatchObject({
+      on: false,
+      asking: null,
+      problem: "AGENT_LOOKOUT_EMAIL_ASKING must be on or off.",
+    });
+    expect(mail.connections).toBe(0);
   });
 
   test("a list of events that cannot be read turns email off, and says so in one line", async () => {
@@ -1021,6 +1087,7 @@ describe("webhook notifications", () => {
       host: null,
       events: null,
       afterMs: null,
+      asking: null,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -1038,6 +1105,7 @@ describe("webhook notifications", () => {
       host: "127.0.0.1",
       events: ["needs-you"],
       afterMs: 60_000,
+      asking: false,
       problem: null,
       last: null,
       limitedUntil: null,
@@ -1113,6 +1181,88 @@ describe("webhook notifications", () => {
         at: new Date(T0 + 2_000).toISOString(),
       },
     ]);
+  });
+
+  test("with AGENT_LOOKOUT_WEBHOOK_ASKING=on, the post for a wait says what the session is asking, and without it the post leaves it out", async () => {
+    const asked = (n: number, name: string, atOffsetMs: number): Session => ({
+      ...asking(n, name, atOffsetMs),
+      waitingText: "Fetch: https://example.com/docs?page=2&lang=en",
+    });
+    const posted: Record<string, { status: WebhookStatusResponse; posts: WebhookPost[] }> = {};
+    for (const setting of ["on", "off", undefined]) {
+      const hook = await startWebhookServer();
+      const server = await posting({
+        AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+        AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+        AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,ended",
+        ...(setting === undefined ? {} : { AGENT_LOOKOUT_WEBHOOK_ASKING: setting }),
+      });
+      await server.poll(0, [busy(1, "checkout-flow")]);
+      await server.poll(2_000, [asked(1, "checkout-flow", 2_000)]);
+      await server.poll(4_000, []);
+      await server.settled();
+      posted[String(setting)] = { status: await server.status(), posts: bodies(hook) };
+    }
+
+    const on = posted.on;
+    expect(on?.status.asking).toBe(true);
+    expect(on?.posts).toEqual([
+      {
+        text: "checkout-flow is waiting for permission: Fetch: https://example.com/docs?page=2&amp;lang=en (0s, checkout-flow, VS Code, Claude Code)",
+        event: "needs-you",
+        reason: "permission",
+        asking: "Fetch: https://example.com/docs?page=2&lang=en",
+        session: {
+          name: "checkout-flow",
+          agent: "Claude Code",
+          folder: "checkout-flow",
+          app: "VS Code",
+        },
+        at: new Date(T0 + 2_000).toISOString(),
+        waitedSeconds: 0,
+      },
+      {
+        text: "checkout-flow ended (checkout-flow, VS Code, Claude Code)",
+        event: "ended",
+        session: {
+          name: "checkout-flow",
+          agent: "Claude Code",
+          folder: "checkout-flow",
+          app: "VS Code",
+        },
+        at: new Date(T0 + 4_000).toISOString(),
+      },
+    ]);
+    for (const off of [posted.off, posted.undefined]) {
+      expect(off?.status.asking).toBe(false);
+      expect(off?.posts.map((post) => post.text)).toEqual([
+        "checkout-flow is waiting for permission (0s, checkout-flow, VS Code, Claude Code)",
+        "checkout-flow ended (checkout-flow, VS Code, Claude Code)",
+      ]);
+      expect(JSON.stringify(off?.posts)).not.toMatch(/asking|example\.com|Fetch/);
+    }
+    expect(JSON.stringify(on?.status)).not.toContain("example.com");
+  });
+
+  test("email and the webhook each follow their own setting", async () => {
+    const mail = await startSmtpServer();
+    const hook = await startWebhookServer();
+    const server = await posting({
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_AFTER: "0",
+      AGENT_LOOKOUT_EMAIL_ASKING: "on",
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+    });
+    await server.poll(0, [busy(1, "docs-site")]);
+    await server.poll(2_000, [{ ...asking(1, "docs-site", 2_000), waitingText: "Run: make docs" }]);
+    await server.settled();
+
+    expect(textOf(mail.received[0]?.data ?? "")).toContain("\nAsking: Run: make docs\n");
+    expect(bodies(hook)).toHaveLength(1);
+    expect(hook.received[0]?.body).not.toContain("make docs");
+    expect((await server.status()).asking).toBe(false);
   });
 
   test("a redirect is not followed, and the status says so", async () => {
@@ -1451,6 +1601,54 @@ describe("history kept on disk", () => {
     expect(text).not.toContain("waitingText");
     expect(text).not.toContain("release.sh");
     expect(text).not.toContain("Run:");
+  });
+
+  test("what a waiting session is asking, sent by email and to the webhook, is kept nowhere", async () => {
+    const mail = await startSmtpServer();
+    const hook = await startWebhookServer();
+    const dir = await tempDir();
+    const source = standInSource([working("checkout-flow")]);
+    const server = await keeping(dir, source, {
+      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+      AGENT_LOOKOUT_SMTP_URL: mail.url(),
+      AGENT_LOOKOUT_EMAIL_AFTER: "0",
+      AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,finished,ended",
+      AGENT_LOOKOUT_EMAIL_ASKING: "on",
+      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+      AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,finished,ended",
+      AGENT_LOOKOUT_WEBHOOK_ASKING: "on",
+    });
+    const asked = { ...waiting("checkout-flow"), waitingText: "Run: ./scripts/release.sh" };
+    await server.poll(2_000, [asked]);
+    await server.poll(4_000, [asked]);
+    await server.poll(6_000, [working("checkout-flow")]);
+    await server.poll(8_000, []);
+    await server.collector.email?.settled();
+    await server.collector.webhook?.settled();
+
+    // It went: once by email, once to the webhook, for the wait alone.
+    expect(mail.received.map((email) => textOf(email.data).includes("release.sh"))).toEqual([
+      true,
+      false,
+    ]);
+    expect(hook.received.map((post) => post.body.includes("release.sh"))).toEqual([true, false]);
+
+    // And nothing that is kept, or that the page is told, holds it.
+    const answers = await Promise.all(
+      ["/api/sessions", "/api/events?since=0", "/api/history", "/api/email", "/api/webhook"].map(
+        async (target) => (await request(server.port, target)).body,
+      ),
+    );
+    server.collector.stop();
+    const text = await files(dir);
+    expect(text).toContain('"to":"needs-you"');
+    for (const kept of [text, ...answers]) {
+      expect(kept).not.toContain("release.sh");
+      expect(kept).not.toContain("waitingText");
+    }
+    expect(JSON.parse(answers[3] ?? "{}")).toMatchObject({ on: true, asking: true });
+    expect(JSON.parse(answers[4] ?? "{}")).toMatchObject({ on: true, asking: true });
   });
 
   test("with AGENT_LOOKOUT_HISTORY=off nothing is written, and the history starts empty each time", async () => {

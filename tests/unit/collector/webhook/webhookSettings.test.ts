@@ -35,7 +35,35 @@ describe("readWebhookSetup", () => {
     expect(setup.settings.url.href).toBe(SLACK_LIKE);
     expect(setup.settings.events).toEqual(["needs-you"]);
     expect(setup.settings.afterMs).toBe(60_000);
+    expect(setup.settings.asking).toBe(false);
   });
+
+  test("what a waiting session is asking is left out unless AGENT_LOOKOUT_WEBHOOK_ASKING is on", () => {
+    const asking = (env: Record<string, string>) => {
+      const setup = read({ AGENT_LOOKOUT_WEBHOOK_URL: SLACK_LIKE, ...env });
+      if (!setup.on) throw new Error("Expected the webhook to be on.");
+      return setup.settings.asking;
+    };
+    expect(asking({})).toBe(false);
+    expect(asking({ AGENT_LOOKOUT_WEBHOOK_ASKING: " " })).toBe(false);
+    expect(asking({ AGENT_LOOKOUT_WEBHOOK_ASKING: "off" })).toBe(false);
+    expect(asking({ AGENT_LOOKOUT_WEBHOOK_ASKING: "on" })).toBe(true);
+    expect(asking({ AGENT_LOOKOUT_WEBHOOK_ASKING: " On " })).toBe(true);
+    // Email's setting is email's alone, so the line can go by email and not to a shared channel.
+    expect(asking({ AGENT_LOOKOUT_EMAIL_ASKING: "on" })).toBe(false);
+  });
+
+  test.each(["yes", "true", "1", "on please"])(
+    "an AGENT_LOOKOUT_WEBHOOK_ASKING that is not on or off turns the webhook off, and names the setting: %j",
+    (value) => {
+      const setup = read({
+        AGENT_LOOKOUT_WEBHOOK_URL: SLACK_LIKE,
+        AGENT_LOOKOUT_WEBHOOK_ASKING: value,
+      });
+      expect(problemOf(setup)).toBe("AGENT_LOOKOUT_WEBHOOK_ASKING must be on or off.");
+      expect(webhookProblemLine(problemOf(setup) as string)).not.toContain("s3cret");
+    },
+  );
 
   test("the events and the delay are read as email reads its own", () => {
     const setup = read({

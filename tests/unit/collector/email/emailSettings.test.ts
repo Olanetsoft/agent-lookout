@@ -42,6 +42,7 @@ describe("readEmailSetup", () => {
           from: TO,
           events: ["needs-you"],
           afterMs: 60_000,
+          asking: false,
           server: {
             host: "smtp.example.com",
             port: 465,
@@ -112,6 +113,40 @@ describe("readEmailSetup", () => {
       "Email notifications are off: AGENT_LOOKOUT_EMAIL_EVENTS must be one or more of needs-you, finished, failed, ended, separated by commas, such as needs-you,finished.",
     );
   });
+
+  test("what a waiting session is asking is left out unless AGENT_LOOKOUT_EMAIL_ASKING is on", () => {
+    const base = { AGENT_LOOKOUT_EMAIL_TO: TO, AGENT_LOOKOUT_SMTP_URL: "smtps://smtp.example.com" };
+    const asking = (value?: string) =>
+      read(value === undefined ? base : { ...base, AGENT_LOOKOUT_EMAIL_ASKING: value });
+
+    expect(asking()).toMatchObject({ on: true, settings: { asking: false } });
+    // Only spaces is the same as leaving it out.
+    expect(asking("  ")).toMatchObject({ on: true, settings: { asking: false } });
+    expect(asking("off")).toMatchObject({ on: true, settings: { asking: false } });
+    expect(asking("on")).toMatchObject({ on: true, settings: { asking: true } });
+    // Spaces and case do not matter.
+    expect(asking(" ON ")).toMatchObject({ on: true, settings: { asking: true } });
+    expect(asking("Off")).toMatchObject({ on: true, settings: { asking: false } });
+    // The webhook's setting is the webhook's alone.
+    expect(read({ ...base, AGENT_LOOKOUT_WEBHOOK_ASKING: "on" })).toMatchObject({
+      settings: { asking: false },
+    });
+  });
+
+  test.each(["yes", "true", "1", "enabled", "on,off", "o n"])(
+    "an AGENT_LOOKOUT_EMAIL_ASKING that is not on or off turns email off, and names the setting: %j",
+    (value) => {
+      const env = {
+        AGENT_LOOKOUT_EMAIL_TO: TO,
+        AGENT_LOOKOUT_SMTP_URL: URL_WITH_PASSWORD,
+        AGENT_LOOKOUT_EMAIL_ASKING: value,
+      };
+      expect(problemOf(read(env))).toBe("AGENT_LOOKOUT_EMAIL_ASKING must be on or off.");
+      expect(emailProblemLine(problemOf(read(env)) as string)).toBe(
+        "Email notifications are off: AGENT_LOOKOUT_EMAIL_ASKING must be on or off.",
+      );
+    },
+  );
 
   test("smtps:// is TLS from the start, and smtp:// must be upgraded with STARTTLS, on the usual ports", () => {
     const server = (url: string) => {

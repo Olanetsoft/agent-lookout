@@ -159,7 +159,9 @@ function wordsOf<Status>(
   words: (status: Status, now: number) => SendingWords,
 ): SendingWords | null {
   if (reading === null) return null;
-  if (reading.status === "unknown") return { state: unknown, title: null, detail: null };
+  if (reading.status === "unknown") {
+    return { state: unknown, asking: null, title: null, detail: null };
+  }
   return words(reading.status, reading.readAt);
 }
 
@@ -169,6 +171,9 @@ function wordsOf<Status>(
  * here. Both are set up in the environment Agent Lookout starts with, so the
  * card has no control, and the button for notifications does not cover them.
  * Before the app has answered, the card says nothing.
+ *
+ * While it is on, a line under the state says whether a wait's email or post
+ * says what the session is asking, which is off unless its setting is on.
  *
  * A setting that is wrong, a send that failed and the hourly limit are said in
  * the info note that says notifications are blocked, so a channel that is not
@@ -181,6 +186,11 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
         <p data-part='state' aria-live='polite' className='text-body font-medium text-ink'>
           {words?.state}
         </p>
+        {words?.asking && (
+          <p data-part='asking' className='mt-3 text-body text-ink-secondary'>
+            {words.asking}
+          </p>
+        )}
         {words?.detail &&
           (words.title ? (
             <Callout title={words.title} className='mt-3'>

@@ -41,6 +41,7 @@ export function webhookOffStatus(problem: string | null): WebhookStatusResponse 
     host: null,
     events: null,
     afterMs: null,
+    asking: null,
     problem,
     last: null,
     limitedUntil: null,
@@ -54,6 +55,7 @@ export function createWebhookNotifications(
   const channel = createOutboundChannel({
     events: settings.events,
     afterMs: settings.afterMs,
+    asking: settings.asking,
     waitMessage: waitPost,
     overMessage: overPost,
     send: (post) => sender.send(post),
@@ -71,6 +73,7 @@ export function createWebhookNotifications(
         host: settings.url.hostname,
         events: [...settings.events],
         afterMs: settings.afterMs,
+        asking: settings.asking,
         problem: null,
         last: channel.last(),
         limitedUntil: channel.limitedUntil(),

@@ -17,6 +17,7 @@ const ON: WebhookStatusResponse = {
   host: "hooks.slack.com",
   events: ["needs-you"],
   afterMs: 60_000,
+  asking: false,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -27,6 +28,7 @@ const OFF: WebhookStatusResponse = {
   host: null,
   events: null,
   afterMs: null,
+  asking: null,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -35,6 +37,7 @@ const OFF: WebhookStatusResponse = {
 test("with nothing set, Settings says the webhook is off and how to turn it on", () => {
   expect(webhookWords(OFF, NOW)).toEqual({
     state: "The webhook is off.",
+    asking: null,
     title: null,
     detail: "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
   });
@@ -45,6 +48,7 @@ test("with a setting that is wrong, it says which, and what to do", () => {
     "AGENT_LOOKOUT_WEBHOOK_URL must begin with https://, or with http:// for an address on this computer, 127.0.0.1 or localhost.";
   expect(webhookWords({ ...OFF, problem }, NOW)).toEqual({
     state: "The webhook is off.",
+    asking: null,
     title: "The webhook is not set up correctly",
     detail: `${problem} Correct it and start Agent Lookout again.`,
   });
@@ -53,9 +57,14 @@ test("with a setting that is wrong, it says which, and what to do", () => {
 test("with it on, it names the host the posts go to, when, and for which events", () => {
   expect(webhookWords(ON, NOW)).toEqual({
     state: "Posts go to hooks.slack.com after a wait of 1 minute.",
+    asking: "Posts leave out what a waiting session is asking.",
     title: null,
     detail: null,
   });
+  expect(webhookWords({ ...ON, asking: true }, NOW).asking).toBe(
+    "Posts for a wait say what the session is asking.",
+  );
+  expect(webhookWords({ ...OFF, asking: true }, NOW).asking).toBeNull();
   expect(webhookWords({ ...ON, afterMs: 0 }, NOW).state).toBe(
     "Posts go to hooks.slack.com as soon as a session waits.",
   );

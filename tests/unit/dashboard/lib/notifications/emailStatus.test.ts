@@ -17,6 +17,7 @@ const ON: EmailStatusResponse = {
   to: "n…@example.com",
   events: ["needs-you"],
   afterMs: 60_000,
+  asking: false,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -27,6 +28,7 @@ const OFF: EmailStatusResponse = {
   to: null,
   events: null,
   afterMs: null,
+  asking: null,
   problem: null,
   last: null,
   limitedUntil: null,
@@ -35,6 +37,7 @@ const OFF: EmailStatusResponse = {
 test("with nothing set, Settings says email is off and how to turn it on", () => {
   expect(emailWords(OFF, NOW)).toEqual({
     state: "Email is off.",
+    asking: null,
     title: null,
     detail: "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on.",
   });
@@ -43,6 +46,7 @@ test("with nothing set, Settings says email is off and how to turn it on", () =>
 test("with a setting that is wrong, it says so in a title, then which, and what to do", () => {
   expect(emailWords({ ...OFF, problem: "AGENT_LOOKOUT_SMTP_URL is not set." }, NOW)).toEqual({
     state: "Email is off.",
+    asking: null,
     title: "Email is not set up correctly",
     detail: "AGENT_LOOKOUT_SMTP_URL is not set. Correct it and start Agent Lookout again.",
   });
@@ -51,12 +55,32 @@ test("with a setting that is wrong, it says so in a title, then which, and what 
 test("with email on, it says where emails go and after how long", () => {
   expect(emailWords(ON, NOW)).toEqual({
     state: "Emails go to n…@example.com after a wait of 1 minute.",
+    asking: "Emails leave out what a waiting session is asking.",
     title: null,
     detail: null,
   });
   expect(emailWords({ ...ON, afterMs: 0 }, NOW).state).toBe(
     "Emails go to n…@example.com as soon as a session waits.",
   );
+});
+
+test("with email on, it says whether the email for a wait says what the session is asking", () => {
+  expect(emailWords({ ...ON, asking: true }, NOW)).toEqual({
+    state: "Emails go to n…@example.com after a wait of 1 minute.",
+    asking: "Emails for a wait say what the session is asking.",
+    title: null,
+    detail: null,
+  });
+  expect(emailWords({ ...ON, asking: false }, NOW).asking).toBe(
+    "Emails leave out what a waiting session is asking.",
+  );
+  // Said whatever else the card says, and not at all while email is off.
+  const failed = { at: AT_1402, sent: false as const, reason: "the mail server refused" };
+  expect(emailWords({ ...ON, asking: true, last: failed }, NOW)).toMatchObject({
+    asking: "Emails for a wait say what the session is asking.",
+    title: "The last email could not be sent",
+  });
+  expect(emailWords({ ...OFF, asking: true }, NOW).asking).toBeNull();
 });
 
 test("with other events chosen, it names each one that sends an email", () => {

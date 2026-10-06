@@ -41,6 +41,7 @@ export function emailOffStatus(problem: string | null): EmailStatusResponse {
     to: null,
     events: null,
     afterMs: null,
+    asking: null,
     problem,
     last: null,
     limitedUntil: null,
@@ -52,6 +53,7 @@ export function createEmailNotifications(options: EmailNotificationsOptions): Em
   const channel = createOutboundChannel({
     events: settings.events,
     afterMs: settings.afterMs,
+    asking: settings.asking,
     waitMessage: waitEmail,
     overMessage: overEmail,
     send: (content) => sender.send(content),
@@ -68,6 +70,7 @@ export function createEmailNotifications(options: EmailNotificationsOptions): Em
         to: maskAddress(settings.to),
         events: [...settings.events],
         afterMs: settings.afterMs,
+        asking: settings.asking,
         problem: null,
         last: channel.last(),
         limitedUntil: channel.limitedUntil(),

@@ -241,10 +241,11 @@ export type SendResult = { at: number; sent: true } | { at: number; sent: false;
 
 /**
  * `GET /api/email`: whether the collector sends emails, to whom, for which
- * events and after how long a wait, and how the last one went. It is
- * read-only. The settings live in the environment the collector was started
- * with, and this never holds the mail server's address, its user name or its
- * password.
+ * events and after how long a wait, whether the email for a wait says what the
+ * session is asking, and how the last one went. It is read-only. The settings
+ * live in the environment the collector was started with, and this never holds
+ * the mail server's address, its user name or its password, nor anything a
+ * session was asking.
  */
 export interface EmailStatusResponse {
   on: boolean;
@@ -254,6 +255,8 @@ export interface EmailStatusResponse {
   events: NoticeEvent[] | null;
   /** How long a wait lasts before it is emailed, in milliseconds. Null while off. */
   afterMs: number | null;
+  /** Whether the email for a wait says what the session is asking, with `AGENT_LOOKOUT_EMAIL_ASKING=on`. Null while off. */
+  asking: boolean | null;
   /** While off because a setting is wrong: one sentence naming the setting, never its value. */
   problem: string | null;
   /** The last email that was tried, or null when none has been. */
@@ -279,10 +282,11 @@ export function isWebhookHost(host: string): boolean {
 
 /**
  * `GET /api/webhook`: whether the collector posts to a webhook, to which host,
- * for which events and after how long a wait, and how the last post went. It
- * is read-only. The address lives in the environment the collector was started
- * with, and this never holds more of it than the host: whoever has the whole
- * address can post to the channel behind it.
+ * for which events and after how long a wait, whether the post for a wait says
+ * what the session is asking, and how the last post went. It is read-only. The
+ * address lives in the environment the collector was started with, and this
+ * never holds more of it than the host: whoever has the whole address can post
+ * to the channel behind it.
  */
 export interface WebhookStatusResponse {
   on: boolean;
@@ -292,6 +296,8 @@ export interface WebhookStatusResponse {
   events: NoticeEvent[] | null;
   /** How long a wait lasts before it is posted, in milliseconds. Null while off. */
   afterMs: number | null;
+  /** Whether the post for a wait says what the session is asking, with `AGENT_LOOKOUT_WEBHOOK_ASKING=on`. Null while off. */
+  asking: boolean | null;
   /** While off because a setting is wrong: one sentence naming the setting, never its value. */
   problem: string | null;
   /** The last post that was tried, or null when none has been. */

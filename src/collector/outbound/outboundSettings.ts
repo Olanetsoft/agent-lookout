@@ -7,8 +7,9 @@ import {
 
 /**
  * The settings email and the webhook read the same way, each under its own
- * names: which events are sent, and how long a wait lasts first. Nothing here
- * ever puts a setting's value in a sentence.
+ * names: which events are sent, how long a wait lasts first, and whether what a
+ * waiting session is asking goes too. Nothing here ever puts a setting's value
+ * in a sentence.
  */
 
 /** How long a wait lasts before it is sent when the setting is left out. */
@@ -54,4 +55,19 @@ export function readEvents(name: string, value: string | undefined): readonly No
     );
   }
   return events;
+}
+
+/**
+ * Whether what a waiting session is asking goes too, from `on` or `off` in the
+ * setting called `name`. Left out, it does not: the line can hold a command, a
+ * web address or a file's full path, so it leaves this computer only when the
+ * person says so. Anything else is a setting that cannot be read, as for every
+ * other setting of the channel, so a typing slip never sends more than was asked.
+ */
+export function readAsking(name: string, value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const said = value.toLowerCase();
+  if (said === "on") return true;
+  if (said === "off") return false;
+  throw new SettingProblem(`${name} must be on or off.`);
 }

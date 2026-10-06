@@ -442,6 +442,8 @@ export function readEmailStatus(data: unknown): EmailStatusResponse | null {
     to: on ? to : null,
     events: on ? events : null,
     afterMs: on ? afterMs : null,
+    // A version of the app that does not say never sends it.
+    asking: on ? data.asking === true : null,
     problem: on ? null : shortText(data.problem),
     last: on ? readSendResult(data.last, "the email could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,
@@ -472,6 +474,7 @@ export function readWebhookStatus(data: unknown): WebhookStatusResponse | null {
     host: on ? host : null,
     events: on ? events : null,
     afterMs: on ? afterMs : null,
+    asking: on ? data.asking === true : null,
     problem: on ? null : shortText(data.problem),
     last: on ? readSendResult(data.last, "the post could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,

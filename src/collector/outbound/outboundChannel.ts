@@ -5,7 +5,13 @@ import {
   type ChangeMemory,
   type NoticeEvent,
 } from "../../core/notices/sessionChanges.ts";
-import { agentName, type Session, type SessionsSnapshot } from "../../core/sessions/session.ts";
+import {
+  agentName,
+  withoutWaitingText,
+  type Session,
+  type SessionsSnapshot,
+} from "../../core/sessions/session.ts";
+import { waitingText } from "../../core/text.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
 
 /**
@@ -23,6 +29,14 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * tried once. One that could not be sent is not tried again, and `last` says
  * why.
  *
+ * What a waiting session is asking goes only in the message for its wait, and
+ * only when the channel's setting says so: it can hold a command, a web address
+ * or a file's full path. It is taken from the snapshot of the poll at which the
+ * wait is sent, cleaned and cut by `waitingText`, the rule the line the
+ * dashboard shows was made by, so the two say the same. Nothing here keeps it:
+ * a wait not yet sent is held by its id and the time it began alone, and every
+ * session handed to a message, or held for one, is handed over without it.
+ *
  * Nothing here can stop a poll. `handle` never throws, and each is sent after
  * the poll has moved on, one at a time.
  */
@@ -35,6 +49,11 @@ export interface WaitFacts {
   session: Pick<Session, "id" | "name" | "project" | "surface" | "waitingReason">;
   /** The agent, as its source calls itself: "Claude Code". Null when not known. */
   agent: string | null;
+  /**
+   * What the session is asking, as the dashboard shows it: "Run: npm test".
+   * Null unless the channel's setting is on and the session's agent says.
+   */
+  asking: string | null;
   /** When the wait began. */
   begunAt: number;
   /** When the email or post is written. */
@@ -58,6 +77,8 @@ export interface OutboundChannelOptions<Content> {
   events: readonly NoticeEvent[];
   /** How long a wait lasts before it is sent, in milliseconds. */
   afterMs: number;
+  /** Whether what is sent for a wait says what the session is asking. */
+  asking: boolean;
   /** What is sent for a wait. */
   waitMessage(facts: WaitFacts): Content;
   /** What is sent for a session that finished, failed or ended. */
@@ -83,7 +104,7 @@ export interface OutboundChannel {
 export function createOutboundChannel<Content>(
   options: OutboundChannelOptions<Content>,
 ): OutboundChannel {
-  const { afterMs, waitMessage, overMessage, failure } = options;
+  const { afterMs, asking, waitMessage, overMessage, failure } = options;
   const now = options.now ?? Date.now;
 
   const wanted = new Set(options.events);
@@ -134,7 +155,12 @@ export function createOutboundChannel<Content>(
         for (const { event, session } of result.changes) {
           if (!wanted.has(event)) continue;
           if (event !== "needs-you") {
-            over.push({ event, session, agent: agentName(session, snapshot.sources), seenAt: at });
+            over.push({
+              event,
+              session: withoutWaitingText(session),
+              agent: agentName(session, snapshot.sources),
+              seenAt: at,
+            });
             continue;
           }
           const since = session.statusSince;
@@ -163,7 +189,14 @@ export function createOutboundChannel<Content>(
           open.delete(id);
           sentAt.push(at);
           send(
-            waitMessage({ session, agent: agentName(session, snapshot.sources), begunAt, now: at }),
+            waitMessage({
+              session: withoutWaitingText(session),
+              agent: agentName(session, snapshot.sources),
+              // Read now, from this poll's snapshot, and only when it is to go.
+              asking: asking ? (waitingText(session.waitingText) ?? null) : null,
+              begunAt,
+              now: at,
+            }),
           );
         }
 

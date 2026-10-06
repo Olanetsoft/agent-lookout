@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- The email and the webhook post for a wait can say what the session is asking, as the dashboard does, such as `Run: npm test`. Each has its own setting, off unless you set it: `AGENT_LOOKOUT_EMAIL_ASKING=on` puts it in the email, as an `Asking:` line in the body and never in the subject, and `AGENT_LOOKOUT_WEBHOOK_ASKING=on` puts it in the post, after the reason in the line Slack shows and in a field of its own, `asking`. That line can hold a command, a web address or a file's full path, so with either on it leaves this computer. It is taken at the moment the email or post is sent, is never kept, and is never sent for a session that finished, failed or ended, and `agent-lookout mcp` still never carries it. The Email and Webhook cards in Settings say whether each one includes it.
+
 ## 0.2.2 - 2026-10-06
 
 History now survives a restart. The Mac app offers this version as its first update.
