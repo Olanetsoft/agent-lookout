@@ -10,6 +10,7 @@ import { isatty } from "node:tty";
 import { fileURLToPath } from "node:url";
 
 import type { HostProcess } from "../collector/hosts/standalone.ts";
+import { readAppVersion } from "../collector/version.ts";
 
 import { HELP, parseArguments } from "./arguments.ts";
 import { addressesToTry, findSnapshot, readSessions, type Reading } from "./localServer.ts";
@@ -60,6 +61,11 @@ export async function runCommand(options: CommandOptions): Promise<number> {
   const parsed = parseArguments(options.argv);
   if (parsed.kind === "help") {
     stdout.write(HELP);
+    return EXIT.nothingNeedsYou;
+  }
+  if (parsed.kind === "version") {
+    // From the package.json two folders up, in a clone as in the bundle in dist/cli/.
+    stdout.write(`${readAppVersion()}\n`);
     return EXIT.nothingNeedsYou;
   }
   if (parsed.kind === "error") {

@@ -152,6 +152,28 @@ describe("help", () => {
   });
 });
 
+describe("the version", () => {
+  test.each([
+    [["--version"]],
+    [["-v"]],
+    [["status", "--version"]],
+    [["status", "--frob", "-v"]],
+    [["mcp", "-v"]],
+    [["start", "--port", "4778", "--version"]],
+  ])("%j asks for the version, whatever else was typed", (argv) => {
+    expect(parseArguments(argv)).toEqual({ kind: "version" });
+  });
+
+  test("gives way to help", () => {
+    expect(parseArguments(["--version", "--help"])).toEqual({ kind: "help" });
+    expect(parseArguments(["help", "-v"])).toEqual({ kind: "help" });
+  });
+
+  test("is in the help", () => {
+    expect(HELP).toContain("  -v, --version    Print the version of agent-lookout\n");
+  });
+});
+
 describe("arguments it cannot use", () => {
   test.each([
     [["stats"], "agent-lookout has no command called stats."],

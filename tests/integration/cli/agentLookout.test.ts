@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { build } from "esbuild";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { createCollector } from "@collector/collector";
@@ -227,7 +228,7 @@ describe("when it cannot find out", () => {
       expect(ran).toEqual({
         code: 2,
         stdout: "",
-        stderr: `Agent Lookout is not running at ${address}. Start it with agent-lookout, or with npm start or npm run dev in its folder.\n`,
+        stderr: `Agent Lookout is not running at ${address}. Start it with npx agent-lookout, agent-lookout, or npm start or npm run dev in its folder.\n`,
       });
     }
   }, 20_000);
@@ -385,6 +386,15 @@ describe("what it sends and what it prints", () => {
     expect(elsewhere.stdout.split("\n")[1]).toBe("#[fg=red]#{host}  Waiting for you  –");
   }, 20_000);
 
+  test("--version and -v print the version in package.json, and exit with 0", async () => {
+    const pkg = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as {
+      version: string;
+    };
+    for (const flag of ["--version", "-v"]) {
+      expect(await run([flag])).toEqual({ code: 0, stdout: `${pkg.version}\n`, stderr: "" });
+    }
+  }, 20_000);
+
   test("--help prints the usage and the exit codes, and exits with 0", async () => {
     const ran = await run(["--help"]);
     expect(ran.code).toBe(0);
@@ -458,6 +468,41 @@ describe("which code it runs", () => {
     );
     expect(ran.code).toBe(0);
   }, 20_000);
+
+  test("installed, the bundle prints the version in the package's own package.json", async () => {
+    const installed = await packageFolder(
+      {
+        "package.json": JSON.stringify({
+          name: "agent-lookout",
+          version: "9.8.7-test",
+          type: "module",
+        }),
+      },
+      ["node_modules"],
+    );
+    // Bundled as scripts/build-package.mjs bundles it: split into files, all directly in dist/cli/.
+    await build({
+      absWorkingDir: repoRoot,
+      entryPoints: { "agent-lookout": "src/cli/agentLookout.ts" },
+      outdir: path.join(installed.dir, "dist", "cli"),
+      bundle: true,
+      splitting: true,
+      format: "esm",
+      platform: "node",
+      target: "node20.19",
+      packages: "external",
+      chunkNames: "[name]-[hash]",
+      logLevel: "silent",
+    });
+
+    for (const flag of ["--version", "-v"]) {
+      expect(await run([flag], {}, { program: installed.program })).toEqual({
+        code: 0,
+        stdout: "9.8.7-test\n",
+        stderr: "",
+      });
+    }
+  }, 30_000);
 
   test("with neither, it says so in one line, and exits with 2", async () => {
     const empty = await packageFolder({});

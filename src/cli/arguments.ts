@@ -1,7 +1,8 @@
 // What the `agent-lookout` command was asked to do, read from its arguments.
 // It has three commands: `start`, the one run when none is named, which starts
 // Agent Lookout itself; `status`, with three ways to print what it finds; and
-// `mcp`, which serves the same to an agent over stdin and stdout.
+// `mcp`, which serves the same to an agent over stdin and stdout. `--version`
+// prints the version.
 
 /** How `status` prints: lines for a person, JSON for a program, or the bare count. */
 export type StatusOutput = "text" | "json" | "count";
@@ -26,6 +27,7 @@ export interface StartOptions {
 
 export type ParsedArguments =
   | { kind: "help" }
+  | { kind: "version" }
   | { kind: "start"; options: StartOptions }
   | { kind: "status"; options: StatusOptions }
   | { kind: "mcp"; options: McpOptions }
@@ -55,6 +57,7 @@ Options:
                    http://localhost:5173 (npm run dev).
                    Only an address on this machine is accepted.
   -h, --help       Print this help
+  -v, --version    Print the version of agent-lookout
 
 Exit codes of status:
   0  Nothing needs you
@@ -118,13 +121,14 @@ function parseStart(rest: readonly string[]): ParsedArguments {
 
 /**
  * Reads the arguments that follow the program's name. `--help` anywhere wins,
- * so it always works, whatever else was typed. With no command, or only
- * options, it is `start`.
+ * so it always works, whatever else was typed, and `--version` anywhere comes
+ * next. With no command, or only options, it is `start`.
  */
 export function parseArguments(argv: readonly string[]): ParsedArguments {
   if (argv[0] === "help" || argv.some((arg) => arg === "--help" || arg === "-h")) {
     return { kind: "help" };
   }
+  if (argv.some((arg) => arg === "--version" || arg === "-v")) return { kind: "version" };
 
   const named = argv[0] !== undefined && !argv[0].startsWith("-");
   const command = named ? (argv[0] as string) : "start";

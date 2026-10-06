@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { runByTmux, runCommand } from "@cli/agentLookout";
 import type { Reading } from "@cli/localServer";
 import type { ReportedSnapshot } from "@cli/statusReport";
+import { readAppVersion } from "@collector/version";
 import { makeSession } from "@tests/fixtures/session";
 
 // The command with its one request replaced, so the order in which it tries
@@ -69,7 +70,7 @@ describe("with no address named", () => {
       code: 2,
       stdout: "",
       stderr:
-        "Agent Lookout is not running at http://127.0.0.1:4777 or http://localhost:5173. Start it with agent-lookout, or with npm start or npm run dev in its folder, or give its address with --url.\n",
+        "Agent Lookout is not running at http://127.0.0.1:4777 or http://localhost:5173. Start it with npx agent-lookout, agent-lookout, or npm start or npm run dev in its folder, or give its address with --url.\n",
       asked: ["http://127.0.0.1:4777", "http://localhost:5173"],
     });
   });
@@ -101,7 +102,7 @@ describe("with an address named", () => {
       code: 2,
       stdout: "",
       stderr:
-        "Agent Lookout is not running at http://127.0.0.1:4778. Start it with agent-lookout, or with npm start or npm run dev in its folder.\n",
+        "Agent Lookout is not running at http://127.0.0.1:4778. Start it with npx agent-lookout, agent-lookout, or npm start or npm run dev in its folder.\n",
       asked: ["http://127.0.0.1:4778"],
     });
 
@@ -156,6 +157,24 @@ describe("the exit code", () => {
     const json = await command(["status", "--json"], answers);
     expect(json.code).toBe(2);
     expect(JSON.parse(json.stdout)).toMatchObject({ counted: false });
+  });
+
+  test("is 0 for --version, which prints the version from package.json and asks nothing", async () => {
+    const version = readAppVersion();
+    expect(version).toMatch(/^\d+\.\d+\.\d+/);
+    for (const flag of ["--version", "-v"]) {
+      expect(await command([flag], {})).toEqual({
+        code: 0,
+        stdout: `${version}\n`,
+        stderr: "",
+        asked: [],
+      });
+    }
+    expect(await command(["status", "--count", "--version"], {})).toMatchObject({
+      code: 0,
+      stdout: `${version}\n`,
+      asked: [],
+    });
   });
 
   test("is 0 for --help, which asks nothing, and 2 for a mistyped command", async () => {

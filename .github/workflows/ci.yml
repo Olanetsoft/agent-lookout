@@ -141,6 +141,14 @@ jobs:
           test ! -e node_modules/agent-lookout/src
       - run: npx --yes=false agent-lookout --help
         working-directory: ${{ runner.temp }}/try
+      # The bundle in dist/cli/ reads the version from the package.json two folders up.
+      - name: Version is the package's
+        working-directory: ${{ runner.temp }}/try
+        run: |
+          expected=$(node -p 'require("./node_modules/agent-lookout/package.json").version')
+          said=$(npx --yes=false agent-lookout --version)
+          echo "$said"
+          test "$said" = "$expected" && test "$(npx --yes=false agent-lookout -v)" = "$expected"
       - run: node "$GITHUB_WORKSPACE/scripts/start-check.mjs" --command npx --yes=false agent-lookout
         working-directory: ${{ runner.temp }}/try
       # With nothing running, status says so in one line, names the command
@@ -152,4 +160,4 @@ jobs:
           said=$(npx --yes=false agent-lookout status 2>&1)
           code=$?
           echo "$said"
-          test "$code" -eq 2 && grep -q "Start it with agent-lookout," <<< "$said"
+          test "$code" -eq 2 && grep -q "Start it with npx agent-lookout, agent-lookout," <<< "$said"

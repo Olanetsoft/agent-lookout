@@ -1,16 +1,17 @@
 {
   "name": "agent-lookout",
   "version": "0.2.0",
-  "description": "A free, open-source control panel for the AI agents you already have running.",
+  "description": "Shows the AI agent sessions on your computer in one browser page, and which need you.",
   "keywords": [
     "ai-agents",
-    "agents",
     "claude-code",
+    "claude",
     "codex",
-    "dashboard",
     "mcp",
+    "mcp-server",
     "tmux",
-    "local",
+    "dashboard",
+    "monitoring",
     "developer-tools"
   ],
   "homepage": "https://agent-lookout.vercel.app",

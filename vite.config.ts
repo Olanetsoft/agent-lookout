@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { playwright } from "@vitest/browser-playwright";
+import type { Plugin } from "vite";
 // `defineConfig` comes from vitest so the `test` block is typed.
 import { defineConfig } from "vitest/config";
 import type { BrowserCommand } from "vitest/node";
@@ -35,6 +38,107 @@ const vendorChunks: Record<string, RegExp> = {
     /\/node_modules\/(radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll|react-remove-scroll-bar|react-style-singleton|get-nonce|use-callback-ref|use-sidecar|detect-node-es)\//,
 };
 
+/** The file in `dist/` that holds the licences of the libraries and fonts the dashboard includes. */
+const LICENSES_FILE = "THIRD-PARTY-LICENSES.md";
+
+/**
+ * The packages the dashboard takes only CSS and fonts from. Vite writes the
+ * licences of the packages whose JavaScript it bundles, and sees no others,
+ * so these are added to its file.
+ */
+const cssAndFontPackages = [
+  "tailwindcss",
+  "tw-animate-css",
+  "@fontsource/atkinson-hyperlegible-next",
+  "@fontsource/atkinson-hyperlegible-mono",
+];
+
+/**
+ * Notices for bundled packages that publish no licence text of their own,
+ * copied from their repositories into `licenses/<name>.txt`:
+ * react-remove-scroll-bar, from https://github.com/theKashey/react-remove-scroll-bar.
+ */
+const LICENSES_DIR = "./licenses";
+
+/** The file in `licenses/` that holds a package's notice. A scope's slash becomes `__`. */
+function noticeFile(name: string): string {
+  return fromRoot(`${LICENSES_DIR}/${name.replace("/", "__")}.txt`);
+}
+
+/**
+ * Fills each entry Vite wrote with no text under its heading, because the package
+ * ships no LICENSE, from `licenses/`. An entry left empty stops the build.
+ */
+function fillMissingNotices(written: string, fail: (message: string) => never): string {
+  const lines = written.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(lines[i]);
+    const heading = /^## (.+) - \S+ \(.+\)$/.exec(lines[i]);
+    if (!heading) continue;
+    let next = i + 1;
+    while (next < lines.length && lines[next].trim() === "") next++;
+    if (next < lines.length && !lines[next].startsWith("## ")) continue;
+    const name = heading[1];
+    const file = noticeFile(name);
+    if (!existsSync(file)) {
+      fail(
+        `${name} ships no licence text, so ${LICENSES_FILE} would have an empty entry for it. Copy its notice from its repository into licenses/${name.replace("/", "__")}.txt.`,
+      );
+    }
+    out.push("", readFileSync(file, "utf8").trim());
+  }
+  return out.join("\n");
+}
+
+/**
+ * Adds each of `cssAndFontPackages` to the licence file Vite has written, as
+ * Vite writes its own: the name, version and licence, then the whole of the
+ * package's LICENSE, and fills any entry Vite left empty. A package or a
+ * notice that is missing stops the build, so `dist/` is never built without a
+ * notice it has to carry.
+ */
+function cssAndFontLicenses(): Plugin {
+  return {
+    name: "agent-lookout:css-and-font-licenses",
+    apply: "build",
+    async writeBundle(options) {
+      const file = path.join(options.dir ?? fromRoot("./dist"), LICENSES_FILE);
+      if (!existsSync(file)) {
+        this.error(
+          `Vite wrote no ${LICENSES_FILE}, so the licences of the CSS and fonts have nowhere to go.`,
+        );
+      }
+      const written = readFileSync(file, "utf8");
+      let added = "";
+      for (const name of cssAndFontPackages) {
+        // Vite lists it already, if it ever comes to see the package.
+        if (written.includes(`\n## ${name} - `)) continue;
+        const manifest = fromRoot(`./node_modules/${name}/package.json`);
+        if (!existsSync(manifest)) {
+          this.error(
+            `${name} is not installed, so its licence cannot go into ${LICENSES_FILE}. Run npm install.`,
+          );
+        }
+        const license = fromRoot(`./node_modules/${name}/LICENSE`);
+        if (!existsSync(license)) {
+          this.error(
+            `${name} has no LICENSE file, so its licence cannot go into ${LICENSES_FILE}.`,
+          );
+        }
+        const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
+          version: string;
+          license: string;
+        };
+        const text = readFileSync(license, "utf8").trim();
+        added += `\n## ${name} - ${pkg.version} (${pkg.license})\n\n${text}\n`;
+      }
+      const fail = (message: string): never => this.error(message);
+      await writeFile(file, fillMissingNotices(written, fail) + added);
+    },
+  };
+}
+
 /** The media features a component test can set, as a person's computer would. */
 interface EmulatedMedia {
   colorScheme?: "light" | "dark" | null;
@@ -51,7 +155,7 @@ const emulateMedia: BrowserCommand<[EmulatedMedia]> = async (context, media) => 
 };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), !isTest && collectorPlugin()],
+  plugins: [react(), tailwindcss(), cssAndFontLicenses(), !isTest && collectorPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -67,6 +171,9 @@ export default defineConfig({
     port: 5173,
   },
   build: {
+    // The licences of the packages whose JavaScript is bundled. `cssAndFontLicenses`
+    // adds those of the CSS and fonts.
+    license: { fileName: LICENSES_FILE },
     rollupOptions: {
       output: {
         manualChunks(id) {

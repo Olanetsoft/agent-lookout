@@ -36,14 +36,18 @@ describe("runProgram, against stand-in openers", () => {
   test("has worked when the opener is still running, and leaves it running in a session of its own", async () => {
     // As xdg-open does when it runs the browser in the foreground: it ends
     // only when the browser quits.
+    // It runs for 3 seconds, long enough to be checked on a busy machine.
     const { file, dir } = await standInOpener(
-      'here=$(dirname "$0")\necho $$ > "$here/pid"\nsleep 1\necho ended > "$here/ended"',
+      'here=$(dirname "$0")\necho $$ > "$here/pid"\nsleep 3\necho ended > "$here/ended"',
     );
     const startedAt = Date.now();
     expect(await runProgram(file, ["http://127.0.0.1:4777"], 200)).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    // It was not waited for.
+    expect(Date.now() - startedAt).toBeLessThan(2_500);
 
-    await vi.waitFor(() => expect(existsSync(path.join(dir, "pid"))).toBe(true));
+    await vi.waitFor(() => expect(existsSync(path.join(dir, "pid"))).toBe(true), {
+      timeout: 2_500,
+    });
     const pid = Number((await readFile(path.join(dir, "pid"), "utf8")).trim());
     // It leads a process group of its own, so Ctrl+C in this terminal does not reach it.
     const { stdout } = await promisify(execFile)("ps", ["-o", "pgid=", "-p", String(pid)]);
@@ -51,7 +55,7 @@ describe("runProgram, against stand-in openers", () => {
 
     // It was not stopped: it ends on its own.
     await vi.waitFor(() => expect(existsSync(path.join(dir, "ended"))).toBe(true), {
-      timeout: 5_000,
+      timeout: 10_000,
     });
-  });
+  }, 20_000);
 });

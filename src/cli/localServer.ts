@@ -159,7 +159,7 @@ export async function findSnapshot(
   const elsewhere = toTry.named ? "" : ", or give its address with --url";
   return {
     kind: "failed",
-    message: `Agent Lookout is not running at ${where}. Start it with agent-lookout, or with npm start or npm run dev in its folder${elsewhere}.`,
+    message: `Agent Lookout is not running at ${where}. Start it with npx agent-lookout, agent-lookout, or npm start or npm run dev in its folder${elsewhere}.`,
   };
 }
 
