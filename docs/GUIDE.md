@@ -150,16 +150,14 @@ Two repositories whose folders have the same name, in different places, are two 
 
 On the board, each card names the repository before its folder when the two names differ, as [Board](#board) shows.
 
-#### One session per worktree
-
-Give each agent session its own git worktree, on a branch named after the task, and two agents never change the same files:
+To give each session its own copy of the files, make a worktree for each piece of work on a branch of its own, from the repository's folder, and start the session in the new folder:
 
 ```sh
 git worktree add ../storefront-checkout -b checkout-flow
 git worktree add ../storefront-billing -b billing-webhooks
 ```
 
-Then start one session in each worktree's folder. In the [Repos](#repositories) view the sessions sit together under one heading for the repository, as in `storefront 2`. Each row still shows its folder with its [branch](#branches) under it, so the list reads like the branch list: `storefront-checkout on checkout-flow`, `storefront-billing on billing-webhooks`.
+Repos then lists both sessions under `storefront`, each with its own folder and branch.
 
 #### Events
 
