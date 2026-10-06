@@ -1,6 +1,6 @@
 # Privacy
 
-Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. Webhook posts are off unless you set an address for them. Once you do, it sends the same notices as short JSON posts to that one address, such as a Slack channel's incoming webhook, and nowhere else. [Webhook](#webhook) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. Webhook posts are off unless you set an address for them. Once you do, it sends the same notices as short JSON posts to that one address, such as a Slack channel's incoming webhook, and nowhere else. [Webhook](#webhook) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does. Its MCP server, `agent-lookout mcp`, runs only once you add it to an agent's app, and answers that app and nothing else. That app may pass what it learns to its model: [The MCP server](#the-mcp-server) says what an answer holds.
 
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
@@ -137,7 +137,7 @@ It runs no program but the `claude` binary, `ps`, `tmux` and, on macOS, `osascri
 
 ## Network
 
-With email and the webhook off, which is the default, the only network traffic Agent Lookout's own code makes is between its own server and the dashboard in your browser, or the `agent-lookout status` command, on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. With a webhook address set, it also connects to that address, once for each post, as [Webhook](#webhook) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
+With email and the webhook off, which is the default, the only network traffic Agent Lookout's own code makes is between its own server and the dashboard in your browser, or the `agent-lookout status` and `agent-lookout mcp` commands, on the same machine. With email set up, it also connects to the mail server you named, once for each email, as [Email](#email) describes. With a webhook address set, it also connects to that address, once for each post, as [Webhook](#webhook) describes. One more connection never leaves the machine either: before `npm start` begins listening, it connects once to its own address and port to see whether another program already answers there, and sends nothing over that connection. There is no telemetry, no analytics, no crash reporting and no update check, and there is no account. Fonts and scripts are bundled, so the page loads nothing from the internet.
 
 The `claude agents` command is Claude Code's own program, and it may contact Anthropic the way it does for anyone who runs it. Agent Lookout sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` for each run, to ask Claude Code to skip its update check, usage reporting and error reporting, and runs the command seldom. Anything else that program does is governed by Claude Code's settings and terms. To stop Agent Lookout running it, set `AGENT_LOOKOUT_CLAUDE_FEED=off`. Sessions then come from the registry alone, and background jobs whose process has ended are not listed.
 
@@ -285,6 +285,32 @@ Anyone who has the address can post to the channel behind it, so it is kept like
 Through `GET /api/webhook`, the dashboard learns whether the webhook is on, the host the posts go to and nothing else of the address, such as `hooks.slack.com`, the events that are posted, the delay, and when the last post was tried, with whether it was sent or a short reason why not. That, and the times of the posts of the last hour, are held in memory and are gone when Agent Lookout stops. Settings shows the host in full, so with a service that puts its secret in the host, keep Settings out of screenshots too.
 
 Once a post has been sent, Agent Lookout has no hold on it. The service at the address, such as Slack or Discord, keeps the message, and whatever it records about it, for as long as its own settings and terms say, and shows it to everyone who can read that channel. Agent Lookout cannot recall or delete it.
+
+## The MCP server
+
+`agent-lookout mcp` does nothing until you add it to an agent's app, such as Claude Code, as the [guide](docs/GUIDE.md#for-your-agents) shows. The app then starts it, and speaks to it over its stdin and stdout. It opens no port.
+
+### What it reads
+
+For each tool the agent calls, it asks Agent Lookout's own server for the list of sessions, `GET /api/sessions`, once, at a loopback address only, as `agent-lookout status` does. The request carries no `Origin` and no notifications header, so it changes nothing in Agent Lookout. Otherwise it reads only `AGENT_LOOKOUT_URL` from the environment, and Agent Lookout's own `package.json`, for its version number. It reads no other file, runs no program and makes no other connection.
+
+### What it sends, and to whom
+
+It answers the app that started it, over stdout, and nothing and nobody else. An answer is one of three:
+
+- For each session: its ID, its name, its agent, its status, why it waits, the name of its folder and never the rest of the path, its branch or commit, its app, when its status began, and how long its agent has written nothing.
+- For each session that needs you: the same, with how long it has waited, and one sentence naming each of them and any agent that could not be read.
+- For each source: its state, the sentence that says how it is read or what went wrong, which can name the folders Agent Lookout reads, such as `~/.claude/sessions`, and what its agent can report.
+
+When Agent Lookout cannot be reached, the answer is one sentence that says so, with the address it tried.
+
+### What happens to an answer
+
+What the app does with an answer is up to the app. An agent's app normally hands each answer to its model, and for most agents the model runs on the vendor's servers, so the names of your sessions, their folders and their branches can leave this computer that way, under that app's own settings and terms. Add the server only to an app you would show your session names to, and remove it from the app to stop it: for Claude Code, `claude mcp remove agent-lookout`.
+
+### What is kept
+
+Nothing. Each answer is worked out from one reading of the list and is gone once it has been sent. The server stops when the app closes it.
 
 ## Storage
 

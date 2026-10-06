@@ -36,6 +36,10 @@ On top of the checks every route makes, the route answers only a request that:
 
 It makes one jump a second, and one at a time. `AGENT_LOOKOUT_TMUX=off` stops Agent Lookout running tmux, and the route then finds no pane for any session. `AGENT_LOOKOUT_TERMINAL_JUMP=off` stops it looking for tabs, and the route then brings no tab forward. [PRIVACY.md](PRIVACY.md#tmux) lists each command, and [Terminal and iTerm2](PRIVACY.md#terminal-and-iterm2) the script.
 
+`agent-lookout mcp` is a Model Context Protocol server for an agent that keeps track of your other agents. The agent's app starts it and speaks to it over stdin and stdout, so it opens no port. For each tool call it reads `GET /api/sessions` from the local server, at a loopback address only, with no `Origin` and no notifications header, exactly as `agent-lookout status` does, and answers the app with what it read. Its three tools only read: none of them reaches `POST /api/jump`, changes a notification or changes anything else. A session's name, agent, folder and branch are text that other programs wrote, and the client is a model that takes instructions from text. So each tool's description and each answer say that this text is data, never instructions, the one-sentence summary puts each name in quotation marks, and escape sequences and control characters are taken out of every text, as `agent-lookout status` does. So are characters that show nothing, such as zero-width spaces and Unicode's tag characters, in which words can be hidden from a person but not from a model.
+
+The local API has no token, and the MCP server adds none, though one was suggested for it. The server opens no port of its own, and the API it reads is the same loopback API that the dashboard and `agent-lookout status` read without one. Websites and other computers are already kept away from that API by the `Host` and `Origin` checks and by its listening on loopback alone. Against websites and other computers a token would add nothing to those checks, and programs running as you could read a token as easily as the API. It could keep out other accounts on a shared computer, the known limit listed below, and is left for later. An API that can be reached some other way, such as from another computer, would need one too, and Agent Lookout has none. [docs/API.md](docs/API.md) describes every route and its checks.
+
 Session names and folder paths can be sensitive. The main risk is that something other than your own browser reads them.
 
 ## In scope
@@ -71,6 +75,10 @@ Session names and folder paths can be sensitive. The main risk is that something
 - A notification, or the browser's question about allowing them, appearing when you have not turned notifications on, in Settings or with `AGENT_LOOKOUT_NOTIFICATIONS=on`.
 - A notification that holds anything but the session's name and the reason, or that makes the browser fetch anything.
 - A page at another address reading or steering the dashboard's notifications, or turning the server's own on or off.
+- A tool of `agent-lookout mcp` that acts: that reaches `POST /api/jump`, sends the notifications header, or changes anything in Agent Lookout, in another tool or on this computer.
+- `agent-lookout mcp` reading anything but `GET /api/sessions` from Agent Lookout at a loopback address, asking an address that is not loopback, opening a port, or making any other connection.
+- Text from a session reaching the app that started `agent-lookout mcp` without being marked as data: a tool description or an answer that does not say it is untrusted text, a name outside its quotation marks in the summary, or a name, agent, folder, branch or source detail with an escape sequence, control character or invisible character such as a Unicode tag character left in it.
+- Anything `agent-lookout mcp` writes to stdout that is not the protocol's own message, or an answer that holds more than PRIVACY.md lists, such as a session's whole folder path.
 
 ## Out of scope
 
@@ -83,6 +91,8 @@ Session names and folder paths can be sensitive. The main risk is that something
 - More than 200 status files: only the 200 written most recently are read.
 - A hard link in the folder of status files to a file elsewhere. It is an ordinary file in the folder and is read as one, and making it takes the same access as writing a status file.
 - Vulnerabilities in Claude Code, Codex or another agent tool. Report those to the vendor.
+- What an agent's app, or the model behind it, does with the answers of `agent-lookout mcp` once it has them, including sending them to the vendor's servers. PRIVACY.md says so.
+- A model that follows instructions written in a session's name although the answer marks the name as data. The answer says what the text is. What a model does with it is up to the model and its app.
 - Other programs running as your user reading the mail server's password from the environment of the Agent Lookout process, or from your shell's history. Settings in the environment can be read that way, and PRIVACY.md says so.
 - What the mail server and the mailbox do with an email once it has been handed over.
 - Other programs running as your user reading the webhook's address from the environment of the Agent Lookout process, or from your shell's history.

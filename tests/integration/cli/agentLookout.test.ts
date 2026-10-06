@@ -11,7 +11,7 @@ import { createAppServer } from "@collector/hosts/server";
 import type { SessionsSnapshot } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 import { statusFile } from "@tests/fixtures/statusFiles";
-import { listen, request } from "@tests/support/node/http";
+import { closedPort, listen, request } from "@tests/support/node/http";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
 
@@ -93,15 +93,6 @@ async function startLookout(files: Record<string, string>): Promise<string> {
     { timeout: 10_000 },
   );
   return `http://127.0.0.1:${port}`;
-}
-
-/** A port with nothing listening on it. */
-async function closedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as { port: number };
-  await new Promise((resolve) => server.close(resolve));
-  return port;
 }
 
 /** A server of the test's own that answers every request as it is told, and writes each one down. */

@@ -1,12 +1,14 @@
 // The `agent-lookout` command: `agent-lookout status` prints which sessions
-// need you, from the Agent Lookout already running on this machine. It starts
-// nothing. `bin/agent-lookout.mjs` loads this file and passes in the process's
+// need you, from the Agent Lookout already running on this machine, and
+// `agent-lookout mcp` serves the same to an agent. Both start nothing.
+// `bin/agent-lookout.mjs` loads this file and passes in the process's
 // arguments, environment and output.
 
+import type { Readable, Writable } from "node:stream";
 import { isatty } from "node:tty";
 
 import { HELP, parseArguments } from "./arguments.ts";
-import { addressesToTry, readSessions, type Reading } from "./localServer.ts";
+import { addressesToTry, findSnapshot, readSessions, type Reading } from "./localServer.ts";
 import { statusCount, statusJson, statusReport, statusText } from "./statusReport.ts";
 
 /** What the exit code says, so a script or a prompt can act on it without reading the output. */
@@ -26,6 +28,8 @@ export interface CommandOptions {
   now?: () => number;
   /** Asks one address for its sessions. Defaults to a real request. */
   read?: (address: string) => Promise<Reading>;
+  /** The streams `mcp` speaks to its client over. Defaults to this process's stdin and stdout. */
+  streams?: { stdin: Readable; stdout: Writable };
 }
 
 /**
@@ -60,34 +64,36 @@ export async function runCommand(options: CommandOptions): Promise<number> {
   }
 
   const read = options.read ?? ((address: string) => readSessions(address));
-  let unreadable: { address: string; why: string } | null = null;
-  for (const address of toTry.addresses) {
-    const reading = await read(address);
-    if (reading.kind === "answered") {
-      const report = statusReport(reading.snapshot, (options.now ?? Date.now)());
-      const output = parsed.options.output;
-      stdout.write(
-        output === "json"
-          ? statusJson(report)
-          : output === "count"
-            ? statusCount(report)
-            : statusText(report, runByTmux(options)),
-      );
-      // Until an agent has been read, no count was made, so a 0 would claim one.
-      if (!report.counted) return EXIT.notKnown;
-      return report.needsYou > 0 ? EXIT.somethingNeedsYou : EXIT.nothingNeedsYou;
-    }
-    if (reading.kind === "unreadable") unreadable ??= { address, why: reading.why };
+  const now = options.now ?? Date.now;
+
+  if (parsed.kind === "mcp") {
+    // Loaded here, so `status` never loads the protocol's library and stays quick.
+    const { serveMcp } = await import("./mcp/mcpServer.ts");
+    await serveMcp({
+      addresses: toTry,
+      read,
+      now,
+      ...(options.streams ?? { stdin: process.stdin, stdout: process.stdout }),
+    });
+    return 0;
   }
 
-  if (unreadable) {
-    say(`Agent Lookout could not be read at ${unreadable.address}: ${unreadable.why}.`);
-  } else {
-    const where = toTry.addresses.join(" or ");
-    const elsewhere = toTry.named ? "" : ", or give its address with --url";
-    say(
-      `Agent Lookout is not running at ${where}. Start it with npm start or npm run dev in its folder${elsewhere}.`,
-    );
+  const found = await findSnapshot(toTry, read);
+  if (found.kind === "failed") {
+    say(found.message);
+    return EXIT.notKnown;
   }
-  return EXIT.notKnown;
+
+  const report = statusReport(found.snapshot, now());
+  const output = parsed.options.output;
+  stdout.write(
+    output === "json"
+      ? statusJson(report)
+      : output === "count"
+        ? statusCount(report)
+        : statusText(report, runByTmux(options)),
+  );
+  // Until an agent has been read, no count was made, so a 0 would claim one.
+  if (!report.counted) return EXIT.notKnown;
+  return report.needsYou > 0 ? EXIT.somethingNeedsYou : EXIT.nothingNeedsYou;
 }

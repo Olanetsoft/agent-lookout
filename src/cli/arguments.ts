@@ -1,5 +1,6 @@
 // What the `agent-lookout` command was asked to do, read from its arguments.
-// It has one command, `status`, and three ways to print what it finds.
+// It has two commands: `status`, with three ways to print what it finds, and
+// `mcp`, which serves the same to an agent over stdin and stdout.
 
 /** How `status` prints: lines for a person, JSON for a program, or the bare count. */
 export type StatusOutput = "text" | "json" | "count";
@@ -10,19 +11,29 @@ export interface StatusOptions {
   url: string | null;
 }
 
+export interface McpOptions {
+  /** The address given with `--url`, as typed, or null when none was. */
+  url: string | null;
+}
+
 export type ParsedArguments =
   | { kind: "help" }
   | { kind: "status"; options: StatusOptions }
+  | { kind: "mcp"; options: McpOptions }
   | { kind: "error"; message: string };
 
 export const HELP = `Usage: agent-lookout status [--json | --count] [--url <address>]
+       agent-lookout mcp [--url <address>]
 
-Prints which sessions need you, from the Agent Lookout running on this
-machine. It starts nothing and asks nothing but Agent Lookout's own server.
+status prints which sessions need you, from the Agent Lookout running on
+this machine. mcp gives the same to an AI agent: it is a Model Context
+Protocol server on stdin and stdout, for the agent's app to start. Its
+tools only read. Neither command starts Agent Lookout, and neither asks
+anything but Agent Lookout's own server.
 
 Options:
-  --json           Print the counts and the waiting sessions as JSON
-  --count          Print only the number of sessions that need you
+  --json           status: print the counts and the waiting sessions as JSON
+  --count          status: print only the number of sessions that need you
   --url <address>  Where Agent Lookout runs, such as http://127.0.0.1:4777.
                    AGENT_LOOKOUT_URL does the same. Without either, it tries
                    http://127.0.0.1:4777 (npm start), then
@@ -30,11 +41,14 @@ Options:
                    Only an address on this machine is accepted.
   -h, --help       Print this help
 
-Exit codes:
+Exit codes of status:
   0  Nothing needs you
   1  One or more sessions need you
   2  Agent Lookout could not be reached or read, has not read any agent
      yet, or the command was mistyped
+
+mcp runs until the app that started it closes its stdin, then exits with
+0. It exits with 2 when the command was mistyped or the address refused.
 `;
 
 const SEE_HELP = "Run agent-lookout --help to see what it takes.";
@@ -53,17 +67,19 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
   }
 
   const [command, ...rest] = argv;
-  if (command === undefined) return error("agent-lookout needs a command: status.");
-  if (command !== "status") return error(`agent-lookout has no command called ${command}.`);
+  if (command === undefined) return error("agent-lookout needs a command: status or mcp.");
+  if (command !== "status" && command !== "mcp") {
+    return error(`agent-lookout has no command called ${command}.`);
+  }
 
   let json = false;
   let count = false;
   let url: string | null = null;
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index] as string;
-    if (arg === "--json") {
+    if (arg === "--json" && command === "status") {
       json = true;
-    } else if (arg === "--count") {
+    } else if (arg === "--count" && command === "status") {
       count = true;
     } else if (arg === "--url") {
       const value = rest[index + 1];
@@ -76,12 +92,13 @@ export function parseArguments(argv: readonly string[]): ParsedArguments {
       url = arg.slice("--url=".length);
       if (url === "") return error("--url needs an address, such as http://127.0.0.1:4777.");
     } else if (arg.startsWith("-")) {
-      return error(`status has no option ${arg}.`);
+      return error(`${command} has no option ${arg}.`);
     } else {
-      return error(`status takes only options, not ${arg}.`);
+      return error(`${command} takes only options, not ${arg}.`);
     }
   }
 
+  if (command === "mcp") return { kind: "mcp", options: { url } };
   if (json && count) return error("Choose one of --json and --count.");
   return {
     kind: "status",

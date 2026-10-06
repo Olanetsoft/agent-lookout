@@ -1,17 +1,18 @@
 import {
+  SOURCE_STATE_LABEL,
   surfaceLabel,
   type Session,
   type SessionEvent,
   type SessionStatus,
   type SourceId,
-  type SourceState,
   type TerminalApp,
 } from "@core/sessions/session";
 import { formatDuration } from "@dashboard/lib/format";
 
 // The core keeps the surfaces' words, which an email uses too. An app that is
-// not known has none, and is left out wherever the app would be named.
-export { surfaceLabel };
+// not known has none, and is left out wherever the app would be named. It keeps
+// the words for a source's state too, which `agent-lookout mcp` says.
+export { SOURCE_STATE_LABEL, surfaceLabel };
 
 /** The words the interface uses for each status. Colour is never the only signal. */
 export const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -36,14 +37,6 @@ export function waitingDetail(
   if (session.waitingReason === "question" && /^input needed$/i.test(detail)) return null;
   return detail;
 }
-
-export const SOURCE_STATE_LABEL: Record<SourceState, string> = {
-  ok: "Watching",
-  searching: "Searching",
-  unavailable: "Not found",
-  "not-set-up": "Not set up",
-  error: "Not working",
-};
 
 /** The words before the length of a wait that is over, in the event log. */
 export const STOPPED_WAITING = "stopped waiting after";

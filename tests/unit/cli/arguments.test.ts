@@ -39,6 +39,20 @@ describe("the status command", () => {
   });
 });
 
+describe("the mcp command", () => {
+  test("names no address unless --url gives one", () => {
+    expect(parseArguments(["mcp"])).toEqual({ kind: "mcp", options: { url: null } });
+    expect(parseArguments(["mcp", "--url", "http://127.0.0.1:4778"])).toEqual({
+      kind: "mcp",
+      options: { url: "http://127.0.0.1:4778" },
+    });
+    expect(parseArguments(["mcp", "--url=http://localhost:5180"])).toEqual({
+      kind: "mcp",
+      options: { url: "http://localhost:5180" },
+    });
+  });
+});
+
 describe("help", () => {
   test.each([
     [["--help"]],
@@ -46,6 +60,7 @@ describe("help", () => {
     [["help"]],
     [["status", "--help"]],
     [["status", "--frob", "-h"]],
+    [["mcp", "--help"]],
   ])("%j asks for help, whatever else was typed", (argv) => {
     expect(parseArguments(argv)).toEqual({ kind: "help" });
   });
@@ -61,6 +76,14 @@ describe("help", () => {
     );
   });
 
+  test("names both commands, and says how mcp ends", () => {
+    expect(HELP).toMatch(
+      /^Usage: agent-lookout status \[--json \| --count\] \[--url <address>\]\n {7}agent-lookout mcp \[--url <address>\]\n/,
+    );
+    expect(HELP).toContain("Its\ntools only read.");
+    expect(HELP).toContain("then exits with\n0.");
+  });
+
   test("names the setting and the addresses it tries", () => {
     expect(HELP).toContain("AGENT_LOOKOUT_URL");
     expect(HELP).toContain("http://127.0.0.1:4777 (npm start)");
@@ -70,7 +93,7 @@ describe("help", () => {
 
 describe("arguments it cannot use", () => {
   test.each([
-    [[], "agent-lookout needs a command: status."],
+    [[], "agent-lookout needs a command: status or mcp."],
     [["stats"], "agent-lookout has no command called stats."],
     [["status", "--verbose"], "status has no option --verbose."],
     [["status", "checkout-flow"], "status takes only options, not checkout-flow."],
@@ -78,6 +101,10 @@ describe("arguments it cannot use", () => {
     [["status", "--url", "--json"], "--url needs an address, such as http://127.0.0.1:4777."],
     [["status", "--url="], "--url needs an address, such as http://127.0.0.1:4777."],
     [["status", "--json", "--count"], "Choose one of --json and --count."],
+    [["mcp", "--json"], "mcp has no option --json."],
+    [["mcp", "--count"], "mcp has no option --count."],
+    [["mcp", "list_sessions"], "mcp takes only options, not list_sessions."],
+    [["mcp", "--url"], "--url needs an address, such as http://127.0.0.1:4777."],
   ])("%j is refused in one sentence that points to --help", (argv, sentence) => {
     expect(parseArguments(argv)).toEqual({
       kind: "error",

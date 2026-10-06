@@ -135,6 +135,15 @@ export interface Session {
  */
 export type SourceState = "ok" | "searching" | "unavailable" | "not-set-up" | "error";
 
+/** Each state in words, on the Sources view and in `agent-lookout mcp`. */
+export const SOURCE_STATE_LABEL: Record<SourceState, string> = {
+  ok: "Watching",
+  searching: "Searching",
+  unavailable: "Not found",
+  "not-set-up": "Not set up",
+  error: "Not working",
+};
+
 /**
  * One thing a source reads or runs, as a label and a value: for example
  * "Command" and "claude agents --json --all", or "Registry read" and

@@ -1,7 +1,12 @@
 // Real HTTP for integration tests: a server on a free loopback port and a
 // client that sends a request exactly as written.
 
-import { request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingHttpHeaders,
+  type Server,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { onTestFinished } from "vitest";
@@ -20,6 +25,15 @@ export async function listen(server: Server, host = "127.0.0.1"): Promise<number
     await new Promise((resolve) => server.close(resolve));
   });
   return (server.address() as AddressInfo).port;
+}
+
+/** A free loopback port with nothing listening on it, so a connection there is refused. */
+export async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
 }
 
 export interface TestResponse {

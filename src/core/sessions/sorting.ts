@@ -1,5 +1,8 @@
 import type { Session, SessionStatus } from "./session.ts";
 
+/** The fields a session is ordered by. */
+type Ordered = Pick<Session, "id" | "name" | "status" | "statusSince">;
+
 /** The order statuses are listed in: the ones that need a person come first. */
 export const STATUS_ORDER: readonly SessionStatus[] = [
   "needs-you",
@@ -34,7 +37,7 @@ function compareText(a: string, b: string): number {
  *    Sessions with no status time come after those that have one.
  * 3. By name, then by id, so the order never flickers between polls.
  */
-export function compareSessions(a: Session, b: Session): number {
+export function compareSessions(a: Ordered, b: Ordered): number {
   const byStatus = rank(a.status) - rank(b.status);
   if (byStatus !== 0) return byStatus;
 
@@ -49,6 +52,6 @@ export function compareSessions(a: Session, b: Session): number {
 }
 
 /** Returns a sorted copy. The input is not changed. */
-export function sortSessions(sessions: readonly Session[]): Session[] {
+export function sortSessions<T extends Ordered>(sessions: readonly T[]): T[] {
   return [...sessions].sort(compareSessions);
 }

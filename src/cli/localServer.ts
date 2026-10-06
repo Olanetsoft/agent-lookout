@@ -42,7 +42,13 @@ export function loopbackAddress(text: string): string | null {
   return `http://${url.host}`;
 }
 
-export type AddressesToTry = { addresses: string[]; named: boolean } | { refusal: string };
+/** The addresses to ask, and whether one was named, so a failure knows to mention `--url`. */
+export interface Addresses {
+  addresses: string[];
+  named: boolean;
+}
+
+export type AddressesToTry = Addresses | { refusal: string };
 
 /**
  * The addresses to ask, in order: the one `--url` gives, or else the one
@@ -120,6 +126,41 @@ export function asSnapshot(value: unknown): ReportedSnapshot | null {
       typeof source.state === "string",
   );
   return sourcesRead ? (value as unknown as ReportedSnapshot) : null;
+}
+
+export type Finding =
+  | { kind: "answered"; snapshot: ReportedSnapshot }
+  /** No address answered: one sentence saying where it looked and how to start Agent Lookout. */
+  | { kind: "failed"; message: string };
+
+/**
+ * Asks each address in turn and takes the first answer. Another program on
+ * the first port does not hide Agent Lookout on the second, but when none
+ * answers, the first that could not be read is the one named. Never rejects.
+ */
+export async function findSnapshot(
+  toTry: Addresses,
+  read: (address: string) => Promise<Reading>,
+): Promise<Finding> {
+  let unreadable: { address: string; why: string } | null = null;
+  for (const address of toTry.addresses) {
+    const reading = await read(address);
+    if (reading.kind === "answered") return reading;
+    if (reading.kind === "unreadable") unreadable ??= { address, why: reading.why };
+  }
+
+  if (unreadable) {
+    return {
+      kind: "failed",
+      message: `Agent Lookout could not be read at ${unreadable.address}: ${unreadable.why}.`,
+    };
+  }
+  const where = toTry.addresses.join(" or ");
+  const elsewhere = toTry.named ? "" : ", or give its address with --url";
+  return {
+    kind: "failed",
+    message: `Agent Lookout is not running at ${where}. Start it with npm start or npm run dev in its folder${elsewhere}.`,
+  };
 }
 
 /** Asks one address for `/api/sessions`. Never rejects. */

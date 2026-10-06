@@ -1,3 +1,6 @@
+import { PassThrough } from "node:stream";
+
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test } from "vitest";
 
 import { runByTmux, runCommand } from "@cli/agentLookout";
@@ -197,5 +200,94 @@ describe("run by tmux for a status line", () => {
     expect(inTmux.stdout.split("\n")[1]).toBe("##[fg=red]##{host}  Waiting for you  5s");
     const inAPane = await command(["status"], answers, { TMUX });
     expect(inAPane.stdout.split("\n")[1]).toBe("#[fg=red]#{host}  Waiting for you  5s");
+  });
+});
+
+/** Each line the server writes, parsed, in the order written. */
+function messagesFrom(stream: PassThrough): () => Promise<any> {
+  let buffered = "";
+  const ready: unknown[] = [];
+  const waiting: ((message: unknown) => void)[] = [];
+  stream.on("data", (chunk: Buffer) => {
+    buffered += chunk.toString("utf8");
+    for (let end = buffered.indexOf("\n"); end !== -1; end = buffered.indexOf("\n")) {
+      const message = JSON.parse(buffered.slice(0, end));
+      buffered = buffered.slice(end + 1);
+      const next = waiting.shift();
+      if (next) next(message);
+      else ready.push(message);
+    }
+  });
+  return () =>
+    ready.length > 0
+      ? Promise.resolve(ready.shift())
+      : new Promise((resolve) => waiting.push(resolve));
+}
+
+describe("the mcp command", () => {
+  test("an address elsewhere is refused in one line, and nothing is served or asked", async () => {
+    const ran = await command(["mcp", "--url", "http://example.com:4777"], {});
+    expect(ran.code).toBe(2);
+    expect(ran.stdout).toBe("");
+    expect(ran.asked).toEqual([]);
+    expect(ran.stderr).toMatch(/^--url must be an http address on this machine/);
+  });
+
+  test("serves its tools on the streams it is given, asking both addresses, until stdin ends", async () => {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const next = messagesFrom(stdout);
+    const send = (message: object) =>
+      stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+    const asked: string[] = [];
+    let printed = "";
+    const waiting: ReportedSnapshot = {
+      ...quiet,
+      sessions: [
+        makeSession({
+          name: "checkout-flow",
+          status: "needs-you",
+          waitingReason: "permission",
+          statusSince: NOW - 31_000,
+        }),
+      ],
+    };
+
+    const exited = runCommand({
+      argv: ["mcp"],
+      env: {},
+      stdout: { write: (text: string) => (printed += text) },
+      stderr: { write: (text: string) => (printed += text) },
+      now: () => NOW,
+      read: async (address) => {
+        asked.push(address);
+        return address === "http://localhost:5173"
+          ? { kind: "answered", snapshot: waiting }
+          : { kind: "not-running" };
+      },
+      streams: { stdin, stdout },
+    });
+
+    send({
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "test", version: "0.0.0" },
+      },
+    });
+    expect((await next()).result.serverInfo).toMatchObject({ name: "agent-lookout" });
+    send({ method: "notifications/initialized" });
+
+    send({ id: 2, method: "tools/call", params: { name: "sessions_needing_you", arguments: {} } });
+    expect((await next()).result.structuredContent.summary).toBe(
+      '1 session needs you: "checkout-flow" (permission, 31s).',
+    );
+    expect(asked).toEqual(["http://127.0.0.1:4777", "http://localhost:5173"]);
+
+    stdin.end();
+    expect(await exited).toBe(0);
+    expect(printed).toBe("");
   });
 });
