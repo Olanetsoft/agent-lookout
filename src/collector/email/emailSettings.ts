@@ -1,5 +1,11 @@
-import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
-import { readAfter, readEvents, SettingProblem, valueOf } from "../outbound/outboundSettings.ts";
+import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
+import {
+  LOCAL_HOSTS,
+  readAfter,
+  readEvents,
+  SettingProblem,
+  valueOf,
+} from "../outbound/outboundSettings.ts";
 
 /**
  * The settings for email notifications, read from the environment the
@@ -70,18 +76,15 @@ const ADDRESS =
   /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
 
 /** The longest address the mail standards allow. */
-const MOST_ADDRESS_LENGTH = 254;
+const MAX_ADDRESS_LENGTH = 254;
 
 /** A server's name, or an IPv6 address in brackets as a URL writes one. */
 const HOST_NAME = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*$/;
 const BRACKETED_IPV6 = /^\[[0-9A-Fa-f:.]+\]$/;
 
-/** The mail servers on this machine that may be reached without TLS. */
-const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost"]);
-
 /** Whether a value is one email address, as `ADDRESS` reads one. */
 export function isOneAddress(value: string): boolean {
-  return value.length <= MOST_ADDRESS_LENGTH && ADDRESS.test(value);
+  return value.length <= MAX_ADDRESS_LENGTH && ADDRESS.test(value);
 }
 
 const URL_UNREADABLE = `${SMTP_URL_ENV} could not be read. Write it as smtps://name:password@server:port, with any @, :, /, ?, # or % in the name or the password written as %40, %3A, %2F, %3F, %23 or %25.`;

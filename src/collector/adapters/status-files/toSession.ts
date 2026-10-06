@@ -3,7 +3,8 @@ import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
-import { sessionName, type StatusFile } from "./statusFile.ts";
+import { sessionName } from "../../../core/text.ts";
+import type { StatusFile } from "./statusFile.ts";
 
 export const SOURCE_ID: SourceId = "status-files";
 

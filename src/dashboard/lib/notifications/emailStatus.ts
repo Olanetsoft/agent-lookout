@@ -1,6 +1,7 @@
-import { EMAILS_PER_HOUR, type EmailStatusResponse } from "@core/api";
+import { SENDS_PER_HOUR, type EmailStatusResponse } from "@core/api";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { readEmailStatus } from "@dashboard/lib/api/readApi";
+import { sentenceStart } from "@dashboard/lib/format";
 import {
   clockAt,
   STATUS_TIMEOUT_MS,
@@ -30,13 +31,17 @@ export async function fetchEmailStatus(): Promise<EmailStatusResponse | null> {
 /** What the Email card in Settings says. */
 export function emailWords(status: EmailStatusResponse, now: number): SendingWords {
   if (!status.on || status.to === null || status.events === null || status.afterMs === null) {
-    return {
-      state: "Email is off.",
-      detail:
-        status.problem === null
-          ? "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on."
-          : `${status.problem} Correct it and start Agent Lookout again.`,
-    };
+    return status.problem === null
+      ? {
+          state: "Email is off.",
+          title: null,
+          detail: "Set AGENT_LOOKOUT_EMAIL_TO and AGENT_LOOKOUT_SMTP_URL to turn it on.",
+        }
+      : {
+          state: "Email is off.",
+          title: "Email is not set up correctly",
+          detail: `${status.problem} Correct it and start Agent Lookout again.`,
+        };
   }
 
   const state = whereAndWhen("Emails", status.to, status.events, status.afterMs);
@@ -45,19 +50,24 @@ export function emailWords(status: EmailStatusResponse, now: number): SendingWor
     // Tries that failed count toward the limit, so a failure is said first:
     // otherwise a wrong password would read as twenty emails gone.
     const next = clockAt(limitedUntil, now);
-    return {
-      state,
-      detail:
-        last !== null && !last.sent
-          ? `The last email could not be sent: ${last.reason}. No more will be tried until ${next}, as ${EMAILS_PER_HOUR} were tried in the last hour.`
-          : `${EMAILS_PER_HOUR} emails were tried in the last hour, the most it tries. The next can go at ${next}.`,
-    };
+    return last !== null && !last.sent
+      ? {
+          state,
+          title: "The last email could not be sent",
+          detail: `${sentenceStart(last.reason)}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`,
+        }
+      : {
+          state,
+          title: "Emails are held back",
+          detail: `${SENDS_PER_HOUR} emails were tried in the last hour, the most it tries. The next can go at ${next}.`,
+        };
   }
-  if (last === null) return { state, detail: null };
-  return {
-    state,
-    detail: last.sent
-      ? `Last sent at ${clockAt(last.at, now)}.`
-      : `The last email could not be sent: ${last.reason}.`,
-  };
+  if (last === null) return { state, title: null, detail: null };
+  return last.sent
+    ? { state, title: null, detail: `Last sent at ${clockAt(last.at, now)}.` }
+    : {
+        state,
+        title: "The last email could not be sent",
+        detail: `${sentenceStart(last.reason)}.`,
+      };
 }

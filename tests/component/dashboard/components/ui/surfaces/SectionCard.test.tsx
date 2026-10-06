@@ -32,7 +32,6 @@ test.each(["dark", "light"] as const)(
     const style = getComputedStyle(element);
 
     await expect.element(card).toBeVisible();
-    expect(element.getAttribute("data-elevation")).toBe("card");
     expect(element.classList.contains("glass-card")).toBe(true);
     expect(style.backgroundColor).toBe(rgbOf("var(--glass-card)"));
     expect(style.boxShadow).toBe(shadowOf("var(--elev-2)"));
@@ -45,30 +44,6 @@ test.each(["dark", "light"] as const)(
     expect(style.overflow).toBe("hidden");
   },
 );
-
-test("a raised card is the hero's glass, and its rim catches the light it is given", async () => {
-  const screen = await render(
-    <SectionCard title='Needs you' raised light='lamp'>
-      <p>body</p>
-    </SectionCard>,
-  );
-  const element = screen.getByRole("region", { name: "Needs you" }).element();
-  const style = getComputedStyle(element);
-
-  expect(element.getAttribute("data-elevation")).toBe("raised");
-  expect(element.getAttribute("data-light")).toBe("lamp");
-  expect(style.backgroundColor).toBe(rgbOf("var(--glass-raised)"));
-  expect(style.boxShadow).toBe(shadowOf("var(--elev-3)"));
-  expect(style.borderRadius).toBe("24px");
-
-  // A card at card height takes no light.
-  await screen.rerender(
-    <SectionCard title='Needs you' light='lamp'>
-      <p>body</p>
-    </SectionCard>,
-  );
-  expect(element.hasAttribute("data-light")).toBe(false);
-});
 
 test("a card is labelled by its title, with its count beside it, a quiet word after it and a slot on the right", async () => {
   const screen = await render(
@@ -99,19 +74,6 @@ test("a card is labelled by its title, with its count beside it, a quiet word af
   expect(sub.getBoundingClientRect().left).toBeGreaterThan(count.getBoundingClientRect().right);
   expect(aside.textContent).toBe("Legend");
   expect(aside.getBoundingClientRect().right).toBeGreaterThan(sub.getBoundingClientRect().right);
-});
-
-test("on raised glass the quiet words take the secondary ink, since the lamp's light can sit behind them", async () => {
-  const screen = await render(
-    <SectionCard title='Needs you' raised count={2} sub='longest first' aside='now'>
-      <p>body</p>
-    </SectionCard>,
-  );
-
-  for (const part of ["count", "sub", "aside"]) {
-    const element = screen.container.querySelector(`[data-part="${part}"]`) as HTMLElement;
-    expect(getComputedStyle(element).color, part).toBe(rgbOf("var(--ink-secondary)"));
-  }
 });
 
 test("only the head is inset: the body runs to the card's edges and owns its own inset", async () => {

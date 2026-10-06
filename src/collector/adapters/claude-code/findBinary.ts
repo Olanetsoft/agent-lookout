@@ -1,6 +1,6 @@
-import { constants } from "node:fs";
-import { access, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { isExecutableFile, pathCandidates, tildify } from "../../files/paths.ts";
 
 /** The variable that names the binary outright. */
 export const CLAUDE_BIN_ENV = "AGENT_LOOKOUT_CLAUDE_BIN";
@@ -20,18 +20,6 @@ export interface FindBinaryOptions {
   isExecutable?: (candidate: string) => Promise<boolean>;
 }
 
-/** Whether a path is a file, not a directory, that this user may run. */
-export async function isExecutableFile(candidate: string): Promise<boolean> {
-  try {
-    const info = await stat(candidate);
-    if (!info.isFile()) return false;
-    await access(candidate, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The places a `claude` binary is installed when it is not on `PATH`. An app
  * launched from the Finder or the Dock does not inherit the shell's `PATH`, so
@@ -43,18 +31,6 @@ export function fixedLocations(homeDir: string): string[] {
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
   ];
-}
-
-/** Where a program of this name would be in each `PATH` directory, in order. */
-export function pathCandidates(env: NodeJS.ProcessEnv, program = "claude"): string[] {
-  return (
-    (env.PATH ?? "")
-      .split(path.delimiter)
-      // A relative or empty entry means "the current directory". Running whatever
-      // has that name there is not something a monitor should do.
-      .filter((dir) => dir !== "" && path.isAbsolute(dir))
-      .map((dir) => path.join(dir, program))
-  );
 }
 
 /**
@@ -81,7 +57,7 @@ export async function findClaudeBinary(options: FindBinaryOptions): Promise<Bina
   }
 
   const fixed = fixedLocations(options.homeDir);
-  const candidates = [...new Set([...pathCandidates(options.env), ...fixed])];
+  const candidates = [...new Set([...pathCandidates(options.env, "claude"), ...fixed])];
   for (const candidate of candidates) {
     if (await isExecutable(candidate)) return { found: true, path: candidate };
   }
@@ -91,14 +67,6 @@ export async function findClaudeBinary(options: FindBinaryOptions): Promise<Bina
     found: false,
     looked: `The claude command was not found on PATH or in ${listWithOr(fixedDirs)}`,
   };
-}
-
-/** Shortens a path under the home directory to `~/...` for display. */
-export function tildify(target: string, homeDir: string): string {
-  if (homeDir === "" || homeDir === path.sep) return target;
-  if (target === homeDir) return "~";
-  if (target.startsWith(homeDir + path.sep)) return `~${target.slice(homeDir.length)}`;
-  return target;
 }
 
 function listWithOr(items: string[]): string {

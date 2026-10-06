@@ -1,4 +1,5 @@
-import { validPid } from "../claude-code/feed.ts";
+import { clean, cut, MAX_NAME_LENGTH } from "../../../core/text.ts";
+import { validPid } from "../../processes/pids.ts";
 
 /**
  * One status file: a small JSON object that any program writes to say what one
@@ -44,22 +45,15 @@ export const MAX_FILE_BYTES = 16 * 1024;
 /** The longest agent name kept, in characters. A longer one is cut. */
 export const MAX_AGENT_LENGTH = 40;
 
-/** The longest session name kept, in characters. A longer one is cut. */
-export const MAX_NAME_LENGTH = 200;
+// The longest session name kept, and the rule every text in a file is cleaned
+// by, are the core's, which branches and the names other agents give share.
+export { MAX_NAME_LENGTH };
 
 /** The longest working folder kept. A longer one is not kept at all, since a cut path is a wrong one. */
 export const MAX_CWD_LENGTH = 1024;
 
 /** A status, a reason or an app longer than this is no word this format has. */
 const MAX_WORD_LENGTH = 40;
-
-/**
- * Control characters, and the characters that make text run the other way: the
- * Arabic letter mark, the left-to-right and right-to-left marks, the embeddings
- * and overrides, and the isolates. Neither belongs in a name, and the second can
- * make one read as another.
- */
-const UNWANTED = /[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 
 /**
  * An ISO 8601 time to the minute or finer, with or without a zone, such as
@@ -72,26 +66,6 @@ const ISO_8601 =
 /** Whether a name in the folder is one to read: it ends in `.json` and is not hidden. */
 export function isStatusFileName(name: string): boolean {
   return name.endsWith(".json") && !name.startsWith(".");
-}
-
-/** The text with the unwanted characters made spaces, trimmed. Empty is none. */
-function clean(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const text = value.replace(UNWANTED, " ").trim();
-  return text === "" ? undefined : text;
-}
-
-/** Clean text cut to `max` characters, never inside a character made of two code units. */
-function cut(value: unknown, max: number): string | undefined {
-  const text = clean(value);
-  if (text === undefined) return undefined;
-  const characters = Array.from(text);
-  return characters.length > max ? characters.slice(0, max).join("").trimEnd() : text;
-}
-
-/** Any text made fit to be a session's name, by the rule the `name` field has. Empty is none. */
-export function sessionName(value: string): string | undefined {
-  return cut(value, MAX_NAME_LENGTH);
 }
 
 /** One of the format's words, in lower case. */

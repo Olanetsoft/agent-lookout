@@ -7,7 +7,7 @@ import {
   readNoticeEvents,
   writeNoticeEvents,
   type NoticeEvent,
-} from "./sessions/waitChanges.ts";
+} from "./notices/sessionChanges.ts";
 
 /** `GET /api/health` */
 export interface HealthResponse {
@@ -144,14 +144,8 @@ export function readNotificationsHeader(value: string): NotificationsSaid | null
  */
 export const SENDS_PER_HOUR = 20;
 
-/** The most emails the collector sends in any hour. Past it, none go until the hour has passed. */
-export const EMAILS_PER_HOUR = SENDS_PER_HOUR;
-
 /** How the last email or post went: when it was tried, and whether it was sent or why it was not. */
 export type SendResult = { at: number; sent: true } | { at: number; sent: false; reason: string };
-
-/** How the last email went. */
-export type EmailOutcome = SendResult;
 
 /**
  * `GET /api/email`: whether the collector sends emails, to whom, for which
@@ -171,7 +165,7 @@ export interface EmailStatusResponse {
   /** While off because a setting is wrong: one sentence naming the setting, never its value. */
   problem: string | null;
   /** The last email that was tried, or null when none has been. */
-  last: EmailOutcome | null;
+  last: SendResult | null;
   /** While the hourly limit holds emails back, when the next may go. */
   limitedUntil: number | null;
 }
@@ -180,7 +174,7 @@ export interface EmailStatusResponse {
 const WEBHOOK_HOST = /^(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.?|\[[0-9A-Fa-f:.]+\])$/;
 
 /** The longest host name DNS allows. */
-const MOST_HOST_LENGTH = 253;
+const MAX_HOST_LENGTH = 253;
 
 /**
  * Whether a host is one the collector posts to and the page shows. The
@@ -188,7 +182,7 @@ const MOST_HOST_LENGTH = 253;
  * only with one, so the page never says off while posts go out.
  */
 export function isWebhookHost(host: string): boolean {
-  return host.length <= MOST_HOST_LENGTH && WEBHOOK_HOST.test(host);
+  return host.length <= MAX_HOST_LENGTH && WEBHOOK_HOST.test(host);
 }
 
 /**

@@ -1,5 +1,7 @@
-import type { NoticeEvent } from "@core/sessions/waitChanges";
-import { formatClockMinutes, formatDay, startOfDay } from "@dashboard/lib/format";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
+import { clockAt } from "@dashboard/lib/format";
+
+export { clockAt };
 
 /**
  * What the Email and Webhook cards in Settings share: how long a read of the
@@ -10,9 +12,16 @@ import { formatClockMinutes, formatDay, startOfDay } from "@dashboard/lib/format
 /** A read is not left waiting on a server that has stopped answering. */
 export const STATUS_TIMEOUT_MS = 4_000;
 
-/** What Settings says about email or the webhook: one line of state, and a line under it when there is more to say. */
+/**
+ * What Settings says about email or the webhook: one line of state, and a line
+ * under it when there is more to say. When something is wrong, a setting, the
+ * last send or the hourly limit, the line under it has a title, and the card
+ * shows the two as a note, as it shows that notifications are blocked.
+ */
 export interface SendingWords {
   state: string;
+  /** What is wrong, in a few words. Null while nothing is. */
+  title: string | null;
   detail: string | null;
 }
 
@@ -23,12 +32,6 @@ export function delayInWords(ms: number): string {
   if (seconds >= 3_600 && seconds % 3_600 === 0) return counted(seconds / 3_600, "hour");
   if (seconds >= 60 && seconds % 60 === 0) return counted(seconds / 60, "minute");
   return counted(seconds, "second");
-}
-
-/** A time on the clock, with the day when it is not today: "14:02", or "14:02 on Oct 4". */
-export function clockAt(at: number, now: number): string {
-  const time = formatClockMinutes(at);
-  return startOfDay(at) === startOfDay(now) ? time : `${time} on ${formatDay(at, now)}`;
 }
 
 /** "a, b or c". */

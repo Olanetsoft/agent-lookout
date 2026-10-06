@@ -12,10 +12,14 @@ import type {
   SourceState,
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import { tildify } from "../../files/paths.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
+import { isProcessAlive } from "../../processes/pids.ts";
+import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
 import type { TabFinder } from "../../terminal/tabFinder.ts";
 import type { PaneFinder } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
+import { every } from "../words.ts";
 import {
   createFeedReader,
   FEED_ARGS,
@@ -25,9 +29,8 @@ import {
   type FeedResult,
   type RunCommand,
 } from "./feed.ts";
-import { CLAUDE_BIN_ENV, findClaudeBinary, tildify } from "./findBinary.ts";
+import { CLAUDE_BIN_ENV, findClaudeBinary } from "./findBinary.ts";
 import { createFinishedTracker } from "./finishedJobs.ts";
-import { createProcessStartCheck, type ReadProcessStarts } from "./processStart.ts";
 import {
   readRegistry,
   type RegistryEntry,
@@ -35,7 +38,6 @@ import {
   type RegistryRead,
 } from "./registry.ts";
 import {
-  isProcessAlive,
   sessionFromFeed,
   sessionFromRegistry,
   SOURCE_ID,
@@ -171,12 +173,6 @@ type RegistryProblem = "unreadable" | "unknown-status" | "lacks-a-session";
 
 function capitalise(sentence: string): string {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
-}
-
-/** "every 2 seconds", for the facts and the sentences. */
-function every(ms: number): string {
-  const seconds = ms / 1000;
-  return seconds === 1 ? "every second" : `every ${seconds} seconds`;
 }
 
 /** A session's start time, when it is one that could be real and falls after `since`. */

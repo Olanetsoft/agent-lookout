@@ -57,6 +57,21 @@ describe("codexSession", () => {
     expect(named(undefined, undefined)).toBe(`codex:${ids.working}`);
   });
 
+  test("a name is cleaned and cut as every other agent's: the marks that reorder text and control characters become spaces", () => {
+    const named = (name: string) =>
+      codexSession({
+        threadId: ids.working,
+        state: state({ meta: { cwd: "/Users/example/code/demo", source: "cli" } }),
+        name,
+        live: true,
+        now: NOW,
+      }).name;
+    expect(named("docs‮gnp.exe")).toBe("docs gnp.exe");
+    expect(named("checkout؜flow\nsecond")).toBe("checkout flow second");
+    expect(named("⁦⁩")).toBe("demo");
+    expect(Array.from(named("x".repeat(300)))).toHaveLength(200);
+  });
+
   test("the surface comes from where the session was started", () => {
     const surface = (meta: RolloutState["meta"]) =>
       codexSession({ threadId: ids.working, state: state({ meta }), live: true, now: NOW }).surface;

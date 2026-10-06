@@ -21,8 +21,8 @@ import {
   logStart,
   watchGaps,
   type LogEntry,
-} from "@dashboard/lib/sessions/events";
-import { countNew } from "@dashboard/lib/sessions/newSince";
+} from "@dashboard/lib/events/events";
+import { countNew } from "@dashboard/lib/events/newSince";
 import {
   formatClock,
   formatClockMinutes,
@@ -675,7 +675,7 @@ export function EventsCard({
       aside={
         start ? (
           <span data-part='since'>
-            since <span className='font-mono'>{formatClockMinutes(start.at)}</span>
+            since <span className='tabular-nums'>{formatClockMinutes(start.at)}</span>
           </span>
         ) : undefined
       }

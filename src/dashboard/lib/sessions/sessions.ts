@@ -1,5 +1,6 @@
-import type { Session, SourceHealth, WaitingReason } from "@core/sessions/session";
+import type { Session, SessionStatus, SourceHealth } from "@core/sessions/session";
 import { compareSessions } from "@core/sessions/sorting";
+import { STATUS_LABEL } from "@dashboard/lib/sessions/status";
 
 /** The sections of the sessions list, in the order they are shown. */
 export type SessionGroupId = "needs-you" | "working" | "idle" | "ended" | "unknown";
@@ -22,6 +23,38 @@ export function isStaleIdle(session: Pick<Session, "status" | "stale">): boolean
   return session.stale && session.status === "idle";
 }
 
+/**
+ * How a session's row reads, wherever one is drawn: in the list, on the board
+ * and in the search. Its mark is its status, or stale. It is quiet, its name
+ * at 500 in the secondary ink, when it is stale, has ended, or its process has
+ * gone; and orphaned, with the "Process ended" badge, when its process has gone
+ * while it still claims to run.
+ */
+export interface RowLook {
+  mark: SessionStatus | "stale";
+  /** "Stale", or the status in words. */
+  word: string;
+  ended: boolean;
+  stale: boolean;
+  quiet: boolean;
+  orphaned: boolean;
+}
+
+export function rowLook(session: Pick<Session, "status" | "stale" | "alive">): RowLook {
+  const ended = session.status === "finished" || session.status === "failed";
+  const gone = session.alive === false;
+  const stale = isStaleIdle(session);
+  return {
+    mark: stale ? "stale" : session.status,
+    word: stale ? "Stale" : STATUS_LABEL[session.status],
+    ended,
+    stale,
+    quiet: stale || ended || gone,
+    // A session that finished or failed is expected to have no process.
+    orphaned: gone && !ended,
+  };
+}
+
 const GROUP_LABEL: Record<Exclude<SessionGroupId, "ended">, string> = {
   "needs-you": "Needs you",
   working: "Working",
@@ -31,7 +64,8 @@ const GROUP_LABEL: Record<Exclude<SessionGroupId, "ended">, string> = {
 
 const GROUP_ORDER: readonly SessionGroupId[] = ["needs-you", "working", "idle", "ended", "unknown"];
 
-function groupOf(session: Session): SessionGroupId {
+/** The section a session is listed in, and the column of the board it is drawn in. */
+export function groupOf(session: Pick<Session, "status">): SessionGroupId {
   switch (session.status) {
     case "needs-you":
       return "needs-you";
@@ -47,12 +81,12 @@ function groupOf(session: Session): SessionGroupId {
   }
 }
 
-/** The ended group is named for what is in it: "Finished", "Failed", or both. */
+/** The ended group is named for what is in it: "Finished", "Failed", or, holding both, "Finished or failed", as its column on the board is. */
 function labelOf(id: SessionGroupId, members: readonly Session[]): string {
   if (id !== "ended") return GROUP_LABEL[id];
   const failed = members.some((session) => session.status === "failed");
   const finished = members.some((session) => session.status === "finished");
-  if (failed && finished) return "Finished and failed";
+  if (failed && finished) return "Finished or failed";
   return failed ? "Failed" : "Finished";
 }
 
@@ -149,8 +183,6 @@ export interface SessionsSummary {
   open: number;
   finished: number;
   failed: number;
-  /** How many sessions are waiting for each reason. */
-  reasons: Record<WaitingReason, number>;
   /** The session that has needed the person longest, when its start is known. */
   longestWait: Longest | null;
   /** The session that has been working longest, when its start is known. */
@@ -177,7 +209,6 @@ export function summarizeSessions(sessions: readonly Session[]): SessionsSummary
     open: 0,
     finished: 0,
     failed: 0,
-    reasons: { permission: 0, question: 0, other: 0 },
     longestWait: null,
     longestWorking: null,
     longestIdle: null,
@@ -192,7 +223,6 @@ export function summarizeSessions(sessions: readonly Session[]): SessionsSummary
     switch (session.status) {
       case "needs-you":
         summary.needsYou += 1;
-        summary.reasons[session.waitingReason ?? "other"] += 1;
         summary.longestWait = longer(summary.longestWait, session);
         break;
       case "working":
@@ -214,21 +244,6 @@ export function summarizeSessions(sessions: readonly Session[]): SessionsSummary
 
   summary.open = summary.total - summary.finished - summary.failed;
   return summary;
-}
-
-/** "1 permission, 2 questions": what the waiting sessions are waiting for. */
-export function describeReasons(reasons: Record<WaitingReason, number>): string {
-  const parts: string[] = [];
-  if (reasons.permission > 0) {
-    parts.push(`${reasons.permission} ${reasons.permission === 1 ? "permission" : "permissions"}`);
-  }
-  if (reasons.question > 0) {
-    parts.push(`${reasons.question} ${reasons.question === 1 ? "question" : "questions"}`);
-  }
-  if (reasons.other > 0) {
-    parts.push(`${reasons.other} other`);
-  }
-  return parts.join(", ");
 }
 
 /**

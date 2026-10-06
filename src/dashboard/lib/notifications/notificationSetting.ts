@@ -4,7 +4,7 @@ import {
   readNoticeEvents,
   writeNoticeEvents,
   type NoticeEvent,
-} from "@core/sessions/waitChanges";
+} from "@core/notices/sessionChanges";
 import {
   notificationHost,
   type NotificationPermissionState,

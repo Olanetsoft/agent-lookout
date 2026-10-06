@@ -1,6 +1,6 @@
 import type { NotificationsSaid } from "../../core/api.ts";
 import type { SessionsSnapshot } from "../../core/sessions/session.ts";
-import { changeNotice } from "../../core/sessions/waiting.ts";
+import { changeNotice } from "../../core/notices/waiting.ts";
 import {
   DEFAULT_NOTICE_EVENTS,
   EMPTY_CHANGE_MEMORY,
@@ -8,7 +8,7 @@ import {
   type ChangeMemory,
   type NoticeEvent,
   type SessionChange,
-} from "../../core/sessions/waitChanges.ts";
+} from "../../core/notices/sessionChanges.ts";
 import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
 import type { SystemNotifier } from "./systemNotifier.ts";
 

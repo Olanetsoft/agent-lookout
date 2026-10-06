@@ -6,6 +6,7 @@ import {
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
+import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { parseCodexTime, type RolloutState } from "./rolloutFile.ts";
 
@@ -82,8 +83,8 @@ export function codexSession(input: CodexSessionInput): Session {
     id,
     source: SOURCE_ID,
     surface: mapCodexSurface(state.meta?.source, state.meta?.originator),
-    // A name made only of spaces is no name.
-    name: input.name?.trim() || project || id,
+    // A name made only of spaces is no name. It is cleaned and cut as every other agent's is.
+    name: sessionName(input.name ?? "") || project || id,
     cwd,
     project,
     status,

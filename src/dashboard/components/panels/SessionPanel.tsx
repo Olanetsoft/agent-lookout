@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 
 import type { Session } from "@core/sessions/session";
-import { waitingLabel } from "@core/sessions/waiting";
+import { waitingLabel } from "@core/notices/waiting";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
@@ -19,7 +19,7 @@ import {
   formatDuration,
   formatSince,
 } from "@dashboard/lib/format";
-import { logEntries, logStart } from "@dashboard/lib/sessions/events";
+import { logEntries, logStart } from "@dashboard/lib/events/events";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";

@@ -4,7 +4,7 @@
 // file.
 //
 // The stand-in has two sides. `io` is what the adapter is given, and it has
-// only the four reading methods of `CodexIo`. Everything that changes the files
+// only the four reading methods of `ReadOnlyIo`. Everything that changes the files
 // is on the other side, for the test alone.
 
 import path from "node:path";
@@ -14,10 +14,10 @@ import {
   NEEDS_YOU_NOTE,
   type CodexAdapterOptions,
 } from "@collector/adapters/codex/index";
-import type { CodexIo, FileInfo, OpenFile } from "@collector/adapters/codex/io";
+import type { ReadOnlyIo, FileInfo, OpenFile } from "@collector/files/readOnlyIo";
 import { HOME, NOW } from "@tests/fixtures/codex";
 
-export type IoMethod = keyof CodexIo;
+export type IoMethod = keyof ReadOnlyIo;
 
 export interface IoCall {
   method: IoMethod;
@@ -94,7 +94,7 @@ export function memoryFiles(clock: () => number = () => NOW) {
     throw errno("ENOENT", target);
   }
 
-  const io: CodexIo = {
+  const io: ReadOnlyIo = {
     async readdir(dir) {
       check("readdir", dir);
       if (entries.has(dir)) throw errno("ENOTDIR", dir);

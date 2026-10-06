@@ -6,7 +6,7 @@ import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
 import type { WebhookSettings } from "@collector/webhook/webhookSettings";
 import { listen } from "@tests/support/node/http";
-import { startWebhookServer } from "@tests/support/node/webhook";
+import { startWebhookServer } from "@tests/support/channels/webhook";
 
 const POST: WebhookPost = {
   text: "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)",

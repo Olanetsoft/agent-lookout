@@ -9,10 +9,10 @@ import {
   OLDER_CODEX_NOTE,
   RECHECK_MS,
 } from "@collector/adapters/codex/index";
-import type { CodexIo } from "@collector/adapters/codex/io";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { INDEX_PROMPT_REFRESH_MS, INDEX_REFRESH_MS } from "@collector/adapters/codex/rollouts";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
-import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/sessions/waitChanges";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
   CODEX_HOME,
   DAY,
@@ -375,7 +375,7 @@ describe("when Codex cannot be read", () => {
   );
 
   test("a stand-in that throws or answers nonsense still gets a sentence, never a rejection", async () => {
-    const broken: CodexIo = {
+    const broken: ReadOnlyIo = {
       readdir: async (dir) =>
         dir.endsWith("thread-writer-locks") ? (null as unknown as string[]) : [],
       stat: async () => ({ kind: "directory", size: 0, mtimeMs: 0, ino: 1 }),
@@ -394,7 +394,7 @@ describe("when Codex cannot be read", () => {
     });
     expect(result.health.detail).not.toMatch(/TypeError|at \w/);
 
-    const throwing: CodexIo = {
+    const throwing: ReadOnlyIo = {
       readdir: () => {
         throw new TypeError("thrown, not rejected");
       },

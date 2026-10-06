@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createOutboundChannel, type SendOutcome } from "@collector/outbound/outboundChannel";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
 import { SENDS_PER_HOUR } from "@core/api";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 

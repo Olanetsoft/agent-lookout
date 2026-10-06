@@ -1,6 +1,12 @@
 import { isWebhookHost } from "../../core/api.ts";
-import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
-import { readAfter, readEvents, SettingProblem, valueOf } from "../outbound/outboundSettings.ts";
+import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
+import {
+  LOCAL_HOSTS,
+  readAfter,
+  readEvents,
+  SettingProblem,
+  valueOf,
+} from "../outbound/outboundSettings.ts";
 
 /**
  * The settings for posting notices to a webhook, read from the environment the
@@ -37,11 +43,8 @@ export interface WebhookSettings {
 export type WebhookSetup =
   { on: true; settings: WebhookSettings } | { on: false; problem: string | null };
 
-/** The hosts on this computer an address may reach over plain `http://`. */
-const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost"]);
-
 /** The longest address that is read. */
-const MOST_URL_LENGTH = 2_048;
+const MAX_URL_LENGTH = 2_048;
 
 const URL_UNREADABLE = `${WEBHOOK_URL_ENV} could not be read. Copy the whole address, beginning https://.`;
 
@@ -49,7 +52,7 @@ const URL_UNREADABLE = `${WEBHOOK_URL_ENV} could not be read. Copy the whole add
 function readUrl(value: string): URL {
   let url: URL;
   try {
-    if (value.length > MOST_URL_LENGTH) throw new Error();
+    if (value.length > MAX_URL_LENGTH) throw new Error();
     url = new URL(value);
   } catch {
     // The error repeats the address, so it goes no further.

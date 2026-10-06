@@ -255,7 +255,7 @@ test("time nobody measured has no mark of its own, but keeps its name, its toolt
   );
   expect(unmeasured.getAttribute("role")).toBe("img");
   expect(unmeasured.getAttribute("aria-label")).toBe(
-    "Not measured, at least 20 minutes 0 seconds, 17:00:00 to 17:20:00",
+    "Not measured, at least 20 minutes, 17:00:00 to 17:20:00",
   );
 
   // Tab lands on the stretch at the present, and Home and the arrows reach the rest.
@@ -296,12 +296,8 @@ test("a wait that ended reads as one that needed the person, and the open one as
   ]);
   const [ended, , open] = stretches(screen.container) as [HTMLElement, HTMLElement, HTMLElement];
 
-  expect(ended.getAttribute("aria-label")).toBe(
-    "Needed you, 4 minutes 0 seconds, 17:10:00 to 17:14:00",
-  );
-  expect(open.getAttribute("aria-label")).toBe(
-    "Needs you, 4 minutes 0 seconds so far, 17:56:00 to now",
-  );
+  expect(ended.getAttribute("aria-label")).toBe("Needed you, 4 minutes, 17:10:00 to 17:14:00");
+  expect(open.getAttribute("aria-label")).toBe("Needs you, 4 minutes so far, 17:56:00 to now");
 });
 
 test.each(["dark", "light"] as const)(
@@ -321,11 +317,9 @@ test.each(["dark", "light"] as const)(
     expect(markOf(wait).style?.backgroundColor).toBe(rgbOf("var(--status-needs-you)"));
     // Ongoing is the present: only the stretch after it reaches now.
     expect(wait.getAttribute("aria-label")).toBe(
-      "Needs you, at least 4 minutes 0 seconds, 17:48:00 to 17:52:00",
+      "Needs you, at least 4 minutes, 17:48:00 to 17:52:00",
     );
-    expect(tail.getAttribute("aria-label")).toBe(
-      "Not measured, 8 minutes 0 seconds so far, 17:52:00 to now",
-    );
+    expect(tail.getAttribute("aria-label")).toBe("Not measured, 8 minutes so far, 17:52:00 to now");
 
     await userEvent.hover(wait);
     const tooltip = page.getByRole("tooltip");
@@ -345,12 +339,8 @@ test("open means nothing on any stretch but a wait", async () => {
   const [working, idle] = stretches(screen.container) as [HTMLElement, HTMLElement];
 
   expect(working.dataset.open).toBeUndefined();
-  expect(working.getAttribute("aria-label")).toBe(
-    "Working, 10 minutes 0 seconds, 17:40:00 to 17:50:00",
-  );
-  expect(idle.getAttribute("aria-label")).toBe(
-    "Idle, 10 minutes 0 seconds so far, 17:50:00 to now",
-  );
+  expect(working.getAttribute("aria-label")).toBe("Working, 10 minutes, 17:40:00 to 17:50:00");
+  expect(idle.getAttribute("aria-label")).toBe("Idle, 10 minutes so far, 17:50:00 to now");
   expect(warmPaint(screen.container)).toEqual([]);
 });
 

@@ -7,7 +7,7 @@ import {
   sendsInLastHour,
   waitBegan,
 } from "@collector/outbound/outboundTiming";
-import { EMAILS_PER_HOUR } from "@core/api";
+import { SENDS_PER_HOUR } from "@core/api";
 
 const T0 = 1_700_000_000_000;
 const MINUTE = 60_000;
@@ -28,9 +28,9 @@ describe("emailTiming", () => {
     expect(emailTiming(T0, 0, [], T0)).toBe("send");
   });
 
-  test(`after ${EMAILS_PER_HOUR} emails in an hour, a due wait is held until the oldest is an hour old`, () => {
+  test(`after ${SENDS_PER_HOUR} emails in an hour, a due wait is held until the oldest is an hour old`, () => {
     const now = T0 + 30 * MINUTE;
-    const full = sends(EMAILS_PER_HOUR, now);
+    const full = sends(SENDS_PER_HOUR, now);
     const oldest = full[0] as number;
 
     expect(emailTiming(T0, 0, full.slice(1), now)).toBe("send");
@@ -58,15 +58,15 @@ describe("the hourly limit", () => {
   test("it says when the next email may go only while it is full", () => {
     const now = T0 + HOUR_MS;
     expect(limitLiftsAt([], now)).toBeNull();
-    expect(limitLiftsAt(sends(EMAILS_PER_HOUR - 1, now), now)).toBeNull();
-    const full = sends(EMAILS_PER_HOUR, now);
+    expect(limitLiftsAt(sends(SENDS_PER_HOUR - 1, now), now)).toBeNull();
+    const full = sends(SENDS_PER_HOUR, now);
     expect(limitLiftsAt(full, now)).toBe((full[0] as number) + HOUR_MS);
     // The sends need not come in order.
     expect(limitLiftsAt([...full].reverse(), now)).toBe((full[0] as number) + HOUR_MS);
   });
 
   test("a clock that went back an hour still counts the sends it made", () => {
-    const sent = sends(EMAILS_PER_HOUR, T0 + HOUR_MS);
+    const sent = sends(SENDS_PER_HOUR, T0 + HOUR_MS);
     expect(emailTiming(T0 - HOUR_MS, 0, sent, T0)).toBe("limited");
   });
 });

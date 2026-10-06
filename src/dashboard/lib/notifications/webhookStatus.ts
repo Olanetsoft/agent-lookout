@@ -1,6 +1,7 @@
 import { SENDS_PER_HOUR, type WebhookStatusResponse } from "@core/api";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { readWebhookStatus } from "@dashboard/lib/api/readApi";
+import { sentenceStart } from "@dashboard/lib/format";
 import {
   clockAt,
   STATUS_TIMEOUT_MS,
@@ -28,16 +29,20 @@ export async function fetchWebhookStatus(): Promise<WebhookStatusResponse | null
   }
 }
 
-/** What Settings says about the webhook: the same two lines the Email card has. */
+/** What Settings says about the webhook: the same lines the Email card has. */
 export function webhookWords(status: WebhookStatusResponse, now: number): SendingWords {
   if (!status.on || status.host === null || status.events === null || status.afterMs === null) {
-    return {
-      state: "The webhook is off.",
-      detail:
-        status.problem === null
-          ? "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on."
-          : `${status.problem} Correct it and start Agent Lookout again.`,
-    };
+    return status.problem === null
+      ? {
+          state: "The webhook is off.",
+          title: null,
+          detail: "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
+        }
+      : {
+          state: "The webhook is off.",
+          title: "The webhook is not set up correctly",
+          detail: `${status.problem} Correct it and start Agent Lookout again.`,
+        };
   }
 
   const state = whereAndWhen("Posts", status.host, status.events, status.afterMs);
@@ -45,19 +50,20 @@ export function webhookWords(status: WebhookStatusResponse, now: number): Sendin
   if (limitedUntil !== null) {
     // Tries that failed count toward the limit, so a failure is said first.
     const next = clockAt(limitedUntil, now);
-    return {
-      state,
-      detail:
-        last !== null && !last.sent
-          ? `The last post failed: ${last.reason}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`
-          : `${SENDS_PER_HOUR} posts were tried in the last hour, the most it tries. The next can go at ${next}.`,
-    };
+    return last !== null && !last.sent
+      ? {
+          state,
+          title: "The last post failed",
+          detail: `${sentenceStart(last.reason)}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`,
+        }
+      : {
+          state,
+          title: "Posts are held back",
+          detail: `${SENDS_PER_HOUR} posts were tried in the last hour, the most it tries. The next can go at ${next}.`,
+        };
   }
-  if (last === null) return { state, detail: null };
-  return {
-    state,
-    detail: last.sent
-      ? `Last posted at ${clockAt(last.at, now)}.`
-      : `The last post failed: ${last.reason}.`,
-  };
+  if (last === null) return { state, title: null, detail: null };
+  return last.sent
+    ? { state, title: null, detail: `Last posted at ${clockAt(last.at, now)}.` }
+    : { state, title: "The last post failed", detail: `${sentenceStart(last.reason)}.` };
 }

@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import type { CodexIo } from "./io.ts";
+import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
  * Finding Codex's session files, which Codex calls rollouts, without opening
@@ -93,7 +93,7 @@ export interface RolloutFinder {
 
 export interface RolloutFinderOptions {
   sessionsDir: string;
-  io: CodexIo;
+  io: ReadOnlyIo;
   refreshMs?: number;
   promptRefreshMs?: number;
 }

@@ -1,9 +1,9 @@
 import { formatDuration } from "../../core/duration.ts";
 import { surfaceLabel, type Session, type WaitingReason } from "../../core/sessions/session.ts";
-import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
-import { overPhrase, sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
+import type { NoticeEvent } from "../../core/notices/sessionChanges.ts";
+import { overPhrase, sessionTitle, waitingPhrase } from "../../core/notices/waiting.ts";
+import { oneLine } from "../../core/text.ts";
 import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
-import { oneLine } from "../outbound/outboundText.ts";
 
 /**
  * What one post to the webhook holds, as JSON. `text` is one line for a

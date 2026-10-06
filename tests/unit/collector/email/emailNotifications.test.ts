@@ -6,7 +6,7 @@ import type { EmailSettings } from "@collector/email/emailSettings";
 import type { EmailSender } from "@collector/email/smtpSender";
 import type { SendOutcome } from "@collector/outbound/outboundChannel";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
-import { EMAILS_PER_HOUR } from "@core/api";
+import { SENDS_PER_HOUR } from "@core/api";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -266,7 +266,7 @@ describe("which waits are emailed", () => {
   });
 });
 
-describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
+describe(`at most ${SENDS_PER_HOUR} an hour`, () => {
   const many = (count: number, make: (n: number) => Session) =>
     Array.from({ length: count }, (_, index) => make(index + 1));
 
@@ -282,7 +282,7 @@ describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
       many(25, (n) => waiting(n)),
     );
 
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
     expect(email.status().limitedUntil).toBe(T0 + 2 * SECOND + HOUR_MS);
 
     await poll(
@@ -293,7 +293,7 @@ describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
       HOUR_MS,
       many(25, (n) => waiting(n)),
     );
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
 
     // The hour has passed. The five still waiting go now, and are said to have waited an hour.
     await poll(
@@ -322,7 +322,7 @@ describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
       2 * SECOND,
       many(21, (n) => waiting(n)),
     );
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
 
     await poll(
       60 * SECOND,
@@ -332,7 +332,7 @@ describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
       2 * HOUR_MS,
       many(21, (n) => working(n)),
     );
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
   });
 
   test("emails that could not be sent count toward the limit too", async () => {
@@ -347,7 +347,7 @@ describe(`at most ${EMAILS_PER_HOUR} an hour`, () => {
       2 * SECOND,
       many(30, (n) => waiting(n)),
     );
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
     await email.settled();
     expect(email.status().limitedUntil).not.toBeNull();
   });
@@ -559,7 +559,7 @@ describe("finished, failed and ended", () => {
       ...many(23, (n) => over(n, "finished")).slice(18),
       ...many(25, (n) => working(n)).slice(23),
     ]);
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
     expect(subjects(sender).slice(18)).toEqual(["session-19 finished", "session-20 finished"]);
     expect(email.status().limitedUntil).toBe(T0 + 2 * SECOND + HOUR_MS);
 
@@ -589,17 +589,17 @@ describe("finished, failed and ended", () => {
     // One goes first, and nineteen a moment later: the hour is full.
     await poll(2 * SECOND, sessions(1, working(22)));
     await poll(4 * SECOND, sessions(20, working(22)));
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
 
     await poll(10 * 60 * SECOND, sessions(21, working(22)));
     await poll(20 * 60 * SECOND, sessions(21, over(22, "finished")));
-    expect(sender.sent).toHaveLength(EMAILS_PER_HOUR);
+    expect(sender.sent).toHaveLength(SENDS_PER_HOUR);
 
     // The first email of the hour is an hour old, so one more can go.
     await poll(HOUR_MS + 2 * SECOND, sessions(21, over(22, "finished")));
-    expect(subjects(sender).slice(EMAILS_PER_HOUR)).toEqual(["session-22 finished"]);
+    expect(subjects(sender).slice(SENDS_PER_HOUR)).toEqual(["session-22 finished"]);
     await poll(HOUR_MS + 4 * SECOND, sessions(21, over(22, "finished")));
-    expect(subjects(sender).slice(EMAILS_PER_HOUR)).toEqual([
+    expect(subjects(sender).slice(SENDS_PER_HOUR)).toEqual([
       "session-22 finished",
       "session-21 is waiting for permission",
     ]);

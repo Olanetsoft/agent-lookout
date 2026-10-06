@@ -843,7 +843,7 @@ test("nothing waiting: it says Nothing needs you at the name's size with the lam
   expect(getComputedStyle(figure.parentElement?.parentElement as Element).color).toBe(
     rgbOf("var(--ink)"),
   );
-  expect(last.textContent).toContain("The last wait lasted 3 minutes 0 seconds");
+  expect(last.textContent).toContain("The last wait lasted 3 minutes");
   expect(part(last, "last-note").textContent).toBe("project-4, answered at 14:13");
 
   // No timer, no reason, no Jump.
@@ -861,6 +861,21 @@ test("a last wait that the session's ending closed says ended, not answered", as
   });
 
   expect(part(hero(screen.container), "last-note").textContent).toBe("project-4, ended at 14:20");
+});
+
+test("a wait under way when the period began, then answered, is the last wait, its start said to be before the period, and the hero never says none above its bar", async () => {
+  const screen = await renderHero({
+    sessions: [BUSY, session(4, { status: "working", statusSince: at(14, 13) })],
+    events: [changed(4, at(14, 13), "needs-you", "working")],
+  });
+  const panel = hero(screen.container);
+
+  expect(part(panel, "last-note").textContent).toBe(
+    "project-4, answered at 14:13, waiting since before 13:32",
+  );
+  expect(part(panel, "last-wait").textContent).toContain("The last wait lasted at least");
+  expect(panel.querySelector('[data-slot="waited-on-you"]')).not.toBeNull();
+  expect(panel.textContent).not.toContain("None since");
 });
 
 test("with no wait over in the period, the quiet hero says so for the period the page can vouch for", async () => {

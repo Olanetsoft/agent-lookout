@@ -15,7 +15,7 @@ import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 import {
   fakeOsascript,
@@ -371,8 +371,8 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
       place: "checkout-flow:2.1",
     });
     expect(response.body).not.toContain("ttys004");
-    // One ps for both sessions.
-    expect(server.ps.runs).toBe(1);
+    // One ps for both sessions' tabs, and the one the tmux pane finder reads its parents from.
+    expect(server.ps.runs).toBe(2);
   });
 
   test.each([
@@ -417,9 +417,10 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
     expect(response.status).toBe(409);
     expect(response.json()).toEqual({ error: "That tab has closed.", reason: "tab-gone" });
 
+    // The first look read the table twice, once for the tabs and once for the tmux panes.
     server.clock.now += TAB_LOOK_SOONEST_MS;
     await server.collector.poller.pollOnce();
-    expect(server.ps.runs).toBe(2);
+    expect(server.ps.runs).toBe(3);
   });
 
   test("when macOS has not allowed it, it is a 403 that says where to allow it", async () => {
@@ -463,11 +464,12 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
     expect((await first).status).toBe(200);
   });
 
-  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, ps is not asked and no session has a tab", async () => {
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, ps is not asked for tabs and no session has a tab", async () => {
     const server = await serve({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" }, inOneTab(TERMINAL_PATH));
 
     expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
-    expect(server.ps.runs).toBe(0);
+    // The one read is the tmux pane finder's, for the pane tmux lists.
+    expect(server.ps.runs).toBe(1);
     expect((await server.jump(ELSEWHERE)).status).toBe(404);
     expect(server.osascript.ran).toEqual([]);
   });

@@ -1,12 +1,12 @@
 import type { Session, SessionsSnapshot, SourceId } from "@core/sessions/session";
-import { changeNotice } from "@core/sessions/waiting";
+import { changeNotice } from "@core/notices/waiting";
 import {
   EMPTY_CHANGE_MEMORY,
   sessionChanges,
   type ChangeMemory,
   type NoticeEvent,
   type SessionChange,
-} from "@core/sessions/waitChanges";
+} from "@core/notices/sessionChanges";
 import type {
   NotificationHost,
   ShownNotification,

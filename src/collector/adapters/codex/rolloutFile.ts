@@ -1,5 +1,5 @@
 import { isImportedCodexTurn } from "../../../core/mapping/codexMapping.ts";
-import type { CodexIo, FileInfo, OpenFile } from "./io.ts";
+import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
 
 /**
  * Reading one Codex session file, a rollout, for the little this adapter needs.
@@ -326,7 +326,7 @@ export interface RolloutReader {
   keepOnly(files: ReadonlySet<string>): void;
 }
 
-export function createRolloutReader(io: CodexIo): RolloutReader {
+export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
   const cache = new Map<string, Cached>();
 
   async function readFresh(file: string): Promise<Cached> {

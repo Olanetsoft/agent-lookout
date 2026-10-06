@@ -7,6 +7,7 @@ import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { useHistoryWindow } from "@dashboard/hooks/data/useHistoryWindow";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { sentenceStart } from "@dashboard/lib/format";
 import {
   HISTORY_WINDOWS,
   samplesOf,
@@ -149,7 +150,7 @@ function HistoryBody({
         ) : status === "loading" ? (
           <Loading label={`Reading ${range.words}`} className='h-full' />
         ) : (
-          <Callout tone='error' title={`${capitalise(range.words)} could not be read`}>
+          <Callout tone='error' title={`${sentenceStart(range.words)} could not be read`}>
             <p>
               Agent Lookout did not answer when asked for it. The page asks again every minute. The
               15 minute window is still there.
@@ -172,10 +173,6 @@ function HistoryBody({
       </div>
     </>
   );
-}
-
-function capitalise(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 interface HistoryPanelProps {

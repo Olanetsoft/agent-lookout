@@ -1,4 +1,4 @@
-import { isMissing, type CodexIo } from "./io.ts";
+import { isMissing, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
  * The folder where Codex keeps one lock file for each session a Codex process
@@ -36,7 +36,7 @@ export function threadIdOfLock(name: string): string | null {
 }
 
 /** Lists the lock folder. A folder that is missing or cannot be listed means open sessions cannot be told apart. */
-export async function readWriterLocks(dir: string, io: CodexIo): Promise<WriterLocks> {
+export async function readWriterLocks(dir: string, io: ReadOnlyIo): Promise<WriterLocks> {
   let names: string[];
   try {
     names = await io.readdir(dir);

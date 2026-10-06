@@ -218,7 +218,7 @@ for (const file of sourceFiles) {
 }
 
 /** The most code files one folder holds before they are grouped into folders by area. */
-const MOST_LOOSE_FILES = 8;
+const MAX_LOOSE_FILES = 8;
 
 const looseFiles = new Map();
 for (const file of files) {
@@ -228,7 +228,7 @@ for (const file of files) {
   looseFiles.set(folder, (looseFiles.get(folder) ?? 0) + 1);
 }
 for (const [folder, count] of looseFiles) {
-  if (count > MOST_LOOSE_FILES) {
+  if (count > MAX_LOOSE_FILES) {
     problems.push(
       `${folder}/: holds ${count} code files side by side. Group the related ones into folders named for what they are about, and move each test to the mirrored path.`,
     );

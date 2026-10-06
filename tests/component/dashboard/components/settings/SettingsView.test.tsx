@@ -125,7 +125,7 @@ test("System follows the computer's setting, and changes when it does", async ()
     .toBeChecked();
 });
 
-test("the facts about this copy say its version and that its data stays on this computer", async () => {
+test("the facts about this copy say its version and that Agent Lookout sends its data nowhere", async () => {
   const screen = await render(<SettingsView />);
   const copy = screen.getByRole("region", { name: "This copy" });
 
@@ -135,7 +135,7 @@ test("the facts about this copy say its version and that its data stays on this 
   ]);
   expect(rows).toEqual([
     ["Version", `v${__APP_VERSION__}`],
-    ["Your data", "Stays on this computer"],
+    ["Your data", "Agent Lookout sends it nowhere"],
   ]);
   expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+/);
 });
@@ -376,8 +376,12 @@ test("the card says what a notification holds, that on a Mac they arrive with no
     "With Needs you on, a notification appears each time a session starts waiting for you. It names the session and the reason, and is cleared when the session moves on.",
   );
   expect(words).toContain(
-    "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them. Only Claude Code sessions and sessions from a status file can be seen waiting, so a Codex session never sends Needs you.",
+    "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them. What each agent can report, under Sources, says which agents can be seen waiting.",
   );
+  // Sources is named as a link to it.
+  expect(
+    notifications(screen).getByRole("link", { name: "Sources" }).element().getAttribute("href"),
+  ).toBe("#sources");
   // One switch covers the page's notifications and the app's own.
   expect(notifications(screen).getByRole("button").elements()).toHaveLength(1);
 });
@@ -449,6 +453,8 @@ test("once notifications are on, the four events are listed under the button, a 
   ]);
   // Showing them stores nothing.
   expect(localStorage.getItem(NOTIFICATION_EVENTS_STORAGE_KEY)).toBeNull();
+  // The switches say what the sentence about them said while they were off, so it has gone.
+  expect(notifications(screen).element().textContent).not.toContain("Once they are on");
 
   // Turning notifications off takes the list away again.
   await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
@@ -684,7 +690,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications, email and the webhook share the wide column, with the facts beside them, and the gaps are the one gap", async () => {
+test("the theme and notifications share the wide column, with email, the webhook and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -703,14 +709,14 @@ test("the theme, notifications, email and the webhook share the wide column, wit
   expect(notes.left).toBe(theme.left);
   expect(notes.width).toBe(theme.width);
   expect(notes.top - theme.bottom).toBe(16);
-  expect(mail.left).toBe(theme.left);
-  expect(mail.width).toBe(theme.width);
-  expect(mail.top - notes.bottom).toBe(16);
-  expect(hook.left).toBe(theme.left);
-  expect(hook.width).toBe(theme.width);
+  expect(mail.top).toBe(theme.top);
+  expect(mail.left - theme.right).toBe(16);
+  expect(hook.left).toBe(mail.left);
+  expect(hook.width).toBe(mail.width);
   expect(hook.top - mail.bottom).toBe(16);
-  expect(copy.top).toBe(theme.top);
-  expect(copy.left - theme.right).toBe(16);
+  expect(copy.left).toBe(mail.left);
+  expect(copy.width).toBe(mail.width);
+  expect(copy.top - hook.bottom).toBe(16);
 });
 
 test.each([1000, 375])(
@@ -786,11 +792,18 @@ test.each(
   },
 );
 
-/** The two lines of the Email card, once the app has answered: the state, and the line under it. */
+/**
+ * The lines of a card that says how sending goes, once the app has answered:
+ * the state, and the line under it, or the title and the words of the note
+ * that says what is wrong.
+ */
+const SENDING_LINES = ":scope > div > p, :scope > div > [data-slot='callout'] p";
+
+/** The lines of the Email card, once the app has answered. */
 async function emailLines(screen: Awaited<ReturnType<typeof render>>) {
   const card = screen.getByRole("region", { name: "Email" });
   await vi.waitFor(() => expect(emailState(screen).textContent).not.toBe(""));
-  return [...card.element().querySelectorAll(":scope > div > p")].map((line) => line.textContent);
+  return [...card.element().querySelectorAll(SENDING_LINES)].map((line) => line.textContent);
 }
 
 /** Today at this time on the clock. */
@@ -835,6 +848,7 @@ test("a setting that is wrong is named, with what to do", async () => {
 
   expect(await emailLines(screen)).toEqual([
     "Email is off.",
+    "Email is not set up correctly",
     "AGENT_LOOKOUT_SMTP_URL must begin with smtps:// or smtp://. Correct it and start Agent Lookout again.",
   ]);
 });
@@ -849,22 +863,25 @@ test("with email on, it says where emails go and after how long, and the facts s
   const copy = screen.getByRole("region", { name: "This copy" }).element();
   expect(
     copy.querySelector('[data-slot="fact-row"] + [data-slot="fact-row"] dd')?.textContent,
-  ).toBe("Leaves only in the emails you set up");
+  ).toBe("Sent only in the emails you set up");
 });
 
-test.each<[string, Partial<EmailStatusResponse>, string]>([
-  ["sent", { last: { at: today(14, 2), sent: true } }, "Last sent at 14:02."],
+test.each<[string, Partial<EmailStatusResponse>, string[]]>([
+  ["sent", { last: { at: today(14, 2), sent: true } }, ["Last sent at 14:02."]],
   [
     "not sent",
     {
       last: { at: today(14, 2), sent: false, reason: "the mail server did not answer in time" },
     },
-    "The last email could not be sent: the mail server did not answer in time.",
+    ["The last email could not be sent", "The mail server did not answer in time."],
   ],
   [
     "held by the hourly limit",
     { last: { at: today(14, 2), sent: true }, limitedUntil: today(15, 2) },
-    "20 emails were tried in the last hour, the most it tries. The next can go at 15:02.",
+    [
+      "Emails are held back",
+      "20 emails were tried in the last hour, the most it tries. The next can go at 15:02.",
+    ],
   ],
   [
     "not sent, and the hourly limit is full",
@@ -876,16 +893,25 @@ test.each<[string, Partial<EmailStatusResponse>, string]>([
       },
       limitedUntil: today(15, 2),
     },
-    "The last email could not be sent: the mail server did not accept the user name and password. No more will be tried until 15:02, as 20 were tried in the last hour.",
+    [
+      "The last email could not be sent",
+      "The mail server did not accept the user name and password. No more will be tried until 15:02, as 20 were tried in the last hour.",
+    ],
   ],
-])("when the last email was %s, the line under says so", async (_, status, line) => {
+])("when the last email was %s, the card says so", async (_, status, lines) => {
   email = { ...EMAIL_ON, ...status };
   const screen = await render(<SettingsView />);
 
   expect(await emailLines(screen)).toEqual([
     "Emails go to n…@example.com after a wait of 1 minute.",
-    line,
+    ...lines,
   ]);
+  // What is wrong is the info note that says notifications are blocked; all being well is a plain line.
+  const note = screen
+    .getByRole("region", { name: "Email" })
+    .element()
+    .querySelector<HTMLElement>('[data-slot="callout"]');
+  expect(note?.dataset.tone ?? null).toBe(lines.length === 2 ? "info" : null);
 });
 
 test("the Email card names every event it sends an email for", async () => {
@@ -903,7 +929,7 @@ test("when the app does not answer, the card says it could not be read, and clai
 
   expect(await emailLines(screen)).toEqual(["Whether email is set up could not be read."]);
   const copy = screen.getByRole("region", { name: "This copy" }).element();
-  expect(copy.textContent).toContain("Stays on this computer");
+  expect(copy.textContent).toContain("Agent Lookout sends it nowhere");
   expect(copy.textContent).not.toContain("emails");
 });
 
@@ -931,7 +957,7 @@ test.each(["dark", "light"] as const)(
 async function webhookLines(screen: Awaited<ReturnType<typeof render>>) {
   const card = screen.getByRole("region", { name: "Webhook" });
   await vi.waitFor(() => expect(webhookState(screen).textContent).not.toBe(""));
-  return [...card.element().querySelectorAll(":scope > div > p")].map((line) => line.textContent);
+  return [...card.element().querySelectorAll(SENDING_LINES)].map((line) => line.textContent);
 }
 
 const WEBHOOK_ON: WebhookStatusResponse = {
@@ -964,7 +990,7 @@ test("with nothing set, the Webhook card says it is off and which setting turns 
   ]);
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
   expect(webhookState(screen).getAttribute("aria-live")).toBe("polite");
-  expect(yourData(screen)).toBe("Stays on this computer");
+  expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
 });
 
 test("a webhook setting that is wrong is named, with what to do", async () => {
@@ -976,6 +1002,7 @@ test("a webhook setting that is wrong is named, with what to do", async () => {
 
   expect(await webhookLines(screen)).toEqual([
     "The webhook is off.",
+    "The webhook is not set up correctly",
     "AGENT_LOOKOUT_WEBHOOK_URL must not hold a user name or a password. Correct it and start Agent Lookout again.",
   ]);
 });
@@ -987,7 +1014,7 @@ test("with the webhook on, it names the host and when, and the facts say posts l
   expect(await webhookLines(screen)).toEqual([
     "Posts go to hooks.slack.com after a wait of 1 minute.",
   ]);
-  expect(yourData(screen)).toBe("Leaves only in the webhook posts you set up");
+  expect(yourData(screen)).toBe("Sent only in the webhook posts you set up");
 });
 
 test("with email and the webhook both on, the facts name both", async () => {
@@ -999,22 +1026,25 @@ test("with email and the webhook both on, the facts name both", async () => {
     "Posts go to hooks.slack.com when a session starts waiting or finishes.",
   ]);
   await emailLines(screen);
-  expect(yourData(screen)).toBe("Leaves only in the emails and webhook posts you set up");
+  expect(yourData(screen)).toBe("Sent only in the emails and posts you set up");
 });
 
-test.each<[string, Partial<WebhookStatusResponse>, string]>([
-  ["posted", { last: { at: today(14, 2), sent: true } }, "Last posted at 14:02."],
+test.each<[string, Partial<WebhookStatusResponse>, string[]]>([
+  ["posted", { last: { at: today(14, 2), sent: true } }, ["Last posted at 14:02."]],
   [
     "not posted",
     {
       last: { at: today(14, 2), sent: false, reason: "the address refused the post (status 403)" },
     },
-    "The last post failed: the address refused the post (status 403).",
+    ["The last post failed", "The address refused the post (status 403)."],
   ],
   [
     "held by the hourly limit",
     { last: { at: today(14, 2), sent: true }, limitedUntil: today(15, 2) },
-    "20 posts were tried in the last hour, the most it tries. The next can go at 15:02.",
+    [
+      "Posts are held back",
+      "20 posts were tried in the last hour, the most it tries. The next can go at 15:02.",
+    ],
   ],
   [
     "not posted, and the hourly limit is full",
@@ -1022,15 +1052,18 @@ test.each<[string, Partial<WebhookStatusResponse>, string]>([
       last: { at: today(14, 2), sent: false, reason: "the address did not answer in time" },
       limitedUntil: today(15, 2),
     },
-    "The last post failed: the address did not answer in time. No more will be tried until 15:02, as 20 were tried in the last hour.",
+    [
+      "The last post failed",
+      "The address did not answer in time. No more will be tried until 15:02, as 20 were tried in the last hour.",
+    ],
   ],
-])("when the last post was %s, the line under says so", async (_, status, line) => {
+])("when the last post was %s, the card says so", async (_, status, lines) => {
   webhook = { ...WEBHOOK_ON, ...status };
   const screen = await render(<SettingsView />);
 
   expect(await webhookLines(screen)).toEqual([
     "Posts go to hooks.slack.com after a wait of 1 minute.",
-    line,
+    ...lines,
   ]);
 });
 
@@ -1039,7 +1072,7 @@ test("when the app does not answer about the webhook, the card says it could not
   const screen = await render(<SettingsView />);
 
   expect(await webhookLines(screen)).toEqual(["Whether the webhook is set up could not be read."]);
-  expect(yourData(screen)).toBe("Stays on this computer");
+  expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
 });
 
 test.each(["dark", "light"] as const)(

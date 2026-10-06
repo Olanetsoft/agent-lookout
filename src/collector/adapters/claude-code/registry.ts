@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { open, readdir } from "node:fs/promises";
 import path from "node:path";
 
-import { validPid } from "./feed.ts";
+import { validPid } from "../../processes/pids.ts";
 
 /**
  * The per-process session registry, `<claude home>/sessions/<pid>.json`.
@@ -32,7 +32,7 @@ import { validPid } from "./feed.ts";
  *   while the status stands. In entries written by 2.1.282 to 2.1.286 it was
  *   the moment the file itself was last written, hours or days earlier for a
  *   session that had stayed in one status. The rule that tells one wait from
- *   the next relies on this (`src/core/sessions/waitChanges.ts`): were the time to move
+ *   the next relies on this (`src/core/notices/sessionChanges.ts`): were the time to move
  *   during a wait, every move would be taken for a new wait. Whether it moves
  *   when only `waitingFor` changes has not been seen either way.
  * - So the file is not rewritten as the session works: a session busy on one

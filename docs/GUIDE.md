@@ -12,11 +12,11 @@ The [README](../README.md#install) has the steps to install and start it.
 
 ## The screen
 
-![The Overview in the Night theme with one session waiting. A rail on the left links to Overview, Sources and Settings. The header says 8 sessions are watched from Claude Code and Codex. The Needs you panel shows a session that has waited just over 4 minutes for permission, with a Jump button, two bars of how long sessions waited on you, and counts of working, idle and stale sessions. The Last hour chart is beside it. Below are the Sessions list, the Events log and the Timeline.](images/dashboard-night.png)
+![The Overview in the Night theme with one session waiting. A rail on the left links to Overview, Sources and Settings. The header says 8 sessions are watched from Claude Code, Codex and status files, and has a magnifier that opens the search. The Needs you panel shows a session that has waited just over 4 minutes for permission, with its folder and branch and a Jump button, two bars of how long sessions waited on you, and counts of working, idle and stale sessions. The Last hour chart is beside it. Below are the Sessions list, grouped by status with each session's branch under its folder and a switch between List and Board, the Events log and the Timeline.](images/dashboard-night.png)
 
 A rail down the left edge moves between three views: Overview, Sources and Settings. The mark at the top of the rail lights up while any session needs you, so you can see it from every view. The browser tab's title gives the number that need you, as in `(2) Agent Lookout`.
 
-The header over each view says how many sessions are being watched and, in a wide window, when they were last checked. Click that line to open Sources. The switch on the right moves between the Night and Day themes, and the magnifier beside it opens the search: see [Keyboard](#keyboard).
+The header over each view says how many sessions are being watched and, in a wide window, when they were last checked. Click that line to open Sources. The switch on the right moves between the Night and Day themes; in a narrow window it is one round button that shows the moon or the sun and switches to the other. The magnifier beside it opens the search: see [Keyboard](#keyboard).
 
 ### Overview
 
@@ -142,7 +142,7 @@ The Timeline draws each session's status over the last hour, one row for each se
 
 ### Sources
 
-![The Sources view in the Night theme. A card for Claude Code and a card for Codex, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. A third card, About sources, says what a source is.](images/sources-night.png)
+![The Sources view in the Night theme. Cards for Claude Code, Codex and status files, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. Under them, What each agent can report gives Yes, No or Partly for each agent and each thing it can show. Beside them, About sources says what a source is.](images/sources-night.png)
 
 Sources has a card for Claude Code, one for Codex and one for status files, and under them a table of [what each agent can report](#what-each-agent-can-report). Each card says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 
@@ -185,7 +185,7 @@ Why, for each No and Partly:
 
 ### Settings
 
-Settings has five cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running.
+Settings has five cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
 
 #### Notifications
 
@@ -246,7 +246,7 @@ The browser gives its permission to the address, not to Agent Lookout. Another p
 
 #### Email
 
-Agent Lookout can also email you when a session has waited for a while, for when you are away from the computer, and, if you choose, when a session finishes, fails or ends. It is off unless you set it up. With it off, which is the default, Agent Lookout sends nothing anywhere and opens no connection to a mail server.
+Agent Lookout can also email you when a session has waited for a while, for when you are away from the computer, and, if you choose, when a session finishes, fails or ends. It is off unless you set it up. With it off, which is the default, Agent Lookout sends no email and opens no connection to a mail server.
 
 It is set up with settings in the environment when you start Agent Lookout, not on this page, and it has its own off switch: leaving those settings out. The button for notifications does not turn emails on or off.
 
@@ -299,7 +299,7 @@ Then start Agent Lookout with them, brackets included:
 
 The brackets keep the settings to this one run, so the terminal does not keep them afterwards, and no program you start from it later is handed the password. For the development server, use `npm run dev` in place of `npm start`, inside the same brackets.
 
-To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." With other events set, it names each one, such as "Emails go to Y…@gmail.com when a session has waited 1 minute or finishes." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or why it could not be, such as "The last email could not be sent: the mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
+To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." With other events set, it names each one, such as "Emails go to Y…@gmail.com when a session has waited 1 minute or finishes." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or, in a note headed "The last email could not be sent", why it could not be, such as "The mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off.", and a note headed "Email is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
 
 The card can say where emails go before any has been tried, so a wrong password or port shows only once a wait has lasted the delay. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_EMAIL_AFTER=0` as well, and let a session ask for permission. The card then says whether the email went. Start it again without that setting afterwards.
 
@@ -359,7 +359,7 @@ For Slack:
 
 For Discord, create a webhook in the channel's settings, under Integrations, copy its address and add `/slack` to the end of it: Discord then takes the same posts.
 
-To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or why it did not, such as "The last post failed: the address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npm start)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
+To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or, in a note headed "The last post failed", why it did not, such as "The address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off.", and a note headed "The webhook is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npm start)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
 
 A post shows in the channel as one line, such as "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)" or "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)": the session's name, what happened, and in brackets how long it has waited, its project folder's name, its app and its agent, leaving out any that is not known. The post also carries the same in fields of its own, for a program to read. It holds no path and no prompt, and a link only where a session's name has a web address written out in it. [PRIVACY.md](../PRIVACY.md#webhook) lists all it holds.
 
@@ -661,11 +661,11 @@ It finds Agent Lookout as `agent-lookout status` does: at `http://127.0.0.1:4777
 
 It has three tools:
 
-| Tool                   | Answers                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `list_sessions`        | Every session, in the order of the Sessions list, with its `id`, `name`, `agent`, `status`, the `reason` when it needs you, its `folder`, `branch` or `commit`, `app`, `since` and, for a working session, `quietFor`. Give it a `status` to list only those |
-| `sessions_needing_you` | The sessions that need you, longest wait first, with how long each has waited, and a `summary` in one sentence                                                                                                                                               |
-| `sources`              | Each source's state, as the Sources view says it, and its row of [what each agent can report](#what-each-agent-can-report), with the reason for each no and partly                                                                                           |
+| Tool                   | Answers                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_sessions`        | Every session, those that need you first, longest wait first, then the rest by status, with its `id`, `name`, `agent`, `status`, the `reason` when it needs you, its `folder`, `branch` or `commit`, `app`, `since` and, for a working session, `quietFor`. Give it a `status` to list only those |
+| `sessions_needing_you` | The sessions that need you, longest wait first, with how long each has waited, and a `summary` in one sentence                                                                                                                                                                                    |
+| `sources`              | Each source's state, as the Sources view says it, and its row of [what each agent can report](#what-each-agent-can-report), with the reason for each no and partly                                                                                                                                |
 
 Each answers in JSON. `sessions_needing_you` gives, for example:
 
@@ -761,7 +761,7 @@ Email and a webhook are the two ways it can tell you of a session away from this
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
-Sessions are not grouped by repository. A session's branch shows in the Sessions list, on its board and in the Needs you panel, and nowhere else: not in the Timeline, a notification, an email or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
+Sessions are not grouped by repository. A session's branch shows in the Sessions list, on its board card, in the Needs you panel, in the search and in the answers of `agent-lookout mcp`, and nowhere else: not in the Timeline, the Events log, a notification, an email, a webhook post or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
 
 The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list what is planned.
 
@@ -773,31 +773,32 @@ Put a setting in front of the command that starts Agent Lookout:
 AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 ```
 
-| Setting                        | What it does                                                                                                                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_LOOKOUT_PORT`           | The port `npm start` uses. The default is 4777.                                                                                                                           |
-| `AGENT_LOOKOUT_HOST`           | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                      |
-| `AGENT_LOOKOUT_CLAUDE_BIN`     | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                |
-| `AGENT_LOOKOUT_CLAUDE_HOME`    | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                         |
-| `AGENT_LOOKOUT_CLAUDE_FEED`    | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.        |
-| `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                          |
-| `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                          |
-| `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                             |
-| `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. |
-| `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                               |
-| `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                   |
-| `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                         |
-| `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                  |
-| `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                      |
-| `AGENT_LOOKOUT_EMAIL_AFTER`    | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                                   |
-| `AGENT_LOOKOUT_EMAIL_EVENTS`   | What is emailed: `needs-you`, `finished`, `failed` and `ended`, any of them, separated by commas. The default is `needs-you`.                                             |
-| `AGENT_LOOKOUT_WEBHOOK_URL`    | The one address [webhook](#webhook) posts go to, beginning with `https://`. It turns the webhook on.                                                                      |
-| `AGENT_LOOKOUT_WEBHOOK_EVENTS` | What is posted, as for `AGENT_LOOKOUT_EMAIL_EVENTS`. The default is `needs-you`.                                                                                          |
-| `AGENT_LOOKOUT_WEBHOOK_AFTER`  | How many seconds a wait lasts before it is posted, from 0 to 86400. The default is 60.                                                                                    |
+| Setting                        | What it does                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_LOOKOUT_PORT`           | The port `npm start` uses. The default is 4777.                                                                                                                                                                                                                                     |
+| `AGENT_LOOKOUT_HOST`           | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                                                                                                                                |
+| `AGENT_LOOKOUT_CLAUDE_BIN`     | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                                                                                                                          |
+| `AGENT_LOOKOUT_CLAUDE_HOME`    | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                                                                                                                                   |
+| `AGENT_LOOKOUT_CLAUDE_FEED`    | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.                                                                                                                  |
+| `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                                                                                                                                    |
+| `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                                                                                                                                    |
+| `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                                                                                                                                       |
+| `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again.                                                                                                           |
+| `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                                                                                                                                         |
+| `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                                                                                                                             |
+| `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                                                                                                                                   |
+| `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                                                                                                                            |
+| `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                                                                                                                                |
+| `AGENT_LOOKOUT_EMAIL_AFTER`    | How many seconds a wait lasts before it is emailed, from 0 to 86400. The default is 60.                                                                                                                                                                                             |
+| `AGENT_LOOKOUT_EMAIL_EVENTS`   | What is emailed: `needs-you`, `finished`, `failed` and `ended`, any of them, separated by commas. The default is `needs-you`.                                                                                                                                                       |
+| `AGENT_LOOKOUT_WEBHOOK_URL`    | The one address [webhook](#webhook) posts go to, beginning with `https://`. It turns the webhook on.                                                                                                                                                                                |
+| `AGENT_LOOKOUT_WEBHOOK_EVENTS` | What is posted, as for `AGENT_LOOKOUT_EMAIL_EVENTS`. The default is `needs-you`.                                                                                                                                                                                                    |
+| `AGENT_LOOKOUT_WEBHOOK_AFTER`  | How many seconds a wait lasts before it is posted, from 0 to 86400. The default is 60.                                                                                                                                                                                              |
+| `AGENT_LOOKOUT_URL`            | The address `agent-lookout status` and `agent-lookout mcp` ask, such as `http://127.0.0.1:4778`, in place of `http://127.0.0.1:4777` and then `http://localhost:5173`. Only an address on this computer is accepted. Set it where the command runs, not where Agent Lookout starts. |
 
-To see the empty screen, set both `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` to an empty folder. With only the first set, Codex sessions still appear.
+To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
 
-The Claude Code, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` only, and `AGENT_LOOKOUT_URL` to the `agent-lookout` command only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -842,10 +843,10 @@ lsof -nP -iTCP:4777 -sTCP:LISTEN
 
 1. Start a session and wait a few seconds. For Claude Code, run `claude` in a terminal. For Codex, run `codex` and send a prompt: a Codex session appears once its first prompt is sent.
 2. If the Sessions list says "No agents are running", Agent Lookout is working and sees no session on this computer. Sessions in the cloud or in a browser tab do not appear.
-3. Open Sources. It says whether Claude Code and Codex were found and where Agent Lookout looked.
+3. Open Sources. It says whether Claude Code and Codex were found, whether the folder of status files is there, and where Agent Lookout looked.
 4. If Claude Code's card says Not found, or says the `claude` command was not found, check that `claude --version` works in a terminal. If `claude` is installed somewhere unusual, set `AGENT_LOOKOUT_CLAUDE_BIN` to its full path.
 5. If Codex's card says Not found, check that the folder it names exists. If you keep Codex's files elsewhere with `CODEX_HOME`, set it in the terminal that starts Agent Lookout too.
-6. Check that `AGENT_LOOKOUT_CLAUDE_HOME` and `AGENT_LOOKOUT_CODEX_HOME` are not set in your shell. When one is, Agent Lookout reads only that folder for that agent.
+6. Check that `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` are not set in your shell. When one is, Agent Lookout reads only that folder for that agent, or for status files.
 
 To see what Agent Lookout sees without opening a browser:
 

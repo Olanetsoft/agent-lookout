@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
-import { jsonValuesIn } from "./firstJson.ts";
+import { validPid } from "../../processes/pids.ts";
+import { jsonValuesIn } from "./jsonValues.ts";
 
 /** How long `claude agents --json` gets before it is given up on. */
 export const FEED_TIMEOUT_MS = 5_000;
@@ -199,11 +200,6 @@ function wholeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
 }
 
-/** A process id we would be willing to signal: a positive whole number. */
-export function validPid(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
-}
-
 /** Keeps the fields we know, with the types we expect, and drops the rest. */
 export function toFeedEntry(value: unknown): FeedEntry | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -379,13 +375,4 @@ export function createFeedReader(run: RunCommand): FeedReader {
       return picked;
     },
   };
-}
-
-/** Runs the command once and reads the session list it prints. */
-export function readFeed(
-  binary: string,
-  run: RunCommand,
-  options: FeedOptions,
-): Promise<FeedResult> {
-  return createFeedReader(run).read(binary, options);
 }

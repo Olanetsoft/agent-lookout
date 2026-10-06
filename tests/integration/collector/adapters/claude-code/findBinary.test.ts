@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { findClaudeBinary, isExecutableFile } from "@collector/adapters/claude-code/findBinary";
+import { findClaudeBinary } from "@collector/adapters/claude-code/findBinary";
+import { isExecutableFile } from "@collector/files/paths";
 import { HOME } from "@tests/fixtures/claudeCode";
 import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 

@@ -5,7 +5,7 @@ import {
   asSnapshot,
   DEFAULT_ADDRESSES,
   loopbackAddress,
-  URL_SETTING,
+  URL_ENV,
 } from "@cli/localServer";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -56,7 +56,7 @@ describe("which addresses are tried", () => {
   });
 
   test("the address the setting names when --url names none, and --url when both do", () => {
-    const env = { [URL_SETTING]: "http://localhost:5180" };
+    const env = { [URL_ENV]: "http://localhost:5180" };
     expect(addressesToTry(null, env)).toEqual({
       addresses: ["http://localhost:5180"],
       named: true,
@@ -68,7 +68,7 @@ describe("which addresses are tried", () => {
   });
 
   test("a setting left blank names nothing", () => {
-    expect(addressesToTry(null, { [URL_SETTING]: "  " })).toMatchObject({ named: false });
+    expect(addressesToTry(null, { [URL_ENV]: "  " })).toMatchObject({ named: false });
   });
 
   test("an address elsewhere is refused, saying which was wrong, and nothing else is tried", () => {
@@ -76,7 +76,7 @@ describe("which addresses are tried", () => {
       refusal:
         "--url must be an http address on this machine, at localhost, 127.0.0.1 or [::1], such as http://127.0.0.1:4777. Session names are read from this machine only.",
     });
-    expect(addressesToTry(null, { [URL_SETTING]: "http://192.168.1.20:4777" })).toEqual({
+    expect(addressesToTry(null, { [URL_ENV]: "http://192.168.1.20:4777" })).toEqual({
       refusal: expect.stringMatching(/^AGENT_LOOKOUT_URL must be an http address on this machine/),
     });
   });

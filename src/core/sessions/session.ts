@@ -7,7 +7,15 @@
  */
 export type SourceId = "claude-code" | "codex" | "status-files";
 
-export type Surface = "terminal" | "vscode" | "desktop" | "cloud" | "browser" | "unknown";
+/**
+ * Every value of each kind below, as a list each type is made from, so a reader
+ * of the API that checks a value against the list cannot fall behind the type:
+ * a value added here is one the page, `agent-lookout status` and the MCP server
+ * all accept.
+ */
+export const SURFACES = ["terminal", "vscode", "desktop", "cloud", "browser", "unknown"] as const;
+
+export type Surface = (typeof SURFACES)[number];
 
 /**
  * What each surface is called, in the dashboard and in an email. A surface that
@@ -26,9 +34,21 @@ export function surfaceLabel(surface: Surface): string | null {
   return surface === "unknown" ? null : SURFACE_LABEL[surface];
 }
 
-export type SessionStatus = "needs-you" | "working" | "idle" | "finished" | "failed" | "unknown";
+/** Every status, in the order they are listed: the ones that need a person come first. */
+export const SESSION_STATUSES = [
+  "needs-you",
+  "working",
+  "idle",
+  "finished",
+  "failed",
+  "unknown",
+] as const;
 
-export type WaitingReason = "permission" | "question" | "other";
+export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+export const WAITING_REASONS = ["permission", "question", "other"] as const;
+
+export type WaitingReason = (typeof WAITING_REASONS)[number];
 
 /** The terminal apps whose tabs the collector can bring forward, as they are named. */
 export const TERMINAL_APPS = ["Terminal", "iTerm2"] as const;
@@ -133,7 +153,9 @@ export interface Session {
  *   outside the Sources view.
  * - `error`: the sessions could not be read.
  */
-export type SourceState = "ok" | "searching" | "unavailable" | "not-set-up" | "error";
+export const SOURCE_STATES = ["ok", "searching", "unavailable", "not-set-up", "error"] as const;
+
+export type SourceState = (typeof SOURCE_STATES)[number];
 
 /** Each state in words, on the Sources view and in `agent-lookout mcp`. */
 export const SOURCE_STATE_LABEL: Record<SourceState, string> = {
@@ -183,7 +205,9 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
 };
 
 /** How much of one thing a source can tell: all of it, none of it, or some. */
-export type CapabilityLevel = "yes" | "no" | "partly";
+export const CAPABILITY_LEVELS = ["yes", "no", "partly"] as const;
+
+export type CapabilityLevel = (typeof CAPABILITY_LEVELS)[number];
 
 /** The word for each level, in a cell. */
 export const CAPABILITY_LEVEL_LABEL: Record<CapabilityLevel, string> = {
@@ -234,8 +258,10 @@ export interface SessionsSnapshot {
   sessions: Session[];
 }
 
-export type EventKind = "appeared" | "status-changed" | "ended";
-export type EventSeverity = "advisory" | "warning" | "critical";
+export const EVENT_KINDS = ["appeared", "status-changed", "ended"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+export const EVENT_SEVERITIES = ["advisory", "warning", "critical"] as const;
+export type EventSeverity = (typeof EVENT_SEVERITIES)[number];
 
 export interface SessionEvent {
   id: string;
@@ -254,4 +280,18 @@ export interface HistoryPoint {
   working: number;
   idle: number;
   total: number;
+}
+
+/**
+ * The agent a session belongs to, in its own plain name: a status file names
+ * its own, such as "Night Shift", and every other source is its own agent,
+ * named as the source is, "Claude Code" or "Codex". Null when neither is known.
+ * The page, the emails and posts, `agent-lookout status` and the MCP server all
+ * name an agent by this rule.
+ */
+export function agentName(
+  session: Pick<Session, "source" | "agent">,
+  sources: readonly Pick<SourceHealth, "id" | "label">[],
+): string | null {
+  return session.agent ?? sources.find((source) => source.id === session.source)?.label ?? null;
 }

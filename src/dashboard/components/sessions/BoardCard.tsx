@@ -3,11 +3,11 @@ import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
-import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
+import { rowLook } from "@dashboard/lib/sessions/sessions";
+import { surfaceLabel } from "@dashboard/lib/sessions/status";
 import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 
@@ -46,13 +46,8 @@ interface BoardCardProps {
  * lights as a row does.
  */
 export function BoardCard({ session, now, agent }: BoardCardProps) {
-  const ended = session.status === "finished" || session.status === "failed";
-  const gone = session.alive === false;
   // As in the list: the badge is for a session still claiming to run.
-  const orphaned = gone && !ended;
-  const stale = isStaleIdle(session);
-  const quiet = stale || ended || gone;
-  const mark: MarkKind = stale ? "stale" : session.status;
+  const { mark, word, stale, quiet, orphaned } = rowLook(session);
   const jump = useJump(session);
   const app = surfaceLabel(session.surface);
 
@@ -166,7 +161,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
         <div className='min-w-0'>
           {/* Read as one phrase: "Working 8m". */}
           <p className='flex items-baseline gap-1.5 leading-tight whitespace-nowrap'>
-            <span data-part='status'>{stale ? "Stale" : STATUS_LABEL[session.status]}</span>
+            <span data-part='status'>{word}</span>
             <Duration session={session} now={now} quiet={quiet} />
           </p>
           <QuietFor session={session} now={now} />

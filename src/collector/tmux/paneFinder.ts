@@ -1,5 +1,5 @@
+import { readProcessParentsWithPs, type ReadProcessParents } from "../processes/processParents.ts";
 import { LIST_PANES_ARGS, paneOfProcess, parsePanes, type TmuxPane } from "./panes.ts";
-import { readProcessParentsWithPs, type ReadProcessParents } from "./processParents.ts";
 import type { RunTmux } from "./program.ts";
 
 /** How often tmux is asked where its panes are. The same beat as the `claude` command. */
@@ -13,7 +13,7 @@ export const PANE_LOOK_SOONEST_MS = 5_000;
 
 export interface PaneFinderOptions {
   run: RunTmux;
-  /** Reads each process's parent. Defaults to asking `ps`. */
+  /** Reads each process's parent. Defaults to asking `ps` for that and nothing more. */
   readParents?: ReadProcessParents;
   now?: () => number;
   intervalMs?: number;

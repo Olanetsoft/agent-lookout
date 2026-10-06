@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 
-import { isExecutableFile, pathCandidates } from "../adapters/claude-code/findBinary.ts";
+import { isExecutableFile, pathCandidates } from "../files/paths.ts";
 
 /** The variable that, set to `off`, stops tmux being run at all. */
 export const TMUX_ENV = "AGENT_LOOKOUT_TMUX";

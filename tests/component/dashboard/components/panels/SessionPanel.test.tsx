@@ -198,7 +198,7 @@ test("a Claude Code session waiting in VS Code: its name, the lamp's Jump, every
 
   expect(facts(root)).toEqual({
     Status:
-      "Needs you for 4 minutes 0 seconds4m 00sWaiting for permission, since 14:28:30 | Bash(npm run deploy)",
+      "Needs you for 4 minutes4m 00sWaiting for permission, since 14:28:30 | Bash(npm run deploy)",
     Agent: "Claude Code",
     App: "VS Code",
     Folder: "/Users/example/code/storefront",
@@ -282,7 +282,7 @@ test("a Codex session working and quiet: its commit in the mono, how long it has
   const root = panel.element();
 
   expect(facts(root)).toEqual({
-    Status: "Working for 30 minutes 0 seconds30m 00ssince 14:02:30, quiet for 12m",
+    Status: "Working for 30 minutes30m 00ssince 14:02:30, quiet for 12m",
     Agent: "Codex",
     App: "Terminal",
     Folder: "/Users/example/code/payments",
@@ -306,7 +306,7 @@ test("a session from a status file: its own agent, no app, no folder known, and 
   const root = panel.element();
 
   expect(facts(root)).toEqual({
-    Status: "Idle for 20 minutes 0 seconds20m 00ssince 14:12:30",
+    Status: "Idle for 20 minutes20m 00ssince 14:12:30",
     Agent: "night-shift",
     Folder: "Not known",
     Started: "Not reported",
@@ -344,7 +344,7 @@ test("a session that leaves the list while open says so in one calm line, keeps 
     .element(page.getByText("This session has left the list. Here is what was last known of it."))
     .toBeVisible();
   // Still the session it was, with the time it had when it was last listed.
-  expect(facts(root).Status).toMatch(/^Needs you for 4 minutes 0 seconds4m 00s/);
+  expect(facts(root).Status).toMatch(/^Needs you for 4 minutes4m 00s/);
   expect(facts(root).Folder).toBe("/Users/example/code/storefront");
   // No way to reach it, and nothing warm: its wait is over.
   expect(root.querySelector('[data-part="jump"]')).toBeNull();

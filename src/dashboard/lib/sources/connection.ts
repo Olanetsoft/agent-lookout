@@ -1,6 +1,6 @@
 import type { SessionsSnapshot, SourceHealth, Surface } from "@core/sessions/session";
 import type { CollectorPhase, ProblemKind } from "@dashboard/lib/api/collectorStore";
-import { formatAgo, formatClock } from "@dashboard/lib/format";
+import { formatAgo, formatClock, sentenceStart } from "@dashboard/lib/format";
 import { sourceNames } from "@dashboard/lib/sources/sources";
 import { SOURCE_STATE_LABEL } from "@dashboard/lib/sessions/status";
 
@@ -82,11 +82,6 @@ const SURFACE_IN_SENTENCE: readonly [Surface, string][] = [
   ["browser", "a browser"],
   ["unknown", "another app"],
 ];
-
-/** The words with a capital letter, to begin a sentence: "Status files could not be read". */
-function sentenceStart(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 /** "A", "A and B", "A, B and C". */
 function listOf(words: readonly string[]): string {

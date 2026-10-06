@@ -20,14 +20,14 @@ import {
   type StatusFileAdapterOptions,
 } from "@collector/adapters/status-files/index";
 import { MAX_FILE_BYTES, MAX_FILES } from "@collector/adapters/status-files/statusFile";
-import { nodeIo, type CodexIo } from "@collector/adapters/codex/io";
+import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { tempDir } from "@tests/support/node/tempFiles";
 
 /** The real file system, with every call written down. */
 function recordingIo() {
-  const calls: { method: keyof CodexIo; path: string }[] = [];
-  const io: CodexIo = {
+  const calls: { method: keyof ReadOnlyIo; path: string }[] = [];
+  const io: ReadOnlyIo = {
     readdir: (target) => (calls.push({ method: "readdir", path: target }), nodeIo.readdir(target)),
     stat: (target) => (calls.push({ method: "stat", path: target }), nodeIo.stat(target)),
     lstat: (target) => (calls.push({ method: "lstat", path: target }), nodeIo.lstat(target)),

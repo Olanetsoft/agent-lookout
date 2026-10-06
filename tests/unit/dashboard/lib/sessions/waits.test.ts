@@ -305,6 +305,7 @@ describe("the last wait that is over", () => {
       id: id(1),
       name: "project-1",
       ms: 2 * MINUTE,
+      startKnown: true,
       at: at(14, 22),
       how: "answered",
     });
@@ -327,8 +328,26 @@ describe("the last wait that is over", () => {
     }
   });
 
-  test("is not offered when the page does not hold the start of the wait", () => {
-    const result = waits({ events: [changed(1, at(14, 22), "needs-you", "working")] });
+  test("when the page does not hold the start of the wait, is offered from the start of the period, its start not known, as the bars count it", () => {
+    const result = waits({
+      sessions: [session(1, { status: "working", statusSince: at(14, 22) })],
+      events: [changed(1, at(14, 22), "needs-you", "working")],
+    });
+
+    expect(result.lastWait).toEqual({
+      id: id(1),
+      name: "project-1",
+      ms: at(14, 22) - result.period.from,
+      startKnown: false,
+      at: at(14, 22),
+      how: "answered",
+    });
+    // The bar for it is the same length.
+    expect(result.sessions).toMatchObject([{ id: id(1), ms: at(14, 22) - result.period.from }]);
+  });
+
+  test("is not offered from the first event the page holds unless that event ends a wait", () => {
+    const result = waits({ events: [changed(1, at(14, 22), "idle", "working")] });
 
     expect(result.lastWait).toBeNull();
   });

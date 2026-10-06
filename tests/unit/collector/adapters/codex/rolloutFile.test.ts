@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { FileInfo } from "@collector/adapters/codex/io";
+import type { FileInfo } from "@collector/files/readOnlyIo";
 import {
   createRolloutReader,
   HEAD_LIMIT_BYTES,

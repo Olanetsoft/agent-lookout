@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import type { WaitFacts } from "@collector/outbound/outboundChannel";
-import { MOST_NAME_LENGTH } from "@collector/outbound/outboundText";
 import { overPost, slackSafe, waitPost } from "@collector/webhook/webhookMessage";
+import { MAX_LINE_LENGTH } from "@core/text";
 import type { Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -190,7 +190,7 @@ describe("a session name that tries to change the post", () => {
 
     for (const part of [post.session.name, post.session.folder, post.session.agent]) {
       expect(part).not.toMatch(/[\r\n\t]/);
-      expect(Array.from(part ?? "").length).toBeLessThanOrEqual(MOST_NAME_LENGTH);
+      expect(Array.from(part ?? "").length).toBeLessThanOrEqual(MAX_LINE_LENGTH);
     }
   });
 
@@ -205,8 +205,8 @@ describe("a session name that tries to change the post", () => {
 
   test("a very long name is cut to its length, between letters", () => {
     const post = waitPost(facts({ name: "🚀".repeat(200) }));
-    expect(post.session.name).toBe(`${"🚀".repeat(MOST_NAME_LENGTH - 1)}…`);
-    expect(post.text.startsWith(`${"🚀".repeat(MOST_NAME_LENGTH - 1)}… is waiting`)).toBe(true);
+    expect(post.session.name).toBe(`${"🚀".repeat(MAX_LINE_LENGTH - 1)}…`);
+    expect(post.text.startsWith(`${"🚀".repeat(MAX_LINE_LENGTH - 1)}… is waiting`)).toBe(true);
   });
 });
 

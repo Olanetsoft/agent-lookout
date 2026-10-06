@@ -3,7 +3,7 @@ import {
   NOTICE_EVENTS,
   readNoticeEvents,
   type NoticeEvent,
-} from "../../core/sessions/waitChanges.ts";
+} from "../../core/notices/sessionChanges.ts";
 
 /**
  * The settings email and the webhook read the same way, each under its own
@@ -15,7 +15,13 @@ import {
 export const DEFAULT_AFTER_SECONDS = 60;
 
 /** The longest delay that can be set: a day. */
-const MOST_AFTER_SECONDS = 86_400;
+const MAX_AFTER_SECONDS = 86_400;
+
+/**
+ * The hosts on this computer that a channel may reach without TLS: a mail
+ * server over plain SMTP, or a webhook over `http://`.
+ */
+export const LOCAL_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost"]);
 
 /** Thrown while reading a setting that cannot be read, with the sentence to say. */
 export class SettingProblem extends Error {}
@@ -30,9 +36,9 @@ export function valueOf(env: NodeJS.ProcessEnv, name: string): string | undefine
 export function readAfter(name: string, value: string | undefined): number {
   if (value === undefined) return DEFAULT_AFTER_SECONDS * 1_000;
   const seconds = /^\d{1,6}$/.test(value) ? Number(value) : Number.NaN;
-  if (!(seconds <= MOST_AFTER_SECONDS)) {
+  if (!(seconds <= MAX_AFTER_SECONDS)) {
     throw new SettingProblem(
-      `${name} must be a whole number of seconds from 0 to ${MOST_AFTER_SECONDS}, such as 60.`,
+      `${name} must be a whole number of seconds from 0 to ${MAX_AFTER_SECONDS}, such as 60.`,
     );
   }
   return seconds * 1_000;

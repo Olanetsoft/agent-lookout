@@ -13,7 +13,7 @@ import { makeSession } from "@tests/fixtures/session";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { closedPort, listen, request } from "@tests/support/node/http";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 
 // The command as people run it: `bin/agent-lookout.mjs`, as a process of its
 // own, asking a real collector that reads stand-in folders on a free port.

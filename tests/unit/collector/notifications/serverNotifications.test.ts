@@ -6,9 +6,9 @@ import {
   notificationsOnAtStart,
 } from "@collector/notifications/serverNotifications";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
 import { makeSession } from "@tests/fixtures/session";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 
 const T0 = 1_700_000_000_000;
 

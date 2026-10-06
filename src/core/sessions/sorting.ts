@@ -1,17 +1,10 @@
-import type { Session, SessionStatus } from "./session.ts";
+import { SESSION_STATUSES, type Session, type SessionStatus } from "./session.ts";
 
 /** The fields a session is ordered by. */
 type Ordered = Pick<Session, "id" | "name" | "status" | "statusSince">;
 
 /** The order statuses are listed in: the ones that need a person come first. */
-export const STATUS_ORDER: readonly SessionStatus[] = [
-  "needs-you",
-  "working",
-  "idle",
-  "finished",
-  "failed",
-  "unknown",
-];
+export const STATUS_ORDER: readonly SessionStatus[] = SESSION_STATUSES;
 
 const RANK = new Map<SessionStatus, number>(STATUS_ORDER.map((status, index) => [status, index]));
 

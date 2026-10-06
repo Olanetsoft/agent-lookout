@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { GitHead, Session } from "../../core/sessions/session.ts";
-import { isMissing, nodeIo, type CodexIo, type FileInfo } from "../adapters/codex/io.ts";
+import { isMissing, nodeIo, type ReadOnlyIo, type FileInfo } from "../files/readOnlyIo.ts";
 import { MAX_GIT_FILE_BYTES, parseGitFile, parseHead } from "./gitHead.ts";
 
 /** How long what was read for a folder stands before its `HEAD` is read again. */
@@ -22,7 +22,7 @@ export const READ_WAIT_MS = 1_000;
  * What the finder does to the file system: the reading-only access the Codex
  * adapter has, less listing a folder. It never writes, and never runs git.
  */
-export type GitIo = Pick<CodexIo, "stat" | "lstat" | "openRegular">;
+export type GitIo = Pick<ReadOnlyIo, "stat" | "lstat" | "openRegular">;
 
 interface Where {
   io: GitIo;

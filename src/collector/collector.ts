@@ -20,7 +20,8 @@ import {
 } from "./notifications/serverNotifications.ts";
 import { createSystemNotifier, type SystemNotifier } from "./notifications/systemNotifier.ts";
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
-import type { ReadProcessTable } from "./terminal/processTable.ts";
+import type { ReadProcessStarts } from "./processes/processStart.ts";
+import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
 import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
 import { createTabFinder } from "./terminal/tabFinder.ts";
 import { createPaneFinder } from "./tmux/paneFinder.ts";
@@ -64,11 +65,17 @@ export interface CollectorOptions {
    */
   osascript?: RunOsascript;
   /**
-   * Reads every process's parent, terminal and program, to find the Terminal
-   * or iTerm2 tab a session runs in. Defaults to asking `ps`. Tests pass a
-   * table of their own.
+   * Reads every process's parent, terminal and program, to find the tmux pane
+   * and the Terminal or iTerm2 tab a session runs in. Defaults to asking `ps`.
+   * Tests pass a table of their own.
    */
   readProcesses?: ReadProcessTable;
+  /**
+   * Reads when processes started, to tell a Claude Code session's process from
+   * another that has since been given its pid. Defaults to asking `ps`. Tests
+   * pass their own, so that, with `readProcesses`, the collector runs no `ps`.
+   */
+  readProcessStarts?: ReadProcessStarts;
   /**
    * Makes what sends an email, once email has been set up in the environment.
    * Defaults to the mail server named there. With email not set up it is never
@@ -122,7 +129,14 @@ export function createCollector(options: CollectorOptions): Collector {
   // The panes the Claude Code adapter finds are the ones the jump route selects,
   // so the two share one finder and one way of running tmux.
   const tmux = options.tmux ?? createTmuxRunner({ env });
-  const panes = createPaneFinder({ run: tmux, now });
+  // A table a test hands in stands in for every `ps` the finders run: the pane
+  // finder reads each process's parent from it.
+  const { readProcesses } = options;
+  const panes = createPaneFinder({
+    run: tmux,
+    readParents: readProcesses && (async () => parentsIn(await readProcesses())),
+    now,
+  });
   // The same for the tabs of Terminal and iTerm2: the adapter finds them and
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
@@ -174,6 +188,7 @@ export function createCollector(options: CollectorOptions): Collector {
         pollIntervalMs: intervalMs,
         panes,
         terminals: tabs,
+        readProcessStarts: options.readProcessStarts,
       }),
       createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
       createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),

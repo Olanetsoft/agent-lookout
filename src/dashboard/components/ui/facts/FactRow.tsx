@@ -36,7 +36,7 @@ export function FactRow({ label, children, mono = false, note }: FactRowProps) {
       <dt className='shrink-0 text-body text-ink-secondary'>{label}</dt>
       <dd
         className={cn(
-          "min-w-0 text-right text-ink",
+          "min-w-0 text-right text-pretty text-ink",
           mono ? "font-mono text-fact" : "text-body font-medium",
         )}
       >

@@ -1,17 +1,17 @@
 # Agent Lookout
 
-Agent Lookout puts every Claude Code and Codex session running on your Mac on one page in your browser, and shows which Claude Code sessions are waiting for you.
+Agent Lookout puts the AI agent sessions running on your Mac on one page in your browser, and shows which of them are waiting for you. It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. By default it sends nothing anywhere.
+
+[Install](#install) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Website](https://agent-lookout.vercel.app)
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/dashboard-day.png">
-  <img alt="The Agent Lookout dashboard. A rail on the left links to Overview, Sources and Settings. At the top, the Needs you panel shows the one session waiting for permission, with its timer and a Jump button, bars of how long sessions waited on you, and counts of working, idle and stale sessions. Beside it is the Last hour chart. Below are the Sessions list, grouped by status, the Events log and the Timeline." src="docs/images/dashboard-night.png">
+  <img alt="The Agent Lookout dashboard. A rail on the left links to Overview, Sources and Settings, and the header has a magnifier that opens the search. At the top, the Needs you panel shows the one session waiting for permission, with its folder and branch, its timer and a Jump button, bars of how long sessions waited on you, and counts of working, idle and stale sessions. Beside it is the Last hour chart. Below are the Sessions list, grouped by status with each session's branch under its folder and a switch between List and Board, the Events log and the Timeline." src="docs/images/dashboard-night.png">
 </picture>
 
-The website is [agent-lookout.vercel.app](https://agent-lookout.vercel.app).
+For Claude Code it reads the list of sessions Claude Code keeps on your computer, so it finds sessions in a terminal, in VS Code or in the desktop app. For Codex it reads the session files Codex saves in `~/.codex`. It never starts, stops or answers a session. A Jump button takes you to a Claude Code session: it opens it in VS Code, selects its tmux pane, or brings its tab of Terminal or iTerm2 to the front. Turn on notifications in Settings to be told when a session starts waiting and, if you choose, when one finishes, fails or ends, on a Mac even after you close the dashboard's tab. If you set it up, it can also email you or post to a Slack channel.
 
-It reads the list of sessions Claude Code keeps on your computer, so it finds sessions in a terminal, in VS Code or in the Claude Code desktop app with no setup. For Codex it reads the session files Codex saves in `~/.codex`, also with no setup. It only watches. A Jump button can take you to a Claude Code session, by opening it in VS Code, by selecting the tmux pane it runs in, or by bringing its tab of Terminal or iTerm2 to the front. The first time you jump to a tab, macOS asks once whether the program Agent Lookout runs in may control that app. It still cannot start, stop or answer a session. Turn on notifications in Settings and you are told when a Claude Code session starts waiting: by your browser while the dashboard is open in a tab, and by Agent Lookout itself once the tab is closed, for as long as it keeps running. If you set it up, it can also email you, or post to a Slack channel through a webhook, when a session has waited a while.
-
-Today it watches Claude Code and Codex on macOS. Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as needing you. Codex support is new: it has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. Any other agent, including one you wrote yourself, can appear by writing a small status file for each session, as the [guide](docs/GUIDE.md#your-own-agents) shows. Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
+Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as needing you. Codex support has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. To show another agent, including one you wrote yourself, see [Your own agents](docs/GUIDE.md#your-own-agents). Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
 
 ## Install
 
@@ -59,7 +59,13 @@ To see which sessions need you without opening the browser, run `npm run --silen
 
 ## Privacy
 
-By default Agent Lookout itself sends nothing anywhere. Email notifications and webhook posts are both off unless you set them up. Once you set up email, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. Once you set a webhook address, it sends the same notices as short posts to that one address and nowhere else: each holds the session's name, what happened, when, and the name of its folder, its app and its agent. The [guide](docs/GUIDE.md#email) says how to set up email, [Webhook](docs/GUIDE.md#webhook) how to set up a webhook for Slack, and both say how to turn them off. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does. Codex's session files hold your conversations. Agent Lookout opens them only to read a few details, such as each session's folder and when each turn started and ended, and keeps none of your prompts, Codex's replies or the commands it ran. `agent-lookout mcp` does nothing until you add it to an agent's app, and then answers only that app, but the app usually hands the answers, with your session names, folder names and branches, to its model, which for most agents runs on the vendor's servers. [The MCP server](PRIVACY.md#the-mcp-server) says what an answer holds and how to remove it. [PRIVACY.md](PRIVACY.md) lists everything it reads and runs, and what an email and a post hold.
+By default Agent Lookout itself sends nothing anywhere: no telemetry, no analytics, no update check and no account. [PRIVACY.md](PRIVACY.md) lists everything it reads and runs, and everything it can send.
+
+- Email and webhook posts are off until you set them up. Then each goes only to the one address you name, through the mail server you name for email, and holds the session's name, what happened, when, and the name of its folder, its app and its agent. [Email](docs/GUIDE.md#email) and [Webhook](docs/GUIDE.md#webhook) say how to set them up and how to turn them off.
+- Agent Lookout runs Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does.
+- Codex's session files hold your conversations. Agent Lookout opens them only to read a few details, such as each session's folder and when each turn started and ended, and keeps none of your prompts, Codex's replies or the commands it ran.
+- Jump to a tab of Terminal or iTerm2 needs macOS to let the program you start Agent Lookout from control that app. macOS asks once, and what you allow covers anything else run from that program.
+- `agent-lookout mcp` does nothing until you add it to an agent's app. That app usually hands its answers, with your session names, folder names and branches, to its model, which for most agents runs on the vendor's servers. [The MCP server](PRIVACY.md#the-mcp-server) says what an answer holds and how to remove it.
 
 ## Contributing
 

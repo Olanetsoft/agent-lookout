@@ -18,7 +18,7 @@ import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 import { listen, request } from "@tests/support/node/http";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 const T0 = 1_700_000_000_000;

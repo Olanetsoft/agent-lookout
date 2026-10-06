@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { nodeIo } from "@collector/adapters/codex/io";
+import { nodeIo } from "@collector/files/readOnlyIo";
 import { BRANCH_READ_MS, createBranchFinder, findGitHead } from "@collector/git/branchFinder";
 import type { GitHead, Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";

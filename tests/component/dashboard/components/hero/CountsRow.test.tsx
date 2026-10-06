@@ -151,6 +151,28 @@ test("Sessions counts endings, and failures only when there are any", async () =
   expect(noteOf(screen.container, "Sessions")).toBe("3 open, 2 failed");
 });
 
+test("a long Sessions note wraps in a narrow row, and none of it is cut", async () => {
+  const ended = [
+    ...SESSIONS,
+    ...Array.from({ length: 9 }, (_, index) =>
+      session(10 + index, { status: "working", statusSince: NOW - MINUTE }),
+    ),
+    session(30, { status: "finished", statusSince: NOW - MINUTE }),
+    session(31, { status: "failed", statusSince: NOW - MINUTE }),
+  ];
+  const screen = await render(
+    <div style={{ width: 560 }}>
+      <CountsRow counts={countState(ended, OK)} asOf={NOW} />
+    </div>,
+  );
+  const note = countOf(screen.container, "Sessions").querySelector<HTMLElement>(
+    '[data-part="note"]',
+  )!;
+  expect(note.textContent).toBe("14 open, 1 finished, 1 failed");
+  expect(note.scrollWidth).toBeLessThanOrEqual(note.clientWidth);
+  expect(getComputedStyle(note).textOverflow).not.toBe("ellipsis");
+});
+
 test("with sessions whose start was not reported, there is no longest", async () => {
   const screen = await renderCounts([
     session(1, { status: "working", statusSince: null }),
@@ -355,25 +377,4 @@ test("a count that was not counted has no history to open", async () => {
   expect(screen.container.querySelector("button")).toBeNull();
   const loading = await renderCounts(null, OK, onOpenHistory);
   expect(loading.container.querySelector("button")).toBeNull();
-});
-
-test("a note too long for its count is cut on one line on a wide screen", async () => {
-  const screen = await render(
-    <div style={{ width: 520 }}>
-      <CountsRow
-        counts={countState(
-          [...SESSIONS, session(6, { status: "finished" }), session(7, { status: "failed" })],
-          OK,
-        )}
-        asOf={NOW}
-      />
-    </div>,
-  );
-  const note = countOf(screen.container, "Sessions").querySelector(
-    '[data-part="note"]',
-  ) as HTMLElement;
-  const style = getComputedStyle(note);
-
-  expect(style.whiteSpace).toBe("nowrap");
-  expect(style.textOverflow).toBe("ellipsis");
 });

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { durationParts, formatDuration } from "@core/duration";
+import { clockAt, durationInWords, durationParts, formatDuration } from "@core/duration";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -32,4 +32,25 @@ test("a duration never shows more than two units", () => {
 
 test("a negative duration, from a clock that is slightly ahead, reads as zero", () => {
   expect(formatDuration(-1_500)).toBe("0s");
+});
+
+test("a length of time in words leaves out a smaller unit that is zero", () => {
+  expect(durationInWords(0)).toBe("0 seconds");
+  expect(durationInWords(SECOND)).toBe("1 second");
+  expect(durationInWords(59 * SECOND + 999)).toBe("59 seconds");
+  expect(durationInWords(MINUTE)).toBe("1 minute");
+  expect(durationInWords(MINUTE + 5 * SECOND)).toBe("1 minute 5 seconds");
+  expect(durationInWords(59 * MINUTE + 59 * SECOND)).toBe("59 minutes 59 seconds");
+  expect(durationInWords(HOUR)).toBe("1 hour");
+  expect(durationInWords(2 * HOUR + 3 * MINUTE)).toBe("2 hours 3 minutes");
+  expect(durationInWords(25 * HOUR)).toBe("1 day 1 hour");
+  expect(durationInWords(3 * DAY)).toBe("3 days");
+});
+
+test("a time is on this computer's 24-hour clock, with the day when it is not today", () => {
+  const evening = new Date(2026, 9, 4, 23, 59, 30).getTime();
+  expect(clockAt(evening, evening + 1_000)).toBe("23:59");
+  expect(clockAt(evening, new Date(2026, 9, 5, 0, 0, 30).getTime())).toMatch(
+    /^23:59 on \S+ 4$|^23:59 on 4 \S+$/,
+  );
 });

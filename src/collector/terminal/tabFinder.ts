@@ -1,6 +1,6 @@
 import os from "node:os";
 
-import { readProcessTableWithPs, type ReadProcessTable } from "./processTable.ts";
+import { readProcessTableWithPs, type ReadProcessTable } from "../processes/processTable.ts";
 import { terminalJumpOff } from "./program.ts";
 import { tabOfProcess, type TerminalTab } from "./terminalTabs.ts";
 

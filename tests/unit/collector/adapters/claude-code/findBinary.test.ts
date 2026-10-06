@@ -1,10 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  findClaudeBinary,
-  fixedLocations,
-  tildify,
-} from "@collector/adapters/claude-code/findBinary";
+import { findClaudeBinary, fixedLocations } from "@collector/adapters/claude-code/findBinary";
 import { HOME } from "@tests/fixtures/claudeCode";
 
 /** Pretends exactly these paths are runnable, and records every path asked about. */
@@ -105,15 +101,5 @@ describe("findClaudeBinary", () => {
       looked:
         "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin",
     });
-  });
-});
-
-describe("tildify", () => {
-  test("shortens paths under the home directory and leaves others alone", () => {
-    expect(tildify("/Users/example/.claude/sessions", HOME)).toBe("~/.claude/sessions");
-    expect(tildify(HOME, HOME)).toBe("~");
-    expect(tildify("/Users/example-other/.claude", HOME)).toBe("/Users/example-other/.claude");
-    expect(tildify("/opt/homebrew/bin", HOME)).toBe("/opt/homebrew/bin");
-    expect(tildify("/opt/homebrew/bin", "")).toBe("/opt/homebrew/bin");
   });
 });

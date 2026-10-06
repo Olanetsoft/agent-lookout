@@ -7,14 +7,12 @@ import {
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
+import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import type { TerminalTab } from "../../terminal/terminalTabs.ts";
 import type { TmuxPane } from "../../tmux/panes.ts";
 import type { FeedEntry } from "./feed.ts";
 import type { RegistryEntry } from "./registry.ts";
-
-// It lived here before the second adapter needed it, and is still reached here.
-export { projectOf };
 
 export const SOURCE_ID: SourceId = "claude-code";
 
@@ -26,16 +24,6 @@ export interface SessionContext {
   paneOf?: (pid: number) => TmuxPane | undefined;
   /** The Terminal or iTerm2 tab a process was found in, when tabs are looked for. */
   tabOf?: (pid: number) => TerminalTab | undefined;
-}
-
-/** Whether a process exists. A process owned by someone else still exists. */
-export function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
 }
 
 /**
@@ -84,8 +72,8 @@ function build(fields: Fields, origin: ClaudeCodeOrigin, context: SessionContext
     id,
     source: SOURCE_ID,
     surface,
-    // A name made only of spaces is no name.
-    name: fields.name?.trim() || project || id,
+    // A name made only of spaces is no name. It is cleaned and cut as every other agent's is.
+    name: sessionName(fields.name ?? "") || project || id,
     cwd: fields.cwd ?? null,
     project,
     ...mapped,

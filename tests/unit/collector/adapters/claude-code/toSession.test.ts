@@ -1,14 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  projectOf,
   sessionFromFeed,
   sessionFromRegistry,
   uniqueById,
   type SessionContext,
 } from "@collector/adapters/claude-code/toSession";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
-import { EMPTY_WAIT_MEMORY, waitChanges } from "@core/sessions/waitChanges";
+import { EMPTY_WAIT_MEMORY, waitChanges } from "@core/notices/sessionChanges";
 import { ids, pids } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -253,6 +252,16 @@ describe("sessionFromFeed", () => {
     expect(sessionFromFeed({ pid: 4242, name: "  demo-project " }, undefined, context).name).toBe(
       "demo-project",
     );
+  });
+
+  test("a name is cleaned and cut as every other agent's: the marks that reorder text and control characters become spaces", () => {
+    const named = (name: string) =>
+      sessionFromFeed({ pid: 4242, name, cwd: "/Users/example/code/demo" }, undefined, context)
+        .name;
+    expect(named("docs‮gnp.exe")).toBe("docs gnp.exe");
+    expect(named("checkout‏flow\u0007")).toBe("checkout flow");
+    expect(named("‪‬")).toBe("demo");
+    expect(Array.from(named("x".repeat(300)))).toHaveLength(200);
   });
 
   test("a background job that failed is failed even while its process sits idle", () => {
@@ -519,17 +528,6 @@ describe("sessionFromRegistry", () => {
       expect(session.status).toBe("working");
       expect(session).not.toHaveProperty("lastWriteAt");
     }
-  });
-});
-
-describe("projectOf", () => {
-  test("is the last segment of the working directory", () => {
-    expect(projectOf("/Users/example/code/demo")).toBe("demo");
-    expect(projectOf("/Users/example/code/demo/")).toBe("demo");
-    expect(projectOf("C:\\Users\\example\\code\\demo")).toBe("demo");
-    expect(projectOf("/")).toBeNull();
-    expect(projectOf("")).toBeNull();
-    expect(projectOf(undefined)).toBeNull();
   });
 });
 

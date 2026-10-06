@@ -320,9 +320,7 @@ test("time nobody measured is hatched on each row it hides, never drawn as idle"
   expect(unmeasured.getBoundingClientRect().width / track.width).toBeCloseTo(45 / 60, 2);
   expect(idle.getBoundingClientRect().width / track.width).toBeCloseTo(15 / 60, 2);
   expect(unmeasured.getAttribute("role")).toBe("img");
-  expect(unmeasured.getAttribute("aria-label")).toMatch(
-    /^Not measured, at least 45 minutes 0 seconds/,
-  );
+  expect(unmeasured.getAttribute("aria-label")).toMatch(/^Not measured, at least 45 minutes/);
 
   // Each row carries the one hatch for itself: there is no band across the card.
   expect(screen.container.querySelector('[data-slot="timeline-gaps"]')).toBeNull();
@@ -736,12 +734,10 @@ test("a wait cut off where answers stopped stays open, but only the stretch afte
   // But it is known only up to the last answer: it does not reach the present,
   // and its length is a minimum.
   expect(wait.getAttribute("aria-label")).toBe(
-    "Needs you, at least 4 minutes 0 seconds, 17:50:00 to 17:54:00",
+    "Needs you, at least 4 minutes, 17:50:00 to 17:54:00",
   );
   expect(tail.dataset.kind).toBe("unmeasured");
-  expect(tail.getAttribute("aria-label")).toBe(
-    "Not measured, 6 minutes 0 seconds so far, 17:54:00 to now",
-  );
+  expect(tail.getAttribute("aria-label")).toBe("Not measured, 6 minutes so far, 17:54:00 to now");
   // One stretch on the row claims the present, not two.
   expect(
     segments.filter((segment) => segment.getAttribute("aria-label")?.endsWith("to now")),

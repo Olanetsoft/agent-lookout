@@ -14,7 +14,7 @@ import {
   NEW_SESSION_GRACE_MS,
   type ClaudeCodeAdapterOptions,
 } from "@collector/adapters/claude-code/index";
-import { readProcessStartsWithPs } from "@collector/adapters/claude-code/processStart";
+import { readProcessStartsWithPs } from "@collector/processes/processStart";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";

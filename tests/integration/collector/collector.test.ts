@@ -14,7 +14,6 @@ import { HOUR_MS } from "@collector/outbound/outboundTiming";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
 import {
-  EMAILS_PER_HOUR,
   NOTIFICATIONS_HEADER,
   SENDS_PER_HOUR,
   type EmailStatusResponse,
@@ -40,15 +39,15 @@ import {
   startSmtpServer,
   textOf,
   type SmtpBehaviour,
-} from "@tests/support/node/smtp";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+} from "@tests/support/channels/smtp";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import {
   CODEX_FIXTURE_HOME,
   makeClaudeHome,
   makeCodexHome,
   tempDir,
 } from "@tests/support/node/tempFiles";
-import { startWebhookServer } from "@tests/support/node/webhook";
+import { startWebhookServer } from "@tests/support/channels/webhook";
 
 /**
  * A collector built the way every host builds it, with its default adapters,
@@ -801,7 +800,7 @@ describe("email notifications", () => {
     expect(mail.received).toHaveLength(2);
   });
 
-  test(`no more than ${EMAILS_PER_HOUR} go in an hour, and the status says when the next can`, async () => {
+  test(`no more than ${SENDS_PER_HOUR} go in an hour, and the status says when the next can`, async () => {
     const mail = await startSmtpServer();
     const server = await mailing({
       AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
@@ -809,7 +808,7 @@ describe("email notifications", () => {
       AGENT_LOOKOUT_EMAIL_AFTER: "0",
     });
     const sessions = (make: (n: number) => Session) =>
-      Array.from({ length: EMAILS_PER_HOUR + 3 }, (_, index) => make(index + 1));
+      Array.from({ length: SENDS_PER_HOUR + 3 }, (_, index) => make(index + 1));
 
     await server.poll(
       0,
@@ -825,7 +824,7 @@ describe("email notifications", () => {
     );
     await server.settled();
 
-    expect(mail.received).toHaveLength(EMAILS_PER_HOUR);
+    expect(mail.received).toHaveLength(SENDS_PER_HOUR);
     expect((await server.status()).limitedUntil).toBe(T0 + 2_000 + HOUR_MS);
   });
 

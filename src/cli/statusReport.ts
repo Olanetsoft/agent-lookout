@@ -5,8 +5,15 @@
 // dashboard's do, so a wait reads the same here as there.
 
 import { formatDuration } from "../core/duration.ts";
-import type { Session, SourceHealth, WaitingReason } from "../core/sessions/session.ts";
-import { sessionTitle, waitingLabel } from "../core/sessions/waiting.ts";
+import {
+  agentName,
+  WAITING_REASONS,
+  type Session,
+  type SourceHealth,
+  type WaitingReason,
+} from "../core/sessions/session.ts";
+import { sessionTitle, waitingLabel } from "../core/notices/waiting.ts";
+import { REORDERING_MARKS } from "../core/text.ts";
 
 /** The fields of a session the report reads. The rest of the answer is left alone. */
 export type ReportedSession = Pick<
@@ -66,17 +73,15 @@ export interface StatusReport {
   waiting: WaitingSession[];
 }
 
-const REASONS: readonly WaitingReason[] = ["permission", "question", "other"];
-
 /** Shown in place of a length of time that is not known, as the dashboard shows it. */
 export const NOT_KNOWN = "–";
 
 /** The most columns a session's name takes in a line. A longer one is cut. */
-export const MOST_NAME_COLUMNS = 40;
+export const MAX_NAME_COLUMNS = 40;
 
 function reasonOf(session: ReportedSession): WaitingReason {
   const reason = session.waitingReason;
-  return reason !== undefined && REASONS.includes(reason) ? reason : "other";
+  return reason !== undefined && WAITING_REASONS.includes(reason) ? reason : "other";
 }
 
 export function statusReport(snapshot: ReportedSnapshot, now: number): StatusReport {
@@ -90,8 +95,6 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
     stale: 0,
     waiting: [],
   };
-  const labels = new Map(snapshot.sources.map((source) => [source.id, source.label]));
-
   for (const session of snapshot.sessions) {
     switch (session.status) {
       case "needs-you": {
@@ -100,7 +103,7 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
         report.waiting.push({
           id: session.id,
           name: sessionTitle(session),
-          agent: session.agent ?? labels.get(session.source) ?? session.source,
+          agent: agentName(session, snapshot.sources) ?? session.source,
           reason: reasonOf(session),
           waitingSince: since,
           waitedMs: since === null ? null : Math.max(0, now - since),
@@ -133,9 +136,10 @@ const ESCAPE_SEQUENCE =
  * Every other control character, line and paragraph separators, and the marks
  * that reorder the text around them.
  */
-const NOT_ON_ONE_LINE =
-  // eslint-disable-next-line no-control-regex
-  /[\u0000-\u001f\u007f-\u009f\u061c\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+const NOT_ON_ONE_LINE = new RegExp(
+  `[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029${REORDERING_MARKS}]`,
+  "g",
+);
 
 /** Marks that join the character before them and take no column: accents, joiners, variation selectors. */
 const NO_COLUMN = /^[\p{Mn}\p{Me}\p{Cf}]$/u;
@@ -162,7 +166,7 @@ export function columns(text: string): number {
  * cut to `most` columns with an ellipsis. Nothing in a name can then move the
  * cursor, change colours, set a window title or break the line.
  */
-export function terminalText(text: string, most = MOST_NAME_COLUMNS): string {
+export function terminalText(text: string, most = MAX_NAME_COLUMNS): string {
   const flat = text
     .replace(ESCAPE_SEQUENCE, "")
     .replace(NOT_ON_ONE_LINE, " ")
@@ -240,7 +244,7 @@ export function statusCount(report: StatusReport): string {
  * one-byte control characters, line and paragraph separators and the marks
  * that reorder text. JSON already escapes the rest.
  */
-const ESCAPED_IN_JSON = /[\u007f-\u009f\u061c\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+const ESCAPED_IN_JSON = new RegExp(`[\\u007f-\\u009f\\u2028\\u2029${REORDERING_MARKS}]`, "g");
 
 /**
  * What `--json` prints. Names are given exactly as the source gave them, with

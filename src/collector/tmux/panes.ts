@@ -1,6 +1,8 @@
 // What tmux prints about its panes, read into shapes, and the walk from a
 // process up to the pane it runs in. Pure, so every odd line can be tested.
 
+import { oneLine } from "../../core/text.ts";
+
 /** One pane of a tmux server. */
 export interface TmuxPane {
   /** The process tmux started in the pane, usually a shell. */
@@ -30,9 +32,6 @@ export const LIST_PANES_ARGS = ["-u", "list-panes", "-a", "-F", PANE_FORMAT] as 
 const PANE_LINE = /^(\d+) (%\d+) (\d+) (\d+) (.*)$/;
 const PANE_ID = /^%\d{1,9}$/;
 
-/** The longest session name a label carries. tmux sets no limit of its own. */
-const MAX_NAME_LENGTH = 80;
-
 /** Whether a value is a pane id as tmux writes one, and nothing more. */
 export function isPaneId(value: unknown): value is string {
   return typeof value === "string" && PANE_ID.test(value);
@@ -40,16 +39,12 @@ export function isPaneId(value: unknown): value is string {
 
 /**
  * A place in words: `work:2.1`. The name is shown to a person and never handed
- * to tmux, so it is tidied for reading: control characters become spaces and a
- * very long name is cut.
+ * to tmux, so it is tidied for reading by the rule for any name on one line:
+ * control characters and the marks that reorder text become spaces, and a
+ * name longer than 80 characters is cut. tmux sets no limit of its own.
  */
 export function placeOf(sessionName: string, windowIndex: string, paneIndex: string): string {
-  const name = [...sessionName.replace(/\p{Cc}+/gu, " ").trim()];
-  const shown =
-    name.length > MAX_NAME_LENGTH
-      ? `${name.slice(0, MAX_NAME_LENGTH - 1).join("")}…`
-      : name.join("");
-  return `${shown}:${windowIndex}.${paneIndex}`;
+  return `${oneLine(sessionName)}:${windowIndex}.${paneIndex}`;
 }
 
 /**

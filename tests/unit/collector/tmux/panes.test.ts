@@ -113,6 +113,15 @@ describe("placeOf", () => {
   test("turns control characters into spaces, so a name cannot break a line of the page", () => {
     expect(placeOf("docs\n-site\u0007", "0", "0")).toBe("docs -site:0.0");
   });
+
+  test("turns the marks that reorder text into spaces, so a name cannot read as another", () => {
+    expect(placeOf("docs‮gnp.exe", "0", "1")).toBe("docs gnp.exe:0.1");
+    expect(placeOf("work؜⁦", "2", "0")).toBe("work:2.0");
+  });
+
+  test("cuts a name longer than 80 characters with an ellipsis", () => {
+    expect(placeOf("x".repeat(100), "0", "0")).toBe(`${"x".repeat(79)}…:0.0`);
+  });
 });
 
 describe("paneOfProcess", () => {

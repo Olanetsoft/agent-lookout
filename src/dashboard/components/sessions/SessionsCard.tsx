@@ -173,18 +173,24 @@ function GroupBody({
  * The widths of the columns beside Session, in rem, as the classes of the
  * table's columns set them. Each holds what goes in it and little more: Agent
  * w-25 holds "Claude Code", App w-28 "Desktop app", Status w-40 the longest
- * phrase, "Finished 23h 59m ago", and Jump w-24 the 64px button. Folder w-28
- * holds a folder name of about 12 letters and cuts a longer one, whose whole
- * path is in its tooltip. A change to one of those classes changes this.
+ * phrase, "Finished 23h 59m ago", and Jump w-24 the 64px button. Folder is at
+ * least 7rem, a folder name of about 12 letters, and cuts a longer one, whose
+ * whole path is in its tooltip. A change to one of those classes changes this.
  */
 const COLUMN_REM = { agent: 6.25, folder: 7, app: 7, status: 10, jump: 6 } as const;
 /** The least the Session column keeps: its mark and a name of about 18 letters. */
 const SESSION_REM = 12.5;
+/** The most the Folder column takes, a folder or a branch of about 22 letters. */
+const MAX_FOLDER_REM = 12;
 
 interface Columns {
   folder: boolean;
   app: boolean;
+  /** The Folder column's width, in rem. */
+  folderRem: number;
 }
+
+const ALL_COLUMNS: Columns = { folder: true, app: true, folderRem: COLUMN_REM.folder };
 
 /**
  * Which of the Folder and App columns the card has room for. The name comes
@@ -196,6 +202,11 @@ interface Columns {
  * Beside the Events card on a laptop screen, or alone in a window just wider
  * than a phone, the card is often too narrow for all of them.
  *
+ * The Folder column, which holds the folder with its branch under it, takes
+ * half the room left over once every column has its least, up to 12rem, and
+ * the Session column the other half, so neither is cut while the other sits
+ * empty. Folder and App still give way at the same widths.
+ *
  * Measured from the card, whose width does not depend on which way is chosen,
  * and before the page is painted, so the table never draws one way and then
  * the other.
@@ -206,7 +217,7 @@ function useColumns(
   agentColumn: boolean,
   jumpColumn: boolean,
 ): Columns {
-  const [columns, setColumns] = useState<Columns>({ folder: true, app: true });
+  const [columns, setColumns] = useState<Columns>(ALL_COLUMNS);
 
   useLayoutEffect(() => {
     const card = table.current?.parentElement;
@@ -221,8 +232,14 @@ function useColumns(
       const width = card.clientWidth / rem;
       const folder = width >= always + COLUMN_REM.folder;
       const app = folder && width >= always + COLUMN_REM.folder + COLUMN_REM.app;
+      const spare = width - (always + COLUMN_REM.folder + (app ? COLUMN_REM.app : 0));
+      // In quarters of a rem, so a pixel more or less does not draw the table again.
+      const folderRem =
+        Math.round(Math.min(MAX_FOLDER_REM, COLUMN_REM.folder + Math.max(0, spare) / 2) * 4) / 4;
       setColumns((current) =>
-        current.folder === folder && current.app === app ? current : { folder, app },
+        current.folder === folder && current.app === app && current.folderRem === folderRem
+          ? current
+          : { folder, app, folderRem },
       );
     };
     measure();
@@ -231,7 +248,7 @@ function useColumns(
     return () => observer.disconnect();
   }, [table, measured, agentColumn, jumpColumn]);
 
-  return measured ? columns : { folder: true, app: true };
+  return measured ? columns : ALL_COLUMNS;
 }
 
 /**
@@ -295,12 +312,11 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   const agentColumn = agents && !narrow;
   // Narrow, the rows still draw the Folder and App cells, hidden, so the first
   // paint is right before the window's width is known to the script.
-  const { folder: folderColumn, app: appColumn } = useColumns(
-    table,
-    listed.length > 0 && !narrow && !board,
-    agentColumn,
-    jumpColumn,
-  );
+  const {
+    folder: folderColumn,
+    app: appColumn,
+    folderRem,
+  } = useColumns(table, listed.length > 0 && !narrow && !board, agentColumn, jumpColumn);
   // A group row spans the columns there are. A span wider than that would add
   // empty columns of its own and squeeze the ones with something in them.
   // Wide, those are Session and Status, with Agent, Folder and App when shown.
@@ -332,7 +348,7 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
           <colgroup>
             <col />
             {agentColumn && <col className='w-25' />}
-            {folderColumn && !narrow && <col className='w-28' />}
+            {folderColumn && !narrow && <col style={{ width: `${folderRem}rem` }} />}
             {appColumn && !narrow && <col className='w-28' />}
             {!narrow && <col className='w-40' />}
             {jumpColumn && <col className='w-24' />}

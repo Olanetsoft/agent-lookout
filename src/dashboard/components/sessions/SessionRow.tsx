@@ -5,12 +5,12 @@ import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { quietFor } from "@dashboard/lib/sessions/quiet";
-import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
+import { rowLook } from "@dashboard/lib/sessions/sessions";
+import { surfaceLabel } from "@dashboard/lib/sessions/status";
 import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 
@@ -110,15 +110,8 @@ export function SessionRow({
   folderColumn = true,
   appColumn = true,
 }: SessionRowProps) {
-  const ended = session.status === "finished" || session.status === "failed";
-  const gone = session.alive === false;
-  // A session that finished or failed is expected to have no process. The badge
-  // is for one that still claims to be running when its process has gone.
-  const orphaned = gone && !ended;
-  const stale = isStaleIdle(session);
-  const quiet = stale || ended || gone;
-  const mark: MarkKind = stale ? "stale" : session.status;
-  const statusWord = stale ? "Stale" : STATUS_LABEL[session.status];
+  // The badge is for a session that still claims to be running when its process has gone.
+  const { mark, word: statusWord, stale, quiet, orphaned } = rowLook(session);
   const jump = useJump(session);
   const surface = surfaceLabel(session.surface);
 

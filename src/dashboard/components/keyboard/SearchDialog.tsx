@@ -3,12 +3,12 @@ import { Dialog } from "radix-ui";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Session } from "@core/sessions/session";
-import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
+import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { formatShortDuration, shortDurationInWords } from "@dashboard/lib/format";
 import { searchSessions } from "@dashboard/lib/sessions/search";
-import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { jumpWay, STATUS_LABEL } from "@dashboard/lib/sessions/status";
+import { rowLook } from "@dashboard/lib/sessions/sessions";
+import { jumpWay } from "@dashboard/lib/sessions/status";
 import { agentLabel } from "@dashboard/lib/sources/sources";
 import { cn } from "@dashboard/lib/utils";
 
@@ -67,14 +67,7 @@ interface ResultProps {
  * reader says of it.
  */
 function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultProps) {
-  const stale = isStaleIdle(session);
-  const mark: MarkKind = stale ? "stale" : session.status;
-  const word = stale ? "Stale" : STATUS_LABEL[session.status];
-  const quiet =
-    stale ||
-    session.status === "finished" ||
-    session.status === "failed" ||
-    session.alive === false;
+  const { mark, word, quiet } = rowLook(session);
   const lasted = lastedOf(session, asOf);
   const way = jumpWay(session);
   const label = [
@@ -129,7 +122,8 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
             </span>
           </span>
         </p>
-        <p data-part='place' className='text-body wrap-anywhere text-ink-secondary'>
+        {/* A long folder or branch breaks between words where it can. The agent keeps its dot and stays whole. */}
+        <p data-part='place' className='text-body wrap-break-word text-ink-secondary'>
           {session.project !== null && (
             <>
               <span data-part='project'>{session.project}</span>
@@ -146,11 +140,17 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
                     {commit}
                   </span>
                 </>
-              ) : null}
-              <span className='mx-1.5'>·</span>
+              ) : null}{" "}
             </>
           )}
-          <span data-part='agent'>{agent}</span>
+          <span className='whitespace-nowrap'>
+            {session.project !== null && (
+              <span aria-hidden className='mr-1.5 ml-0.5'>
+                ·
+              </span>
+            )}
+            <span data-part='agent'>{agent}</span>
+          </span>
         </p>
       </div>
     </li>

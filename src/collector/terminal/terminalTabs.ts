@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { TerminalApp } from "../../core/sessions/session.ts";
-import type { ProcessFacts } from "./processTable.ts";
+import type { ProcessFacts } from "../processes/processTable.ts";
 
 // Which terminal app a process runs in, and on which of its terminals, read
 // from a table of processes. Pure, so every odd chain can be tested.

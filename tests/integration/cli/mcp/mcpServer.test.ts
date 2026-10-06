@@ -15,7 +15,7 @@ import { createAppServer } from "@collector/hosts/server";
 import { CAPABILITIES, type SessionsSnapshot } from "@core/sessions/session";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { closedPort, listen, request } from "@tests/support/node/http";
-import { fakeSystemNotifier } from "@tests/support/node/systemNotifier";
+import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
 
 // `agent-lookout mcp` as an agent's app runs it: `bin/agent-lookout.mjs` as a

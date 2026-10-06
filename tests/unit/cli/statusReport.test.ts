@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   columns,
   countsLine,
-  MOST_NAME_COLUMNS,
+  MAX_NAME_COLUMNS,
   statusCount,
   statusJson,
   statusReport,
@@ -266,12 +266,12 @@ describe("names from sessions", () => {
   test("a long name is cut to the most columns with an ellipsis, never through a wide letter", () => {
     const long = "mobile-onboarding-".repeat(5);
     const cut = terminalText(long);
-    expect(columns(cut)).toBe(MOST_NAME_COLUMNS);
+    expect(columns(cut)).toBe(MAX_NAME_COLUMNS);
     expect(cut.endsWith("…")).toBe(true);
 
     const wide = terminalText("数".repeat(30));
     expect(wide).toBe(`${"数".repeat(19)}…`);
-    expect(columns(wide)).toBe(MOST_NAME_COLUMNS - 1);
+    expect(columns(wide)).toBe(MAX_NAME_COLUMNS - 1);
   });
 
   test("wide names still line up the reason and the wait", () => {

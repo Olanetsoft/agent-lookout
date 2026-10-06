@@ -4,8 +4,11 @@ import {
   createSystemNotifier,
   OSASCRIPT,
   osascriptArgs,
-  type RunProgram,
 } from "@collector/notifications/systemNotifier";
+import type { RunOsascript } from "@collector/processes/osascript";
+import { oneLine } from "@core/text";
+
+const shownFine: RunOsascript = async () => ({ ok: true, stdout: "" });
 
 /** The script every notification is shown with. No part of it comes from a session. */
 const SCRIPT = [
@@ -37,34 +40,38 @@ describe("the arguments osascript is given", () => {
     ["a script behind an option", '-e do shell script "id"'],
     ["a double dash", "--"],
     ["other languages", "mobile-onboarding 日本語 naïve ✓"],
-  ])("a name made of %s is one argument, passed on as it is", (_what, name) => {
+  ])("a name made of %s is one argument, on one line", (_what, name) => {
     const args = osascriptArgs({ title: name, body: "Asked you a question" });
 
     // The script is the same whatever the name is: the name is no part of it.
     expect(args.slice(0, SCRIPT.length)).toEqual(SCRIPT);
     // Everything after the double dash is an argument to the script, never an option.
-    expect(args.slice(SCRIPT.length)).toEqual(["--", name, "Asked you a question"]);
+    expect(args.slice(SCRIPT.length)).toEqual(["--", oneLine(name), "Asked you a question"]);
+    expect(args.at(-2)).not.toMatch(/[\r\n\t]/);
   });
 
-  test("a NUL, which no argument can hold, is taken out", () => {
-    const args = osascriptArgs({ title: "infra\0-terraform", body: "Waiting\0 for you" });
-    expect(args.slice(-2)).toEqual(["infra-terraform", "Waiting for you"]);
+  test("a NUL, which no argument can hold, a line break and a mark that reorders text become spaces", () => {
+    const args = osascriptArgs({
+      title: "infra\0-terraform\u202egnp.exe",
+      body: "Waiting\nfor you",
+    });
+    expect(args.slice(-2)).toEqual(["infra -terraform gnp.exe", "Waiting for you"]);
   });
 });
 
 describe("the system notifier", () => {
   test("on macOS it runs osascript, by its full path, with those arguments", () => {
-    const run = vi.fn<RunProgram>(async () => {});
+    const run = vi.fn<RunOsascript>(shownFine);
     const notice = { title: "email-templates", body: "Waiting for you" };
 
     createSystemNotifier({ platform: "darwin", run }).show(notice);
 
-    expect(run).toHaveBeenCalledExactlyOnceWith("/usr/bin/osascript", osascriptArgs(notice));
+    expect(run).toHaveBeenCalledExactlyOnceWith(osascriptArgs(notice));
     expect(OSASCRIPT).toBe("/usr/bin/osascript");
   });
 
   test.each(["linux", "win32", "freebsd"] as const)("on %s it runs nothing", (platform) => {
-    const run = vi.fn<RunProgram>(async () => {});
+    const run = vi.fn<RunOsascript>(shownFine);
 
     createSystemNotifier({ platform, run }).show({ title: "checkout-flow", body: "Waiting" });
 

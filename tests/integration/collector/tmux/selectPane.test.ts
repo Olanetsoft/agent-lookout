@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
+import { readProcessParentsWithPs } from "@collector/processes/processParents";
 import { createPaneFinder } from "@collector/tmux/paneFinder";
 import { parsePanes, LIST_PANES_ARGS } from "@collector/tmux/panes";
-import { readProcessParentsWithPs } from "@collector/tmux/processParents";
 import { findTmuxBinary } from "@collector/tmux/program";
 import { selectPane } from "@collector/tmux/selectPane";
 import { privateTmux, type PrivateTmux } from "@tests/support/node/tmux";

@@ -1,4 +1,4 @@
-import type { Session, SourceHealth, SourceId } from "@core/sessions/session";
+import { agentName, type Session, type SourceHealth, type SourceId } from "@core/sessions/session";
 
 /**
  * Where a source looks is said by the collector, in each source's `detail`: it
@@ -84,6 +84,5 @@ export function agentLabel(
   session: Pick<Session, "source" | "agent">,
   sources: readonly Pick<SourceHealth, "id" | "label">[],
 ): string {
-  if (session.agent !== undefined) return session.agent;
-  return sources.find((source) => source.id === session.source)?.label ?? session.source;
+  return agentName(session, sources) ?? session.source;
 }

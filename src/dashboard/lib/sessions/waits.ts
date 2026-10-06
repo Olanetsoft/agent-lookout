@@ -62,8 +62,13 @@ export interface LastWait {
   /** The session's id. */
   id: string;
   name: string;
-  /** How long it lasted. */
+  /** How long it lasted, or, when its start is not known, how long it lasted in the period. */
   ms: number;
+  /**
+   * False when the wait was already under way when the period began, as when
+   * Agent Lookout started while the session waited, so `ms` is a minimum.
+   */
+  startKnown: boolean;
   /** When it was over. */
   at: number;
   /** Answered: the session went on. Ended: the session finished, failed or left. */
@@ -129,8 +134,10 @@ function periodOf(input: WaitsInput, history: HistoryResponse): Period {
 
 /**
  * The wait that was over most recently in the period, from the events: a move
- * into needs-you, then the next thing that session did. A wait whose start the
- * page does not hold has no length to give, so it is not offered.
+ * into needs-you, then the next thing that session did. A session whose first
+ * event the page holds moves it out of needs-you was waiting before that: when
+ * Agent Lookout started while it waited, say. Its wait is offered from the
+ * start of the period, as the bars count it, with its start marked not known.
  */
 function lastWaitOver(events: readonly SessionEvent[], period: Period, until: number) {
   const bySession = new Map<string, SessionEvent[]>();
@@ -145,14 +152,17 @@ function lastWaitOver(events: readonly SessionEvent[], period: Period, until: nu
     own.sort((a, b) => a.at - b.at);
     own.forEach((event, index) => {
       const began = own[index - 1];
-      if (!began || began.to !== "needs-you" || event.to === "needs-you") return;
-      if (event.at < period.from || event.at > until || event.at <= began.at) return;
+      const waited = began ? began.to === "needs-you" : event.from === "needs-you";
+      if (!waited || event.to === "needs-you") return;
+      if (event.at < period.from || event.at > until) return;
+      if (began && event.at <= began.at) return;
       if (last && event.at <= last.at) return;
       const ended = event.kind === "ended" || event.to === "finished" || event.to === "failed";
       last = {
         id: event.sessionId,
         name: event.sessionName,
-        ms: event.at - began.at,
+        ms: event.at - (began ? began.at : period.from),
+        startKnown: began !== undefined,
         at: event.at,
         how: ended ? "ended" : "answered",
       };

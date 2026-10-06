@@ -1,5 +1,5 @@
 import type { GitHead } from "../../core/sessions/session.ts";
-import { MAX_NAME_LENGTH, sessionName } from "../adapters/status-files/statusFile.ts";
+import { MAX_NAME_LENGTH, sessionName } from "../../core/text.ts";
 
 /**
  * The two files Agent Lookout reads in a git repository, and nothing else in it:

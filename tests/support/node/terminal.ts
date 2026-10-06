@@ -4,7 +4,7 @@
 // chooses which app a session seems to run in. No test asks, or changes, the
 // terminal a person is using.
 
-import type { ProcessFacts, ReadProcessTable } from "@collector/terminal/processTable";
+import type { ProcessFacts, ReadProcessTable } from "@collector/processes/processTable";
 import type { OsascriptResult, RunOsascript } from "@collector/terminal/program";
 import { ITERM_PATH, TERMINAL_PATH } from "@collector/terminal/terminalTabs";
 

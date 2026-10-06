@@ -8,9 +8,7 @@ import {
   feedEnvironment,
   RETRY_ALL_AFTER_READS,
   pickSessionList,
-  readFeed,
   toFeedEntry,
-  validPid,
   type RunCommand,
   type RunResult,
 } from "@collector/adapters/claude-code/feed";
@@ -31,10 +29,10 @@ function fakeRun(result: Awaited<ReturnType<RunCommand>>) {
 const one = [{ pid: 4242, sessionId: "00000000-0000-4000-8000-000000000001", status: "busy" }];
 const oneJson = JSON.stringify(one);
 
-describe("readFeed", () => {
+describe("reading the feed once", () => {
   test("runs `claude agents --json --all` with a 5 second timeout", async () => {
     const { run, calls } = fakeRun({ ok: true, stdout: "[]" });
-    await readFeed("/usr/local/bin/claude", run, { env });
+    await createFeedReader(run).read("/usr/local/bin/claude", { env });
     expect(FEED_TIMEOUT_MS).toBe(5_000);
     expect(FEED_ARGS).toEqual(["agents", "--json", "--all"]);
     expect(calls).toHaveLength(1);
@@ -47,23 +45,29 @@ describe("readFeed", () => {
 
   test("gives the child process the quiet environment", async () => {
     const { run, calls } = fakeRun({ ok: true, stdout: "[]" });
-    await readFeed("/usr/local/bin/claude", run, { env });
+    await createFeedReader(run).read("/usr/local/bin/claude", { env });
     expect(calls[0]?.env).toEqual(feedEnvironment(env));
   });
 
   test("reads the entries from a clean array", async () => {
     const { run } = fakeRun({ ok: true, stdout: feedJson });
-    expect(await readFeed("claude", run, { env })).toEqual({ ok: true, entries: feedEntries });
+    expect(await createFeedReader(run).read("claude", { env })).toEqual({
+      ok: true,
+      entries: feedEntries,
+    });
   });
 
   test("reads the entries when another tool prints after the array", async () => {
     const { run } = fakeRun({ ok: true, stdout: feedJsonWithTrailingText });
-    expect(await readFeed("claude", run, { env })).toEqual({ ok: true, entries: feedEntries });
+    expect(await createFeedReader(run).read("claude", { env })).toEqual({
+      ok: true,
+      entries: feedEntries,
+    });
   });
 
   test("an empty array is a good answer with no sessions", async () => {
     const { run } = fakeRun({ ok: true, stdout: "[]\n" });
-    expect(await readFeed("claude", run, { env })).toEqual({ ok: true, entries: [] });
+    expect(await createFeedReader(run).read("claude", { env })).toEqual({ ok: true, entries: [] });
   });
 
   test("items that are not usable sessions are dropped and the rest kept", async () => {
@@ -77,7 +81,7 @@ describe("readFeed", () => {
       { pid: 4242, status: "idle" },
     ]);
     const { run } = fakeRun({ ok: true, stdout });
-    expect(await readFeed("claude", run, { env })).toEqual({
+    expect(await createFeedReader(run).read("claude", { env })).toEqual({
       ok: true,
       entries: [{ pid: 4242, status: "idle" }],
     });
@@ -87,7 +91,7 @@ describe("readFeed", () => {
     // Reporting no sessions here would announce every running session as ended.
     for (const stdout of ['[1, "a", null]', "[12345] wrapper started", '[{"level": "info"}]']) {
       const { run } = fakeRun({ ok: true, stdout });
-      expect(await readFeed("claude", run, { env })).toEqual({
+      expect(await createFeedReader(run).read("claude", { env })).toEqual({
         ok: false,
         problem:
           "The claude agents --json command printed a list, but nothing in it could be read as a session",
@@ -98,7 +102,7 @@ describe("readFeed", () => {
   test("output that is not a list is a failure, in plain words", async () => {
     for (const stdout of ["", "Not logged in.", '{"error": "unsupported"}', '[{"pid": 1}, ']) {
       const { run } = fakeRun({ ok: true, stdout });
-      expect(await readFeed("claude", run, { env })).toEqual({
+      expect(await createFeedReader(run).read("claude", { env })).toEqual({
         ok: false,
         problem: "The claude agents --json command did not print a list of sessions",
       });
@@ -107,7 +111,7 @@ describe("readFeed", () => {
 
   test("a command that fails is a failure that says how", async () => {
     const { run } = fakeRun({ ok: false, problem: "stopped with exit code 1" });
-    expect(await readFeed("claude", run, { env })).toEqual({
+    expect(await createFeedReader(run).read("claude", { env })).toEqual({
       ok: false,
       problem: "The claude agents --json command stopped with exit code 1",
     });
@@ -376,18 +380,5 @@ describe("toFeedEntry", () => {
     expect(toFeedEntry({ pid: 4242, startedAt: 1_700_000_000_000 })?.startedAt).toBe(
       1_700_000_000_000,
     );
-  });
-});
-
-describe("validPid", () => {
-  test("only positive whole numbers are process ids", () => {
-    expect(validPid(4242)).toBe(4242);
-    // Signalling pid 0 or a negative pid would address a whole process group.
-    expect(validPid(0)).toBeUndefined();
-    expect(validPid(-4242)).toBeUndefined();
-    expect(validPid(1.5)).toBeUndefined();
-    expect(validPid(Number.NaN)).toBeUndefined();
-    expect(validPid("4242")).toBeUndefined();
-    expect(validPid(null)).toBeUndefined();
   });
 });

@@ -33,6 +33,7 @@ export function Count({ children }: { children: number }) {
  * most recent to change, and counts the rest under them. The list has them all.
  * A column that scrolled on its own would put a scroll inside the page's
  * scroll, and four scrollbars side by side, on a screen left open all day.
+ * A session chosen in the search that has no card here has that line focused.
  */
 function Column({
   column,
@@ -75,7 +76,7 @@ function Column({
         </p>
       )}
       {more > 0 && (
-        <p data-part='more' className='px-3.5 pt-2.5 text-caption text-ink-muted'>
+        <p data-part='more' className='rounded-row px-3.5 pt-2.5 text-caption text-ink-muted'>
           and <span className='tabular-nums'>{more}</span> more in the list
         </p>
       )}
@@ -113,7 +114,7 @@ export function SessionsBoard({ sessions, now, agentOf }: SessionsBoardProps) {
         ))}
       </div>
       {unknown.length > 0 && (
-        <p data-part='unknown' className='px-3.5 pt-3 pb-1 text-caption text-ink-muted'>
+        <p data-part='unknown' className='rounded-row px-3.5 pt-3 pb-1 text-caption text-ink-muted'>
           {unknown.length === 1
             ? "The status of 1 session is not known. The list shows it."
             : `The status of ${unknown.length} sessions is not known. The list shows them.`}

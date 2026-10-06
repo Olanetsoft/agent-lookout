@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SessionEvent } from "@core/sessions/session";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
-import { nextNewSince, startNewSince, type NewSince } from "@dashboard/lib/sessions/newSince";
+import { nextNewSince, startNewSince, type NewSince } from "@dashboard/lib/events/newSince";
 
 /** Where the moment the events log was last on screen is kept, as milliseconds since 1970. */
 export const LAST_LOOKED_STORAGE_KEY = "agent-lookout-last-looked";

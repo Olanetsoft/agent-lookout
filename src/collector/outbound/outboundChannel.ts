@@ -1,11 +1,11 @@
 import type { SendResult } from "../../core/api.ts";
-import type { Session, SessionsSnapshot } from "../../core/sessions/session.ts";
 import {
   EMPTY_CHANGE_MEMORY,
   sessionChanges,
   type ChangeMemory,
   type NoticeEvent,
-} from "../../core/sessions/waitChanges.ts";
+} from "../../core/notices/sessionChanges.ts";
+import { agentName, type Session, type SessionsSnapshot } from "../../core/sessions/session.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
 
 /**
@@ -80,13 +80,6 @@ export interface OutboundChannel {
   settled(): Promise<void>;
 }
 
-/** The agent a session belongs to: a status file names its own, and every other source is its own agent. */
-function agentOf(session: Session, snapshot: SessionsSnapshot): string | null {
-  return (
-    session.agent ?? snapshot.sources.find((source) => source.id === session.source)?.label ?? null
-  );
-}
-
 export function createOutboundChannel<Content>(
   options: OutboundChannelOptions<Content>,
 ): OutboundChannel {
@@ -141,7 +134,7 @@ export function createOutboundChannel<Content>(
         for (const { event, session } of result.changes) {
           if (!wanted.has(event)) continue;
           if (event !== "needs-you") {
-            over.push({ event, session, agent: agentOf(session, snapshot), seenAt: at });
+            over.push({ event, session, agent: agentName(session, snapshot.sources), seenAt: at });
             continue;
           }
           const since = session.statusSince;
@@ -169,7 +162,9 @@ export function createOutboundChannel<Content>(
 
           open.delete(id);
           sentAt.push(at);
-          send(waitMessage({ session, agent: agentOf(session, snapshot), begunAt, now: at }));
+          send(
+            waitMessage({ session, agent: agentName(session, snapshot.sources), begunAt, now: at }),
+          );
         }
 
         // A wait seen now and not open was sent, or was open at the start.

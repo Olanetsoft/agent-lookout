@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { isWebhookHost, notificationsHeaderValue, readNotificationsHeader } from "@core/api";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
 
 describe("the notifications header", () => {
   test("is off for no events, on for a wait alone, and names the events for any other choice", () => {

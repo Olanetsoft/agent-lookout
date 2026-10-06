@@ -1,12 +1,32 @@
 /** Formatting for the facts the dashboard shows: durations and times. */
 
-import { durationParts, formatDuration, joinParts, type DurationPart } from "@core/duration";
+import {
+  durationParts,
+  formatDuration,
+  joinParts,
+  partsInWords,
+  type DurationPart,
+} from "@core/duration";
 
-// The full form of a duration lives in the core, so the `agent-lookout`
-// command prints a wait as the page shows it.
-export { durationParts, formatDuration, type DurationPart } from "@core/duration";
+// The full form of a duration, its words and the clock live in the core, so the
+// `agent-lookout` command and an email say a wait and a time as the page does.
+export {
+  clockAt,
+  durationInWords,
+  durationParts,
+  formatClockMinutes,
+  formatDay,
+  formatDuration,
+  startOfDay,
+  type DurationPart,
+} from "@core/duration";
 
 const SECOND = 1_000;
+
+/** Words with their first letter made a capital, to start a sentence: "the server answered 502" as "The server answered 502". */
+export function sentenceStart(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -30,21 +50,6 @@ export function formatShortDuration(ms: number): string {
   return joinParts(shortDurationParts(ms));
 }
 
-function partsInWords(parts: readonly DurationPart[]): string {
-  const names = { s: "second", m: "minute", h: "hour", d: "day" } as const;
-  return parts
-    .map((part) => {
-      const count = Number(part.value);
-      return `${count} ${names[part.unit]}${count === 1 ? "" : "s"}`;
-    })
-    .join(" ");
-}
-
-/** A duration in words, for screen readers: "4 minutes 12 seconds". */
-export function durationInWords(ms: number): string {
-  return partsInWords(durationParts(ms));
-}
-
 /** The short form in words, so what is read out is what is shown: "34 minutes". */
 export function shortDurationInWords(ms: number): string {
   return partsInWords(shortDurationParts(ms));
@@ -61,13 +66,6 @@ export function formatClock(at: number): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
-/** Local wall-clock time to the minute, 24-hour: `10:42`. For the ticks of a time axis. */
-export function formatClockMinutes(at: number): string {
-  const date = new Date(at);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-}
-
-const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -82,22 +80,6 @@ function sameLocalDay(a: number, b: number): boolean {
     first.getMonth() === second.getMonth() &&
     first.getDate() === second.getDate()
   );
-}
-
-/** The start of a moment's day on the local clock. Two moments on one day share it. */
-export function startOfDay(at: number): number {
-  const date = new Date(at);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-}
-
-/**
- * A day, for a heading in a list of times: `Sep 30`, with the year only when it
- * is not this one.
- */
-export function formatDay(at: number, now: number): string {
-  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
-  return (sameYear ? dayFormat : dateFormat).format(new Date(at));
 }
 
 /**

@@ -27,7 +27,7 @@ const DECLARED: [string, SourceCapabilities][] = [
 ];
 
 /** The longest reason that still reads as one short line in a tooltip. */
-const MOST_REASON_CHARACTERS = 130;
+const MAX_REASON_CHARACTERS = 130;
 
 describe.each(DECLARED)("what %s declares it can report", (_label, declared) => {
   test("names every capability and nothing else, each as yes, no or partly", () => {
@@ -47,7 +47,7 @@ describe.each(DECLARED)("what %s declares it can report", (_label, declared) => 
       const { reason } = cell;
       expect(reason, capability).toBe(reason.trim());
       expect(reason, capability).toMatch(/^[A-Z].*\.$/);
-      expect(reason.length, capability).toBeLessThanOrEqual(MOST_REASON_CHARACTERS);
+      expect(reason.length, capability).toBeLessThanOrEqual(MAX_REASON_CHARACTERS);
       expect(reason, capability).not.toContain("!");
     }
   });

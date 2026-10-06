@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
 import { createWaitNotifier } from "@dashboard/lib/notifications/waitNotifier";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeNotificationHost } from "@tests/support/notifications";

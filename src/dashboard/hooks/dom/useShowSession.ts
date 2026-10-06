@@ -12,6 +12,9 @@ const ROWS = [
   '[data-slot="board-card"]',
 ];
 
+/** The same rows as one selector, for whatever follows focus from one row to the next. */
+export const SESSION_ROWS = ROWS.join(", ");
+
 /**
  * Does with a session what its Jump does, or opens its details when it has
  * none, as the search's line under its list says.

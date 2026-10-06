@@ -16,13 +16,13 @@ import type { ReportedSession, ReportedSnapshot } from "./statusReport.ts";
 export const DEFAULT_ADDRESSES = ["http://127.0.0.1:4777", "http://localhost:5173"] as const;
 
 /** The setting that names the address, when `--url` does not. */
-export const URL_SETTING = "AGENT_LOOKOUT_URL";
+export const URL_ENV = "AGENT_LOOKOUT_URL";
 
 /** How long one address has to answer. A status line runs this every few seconds. */
 export const ANSWER_TIMEOUT_MS = 500;
 
 /** More than any real answer holds. A larger one is not read. */
-const MOST_ANSWER_BYTES = 8 * 1024 * 1024;
+const MAX_ANSWER_BYTES = 8 * 1024 * 1024;
 
 const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -56,12 +56,12 @@ export type AddressesToTry = Addresses | { refusal: string };
  * A given address that is not on this machine is refused, never skipped.
  */
 export function addressesToTry(url: string | null, env: NodeJS.ProcessEnv): AddressesToTry {
-  const fromEnv = env[URL_SETTING]?.trim() || null;
+  const fromEnv = env[URL_ENV]?.trim() || null;
   const given = url ?? fromEnv;
   if (given === null) return { addresses: [...DEFAULT_ADDRESSES], named: false };
   const address = loopbackAddress(given);
   if (address === null) {
-    const where = url !== null ? "--url" : URL_SETTING;
+    const where = url !== null ? "--url" : URL_ENV;
     return {
       refusal: `${where} must be an http address on this machine, at localhost, 127.0.0.1 or [::1], such as http://127.0.0.1:4777. Session names are read from this machine only.`,
     };
@@ -208,7 +208,7 @@ export function readSessions(address: string, timeoutMs = ANSWER_TIMEOUT_MS): Pr
       let size = 0;
       res.on("data", (chunk: Buffer) => {
         size += chunk.byteLength;
-        if (size > MOST_ANSWER_BYTES) finish({ kind: "unreadable", why: "its answer is too long" });
+        if (size > MAX_ANSWER_BYTES) finish({ kind: "unreadable", why: "its answer is too long" });
         else chunks.push(chunk);
       });
       res.on("error", () => {

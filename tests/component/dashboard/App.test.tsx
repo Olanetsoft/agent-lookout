@@ -835,7 +835,7 @@ test("with its own store, the app polls on a worker's beat, which is ended when 
   expect(ended).toHaveBeenCalledTimes(1);
 });
 
-test("at 760 pixels and below the status line keeps a short form under the wordmark, and the switch shows its icons", async () => {
+test("at 760 pixels and below the status line keeps a short form under the wordmark, and the switch is one round button the size of the search's", async () => {
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<App store={fixedStore(liveState())} />);
   const status = () => screen.container.querySelector('[data-slot="status-line"]') as HTMLElement;
@@ -851,7 +851,7 @@ test("at 760 pixels and below the status line keeps a short form under the wordm
   );
   expect(night().textContent).toBe("Night");
 
-  for (const width of [760, 375]) {
+  for (const width of [760, 375, 320]) {
     await page.viewport(width, 900);
     await vi.waitFor(() => expect(status().querySelector("a")?.textContent).toBe("2 sessions"));
     // The wordmark keeps to one line and is never cut. Linux draws the same font
@@ -866,18 +866,27 @@ test("at 760 pixels and below the status line keeps a short form under the wordm
     expect(line.bottom).toBeLessThanOrEqual(header().getBoundingClientRect().bottom);
     const checked = status().querySelector('[data-part="checked"]') as HTMLElement;
     expect(checked.textContent).toMatch(/^checked (just now|\d+s ago)$/);
+    const search = screen.getByRole("button", { name: "Find a session" }).element();
     expect(checked.getBoundingClientRect().right).toBeLessThanOrEqual(
-      screen.getByRole("radiogroup", { name: "Theme" }).element().getBoundingClientRect().left,
+      search.getBoundingClientRect().left,
+    );
+    // The wordmark never runs under the search's button.
+    expect(wordmark().getBoundingClientRect().right, `${width}`).toBeLessThanOrEqual(
+      search.getBoundingClientRect().left,
     );
     // Still the link to the Sources view, named by what it says.
     await expect.element(screen.getByRole("link", { name: "2 sessions" })).toBeVisible();
 
-    // The switch: the moon and the sun, each in the middle of its option, and still named.
-    expect(night().textContent).toBe("");
-    const icon = night().querySelector("svg")!.getBoundingClientRect();
-    const option = night().getBoundingClientRect();
-    expect(icon.left - option.left).toBeCloseTo(option.right - icon.right, 0);
-    await expect.element(screen.getByRole("radio", { name: "Light theme" })).toBeVisible();
+    // The switch: one round button with the moon in its middle, named for what a press does,
+    // as big as the search's.
+    const toggle = screen.getByRole("button", { name: "Switch to Day" }).element();
+    expect(header().querySelector('[role="radiogroup"]')).toBeNull();
+    const icon = toggle.querySelector("svg")!.getBoundingClientRect();
+    const box = toggle.getBoundingClientRect();
+    expect(icon.left - box.left).toBeCloseTo(box.right - icon.right, 0);
+    expect(box.width).toBe(search.getBoundingClientRect().width);
+    expect(box.height).toBe(search.getBoundingClientRect().height);
+    expect(getComputedStyle(toggle).backgroundColor).toBe(getComputedStyle(search).backgroundColor);
 
     // Nothing in the header runs past the window or into its 16px side.
     expect(document.documentElement.scrollWidth, `${width}`).toBeLessThanOrEqual(width);
@@ -885,6 +894,12 @@ test("at 760 pixels and below the status line keeps a short form under the wordm
       expect(element.getBoundingClientRect().right, `${width}`).toBeLessThanOrEqual(width - 16);
     }
   }
+
+  // A press switches to Day, and the button then offers Night.
+  await screen.getByRole("button", { name: "Switch to Day" }).click();
+  await vi.waitFor(() => expect(document.documentElement.getAttribute("data-theme")).toBe("light"));
+  expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+  await expect.element(screen.getByRole("button", { name: "Switch to Night" })).toBeVisible();
 });
 
 test.each([1180, 1000, 760, 620, 375])(

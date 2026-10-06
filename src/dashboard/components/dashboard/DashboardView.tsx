@@ -7,6 +7,7 @@ import { TimelineCard } from "@dashboard/components/timeline/TimelineCard";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { useFocusFollowsRow } from "@dashboard/hooks/dom/useFocusFollowsRow";
+import { SESSION_ROWS } from "@dashboard/hooks/dom/useShowSession";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import { countState, heroLight } from "@dashboard/lib/sessions/sessions";
@@ -23,10 +24,6 @@ interface DashboardViewProps {
   /** Told whether that line is in view. */
   onNewLineInView?: (inView: boolean) => void;
 }
-
-/** Every row that stands for one session: in the hero, in the Sessions table, or a card on its board. */
-const SESSION_ROWS =
-  '[data-slot="hero-session"], [data-slot="session-row"], [data-slot="board-card"]';
 
 /*
  * Where each card sits. Wide, the hero and Last hour share the first row, the

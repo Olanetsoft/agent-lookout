@@ -7,26 +7,27 @@ import {
 } from "@core/api";
 import {
   CAPABILITIES,
+  EVENT_KINDS,
+  EVENT_SEVERITIES,
+  SESSION_STATUSES,
+  SOURCE_STATES,
+  SURFACES,
   TERMINAL_APPS,
+  WAITING_REASONS,
   type CapabilityCell,
-  type EventKind,
-  type EventSeverity,
   type GitHead,
   type HistoryPoint,
   type JumpTarget,
   type Session,
   type SessionEvent,
   type SessionsSnapshot,
-  type SessionStatus,
   type SourceCapabilities,
   type SourceFact,
   type SourceHealth,
   type SourceId,
-  type SourceState,
-  type Surface,
-  type WaitingReason,
 } from "@core/sessions/session";
-import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
+import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
+import { MAX_NAME_LENGTH } from "@core/text";
 
 /**
  * Reads what the API sent into the shapes the page draws.
@@ -40,33 +41,6 @@ import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
  *
  * A reader returns null when the answer as a whole is not what the route sends.
  */
-
-const SURFACES: readonly Surface[] = [
-  "terminal",
-  "vscode",
-  "desktop",
-  "cloud",
-  "browser",
-  "unknown",
-];
-const STATUSES: readonly SessionStatus[] = [
-  "needs-you",
-  "working",
-  "idle",
-  "finished",
-  "failed",
-  "unknown",
-];
-const REASONS: readonly WaitingReason[] = ["permission", "question", "other"];
-const SOURCE_STATES: readonly SourceState[] = [
-  "ok",
-  "searching",
-  "unavailable",
-  "not-set-up",
-  "error",
-];
-const EVENT_KINDS: readonly EventKind[] = ["appeared", "status-changed", "ended"];
-const SEVERITIES: readonly EventSeverity[] = ["advisory", "warning", "critical"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -110,7 +84,7 @@ export function readSession(value: unknown): Session | null {
   if (!id || !source) return null;
 
   const project = text(value.project);
-  const status = oneOf(STATUSES, value.status) ?? "unknown";
+  const status = oneOf(SESSION_STATUSES, value.status) ?? "unknown";
   const session: Session = {
     id,
     // A source this build has never heard of is kept. Anything that looks a
@@ -128,7 +102,7 @@ export function readSession(value: unknown): Session | null {
   };
 
   if (status === "needs-you") {
-    const reason = oneOf(REASONS, value.waitingReason);
+    const reason = oneOf(WAITING_REASONS, value.waitingReason);
     if (reason) session.waitingReason = reason;
     const detail = text(value.waitingDetail);
     if (detail) session.waitingDetail = detail;
@@ -151,8 +125,8 @@ export function readSession(value: unknown): Session | null {
   return session;
 }
 
-/** The longest branch shown. The collector cuts one at 200 characters. */
-const MAX_BRANCH_LENGTH = 200;
+/** The longest branch shown: the collector cuts one as it cuts a session's name. */
+const MAX_BRANCH_LENGTH = MAX_NAME_LENGTH;
 
 /** A commit's ID in short, as the collector sends it, or longer. */
 const COMMIT_ID = /^[0-9a-f]{7,64}$/;
@@ -280,11 +254,11 @@ export function readEvent(value: unknown): SessionEvent | null {
     sessionId,
     sessionName: text(value.sessionName) ?? (sessionId || "A session"),
     kind: oneOf(EVENT_KINDS, value.kind) ?? "status-changed",
-    severity: oneOf(SEVERITIES, value.severity) ?? "advisory",
+    severity: oneOf(EVENT_SEVERITIES, value.severity) ?? "advisory",
   };
-  const from = oneOf(STATUSES, value.from);
+  const from = oneOf(SESSION_STATUSES, value.from);
   if (from) event.from = from;
-  const to = oneOf(STATUSES, value.to);
+  const to = oneOf(SESSION_STATUSES, value.to);
   if (to) event.to = to;
   return event;
 }

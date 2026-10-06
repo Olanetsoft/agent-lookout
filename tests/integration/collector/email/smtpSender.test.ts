@@ -10,7 +10,7 @@ import {
   headerValues,
   startSmtpServer,
   textOf,
-} from "@tests/support/node/smtp";
+} from "@tests/support/channels/smtp";
 
 const TO = "notify@example.test";
 /** A password with every character a URL has to escape, and some it does not. */

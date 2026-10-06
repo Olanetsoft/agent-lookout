@@ -312,12 +312,12 @@ test("an empty search lists every session, those that need you first, longest wa
     option.querySelector('[data-slot="status-mark"]')?.getAttribute("data-kind"),
   ]);
   expect(shown).toEqual([
-    ["Needs you 9m", "search at 3f9a2c1·Claude Code", "needs-you"],
-    ["Needs you 4m", "storefront on checkout-flow·Claude Code", "needs-you"],
-    ["Working 3m", "gateway on api-rate-limits·Codex", "working"],
-    ["Working 12m", "payments on billing-webhooks·night-shift", "working"],
-    ["Idle 1h 02m", "docs on main·Claude Code", "idle"],
-    ["Finished 2h 01m ago", "mobile·Claude Code", "finished"],
+    ["Needs you 9m", "search at 3f9a2c1 ·Claude Code", "needs-you"],
+    ["Needs you 4m", "storefront on checkout-flow ·Claude Code", "needs-you"],
+    ["Working 3m", "gateway on api-rate-limits ·Codex", "working"],
+    ["Working 12m", "payments on billing-webhooks ·night-shift", "working"],
+    ["Idle 1h 02m", "docs on main ·Claude Code", "idle"],
+    ["Finished 2h 01m ago", "mobile ·Claude Code", "finished"],
   ]);
   // A commit is read character by character, in the mono.
   const commit = part(options()[0]!, "commit");
@@ -395,7 +395,7 @@ test("a session whose app is not known is shown and named with nothing said of t
 
   // With a folder: the folder, its branch and the agent, and no app.
   const billing = optionOf("billing-webhooks");
-  expect(part(billing, "place").textContent).toBe("payments on billing-webhooks·night-shift");
+  expect(part(billing, "place").textContent).toBe("payments on billing-webhooks ·night-shift");
   expect(billing.querySelector('[data-part="app"]')).toBeNull();
   // With no folder: the agent alone.
   const infra = optionOf("infra-terraform");
@@ -583,6 +583,47 @@ test("once answers stop, how long is counted up to the last one", async () => {
     state: stateWith(SESSIONS, { phase: "stalled", lastOkAt: NOW - 2 * MINUTE }),
   });
   expect(part(options()[0]!, "status").textContent).toBe("Needs you 7m");
+});
+
+test("at the width of a phone the second line breaks between words, never inside the agent's name or a branch, and the dot stays with the agent", async () => {
+  onTestFinished(() => page.viewport(1280, 900));
+  await page.viewport(375, 900);
+  const sessions = [
+    session(8, {
+      name: "mobile-onboarding",
+      status: "working",
+      statusSince: NOW - 5 * MINUTE,
+      source: "status-files",
+      agent: "Night Shift",
+      project: "mobile-onboarding",
+      git: { branch: "onboarding-v2" },
+    }),
+    session(9, {
+      name: "api-rate-limits",
+      status: "working",
+      statusSince: NOW - 3 * MINUTE,
+      project: "api-rate-limits",
+      git: { branch: "feature/token-bucket" },
+    }),
+  ];
+  await openSearch({ state: stateWith(sessions) });
+
+  for (const option of options()) {
+    // The line is too long for the phone, so it does break somewhere.
+    const place = part(option, "place");
+    expect(place.getBoundingClientRect().height).toBeGreaterThan(
+      parseFloat(getComputedStyle(place).lineHeight) * 1.5,
+    );
+    const agent = part(option, "agent");
+    // One box: it is on one line.
+    expect(agent.getClientRects(), agent.textContent ?? "").toHaveLength(1);
+    const dot = agent.previousElementSibling as HTMLElement;
+    expect(dot.textContent).toBe("·");
+    expect(dot.getBoundingClientRect().top).toBe(agent.getBoundingClientRect().top);
+    const branch = part(option, "branch");
+    expect(branch.getClientRects(), branch.textContent ?? "").toHaveLength(1);
+  }
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
 });
 
 test("at the width of a phone a long name wraps rather than being cut, and the time keeps its place", async () => {

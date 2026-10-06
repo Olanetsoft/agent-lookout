@@ -35,6 +35,7 @@ const OFF: WebhookStatusResponse = {
 test("with nothing set, Settings says the webhook is off and how to turn it on", () => {
   expect(webhookWords(OFF, NOW)).toEqual({
     state: "The webhook is off.",
+    title: null,
     detail: "Set AGENT_LOOKOUT_WEBHOOK_URL to turn it on.",
   });
 });
@@ -44,6 +45,7 @@ test("with a setting that is wrong, it says which, and what to do", () => {
     "AGENT_LOOKOUT_WEBHOOK_URL must begin with https://, or with http:// for an address on this computer, 127.0.0.1 or localhost.";
   expect(webhookWords({ ...OFF, problem }, NOW)).toEqual({
     state: "The webhook is off.",
+    title: "The webhook is not set up correctly",
     detail: `${problem} Correct it and start Agent Lookout again.`,
   });
 });
@@ -51,6 +53,7 @@ test("with a setting that is wrong, it says which, and what to do", () => {
 test("with it on, it names the host the posts go to, when, and for which events", () => {
   expect(webhookWords(ON, NOW)).toEqual({
     state: "Posts go to hooks.slack.com after a wait of 1 minute.",
+    title: null,
     detail: null,
   });
   expect(webhookWords({ ...ON, afterMs: 0 }, NOW).state).toBe(
@@ -62,22 +65,28 @@ test("with it on, it names the host the posts go to, when, and for which events"
 });
 
 test("it says how the last post went", () => {
-  expect(webhookWords({ ...ON, last: { at: AT_1402, sent: true } }, NOW).detail).toBe(
-    "Last posted at 14:02.",
-  );
+  expect(webhookWords({ ...ON, last: { at: AT_1402, sent: true } }, NOW)).toMatchObject({
+    title: null,
+    detail: "Last posted at 14:02.",
+  });
   expect(
     webhookWords(
       { ...ON, last: { at: AT_1402, sent: false, reason: "the address did not answer in time" } },
       NOW,
-    ).detail,
-  ).toBe("The last post failed: the address did not answer in time.");
+    ),
+  ).toMatchObject({
+    title: "The last post failed",
+    detail: "The address did not answer in time.",
+  });
 });
 
 test("while the hourly limit holds posts back, it says when the next can go, a failure first", () => {
   expect(
-    webhookWords({ ...ON, last: { at: AT_1402, sent: true }, limitedUntil: UNTIL_1502 }, NOW)
-      .detail,
-  ).toBe("20 posts were tried in the last hour, the most it tries. The next can go at 15:02.");
+    webhookWords({ ...ON, last: { at: AT_1402, sent: true }, limitedUntil: UNTIL_1502 }, NOW),
+  ).toMatchObject({
+    title: "Posts are held back",
+    detail: "20 posts were tried in the last hour, the most it tries. The next can go at 15:02.",
+  });
   expect(
     webhookWords(
       {
@@ -86,10 +95,12 @@ test("while the hourly limit holds posts back, it says when the next can go, a f
         limitedUntil: UNTIL_1502,
       },
       NOW,
-    ).detail,
-  ).toBe(
-    "The last post failed: the address refused the post (status 403). No more will be tried until 15:02, as 20 were tried in the last hour.",
-  );
+    ),
+  ).toMatchObject({
+    title: "The last post failed",
+    detail:
+      "The address refused the post (status 403). No more will be tried until 15:02, as 20 were tried in the last hour.",
+  });
 });
 
 test("the status is read through the app's own seam, and anything else comes back as null", async () => {

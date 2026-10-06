@@ -3,7 +3,6 @@ import { expect, test } from "vitest";
 import {
   countNeedingYou,
   countState,
-  describeReasons,
   groupSessions,
   heroLight,
   summarizeSessions,
@@ -33,7 +32,7 @@ test("groups come in the order needs you, working, idle, finished and failed", (
     "Needs you",
     "Working",
     "Idle",
-    "Finished and failed",
+    "Finished or failed",
   ]);
 });
 
@@ -121,7 +120,6 @@ test("the summary counts each status, stale sessions apart from idle ones, and o
     open: 6,
     finished: 1,
     failed: 1,
-    reasons: { permission: 1, question: 1, other: 0 },
   });
   // Every session is counted once, so the counts add up to the total.
   const unknown = 1;
@@ -220,7 +218,7 @@ test("the ended group is named for what is in it", () => {
 
   expect(label("finished")).toBe("Finished");
   expect(label("failed", "failed")).toBe("Failed");
-  expect(label("finished", "failed")).toBe("Finished and failed");
+  expect(label("finished", "failed")).toBe("Finished or failed");
 });
 
 test("there is no longest wait when nothing is waiting, or when no start was reported", () => {
@@ -245,20 +243,6 @@ test("the count that lights the lamp is the sessions that need the person now, a
   expect(countNeedingYou([])).toBe(0);
   expect(countNeedingYou(null)).toBe(0);
   expect(countNeedingYou(undefined)).toBe(0);
-});
-
-test("a session that needs the person with no stated reason counts as other", () => {
-  const summary = summarizeSessions([session("a", { status: "needs-you" })]);
-
-  expect(summary.reasons).toEqual({ permission: 0, question: 0, other: 1 });
-});
-
-test("reasons read as a short plain list", () => {
-  expect(describeReasons({ permission: 1, question: 0, other: 0 })).toBe("1 permission");
-  expect(describeReasons({ permission: 2, question: 1, other: 3 })).toBe(
-    "2 permissions, 1 question, 3 other",
-  );
-  expect(describeReasons({ permission: 0, question: 0, other: 0 })).toBe("");
 });
 
 test("the sessions that need the person are the hero's, longest wait first, with an unreported start last", () => {

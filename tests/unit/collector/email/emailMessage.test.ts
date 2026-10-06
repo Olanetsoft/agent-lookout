@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { clockTime, overEmail, waitEmail, waitedInWords } from "@collector/email/emailMessage";
+import { overEmail, waitEmail } from "@collector/email/emailMessage";
 import type { WaitFacts } from "@collector/outbound/outboundChannel";
-import { MOST_NAME_LENGTH, oneLine } from "@collector/outbound/outboundText";
+import { clockAt, durationInWords } from "@core/duration";
 import type { Session } from "@core/sessions/session";
+import { MAX_LINE_LENGTH } from "@core/text";
 import { makeSession } from "@tests/fixtures/session";
 
 /** 14:01:05 on this computer's clock, whatever its time zone. */
@@ -119,7 +120,8 @@ describe("waitEmail", () => {
 
   test("a wait that began on another day says the day", () => {
     const text = waitEmail(facts({}, { now: BEGUN + 12 * 3_600_000 })).text;
-    expect(text).toContain("It has waited 12 hours, since Oct 5, 14:01.");
+    // The day as the dashboard writes it, in this computer's own words for it.
+    expect(text).toMatch(/It has waited 12 hours, since 14:01 on (\S+ 5|5 \S+)\./);
   });
 
   const HOSTILE_NAMES = [
@@ -149,7 +151,7 @@ describe("waitEmail", () => {
       );
       expect(email.subject.endsWith(" is waiting for permission")).toBe(true);
       const shownName = email.subject.slice(0, -" is waiting for permission".length);
-      expect(Array.from(shownName).length).toBeLessThanOrEqual(MOST_NAME_LENGTH);
+      expect(Array.from(shownName).length).toBeLessThanOrEqual(MAX_LINE_LENGTH);
 
       // The body keeps its shape: the same lines, and the name never begins one of its own.
       expect(email.text.split("\n")).toEqual([
@@ -221,34 +223,11 @@ describe("overEmail", () => {
   });
 });
 
-describe("oneLine", () => {
-  test("turns line breaks and control characters into single spaces", () => {
-    expect(oneLine("a\r\nb\tc\u0000d   e")).toBe("a b c d e");
-    expect(oneLine("  padded  ")).toBe("padded");
-  });
-
-  test("cuts a long name with an ellipsis, between letters", () => {
-    expect(oneLine("abcdefghij", 5)).toBe("abcd…");
-    expect(oneLine("abcde", 5)).toBe("abcde");
-    // Four letters outside the basic plane, each two UTF-16 units, are never split.
-    expect(oneLine("🚀🚀🚀🚀🚀🚀", 4)).toBe("🚀🚀🚀…");
-  });
-});
-
-test("a length of time is said to the second under an hour, and to the minute after", () => {
-  expect(waitedInWords(0)).toBe("0 seconds");
-  expect(waitedInWords(1_000)).toBe("1 second");
-  expect(waitedInWords(59_999)).toBe("59 seconds");
-  expect(waitedInWords(60_000)).toBe("1 minute");
-  expect(waitedInWords(65_000)).toBe("1 minute 5 seconds");
-  expect(waitedInWords(3_599_000)).toBe("59 minutes 59 seconds");
-  expect(waitedInWords(3_600_000)).toBe("1 hour");
-  expect(waitedInWords(7_380_000)).toBe("2 hours 3 minutes");
-});
-
-test("a time is on this computer's 24-hour clock, with the day when it is not today", () => {
-  const evening = new Date(2026, 9, 4, 23, 59, 30).getTime();
-  expect(clockTime(evening, evening + 1_000)).toBe("23:59");
-  expect(clockTime(evening, new Date(2026, 9, 5, 0, 0, 30).getTime())).toBe("Oct 4, 23:59");
-  expect(clockTime(new Date(2026, 0, 2, 7, 5).getTime(), BEGUN)).toBe("Jan 2, 07:05");
+test("a length of time and a time on the clock are written as the dashboard writes them", () => {
+  const begun = BEGUN - 90_000_000;
+  const email = waitEmail(facts({}, { begunAt: begun, now: BEGUN }));
+  expect(email.text).toContain(
+    `It has waited ${durationInWords(90_000_000)}, since ${clockAt(begun, BEGUN)}.`,
+  );
+  expect(email.text).toContain("It has waited 1 day 1 hour, since ");
 });

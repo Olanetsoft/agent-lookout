@@ -1,7 +1,7 @@
 import { useId, useMemo, type ReactNode } from "react";
 
 import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
-import { waitingLabel } from "@core/sessions/waiting";
+import { waitingLabel } from "@core/notices/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
@@ -364,13 +364,21 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
   );
 }
 
-/** "demo-project, answered at 09:40". */
-function lastWaitNote(last: LastWait): ReactNode {
+/**
+ * "demo-project, answered at 09:40", and, for a wait that was under way when
+ * the period began, "demo-project, answered at 09:40, waiting since before 09:15".
+ */
+function lastWaitNote(last: LastWait, from: number): ReactNode {
   return (
     <>
       <span className='font-semibold text-ink'>{last.name}</span>,{" "}
       {last.how === "ended" ? "ended at" : "answered at"}{" "}
       <span className='tabular-nums'>{formatClockMinutes(last.at)}</span>
+      {!last.startKnown && (
+        <>
+          , waiting since before <span className='tabular-nums'>{formatClockMinutes(from)}</span>
+        </>
+      )}
     </>
   );
 }
@@ -379,10 +387,13 @@ function lastWaitNote(last: LastWait): ReactNode {
  * Nothing needs the person. It says so at the hero's size, with the lamp out,
  * and on the right gives the last wait that is over, so the panel stays worth
  * looking at. With none in the period, it says that instead, once: "None since
- * 13:05", and how much of that time nobody measured.
+ * 13:05", and how much of that time nobody measured. It never says none while
+ * the bars of waits under it show one.
  */
 function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?: () => void }) {
   const last = waits?.lastWait ?? null;
+  // The bars under the hero can show a wait the page could not say was the last.
+  const none = waits !== null && waits.sessions.length === 0;
   const since = waits
     ? waits.period.today
       ? "today"
@@ -416,19 +427,22 @@ function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?
         {last ? (
           <>
             <p className='text-wait font-normal whitespace-nowrap text-ink'>
-              <span className='sr-only'>The last wait lasted {durationInWords(last.ms)}</span>
+              <span className='sr-only'>
+                The last wait lasted {last.startKnown ? "" : "at least "}
+                {durationInWords(last.ms)}
+              </span>
               <span aria-hidden>
                 <DurationFigure parts={durationParts(last.ms)} />
               </span>
             </p>
             <p data-part='last-note' className='mt-2 text-caption text-ink-secondary'>
-              {lastWaitNote(last)}
+              {lastWaitNote(last, waits?.period.from ?? last.at)}
             </p>
           </>
         ) : (
           <>
             <p data-part='last-note' className='text-body text-ink-secondary'>
-              {since ? `None ${since}` : "Not known"}
+              {since && none ? `None ${since}` : "Not known"}
             </p>
             {unmeasured && (
               <p data-part='last-gaps' className='mt-1 text-caption text-ink-secondary'>

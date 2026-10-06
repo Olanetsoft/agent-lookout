@@ -7,14 +7,14 @@ import path from "node:path";
 import { describe, expect, onTestFinished, test } from "vitest";
 
 import {
+  createFeedReader,
   FEED_ARGS,
   feedEnvironment,
   pickSessionList,
-  readFeed,
   runProgram,
 } from "@collector/adapters/claude-code/feed";
 import { findClaudeBinary } from "@collector/adapters/claude-code/findBinary";
-import { isProcessAlive } from "@collector/adapters/claude-code/toSession";
+import { isProcessAlive } from "@collector/processes/pids";
 import { feedEntries, feedJsonWithTrailingText } from "@tests/fixtures/claudeCode";
 import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
@@ -38,7 +38,7 @@ describe("runProgram, against real programs", () => {
     expect(result.ok).toBe(true);
     expect(result.ok && result.stdout).toContain("session tracker");
 
-    expect(await readFeed(stub, runProgram, { env })).toEqual({
+    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
       ok: true,
       entries: feedEntries,
     });
@@ -48,13 +48,13 @@ describe("runProgram, against real programs", () => {
     const stub = await writeStub(
       `printf '[{"sessionId":"%s|%s|%s|%s|%s|%s|%s"}]' "$#" "$1" "$2" "$3" "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" "$DISABLE_AUTOUPDATER" "\${HTTPS_PROXY-unset}"`,
     );
-    expect(await readFeed(stub, runProgram, { env })).toEqual({
+    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
       ok: true,
       entries: [{ sessionId: "3|agents|--json|--all|1|1|unset" }],
     });
     // A proxy the person set arrives as they set it.
     expect(
-      await readFeed(stub, runProgram, {
+      await createFeedReader(runProgram).read(stub, {
         env: { ...env, HTTPS_PROXY: "http://proxy.example:8080" },
       }),
     ).toEqual({
@@ -125,7 +125,10 @@ describe("runProgram, against real programs", () => {
     const stub = await writeStub(
       `if [ "$3" = "--all" ]; then echo "error: unknown option '--all'" >&2; exit 1; fi\necho '${oneJson}'`,
     );
-    expect(await readFeed(stub, runProgram, { env })).toEqual({ ok: true, entries: one });
+    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
+      ok: true,
+      entries: one,
+    });
   });
 
   test("when a wrapper's child hangs, the timeout stops the child as well as the wrapper", async () => {

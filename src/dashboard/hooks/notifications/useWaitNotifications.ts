@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import { notificationsHeaderValue } from "@core/api";
-import type { NoticeEvent } from "@core/sessions/waitChanges";
+import type { NoticeEvent } from "@core/notices/sessionChanges";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import type { CollectorStore } from "@dashboard/lib/api/collectorStore";
 import { openNotificationHandover } from "@dashboard/lib/notifications/notificationHandover";

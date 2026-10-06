@@ -1,5 +1,5 @@
-import { NOTICE_EVENTS, type NoticeEvent } from "@core/sessions/waitChanges";
-import { NOTICE_EVENT_LABEL } from "@core/sessions/waiting";
+import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
+import { NOTICE_EVENT_LABEL } from "@core/notices/waiting";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
@@ -123,15 +123,24 @@ function NotificationsCard() {
           With Needs you on, a notification appears each time a session starts waiting for you. It
           names the session and the reason, and is cleared when the session moves on.
         </p>
-        <p className='mt-2 text-body text-ink-secondary'>
-          Once they are on, you can also be told when a session finishes or fails, or ends without
-          saying whether it finished, as when its process stops. Those name the session and what
-          happened, and stay until you clear them.
-        </p>
+        {/* While they are on, the switches above say this. */}
+        {!on && (
+          <p className='mt-2 text-body text-ink-secondary'>
+            Once they are on, you can also be told when a session finishes or fails, or ends without
+            saying whether it finished, as when its process stops. Those name the session and what
+            happened, and stay until you clear them.
+          </p>
+        )}
         <p className='mt-2 text-body text-ink-secondary'>
           On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout
-          keeps running, and those stay until you clear them. Only Claude Code sessions and sessions
-          from a status file can be seen waiting, so a Codex session never sends Needs you.
+          keeps running, and those stay until you clear them. What each agent can report, under{" "}
+          <a
+            href='#sources'
+            className='rounded-bar underline decoration-rule-strong underline-offset-2 transition-colors duration-120 hover:text-ink'
+          >
+            Sources
+          </a>
+          , says which agents can be seen waiting.
         </p>
       </div>
     </SectionCard>
@@ -145,7 +154,7 @@ function wordsOf<Status>(
   words: (status: Status, now: number) => SendingWords,
 ): SendingWords | null {
   if (reading === null) return null;
-  if (reading.status === "unknown") return { state: unknown, detail: null };
+  if (reading.status === "unknown") return { state: unknown, title: null, detail: null };
   return words(reading.status, reading.readAt);
 }
 
@@ -155,6 +164,10 @@ function wordsOf<Status>(
  * here. Both are set up in the environment Agent Lookout starts with, so the
  * card has no control, and the button for notifications does not cover them.
  * Before the app has answered, the card says nothing.
+ *
+ * A setting that is wrong, a send that failed and the hourly limit are said in
+ * the info note that says notifications are blocked, so a channel that is not
+ * working never reads like one that is.
  */
 function SendingCard({ title, words }: { title: string; words: SendingWords | null }) {
   return (
@@ -163,11 +176,18 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
         <p data-part='state' aria-live='polite' className='text-body font-medium text-ink'>
           {words?.state}
         </p>
-        {words?.detail && (
-          <p className='mt-3 text-body text-ink-secondary'>
-            <FactText>{words.detail}</FactText>
-          </p>
-        )}
+        {words?.detail &&
+          (words.title ? (
+            <Callout title={words.title} className='mt-3'>
+              <p>
+                <FactText>{words.detail}</FactText>
+              </p>
+            </Callout>
+          ) : (
+            <p className='mt-3 text-body text-ink-secondary'>
+              <FactText>{words.detail}</FactText>
+            </p>
+          ))}
       </div>
     </SectionCard>
   );
@@ -175,10 +195,10 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
 
 /** Where the person's data goes, as the facts about this copy say it. */
 function whereDataGoes(emailing: boolean, posting: boolean): string {
-  if (emailing && posting) return "Leaves only in the emails and webhook posts you set up";
-  if (emailing) return "Leaves only in the emails you set up";
-  if (posting) return "Leaves only in the webhook posts you set up";
-  return "Stays on this computer";
+  if (emailing && posting) return "Sent only in the emails and posts you set up";
+  if (emailing) return "Sent only in the emails you set up";
+  if (posting) return "Sent only in the webhook posts you set up";
+  return "Agent Lookout sends it nowhere";
 }
 
 /**
@@ -201,7 +221,12 @@ export function SettingsView() {
       data-slot='settings-view'
       className='grid grid-cols-12 items-start gap-4 max-wide:flex max-wide:flex-col'
     >
-      {/* One column of settings. When the view narrows it stacks above the facts. */}
+      {/*
+       * The two settings on the left, and on the right what is only read: email,
+       * the webhook and the facts about this copy, as Sources keeps its
+       * explanations in the right third. When the view narrows the right stacks
+       * under the left.
+       */}
       <div className='col-span-8 flex min-w-0 flex-col gap-4 max-wide:w-full'>
         <SectionCard title='Theme'>
           <div className='px-6 pb-6'>
@@ -219,6 +244,9 @@ export function SettingsView() {
         </SectionCard>
 
         <NotificationsCard />
+      </div>
+
+      <div className='col-span-4 flex min-w-0 flex-col gap-4 max-wide:w-full'>
         <SendingCard
           title='Email'
           words={wordsOf(email, "Whether email is set up could not be read.", emailWords)}
@@ -227,16 +255,15 @@ export function SettingsView() {
           title='Webhook'
           words={wordsOf(webhook, "Whether the webhook is set up could not be read.", webhookWords)}
         />
+        <SectionCard title='This copy'>
+          <FactList className='px-6 pb-3'>
+            <FactRow label='Version' mono>
+              v{__APP_VERSION__}
+            </FactRow>
+            <FactRow label='Your data'>{whereDataGoes(emailing, posting)}</FactRow>
+          </FactList>
+        </SectionCard>
       </div>
-
-      <SectionCard title='This copy' className='col-span-4 max-wide:w-full'>
-        <FactList className='px-6 pb-3'>
-          <FactRow label='Version' mono>
-            v{__APP_VERSION__}
-          </FactRow>
-          <FactRow label='Your data'>{whereDataGoes(emailing, posting)}</FactRow>
-        </FactList>
-      </SectionCard>
     </div>
   );
 }

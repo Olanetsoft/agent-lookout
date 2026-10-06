@@ -1,7 +1,8 @@
+import { clockAt, durationInWords } from "../../core/duration.ts";
 import { surfaceLabel, type Session } from "../../core/sessions/session.ts";
-import { overPhrase, sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
+import { overPhrase, sessionTitle, waitingPhrase } from "../../core/notices/waiting.ts";
+import { oneLine } from "../../core/text.ts";
 import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
-import { oneLine } from "../outbound/outboundText.ts";
 import { EMAIL_TO_ENV } from "./emailSettings.ts";
 
 /**
@@ -14,47 +15,6 @@ import { EMAIL_TO_ENV } from "./emailSettings.ts";
 export interface EmailContent {
   subject: string;
   text: string;
-}
-
-function counted(count: number, unit: string): string {
-  return `${count} ${unit}${count === 1 ? "" : "s"}`;
-}
-
-/** A length of time in words, to the second under an hour and to the minute after: "1 minute 5 seconds". */
-export function waitedInWords(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1_000));
-  if (seconds < 60) return counted(seconds, "second");
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    const rest = seconds % 60;
-    return rest === 0
-      ? counted(minutes, "minute")
-      : `${counted(minutes, "minute")} ${counted(rest, "second")}`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0
-    ? counted(hours, "hour")
-    : `${counted(hours, "hour")} ${counted(rest, "minute")}`;
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-const pad2 = (value: number) => String(value).padStart(2, "0");
-
-/**
- * A moment on this computer's clock, 24-hour, as the dashboard writes one:
- * "14:01", with the day in front when it is not the day of `now`: "Oct 4, 23:59".
- */
-export function clockTime(at: number, now: number): string {
-  const date = new Date(at);
-  const today = new Date(now);
-  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-  const sameDay =
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate();
-  return sameDay ? time : `${MONTHS[date.getMonth()]} ${date.getDate()}, ${time}`;
 }
 
 /** The email: the sentence of what happened, a line on when, then the facts every email ends with. */
@@ -83,7 +43,7 @@ export function waitEmail(facts: WaitFacts): EmailContent {
   const { session, begunAt, now } = facts;
   return emailOf(
     `${oneLine(sessionTitle(session))} ${waitingPhrase(session)}`,
-    `It has waited ${waitedInWords(now - begunAt)}, since ${clockTime(begunAt, now)}.`,
+    `It has waited ${durationInWords(now - begunAt)}, since ${clockAt(begunAt, now)}.`,
     session,
     facts.agent,
   );
@@ -98,7 +58,7 @@ export function overEmail(facts: OverFacts): EmailContent {
   const { session, seenAt, now } = facts;
   return emailOf(
     `${oneLine(sessionTitle(session))} ${overPhrase(facts.event)}`,
-    `Agent Lookout saw this at ${clockTime(seenAt, now)}.`,
+    `Agent Lookout saw this at ${clockAt(seenAt, now)}.`,
     session,
     facts.agent,
   );

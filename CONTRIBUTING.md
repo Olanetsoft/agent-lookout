@@ -31,10 +31,10 @@ To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
-AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty npm run dev
+AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty npm run dev
 ```
 
-With both set, Agent Lookout reads only that folder, does not run the `claude` command and does not read `~/.codex`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
+With all three set, Agent Lookout reads only that folder, does not run the `claude` command, and reads neither `~/.codex` nor `~/.agent-lookout/sessions`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
 
 ## Checks
 

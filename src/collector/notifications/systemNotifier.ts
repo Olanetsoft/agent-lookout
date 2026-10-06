@@ -1,6 +1,8 @@
-import { execFile } from "node:child_process";
+import type { Notice } from "../../core/notices/waiting.ts";
+import { oneLine } from "../../core/text.ts";
+import { OSASCRIPT, runOsascript, type RunOsascript } from "../processes/osascript.ts";
 
-import type { Notice } from "../../core/sessions/waiting.ts";
+export { OSASCRIPT };
 
 /**
  * The one seam between the collector and the system's notifications.
@@ -20,9 +22,6 @@ export interface SystemNotifier {
   show(notice: Notice): void;
 }
 
-/** Where macOS keeps `osascript`. It is never looked for on `PATH`. */
-export const OSASCRIPT = "/usr/bin/osascript";
-
 /** How long `osascript` gets. It normally answers in well under a second. */
 const OSASCRIPT_TIMEOUT_MS = 5_000;
 
@@ -36,11 +35,6 @@ const SCRIPT = [
   "end run",
 ];
 
-/** An argument cannot hold a NUL, and a program given one is not started. */
-function withoutNul(text: string): string {
-  return text.replaceAll("\0", "");
-}
-
 /**
  * The arguments `osascript` is given for one notification: the fixed script,
  * a `--`, then the title and the text.
@@ -48,39 +42,30 @@ function withoutNul(text: string): string {
  * The `--` matters. Without it `osascript` reads an argument that begins with a
  * dash as one of its own options, and a session named `-e` would have the
  * argument after it run as a script.
+ *
+ * The title and the text are made to stand on one line, as every name Agent
+ * Lookout shows or sends is: a line break, any other control character, a NUL,
+ * which no argument can hold, and the marks that reorder text become spaces,
+ * and a long name is cut.
  */
 export function osascriptArgs(notice: Notice): string[] {
   return [
     ...SCRIPT.flatMap((line) => ["-e", line]),
     "--",
-    withoutNul(notice.title),
-    withoutNul(notice.body),
+    oneLine(notice.title),
+    oneLine(notice.body),
   ];
 }
 
-/** Runs a program with these arguments. Resolves when it ends and rejects when it failed. */
-export type RunProgram = (file: string, args: readonly string[]) => Promise<void>;
-
-/** Starts the program directly, with no shell between, stdin closed and a timeout. */
-export const runDirectly: RunProgram = (file, args) =>
-  new Promise((resolve, reject) => {
-    const child = execFile(
-      file,
-      [...args],
-      { timeout: OSASCRIPT_TIMEOUT_MS, windowsHide: true },
-      (error) => {
-        if (error) reject(error);
-        else resolve();
-      },
-    );
-    child.stdin?.end();
-  });
+/** Runs `osascript` the one way the collector runs it, with a notification's own timeout. */
+const runForNotification: RunOsascript = (args) =>
+  runOsascript(args, { timeoutMs: OSASCRIPT_TIMEOUT_MS });
 
 export interface SystemNotifierOptions {
   /** Defaults to this machine's. */
   platform?: NodeJS.Platform;
-  /** Defaults to starting the program for real. */
-  run?: RunProgram;
+  /** Defaults to running `/usr/bin/osascript` for real. */
+  run?: RunOsascript;
 }
 
 /**
@@ -91,13 +76,13 @@ export interface SystemNotifierOptions {
  */
 export function createSystemNotifier(options: SystemNotifierOptions = {}): SystemNotifier {
   const platform = options.platform ?? process.platform;
-  const run = options.run ?? runDirectly;
+  const run = options.run ?? runForNotification;
 
   return {
     show(notice) {
       if (platform !== "darwin") return;
       try {
-        run(OSASCRIPT, osascriptArgs(notice)).catch(() => {
+        run(osascriptArgs(notice)).catch(() => {
           // Not shown. There is nobody to tell.
         });
       } catch {

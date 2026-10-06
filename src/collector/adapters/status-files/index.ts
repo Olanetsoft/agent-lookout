@@ -11,18 +11,19 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
+import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import { tildify } from "../../files/paths.ts";
+import { isMissing, nodeIo, type OpenFile, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
+import { isProcessAlive } from "../../processes/pids.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
-import { tildify } from "../claude-code/findBinary.ts";
-import { isProcessAlive } from "../claude-code/toSession.ts";
-import { isMissing, nodeIo, type CodexIo, type OpenFile } from "../codex/io.ts";
+import { every } from "../words.ts";
 import {
   isStatusFileName,
   MAX_FILE_BYTES,
   MAX_FILES,
   parseStatusFile,
-  sessionName,
   type StatusFile,
 } from "./statusFile.ts";
 import { SOURCE_ID, statusFileSession } from "./toSession.ts";
@@ -61,7 +62,7 @@ export interface StatusFileAdapterOptions {
   homeDir?: string;
   now?: () => number;
   /** How the folder is read: the same reading-only access the Codex adapter has. */
-  io?: CodexIo;
+  io?: ReadOnlyIo;
   isAlive?: (pid: number) => boolean;
   /**
    * How often the poller calls `poll()`, which is how often the folder is read.
@@ -88,12 +89,6 @@ type Reading =
 interface Read {
   file: StatusFile;
   mtimeMs: number;
-}
-
-/** "every 2 seconds". */
-function every(ms: number): string {
-  const seconds = ms / 1000;
-  return seconds === 1 ? "every second" : `every ${seconds} seconds`;
 }
 
 /** "1 file was", "3 files were": a count and its words, singular or plural. */

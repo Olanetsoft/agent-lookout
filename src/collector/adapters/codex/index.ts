@@ -10,10 +10,11 @@ import type {
   SourceState,
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import { tildify } from "../../files/paths.ts";
+import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
-import { tildify } from "../claude-code/findBinary.ts";
-import { isMissing, nodeIo, type CodexIo, type FileInfo } from "./io.ts";
+import { every } from "../words.ts";
 import { createRolloutReader, type RolloutState } from "./rolloutFile.ts";
 import { createRolloutFinder, type RolloutRef } from "./rollouts.ts";
 import { createSessionIndexReader, SESSION_INDEX_FILE } from "./sessionIndex.ts";
@@ -98,7 +99,7 @@ export interface CodexAdapterOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
   now?: () => number;
-  io?: CodexIo;
+  io?: ReadOnlyIo;
   /**
    * How often the poller calls `poll()`, which is how often the files are read.
    * The adapter keeps no timer of its own: this is only stated in `watching`.
@@ -115,13 +116,6 @@ export interface CodexAdapterOptions {
 
 /** Where the Codex folder was named. */
 type HomeFrom = "agent-lookout" | "codex" | "default";
-
-/** "every 2 seconds", or "every minute". */
-function every(ms: number): string {
-  if (ms === 60_000) return "every minute";
-  const seconds = ms / 1000;
-  return seconds === 1 ? "every second" : `every ${seconds} seconds`;
-}
 
 /**
  * Finds Codex sessions on this machine from the files Codex keeps, with

@@ -204,7 +204,7 @@ test("sessions are grouped in order under a group head of words with its count",
   }
   // The idle group counts its stale sessions apart, as the counts row does: one
   // idle, one stale, over two rows.
-  expect(groupRows(screen.container)).toEqual(["Working1", "Idle1Stale1", "Finished and failed2"]);
+  expect(groupRows(screen.container)).toEqual(["Working1", "Idle1Stale1", "Finished or failed2"]);
 
   const names = [...screen.container.querySelectorAll('[data-part="name"]')].map(
     (n) => n.textContent,
@@ -464,6 +464,36 @@ test("a branch too long for the Folder column is cut, and stays one hover or one
   await expect.element(page.getByRole("tooltip")).toHaveTextContent(long);
 });
 
+test.each([
+  [584, 112],
+  [680, 160],
+  [1100, 192],
+])(
+  "in a card %i pixels wide the Folder column takes half the room left over, up to 12rem, so a folder and its branch are cut only when the card is narrow",
+  async (width, folderWidth) => {
+    await page.viewport(1440, 900);
+    const sessions = [
+      { ...IN_REPOSITORIES[0]!, git: { branch: "feature/token-bucket" } },
+      ...IN_REPOSITORIES.slice(1),
+    ];
+    const screen = await render(
+      <div style={{ width }}>
+        <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+      </div>,
+    );
+    const row = rowOf(screen.container, "checkout-flow");
+    const folder = () =>
+      row.querySelector('[data-part="project"]')!.closest("td")!.getBoundingClientRect().width;
+    await vi.waitFor(() => expect(Math.round(folder())).toBe(folderWidth));
+    // App gives way at the width it always did, and is here at each of these.
+    expect(row.querySelector('[data-part="app"]')).not.toBeNull();
+    const branch = row.querySelector<HTMLElement>('[data-part="branch"]')!;
+    expect(branch.scrollWidth > branch.clientWidth).toBe(folderWidth === 112);
+    // The Session column keeps at least its 200px.
+    expect(row.querySelector("td")!.getBoundingClientRect().width).toBeGreaterThanOrEqual(200);
+  },
+);
+
 test("a branch leaves with its Folder column, in a narrow window and in a narrow card", async () => {
   await page.viewport(375, 900);
   const narrow = await render(
@@ -719,11 +749,7 @@ test.each(["dark", "light"] as const)(
     document.documentElement.setAttribute("data-theme", theme);
     const screen = await render(<SessionsCard sessions={CALM} sources={[SOURCE_OK]} now={NOW} />);
 
-    expect(groupRows(screen.container)).toEqual([
-      "Working1",
-      "Idle1Stale1",
-      "Finished and failed2",
-    ]);
+    expect(groupRows(screen.container)).toEqual(["Working1", "Idle1Stale1", "Finished or failed2"]);
     expect(screen.container.textContent).not.toContain("Nothing needs you");
     expect(screen.container.querySelector("[data-lit]")).toBeNull();
     expect(solidButtons(screen.container)).toEqual([]);

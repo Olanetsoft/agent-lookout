@@ -136,10 +136,8 @@ function Count({ kind, label, mark, value, note, onOpen }: CountProps) {
             <span className='truncate'>{label}</span>
           )}
         </p>
-        <p
-          data-part='note'
-          className='mt-px truncate text-caption text-ink-secondary max-mid:whitespace-normal'
-        >
+        {/* It wraps rather than being cut, so the failures it counts are never the part lost. */}
+        <p data-part='note' className='mt-px text-caption text-pretty text-ink-secondary'>
           {note}
         </p>
       </div>

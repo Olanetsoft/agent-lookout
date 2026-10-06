@@ -242,9 +242,11 @@ test("while the log has room it ends where Agent Lookout started watching, and t
 
   const since = screen.container.querySelector('[data-part="since"]') as HTMLElement;
   expect(since.textContent).toBe("since 09:00");
-  expect(getComputedStyle(since.querySelector("span")!).fontFamily).toMatch(
-    /^"?Atkinson Hyperlegible Mono/,
-  );
+  // A clock time in a sentence is in the sans with figures that keep their width, as the New
+  // since line under it is.
+  const time = since.querySelector("span")!;
+  expect(getComputedStyle(time).fontFamily).toMatch(/^"?Atkinson Hyperlegible Next/);
+  expect(getComputedStyle(time).fontVariantNumeric).toBe("tabular-nums");
 });
 
 test("once the log is full it claims only as far back as its oldest event, and shows no start", async () => {

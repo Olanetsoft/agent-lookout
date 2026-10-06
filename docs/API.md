@@ -93,7 +93,7 @@ The snapshot the collector made at its last poll, two seconds apart at most:
 }
 ```
 
-Sessions come in the order the dashboard lists them: those that need you first, longest wait first, then the rest by status, most recent change first.
+Sessions come in this order: those that need you first, longest wait first, then working, idle, finished, failed and unknown, each with the most recent change first.
 
 | Session field   | Holds                                                                                                                                              |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -172,7 +172,7 @@ The server then looks the session up in its own latest snapshot and acts on the 
 | 200    | `{ "ok": true, "kind": "tmux", "place": "work:2.1" }`, or `{ "ok": true, "kind": "terminal", "app": "iTerm2", "place": "iTerm2" }` |
 | 404    | `reason: "no-pane"`: the session is not listed, or no pane or tab is known for it                                                  |
 | 409    | `reason: "pane-gone"`, `"tmux-stopped"` or `"tab-gone"`                                                                            |
-| 403    | `reason: "not-allowed"`: macOS has not allowed Agent Lookout to control the app                                                    |
+| 403    | `reason: "not-allowed"`: macOS has not allowed the program Agent Lookout runs in to control the app                                |
 | 429    | `reason: "too-soon"`, with `Retry-After: 1`                                                                                        |
 | 500    | `reason: "failed"`: tmux or `osascript` could not be run, or did not answer in time                                                |
 

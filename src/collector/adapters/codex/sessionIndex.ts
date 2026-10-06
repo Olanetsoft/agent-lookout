@@ -1,4 +1,4 @@
-import { isMissing, type CodexIo } from "./io.ts";
+import { isMissing, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
  * The names people give Codex sessions, from `<codex home>/session_index.jsonl`.
@@ -50,7 +50,7 @@ export interface SessionIndexReader {
   names(): Promise<Map<string, string>>;
 }
 
-export function createSessionIndexReader(file: string, io: CodexIo): SessionIndexReader {
+export function createSessionIndexReader(file: string, io: ReadOnlyIo): SessionIndexReader {
   let seen: { ino: number; size: number; mtimeMs: number } | null = null;
   let names = new Map<string, string>();
 
