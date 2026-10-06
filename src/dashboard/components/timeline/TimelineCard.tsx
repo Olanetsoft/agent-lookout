@@ -59,15 +59,20 @@ function markOf(row: TimelineRow): MarkKind | null {
   return row.stale && row.status === "idle" ? "stale" : row.status;
 }
 
-/** One session: its mark and name, and its status over the hour beside it, with the time rules. */
+/**
+ * One session: its mark and name, and its status over the hour beside it, with
+ * the time rules. Unnamed, the track has the row to itself.
+ */
 function Row({
   row,
   timeline,
   rules,
+  named,
 }: {
   row: TimelineRow;
   timeline: Timeline;
   rules: readonly number[];
+  named: boolean;
 }) {
   const mark = markOf(row);
   const lit = row.status === "needs-you";
@@ -77,19 +82,21 @@ function Row({
       data-ended={row.ended}
       className='flex h-track items-center rounded-row odd:bg-fill-zebra'
     >
-      <div
-        className={cn(
-          "flex w-label-col shrink-0 items-center gap-3 px-3 text-body",
-          lit ? "font-semibold text-ink" : "font-medium text-ink-secondary",
-        )}
-      >
-        {mark ? (
-          <StatusMark kind={mark} />
-        ) : (
-          <span aria-hidden data-part='no-mark' className='size-mark shrink-0' />
-        )}
-        <Truncated data-part='name'>{row.name}</Truncated>
-      </div>
+      {named && (
+        <div
+          className={cn(
+            "flex w-label-col shrink-0 items-center gap-3 px-3 text-body",
+            lit ? "font-semibold text-ink" : "font-medium text-ink-secondary",
+          )}
+        >
+          {mark ? (
+            <StatusMark kind={mark} />
+          ) : (
+            <span aria-hidden data-part='no-mark' className='size-mark shrink-0' />
+          )}
+          <Truncated data-part='name'>{row.name}</Truncated>
+        </div>
+      )}
       <StatusTrack
         segments={row.segments}
         start={timeline.start}
@@ -215,17 +222,34 @@ function timeMarks(timeline: Timeline, width: number): { at: number; left: strin
  * The rows, each drawing a rule down every marked time on its own track, then
  * the time axis. A track stops its rules where it is hatched, so the hatch,
  * which has no ground of its own on glass, still reads as its own stretch.
+ *
+ * A session's details draw their own row alone, unnamed, since they name the
+ * session already, and the track and the axis take the whole width.
  */
-function Chart({ timeline }: { timeline: Timeline }) {
+export function TimelineChart({
+  timeline,
+  rows = timeline.rows,
+  named = true,
+  label = "Sessions over the last hour",
+  className = "px-6 pb-4.5",
+}: {
+  timeline: Timeline;
+  /** The rows to draw. Every row of the timeline unless said. */
+  rows?: readonly TimelineRow[];
+  /** Whether each row leads with its mark and name. */
+  named?: boolean;
+  label?: string;
+  className?: string;
+}) {
   const [axis, width] = useElementWidth<HTMLDivElement>();
   const marks = timeMarks(timeline, width);
   const rules = marks.map((mark) => mark.at);
 
   return (
-    <div className='px-6 pb-4.5'>
-      <ul data-slot='timeline-rows' aria-label='Sessions over the last hour'>
-        {timeline.rows.map((row) => (
-          <Row key={row.id} row={row} timeline={timeline} rules={rules} />
+    <div className={className}>
+      <ul data-slot='timeline-rows' aria-label={label}>
+        {rows.map((row) => (
+          <Row key={row.id} row={row} timeline={timeline} rules={rules} named={named} />
         ))}
       </ul>
 
@@ -233,7 +257,10 @@ function Chart({ timeline }: { timeline: Timeline }) {
         ref={axis}
         data-slot='timeline-axis'
         aria-hidden
-        className='relative mt-2 ml-label-col h-5.5 border-t border-rule font-mono text-micro leading-none text-ink-muted'
+        className={cn(
+          "relative mt-2 h-5.5 border-t border-rule font-mono text-micro leading-none text-ink-muted",
+          named && "ml-label-col",
+        )}
       >
         {marks.map((mark) => (
           <span
@@ -309,7 +336,7 @@ export function TimelineCard({
       </div>
     );
   } else if (timeline.rows.length > 0) {
-    body = <Chart timeline={timeline} />;
+    body = <TimelineChart timeline={timeline} />;
   } else if (sources.some((source) => source.state === "searching")) {
     body = <Loading label='Looking for sessions' />;
   } else if (!sources.some((source) => source.state === "ok")) {

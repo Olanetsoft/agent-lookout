@@ -18,14 +18,29 @@ interface DetailsModalProps {
   title: string;
   description?: ReactNode;
   size?: keyof typeof SIZES;
+  /** Beside the title, before the close button: a session's Jump. */
+  actions?: ReactNode;
+  /**
+   * Set for a dialog that is mostly reading: focus starts on its title, not on
+   * its first control, so a key held down from opening it presses nothing.
+   */
+  focusTitle?: boolean;
+  /**
+   * Where focus goes once it has closed, in place of what had focus when it
+   * opened. For a dialog that an address can open, where nothing opened it.
+   * When it gives nothing, focus goes back to what had it, if that is still in
+   * the page.
+   */
+  returnFocus?: () => HTMLElement | null;
   children: ReactNode;
 }
 
 /**
- * The dialog that shows the history behind a count. It is floating glass: the
- * densest tint with real blur behind it, a rim of light, the deepest shadow and
- * the panel's 24px corners, over a flat scrim. Radix Dialog does the hard parts:
- * it traps focus and closes on Escape and on a click outside.
+ * The dialog that shows the history behind a count, or a session's details. It
+ * is floating glass: the densest tint with real blur behind it, a rim of light,
+ * the deepest shadow and the panel's 24px corners, over a flat scrim. Radix
+ * Dialog does the hard parts: it traps focus and closes on Escape and on a
+ * click outside.
  *
  * Radix returns focus to a `Dialog.Trigger`, and this dialog has none: a count
  * opens it from its own button. So the dialog remembers what had focus when it
@@ -42,9 +57,13 @@ export function DetailsModal({
   title,
   description,
   size = "default",
+  actions,
+  focusTitle = false,
+  returnFocus,
   children,
 }: DetailsModalProps) {
   const opener = useRef<HTMLElement | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -64,31 +83,46 @@ export function DetailsModal({
               SIZES[size],
             )}
             {...(description ? {} : { "aria-describedby": undefined })}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               // Focus has not moved into the dialog yet, so this is still the opener.
               opener.current =
                 document.activeElement instanceof HTMLElement ? document.activeElement : null;
+              if (focusTitle) {
+                event.preventDefault();
+                heading.current?.focus();
+              }
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              opener.current?.focus();
+              // What opened it may have left the page while it was open.
+              const target = returnFocus?.() ?? opener.current;
+              if (target?.isConnected) target.focus();
               opener.current = null;
             }}
           >
             <header className='flex items-start justify-between gap-4'>
               <div className='min-w-0'>
-                <Dialog.Title className='text-title font-semibold'>{title}</Dialog.Title>
+                <Dialog.Title
+                  ref={heading}
+                  tabIndex={focusTitle ? -1 : undefined}
+                  className='text-title font-semibold wrap-anywhere outline-none'
+                >
+                  {title}
+                </Dialog.Title>
                 {description && (
                   <Dialog.Description className='mt-1 max-w-[56ch] text-body text-ink-secondary'>
                     {description}
                   </Dialog.Description>
                 )}
               </div>
-              <Dialog.Close asChild>
-                <Button size='icon' aria-label='Close'>
-                  <X aria-hidden className='size-4' strokeWidth={1.75} />
-                </Button>
-              </Dialog.Close>
+              <div className='flex shrink-0 items-center gap-2'>
+                {actions}
+                <Dialog.Close asChild>
+                  <Button size='icon' aria-label='Close'>
+                    <X aria-hidden className='size-4' strokeWidth={1.75} />
+                  </Button>
+                </Dialog.Close>
+              </div>
             </header>
             {children}
           </Dialog.Content>

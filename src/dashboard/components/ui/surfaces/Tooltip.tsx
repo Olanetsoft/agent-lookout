@@ -1,5 +1,12 @@
 import { Tooltip as TooltipPrimitive } from "radix-ui";
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { cn } from "@dashboard/lib/utils";
 
@@ -145,6 +152,11 @@ interface TruncatedProps extends Omit<ComponentProps<"span">, "children"> {
   tooltip?: string;
   /** Set when the tooltip is a machine fact. */
   mono?: boolean;
+  /**
+   * Makes the text a link to this address, as a session's name is a link to its
+   * details. A link is always a stop on the way through the page.
+   */
+  href?: string;
 }
 
 /**
@@ -152,16 +164,19 @@ interface TruncatedProps extends Omit<ComponentProps<"span">, "children"> {
  * full. While it is cut it has a tooltip with the whole text and can be reached
  * with Tab, so the rest is not for mouse users only. While it fits it is plain
  * text: no tooltip, and no stop on the way through the page.
+ *
+ * With `href` it is a link, cut the same way, whose tooltip opens on the link.
  */
 export function Truncated({
   children,
   lines = 1,
   tooltip,
   mono = false,
+  href,
   className,
   ...props
 }: TruncatedProps) {
-  const ref = useRef<HTMLSpanElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const [cut, setCut] = useState(false);
   const full = tooltip ?? (typeof children === "string" ? children : "");
 
@@ -175,17 +190,24 @@ export function Truncated({
     // New text in a box of the same size can be cut where the old text was not.
   }, [full, lines]);
 
+  const look = cn(lines === 1 ? "truncate" : "line-clamp-2", "rounded-bar", className);
   return (
     <Tooltip content={full} enabled={cut} mono={mono}>
-      <span
-        ref={ref}
-        data-cut={cut}
-        tabIndex={cut ? 0 : undefined}
-        className={cn(lines === 1 ? "truncate" : "line-clamp-2", "rounded-bar", className)}
-        {...props}
-      >
-        {children}
-      </span>
+      {href !== undefined ? (
+        <a
+          ref={ref as RefObject<HTMLAnchorElement | null>}
+          href={href}
+          data-cut={cut}
+          className={look}
+          {...(props as ComponentProps<"a">)}
+        >
+          {children}
+        </a>
+      ) : (
+        <span ref={ref} data-cut={cut} tabIndex={cut ? 0 : undefined} className={look} {...props}>
+          {children}
+        </span>
+      )}
     </Tooltip>
   );
 }

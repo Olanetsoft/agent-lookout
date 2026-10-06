@@ -17,9 +17,23 @@ const NOW = at(14, 32, 30);
 /** Three sessions that waited: one still waiting, two answered, the last cut at the period's start. */
 function waits(overrides: Partial<Waits> = {}): Waits {
   const sessions = [
-    { id: "a", name: "demo-project", ms: 4 * MINUTE + 11 * SECOND, open: true, startKnown: true },
-    { id: "b", name: "project-2", ms: MINUTE + 40 * SECOND, open: false, startKnown: true },
-    { id: "c", name: "project-3", ms: 30 * SECOND, open: false, startKnown: false },
+    {
+      id: "a",
+      name: "demo-project",
+      ms: 4 * MINUTE + 11 * SECOND,
+      times: 1,
+      open: true,
+      startKnown: true,
+    },
+    {
+      id: "b",
+      name: "project-2",
+      ms: MINUTE + 40 * SECOND,
+      times: 2,
+      open: false,
+      startKnown: true,
+    },
+    { id: "c", name: "project-3", ms: 30 * SECOND, times: 1, open: false, startKnown: false },
   ];
   return {
     period: { from: at(13, 32, 30), to: NOW, bound: "held", today: false },
@@ -142,8 +156,8 @@ test("bars are drawn to a scale of at least seven minutes, so a short wait reads
   // Past seven minutes the longest wait fills the track.
   const longer = waits({
     sessions: [
-      { id: "a", name: "demo-project", ms: 14 * MINUTE, open: true, startKnown: true },
-      { id: "b", name: "project-2", ms: 7 * MINUTE, open: false, startKnown: true },
+      { id: "a", name: "demo-project", ms: 14 * MINUTE, times: 1, open: true, startKnown: true },
+      { id: "b", name: "project-2", ms: 7 * MINUTE, times: 1, open: false, startKnown: true },
     ],
   });
   await screen.rerender(<WaitedOnYou waits={longer} />);

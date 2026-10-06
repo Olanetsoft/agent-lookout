@@ -109,6 +109,16 @@ describe("each session's waits", () => {
     expect(result.sessions.every((s) => s.startKnown)).toBe(true);
   });
 
+  test("are counted: each wait once, the one still open included", () => {
+    const result = waits({ sessions: SESSIONS, events: EVENTS });
+
+    expect(result.sessions.map((s) => [s.name, s.times])).toEqual([
+      ["project-2", 1],
+      ["project-1", 2],
+      ["project-3", 1],
+    ]);
+  });
+
   test("a wait still open grows with the clock, and stops at the last answer once answers stop", () => {
     const live = waits({ sessions: SESSIONS, events: EVENTS });
     const later = waits({
@@ -155,6 +165,8 @@ describe("each session's waits", () => {
     });
 
     expect(result.sessions[0]?.ms).toBe(8 * MINUTE);
+    // Nothing was seen to answer it in the break, so it is one wait.
+    expect(result.sessions[0]?.times).toBe(1);
   });
 
   test("with nothing waited, there are no bars, no total and no last wait", () => {

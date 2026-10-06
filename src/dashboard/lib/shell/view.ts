@@ -2,7 +2,8 @@
  * The three views the rail moves between. Each has its own address in the
  * fragment of the page's URL, so the browser's back button, a reload and a
  * bookmark all land on the same view. Anything the page does not know is the
- * Overview, so a mistyped address is never an empty page.
+ * Overview, so a mistyped address is never an empty page. So is the address of
+ * a session's details, which open over it: see `sessionDetails.ts`.
  */
 
 export type ViewId = "overview" | "sources" | "settings";

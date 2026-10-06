@@ -15,7 +15,13 @@ import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
-import { logEntries, logRows, logStart, watchGaps } from "@dashboard/lib/sessions/events";
+import {
+  logEntries,
+  logRows,
+  logStart,
+  watchGaps,
+  type LogEntry,
+} from "@dashboard/lib/sessions/events";
 import { countNew } from "@dashboard/lib/sessions/newSince";
 import {
   formatClock,
@@ -100,6 +106,7 @@ function Row({
   mark,
   thread,
   lit = false,
+  className,
   children,
   ...data
 }: {
@@ -107,6 +114,8 @@ function Row({
   mark: ReactNode;
   thread: Thread;
   lit?: boolean;
+  /** In place of the card's inset, for a list that is not in a card. */
+  className?: string;
   children: ReactNode;
   "data-slot": string;
 }) {
@@ -117,6 +126,7 @@ function Row({
       className={cn(
         "flex min-h-log-row shrink-0 items-stretch gap-3.5 px-6 text-body",
         lit ? "text-ink" : "text-ink-secondary",
+        className,
       )}
     >
       <Tooltip content={formatFullTime(at)} mono align='start'>
@@ -185,14 +195,122 @@ const EventRow = memo(function EventRow({
   );
 });
 
+/** What happened, as the start of a line: "Stopped waiting after 1m 05s". */
+function sentenceOf(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+/** The most rows a session's own events show before they scroll. */
+const OWN_ROWS = 6;
+
+/**
+ * One session's own events, newest first, in the log's rows: the time, the mark
+ * on the thread and what happened, with the same marks, so an open wait has the
+ * lit lamp here as it has in the log. The name is left out, because what holds
+ * the list names the session, and what happened starts the line. The events of
+ * an earlier day are under its heading, as in the log. Past six events the list
+ * scrolls, inside the height of six rows.
+ */
+export function OwnEvents({
+  entries,
+  now,
+  className,
+}: {
+  /** Newest first, from `logEntries`. */
+  entries: readonly LogEntry[];
+  now: number;
+  className?: string;
+}) {
+  // Today's events need no heading. Each earlier day gets one.
+  const items: ({ kind: "day"; day: number } | { kind: "event"; entry: LogEntry })[] = [];
+  let day = startOfDay(now);
+  for (const entry of entries) {
+    const eventDay = startOfDay(entry.event.at);
+    if (eventDay !== day) {
+      day = eventDay;
+      items.push({ kind: "day", day });
+    }
+    items.push({ kind: "event", entry });
+  }
+  const scrolls = entries.length > OWN_ROWS;
+  return (
+    <ol
+      data-slot='own-events'
+      aria-label='Its events, newest first'
+      tabIndex={scrolls ? 0 : undefined}
+      className={cn(
+        "thin-scroll flex flex-col",
+        scrolls && "max-h-57 overflow-y-auto focus-visible:-outline-offset-2",
+        className,
+      )}
+    >
+      {items.map((item, index) => {
+        // The thread runs on past a day heading, as in the log.
+        const thread: Thread = {
+          above: index === 0 ? null : "line",
+          below: index === items.length - 1 ? null : "line",
+        };
+        if (item.kind === "day") {
+          return (
+            <DayHeading
+              key={`day-${item.day}`}
+              day={item.day}
+              now={now}
+              thread={thread}
+              className='px-0'
+            />
+          );
+        }
+        const { entry } = item;
+        const phrase = eventPhrase(entry.event, entry.waitedMs);
+        return (
+          <Row
+            key={entry.event.id}
+            data-slot='event-row'
+            at={entry.event.at}
+            lit={entry.open}
+            thread={thread}
+            mark={<StatusMark kind={entry.mark} labelled />}
+            className='px-0'
+          >
+            <span data-part='phrase'>
+              {entry.waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
+                <>
+                  {sentenceOf(STOPPED_WAITING)}{" "}
+                  <span className='whitespace-nowrap tabular-nums'>
+                    {formatDuration(entry.waitedMs)}
+                  </span>
+                </>
+              ) : (
+                sentenceOf(phrase)
+              )}
+            </span>
+          </Row>
+        );
+      })}
+    </ol>
+  );
+}
+
 /**
  * The heading over the events of an earlier day. Every row shows its clock time,
  * so after a night of running the log still says when each thing happened, and
  * the time column keeps one width. The thread runs on past it.
  */
-function DayHeading({ day, now, thread }: { day: number; now: number; thread: Thread }) {
+function DayHeading({
+  day,
+  now,
+  thread,
+  className,
+}: {
+  day: number;
+  now: number;
+  thread: Thread;
+  /** In place of the card's inset, for a list that is not in a card. */
+  className?: string;
+}) {
   return (
-    <li data-slot='event-day' className='flex shrink-0 items-stretch gap-3.5 px-6'>
+    <li data-slot='event-day' className={cn("flex shrink-0 items-stretch gap-3.5 px-6", className)}>
       <span className={cn(TIME, "pt-3 pb-1 font-medium text-ink-muted")}>
         {formatDay(day, now)}
       </span>

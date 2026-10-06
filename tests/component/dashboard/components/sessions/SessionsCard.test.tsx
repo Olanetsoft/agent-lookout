@@ -6,6 +6,7 @@ import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { formatSince } from "@dashboard/lib/format";
+import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
@@ -74,6 +75,16 @@ function rowOf(container: HTMLElement, name: string): HTMLElement {
   const row = rows.find((r) => r.querySelector('[data-part="name"]')?.textContent === name);
   if (!row) throw new Error(`No row named ${name}`);
   return row;
+}
+
+/**
+ * The address of every link that is not a Jump. Each should be a session's
+ * details, built here, so a link taken from a session's data cannot hide among them.
+ */
+function otherLinks(container: HTMLElement): (string | null)[] {
+  return [...container.querySelectorAll('a:not([data-part="jump"])')].map((a) =>
+    a.getAttribute("href"),
+  );
 }
 
 function groupRows(container: HTMLElement): (string | null)[] {
@@ -658,7 +669,7 @@ test.each(["dark", "light"] as const)(
     const stale = screen.getByRole("link", { name: "Jump to stale-one in VS Code" });
     await expect.element(stale).toHaveAttribute("href", jumpLink(6));
     // The waiting session's Jump is in the hero, not here.
-    expect(screen.container.querySelectorAll("a")).toHaveLength(1);
+    expect(screen.container.querySelectorAll('a[data-part="jump"]')).toHaveLength(1);
     expect(solidButtons(screen.container)).toEqual([]);
 
     const quiet = getComputedStyle(stale.element());
@@ -726,7 +737,9 @@ test("a link that could run script is never rendered", async () => {
   ];
   const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
 
-  expect(screen.container.querySelector("a")).toBeNull();
+  expect(screen.container.querySelector('a[data-part="jump"]')).toBeNull();
+  // The one link left is the name's, to the session's details.
+  expect(otherLinks(screen.container)).toEqual([sessionHref(sessions[0]!.id)]);
 });
 
 test("only the address this source builds becomes a Jump button", async () => {
@@ -748,11 +761,13 @@ test("only the address this source builds becomes a Jump button", async () => {
   ];
   const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
 
-  const links = [...screen.container.querySelectorAll("a")];
+  const links = [...screen.container.querySelectorAll('a[data-part="jump"]')];
   expect(links.map((a) => a.getAttribute("href"))).toEqual([jumpLink(2)]);
   expect(screen.container.querySelectorAll('[data-slot="session-row"]')).toHaveLength(
     elsewhere.length + 1,
   );
+  expect(otherLinks(screen.container)).toHaveLength(elsewhere.length + 1);
+  for (const href of otherLinks(screen.container)) expect(href).toMatch(/^#overview\/session\//);
 });
 
 test("a hostile link beside a real one gets no link of its own", async () => {
@@ -762,9 +777,12 @@ test("a hostile link beside a real one gets no link of its own", async () => {
   ];
   const screen = await render(<SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />);
 
-  const links = [...screen.container.querySelectorAll("a")];
+  const links = [...screen.container.querySelectorAll('a[data-part="jump"]')];
   expect(links.map((a) => a.getAttribute("href"))).toEqual([jumpLink(2)]);
-  expect(rowOf(screen.container, "hostile").querySelector("a")).toBeNull();
+  expect(rowOf(screen.container, "hostile").querySelector('a[data-part="jump"]')).toBeNull();
+  expect(otherLinks(screen.container).sort()).toEqual(
+    sessions.map((s) => sessionHref(s.id)).sort(),
+  );
 });
 
 test("columns line up across every group, and every row of one line is 44px", async () => {
@@ -1212,9 +1230,9 @@ test("a session from a status file names its own agent in the Agent column, and 
   // No Jump, and nothing to follow, whatever link the session carries.
   for (const name of ["billing-webhooks", "search-indexing"]) {
     const row = rowOf(screen.container, name);
-    expect(row.querySelector("a, button"), name).toBeNull();
+    expect(row.querySelector('[data-part="jump"]'), name).toBeNull();
   }
-  expect(rowOf(screen.container, "stale-one").querySelector("a")).not.toBeNull();
+  expect(rowOf(screen.container, "stale-one").querySelector('a[data-part="jump"]')).not.toBeNull();
 });
 
 test("an agent's name too long for the Agent column is cut, and stays readable in full", async () => {
@@ -1317,7 +1335,7 @@ test("with both tools found, each row names its tool in plain words in an Agent 
       .color,
   ).toBe(rgbOf("var(--ink-secondary)"));
   // Codex sessions get no Jump, and no tool's name adds a warm colour, not even on the waiting row.
-  expect(rowOf(screen.container, "codex-busy").querySelector("a")).toBeNull();
+  expect(rowOf(screen.container, "codex-busy").querySelector('a[data-part="jump"]')).toBeNull();
   for (const agent of screen.container.querySelectorAll('[data-part="agent"]')) {
     expect(warmPaint(agent)).toEqual([]);
   }
@@ -1583,7 +1601,7 @@ test("a session in a tmux pane has its Jump in the Jump column, a button where a
   expect(solidButtons(screen.container)).toEqual([]);
 
   // A session in neither has an empty cell, as before.
-  expect(rowOf(screen.container, "search-indexing").querySelector("a, button")).toBeNull();
+  expect(rowOf(screen.container, "search-indexing").querySelector('[data-part="jump"]')).toBeNull();
   expect(warmPaint(screen.container)).toEqual([]);
 });
 

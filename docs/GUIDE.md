@@ -20,7 +20,7 @@ The header over each view says how many sessions are being watched and, in a wid
 
 ### Overview
 
-The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board).
+The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board), and any session in it can be opened to see its [details](#a-sessions-details).
 
 #### Needs you
 
@@ -64,6 +64,8 @@ When the list is too narrow for every column, the app is left out first and then
 
 A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too.
 
+Click a row, or move to its name with Tab and press Enter, to open the session's [details](#a-sessions-details).
+
 #### Board
 
 The switch at the top right of the Sessions list, or under its title on a phone, chooses List or Board. Board shows the same sessions in a column for each status, so you can see at a glance how many are in each state and which are waiting. Each column's heading gives its count.
@@ -75,7 +77,7 @@ The switch at the top right of the Sessions list, or under its title on a phone,
 | Idle               | Sessions ready for a new prompt, then stale ones with their own mark. The heading counts them apart: `Idle 1 Stale 1` |
 | Finished or failed | Sessions that finished or failed, failures first                                                                      |
 
-Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab.
+Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab. Click a card, or move to its name and press Enter, to open the session's [details](#a-sessions-details).
 
 The board only shows what Agent Lookout found. When a session's status changes, its card moves to its new column by itself the next time Agent Lookout reads the sessions, within about 2 seconds. Cards cannot be dragged, because Agent Lookout does not change a session's status.
 
@@ -84,6 +86,27 @@ A column with nothing in it says so, such as `Nothing waiting`. A column shows a
 In a wide window the four columns stand side by side. In a narrower one they are two by two, and on a phone one under another.
 
 Your choice of List or Board is kept in your browser, so the Overview opens the same way next time. [PRIVACY.md](../PRIVACY.md#storage) lists what the browser keeps.
+
+#### A session's details
+
+Click a session's row in the Sessions list, or its card on the board, and its details open over the Overview. Anywhere on the row or the card opens them, except its Jump button, its folder and its quiet time, which do what they always did. From the keyboard, move to the session's name with Tab and press Enter.
+
+The details show everything Agent Lookout knows about the session:
+
+- its status, with how long it has had it and since when, the reason when it is waiting for you, and how long it has been [quiet](#quiet-for) when that applies
+- its agent, and the app it runs in when that is known
+- the full path of its folder, which you can select and copy
+- its [branch](#branches), or the commit when no branch is checked out
+- when it started and its process ID, when its agent reports them
+- how many times it waited for you and how long in all, over the same time as the bars in the Needs you panel
+- its own events, newest first, as the Events log shows them
+- its row of the Timeline over the last hour
+
+A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you.
+
+Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's row or card. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
+
+A session that needs you is in the Needs you panel rather than the list, so open its details from its card on the [board](#board).
 
 #### Quiet for
 
@@ -435,13 +458,13 @@ To stop Agent Lookout looking for tabs at all, start it with `AGENT_LOOKOUT_TERM
 
 Every view answers to a few keys. Press `?` to see them all.
 
-| Key                                             | What it does                                                |
-| ----------------------------------------------- | ----------------------------------------------------------- |
-| `/`, or `Cmd+K` on a Mac and `Ctrl+K` elsewhere | Opens the search                                            |
-| `?`                                             | Lists every shortcut                                        |
-| `Esc`                                           | Closes the search, the list of shortcuts or a history chart |
+| Key                                             | What it does                                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| `/`, or `Cmd+K` on a Mac and `Ctrl+K` elsewhere | Opens the search                                                                 |
+| `?`                                             | Lists every shortcut                                                             |
+| `Esc`                                           | Closes the search, the list of shortcuts, a history chart or a session's details |
 
-`/` and `?` work wherever you are not typing in a text field. `Cmd+K` and `Ctrl+K` work there too. While a history chart is open, the keys are left to it.
+`/` and `?` work wherever you are not typing in a text field. `Cmd+K` and `Ctrl+K` work there too. While a history chart or a session's details are open, the keys are left to them.
 
 ### Finding a session
 

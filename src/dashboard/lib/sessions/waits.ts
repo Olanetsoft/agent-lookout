@@ -44,6 +44,11 @@ export interface SessionWaits {
   name: string;
   /** How long it waited on the person in the period, in all. */
   ms: number;
+  /**
+   * How many times it waited. A wait that runs on across time nobody measured
+   * is one wait, since nothing was seen to answer it.
+   */
+  times: number;
   /** Whether one of its waits is still open: it needs the person now. */
   open: boolean;
   /**
@@ -182,15 +187,28 @@ export function waitedOnYou(input: WaitsInput): WaitedOnYou | null {
   const sessions: SessionWaits[] = [];
   for (const row of timeline.rows) {
     let ms = 0;
+    let times = 0;
     let open = false;
     let startKnown = true;
+    // Whether the last stretch that was measured was a wait, with the session
+    // running ever since.
+    let waiting = false;
+    let reached = -Infinity;
     for (const segment of row.segments) {
-      if (segment.kind !== "needs-you") continue;
+      if (segment.from > reached) waiting = false;
+      reached = segment.to;
+      if (segment.kind === "unmeasured") continue;
+      if (segment.kind !== "needs-you") {
+        waiting = false;
+        continue;
+      }
+      if (!waiting) times += 1;
+      waiting = true;
       ms += segment.to - segment.from;
       if (segment.open) open = true;
       if (segment.startKnown === false) startKnown = false;
     }
-    if (ms > 0) sessions.push({ id: row.id, name: row.name, ms, open, startKnown });
+    if (ms > 0) sessions.push({ id: row.id, name: row.name, ms, times, open, startKnown });
   }
   sessions.sort((a, b) => b.ms - a.ms || a.name.localeCompare(b.name));
 

@@ -16,12 +16,13 @@ import { useDocumentTitle } from "@dashboard/hooks/shell/useDocumentTitle";
 import { useNewSince } from "@dashboard/hooks/data/useNewSince";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useShortcuts } from "@dashboard/hooks/shell/useShortcuts";
-import { useView } from "@dashboard/hooks/shell/useView";
+import { useSessionAddress, useView } from "@dashboard/hooks/shell/useView";
 import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
 import { workerBeat } from "@dashboard/lib/api/beat";
 import { createCollectorStore, type CollectorStore } from "@dashboard/lib/api/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import { countNeedingYou } from "@dashboard/lib/sessions/sessions";
+import { closeSession } from "@dashboard/lib/shell/sessionDetails";
 import { viewLabel } from "@dashboard/lib/shell/view";
 
 /*
@@ -31,6 +32,10 @@ import { viewLabel } from "@dashboard/lib/shell/view";
  */
 const HistoryPanel = lazy(() =>
   import("@dashboard/components/panels/HistoryPanel").then((m) => ({ default: m.HistoryPanel })),
+);
+/* A session's details are fetched the same way. */
+const SessionPanel = lazy(() =>
+  import("@dashboard/components/panels/SessionPanel").then((m) => ({ default: m.SessionPanel })),
 );
 
 /** The counts that open a history dialog. */
@@ -86,6 +91,9 @@ function Ground() {
  * focus there; the rail and the header stay where they were. The header stays
  * at the top as the page scrolls, and is the one panel content passes behind.
  * Working, Idle and the hero's title open a history dialog over the Overview.
+ * A session's row or card opens its details there, at an address of their
+ * own, so a link, Back and a reload land on them; closing them goes back to
+ * the Overview.
  *
  * A session that starts waiting sends a notification from here, whichever view
  * is showing, once the person has turned that on in Settings.
@@ -107,6 +115,7 @@ export default function App({ store: providedStore }: AppProps) {
   useWaitNotifications(store);
   const now = useNow();
   const view = useView();
+  const details = useSessionAddress();
   const [history, setHistory] = useState<HistoryMetric | null>(null);
   const [search, setSearch] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
@@ -134,7 +143,7 @@ export default function App({ store: providedStore }: AppProps) {
   const showSession = useShowSession(main, view);
 
   useShortcuts((shortcut) => {
-    if (history !== null || shortcuts) return false;
+    if (history !== null || shortcuts || details !== null) return false;
     // Cmd+K in the open search closes it. "?" in it is the search's own to answer.
     if (shortcut === "search") setSearch((open) => !open);
     else if (search) return false;
@@ -213,6 +222,7 @@ export default function App({ store: providedStore }: AppProps) {
             now={now}
           />
         ))}
+        <SessionPanel sessionId={details} onClose={closeSession} state={state} now={now} />
       </Suspense>
 
       <SearchDialog

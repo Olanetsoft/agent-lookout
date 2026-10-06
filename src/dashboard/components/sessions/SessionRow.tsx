@@ -11,6 +11,7 @@ import { useJump } from "@dashboard/hooks/data/useJump";
 import { quietFor } from "@dashboard/lib/sessions/quiet";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
+import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionRowProps {
@@ -89,10 +90,20 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * terminal tab's Jump can say take a line of their own under the name, and the
  * row grows for as long as one is said.
  *
- * A row is no stop on the way through the page, but the search can put focus
- * on it, to show the person the session they chose. Its ring is then drawn
- * round the row's rounded shape, where the pointer lights it, since a ring
- * round the row itself would reach past the card's edge.
+ * A click anywhere on the row opens the session's details over the Overview,
+ * except on what the row already answers to: Jump, and the folder and the
+ * quiet time, which open their tooltips. The name is a link to the same place,
+ * named "checkout-flow, details", which makes the row one stop on the way
+ * through the page and lets Enter open it. A link in the first cell keeps the
+ * table a table: the row is still a row of cells, read as one, and the link is
+ * the one thing in it that opens, as a button would be, but with an address of
+ * its own, which a reload or a new tab lands on. Its ring is drawn round the
+ * row's rounded shape, where the pointer lights it, because the whole row is
+ * what opens.
+ *
+ * The search can also put focus on the row itself, to show the person the
+ * session they chose. Its ring is then drawn the same way, since a ring round
+ * the row itself would reach past the card's edge.
  */
 export function SessionRow({
   session,
@@ -177,7 +188,8 @@ export function SessionRow({
       data-session={session.id}
       data-status={session.status}
       data-stale={stale || undefined}
-      className='group relative text-body text-ink-secondary focus-visible:outline-none'
+      onClick={(event) => openFromClick(event, session.id)}
+      className='group relative cursor-pointer text-body text-ink-secondary focus-visible:outline-none'
     >
       <td
         className={cn(
@@ -186,8 +198,9 @@ export function SessionRow({
           narrow && "py-2",
           // The row's one rounded shape under the pointer, 10px inside the card.
           "before:pointer-events-none before:absolute before:inset-x-2.5 before:inset-y-px before:-z-10 before:rounded-inner before:transition-colors before:duration-120 group-hover:before:bg-fill-hover",
-          // The focus ring, when the search puts focus on the row.
+          // The focus ring, when the search puts focus on the row or Tab reaches its name.
           "group-focus-visible:before:outline-2 group-focus-visible:before:outline-offset-2 group-focus-visible:before:outline-focus",
+          "group-has-[a[data-part=name]:focus-visible]:before:outline-2 group-has-[a[data-part=name]:focus-visible]:before:outline-offset-2 group-has-[a[data-part=name]:focus-visible]:before:outline-focus",
         )}
       >
         <div className='flex min-w-0 items-center gap-3'>
@@ -198,8 +211,12 @@ export function SessionRow({
               <div className='flex max-w-full min-w-0 items-center gap-2'>
                 <Truncated
                   data-part='name'
+                  href={sessionHref(session.id)}
+                  onClick={(event) => openFromLink(event, session.id)}
+                  aria-label={`${session.name}, details`}
+                  aria-haspopup='dialog'
                   className={cn(
-                    "text-row",
+                    "text-row focus-visible:outline-none",
                     quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
                   )}
                 >

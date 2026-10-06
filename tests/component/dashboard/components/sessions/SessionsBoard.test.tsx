@@ -321,7 +321,7 @@ test("a card has Jump where one exists: the quiet capsule, a link for VS Code an
     expect(getComputedStyle(jump).backgroundColor).not.toBe(rgbOf("var(--status-needs-you)"));
   }
   // No way to reach it, no Jump.
-  expect(cardOf(screen.container, "docs-site").querySelector("a, button")).toBeNull();
+  expect(cardOf(screen.container, "docs-site").querySelector('[data-part="jump"]')).toBeNull();
 });
 
 test("at the width the Overview gives the board at 1440, every Jump keeps to its card's right edge, under the status when a long wait leaves no room beside it", async () => {
@@ -483,12 +483,12 @@ test("a card's Jump to a Terminal tab says, while macOS asks, that it will ask o
   localStorage.removeItem(AUTOMATION_NOTE_STORAGE_KEY);
 });
 
-test("Tab goes through the cards column by column, top to bottom, each card's folder and then its Jump", async () => {
+test("Tab goes through the cards column by column, top to bottom, each card's name, its folder and then its Jump", async () => {
   const screen = await renderBoard(SESSIONS);
   startAtTop();
 
   const stops: string[] = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 24; i++) {
     await userEvent.tab();
     const active = document.activeElement as HTMLElement;
     const card = active.closest('[data-slot="board-card"]');
@@ -499,15 +499,23 @@ test("Tab goes through the cards column by column, top to bottom, each card's fo
   }
 
   expect(stops).toEqual([
+    "checkout-flow name",
     "checkout-flow project",
     "checkout-flow jump",
+    "api-rate-limits name",
     "api-rate-limits project",
+    "search-indexing name",
     "search-indexing project",
+    "billing-webhooks name",
     "billing-webhooks project",
     "billing-webhooks jump",
+    "docs-site name",
     "docs-site project",
+    "mobile-onboarding name",
     "mobile-onboarding project",
+    "email-templates name",
     "email-templates project",
+    "infra-terraform name",
     "infra-terraform project",
   ]);
   await pointAway();

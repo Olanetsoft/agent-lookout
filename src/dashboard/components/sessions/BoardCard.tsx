@@ -8,6 +8,7 @@ import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
+import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 
 interface BoardCardProps {
@@ -38,6 +39,11 @@ interface BoardCardProps {
  * What a press of Jump came to is a badge beside the name, or under it where
  * the line cannot hold both, and the two sentences about macOS take a line of
  * their own, as in the list.
+ *
+ * As a row of the list does, it opens the session's details on a click
+ * anywhere but its Jump and its folder, and its name is the link to them, one
+ * stop of Tab, with the ring drawn round the whole card. Under the pointer it
+ * lights as a row does.
  */
 export function BoardCard({ session, now, agent }: BoardCardProps) {
   const ended = session.status === "finished" || session.status === "failed";
@@ -57,7 +63,13 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
       data-status={session.status}
       data-stale={stale || undefined}
       draggable={false}
-      className='group flex min-w-0 flex-col rounded-inner bg-fill-zebra px-3.5 pt-3 pb-3 text-body text-ink-secondary inset-ring inset-ring-hairline'
+      onClick={(event) => openFromClick(event, session.id)}
+      className={cn(
+        "group flex min-w-0 cursor-pointer flex-col rounded-inner bg-fill-zebra px-3.5 pt-3 pb-3 text-body text-ink-secondary inset-ring inset-ring-hairline",
+        "transition-colors duration-120 hover:bg-fill-hover",
+        // The focus ring, round the card, when Tab reaches its name.
+        "has-[a[data-part=name]:focus-visible]:outline-2 has-[a[data-part=name]:focus-visible]:outline-offset-2 has-[a[data-part=name]:focus-visible]:outline-focus",
+      )}
     >
       {/* What Jump came to goes under the name when the line cannot hold both. */}
       <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
@@ -65,8 +77,12 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
           <StatusMark kind={mark} />
           <Truncated
             data-part='name'
+            href={sessionHref(session.id)}
+            onClick={(event) => openFromLink(event, session.id)}
+            aria-label={`${session.name}, details`}
+            aria-haspopup='dialog'
             className={cn(
-              "text-row",
+              "text-row focus-visible:outline-none",
               quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
             )}
           >
