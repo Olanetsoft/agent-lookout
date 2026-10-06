@@ -1,5 +1,6 @@
 // The standalone host: the built dashboard and `/api/*` from one Node process,
-// on this machine only. `serve.ts` runs it for `npm start`.
+// on this machine only. `serve.ts` runs it for `npm start`, and the
+// `agent-lookout` command for `agent-lookout start`.
 //
 // Everything it would otherwise take from the process it runs in is passed in:
 // the folder of built files, the environment, where messages go, and the
@@ -44,6 +45,11 @@ export interface StandaloneOptions {
   env: NodeJS.ProcessEnv;
   print: Printer;
   process: HostProcess;
+  /**
+   * What a message about the port tells the person to choose another one with.
+   * `AGENT_LOOKOUT_PORT` unless given: the `agent-lookout` command says `--port`.
+   */
+  portSetting?: string;
 }
 
 /**
@@ -58,6 +64,7 @@ export interface StandaloneOptions {
  */
 export async function runStandalone(options: StandaloneOptions): Promise<AddressInfo | null> {
   const { distDir, env, print, process: host } = options;
+  const portSetting = options.portSetting ?? "AGENT_LOOKOUT_PORT";
 
   const stopWith = (message: string): null => {
     print.error(message);
@@ -78,7 +85,7 @@ export async function runStandalone(options: StandaloneOptions): Promise<Address
 
   if (!existsSync(path.join(distDir, "index.html"))) {
     return stopWith(
-      "The dashboard has not been built yet. Run `npm run build`, then `npm start` again.",
+      "The dashboard has not been built yet. Run `npm run build`, then start it again.",
     );
   }
 
@@ -96,12 +103,12 @@ export async function runStandalone(options: StandaloneOptions): Promise<Address
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EADDRINUSE") {
       return stopWith(
-        `Port ${port} is already in use. Stop the other program, or choose another port with AGENT_LOOKOUT_PORT.`,
+        `Port ${port} is already in use. Stop the other program, or choose another port with ${portSetting}.`,
       );
     }
     if (code === "EACCES") {
       return stopWith(
-        `This user may not listen on port ${port}. Choose another port with AGENT_LOOKOUT_PORT.`,
+        `This user may not listen on port ${port}. Choose another port with ${portSetting}.`,
       );
     }
     return stopWith((error as Error).message);

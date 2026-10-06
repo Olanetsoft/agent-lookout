@@ -44,7 +44,7 @@ Run this before you open a pull request:
 npm run check
 ```
 
-It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five, `npm run build`, and the start check described under [Running on Linux](#running-on-linux). Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
+It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five, `npm run build`, the start check described under [Running on Linux](#running-on-linux), and the package check described under [The npm package](#the-npm-package). Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
 
 A change in behaviour comes with a test. Every test lives under `tests/`, in `unit/`, `integration/` or `component/`, at the path that mirrors the module it covers. Nothing under `src/` is a test or imports from `tests/`. The layout check fails, and says where the file belongs, when one of those rules is broken.
 
@@ -60,6 +60,48 @@ npm run start:check
 ```
 
 It starts the app with `npm start` on a port the system picks, pointed at folders it makes for the check, prints one line for each check, then stops the app as Ctrl+C would. It reads none of your own sessions and runs no `claude` command. Notifications with no dashboard tab open and Jump to a tab of Terminal or iTerm2 are macOS only, so on Linux their tests run with stand-ins for `osascript` and for Terminal's processes, as they do everywhere. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-linux) has what differs between the two systems.
+
+## The npm package
+
+The package holds only what `npx agent-lookout` needs: the built dashboard and the bundled command in `dist/`, `bin/agent-lookout.mjs`, and the README, the licence, the changelog, `PRIVACY.md`, `SECURITY.md`, `DISCLAIMER.md`, `docs/GUIDE.md` and `docs/API.md`. `files` in `package.json` lists them, and nothing else goes in: no source, tests, scripts, site or local notes.
+
+```sh
+npm run build:package
+```
+
+builds it. It runs `npm run build`, then `scripts/build-package.mjs`, which bundles `src/cli/agentLookout.ts`, with the collector that `agent-lookout start` runs, into plain JavaScript in `dist/cli/` with esbuild, so a person who installs the package needs no TypeScript. `@modelcontextprotocol/sdk`, `zod` and `nodemailer` stay outside the bundle and are the package's only dependencies. Everything else, React and the rest of the dashboard's libraries included, is a devDependency, since the dashboard ships built. The script stops if the bundle imports any other package. `npm pack` and `npm publish` run it first, through `prepack`.
+
+`bin/agent-lookout.mjs` runs the bundle only where there is no `src/` beside it, as in the installed package. In a clone it runs `src/` through tsx, so a bundle left in `dist/cli/` is never used by mistake, and `npm run build` removes it.
+
+To check the package as a person gets it, pack it, install it into a folder of its own and start it there, as the CI job `package` does:
+
+```sh
+npm pack --pack-destination /tmp
+mkdir /tmp/try && cd /tmp/try && echo '{ "private": true }' > package.json
+npm install /tmp/agent-lookout-*.tgz
+npx --yes=false agent-lookout --help
+node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false agent-lookout
+```
+
+`npm pack --dry-run` lists what would go in without writing the tarball. `--yes=false` stops npx installing the published package in place of the one you installed.
+
+## Publishing
+
+The maintainer publishes. The README, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is written before it is published, not after.
+
+1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date.
+2. For the first version on npm, add the `npx agent-lookout` way to the README's Install, and in `docs/GUIDE.md`, under [Start it with one command](docs/GUIDE.md#start-it-with-one-command), say that Agent Lookout is on npm in place of "Once Agent Lookout is on npm" and "Until then".
+3. Check that `npm run check` passes, then publish from the working tree with those changes in it, before they are committed:
+
+   ```sh
+   npm pack --dry-run
+   npm login
+   npm publish
+   ```
+
+4. Commit the changes once `npm publish` has succeeded. If it failed, nothing was published.
+
+`npm publish` runs `prepack`, which builds the dashboard and the bundle afresh, then uploads the tarball, made from the files on disk. npm asks for a one-time password when the account has two-factor authentication on. `publishConfig` in `package.json` makes the package public.
 
 ## Where code goes
 

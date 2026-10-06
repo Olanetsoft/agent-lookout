@@ -102,3 +102,54 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run start:check
+
+  # Checks the package as a person gets it from npm. `npm pack` runs prepack,
+  # which builds the dashboard and bundles the command into dist/cli/. The
+  # tarball must hold only what the package needs. It is installed into a
+  # folder of its own, with nothing from this checkout, and started there with
+  # `npx --yes=false agent-lookout`, which never installs the published package
+  # in its place, on folders of the check's own. Then it is stopped as Ctrl+C
+  # would stop it.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: The tarball holds only what the package needs
+        run: |
+          tar -tzf "$RUNNER_TEMP"/agent-lookout-*.tgz | sort | tee "$RUNNER_TEMP/files.txt"
+          if grep -Ev '^package/(bin/agent-lookout\.mjs|dist/.+|docs/(API|GUIDE)\.md|(CHANGELOG|DISCLAIMER|PRIVACY|README|SECURITY)\.md|LICENSE|package\.json)$' "$RUNNER_TEMP/files.txt"; then
+            echo "The lines above should not be in the package."
+            exit 1
+          fi
+          if grep -E '\.map$' "$RUNNER_TEMP/files.txt"; then
+            echo "The package holds a source map."
+            exit 1
+          fi
+      - name: Install it into a folder of its own
+        run: |
+          mkdir "$RUNNER_TEMP/try"
+          cd "$RUNNER_TEMP/try"
+          # A package.json of its own, so npm installs here and not into a folder above.
+          echo '{ "private": true }' > package.json
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/agent-lookout-*.tgz
+          test ! -e node_modules/agent-lookout/src
+      - run: npx --yes=false agent-lookout --help
+        working-directory: ${{ runner.temp }}/try
+      - run: node "$GITHUB_WORKSPACE/scripts/start-check.mjs" --command npx --yes=false agent-lookout
+        working-directory: ${{ runner.temp }}/try
+      # With nothing running, status says so in one line, names the command
+      # this package installs as the way to start it, and exits with 2.
+      - name: Status says how to start it
+        working-directory: ${{ runner.temp }}/try
+        run: |
+          set +e
+          said=$(npx --yes=false agent-lookout status 2>&1)
+          code=$?
+          echo "$said"
+          test "$code" -eq 2 && grep -q "Start it with agent-lookout," <<< "$said"

@@ -108,7 +108,7 @@ describe("the standalone host", () => {
 
     expect(host.address).toBeNull();
     expect(host.errors).toEqual([
-      "The dashboard has not been built yet. Run `npm run build`, then `npm start` again.",
+      "The dashboard has not been built yet. Run `npm run build`, then start it again.",
     ]);
     expect(host.logged).toEqual([]);
     expect(host.exits).toEqual([1]);

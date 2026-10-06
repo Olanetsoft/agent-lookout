@@ -4,14 +4,19 @@
 //   npm run build
 //   npm run start:check
 //
+// With `--command`, it starts the command that follows in place of `npm start`,
+// in the folder it is run from. CI uses that to check the package as a person
+// gets it from npm: packed, installed into a folder of its own, and started
+// with `npx --yes=false agent-lookout`.
+//
 // It reads none of this machine's own agents. It makes folders of its own, in
 // the system's temporary folder or, with `-- --dir <folder>`, in that folder: a
 // Claude Code folder whose registry names a `sleep` this script starts, a copy
 // of tests/fixtures/codex-home, and a folder with one status file. It starts
 // the app on a port the system picks, with the claude command, tmux and
-// Terminal left alone, and asks only `/api/health` and `/api/sessions`. Then it
-// stops the app, and every process it started, each by its own process ID, and
-// removes the folders.
+// Terminal left alone, and asks only `/api/health`, `/api/sessions`, the
+// dashboard's page and its script. Then it stops the app, and every process it
+// started, each by its own process ID, and removes the folders.
 //
 // It prints one line for each check and exits with 0 when all pass, 1 when one
 // fails and 2 when it could not get as far as checking.
@@ -128,24 +133,26 @@ function signal(pid, name) {
   }
 }
 
-/** One GET to the app, as JSON. Rejects when nothing answers or the answer is not JSON. */
-function getJson(base, route) {
+/** One GET to the app. Rejects when nothing answers. */
+function getText(base, route) {
   return new Promise((resolve, reject) => {
     const request = get(`${base}${route}`, { timeout: 2_000 }, (response) => {
       let body = "";
       response.setEncoding("utf8");
       response.on("data", (chunk) => (body += chunk));
-      response.on("end", () => {
-        try {
-          resolve({ status: response.statusCode, json: JSON.parse(body) });
-        } catch (error) {
-          reject(error);
-        }
-      });
+      response.on("end", () =>
+        resolve({ status: response.statusCode, type: response.headers["content-type"], body }),
+      );
     });
     request.on("timeout", () => request.destroy(new Error("no answer in time")));
     request.on("error", reject);
   });
+}
+
+/** One GET to the app, as JSON. Rejects when nothing answers or the answer is not JSON. */
+async function getJson(base, route) {
+  const { status, body } = await getText(base, route);
+  return { status, json: JSON.parse(body) };
 }
 
 /** Every process below this one, from one run of `ps`, by walking down from it. */
@@ -261,10 +268,21 @@ function appEnv(folders) {
   };
 }
 
-/** Starts `npm start` and resolves with the address it prints, or rejects with what it printed. */
+/** What starts the app: `npm start` in this folder, or the command `--command` gives, where this runs. */
+function startCommandOf(argv) {
+  const at = argv.indexOf("--command");
+  if (at === -1) return { file: "npm", args: ["start"], cwd: root, label: "npm start" };
+  const [file, ...args] = argv.slice(at + 1);
+  if (!file) return null;
+  return { file, args, cwd: process.cwd(), label: [file, ...args].join(" ") };
+}
+
+const start = startCommandOf(process.argv.slice(2));
+
+/** Starts the app and resolves with the address it prints, or rejects with what it printed. */
 async function startApp(env) {
-  const npm = await startProcess("npm", ["start"], {
-    cwd: root,
+  const npm = await startProcess(start.file, start.args, {
+    cwd: start.cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -280,7 +298,7 @@ async function startApp(env) {
     if (npm.exitCode !== null || npm.signalCode !== null) break;
     await wait(100);
   }
-  throw new Error(`npm start did not say where it is running. It printed:\n${printed}`);
+  throw new Error(`${start.label} did not say where it is running. It printed:\n${printed}`);
 }
 
 /** Asks for the sessions until every source has been read once, or the time is up. */
@@ -345,8 +363,24 @@ function check(snapshot, procStart) {
   }
 }
 
+/** Checks that the dashboard's page is served, and the script it names. */
+async function checkPage(address) {
+  const page = await getText(address, "/").catch(() => null);
+  const script = page?.body.match(/<script type="module"[^>]*\ssrc="(\/assets\/[^"]+\.js)"/)?.[1];
+  if (page?.status !== 200 || !page.type?.startsWith("text/html") || !script) {
+    fail(`The dashboard's page is not served at ${address}/`);
+    return;
+  }
+  const code = await getText(address, script).catch(() => null);
+  if (code?.status === 200 && code.type?.startsWith("text/javascript")) {
+    pass(`The dashboard's page is served, with its script ${script}`);
+  } else {
+    fail(`The dashboard's script ${script} is not served`);
+  }
+}
+
 /**
- * Stops `npm start` as Ctrl+C in its terminal does, by sending SIGINT to npm
+ * Stops the app as Ctrl+C in its terminal does, by sending SIGINT to npm
  * and to every process under it at once, each by its own ID, and checks that
  * the app stopped with it.
  */
@@ -357,7 +391,7 @@ async function stopApp(address) {
   const code = await exitOf(npm, STOP_TIMEOUT_MS);
   started.npm = null;
   if (code === null) {
-    fail("npm start did not stop on Ctrl+C");
+    fail(`${start.label} did not stop on Ctrl+C`);
     signal(npm.pid, "SIGKILL");
   }
 
@@ -379,7 +413,7 @@ async function stopApp(address) {
   }
   if (code !== null && !answering && left.length === 0) {
     const ended = typeof code === "number" ? `exit code ${code}` : code;
-    pass(`It stopped on Ctrl+C, and npm start ended with ${ended}`);
+    pass(`It stopped on Ctrl+C, and ${start.label} ended with ${ended}`);
   } else if (answering || left.length > 0) {
     fail(`The app went on running after Ctrl+C: process ${left.join(", ") || "unknown"}`);
   }
@@ -403,7 +437,13 @@ async function cleanUp() {
 }
 
 async function main() {
-  if (!existsSync(path.join(root, "dist", "index.html"))) {
+  if (start === null) {
+    console.error(
+      "--command needs the command to start, such as --command npx --yes=false agent-lookout.",
+    );
+    return 2;
+  }
+  if (start.label === "npm start" && !existsSync(path.join(root, "dist", "index.html"))) {
     console.error("The dashboard has not been built yet. Run `npm run build`, then this again.");
     return 2;
   }
@@ -431,19 +471,21 @@ async function main() {
 
   const health = await getJson(app.address, "/api/health").catch(() => null);
   if (health?.json?.ok === true) {
-    pass(`npm start answers at ${app.address}, version ${health.json.version}`);
+    pass(`${start.label} answers at ${app.address}, version ${health.json.version}`);
   } else {
-    fail(`npm start does not answer /api/health at ${app.address}`);
+    fail(`${start.label} does not answer /api/health at ${app.address}`);
   }
 
+  await checkPage(app.address);
+
   const snapshot = await readSessions(app.address);
-  if (snapshot === null) fail("npm start did not answer /api/sessions");
+  if (snapshot === null) fail(`${start.label} did not answer /api/sessions`);
   else check(snapshot, folders.procStart);
 
   await stopApp(app.address);
 
   if (failures > 0) {
-    console.log(`\nThe start check failed on ${process.platform}. npm start printed:\n`);
+    console.log(`\nThe start check failed on ${process.platform}. ${start.label} printed:\n`);
     console.log(app.printed());
     return 1;
   }

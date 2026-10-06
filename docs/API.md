@@ -8,10 +8,11 @@ The response shapes are TypeScript types in `src/core/api.ts` and `src/core/sess
 
 ## Where it listens
 
-| Started with  | Address                 | Changed with                                                                                                                       |
-| ------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`   | `http://127.0.0.1:4777` | `AGENT_LOOKOUT_PORT`, and `AGENT_LOOKOUT_HOST` set to `127.0.0.1`, `localhost` or `::1`. It refuses to listen on any other address |
-| `npm run dev` | `http://localhost:5173` | `npm run dev -- --port 5180`. Vite's own `--host` flag makes it listen on the network: do not use it                               |
+| Started with    | Address                 | Changed with                                                                                                                       |
+| --------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`     | `http://127.0.0.1:4777` | `AGENT_LOOKOUT_PORT`, and `AGENT_LOOKOUT_HOST` set to `127.0.0.1`, `localhost` or `::1`. It refuses to listen on any other address |
+| `agent-lookout` | `http://127.0.0.1:4777` | `--port`, which takes the place of `AGENT_LOOKOUT_PORT`, and the same settings as `npm start`                                      |
+| `npm run dev`   | `http://localhost:5173` | `npm run dev -- --port 5180`. Vite's own `--host` flag makes it listen on the network: do not use it                               |
 
 ## The rules every request passes
 

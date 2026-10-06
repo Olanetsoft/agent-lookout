@@ -2,6 +2,56 @@ import { describe, expect, test } from "vitest";
 
 import { HELP, parseArguments } from "@cli/arguments";
 
+describe("the start command", () => {
+  test("is what runs with no command, or only options, on the default port and with no browser", () => {
+    const plain = { kind: "start", options: { port: null, open: false } };
+    expect(parseArguments([])).toEqual(plain);
+    expect(parseArguments(["start"])).toEqual(plain);
+  });
+
+  test("--port takes the number after it, or after an equals sign, with or without the command", () => {
+    expect(parseArguments(["--port", "4778"])).toEqual({
+      kind: "start",
+      options: { port: 4778, open: false },
+    });
+    expect(parseArguments(["start", "--port=4779"])).toEqual({
+      kind: "start",
+      options: { port: 4779, open: false },
+    });
+    // 0 lets the system choose, as AGENT_LOOKOUT_PORT=0 does.
+    expect(parseArguments(["--port", "0"])).toEqual({
+      kind: "start",
+      options: { port: 0, open: false },
+    });
+    expect(parseArguments(["--port", "65535"])).toEqual({
+      kind: "start",
+      options: { port: 65_535, open: false },
+    });
+  });
+
+  test("--open asks for the browser, in any order with --port", () => {
+    expect(parseArguments(["--open"])).toEqual({
+      kind: "start",
+      options: { port: null, open: true },
+    });
+    expect(parseArguments(["start", "--open", "--port", "4778"])).toEqual({
+      kind: "start",
+      options: { port: 4778, open: true },
+    });
+    expect(parseArguments(["--port=4778", "--open"])).toEqual({
+      kind: "start",
+      options: { port: 4778, open: true },
+    });
+  });
+
+  test("a second --port takes the place of the first", () => {
+    expect(parseArguments(["--port", "4778", "--port", "4779"])).toEqual({
+      kind: "start",
+      options: { port: 4779, open: false },
+    });
+  });
+});
+
 describe("the status command", () => {
   test("prints lines for a person unless told otherwise, and names no address", () => {
     expect(parseArguments(["status"])).toEqual({
@@ -61,6 +111,9 @@ describe("help", () => {
     [["status", "--help"]],
     [["status", "--frob", "-h"]],
     [["mcp", "--help"]],
+    [["start", "--help"]],
+    [["--port", "4778", "--help"]],
+    [["--open", "-h"]],
   ])("%j asks for help, whatever else was typed", (argv) => {
     expect(parseArguments(argv)).toEqual({ kind: "help" });
   });
@@ -76,25 +129,43 @@ describe("help", () => {
     );
   });
 
-  test("names both commands, and says how mcp ends", () => {
+  test("names all three commands, and says how start and mcp end", () => {
     expect(HELP).toMatch(
-      /^Usage: agent-lookout status \[--json \| --count\] \[--url <address>\]\n {7}agent-lookout mcp \[--url <address>\]\n/,
+      /^Usage: agent-lookout \[start\] \[--port <number>\] \[--open\]\n {7}agent-lookout status \[--json \| --count\] \[--url <address>\]\n {7}agent-lookout mcp \[--url <address>\]\n/,
     );
-    expect(HELP).toContain("Its\ntools only read.");
+    expect(HELP).toContain("Its tools only read.");
+    expect(HELP).toContain("start runs until Ctrl+C, then exits with 0.");
     expect(HELP).toContain("then exits with\n0.");
+  });
+
+  test("names the options of start, the port it uses and the setting that does the same", () => {
+    expect(HELP).toContain("--port <number>  start:");
+    expect(HELP).toContain("--open           start: open the address in the default browser");
+    expect(HELP).toContain("http://127.0.0.1:4777, on this machine only");
+    expect(HELP).toContain("AGENT_LOOKOUT_PORT");
   });
 
   test("names the setting and the addresses it tries", () => {
     expect(HELP).toContain("AGENT_LOOKOUT_URL");
-    expect(HELP).toContain("http://127.0.0.1:4777 (npm start)");
+    expect(HELP).toContain("http://127.0.0.1:4777 (agent-lookout or npm start)");
     expect(HELP).toContain("http://localhost:5173 (npm run dev)");
   });
 });
 
 describe("arguments it cannot use", () => {
   test.each([
-    [[], "agent-lookout needs a command: status or mcp."],
     [["stats"], "agent-lookout has no command called stats."],
+    [["start", "now"], "start takes only options, not now."],
+    [["--json"], "start has no option --json."],
+    [["--url", "http://127.0.0.1:4777"], "start has no option --url."],
+    [["start", "--host", "0.0.0.0"], "start has no option --host."],
+    [["--port"], "--port needs a port number, such as 4778."],
+    [["--port", "--open"], "--port needs a port number, such as 4778."],
+    [["--port="], "--port needs a port number, such as 4778."],
+    [["--port", "http"], "--port takes a number from 0 to 65535, not http."],
+    [["--port", "65536"], "--port takes a number from 0 to 65535, not 65536."],
+    [["--port=4778.5"], "--port takes a number from 0 to 65535, not 4778.5."],
+    [["--port", " 4778"], "--port takes a number from 0 to 65535, not  4778."],
     [["status", "--verbose"], "status has no option --verbose."],
     [["status", "checkout-flow"], "status takes only options, not checkout-flow."],
     [["status", "--url"], "--url needs an address, such as http://127.0.0.1:4777."],

@@ -69,7 +69,7 @@ describe("with no address named", () => {
       code: 2,
       stdout: "",
       stderr:
-        "Agent Lookout is not running at http://127.0.0.1:4777 or http://localhost:5173. Start it with npm start or npm run dev in its folder, or give its address with --url.\n",
+        "Agent Lookout is not running at http://127.0.0.1:4777 or http://localhost:5173. Start it with agent-lookout, or with npm start or npm run dev in its folder, or give its address with --url.\n",
       asked: ["http://127.0.0.1:4777", "http://localhost:5173"],
     });
   });
@@ -101,7 +101,7 @@ describe("with an address named", () => {
       code: 2,
       stdout: "",
       stderr:
-        "Agent Lookout is not running at http://127.0.0.1:4778. Start it with npm start or npm run dev in its folder.\n",
+        "Agent Lookout is not running at http://127.0.0.1:4778. Start it with agent-lookout, or with npm start or npm run dev in its folder.\n",
       asked: ["http://127.0.0.1:4778"],
     });
 
@@ -161,8 +161,18 @@ describe("the exit code", () => {
   test("is 0 for --help, which asks nothing, and 2 for a mistyped command", async () => {
     const help = await command(["--help"], {});
     expect(help.code).toBe(0);
-    expect(help.stdout).toMatch(/^Usage: agent-lookout status/);
+    expect(help.stdout).toMatch(/^Usage: agent-lookout \[start\]/);
     expect(help.asked).toEqual([]);
+
+    // start with a port it cannot use is refused before anything is started or asked.
+    const badPort = await command(["--port", "http"], {});
+    expect(badPort).toEqual({
+      code: 2,
+      stdout: "",
+      stderr:
+        "--port takes a number from 0 to 65535, not http. Run agent-lookout --help to see what it takes.\n",
+      asked: [],
+    });
 
     const mistyped = await command(["stauts"], {});
     expect(mistyped).toEqual({

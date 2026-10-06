@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,7 @@ import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 // running on this machine for real.
 
 const bin = fileURLToPath(new URL("../../../bin/agent-lookout.mjs", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -226,7 +227,7 @@ describe("when it cannot find out", () => {
       expect(ran).toEqual({
         code: 2,
         stdout: "",
-        stderr: `Agent Lookout is not running at ${address}. Start it with npm start or npm run dev in its folder.\n`,
+        stderr: `Agent Lookout is not running at ${address}. Start it with agent-lookout, or with npm start or npm run dev in its folder.\n`,
       });
     }
   }, 20_000);
@@ -387,7 +388,127 @@ describe("what it sends and what it prints", () => {
   test("--help prints the usage and the exit codes, and exits with 0", async () => {
     const ran = await run(["--help"]);
     expect(ran.code).toBe(0);
-    expect(ran.stdout).toMatch(/^Usage: agent-lookout status \[--json \| --count\]/);
+    expect(ran.stdout).toMatch(/^Usage: agent-lookout \[start\] \[--port <number>\] \[--open\]\n/);
+    expect(ran.stdout).toContain("agent-lookout status [--json | --count]");
     expect(ran.stdout).toContain("1  One or more sessions need you");
   }, 20_000);
+});
+
+/**
+ * A folder laid out as the package is, with a copy of the command's file in
+ * `bin/` and whatever else the test writes. `link` names folders of this
+ * clone to put in it as links, such as `src` and `node_modules`, so the copy
+ * runs this clone's own code.
+ */
+async function packageFolder(
+  files: Record<string, string>,
+  link: string[] = [],
+): Promise<{ dir: string; program: string }> {
+  // By its real path, which is how Node names the file it runs.
+  const dir = await realpath(await tempDir());
+  await mkdir(path.join(dir, "bin"));
+  const program = path.join(dir, "bin", "agent-lookout.mjs");
+  await copyFile(bin, program);
+  for (const [name, content] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, name)), { recursive: true });
+    await writeFile(path.join(dir, name), content);
+  }
+  for (const name of link) await symlink(path.join(repoRoot, name), path.join(dir, name));
+  return { dir, program };
+}
+
+/** A stand-in for a module the command loads, which says which one ran and with what. */
+const standInCommand = (which: string) => `
+export async function runCommand({ argv, stdout, distDir }) {
+  stdout.write(${JSON.stringify(which)} + " ran " + JSON.stringify(argv) + " for " + distDir + "\\n");
+  return 0;
+}
+`;
+
+describe("which code it runs", () => {
+  test("installed, with no src/ beside it, it runs the bundle in dist/cli/ and serves dist/", async () => {
+    const pkg = await packageFolder({
+      "dist/cli/agent-lookout.js": standInCommand("the bundle"),
+    });
+
+    const ran = await run(["status", "--count"], {}, { program: pkg.program });
+
+    expect(ran).toEqual({
+      code: 0,
+      stdout: `the bundle ran ["status","--count"] for ${path.join(pkg.dir, "dist")}${path.sep}\n`,
+      stderr: "",
+    });
+  }, 20_000);
+
+  test("in a clone, with src/ beside it, it runs the source through tsx, not a bundle left in dist/", async () => {
+    const clone = await packageFolder(
+      {
+        "package.json": JSON.stringify({ type: "module" }),
+        "src/cli/agentLookout.ts": standInCommand("the source"),
+        "dist/cli/agent-lookout.js": standInCommand("the bundle"),
+      },
+      ["node_modules"],
+    );
+
+    const ran = await run(["mcp"], {}, { program: clone.program });
+
+    expect(ran.stderr).toBe("");
+    expect(ran.stdout).toBe(
+      `the source ran ["mcp"] for ${path.join(clone.dir, "dist")}${path.sep}\n`,
+    );
+    expect(ran.code).toBe(0);
+  }, 20_000);
+
+  test("with neither, it says so in one line, and exits with 2", async () => {
+    const empty = await packageFolder({});
+
+    const ran = await run(["--help"], {}, { program: empty.program });
+
+    expect(ran.code).toBe(2);
+    expect(ran.stdout).toBe("");
+    expect(ran.stderr).toMatch(/^agent-lookout could not run: .+\n$/);
+  }, 20_000);
+});
+
+describe("agent-lookout start, as a process", () => {
+  test("serves the dist/ beside bin/ on the port it is given, prints the address, and stops on Ctrl+C with 0", async () => {
+    // This clone's own code, serving a stand-in for dist/, so no build is needed or read.
+    const clone = await packageFolder(
+      { "dist/index.html": "<!doctype html><title>Agent Lookout</title>" },
+      ["src", "node_modules"],
+    );
+    const child = spawn(process.execPath, [clone.program, "--port", "0"], {
+      env: {
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+        AGENT_LOOKOUT_CLAUDE_FEED: "off",
+        AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+        AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
+        AGENT_LOOKOUT_TMUX: "off",
+        AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
+    onTestFinished(async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await exited;
+    });
+    let printed = "";
+    child.stdout.on("data", (chunk: Buffer) => (printed += chunk.toString("utf8")));
+    child.stderr.on("data", (chunk: Buffer) => (printed += chunk.toString("utf8")));
+
+    await vi.waitFor(() => expect(printed).toMatch(/is running at http:\/\/127\.0\.0\.1:\d+\n/), {
+      timeout: 15_000,
+    });
+    const port = Number(/127\.0\.0\.1:(\d+)/.exec(printed)?.[1]);
+    expect(printed).toBe(
+      `Agent Lookout is running at http://127.0.0.1:${port}\nIt listens on this machine only. Press Ctrl+C to stop.\n`,
+    );
+    expect((await request(port, "/")).body).toContain("<title>Agent Lookout</title>");
+    expect((await request(port, "/api/health")).status).toBe(200);
+
+    child.kill("SIGINT");
+    expect(await exited).toBe(0);
+  }, 30_000);
 });

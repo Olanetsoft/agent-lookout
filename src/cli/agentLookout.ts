@@ -1,11 +1,15 @@
-// The `agent-lookout` command: `agent-lookout status` prints which sessions
-// need you, from the Agent Lookout already running on this machine, and
-// `agent-lookout mcp` serves the same to an agent. Both start nothing.
-// `bin/agent-lookout.mjs` loads this file and passes in the process's
-// arguments, environment and output.
+// The `agent-lookout` command. `agent-lookout`, or `agent-lookout start`,
+// starts Agent Lookout itself, as `npm start` does. `agent-lookout status`
+// prints which sessions need you, from the Agent Lookout already running on
+// this machine, and `agent-lookout mcp` serves the same to an agent. Those two
+// start nothing. `bin/agent-lookout.mjs` loads this file, or the bundle built
+// from it, and passes in the process's arguments, environment and output.
 
 import type { Readable, Writable } from "node:stream";
 import { isatty } from "node:tty";
+import { fileURLToPath } from "node:url";
+
+import type { HostProcess } from "../collector/hosts/standalone.ts";
 
 import { HELP, parseArguments } from "./arguments.ts";
 import { addressesToTry, findSnapshot, readSessions, type Reading } from "./localServer.ts";
@@ -30,6 +34,12 @@ export interface CommandOptions {
   read?: (address: string) => Promise<Reading>;
   /** The streams `mcp` speaks to its client over. Defaults to this process's stdin and stdout. */
   streams?: { stdin: Readable; stdout: Writable };
+  /** The built dashboard `start` serves. The bin passes the `dist/` beside `bin/`. */
+  distDir?: string;
+  /** The process `start` stops with on Ctrl+C. Defaults to this one. */
+  host?: HostProcess;
+  /** Opens an address in the browser, for `start --open`. Defaults to the system's opener. */
+  opener?: (url: string) => Promise<boolean>;
 }
 
 /**
@@ -55,6 +65,21 @@ export async function runCommand(options: CommandOptions): Promise<number> {
   if (parsed.kind === "error") {
     say(parsed.message);
     return EXIT.notKnown;
+  }
+
+  if (parsed.kind === "start") {
+    // Loaded here, so `status` never loads the collector and stays quick.
+    const { startCommand } = await import("./start/startCommand.ts");
+    const url = await startCommand({
+      ...parsed.options,
+      distDir: options.distDir ?? fileURLToPath(new URL("../../dist/", import.meta.url)),
+      env: options.env,
+      print: { log: (line) => stdout.write(`${line}\n`), error: say },
+      process: options.host ?? process,
+      opener: options.opener,
+    });
+    // Listening, it runs until Ctrl+C. A problem has already ended a real process with 1.
+    return url === null ? 1 : 0;
   }
 
   const toTry = addressesToTry(parsed.options.url, options.env);

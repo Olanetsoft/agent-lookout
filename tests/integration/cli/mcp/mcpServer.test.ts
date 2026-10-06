@@ -230,7 +230,7 @@ describe("when Agent Lookout cannot be read", () => {
         content: [
           {
             type: "text",
-            text: `Agent Lookout is not running at ${address}. Start it with npm start or npm run dev in its folder.`,
+            text: `Agent Lookout is not running at ${address}. Start it with agent-lookout, or with npm start or npm run dev in its folder.`,
           },
         ],
       });
