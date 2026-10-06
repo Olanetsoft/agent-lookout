@@ -150,6 +150,17 @@ Two repositories whose folders have the same name, in different places, are two 
 
 On the board, each card names the repository before its folder when the two names differ, as [Board](#board) shows.
 
+#### One session per worktree
+
+Give each agent session its own git worktree, on a branch named after the task, and two agents never change the same files:
+
+```sh
+git worktree add ../storefront-checkout -b checkout-flow
+git worktree add ../storefront-billing -b billing-webhooks
+```
+
+Then start one session in each worktree's folder. In the [Repos](#repositories) view the sessions sit together under one heading for the repository, as in `storefront 2`. Each row still shows its folder with its [branch](#branches) under it, so the list reads like the branch list: `storefront-checkout on checkout-flow`, `storefront-billing on billing-webhooks`.
+
 #### Events
 
 The Events log records each session appearing, changing status and ending, newest first. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep, a row says when watching resumed and how long was not measured. While the log still holds everything since Agent Lookout started, it ends with Started watching.
