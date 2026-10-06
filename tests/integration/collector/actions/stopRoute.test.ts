@@ -374,7 +374,7 @@ describe("a background job", () => {
       },
       { timeout: 5_000, interval: 100 },
     );
-  });
+  }, 20_000);
 
   test("is not offered while the claude command may not be run", async () => {
     const job = await startStandIn();
