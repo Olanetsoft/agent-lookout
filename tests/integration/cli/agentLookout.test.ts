@@ -498,9 +498,13 @@ describe("agent-lookout start, as a process", () => {
     child.stdout.on("data", (chunk: Buffer) => (printed += chunk.toString("utf8")));
     child.stderr.on("data", (chunk: Buffer) => (printed += chunk.toString("utf8")));
 
-    await vi.waitFor(() => expect(printed).toMatch(/is running at http:\/\/127\.0\.0\.1:\d+\n/), {
-      timeout: 15_000,
-    });
+    // The two lines can arrive in separate chunks, so wait for the second as well.
+    await vi.waitFor(
+      () => expect(printed).toMatch(/is running at http:\/\/127\.0\.0\.1:\d+\n.*\n/),
+      {
+        timeout: 15_000,
+      },
+    );
     const port = Number(/127\.0\.0\.1:(\d+)/.exec(printed)?.[1]);
     expect(printed).toBe(
       `Agent Lookout is running at http://127.0.0.1:${port}\nIt listens on this machine only. Press Ctrl+C to stop.\n`,
