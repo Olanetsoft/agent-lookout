@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
@@ -10,6 +10,7 @@ import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
@@ -269,19 +270,10 @@ function Details({
         {app !== null && <FactRow label='App'>{app}</FactRow>}
         <FactRow label='Folder' mono={session.cwd !== null}>
           {session.cwd !== null ? (
-            <span data-part='folder' className='wrap-anywhere select-text'>
-              {/* A long path breaks after a slash where it can. */}
-              {session.cwd.split("/").map((part, index, parts) => (
-                <Fragment key={index}>
-                  {part}
-                  {index < parts.length - 1 && (
-                    <>
-                      /<wbr />
-                    </>
-                  )}
-                </Fragment>
-              ))}
-            </span>
+            // A long path breaks after a slash, never at a hyphen in a name.
+            <Literal data-part='folder' className='select-text'>
+              {session.cwd}
+            </Literal>
           ) : (
             "Not known"
           )}

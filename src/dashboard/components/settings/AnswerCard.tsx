@@ -1,12 +1,13 @@
 import type { AnsweringStatus } from "@core/sessions/session";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { durationInWords } from "@dashboard/lib/format";
 
 /**
  * A command the person types into Claude Code: a literal block of its own, in
  * the mono, so it is read and copied whole. It breaks only where it must, on a
- * phone.
+ * phone: between its words, or after a slash.
  */
 function Command({ children }: { children: string }) {
   return (
@@ -15,7 +16,7 @@ function Command({ children }: { children: string }) {
       data-part='install-command'
       className='block w-fit max-w-full rounded-row bg-fill-zebra px-3 py-1.5 font-mono text-fact text-ink inset-ring inset-ring-hairline select-all wrap-break-word'
     >
-      {children}
+      <Literal>{children}</Literal>
     </code>
   );
 }

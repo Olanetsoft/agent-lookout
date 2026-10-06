@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
@@ -6,6 +6,7 @@ import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import {
   clearFailureWords,
@@ -141,20 +142,11 @@ export function HistoryCard({
         {words.facts && (
           <FactList className='mt-3'>
             <FactRow label='Folder' mono>
-              {/* A folder can be any length. It breaks after a slash where it
-                  can, and anywhere rather than run past the card. */}
-              <span data-part='folder' className='wrap-anywhere select-text'>
-                {words.facts.folder.split("/").map((part, index, parts) => (
-                  <Fragment key={index}>
-                    {part}
-                    {index < parts.length - 1 && (
-                      <>
-                        /<wbr />
-                      </>
-                    )}
-                  </Fragment>
-                ))}
-              </span>
+              {/* A folder can be any length. It breaks after a slash, and inside
+                  a name only when the name is longer than a whole line. */}
+              <Literal data-part='folder' className='select-text'>
+                {words.facts.folder}
+              </Literal>
             </FactRow>
             <FactRow label='Holds'>
               <span className='tabular-nums'>{words.facts.holds}</span>

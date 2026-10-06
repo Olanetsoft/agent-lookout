@@ -8,6 +8,7 @@ import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { ClearOutcome } from "@dashboard/lib/api/keptHistory";
 import { pointAway } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
+import { piecesDrawn } from "@tests/support/browser/lines";
 
 afterEach(() => {
   setApiHost();
@@ -103,8 +104,14 @@ test("a long folder breaks after its slashes inside the card on a phone, and cop
   );
   const folder = card(screen).element().querySelector('[data-part="folder"]') as HTMLElement;
   expect(folder.textContent).toBe(long);
-  expect(folder.querySelectorAll("wbr")).toHaveLength(long.split("/").length - 1);
+  // A break after each slash but the first, so no line ends on "/" alone.
+  expect(folder.querySelectorAll("wbr")).toHaveLength(long.split("/").length - 2);
   const row = folder.closest('[data-slot="fact-row"]') as HTMLElement;
+  // Each name that fits on a line is whole, its hyphens unbroken. Only the one
+  // longer than a whole line breaks inside itself, rather than run past the card.
+  expect(piecesDrawn(folder, /[^/]+\//g).filter(({ lines }) => lines > 1)).toEqual([
+    { piece: "-Users-example-Documents-code-lookout-tryout/", lines: 2 },
+  ]);
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
   expect(folder.getBoundingClientRect().right).toBeLessThanOrEqual(
     row.getBoundingClientRect().right + 0.5,

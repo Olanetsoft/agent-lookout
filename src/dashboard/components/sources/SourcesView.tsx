@@ -6,6 +6,7 @@ import { CapabilitiesCard } from "@dashboard/components/sources/CapabilitiesCard
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
@@ -78,18 +79,25 @@ function SourceCard({
         )}
 
         <FactList className='mt-2'>
-          {source.watching?.map((fact, index) => (
-            <FactRow key={`${index}-${fact.label}`} label={fact.label} mono={isLiteral(fact.value)}>
-              {/* A folder can be any length and has no spaces to break at. A
-                  count, such as the files read, is a figure that keeps its width. */}
-              <span
-                data-part='watching'
-                className={cn("wrap-anywhere", isCount(fact.value) && "tabular-nums")}
-              >
-                {fact.value}
-              </span>
-            </FactRow>
-          ))}
+          {source.watching?.map((fact, index) =>
+            isLiteral(fact.value) ? (
+              // A folder or a command breaks only between its words and after a
+              // slash, so a flag is never split at its hyphens.
+              <FactRow key={`${index}-${fact.label}`} label={fact.label} mono>
+                <Literal data-part='watching'>{fact.value}</Literal>
+              </FactRow>
+            ) : (
+              // A count, such as the files read, is a figure that keeps its width.
+              <FactRow key={`${index}-${fact.label}`} label={fact.label}>
+                <span
+                  data-part='watching'
+                  className={cn("wrap-anywhere", isCount(fact.value) && "tabular-nums")}
+                >
+                  {fact.value}
+                </span>
+              </FactRow>
+            ),
+          )}
           {/* A count and an age are figures, in the sans with figures that keep their width. */}
           <FactRow label='Sessions found'>
             <span className='tabular-nums'>{found}</span>

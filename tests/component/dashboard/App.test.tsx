@@ -33,6 +33,7 @@ import {
   installStubNotification,
   StubNotification,
 } from "@tests/support/notifications";
+import { linesDrawn, piecesDrawn } from "@tests/support/browser/lines";
 import { atFullSize, pixelsOf } from "@tests/support/browser/pixels";
 
 const MINUTE = 60_000;
@@ -523,6 +524,61 @@ test("the Sources view shows each source's facts as rows, and a long folder wrap
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
   }
 });
+
+test.each([
+  ["dark", 320],
+  ["dark", 375],
+  ["dark", 390],
+  ["dark", 1280],
+  ["light", 320],
+  ["light", 375],
+  ["light", 390],
+  ["light", 1280],
+] as const)(
+  "in the %s theme at %i pixels the Sources view breaks a command only between its words, and a folder only after a slash",
+  async (theme, width) => {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    await page.viewport(width, 900);
+    atView("sources");
+    const screen = await render(<App store={fixedStore(liveState())} />);
+    const card = screen.getByRole("region", { name: "Claude Code" });
+    await expect.element(card).toHaveTextContent("claude agents --json --all");
+    expect(document.documentElement.getAttribute("data-theme")).toBe(theme);
+
+    const value = (label: string) => {
+      const row = [...card.element().querySelectorAll('[data-slot="fact-row"]')].find(
+        (candidate) => candidate.querySelector("dt")?.textContent === label,
+      );
+      return row?.querySelector('[data-part="watching"]') as HTMLElement;
+    };
+    const command = value("Command");
+    const folder = value("Registry folder");
+    expect(command.textContent).toBe("claude agents --json --all");
+    expect(folder.textContent).toBe("/tmp/example-home/sessions");
+
+    // Each word of the command, each flag whole, is on one line: no line starts
+    // or ends inside one. At 390, a common phone's width, the last flag was once
+    // split, "claude agents --json -" over "-all". On the narrowest phone the
+    // command does take more than one line.
+    expect(piecesDrawn(command, /\S+/g)).toEqual(
+      ["claude", "agents", "--json", "--all"].map((piece) => ({ piece, lines: 1 })),
+    );
+    if (width === 320) expect(linesDrawn(command)).toBeGreaterThan(1);
+    // The folder breaks only after a slash: each name with its slash is whole.
+    expect(piecesDrawn(folder, /\/?[^/\s]+\/?/g)).toEqual(
+      ["/tmp/", "example-home/", "sessions"].map((piece) => ({ piece, lines: 1 })),
+    );
+
+    // And nothing runs past its card or the window.
+    for (const part of [command, folder]) {
+      expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(
+        card.element().getBoundingClientRect().right,
+      );
+    }
+    expect(card.element().scrollWidth).toBeLessThanOrEqual(card.element().clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);
 
 test("the header's switch shows Night and Day, marks the theme in force and stores a choice", async () => {
   const screen = await render(<App store={fixedStore(liveState())} />);

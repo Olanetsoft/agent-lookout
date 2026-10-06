@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { cn } from "@dashboard/lib/utils";
 
 /** Long enough that a pointer crossing a row does not set off a trail of tooltips. */
@@ -41,7 +42,7 @@ interface TooltipProps {
   content: ReactNode;
   /** The element it describes. It must take a ref and spread its props. */
   children: ReactNode;
-  /** Set for a machine fact: a path, a time. */
+  /** Set for a machine fact: a path, a time. A path then breaks only after a slash. */
   mono?: boolean;
   /** Set false to keep it closed, for text that is only sometimes cut. */
   enabled?: boolean;
@@ -116,7 +117,7 @@ export function Tooltip({
               mono ? "font-mono text-fact" : "text-caption font-medium",
             )}
           >
-            {content}
+            {mono && typeof content === "string" ? <Literal>{content}</Literal> : content}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>

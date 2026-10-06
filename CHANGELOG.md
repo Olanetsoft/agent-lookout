@@ -16,6 +16,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Fixed
 
 - Waits counted a wait that ended with Stop as two waits, one on each side of the stop. It is one wait again, and so is one answered with Allow or Deny.
+- On a phone, Sources split a command in the middle of a flag, `claude agents --json -` on one line and `-all` on the next. A command or a path on any view now breaks only between its words, and a path after a slash, and one too long to sit beside its label takes a line of its own under it.
 
 ## 0.2.4 - 2026-10-06
 

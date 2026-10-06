@@ -46,3 +46,39 @@ test("a note is a line of its own under the pair, across the whole row, in the c
   expect(getComputedStyle(said as HTMLElement).fontSize).toBe("12px");
   expect(getComputedStyle(said as HTMLElement).textAlign).toBe("start");
 });
+
+test("a literal string that does not fit beside its label takes a line of its own under it, at the right", async () => {
+  const screen = await render(
+    <div style={{ width: 240 }}>
+      <FactList>
+        <FactRow label='Version' mono>
+          v0.2.4
+        </FactRow>
+        <FactRow label='Registry folder' mono>
+          /tmp/example-home/sessions
+        </FactRow>
+      </FactList>
+    </div>,
+  );
+  const [short, long] = [...screen.container.querySelectorAll('[data-slot="fact-row"]')].map(
+    (row) =>
+      [row, row.querySelector("dt"), row.querySelector("dd")].map((element) =>
+        (element as HTMLElement).getBoundingClientRect(),
+      ),
+  ) as DOMRect[][];
+
+  // One that fits stays on the label's line, on its baseline.
+  const [shortRow, shortLabel, shortValue] = short as DOMRect[];
+  expect(shortValue?.top).toBeLessThan((shortLabel as DOMRect).bottom);
+  expect(shortValue?.right).toBe(shortRow?.right);
+  // One that does not goes under the label, 4px down, and still keeps to the right.
+  const [longRow, longLabel, longValue] = long as DOMRect[];
+  expect(longValue?.top).toBe((longLabel as DOMRect).bottom + 4);
+  expect(longValue?.right).toBe(longRow?.right);
+  expect(longValue?.width).toBeLessThanOrEqual((longRow as DOMRect).width);
+  // Given as a string, it breaks as a literal does: after a slash, never at a hyphen.
+  const value = screen.container.querySelectorAll("dd")[1] as HTMLElement;
+  expect(value.querySelector('[data-slot="literal"]')?.textContent).toBe(
+    "/tmp/example-home/sessions",
+  );
+});
