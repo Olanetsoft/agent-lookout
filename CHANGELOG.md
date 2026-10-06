@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.2 - 2026-10-06
+
+History now survives a restart. The Mac app offers this version as its first update.
 
 ### Added
 
