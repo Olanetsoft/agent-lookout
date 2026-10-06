@@ -39,9 +39,11 @@ export interface ApiAnswer {
   headers?: Record<string, string>;
 }
 
-/** Where the collector's two routes that do something are. Every other route only reads. */
+/** Where the collector's four routes that do something are. Every other route only reads. */
 export const JUMP_PATH = "/api/jump";
 export const CLEAR_HISTORY_PATH = "/api/history/clear";
+export const STOP_PATH = "/api/sessions/stop";
+export const CLEAN_UP_PATH = "/api/sessions/clean-up";
 
 export interface ApiHandlerOptions {
   version: string;
@@ -76,6 +78,19 @@ export interface ApiHandlerOptions {
    * out, there is no such route.
    */
   clearHistory?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `POST /api/sessions/stop`, with the same checks of its own as the
+   * jump route and more before it acts: `createStopRoute` in
+   * `actions/stopRoute.ts`. Left out, as with `AGENT_LOOKOUT_STOP=off`, there
+   * is no such route.
+   */
+  stop?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `POST /api/sessions/clean-up`, with the stop route's checks for
+   * every session it ends: `createCleanUpRoute` in `actions/cleanUpRoute.ts`.
+   * Left out, there is no such route.
+   */
+  cleanUp?: (req: IncomingMessage) => Promise<ApiAnswer>;
   /**
    * Where the history held begins, where it is kept and the restarts in it,
    * for `/api/history`. Left out, it is kept in memory only and begins when
@@ -177,8 +192,9 @@ export function refusal(
 
 /**
  * Why a request to a route that acts is refused before its body is read, or
- * null when it may proceed. The collector's two such routes,
- * `POST /api/jump` and `POST /api/history/clear`, and the Mac app's routes for
+ * null when it may proceed. The collector's four such routes,
+ * `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop` and
+ * `POST /api/sessions/clean-up`, and the Mac app's routes for
  * its updates, in `src/desktop/updates/updateRoute.ts`, make these checks on
  * top of the ones every request has already passed in `refusalFor`, so each is
  * a request only the dashboard's own page can send:
@@ -189,8 +205,8 @@ export function refusal(
  *   from a page, and here that is refused, where a GET may go without.
  * - Marked `same-origin` by a browser that marks its requests at all.
  * - Carrying `X-Agent-Lookout-Action` with the route's own action, such as
- *   `jump`, and a JSON content type. A page at another origin may send neither without asking
- *   first, with a preflight. A preflight is an OPTIONS request. One from
+ *   `jump` or `stop`, and a JSON content type. A page at another origin may
+ *   send neither without asking first, with a preflight. A preflight is an OPTIONS request. One from
  *   another site never gets this far, and one that does is refused here like
  *   any other method. No answer to either has a CORS header.
  * - No larger than `maxBodyBytes`.
@@ -310,6 +326,8 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
   const actions = new Map<string, (req: IncomingMessage) => Promise<ApiAnswer>>();
   if (jump) actions.set(JUMP_PATH, jump);
   if (options.clearHistory) actions.set(CLEAR_HISTORY_PATH, options.clearHistory);
+  if (options.stop) actions.set(STOP_PATH, options.stop);
+  if (options.cleanUp) actions.set(CLEAN_UP_PATH, options.cleanUp);
 
   function route(req: IncomingMessage, res: ServerResponse): void {
     const refusal = refusalFor(req);

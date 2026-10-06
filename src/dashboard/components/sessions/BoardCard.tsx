@@ -5,7 +5,7 @@ import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
-import { useJump } from "@dashboard/hooks/data/useJump";
+import { useJump } from "@dashboard/hooks/actions/useJump";
 import { repositoryBeside } from "@dashboard/lib/sessions/repositories";
 import { rowLook } from "@dashboard/lib/sessions/sessions";
 import { surfaceLabel } from "@dashboard/lib/sessions/status";

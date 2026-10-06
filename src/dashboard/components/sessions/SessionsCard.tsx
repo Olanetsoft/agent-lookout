@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } fro
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { SessionRow } from "@dashboard/components/sessions/SessionRow";
 import { Count, SessionsBoard } from "@dashboard/components/sessions/SessionsBoard";
+import { LeftRunning } from "@dashboard/components/stop/LeftRunning";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
@@ -38,6 +39,8 @@ interface SessionsCardProps {
   sessions: readonly Session[];
   sources: readonly SourceHealth[];
   now: number;
+  /** Told once sessions left running have been ended, so the page reads the sessions again. */
+  onEnded?: () => void;
   className?: string;
 }
 
@@ -353,9 +356,17 @@ function useColumns(
  * Grouped by repository, the sessions that need the person are still the
  * hero's. The choice is kept in this browser. With no session there is nothing
  * to lay out, and the switch is not offered.
+ *
+ * Over the list or the board, once there is one, a band says how many
+ * sessions are left running: idle a day or more with the process still
+ * running. Review… opens it to list them. Each can be hidden until it
+ * changes, and End all… ends them after a confirmation that lists each one.
+ * They stay in the list under Idle as well.
  */
-export function SessionsCard({ sessions, sources, now, className }: SessionsCardProps) {
+export function SessionsCard({ sessions, sources, now, onEnded, className }: SessionsCardProps) {
   const table = useRef<HTMLTableElement>(null);
+  // Where focus goes when the last of the sessions left running is hidden.
+  const title = useRef<HTMLHeadingElement>(null);
   const shown = overviewSources(sources);
   const broken = shown.filter(
     (source) => source.state === "unavailable" || source.state === "error",
@@ -505,6 +516,7 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
   return (
     <SectionCard
       title='Sessions'
+      titleRef={title}
       count={counted ? sessions.length : undefined}
       aside={
         layoutSwitch && !narrow ? (
@@ -523,6 +535,12 @@ export function SessionsCard({ sessions, sources, now, className }: SessionsCard
           {layoutSwitch}
         </div>
       )}
+      <LeftRunning
+        sessions={sessions}
+        now={now}
+        onEnded={onEnded}
+        onGone={() => title.current?.focus()}
+      />
       {body}
     </SectionCard>
   );

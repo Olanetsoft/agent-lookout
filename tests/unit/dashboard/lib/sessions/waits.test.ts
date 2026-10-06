@@ -311,6 +311,19 @@ describe("the last wait that is over", () => {
     });
   });
 
+  test("a wait ended by stopping the session from Agent Lookout is over when the session left, not at the stop", () => {
+    const stopped: SessionEvent = {
+      ...changed(5, at(14, 27), "needs-you", "unknown"),
+      kind: "stopped",
+      to: undefined,
+      by: "agent-lookout",
+    };
+    const result = waits({
+      events: [changed(5, at(14, 26), "working", "needs-you"), stopped, ended(5, at(14, 28))],
+    });
+    expect(result.lastWait).toMatchObject({ ms: 2 * MINUTE, at: at(14, 28), how: "ended" });
+  });
+
   test("is ended, not answered, when the session finished, failed or left while it waited", () => {
     const left = waits({
       events: [changed(5, at(14, 26), "working", "needs-you"), ended(5, at(14, 28))],

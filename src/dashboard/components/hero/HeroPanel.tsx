@@ -11,7 +11,7 @@ import { DurationFigure } from "@dashboard/components/ui/status/DurationFigure";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
-import { useJump } from "@dashboard/hooks/data/useJump";
+import { useJump } from "@dashboard/hooks/actions/useJump";
 import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import {
   durationInWords,

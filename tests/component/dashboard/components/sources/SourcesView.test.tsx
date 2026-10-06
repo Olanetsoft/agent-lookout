@@ -144,6 +144,7 @@ test("what each agent can report sits under the source cards, from what each sou
     names: { level: "yes" },
     jump: { level: "partly", reason: "Only where a place is found." },
     "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
+    stop: { level: "partly", reason: "Not in the desktop app." },
   } as const;
   const declared = snapshot([{ ...SOURCE, capabilities }]);
   const screen = await render(<SourcesView state={state({ snapshot: declared })} now={NOW} />);
@@ -177,7 +178,13 @@ test("the view says that Agent Lookout sends nothing unless email or a webhook i
       "Unless you set up email or a webhook, Agent Lookout itself sends nothing anywhere.",
     );
   await expect.element(about).toHaveTextContent("that tool's own program");
-  await expect.element(about).toHaveTextContent("It only reads");
+  await expect.element(about).toHaveTextContent("It reads its files and never writes to them.");
+  await expect
+    .element(about)
+    .toHaveTextContent(
+      "Agent Lookout stops a Claude Code session only when you press Stop and confirm.",
+    );
+  expect(about.element().textContent).not.toContain("It only reads");
 });
 
 test("a source that sends no list of facts gets no rows for them, and a path in its sentence is still mono", async () => {

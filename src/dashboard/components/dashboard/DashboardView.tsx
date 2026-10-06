@@ -18,6 +18,8 @@ interface DashboardViewProps {
   state: CollectorState;
   now: number;
   onRetry: () => void;
+  /** Told once sessions left running have been ended, so the page reads the sessions again. */
+  onEnded?: () => void;
   /** Opens the history behind Needs you, Working or Idle. */
   onOpenHistory?: (metric: HistoryMetric) => void;
   /** Where the events log draws the line under what arrived while the page was out of sight. */
@@ -63,6 +65,7 @@ export function DashboardView({
   state,
   now,
   onRetry,
+  onEnded,
   onOpenHistory,
   newSince = null,
   onNewLineInView,
@@ -130,6 +133,7 @@ export function DashboardView({
               sessions={snapshot.sessions}
               sources={snapshot.sources}
               now={asOf}
+              onEnded={onEnded}
               className={cn("z-1", PLACE.sessions)}
             />
             <EventsCard

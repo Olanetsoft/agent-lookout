@@ -1,6 +1,6 @@
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
-import { useMenuBarSetting } from "@dashboard/hooks/data/useMenuBarSetting";
+import { useMenuBarSetting } from "@dashboard/hooks/app/useMenuBarSetting";
 
 const SWITCH = [
   { value: "off", label: "Off" },

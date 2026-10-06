@@ -1,5 +1,9 @@
 import type { HistoryRestart } from "../core/api.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
+import { createCleanUpRoute } from "./actions/cleanUpRoute.ts";
+import { createStopRoute } from "./actions/stopRoute.ts";
+import { createActionLimiter, createStopper, type StopperOptions } from "./actions/stopSession.ts";
+import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
 import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
@@ -105,7 +109,8 @@ export interface CollectorOptions {
   readProcesses?: ReadProcessTable;
   /**
    * Reads when processes started, to tell a Claude Code session's process from
-   * another that has since been given its pid. Defaults to asking `ps`. Tests
+   * another that has since been given its pid, and again, with nothing
+   * remembered, before a session is stopped. Defaults to asking `ps`. Tests
    * pass their own, so that, with `readProcesses`, the collector runs no `ps`.
    */
   readProcessStarts?: ReadProcessStarts;
@@ -127,6 +132,14 @@ export interface CollectorOptions {
    * setting is wrong. Defaults to the console's errors.
    */
   warn?: (line: string) => void;
+  /**
+   * How the routes that stop sessions act: what sends a signal, how long they
+   * wait for a process to end and the clock they wait by, what runs
+   * `claude stop`, and what asks `ps` for a start time. Defaults to the real
+   * ones. Tests pass a clock that runs ahead, or a runner of their own. Every
+   * check is made whatever is passed.
+   */
+  stopping?: Omit<StopperOptions, "env">;
   /**
    * Told each poll's sessions, after the collector's own notifications, email
    * and webhook have been. The Mac app puts the count that needs you on its
@@ -163,9 +176,10 @@ export interface Collector {
  * disk unless `AGENT_LOOKOUT_HISTORY` is off, its own notifications,
  * the email and webhook notifications when they are set up, what finds and
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
- * what reads each session's git branch, and the request handler. Every host
- * builds it the same way: the dev server, the standalone server, and later a
- * desktop app.
+ * what stops a Claude Code session when the person asks, unless
+ * `AGENT_LOOKOUT_STOP` is off, what reads each session's git branch, and the
+ * request handler. Every host builds it the same way: the dev server, the
+ * standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -216,6 +230,11 @@ export function createCollector(options: CollectorOptions): Collector {
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
+  // What each Claude Code session is stopped by: the adapter finds it, and the
+  // routes that stop sessions act on it. With AGENT_LOOKOUT_STOP off there are
+  // neither the targets nor the routes.
+  const stopsOn = !stopOff(env);
+  const stopTargets = stopsOn ? createStopTargets() : undefined;
   const platform = options.platform ?? process.platform;
   const notifications = createServerNotifications({
     notifier: options.notifier ?? createSystemNotifier({ platform }),
@@ -270,6 +289,7 @@ export function createCollector(options: CollectorOptions): Collector {
         panes,
         terminals: tabs,
         readProcessStarts: options.readProcessStarts,
+        stops: stopTargets,
       }),
       createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
       createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
@@ -289,6 +309,20 @@ export function createCollector(options: CollectorOptions): Collector {
       options.onSnapshot?.(snapshot);
     },
   });
+  const stopper = createStopper({
+    env,
+    now,
+    readStarts: options.readProcessStarts,
+    readParents: readProcesses && (async () => parentsIn(await readProcesses())),
+    ...options.stopping,
+  });
+  const stopRoutes = stopTargets && {
+    poller,
+    events,
+    targets: stopTargets,
+    stopper,
+    limiter: createActionLimiter(now),
+  };
   const handler = createApiHandler({
     version: options.version,
     poller,
@@ -298,6 +332,8 @@ export function createCollector(options: CollectorOptions): Collector {
     email: () => email?.status() ?? emailOff,
     webhook: () => webhook?.status() ?? webhookOff,
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
+    stop: stopRoutes && createStopRoute(stopRoutes),
+    cleanUp: stopRoutes && createCleanUpRoute(stopRoutes),
     clearHistory: createClearHistoryRoute({
       keeper,
       forget: () => {

@@ -16,7 +16,8 @@ export interface LogEntry {
    * The mark beside it: the status the event moved to. A move to "needs you" is
    * the lit lamp while that wait is still open, and the answered mark once it is
    * over, so the log holds amber only for what is waiting now. An ending that
-   * names no status has the ended mark, so every row has one.
+   * names no status has the ended mark, so every row has one, and so has a
+   * session Agent Lookout stopped.
    */
   mark: MarkKind;
   /** Whether this is a wait that is still open. */
@@ -63,6 +64,9 @@ export function logEntries(
       const open = isNewest && waiting.has(event.sessionId);
       return { event, mark: open ? "needs-you" : "answered", open, waitedMs: null };
     }
+
+    // Being stopped is an ending the person asked for, and has the ended mark.
+    if (event.kind === "stopped") return { event, mark: "ended", open: false, waitedMs: null };
 
     const started = olderOf.get(event);
     const waitedMs =

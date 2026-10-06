@@ -133,6 +133,34 @@ describe("encoding", () => {
     ).toEqual(["id", "at", "sessionId", "sessionName", "kind", "severity"]);
   });
 
+  test("a stopped event keeps who stopped it, and reads back as it was written", () => {
+    const stopped: SessionEvent = {
+      id: `claude-code:demo@${T0}:stopped`,
+      at: T0,
+      sessionId: "claude-code:demo",
+      sessionName: "demo-project",
+      kind: "stopped",
+      from: "working",
+      severity: "advisory",
+      by: "agent-lookout",
+    };
+    const line = encodeRecord({ kind: "event", event: stopped });
+    expect(Object.keys((JSON.parse(line) as { event: object }).event)).toEqual([
+      "id",
+      "at",
+      "sessionId",
+      "sessionName",
+      "kind",
+      "from",
+      "severity",
+      "by",
+    ]);
+    expect(parseRecord(line.trim())).toEqual({ kind: "event", event: stopped });
+    // Someone this version does not know of spoils the event.
+    const odd = JSON.stringify({ event: { ...stopped, by: "somebody" } });
+    expect(parseRecord(odd)).toBeNull();
+  });
+
   test("every record reads back as it was written", () => {
     const appeared: SessionEvent = {
       id: "x",

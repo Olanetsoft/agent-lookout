@@ -33,6 +33,7 @@ const snapshot: SessionsSnapshot = {
         names: { level: "yes" },
         jump: { level: "partly", reason: "Only where a place is found." },
         "quiet-for": { level: "no", reason: "The file read is not rewritten." },
+        stop: { level: "partly", reason: "Not in the desktop app." },
       },
       checkedAt: 1_700_000_060_000,
     },

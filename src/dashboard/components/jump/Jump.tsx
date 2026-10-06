@@ -2,7 +2,7 @@ import type { Session } from "@core/sessions/session";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
-import type { JumpPress } from "@dashboard/hooks/data/useJump";
+import type { JumpPress } from "@dashboard/hooks/actions/useJump";
 import {
   AUTOMATION_REFUSED_LINE,
   automationAskLine,

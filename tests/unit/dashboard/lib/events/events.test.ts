@@ -305,3 +305,26 @@ test("nothing before the history was cleared is a break", () => {
   };
   expect(watchGaps(history, 8_000)).toEqual([]);
 });
+
+test("a session Agent Lookout stopped has the ended mark, and is no wait, open or answered", () => {
+  const wait = changed(1, ago(5), "working", "needs-you");
+  const stopped: SessionEvent = {
+    id: "stopped-1",
+    at: ago(1),
+    sessionId: id(1),
+    sessionName: "project-1",
+    kind: "stopped",
+    from: "needs-you",
+    severity: "advisory",
+    by: "agent-lookout",
+  };
+  const entries = logEntries([stopped, wait], [listed(1, "needs-you")]);
+
+  expect(
+    entries.map((entry) => [entry.event.kind, entry.mark, entry.open, entry.waitedMs]),
+  ).toEqual([
+    ["stopped", "ended", false, null],
+    // The stop is the newest event, so the wait it ended is no longer open.
+    ["status-changed", "answered", false, null],
+  ]);
+});

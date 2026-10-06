@@ -12,6 +12,7 @@ import type {
   SourceState,
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import { STOP_ENV, stopOff, type StopTargets } from "../../actions/stopTargets.ts";
 import { tildify } from "../../files/paths.ts";
 import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -38,6 +39,7 @@ import {
   type RegistryIo,
   type RegistryRead,
 } from "./registry.ts";
+import { withStopOffers } from "./stopOffers.ts";
 import {
   sessionFromFeed,
   sessionFromRegistry,
@@ -84,6 +86,9 @@ const LABEL = "Claude Code";
  *   session, and no other terminal is found.
  * - Quiet for needs a file the agent rewrites as it works, and the registry
  *   file is not one: see `registry.ts`.
+ * - Stop is SIGTERM to the process of a session in a terminal or in VS Code,
+ *   and `claude stop` for a background job (`stopOffers.ts`). The desktop app
+ *   looks after its own process, so its sessions are not stopped from here.
  */
 export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -106,7 +111,17 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     level: "no",
     reason: "The file Agent Lookout reads is not rewritten as a session works.",
   },
+  stop: {
+    level: "partly",
+    reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
+  },
 };
+
+/** What the adapter declares while `AGENT_LOOKOUT_STOP` is off. */
+const STOP_TURNED_OFF = {
+  level: "no",
+  reason: `${STOP_ENV} is off, so no session is stopped from Agent Lookout.`,
+} as const;
 
 /** What is said of a run that ended in a way `runProgram` promises it never will. */
 const COULD_NOT_RUN = "The claude agents --json command could not be run";
@@ -140,6 +155,13 @@ export interface ClaudeCodeAdapterOptions {
    * reads. Left out, no tab is looked for and `ps` is not asked.
    */
   terminals?: Pick<TabFinder, "look" | "tabOf">;
+  /**
+   * Told, after each poll, which sessions can be stopped and what each is
+   * stopped by, and asks for the command to be run again at the next poll
+   * once a background job has been stopped. The collector passes the one its
+   * routes that stop sessions read. Left out, no session is offered Stop.
+   */
+  stops?: Pick<StopTargets, "set" | "onAskFeedSoon">;
   /** How long `claude agents --json` gets. Defaults to 5 seconds. */
   feedTimeoutMs?: number;
   /** How often the command is run. Defaults to 30 seconds. */
@@ -262,6 +284,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const transcriptsOff = waitingTextOff(env);
   const feedWithheld = homeOverride !== undefined && !binaryNamed;
   const neverRun = feedOff || feedWithheld;
+  // With AGENT_LOOKOUT_STOP off, nothing is offered Stop, whatever the collector passed.
+  const stops = stopOff(env) ? undefined : options.stops;
+  const capabilities: SourceCapabilities = stopOff(env)
+    ? { ...CLAUDE_CODE_CAPABILITIES, stop: STOP_TURNED_OFF }
+    : CLAUDE_CODE_CAPABILITIES;
 
   const claudeHome = path.resolve(homeOverride ?? path.join(homeDir, ".claude"));
   const sessionsDir = path.join(claudeHome, "sessions");
@@ -278,6 +305,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   let lastDue: number | null = null;
   /** What the last run came back with. It stands until the next run. */
   let lastRead: FeedRead | null = null;
+  /** Set once a background job has been stopped, so the command is run at the next poll. */
+  let feedSoon = false;
+  stops?.onAskFeedSoon(() => {
+    feedSoon = true;
+  });
 
   const noRegistry = (missing: boolean) =>
     missing
@@ -418,7 +450,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     let reading = neverRun || lastDue !== null ? await readRegistryNow(checkedAt) : null;
     if (!neverRun) {
       const reliedOn = reading !== null && problemWith(reading, lastRead) === null;
-      const due = dueAt(checkedAt, reliedOn ? feedIntervalMs : feedFallbackIntervalMs);
+      // A run asked for since the last poll is due now, and the beat goes on from it.
+      const due = feedSoon
+        ? checkedAt
+        : dueAt(checkedAt, reliedOn ? feedIntervalMs : feedFallbackIntervalMs);
+      feedSoon = false;
       if (due !== null) {
         lastDue = due;
         // Should the run break its promise not to throw, this is what is left of
@@ -443,6 +479,21 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     const answer = read?.feed.ok ? read.feed.entries : null;
     const problem = problemWith(reading, read);
     const { registry, live } = reading;
+
+    /**
+     * The sessions as they go to the poller, each one that can be stopped
+     * saying so, and what each is stopped by handed to the routes that stop
+     * them. A poll that lists no session leaves none to stop.
+     */
+    const offered = (result: AdapterResult): AdapterResult => {
+      if (!stops) return result;
+      const found = withStopOffers(result.sessions, live, answer, {
+        sessionsDir,
+        background: !neverRun,
+      });
+      stops.set(found.targets);
+      return { ...result, sessions: found.sessions };
+    };
 
     if (options.panes || options.terminals) {
       // Every process a session below can have: the registry's, and the ones
@@ -518,11 +569,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           ? " This version of Claude Code cannot list background jobs whose process has ended."
           : ""
       }`;
-      return {
+      return offered({
         health: health("ok", detail),
         sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
         basis: "registry+feed",
-      };
+      });
     }
 
     if (answer !== null && problem !== null) {
@@ -545,11 +596,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       } else {
         detail = `The claude command lists a running session that the registry at ${registryName} does not have, so sessions are listed with the claude command ${fallbackEvery} until the two agree.`;
       }
-      return {
+      return offered({
         health: health("ok", detail),
         sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
         basis: "feed",
-      };
+      });
     }
 
     // From here on there is no answer from the command: it is not run, it was
@@ -580,7 +631,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       } else {
         detail = `${whyNoAnswer}, so sessions are read from the session registry alone. ${noEndedJobs}`;
       }
-      return { health: health("ok", detail), sessions, basis: "registry" };
+      return offered({ health: health("ok", detail), sessions, basis: "registry" });
     }
 
     // Someone who names a directory means that directory. If it has no sessions
@@ -592,7 +643,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         : withheld
           ? `${emptyNote}. ${withheldNote}`
           : `${whyNoAnswer}, and ${emptyNote}.`;
-      return { health: health("ok", detail), sessions: [], basis: "registry" };
+      return offered({ health: health("ok", detail), sessions: [], basis: "registry" });
     }
 
     // Neither way of reading worked.
@@ -603,13 +654,13 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     // What to do about it is known in one case: the person named a program that
     // cannot be run. Installing Claude Code would not help them.
     const advice = read?.badVariable ? `Correct ${CLAUDE_BIN_ENV}, or unset it.` : undefined;
-    return { health: health("unavailable", detail, advice), sessions: [] };
+    return offered({ health: health("unavailable", detail, advice), sessions: [] });
   }
 
   return {
     id: SOURCE_ID,
     label: LABEL,
-    capabilities: CLAUDE_CODE_CAPABILITIES,
+    capabilities,
     lookingIn: neverRun
       ? `Looking for sessions in ${registryName}.`
       : `Looking for sessions in ${registryName} and with claude ${FEED_ARGS.join(" ")}.`,
@@ -619,8 +670,9 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
         // answer, and the person sees a sentence, not a stack trace. It lists no
-        // session, so no wait is remembered either.
+        // session, so no wait is remembered either, and none can be stopped.
         await waitingTexts?.annotate([]);
+        stops?.set(new Map());
         return {
           health: {
             id: SOURCE_ID,

@@ -199,6 +199,7 @@ export default function App({ store: providedStore }: AppProps) {
                       state={state}
                       now={now}
                       onRetry={store.refresh}
+                      onEnded={store.refresh}
                       onOpenHistory={setHistory}
                       newSince={newSince.since}
                       onNewLineInView={newSince.onLineInView}
@@ -222,7 +223,13 @@ export default function App({ store: providedStore }: AppProps) {
             now={now}
           />
         ))}
-        <SessionPanel sessionId={details} onClose={closeSession} state={state} now={now} />
+        <SessionPanel
+          sessionId={details}
+          onClose={closeSession}
+          state={state}
+          now={now}
+          onStopped={store.refresh}
+        />
       </Suspense>
 
       <SearchDialog

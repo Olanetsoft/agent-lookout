@@ -6,7 +6,7 @@ import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedCon
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
-import { useAppUpdate } from "@dashboard/hooks/data/useAppUpdate";
+import { useAppUpdate } from "@dashboard/hooks/app/useAppUpdate";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { lastCheckedWords, updateWords } from "@dashboard/lib/updates/updateWords";
 

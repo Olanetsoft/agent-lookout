@@ -21,6 +21,10 @@ const FIRST: SourceCapabilities = {
   names: { level: "yes" },
   jump: { level: "partly", reason: LONG_REASON },
   "quiet-for": { level: "no", reason: "Its file is not rewritten as a session works." },
+  stop: {
+    level: "partly",
+    reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
+  },
 };
 
 const SECOND: SourceCapabilities = {
@@ -31,6 +35,7 @@ const SECOND: SourceCapabilities = {
   names: { level: "partly", reason: "Its desktop app keeps no names, so folders name them." },
   jump: { level: "no", reason: "Its files name no process to find and no link to open." },
   "quiet-for": { level: "yes" },
+  stop: { level: "no", reason: "Its files name no process that could be confirmed and stopped." },
 };
 
 const THIRD: SourceCapabilities = {
@@ -41,6 +46,7 @@ const THIRD: SourceCapabilities = {
   names: { level: "partly", reason: "If the agent writes a name." },
   jump: { level: "no", reason: "Nothing in a file is used to reach a session." },
   "quiet-for": { level: "partly", reason: "If the agent writes its file again as it works." },
+  stop: { level: "no", reason: "Nothing in a file is used to stop a session." },
 };
 
 const source = (
@@ -72,6 +78,7 @@ const HEADS = [
   "Names",
   "Jump",
   "Quiet for",
+  "Stop",
 ];
 
 /**
@@ -149,9 +156,9 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Status files",
     ]);
     expect(rows.map((row) => cellsOf(row).map((cell) => cell.firstChild?.textContent))).toEqual([
-      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No"],
-      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes"],
-      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly"],
+      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No", "Partly"],
+      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes", "No"],
+      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly", "No"],
     ]);
     for (const cell of rows.flatMap(cellsOf)) expectWordInk(cell);
 
@@ -184,6 +191,7 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Yes",
       "Partly",
       "No",
+      "Partly",
     ]);
     for (const cell of agents.flatMap(cellsOf)) expectWordInk(cell);
 
@@ -233,7 +241,7 @@ test("Tab reaches each no and partly in reading order and opens its reason, and 
   const reachable = [...card().querySelectorAll<HTMLElement>('[data-part="capability"]')].filter(
     (cell) => cell.getAttribute("data-level") !== "yes",
   );
-  expect(reachable).toHaveLength(4 + 5 + 7);
+  expect(reachable).toHaveLength(5 + 6 + 8);
   for (const cell of card().querySelectorAll('[data-level="yes"]')) {
     expect(cell.hasAttribute("tabindex")).toBe(false);
   }
@@ -268,6 +276,7 @@ test("a screen reader hears each cell's word with its reason, and the table's he
     "Partly: Its desktop app keeps no names, so folders name them.",
     "No: Its files name no process to find and no link to open.",
     "Yes",
+    "No: Its files name no process that could be confirmed and stopped.",
   ]);
   expect(said(claude as Element)[5]).toBe(`Partly: ${LONG_REASON}`);
   // The reason is for the ear only: on screen it is in the tooltip.

@@ -16,10 +16,12 @@ import {
 } from "@core/api";
 import {
   CAPABILITIES,
+  EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
   SESSION_STATUSES,
   SOURCE_STATES,
+  STOP_WAYS,
   SURFACES,
   TERMINAL_APPS,
   WAITING_REASONS,
@@ -132,6 +134,9 @@ export function readSession(value: unknown): Session | null {
   }
   const jump = readJump(value.jump);
   if (jump) session.jump = jump;
+  // That it can be stopped, and how. Anything else is read as not.
+  const how = isRecord(value.stop) ? oneOf(STOP_WAYS, value.stop.how) : null;
+  if (how) session.stop = { how };
   const git = readGit(value.git);
   if (git) session.git = git;
   return session;
@@ -272,12 +277,17 @@ export function readSnapshot(data: unknown): SessionsSnapshot | null {
   };
 }
 
-/** One event, or null when it has no id or no time. */
+/**
+ * One event, or null when it has no id or no time, or is of a kind this page
+ * does not know: a later version's kind is left out rather than drawn as a
+ * change of status it was not.
+ */
 export function readEvent(value: unknown): SessionEvent | null {
   if (!isRecord(value)) return null;
   const id = text(value.id);
   const at = number(value.at);
-  if (!id || at === null) return null;
+  const kind = oneOf(EVENT_KINDS, value.kind);
+  if (!id || at === null || !kind) return null;
 
   const sessionId = text(value.sessionId) ?? "";
   const event: SessionEvent = {
@@ -285,13 +295,15 @@ export function readEvent(value: unknown): SessionEvent | null {
     at,
     sessionId,
     sessionName: text(value.sessionName) ?? (sessionId || "A session"),
-    kind: oneOf(EVENT_KINDS, value.kind) ?? "status-changed",
+    kind,
     severity: oneOf(EVENT_SEVERITIES, value.severity) ?? "advisory",
   };
   const from = oneOf(SESSION_STATUSES, value.from);
   if (from) event.from = from;
   const to = oneOf(SESSION_STATUSES, value.to);
   if (to) event.to = to;
+  const by = oneOf(EVENT_ACTORS, value.by);
+  if (by) event.by = by;
   return event;
 }
 

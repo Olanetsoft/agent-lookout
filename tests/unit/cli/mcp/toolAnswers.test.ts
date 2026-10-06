@@ -463,6 +463,12 @@ describe("sources", () => {
       expect.objectContaining({ capability: "names", level: "partly" }),
       expect.objectContaining({ capability: "jump", level: "no" }),
       { capability: "quiet-for", label: "Quiet for", level: "yes", reason: null },
+      {
+        capability: "stop",
+        label: "Stop",
+        level: "no",
+        reason: "Codex's files name no process that Agent Lookout could confirm and stop.",
+      },
     ]);
   });
 

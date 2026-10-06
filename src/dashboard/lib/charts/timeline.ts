@@ -29,7 +29,12 @@
 
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
-import type { Session, SessionEvent, SessionStatus } from "@core/sessions/session";
+import {
+  isStatusEvent,
+  type Session,
+  type SessionEvent,
+  type SessionStatus,
+} from "@core/sessions/session";
 import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
 import type { TrackSegment } from "@dashboard/components/ui/charts/StatusTrack";
 import { measuredSpans, pollRuns, uncovered, type Span } from "@dashboard/lib/charts/measured";
@@ -338,6 +343,9 @@ export function buildTimeline(input: TimelineInput): Timeline {
   let oldestEvent = Infinity;
   for (const event of events) {
     if (event.at < oldestEvent) oldestEvent = event.at;
+    // A row is drawn from what the events say of the status. Being stopped
+    // says nothing of it: the session's leaving the list is an event of its own.
+    if (!isStatusEvent(event)) continue;
     const own = eventsBySession.get(event.sessionId);
     if (own) own.push(event);
     else eventsBySession.set(event.sessionId, [event]);

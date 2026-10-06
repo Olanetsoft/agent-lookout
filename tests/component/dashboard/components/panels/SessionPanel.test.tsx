@@ -10,6 +10,7 @@ import type {
   SourceHealth,
 } from "@core/sessions/session";
 import { SessionPanel } from "@dashboard/components/panels/SessionPanel";
+import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway } from "@tests/support/browser/browser";
@@ -172,6 +173,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   document.documentElement.removeAttribute("data-theme");
+  setApiHost();
 });
 
 test("nothing is open without a session's address", async () => {
@@ -510,4 +512,202 @@ test("a session that leaves the list while it waits no longer says what it was a
     .toBeVisible();
   expect(panel.element().querySelector('[data-part="asking"]')).toBeNull();
   expect(panel.element().textContent).not.toContain("npm run deploy -- --env staging");
+});
+
+/** The listed sessions, with the Claude Code one changed as a test says. */
+function withClaude(overrides: Partial<Session>): CollectorState {
+  return state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CLAUDE_ID ? { ...session, ...overrides } : session,
+      ),
+    },
+  });
+}
+
+test.each([375, 1440])(
+  "at %ipx, a session the collector can stop has Stop beside its Jump, which asks first at the top of the details",
+  async (width) => {
+    await page.viewport(width, 900);
+    await renderPanel(CLAUDE_ID, withClaude({ stop: { how: "signal" } }));
+    const panel = dialog("checkout-flow");
+    await expect.element(panel).toBeVisible();
+    const root = panel.element();
+    const head = root.querySelector("header") as HTMLElement;
+
+    const stop = page.getByRole("button", { name: "Stop checkout-flow" });
+    expect(head.contains(stop.element())).toBe(true);
+    // After the Jump, before the close button, and the quiet one, never warm.
+    const order = [...head.querySelectorAll("a, button")].map(
+      (control) => control.getAttribute("data-part") ?? control.getAttribute("aria-label"),
+    );
+    expect(order).toEqual(["jump", "stop", "Close"]);
+    expect(stop.element().getAttribute("data-variant")).toBe("quiet");
+    expect(warmPaint(stop.element())).toEqual([]);
+    // The title still has room, and nothing runs past the dialog.
+    expect(head.scrollWidth).toBeLessThanOrEqual(head.clientWidth);
+
+    await userEvent.click(stop);
+    const confirm = root.querySelector('[data-part="stop-confirm"]') as HTMLElement;
+    expect(confirm.querySelector('[data-part="question"]')?.textContent).toBe(
+      "Stop checkout-flow?",
+    );
+    expect(confirm.querySelector('[data-part="interrupts"]')?.textContent).toBe(
+      "It is waiting for you. The question is left unanswered.",
+    );
+    // Above the facts, and focus on Cancel.
+    expect(
+      confirm.compareDocumentPosition(root.querySelector('[data-slot="fact-row"]') as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("Cancel");
+    expect(confirm.scrollWidth).toBeLessThanOrEqual(confirm.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);
+
+test("Stop session asks the app to stop it, by its id alone, and the page reads the sessions again", async () => {
+  const asked: [string, RequestInit | undefined][] = [];
+  setApiHost(
+    vi.fn<ApiHost>(async (path, init) => {
+      asked.push([path, init]);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  const stopped = vi.fn();
+  await render(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={withClaude({ stop: { how: "signal" } })}
+      now={NOW}
+      onStopped={stopped}
+    />,
+  );
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+
+  await expect
+    .element(page.getByRole("status").filter({ hasText: "Stopped." }))
+    .toHaveTextContent("Stopped. Its process has ended, and its conversation is kept.");
+  expect(asked.map(([path, init]) => [path, init?.method, init?.body])).toEqual([
+    ["/api/sessions/stop", "POST", JSON.stringify({ sessionId: CLAUDE_ID })],
+  ]);
+  expect(stopped).toHaveBeenCalledOnce();
+});
+
+test("a session in the desktop app has no Stop, and its process says where to stop it", async () => {
+  await renderPanel(CLAUDE_ID, withClaude({ surface: "desktop", links: {} }));
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+
+  expect(panel.element().querySelector('[data-part="stop"]')).toBeNull();
+  expect(facts(panel.element()).Process).toBe(
+    "4242 | Stop it in the desktop app. Agent Lookout does not stop the desktop app's sessions, because that app looks after their processes.",
+  );
+});
+
+test("a session that leaves the list has no Stop, though what Stop came to is still said", async () => {
+  const screen = await renderPanel(CLAUDE_ID, withClaude({ stop: { how: "signal" } }));
+  await expect.element(page.getByRole("button", { name: "Stop checkout-flow" })).toBeVisible();
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  expect(document.querySelector('[data-part="stop"]')).toBeNull();
+});
+
+test("a waiting session with no Jump still has the quiet Stop, alone before the close button", async () => {
+  await renderPanel(
+    CLAUDE_ID,
+    withClaude({ surface: "terminal", links: {}, stop: { how: "signal" } }),
+  );
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const head = panel.element().querySelector("header") as HTMLElement;
+
+  const order = [...head.querySelectorAll("a, button")].map(
+    (control) => control.getAttribute("data-part") ?? control.getAttribute("aria-label"),
+  );
+  expect(order).toEqual(["stop", "Close"]);
+  const stop = page.getByRole("button", { name: "Stop checkout-flow" }).element();
+  expect(stop.getAttribute("data-variant")).toBe("quiet");
+  expect(warmPaint(stop)).toEqual([]);
+});
+
+/** The details of the Claude Code session, open or closed, as the page's address says. */
+function panelOf(open: boolean, value: CollectorState, onStopped?: () => void) {
+  return (
+    <SessionPanel
+      sessionId={open ? CLAUDE_ID : null}
+      onClose={vi.fn()}
+      state={value}
+      now={NOW}
+      onStopped={onStopped}
+    />
+  );
+}
+
+test("closing the details puts Stop back, so opening them again asks nothing and says nothing old", async () => {
+  const value = withClaude({ stop: { how: "signal" } });
+  const screen = await render(panelOf(true, value));
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  expect(document.querySelector('[data-part="stop-confirm"]')).not.toBeNull();
+
+  // Left with Escape, as the address closing.
+  await screen.rerender(panelOf(false, value));
+  await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
+  await screen.rerender(panelOf(true, value));
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+
+  expect(document.querySelector('[data-part="stop-confirm"]')).toBeNull();
+  expect(document.querySelector('[data-part="stop-outcome"]')).toBeNull();
+  // Focus is on the title, as whenever the details open.
+  await expect.poll(() => document.activeElement?.closest('[role="dialog"]') !== null).toBe(true);
+  expect(document.activeElement?.textContent).toBe("checkout-flow");
+});
+
+test("what Stop came to is not said again once the details have closed and opened", async () => {
+  let answer: (response: Response) => void = () => {};
+  setApiHost(
+    vi.fn<ApiHost>(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    ),
+  );
+  const value = withClaude({ stop: { how: "signal" } });
+  const stopped = vi.fn();
+  const screen = await render(panelOf(true, value, stopped));
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+
+  // Closed while the request is under way: it is left to finish.
+  await screen.rerender(panelOf(false, value, stopped));
+  await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
+  answer(
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  await expect.poll(() => stopped.mock.calls.length).toBe(1);
+
+  await screen.rerender(panelOf(true, value, stopped));
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+  expect(document.querySelector('[data-part="stop-outcome"]')).toBeNull();
+  expect(document.querySelector('[data-part="stop-confirm"]')).toBeNull();
 });

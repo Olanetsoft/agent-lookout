@@ -25,6 +25,7 @@ test("an event reads as what happened to the session", () => {
   expect(eventPhrase({ kind: "status-changed", to: "finished" })).toBe("finished");
   expect(eventPhrase({ kind: "status-changed", to: "failed" })).toBe("failed");
   expect(eventPhrase({ kind: "status-changed", to: "unknown" })).toBe("changed status");
+  expect(eventPhrase({ kind: "stopped", from: "working" })).toBe("was stopped from Agent Lookout");
 });
 
 test("a wait that ended says how long it lasted, when its start is held", () => {

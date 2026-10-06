@@ -2503,3 +2503,62 @@ test.each([
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
+
+/** A session left running in VS Code, idle 30 hours, that the collector can stop. */
+function leftOpen() {
+  return session(8, {
+    name: "left-open",
+    surface: "vscode",
+    status: "idle",
+    statusSince: NOW - 30 * HOUR,
+    stale: true,
+    pid: 4248,
+    alive: true,
+    stop: { how: "signal" },
+  });
+}
+
+test("the sessions left running are a band under the card's head, over the list and the board, and stay in the list under Idle", async () => {
+  localStorage.removeItem("agent-lookout-hidden-sessions");
+  const screen = await render(
+    <SessionsCard sessions={[...CALM, leftOpen()]} sources={[SOURCE_OK]} now={NOW} />,
+  );
+  const group = screen.container.querySelector('[data-slot="left-running"]') as HTMLElement;
+  const list = screen.container.querySelector('[data-slot="session-list"]') as HTMLElement;
+
+  expect(group.querySelector("h3")?.textContent).toBe("Left running1");
+  // Folded at first, so the first group of the list sits just under it.
+  expect(group.querySelector('[data-slot="left-running-row"]')).toBeNull();
+  const first = list.querySelector('[data-slot="session-group"]') as HTMLElement;
+  expect(first.getBoundingClientRect().top - group.getBoundingClientRect().top).toBeLessThanOrEqual(
+    64,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Review…" }));
+  expect(
+    [...group.querySelectorAll('[data-slot="left-running-row"] [data-part="name"]')].map(
+      (name) => name.textContent,
+    ),
+  ).toEqual(["left-open"]);
+  expect(group.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // Still a row of the list, under Idle, where every stale session is.
+  expect(rowOf(screen.container, "left-open").closest('[data-group="idle"]')).not.toBeNull();
+  // The stale session with no process to stop is not left running.
+  expect(group.textContent).not.toContain("stale-one");
+  expect(warmPaint(group)).toEqual([]);
+
+  await userEvent.click(screen.getByRole("radio", { name: "Board" }));
+  expect(screen.container.querySelector('[data-slot="left-running"]')).not.toBeNull();
+});
+
+test("hiding the last session left running gives focus to the card's title", async () => {
+  localStorage.removeItem("agent-lookout-hidden-sessions");
+  const screen = await render(
+    <SessionsCard sessions={[...CALM, leftOpen()]} sources={[SOURCE_OK]} now={NOW} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Review…" }));
+  await userEvent.click(screen.getByRole("button", { name: "Hide left-open until it changes" }));
+
+  expect(screen.container.querySelector('[data-slot="left-running"]')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sessions" }).element());
+  localStorage.removeItem("agent-lookout-hidden-sessions");
+});

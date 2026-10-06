@@ -1,4 +1,4 @@
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { useId, type ComponentProps, type ReactNode, type Ref } from "react";
 
 import { cn } from "@dashboard/lib/utils";
 
@@ -10,6 +10,12 @@ interface SectionCardProps extends Omit<ComponentProps<"section">, "title"> {
   sub?: ReactNode;
   /** What sits at the right of the head: a hint, a clock time, a legend. */
   aside?: ReactNode;
+  /**
+   * The title, for a card that sends focus to it when what had focus inside
+   * has gone. Given, the title can take focus from a script, though Tab
+   * passes it by.
+   */
+  titleRef?: Ref<HTMLHeadingElement>;
 }
 
 /**
@@ -29,6 +35,7 @@ export function SectionCard({
   count,
   sub,
   aside,
+  titleRef,
   className,
   children,
   ...props
@@ -46,7 +53,12 @@ export function SectionCard({
         className='flex items-baseline justify-between gap-x-4 gap-y-2 px-6 pt-5 pb-3 max-wide:flex-wrap'
       >
         <div className='flex min-w-0 items-baseline gap-2'>
-          <h2 id={titleId} className='text-title font-semibold'>
+          <h2
+            ref={titleRef}
+            id={titleId}
+            tabIndex={titleRef ? -1 : undefined}
+            className='text-title font-semibold outline-none'
+          >
             {title}
           </h2>
           {/* Beside the title, not in it, so the card's name stays the same as the count changes. */}

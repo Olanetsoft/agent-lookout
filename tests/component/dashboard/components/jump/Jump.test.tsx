@@ -10,7 +10,7 @@ import {
   JUMP_NOTE_MS,
   JUMP_REFUSED_NOTE_MS,
   useJump,
-} from "@dashboard/hooks/data/useJump";
+} from "@dashboard/hooks/actions/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import { AUTOMATION_NOTE_STORAGE_KEY } from "@dashboard/lib/api/automationNote";
 import { makeSession } from "@tests/fixtures/session";

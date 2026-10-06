@@ -108,6 +108,7 @@ describe("the snapshot", () => {
       names: { level: "yes" },
       jump: { level: "no", reason: "This tool names no place to go." },
       "quiet-for": { level: "partly", reason: "Only while it writes its file." },
+      stop: { level: "no", reason: "It names no process to stop." },
     } as const;
     let calls = 0;
     const declaring: Adapter = {
@@ -541,6 +542,26 @@ describe("events after a restart, with history kept from before it", () => {
     expect(
       events.list().map((event) => [event.sessionId, event.kind, event.from, event.to]),
     ).toEqual([["claude-code:a", "status-changed", "working", "idle"]]);
+  });
+
+  test("a session stopped from Agent Lookout is taken as its last status said, not as a status of its own", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      kept("claude-code:a", "status-changed", "working", T0 - 60_000),
+      // A stop that did not end it, the newest event held, says nothing of its status.
+      {
+        ...kept("claude-code:a", "stopped", undefined, T0 - 30_000),
+        from: "working",
+        by: "agent-lookout",
+      },
+    ]);
+    vi.setSystemTime(T0 + 60_000);
+    await poller.pollOnce();
+    expect(events.list().map((event) => [event.kind, event.from, event.to])).toEqual([
+      ["status-changed", "working", "idle"],
+    ]);
   });
 
   test("without history from before, the first poll is a baseline", async () => {

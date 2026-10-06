@@ -76,6 +76,27 @@ export type JumpTarget =
       place: string;
     };
 
+/** The two ways the collector can stop a session it lists, when the person presses Stop. */
+export const STOP_WAYS = ["signal", "background"] as const;
+
+export type StopWay = (typeof STOP_WAYS)[number];
+
+/**
+ * That the collector can stop a session, when the dashboard asks it to with
+ * `POST /api/sessions/stop`, and how:
+ *
+ * - `signal`: it ends the session's process with SIGTERM, as for a session in
+ *   a terminal or in VS Code.
+ * - `background`: it runs `claude stop` with the background job's id, since a
+ *   background job runs under Claude Code's own supervisor.
+ *
+ * It holds nothing a command could be made of. What the collector acts on,
+ * the process, its start time and the job's id, never leaves it.
+ */
+export interface StopOffer {
+  how: StopWay;
+}
+
 /**
  * Where a session's folder stands in git: the branch it has checked out, or,
  * when it has none checked out, the commit it is on, as the first seven
@@ -177,6 +198,8 @@ export interface Session {
   links: { open?: string };
   /** Present when the collector can take the person to the session: see `JumpTarget`. */
   jump?: JumpTarget;
+  /** Present when the collector can stop the session, on the person's request: see `StopOffer`. */
+  stop?: StopOffer;
   /** True when the session has been idle longer than the stale threshold. */
   stale: boolean;
 }
@@ -214,9 +237,11 @@ export interface SourceFact {
 }
 
 /**
- * The things a source can tell about its sessions, in the order the Sources
- * view and docs/GUIDE.md list them. The branch is not among them: it is read
- * from each session's folder, the same way for every source.
+ * The things a source can tell about its sessions, and do to them, in the
+ * order the Sources view and docs/GUIDE.md list them: the last, Stop, is what
+ * Agent Lookout can do to a session when the person presses Stop. The branch
+ * is not among them: it is read from each session's folder, the same way for
+ * every source.
  */
 export const CAPABILITIES = [
   "working-and-idle",
@@ -226,6 +251,7 @@ export const CAPABILITIES = [
   "names",
   "jump",
   "quiet-for",
+  "stop",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -239,6 +265,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   names: "Names",
   jump: "Jump",
   "quiet-for": "Quiet for",
+  stop: "Stop",
 };
 
 /** How much of one thing a source can tell: all of it, none of it, or some. */
@@ -295,8 +322,37 @@ export interface SessionsSnapshot {
   sessions: Session[];
 }
 
-export const EVENT_KINDS = ["appeared", "status-changed", "ended"] as const;
+/**
+ * What an event says happened:
+ *
+ * appeared        a session was found
+ * status-changed  its status changed
+ * ended           it left the list
+ * stopped         Agent Lookout stopped it, when the person pressed Stop or
+ *                 ended it with the sessions left running. Its leaving the
+ *                 list is an `ended` event of its own, at the next poll
+ *
+ * A reader drops an event of a kind it does not know, so a later kind never
+ * reads as one of these.
+ */
+export const EVENT_KINDS = ["appeared", "status-changed", "ended", "stopped"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
+
+/** The kinds that say what a session's status was, which the timeline and the waits are drawn from. */
+export const STATUS_EVENT_KINDS = [
+  "appeared",
+  "status-changed",
+  "ended",
+] as const satisfies readonly EventKind[];
+
+/** Whether an event says what a session's status was, rather than what was done to it. */
+export function isStatusEvent(event: Pick<SessionEvent, "kind">): boolean {
+  return (STATUS_EVENT_KINDS as readonly EventKind[]).includes(event.kind);
+}
+
+/** Who did what an event says was done to a session: Agent Lookout, at the person's request. */
+export const EVENT_ACTORS = ["agent-lookout"] as const;
+export type EventActor = (typeof EVENT_ACTORS)[number];
 export const EVENT_SEVERITIES = ["advisory", "warning", "critical"] as const;
 export type EventSeverity = (typeof EVENT_SEVERITIES)[number];
 
@@ -309,6 +365,8 @@ export interface SessionEvent {
   from?: SessionStatus;
   to?: SessionStatus;
   severity: EventSeverity;
+  /** For a `stopped` event: who stopped it, which is always Agent Lookout, at the person's request. */
+  by?: EventActor;
 }
 
 export interface HistoryPoint {

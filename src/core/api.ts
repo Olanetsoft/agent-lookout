@@ -245,11 +245,121 @@ export interface JumpRefusal extends ErrorResponse {
  */
 export const JUMP_INTERVAL_MS = 1_000;
 
+/** What `ACTION_HEADER` says on a request that stops one session. */
+export const STOP_ACTION = "stop";
+
+/** What `ACTION_HEADER` says on a request that ends the sessions left running. */
+export const CLEAN_UP_ACTION = "clean-up";
+
+/**
+ * The body of `POST /api/sessions/stop`: the id of the session to stop, and
+ * nothing else. The collector looks the session up in its own list and acts
+ * on the process or the background job it found there, so nothing in the
+ * request can choose what is signalled or run.
+ */
+export interface StopRequest {
+  sessionId: string;
+}
+
+/** `POST /api/sessions/stop`, when the session's process has ended, or its background job was stopped. */
+export interface StopResponse {
+  ok: true;
+}
+
+/**
+ * Why a session was not stopped, or not yet, for the dashboard to say in its
+ * own words.
+ *
+ * gone            404: the session is not listed, or its process has already ended
+ * unsupported     409: Agent Lookout does not stop this session: one of Codex, a
+ *                 status file, the desktop app, or one whose kind is not known
+ * cannot-confirm  409: the collector could not confirm that the process is that
+ *                 session: its registry file changed, or `ps` did not give the
+ *                 same start time
+ * not-allowed     403: the process is another user's, or one Agent Lookout never
+ *                 stops: its own, the one it was started from, or the first process
+ * still-running   202: asked to stop, and still running 10 seconds later
+ * too-soon        429: another stop was made less than a second ago, or one is under way
+ * failed          500: the signal could not be sent, or `claude stop` failed
+ */
+export type StopFailure =
+  | "gone"
+  | "unsupported"
+  | "cannot-confirm"
+  | "not-allowed"
+  | "still-running"
+  | "too-soon"
+  | "failed";
+
+/** The body of an answer of `POST /api/sessions/stop` that says why the session was not stopped. */
+export interface StopRefusal extends ErrorResponse {
+  reason: StopFailure;
+}
+
+/** How long the collector waits for a process it signalled to end, before it says it is still running. */
+export const STOP_WAIT_MS = 10_000;
+
+/**
+ * The least time between two stops, or two clean-ups, which share one limit.
+ * The collector refuses one that comes sooner, and one while another is under way.
+ */
+export const STOP_INTERVAL_MS = 1_000;
+
+/** The most sessions one clean-up ends. */
+export const MAX_CLEAN_UP_SESSIONS = 20;
+
+/**
+ * One session to end in a clean-up: its id, and the moment its idle began as
+ * the page showed it. A session whose idle began at another moment since has
+ * done something in between, and is left running.
+ */
+export interface CleanUpEntry {
+  sessionId: string;
+  statusSince: number;
+}
+
+/** The body of `POST /api/sessions/clean-up`: the sessions to end, and nothing else. */
+export interface CleanUpRequest {
+  sessions: CleanUpEntry[];
+}
+
+/**
+ * What became of one session in a clean-up:
+ *
+ * ended           its process ended, or its background job was stopped
+ * became-active   it has done something since the page listed it, so it was left running
+ * not-stale       it has been idle less than a day, so it was left running
+ * gone            it is not listed, or its process had already ended
+ * unsupported     Agent Lookout does not stop this session
+ * cannot-confirm  the collector could not confirm that the process is that session
+ * not-allowed     the process is one Agent Lookout may not stop
+ * still-running   asked to stop, and still running 10 seconds later
+ * failed          the signal could not be sent, or `claude stop` failed
+ */
+export const CLEAN_UP_OUTCOMES = [
+  "ended",
+  "became-active",
+  "not-stale",
+  "gone",
+  "unsupported",
+  "cannot-confirm",
+  "not-allowed",
+  "still-running",
+  "failed",
+] as const;
+
+export type CleanUpOutcome = (typeof CLEAN_UP_OUTCOMES)[number];
+
+/** `POST /api/sessions/clean-up`: what became of each session asked for, in the order asked. */
+export interface CleanUpResponse {
+  results: { sessionId: string; outcome: CleanUpOutcome }[];
+}
+
 /**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`, or `clear-history`. A browser sends no header of this
- * kind to another origin without asking first, and the collector never says
- * yes, so a page at another address cannot send it.
+ * naming what: `jump`, `clear-history`, `stop` or `clean-up`. A browser sends
+ * no header of this kind to another origin without asking first, and the
+ * collector never says yes, so a page at another address cannot send it.
  */
 export const ACTION_HEADER = "X-Agent-Lookout-Action";
 

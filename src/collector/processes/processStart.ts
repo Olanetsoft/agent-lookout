@@ -37,7 +37,18 @@ export const START_CHECK_TTL_MS = 30_000;
  * the old one is not a case that happens. A clock set by more than this still
  * makes a running session look like a leftover.
  */
-const SAME_START_WITHIN_MS = 60_000;
+export const SAME_START_WITHIN_MS = 60_000;
+
+/**
+ * How far apart two start times can be for a process to be ended as the one a
+ * registry file was written for: one second, the most `lstart`, which counts in
+ * whole seconds, can move by when Linux's `ps` works it out again. A minute is
+ * right for leaving a session in the list, where a mistake shows one leftover,
+ * and too much for sending a signal, where a mistake ends another program. A
+ * clock set by more than a second while a session runs leaves it with no Stop
+ * that works until it is restarted.
+ */
+export const SAME_START_TO_STOP_WITHIN_MS = 1_000;
 
 /**
  * What `ps -o lstart=` prints in the C locale, once runs of spaces are
@@ -68,11 +79,13 @@ function lstartMs(value: string): number | undefined {
  * Compares the start time a registry file recorded with the one `ps` reports now.
  *
  * Only two values that both look like `ps` output and are more than a minute
- * apart are "different". Anything that cannot be compared is "unknown".
+ * apart are "different", or more than `withinMs` apart when that is given.
+ * Anything that cannot be compared is "unknown".
  */
 export function compareProcessStart(
   recorded: string | undefined,
   actual: string | undefined,
+  withinMs: number = SAME_START_WITHIN_MS,
 ): StartMatch {
   if (recorded === undefined || actual === undefined) return "unknown";
   const before = collapse(recorded);
@@ -82,7 +95,7 @@ export function compareProcessStart(
   const beforeMs = lstartMs(before);
   const nowMs = lstartMs(now);
   if (beforeMs === undefined || nowMs === undefined) return "unknown";
-  return Math.abs(beforeMs - nowMs) <= SAME_START_WITHIN_MS ? "same" : "different";
+  return Math.abs(beforeMs - nowMs) <= withinMs ? "same" : "different";
 }
 
 /** The arguments that ask `ps` when each of these processes started, and nothing else. */

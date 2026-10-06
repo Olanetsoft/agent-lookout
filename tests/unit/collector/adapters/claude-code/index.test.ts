@@ -6,9 +6,10 @@ import {
   FEED_INTERVAL_MS,
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
+import { createStopTargets } from "@collector/actions/stopTargets";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import type { TmuxPane } from "@collector/tmux/panes";
-import { HOME, pids, registryFiles } from "@tests/fixtures/claudeCode";
+import { HOME, ids, pids, registryFiles } from "@tests/fixtures/claudeCode";
 import {
   adapterFor,
   fails,
@@ -280,5 +281,90 @@ describe("Terminal and iTerm2 tabs", () => {
     const without = adapterFor("/Users/example/elsewhere", { registryIo });
 
     expect((await without.poll()).sessions).toEqual((await withFinder.poll()).sessions);
+  });
+});
+
+describe("Stop", () => {
+  /** The fixtures' registry folder, held in memory. */
+  const registryIo: RegistryIo = {
+    readdir: async () => Object.keys(registryFiles),
+    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+  };
+
+  test("each session it can stop says how, and what it is stopped by goes to the collector alone", async () => {
+    const stops = createStopTargets();
+    const { sessions } = await adapterFor("/Users/example/elsewhere", { registryIo, stops }).poll();
+
+    expect(
+      Object.fromEntries(sessions.map((session) => [session.name, session.stop?.how ?? null])),
+    ).toEqual({
+      "demo-project": "signal",
+      // In the desktop app.
+      "demo-api": null,
+      "demo-docs": "signal",
+      "demo-site": "signal",
+      // A background job with no live process has nothing to stop.
+      "nightly-report": null,
+    });
+    expect(stops.targetOf(`claude-code:${ids.busy}`)).toMatchObject({
+      how: "signal",
+      pid: pids.busy,
+      registryFile: `/Users/example/elsewhere/sessions/${pids.busy}.json`,
+    });
+    expect(stops.targetOf(`claude-code:${ids.permission}`)).toBeUndefined();
+  });
+
+  test("without anything to hand the targets to, no session is offered Stop", async () => {
+    const { sessions } = await adapterFor("/Users/example/elsewhere", { registryIo }).poll();
+    expect(sessions.filter((session) => session.stop !== undefined)).toEqual([]);
+  });
+
+  test("with AGENT_LOOKOUT_STOP off, nothing is offered Stop, and the source says so", async () => {
+    const stops = createStopTargets();
+    const adapter = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      stops,
+      env: {
+        AGENT_LOOKOUT_CLAUDE_HOME: "/Users/example/elsewhere",
+        AGENT_LOOKOUT_CLAUDE_BIN: "/opt/tools/claude",
+        AGENT_LOOKOUT_STOP: "off",
+      },
+    });
+    const { sessions } = await adapter.poll();
+
+    expect(sessions.filter((session) => session.stop !== undefined)).toEqual([]);
+    expect(stops.targetOf(`claude-code:${ids.busy}`)).toBeUndefined();
+    expect(adapter.capabilities?.stop).toEqual({
+      level: "no",
+      reason: "AGENT_LOOKOUT_STOP is off, so no session is stopped from Agent Lookout.",
+    });
+  });
+
+  test("once a background job has been stopped, the command is run at the next poll, ahead of its beat", async () => {
+    const stops = createStopTargets();
+    const clock = { now };
+    let runs = 0;
+    const adapter = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      stops,
+      now: () => clock.now,
+      run: async () => {
+        runs += 1;
+        return prints("[]")("", [], { timeoutMs: 1, env: {} });
+      },
+    });
+    await adapter.poll();
+    clock.now += 2_000;
+    await adapter.poll();
+    expect(runs).toBe(1);
+
+    stops.askFeedSoon();
+    clock.now += 2_000;
+    await adapter.poll();
+    expect(runs).toBe(2);
+    // And then the beat goes on from that run.
+    clock.now += 2_000;
+    await adapter.poll();
+    expect(runs).toBe(2);
   });
 });

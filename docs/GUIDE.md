@@ -64,6 +64,8 @@ When the list is too narrow for every column, the app is left out first and then
 
 A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too.
 
+Claude Code sessions idle for a day or more whose process still runs are also listed over the list, under Left running, where they can be hidden or ended: see [Sessions left running](#sessions-left-running).
+
 Click a row, or move to its name with Tab and press Enter, to open the session's [details](#a-sessions-details).
 
 The switch at the top right of the Sessions list, or under its title on a phone, chooses List, Repos or Board. Repos groups the same rows by [repository](#repositories), and Board lays them out in columns.
@@ -106,7 +108,7 @@ The details show everything Agent Lookout knows about the session:
 - its own events, newest first, as the Events log shows them
 - its row of the Timeline over the last hour
 
-A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you.
+A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you. A session Agent Lookout can stop has a [Stop](#stop-a-session) button beside it.
 
 Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's name. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
 
@@ -161,7 +163,7 @@ Repos then lists both sessions under `storefront`, each with its own folder and 
 
 #### Events
 
-The Events log records each session appearing, changing status and ending, newest first. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep or Agent Lookout was stopped, a row says when watching resumed and how long was not measured. The log is kept on this computer with the charts' counts, so a restart does not empty it: see [History](#history). While the log still holds everything since Agent Lookout started, it ends with Started watching, and its heading says since when, with the day when that was not today. Once the history has been cleared, it ends with History cleared instead.
+The Events log records each session appearing, changing status and ending, newest first, and each session [stopped](#stop-a-session) from Agent Lookout. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep or Agent Lookout was stopped, a row says when watching resumed and how long was not measured. The log is kept on this computer with the charts' counts, so a restart does not empty it: see [History](#history). While the log still holds everything since Agent Lookout started, it ends with Started watching, and its heading says since when, with the day when that was not today. Once the history has been cleared, it ends with History cleared instead.
 
 When you come back to the tab after it was in the background or minimised, or open the dashboard again, a line in the log marks where you left off, such as New since 14:02:37, and the log's heading says how many events arrived since, such as 3 new. The events above the line are the new ones. The line and the count go once the line has been in view for 10 seconds, or when you open Sources or Settings. If more arrived than the log shows at once, scroll down the log to the line. With the tab in front all the time there is never a line. Events that arrive while the line is showing join the new ones above it. A wait among the new events has its usual mark, and nothing else changes colour. The one thing kept for this is the time you left off, in your browser.
 
@@ -191,13 +193,13 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 #### What each agent can report
 
-Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
+Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
 
-| Agent        | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for |
-| ------------ | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- |
-| Claude Code  | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        |
-| Codex        | Yes              | No        | Partly   | No     | Partly | No     | Yes       |
-| Status files | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    |
+| Agent        | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for | Stop   |
+| ------------ | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- | ------ |
+| Claude Code  | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        | Partly |
+| Codex        | Yes              | No        | Partly   | No     | Partly | No     | Yes       | No     |
+| Status files | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    | No     |
 
 Why, for each No and Partly:
 
@@ -205,11 +207,13 @@ Why, for each No and Partly:
 - Claude Code, Failed: Only background jobs. Any other session leaves the list without saying how it ended.
 - Claude Code, Jump: In VS Code, in tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in the desktop app or another terminal.
 - Claude Code, Quiet for: The file Agent Lookout reads is not rewritten as a session works.
+- Claude Code, Stop: In a terminal, in VS Code and for background jobs. Not in the desktop app.
 - Codex, Needs you: Codex does not record approval waits, so a session waiting for you shows as working.
 - Codex, Finished: From Codex 0.155 on, once no Codex program has the session open.
 - Codex, Failed: Codex does not record errors in its files.
 - Codex, Names: The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.
 - Codex, Jump: Codex's files name no process to find, and Codex documents no link to a session.
+- Codex, Stop: Codex's files name no process that Agent Lookout could confirm and stop.
 - Status files, Working and idle: If the agent writes working and idle.
 - Status files, Needs you: If the agent writes waiting.
 - Status files, Finished: If the agent writes finished.
@@ -217,6 +221,7 @@ Why, for each No and Partly:
 - Status files, Names: If the agent writes a name. Otherwise the folder's or the file's name is used.
 - Status files, Jump: Nothing in a status file is used to reach a session.
 - Status files, Quiet for: If the agent writes its file again as it works.
+- Status files, Stop: Any program can write a status file, so nothing in one is used to stop a session.
 
 ### Settings
 
@@ -538,6 +543,39 @@ In the [desktop app](#desktop-app) the collector runs inside Agent Lookout itsel
 
 To stop Agent Lookout looking for tabs at all, start it with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. It then runs neither `ps` for this nor `osascript` for Jump, and sessions in Terminal and iTerm2 have no button. [PRIVACY.md](../PRIVACY.md#terminal-and-iterm2) lists what it reads and runs.
 
+## Stop a session
+
+A Claude Code session that runs in a terminal or in VS Code, and a Claude Code background job, has a Stop button at the top of its [details](#a-sessions-details), beside its Jump. Stop ends the session's process. It is not an interrupt: the session ends, and what it was doing stops part-way. Its conversation is kept, so `claude --resume` with the session's ID opens it again, and VS Code opens it from its session history. Agent Lookout stops a session only when you press Stop and confirm, and never on its own.
+
+Stop asks first, at the top of the details: it names the session, says that its process ends now and how to open the conversation again, and, for a session that is working or waiting for you, that what it is doing stops part-way or that its question is left unanswered. Focus goes to Cancel, so pressing Enter does not stop it. Press Stop session to stop it.
+
+Agent Lookout then checks again that the process is that session: it reads the session's file in `~/.claude/sessions` again and asks `ps` when the process started, and does nothing unless both agree with what it found before. A session in a terminal or VS Code is sent SIGTERM, which ends Claude Code the way closing it does, and Agent Lookout waits up to 10 seconds for it to end. A background job is stopped with `claude stop` and its ID, since Claude Code would start its process again if it were ended another way. The session leaves the list within a second or two, a background job shows as finished, and the Events log says it was stopped from Agent Lookout.
+
+| What the details say                                                              | Why                                                                                                                                    |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Stopped. Its process has ended, and its conversation is kept.                     | It worked.                                                                                                                             |
+| Asked to stop, still running. It had not ended 10 seconds later.                  | SIGTERM was sent and the process has not ended. Nothing stronger is sent. Look at the session where it runs.                           |
+| Agent Lookout cannot confirm this process is that session, so it did not stop it. | Its file in `~/.claude/sessions` changed, or `ps` gave another start time, as when the process ID now belongs to another program.      |
+| That session has already ended.                                                   | It ended before Stop reached it.                                                                                                       |
+| Agent Lookout is not allowed to stop this process.                                | The process is another user's, or one Agent Lookout itself runs in or was started from, such as the session whose terminal started it. |
+
+#### Which sessions have Stop
+
+- A Claude Code session in a terminal of any app, tmux included, or in VS Code, whose file in `~/.claude/sessions` says it is an interactive session and records when its process started.
+- A Claude Code background job, while Agent Lookout runs the `claude` command: not with `AGENT_LOOKOUT_CLAUDE_FEED=off`, and not with `AGENT_LOOKOUT_CLAUDE_HOME` set and `AGENT_LOOKOUT_CLAUDE_BIN` not.
+- Not a session in Claude Code's desktop app, which looks after its own processes: its details say to stop it there. Not a session whose file does not say what kind it is, or which app it runs in.
+- Not a Codex session, and not a session from a status file.
+
+### Sessions left running
+
+Closing a Claude Code tab in VS Code can leave its process running, and the session then sits idle for days. Over the Sessions list, or the board, a band says how many Claude Code sessions have been idle for a day or more with their process still running: those Agent Lookout can stop, and those in the desktop app. Press Review… to list them, the longest idle first, each with its folder, its app and how long it has been idle, and Close to fold the list again. They stay in the list under Idle too.
+
+Hide until it changes takes one out of Left running, in this browser only, until its status next changes. It does nothing to the session.
+
+End all… lists each one again with a tick, all ticked, up to 20, which is as many as it ends at a time. Untick any you want to keep, and press End, which says how many it ends, such as End 3 sessions. Each one is stopped as Stop stops it, after the same checks, and only if it is still idle since the moment the list showed: a session that has done anything since is left running, even if it is idle again. A line then says what came of it, such as Ended 2. Left 1 running because it became active., and each row says what became of it. A session in the desktop app is listed with a line that says to stop it there, and has no tick.
+
+To take Stop and the ending of sessions left running away altogether, start Agent Lookout with `AGENT_LOOKOUT_STOP=off`. [PRIVACY.md](../PRIVACY.md#stopping-a-session) says what Agent Lookout checks and runs to stop a session.
+
 ## Keyboard
 
 Every view answers to a few keys. Press `?` to see them all.
@@ -711,7 +749,7 @@ The prompt then runs the command each time it is drawn, which adds about a tenth
 
 ## For your agents
 
-`agent-lookout mcp` lets an AI agent ask which sessions are running and which need you, so one agent can keep track of the others. It is a [Model Context Protocol](https://modelcontextprotocol.io) server. The agent's app starts it and speaks to it over stdin and stdout, so it listens on no port. It asks the Agent Lookout that is already running, the way `agent-lookout status` does, and starts nothing. Its tools only read: none of them can jump to a session, answer one or change a notification.
+`agent-lookout mcp` lets an AI agent ask which sessions are running and which need you, so one agent can keep track of the others. It is a [Model Context Protocol](https://modelcontextprotocol.io) server. The agent's app starts it and speaks to it over stdin and stdout, so it listens on no port. It asks the Agent Lookout that is already running, the way `agent-lookout status` does, and starts nothing. Its tools only read: none of them can jump to a session, stop one, answer one or change a notification.
 
 To add it to Claude Code, run this once:
 
@@ -852,13 +890,13 @@ These are macOS only:
 - Notifications with no dashboard tab open. On a Mac Agent Lookout shows those itself with `osascript`, which Linux does not have, so on Linux it shows none. Started with `AGENT_LOOKOUT_NOTIFICATIONS=on`, it prints a line saying so. Showing them with `notify-send` is left out for now. Keep a dashboard tab open to be notified.
 - [Jump to a tab of Terminal or iTerm2](#a-session-in-a-tab-of-terminal-or-iterm2), the two Mac apps it can bring forward. A session in a Linux terminal that is not running tmux has no Jump button.
 
-If the clock is set by more than a minute while a Claude Code session runs, that session can drop off the list until it is restarted. Linux's `ps` works out when a process started from the clock, so the start time it gives then no longer matches the one in the session's registry file, and the file looks like one a crashed session left behind.
+If the clock is set by more than a minute while a Claude Code session runs, that session can drop off the list until it is restarted. Linux's `ps` works out when a process started from the clock, so the start time it gives then no longer matches the one in the session's registry file, and the file looks like one a crashed session left behind. Stop asks more, a start time within a second of the recorded one, so if the clock is set by more than a second, Stop says it cannot confirm that session's process until the session is restarted.
 
 Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on NixOS, no session in tmux has a Jump button, and a registry file left behind by a session that crashed shows as a session if another program is given its process ID.
 
 ## What it does not do yet
 
-It cannot stop, resume or answer a session, and nor can an agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
+It cannot resume or answer a session. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
@@ -900,6 +938,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. Anywhere else it prints a line saying it shows none itself.                                               |
 | `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                                                                                                                                         |
 | `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                                                                                                                             |
+| `AGENT_LOOKOUT_STOP`           | Set to `off` and Agent Lookout never stops a session: no session has a Stop button, Left running has no End all…, and the server answers no request to stop one.                                                                                                                    |
 | `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                                                                                                                                   |
 | `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                                                                                                                            |
 | `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                                                                                                                                |
@@ -914,7 +953,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 
 To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR` and `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
 
-The Claude Code, transcript, Codex, status file, history, notification, tmux, terminal tab, email and webhook settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, transcript, Codex, status file, history, notification, tmux, terminal tab, stop, email and webhook settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180

@@ -606,7 +606,8 @@
           <h2 id="today-title">What it does today</h2>
           <p>
             It watches your sessions, takes you to a Claude Code session in VS Code, tmux, Terminal
-            or iTerm2, and notifies you if you ask it to.
+            or iTerm2, notifies you if you ask it to, and stops a Claude Code session when you press
+            Stop and confirm.
           </p>
         </div>
 
@@ -658,8 +659,14 @@
               </dd>
             </div>
             <div>
-              <dt>Controls</dt>
-              <dd>None. There are no approve, stop or pause buttons.</dd>
+              <dt>Stop</dt>
+              <dd>
+                Ends a Claude Code session’s process when you press Stop in its details and confirm,
+                and ends the sessions left running for a day or more, after a confirmation that
+                lists each one. The conversation is kept, and <code>claude --resume</code> opens it
+                again. Agent Lookout never stops a session on its own, and not one in Claude Code’s
+                desktop app. There are no approve or pause buttons.
+              </dd>
             </div>
             <div>
               <dt>Licence</dt>

@@ -5,6 +5,7 @@ import {
   createProcessStartCheck,
   parseProcessStarts,
   psStartArgs,
+  SAME_START_TO_STOP_WITHIN_MS,
   START_CHECK_TTL_MS,
   type ReadProcessStarts,
 } from "@collector/processes/processStart";
@@ -75,6 +76,22 @@ describe("compareProcessStart", () => {
     expect(compareProcessStart(recorded, "Tue Nov 14 22:12:19 2023")).toBe("different");
     expect(compareProcessStart(recorded, "Wed Nov 15 22:13:20 2023")).toBe("different");
     expect(compareProcessStart(recorded, "Sat Oct  3 09:12:00 2026")).toBe("different");
+  });
+
+  test("to stop a process, start times must be a second or less apart", () => {
+    expect(compareProcessStart(recorded, recorded, SAME_START_TO_STOP_WITHIN_MS)).toBe("same");
+    expect(
+      compareProcessStart(recorded, "Tue Nov 14 22:13:21 2023", SAME_START_TO_STOP_WITHIN_MS),
+    ).toBe("same");
+    expect(
+      compareProcessStart(recorded, "Tue Nov 14 22:13:22 2023", SAME_START_TO_STOP_WITHIN_MS),
+    ).toBe("different");
+    expect(
+      compareProcessStart(recorded, "Tue Nov 14 22:14:00 2023", SAME_START_TO_STOP_WITHIN_MS),
+    ).toBe("different");
+    expect(compareProcessStart(recorded, "nothing ps prints", SAME_START_TO_STOP_WITHIN_MS)).toBe(
+      "unknown",
+    );
   });
 
   test("a month name ps does not print is unknown, never different", () => {

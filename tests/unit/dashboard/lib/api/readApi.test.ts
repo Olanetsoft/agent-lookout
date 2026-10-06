@@ -395,6 +395,7 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
     names: { level: "yes" },
     jump: { level: "no", reason: "The tool names no place to go." },
     "quiet-for": { level: "yes" },
+    stop: { level: "no", reason: "The tool names no process to stop." },
   };
   const read = (value: unknown) =>
     readSource({ id: "claude-code", state: "ok", capabilities: value }, T);
@@ -422,7 +423,7 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
   }
 });
 
-test("events with no id or no time are left out, and unknown words become the plain ones", () => {
+test("events with no id, no time or a kind this page does not know are left out, and unknown words become the plain ones", () => {
   const events = readEvents({
     events: [
       {
@@ -440,12 +441,22 @@ test("events with no id or no time are left out, and unknown words become the pl
         at: T - 1,
         sessionId: "claude-code:1",
         sessionName: { a: 1 },
-        kind: "exploded",
+        kind: "ended",
         to: "<img>",
         severity: "loud",
+        by: "somebody",
       },
-      { id: "e3", sessionName: "no time" },
-      { at: T, sessionName: "no id" },
+      // A kind a later version adds is not drawn as a change of status it was not.
+      { id: "e3", at: T - 2, sessionId: "claude-code:1", sessionName: "demo", kind: "exploded" },
+      {
+        id: "e4",
+        at: T - 3,
+        sessionId: "claude-code:1",
+        sessionName: "demo",
+        severity: "advisory",
+      },
+      { id: "e5", sessionName: "no time", kind: "ended" },
+      { at: T, sessionName: "no id", kind: "ended" },
       "nonsense",
     ],
   });
@@ -466,12 +477,37 @@ test("events with no id or no time are left out, and unknown words become the pl
       at: T - 1,
       sessionId: "claude-code:1",
       sessionName: "claude-code:1",
-      kind: "status-changed",
+      kind: "ended",
       severity: "advisory",
     },
   ]);
   expect(readEvents({ events: "none" })).toBeNull();
   expect(readEvents(null)).toBeNull();
+});
+
+test("a session Agent Lookout stopped is an event of its own, with who stopped it", () => {
+  const stopped = {
+    id: "claude-code:1@1:stopped",
+    at: T,
+    sessionId: "claude-code:1",
+    sessionName: "demo",
+    kind: "stopped",
+    from: "working",
+    severity: "advisory",
+    by: "agent-lookout",
+  };
+  expect(readEvents({ events: [stopped] })).toEqual([stopped]);
+});
+
+test("a session the collector can stop says how, and nothing else is read as Stop", () => {
+  const base = { id: "claude-code:1", source: "claude-code", status: "idle" };
+  expect(readSession({ ...base, stop: { how: "signal" } })?.stop).toEqual({ how: "signal" });
+  expect(readSession({ ...base, stop: { how: "background", pid: 7 } })?.stop).toEqual({
+    how: "background",
+  });
+  for (const stop of [undefined, true, "signal", { how: "kill" }, { how: null }, []]) {
+    expect(readSession({ ...base, stop })).not.toHaveProperty("stop");
+  }
 });
 
 test("history keeps the points that are all numbers, and needs to know when the collector began", () => {

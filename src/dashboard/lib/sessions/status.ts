@@ -42,6 +42,9 @@ export function waitingDetail(
 /** The words before the length of a wait that is over, in the event log. */
 export const STOPPED_WAITING = "stopped waiting after";
 
+/** What the log says of a session Agent Lookout stopped, at the person's request. */
+export const STOPPED_HERE = "was stopped from Agent Lookout";
+
 /**
  * What happened, as the words that follow the session's name in the event log.
  *
@@ -55,6 +58,7 @@ export function eventPhrase(
 ): string {
   if (event.kind === "appeared") return "appeared";
   if (event.kind === "ended") return "ended";
+  if (event.kind === "stopped") return STOPPED_HERE;
   if (event.from === "needs-you" && event.to !== "needs-you" && waitedMs !== null) {
     return `${STOPPED_WAITING} ${formatDuration(waitedMs)}`;
   }

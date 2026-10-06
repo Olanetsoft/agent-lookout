@@ -6,7 +6,7 @@ import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
 import { LAST_LOOKED_STORAGE_KEY } from "@dashboard/hooks/data/useNewSince";
-import { ASK_AFTER_MS } from "@dashboard/hooks/data/useJump";
+import { ASK_AFTER_MS } from "@dashboard/hooks/actions/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   createCollectorStore,

@@ -1,6 +1,7 @@
 import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/sessions/diff.ts";
 import { historyPointFor } from "../core/history.ts";
 import {
+  isStatusEvent,
   withoutWaitingText,
   type Session,
   type SessionEvent,
@@ -356,6 +357,9 @@ export function createPoller(options: PollerOptions): Poller {
     resume(kept) {
       const newest = new Map<string, SessionEvent>();
       for (const event of kept) {
+        // An event of what was done to a session, such as being stopped, says
+        // nothing of its status. Its leaving the list is an event of its own.
+        if (!isStatusEvent(event)) continue;
         const held = newest.get(event.sessionId);
         if (!held || event.at >= held.at) newest.set(event.sessionId, event);
       }

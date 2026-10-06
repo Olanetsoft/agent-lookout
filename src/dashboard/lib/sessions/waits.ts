@@ -15,7 +15,7 @@
 
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
-import type { Session, SessionEvent } from "@core/sessions/session";
+import { isStatusEvent, type Session, type SessionEvent } from "@core/sessions/session";
 import { formatClockMinutes, formatDuration, startOfDay } from "@dashboard/lib/format";
 import {
   lengthOf,
@@ -143,6 +143,8 @@ function periodOf(input: WaitsInput, history: HistoryResponse): Period {
 function lastWaitOver(events: readonly SessionEvent[], period: Period, until: number) {
   const bySession = new Map<string, SessionEvent[]>();
   for (const event of events) {
+    // A wait is over when the status moves on, which being stopped is not.
+    if (!isStatusEvent(event)) continue;
     const own = bySession.get(event.sessionId);
     if (own) own.push(event);
     else bySession.set(event.sessionId, [event]);

@@ -4,6 +4,7 @@ import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
@@ -11,7 +12,8 @@ import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
 import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
-import { useJump } from "@dashboard/hooks/data/useJump";
+import { useJump } from "@dashboard/hooks/actions/useJump";
+import { useStop } from "@dashboard/hooks/actions/useStop";
 import { MAX_EVENTS, type CollectorState } from "@dashboard/lib/api/collectorStore";
 import { buildTimeline } from "@dashboard/lib/charts/timeline";
 import {
@@ -26,6 +28,7 @@ import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";
 import { waitedOnYou } from "@dashboard/lib/sessions/waits";
 import { agentLabel } from "@dashboard/lib/sources/sources";
+import { DESKTOP_NO_STOP } from "@dashboard/lib/stop/stopWords";
 import { cn } from "@dashboard/lib/utils";
 
 const NO_SESSIONS: readonly Session[] = [];
@@ -309,7 +312,14 @@ function Details({
           <FactRow
             label='Process'
             mono
-            note={session.alive === false ? "The process has ended." : undefined}
+            note={
+              session.alive === false
+                ? "The process has ended."
+                : // The desktop app looks after its own process, so it has no Stop, and says why.
+                  !gone && session.source === "claude-code" && session.surface === "desktop"
+                  ? DESKTOP_NO_STOP
+                  : undefined
+            }
           >
             {session.pid}
           </FactRow>
@@ -359,10 +369,12 @@ interface SessionDialogProps {
   onClose: () => void;
   state: CollectorState;
   now: number;
+  /** Told once the session has been stopped, so the page reads the sessions again at once. */
+  onStopped?: () => void;
 }
 
 /** One session's dialog, from the moment its address is opened until it has faded out. */
-function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogProps) {
+function SessionDialog({ sessionId, open, onClose, state, now, onStopped }: SessionDialogProps) {
   const listed = state.snapshot?.sessions.find((session) => session.id === sessionId) ?? null;
   // What was last known of it, and when, kept for when it leaves the list while open.
   const [kept, setKept] = useState<{ session: Session; at: number } | null>(null);
@@ -387,6 +399,10 @@ function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogPr
         ? state.lastOkAt
         : now;
   const saying = jump.outcome !== null || jump.asking !== null;
+  const stop = useStop(sessionId, { open, onStopped });
+  // What Stop asks is no question once the session has gone, but what it came to is still said.
+  const stopSaying =
+    stop.step.kind === "answered" || (stop.step.kind === "confirming" && (stop.step.busy || !gone));
 
   let title: string;
   let body: ReactNode;
@@ -400,6 +416,7 @@ function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogPr
             <JumpNote session={session} jump={jump} />
           </div>
         )}
+        {stopSaying && <StopNote session={session} stop={stop} className='mt-3' />}
         <Details session={session} gone={gone} state={state} now={now} asOf={asOf} />
       </>
     );
@@ -438,11 +455,14 @@ function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogPr
       actions={
         session &&
         !gone && (
-          <Jump
-            session={session}
-            jump={jump}
-            variant={session.status === "needs-you" ? "needs-you" : "quiet"}
-          />
+          <>
+            <Jump
+              session={session}
+              jump={jump}
+              variant={session.status === "needs-you" ? "needs-you" : "quiet"}
+            />
+            <StopButton session={session} stop={stop} />
+          </>
         )
       }
     >
@@ -458,6 +478,8 @@ interface SessionPanelProps {
   onClose: () => void;
   state: CollectorState;
   now: number;
+  /** Told once a session has been stopped from its details, so the page reads the sessions again. */
+  onStopped?: () => void;
 }
 
 /**
@@ -466,10 +488,13 @@ interface SessionPanelProps {
  *
  * Its name is the title, with its Jump beside it when it has one: the lamp's
  * solid Jump while it needs the person, as in the hero, and the quiet one
- * otherwise. Under them, as facts: its status with how long and since when,
- * its agent, its app when known, its folder's whole path, its branch, when it
- * started, its process, and how often and how long it waited over the period
- * the page holds. Then its own events, newest first, as the Events log draws
+ * otherwise. After it comes Stop, when the collector can stop the session:
+ * it asks first, at the top of the details, and says there what it came to.
+ * A session in the desktop app has no Stop, and its process fact says why.
+ * Under them, as facts: its status with how long and since when, its agent,
+ * its app when known, its folder's whole path, its branch, when it started,
+ * its process, and how often and how long it waited over the period the page
+ * holds. Then its own events, newest first, as the Events log draws
  * them, and its row of the Timeline across the whole width.
  *
  * The only warm things are the needs-you signals the rest of the page has for
@@ -478,10 +503,10 @@ interface SessionPanelProps {
  * reason and its waits are in the ink.
  *
  * A session that leaves the list while it is open keeps what was last known,
- * under one calm line that says so, and has no Jump. An address that names no
+ * under one calm line that says so, and has no Jump and no Stop. An address that names no
  * session says so and offers the Overview.
  */
-export function SessionPanel({ sessionId, onClose, state, now }: SessionPanelProps) {
+export function SessionPanel({ sessionId, onClose, state, now, onStopped }: SessionPanelProps) {
   // Kept while the dialog fades out, so what it shows stays put.
   const [shownId, setShownId] = useState(sessionId);
   if (sessionId !== null && sessionId !== shownId) setShownId(sessionId);
@@ -494,6 +519,7 @@ export function SessionPanel({ sessionId, onClose, state, now }: SessionPanelPro
       onClose={onClose}
       state={state}
       now={now}
+      onStopped={onStopped}
     />
   );
 }

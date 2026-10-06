@@ -48,8 +48,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           action={<Button onClick={() => this.setState({ error: null })}>Try again</Button>}
         >
           <p>
-            Something in the page itself went wrong. Your sessions are not affected: Agent Lookout
-            only reads them. If trying again does not help, reload the page.
+            Something in the page itself went wrong. Your sessions are not affected: the page
+            changes nothing in them unless you press Stop and confirm. If trying again does not
+            help, reload the page.
           </p>
         </Callout>
         <FactList className='mt-3'>

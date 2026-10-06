@@ -209,6 +209,34 @@ test("between two events the status comes from them, and before the first it is 
   ]);
 });
 
+test("a session stopped from Agent Lookout is drawn from its statuses, the stop being no status of its own", () => {
+  const stopped: SessionEvent = {
+    ...changed(1, ago(10), "working", "unknown"),
+    kind: "stopped",
+    to: undefined,
+    by: "agent-lookout",
+  };
+  const plain = segmentsOf({
+    sessions: [session(1, { status: "needs-you" })],
+    events: [changed(1, ago(5), "working", "needs-you"), changed(1, ago(30), "idle", "working")],
+  });
+  const withStop = segmentsOf({
+    sessions: [session(1, { status: "needs-you" })],
+    events: [
+      changed(1, ago(5), "working", "needs-you"),
+      stopped,
+      changed(1, ago(30), "idle", "working"),
+    ],
+  });
+  expect(withStop).toEqual(plain);
+
+  // Once it has ended, its row ends where it ended, after the stop.
+  const gone = timeline({
+    events: [ended(1, ago(9), "working"), stopped, changed(1, ago(30), "idle", "working")],
+  });
+  expect(gone.rows.map((row) => row.id)).toEqual([id(1)]);
+});
+
 test("a session that appeared inside the window has nothing drawn before it appeared", () => {
   const segments = segmentsOf({
     sessions: [session(1, { status: "working" })],

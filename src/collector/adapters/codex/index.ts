@@ -70,6 +70,7 @@ export const OLDER_CODEX_NOTE =
  * - No Jump: the files name no process, and the desktop app's link is
  *   undocumented (`toSession.ts`).
  * - Quiet for is the file's own modified time, moved on by every line.
+ * - No Stop: with no process named, there is nothing to confirm and stop.
  */
 export const CODEX_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -92,6 +93,10 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
     reason: "Codex's files name no process to find, and Codex documents no link to a session.",
   },
   "quiet-for": { level: "yes" },
+  stop: {
+    level: "no",
+    reason: "Codex's files name no process that Agent Lookout could confirm and stop.",
+  },
 };
 
 /** Everything the adapter touches outside itself. Tests replace these. */

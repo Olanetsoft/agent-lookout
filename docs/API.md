@@ -1,6 +1,6 @@
 # API
 
-Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but two only reads.
+Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but four only reads.
 
 The answers hold your session names and folder paths. Check one before you share it.
 
@@ -31,27 +31,29 @@ curl -s http://127.0.0.1:4777/api/sessions
 
 Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Every answer that is not a 200 has the body `{ "error": "<one sentence>" }`.
 
-| Status | When                                                                                                               |
-| ------ | ------------------------------------------------------------------------------------------------------------------ |
-| 400    | The address, `since` or `windowMs` could not be read                                                               |
-| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                                 |
-| 404    | There is no route at that path                                                                                     |
-| 405    | Any method but `GET`, with `Allow: GET`. `/api/jump` and `/api/history/clear` take only `POST`, with `Allow: POST` |
-| 500    | Something went wrong that the server did not expect                                                                |
+| Status | When                                                                                                   |
+| ------ | ------------------------------------------------------------------------------------------------------ |
+| 400    | The address, `since` or `windowMs` could not be read                                                   |
+| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                     |
+| 404    | There is no route at that path                                                                         |
+| 405    | Any method but `GET`, with `Allow: GET`. The four routes that act take only `POST`, with `Allow: POST` |
+| 500    | Something went wrong that the server did not expect                                                    |
 
 ## Routes
 
-| Route                              | Answers                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET /api/health`                  | `{ ok: true, version }`                                                                |
-| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions }`                              |
-| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                |
-| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first  |
-| `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                     |
-| `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                   |
-| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you              |
-| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of two routes that act |
-| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. The other route that acts                                   |
+| Route                              | Answers                                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /api/health`                  | `{ ok: true, version }`                                                                 |
+| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions }`                               |
+| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                 |
+| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first   |
+| `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                      |
+| `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                    |
+| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you               |
+| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of four routes that act |
+| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. A route that acts                                            |
+| `POST /api/sessions/stop`          | `{ ok: true }` once the session's process has ended. A route that acts                  |
+| `POST /api/sessions/clean-up`      | `{ results }`, what became of each session left running. A route that acts              |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -122,24 +124,25 @@ Sessions come in this order: those that need you first, longest wait first, then
 | `pid`, `alive`   | Its process and whether that still runs, when known                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `links.open`     | A `vscode://` address that opens it, for a session in VS Code                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `jump`           | `{ kind: "tmux", place }` or `{ kind: "terminal", app, place }` when `POST /api/jump` can take you to it                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `stop`           | `{ how: "signal" }` or `{ how: "background" }` when `POST /api/sessions/stop` can stop it: a Claude Code session in a terminal or VS Code, or a background job. It holds nothing else                                                                                                                                                                                                                                                                                                                             |
 | `stale`          | `true` once it has been idle for 24 hours                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-| Source field   | Holds                                                                                                                       |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `label`  | `claude-code` and `Claude Code`, `codex` and `Codex`, or `status-files` and `Status files`                                  |
-| `state`        | `ok`, `searching`, `unavailable`, `not-set-up` or `error`                                                                   |
-| `detail`       | One plain sentence: how it is being read, or what went wrong                                                                |
-| `advice`       | One plain sentence saying what you can do about a problem, when the collector knows                                         |
-| `watching`     | `[{ label, value }]`: what it reads and runs, and how often                                                                 |
-| `basis`        | Which way the sessions were read, for a source that has more than one                                                       |
-| `capabilities` | What its agent can report: for each of seven things, `{ level: "yes" }`, or `{ level: "no" }` or `"partly"` with a `reason` |
-| `checkedAt`    | When it was last read                                                                                                       |
+| Source field   | Holds                                                                                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `label`  | `claude-code` and `Claude Code`, `codex` and `Codex`, or `status-files` and `Status files`                                                                           |
+| `state`        | `ok`, `searching`, `unavailable`, `not-set-up` or `error`                                                                                                            |
+| `detail`       | One plain sentence: how it is being read, or what went wrong                                                                                                         |
+| `advice`       | One plain sentence saying what you can do about a problem, when the collector knows                                                                                  |
+| `watching`     | `[{ label, value }]`: what it reads and runs, and how often                                                                                                          |
+| `basis`        | Which way the sessions were read, for a source that has more than one                                                                                                |
+| `capabilities` | What its agent can report, and whether its sessions can be stopped: for each of eight things, `{ level: "yes" }`, or `{ level: "no" }` or `"partly"` with a `reason` |
+| `checkedAt`    | When it was last read                                                                                                                                                |
 
 The [guide](GUIDE.md#what-each-agent-can-report) has the table `capabilities` holds.
 
 ### `GET /api/events?since=<epoch ms>`
 
-`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed` or `ended`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. The collector keeps the last 1,000 in memory, and with history kept on disk it reads them back when it starts again.
+`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed`, `ended` or `stopped`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. A `stopped` event says that Agent Lookout stopped the session, when you pressed Stop or ended the sessions left running: it has `from`, the status the session had, no `to`, and `by: "agent-lookout"`. Its leaving the list is an `ended` event of its own. A reader should pass over a `kind` it does not know: later versions may add others. The collector keeps the last 1,000 in memory, and with history kept on disk it reads them back when it starts again.
 
 ### `GET /api/history?windowMs=<ms>`
 
@@ -253,7 +256,7 @@ Neither ever holds the mail server's address, its user name or its password, the
 
 ### `POST /api/jump`
 
-One of the two routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
+One of the four routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer. A request with no `Origin` gets 403 here, though a read may go without one.
@@ -277,7 +280,7 @@ Each of these has an `error` sentence beside its `reason`. [SECURITY.md](../SECU
 
 ### `POST /api/history/clear`
 
-The other route that acts. It deletes the files the history is kept in, except any that a later version of Agent Lookout wrote, and empties the Events log and the history in memory, as Clear history in Settings does. The history then begins again from that moment, with `since` set to `{ at, by: "cleared" }`. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/history/clearRoute.ts`, and answers only a request that:
+A route that acts. It deletes the files the history is kept in, except any that a later version of Agent Lookout wrote, and empties the Events log and the history in memory, as Clear history in Settings does. The history then begins again from that moment, with `since` set to `{ at, by: "cleared" }`. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/history/clearRoute.ts`, and answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer, or gets 403.
@@ -296,6 +299,60 @@ Nothing in the request names a file: the files are the ones in the history's own
 | 500    | `reason: "failed"`: the files could not all be deleted, and nothing in memory was emptied                                |
 
 Each of these has an `error` sentence beside its `reason`.
+
+### `POST /api/sessions/stop`
+
+A route that acts. It ends one Claude Code session's process, as Stop session does in the session's details. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/actions/stopRoute.ts`, and answers only a request that:
+
+- is a `POST`. Any other method gets 405, with `Allow: POST`.
+- has an `Origin` that names this computer, or gets 403.
+- is marked `same-origin` in `Sec-Fetch-Site`, when that header is sent, or gets 403.
+- carries `X-Agent-Lookout-Action: stop`, or gets 403.
+- has `Content-Type: application/json`, or gets 415.
+- has a body of 1,024 bytes or less, or gets 413, that is exactly `{ "sessionId": "..." }`, or gets 400.
+
+The server looks the session up in its own latest snapshot, and stops only one with a `stop` field, by what it found for it itself: its process, or its background job. Before it acts it reads the session's registry file again, which must still name that session, that process, the same kind, `interactive` or `bg`, and the same start time, and asks `ps` for the process's start time again, which must be the same, to the second. It never stops process 1, its own process, the one it was started from or any process above that. Then it sends SIGTERM, and waits up to 10 seconds for the process to end, or runs `claude stop` with the job's ID. Nothing in the request reaches a signal or a command. A stop adds a `stopped` event, and the server reads the sessions again before it answers. It makes one stop a second, and one at a time, with the clean-up's.
+
+| Status | Body                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 200    | `{ "ok": true }`: the process has ended, or the background job was stopped                                                              |
+| 202    | `{ "ok": false, "reason": "still-running" }`: SIGTERM was sent, and the process is still running 10 seconds later. Nothing more is sent |
+| 404    | `reason: "gone"`: the session is not listed, or its process has already ended                                                           |
+| 409    | `reason: "unsupported"`: Agent Lookout does not stop this session, such as one in the desktop app or one whose kind is not known        |
+| 409    | `reason: "cannot-confirm"`: its registry file changed, or `ps` did not give the same start time                                         |
+| 403    | `reason: "not-allowed"`: the process is another user's, or one Agent Lookout never stops                                                |
+| 429    | `reason: "too-soon"`, with `Retry-After: 1`                                                                                             |
+| 500    | `reason: "failed"`: the signal could not be sent, or `claude stop` failed                                                               |
+
+Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_STOP=off` there is no such route, and a POST to it gets 405.
+
+### `POST /api/sessions/clean-up`
+
+A route that acts. It ends the sessions left running that you chose, as End does under Left running in the Sessions card. It makes the same checks as `POST /api/sessions/stop`, with `X-Agent-Lookout-Action: clean-up`, and takes a body of 8 KiB or less that is exactly:
+
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "claude-code:00000000-0000-4000-8000-000000000004",
+      "statusSince": 1791118800000
+    }
+  ]
+}
+```
+
+with 1 to 20 sessions, none named twice, each with the `statusSince` the page showed for it. Anything else gets 400. For each session in turn the server makes every check of `POST /api/sessions/stop`, and then reads in the session's registry file, and in its own latest list of sessions, that it is still idle, since that same `statusSince`, and that this was 24 hours or more ago. A session that has done anything since is left running. Then it stops each one that passed, as the stop route does, and waits up to 10 seconds for them all.
+
+```json
+{
+  "results": [
+    { "sessionId": "claude-code:00000000-0000-4000-8000-000000000004", "outcome": "ended" },
+    { "sessionId": "claude-code:00000000-0000-4000-8000-000000000005", "outcome": "became-active" }
+  ]
+}
+```
+
+The answer is 200 with an `outcome` for each session asked for, in order: `ended`, `became-active`, `not-stale`, `gone`, `unsupported`, `cannot-confirm`, `not-allowed`, `still-running` or `failed`, which mean what the stop route's reasons do. One `stopped` event is added for each session ended. A clean-up while a stop or another clean-up is under way, or less than a second after one began, gets 429 with `reason: "too-soon"`.
 
 ## In the Mac app only
 
@@ -320,9 +377,9 @@ A program that only reads should not send it. `agent-lookout status` and `agent-
 
 ## For this computer only
 
-The API has no token or password. The `Host` and `Origin` rules keep websites, and other computers on the network, away from it: it listens on loopback, and a browser cannot be made to read it from another site. What they do not stop is another program on this computer, which can read it as `curl` does, and on a shared computer that includes other user accounts. [SECURITY.md](../SECURITY.md) lists that as a known limit.
+The API has no token or password. The `Host` and `Origin` rules keep websites, and other computers on the network, away from it: it listens on loopback, and a browser cannot be made to read it from another site. What they do not stop is another program on this computer, which can read it as `curl` does, and on a shared computer that includes other user accounts. Such a program can also send the headers a route that acts asks for, since no browser is involved, so another account can ask the server to stop your Claude Code sessions, which it could not do itself. [SECURITY.md](../SECURITY.md) lists that as a known limit. The Mac app opens no port, and `AGENT_LOOKOUT_STOP=off` takes stopping away.
 
-A token would not keep out programs running as you, which could read it as easily as the API. It could keep out other accounts on a shared computer, the known limit above, and is left for a later version. The MCP server changes none of this: it opens no port of its own, speaks to the app that started it over stdin and stdout, and reads the same loopback API the dashboard and `agent-lookout status` read without one. A token is also for an API that can be reached some other way, such as from another computer, and Agent Lookout has none.
+A token would not keep out programs running as you, which could read it as easily as the API. It could keep out other accounts on a shared computer, stopping your sessions included, the known limit above, and is left for a later version. The MCP server changes none of this: it opens no port of its own, speaks to the app that started it over stdin and stdout, and reads the same loopback API the dashboard and `agent-lookout status` read without one. A token is also for an API that can be reached some other way, such as from another computer, and Agent Lookout has none.
 
 ## The MCP server
 

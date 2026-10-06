@@ -2,7 +2,7 @@
 
 Agent Lookout shows the AI agent sessions on your Mac or Linux computer in one browser page, and which need you.
 
-It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. It only watches: it never starts, stops or answers a session. By default Agent Lookout itself sends nothing anywhere. Start it with `npx agent-lookout`, or download the [Mac app](#mac-app).
+It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. It never starts or answers a session, and it stops one only when you press Stop and confirm: it never acts on its own. By default Agent Lookout itself sends nothing anywhere. Start it with `npx agent-lookout`, or download the [Mac app](#mac-app).
 
 [Install](#install) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Roadmap](https://github.com/Olanetsoft/agent-lookout/milestones) · [Website](https://agent-lookout.vercel.app)
 
@@ -18,6 +18,7 @@ It finds Claude Code and Codex sessions with no setup, and the sessions of any o
 | [Needs you](docs/GUIDE.md#needs-you)                              | Lists the sessions waiting for permission or for an answer, longest wait first, each with a timer. For Claude Code it also says what the session is asking, such as `Run: npm test`.                                |
 | [Sessions](docs/GUIDE.md#sessions)                                | Lists the other sessions by status, by repository or on a board, each with its folder and git branch. Click one to see its details.                                                                                 |
 | [Jump](docs/GUIDE.md#jump)                                        | Takes you to a Claude Code session. It opens it in VS Code, selects its tmux pane, or on a Mac brings its Terminal or iTerm2 tab to the front.                                                                      |
+| [Stop](docs/GUIDE.md#stop-a-session)                              | Ends a Claude Code session's process when you press Stop in its details and confirm. The conversation is kept. Sessions left running, idle for a day or more, can be ended together after a confirmation.           |
 | [Notifications](docs/GUIDE.md#notifications)                      | Tell you when a session starts waiting and, if you choose, when one finishes, fails or ends. Off until you turn them on. On a Mac they keep coming after you close the tab, once a page with them on has been open. |
 | [Email](docs/GUIDE.md#email) and [webhook](docs/GUIDE.md#webhook) | Send the same events to one email address, or to one webhook such as a Slack channel's, for when you are away. Off until you set them up.                                                                           |
 | [`agent-lookout status`](docs/GUIDE.md#in-the-terminal)           | Prints which sessions need you, for a terminal, a tmux status line or a script.                                                                                                                                     |
@@ -162,7 +163,7 @@ It asks `http://127.0.0.1:4777`, then `http://localhost:5173`. If Agent Lookout 
 
 ## For your agents
 
-`agent-lookout mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. It lets an AI agent ask which sessions are running and which need you, so one agent can keep track of the others. Its three tools, `list_sessions`, `sessions_needing_you` and `sources`, only read. It asks the Agent Lookout that is running, and starts nothing.
+`agent-lookout mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. It lets an AI agent ask which sessions are running and which need you, so one agent can keep track of the others. Its three tools, `list_sessions`, `sessions_needing_you` and `sources`, only read: none of them can stop a session. It asks the Agent Lookout that is running, and starts nothing.
 
 To add it to Claude Code for all your folders, run this once:
 
@@ -190,6 +191,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_CLAUDE_FEED=off`  | Never runs the `claude` command. Sessions come from Claude Code's session files alone.                                                                                            |
 | `AGENT_LOOKOUT_WAITING_TEXT=off` | Never opens a Claude Code transcript. A waiting session shows its reason alone.                                                                                                   |
 | `AGENT_LOOKOUT_HISTORY=off`      | Keeps the Events log and the charts in memory only, so they start empty each time. Nothing is written to `~/.agent-lookout/history`.                                              |
+| `AGENT_LOOKOUT_STOP=off`         | Takes away Stop and the ending of sessions left running. No session is ever stopped from Agent Lookout.                                                                           |
 
 [The guide](docs/GUIDE.md#settings-you-can-change) lists every setting, those for [email](docs/GUIDE.md#email) and the [webhook](docs/GUIDE.md#webhook) among them. The theme and the page's notifications are in the dashboard's Settings view.
 
@@ -205,11 +207,11 @@ By default Agent Lookout itself sends nothing anywhere: no telemetry, no analyti
 - `agent-lookout mcp` does nothing until you add it to an agent's app. That app usually hands its answers, with your session names, folders and branches, to its model, which for most agents runs on the vendor's servers. [The MCP server](PRIVACY.md#the-mcp-server) says what an answer holds.
 - Jump to a Terminal or iTerm2 tab needs macOS to let the program you start Agent Lookout from control that app. macOS asks once, and what you allow covers anything else you run from that program. Choose Don't Allow and only that Jump stops working. `AGENT_LOOKOUT_TERMINAL_JUMP=off` turns it off.
 
-It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_LOOKOUT_HOST`, and refuses any other, so other computers cannot reach it. It turns away requests from websites open in your browser. It has no password. While it runs, other programs and other user accounts on this computer can read it. They can also turn the notifications it shows on or off, do what the Jump button does, and clear the history. It writes to no agent's files. The one thing it changes outside itself is which tmux pane, or which Terminal or iTerm2 tab, is in front, when you press Jump.
+It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_LOOKOUT_HOST`, and refuses any other, so other computers cannot reach it. It turns away requests from websites open in your browser. It has no password. While it runs, other programs and other user accounts on this computer can read it. They can also turn the notifications it shows on or off, do what the Jump button does, clear the history, and stop a Claude Code session as the Stop button does. The Mac app opens no port, so there only its own window can. It writes to no agent's files. It changes two things outside itself, and only when you ask. When you press Jump, it brings a tmux pane, or a Terminal or iTerm2 tab, to the front. When you press Stop and confirm, it ends that Claude Code session's process. `AGENT_LOOKOUT_STOP=off` takes Stop away.
 
 ## What it does not do yet
 
-- Neither it nor an agent using `agent-lookout mcp` can stop, resume or answer a session.
+- It cannot resume or answer a session. It stops a Claude Code session only when you press Stop and confirm, and not one in the desktop app. An agent using `agent-lookout mcp` can do none of these.
 - It shows only sessions on this computer. Cloud sessions, Codex cloud tasks and chats in a browser tab do not appear.
 - Claude Code's session files and Codex's files are not documented by their makers. An update to either can make Agent Lookout show less, or nothing, until it is updated. [docs/adapters/codex.md](docs/adapters/codex.md#what-breaks-when-codex-changes) lists what breaks when Codex changes.
 - The Mac app is not signed with an Apple Developer ID yet, so the first time it is opened, macOS does not open it until you allow it in Privacy & Security. There is no app for Linux. Support for more agents is planned in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).

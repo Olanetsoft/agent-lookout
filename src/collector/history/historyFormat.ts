@@ -18,6 +18,7 @@
 // such as what a waiting session is asking, can reach a file.
 
 import {
+  EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
   SESSION_STATUSES,
@@ -122,7 +123,7 @@ function recordValue(record: HistoryRecord): unknown {
 
 /** An event's own fields and nothing else, in a fixed order. */
 function eventFields(event: SessionEvent): SessionEvent {
-  const { id, at, sessionId, sessionName, kind, from, to, severity } = event;
+  const { id, at, sessionId, sessionName, kind, from, to, severity, by } = event;
   return {
     id,
     at,
@@ -132,6 +133,7 @@ function eventFields(event: SessionEvent): SessionEvent {
     ...(from !== undefined && { from }),
     ...(to !== undefined && { to }),
     severity,
+    ...(by !== undefined && { by }),
   };
 }
 
@@ -179,8 +181,11 @@ function readEvent(value: unknown): SessionEvent | null {
   if (!id || at === null || !sessionId || !sessionName || !kind || !severity) return null;
   const from: SessionStatus | null = oneOf(SESSION_STATUSES, value.from);
   const to: SessionStatus | null = oneOf(SESSION_STATUSES, value.to);
-  // A status that is there and is not one of the statuses spoils the event.
+  // A status that is there and is not one of the statuses spoils the event,
+  // and so does a doer that is not one this version knows.
   if ((value.from !== undefined && !from) || (value.to !== undefined && !to)) return null;
+  const by = oneOf(EVENT_ACTORS, value.by);
+  if (value.by !== undefined && !by) return null;
   return {
     id,
     at,
@@ -190,6 +195,7 @@ function readEvent(value: unknown): SessionEvent | null {
     ...(from && { from }),
     ...(to && { to }),
     severity,
+    ...(by && { by }),
   };
 }
 
