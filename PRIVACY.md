@@ -327,7 +327,7 @@ Only when that version is newer than the one running, and is not a prerelease, d
 
 ### What a request holds
 
-Each request holds the address above and a `User-Agent` header, `Agent-Lookout/` followed by the version running, such as `Agent-Lookout/0.2.0`, and an `Accept` header. It holds no cookie, no account, no session data, no name, path or count of sessions, and nothing else about this computer. As with any web request, GitHub sees the network address the request comes from, and it may keep what it records of requests under its own terms. The requests are made by the app's main process with Node's own HTTPS client, with the certificate checked. The page in the app's window cannot make any request off the machine.
+Each request holds the address above and a `User-Agent` header, `Agent-Lookout/` followed by the version running, such as `Agent-Lookout/0.2.1`, and an `Accept` header. It holds no cookie, no account, no session data, no name, path or count of sessions, and nothing else about this computer. As with any web request, GitHub sees the network address the request comes from, and it may keep what it records of requests under its own terms. The requests are made by the app's main process with Node's own HTTPS client, with the certificate checked. The page in the app's window cannot make any request off the machine.
 
 ### How often
 

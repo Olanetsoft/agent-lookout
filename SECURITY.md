@@ -8,7 +8,7 @@ Say what you found, how to reproduce it and what someone could do with it. Leave
 
 If that page does not open, or shows no form, reach the maintainer, Idris Olubisi, through the links on the [Olanetsoft GitHub profile](https://github.com/Olanetsoft). In that first message, say only that you have a security report for Agent Lookout. The maintainer will agree a private way to send the details.
 
-The project has one maintainer, so replies are best effort. There are no tagged releases yet, so fixes land on `main`.
+The project has one maintainer, so replies are best effort. Fixes land on `main` and go out in the next release, whose version only changes its last number, as in 0.2.1 to 0.2.2. Use the latest release.
 
 ## What the app handles
 

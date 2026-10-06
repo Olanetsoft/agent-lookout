@@ -2,11 +2,13 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.1 - 2026-10-06
+
+The first version with a Mac app to download: its [release on GitHub](https://github.com/Olanetsoft/agent-lookout/releases/tag/v0.2.1) has a disk image for Apple silicon and one for Intel.
 
 ### Added
 
-- A Mac app, built from the repository with `npm run dist:mac` for Apple silicon and for Intel. It shows the dashboard in its own window, runs Agent Lookout inside itself with no port opened, keeps running in the Dock when the window is closed, shows on its Dock icon how many sessions need you, and shows notifications under its own name. It is not signed yet, so macOS asks once before it first opens: [Desktop app](docs/GUIDE.md#desktop-app) has the steps.
+- A Mac app for Apple silicon and for Intel, to download from the release or build from the repository with `npm run dist:mac`. It shows the dashboard in its own window, runs Agent Lookout inside itself with no port opened, keeps running in the Dock when the window is closed, shows on its Dock icon how many sessions need you, and shows notifications under its own name. It is not signed yet, so macOS asks once before it first opens: [Desktop app](docs/GUIDE.md#desktop-app) has the steps.
 - The Mac app can update itself from the project's releases on GitHub. About once a day while it runs, it asks GitHub whether a newer version is out, sending nothing about your sessions, and a switch under Updates in Settings turns that off. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once. A newer version is downloaded and checked against the size and SHA-512 its release gives, and installed only when you press Install and Restart, which quits the app and opens the new version. It updates itself from Applications or any folder it can change, and run from its disk image, another disk or a read-only copy it says how to move it instead. The npm package and the repository never check. [Updates](docs/GUIDE.md#updates) has the details.
 
 ## 0.2.0 - 2026-10-06

@@ -3,7 +3,7 @@
 ## Requirements
 
 - macOS or Linux. Agent Lookout is developed and tested on macOS. On Linux it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux desktop. [On Linux](#on-linux) says what differs there. Windows is untested.
-- Node.js 20.19 or newer. On Node 22 it needs 22.12 or newer.
+- Node.js 20.19 or newer. On Node 22 it needs 22.12 or newer. The [Mac app](#desktop-app) needs no Node.js.
 - Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
@@ -878,7 +878,7 @@ npm start
 curl -s http://127.0.0.1:4777/api/health
 ```
 
-It prints `{"ok":true,"version":"0.2.0"}`, or a later version number. If you run `npm start` before `npm run build`, it stops and tells you to build first. After you pull new code, run `npm run build` again.
+It prints `{"ok":true,"version":"0.2.1"}`, or a later version number. If you run `npm start` before `npm run build`, it stops and tells you to build first. After you pull new code, run `npm run build` again.
 
 ## Start it with one command
 
@@ -889,7 +889,7 @@ It prints `{"ok":true,"version":"0.2.0"}`, or a later version number. If you run
 | `--port <number>` | Listens on this port in place of 4777, such as `--port 4778`. `AGENT_LOOKOUT_PORT` does the same, and `--port` wins when both are given                                                    |
 | `--open`          | Opens the address in your default browser once it is listening, with `open` on macOS or `xdg-open` on Linux. If that cannot be done, it prints one line with the address and keeps running |
 | `--help`          | Prints the options of `agent-lookout`, `agent-lookout status` and `agent-lookout mcp`                                                                                                      |
-| `--version`       | Prints the version of Agent Lookout, such as `0.2.0`, and nothing else                                                                                                                     |
+| `--version`       | Prints the version of Agent Lookout, such as `0.2.1`, and nothing else                                                                                                                     |
 
 Every other setting under [Settings you can change](#settings-you-can-change) works with it as with `npm start`. It ends with 0 when you press Ctrl+C, and with 1 when it cannot start, such as when the port is in use. Under `npx agent-lookout`, the shell reports the interrupt instead, as exit code 130.
 
@@ -899,14 +899,9 @@ In a clone, run `npm run build` and `npm link` once in the `agent-lookout` folde
 
 ## Desktop app
 
-Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. No release of the app has been published yet. To build it from a clone, on a Mac:
+Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. It needs no Node.js.
 
-```sh
-npm install
-npm run dist:mac
-```
-
-It takes a minute or two, and the first time it downloads Electron for each kind of Mac. It puts a disk image and a zip for each in `release/`: `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon and `Agent-Lookout-<version>-mac-x64.dmg` for Intel. Open the disk image for your Mac and drag Agent Lookout to Applications.
+To install it, download the disk image for your Mac from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest) on GitHub: `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon, or `Agent-Lookout-<version>-mac-x64.dmg` for Intel. About This Mac, in the Apple menu, shows which you have: a chip such as Apple M1 is Apple silicon, and a processor named Intel is Intel. Open the disk image and drag Agent Lookout to Applications. Keep it there: the app [updates itself](#updates) only from a folder it can change.
 
 The app is not yet signed with an Apple Developer ID, so the first time a downloaded copy is opened, macOS does not open it. Its message is titled “Agent Lookout” Not Opened and says that Apple could not verify “Agent Lookout” is free of malware. To open it anyway:
 
@@ -914,7 +909,16 @@ The app is not yet signed with an Apple Developer ID, so the first time a downlo
 2. Open System Settings › Privacy & Security.
 3. Under Security, next to the line that says Agent Lookout was blocked, press Open Anyway, and confirm with your password or Touch ID. The button is there for about an hour after macOS stopped the app. If it has gone, open the app again, press Done, and go back to Privacy & Security.
 
-macOS remembers the choice. A copy you built yourself on this Mac opens without this step.
+macOS remembers the choice.
+
+To build the app yourself instead, from a clone, on a Mac:
+
+```sh
+npm install
+npm run dist:mac
+```
+
+It takes a minute or two, and the first time it downloads Electron for each kind of Mac. It puts a disk image and a zip for each in `release/`, with the same names as on the release. Open the disk image for your Mac and drag Agent Lookout to Applications. A copy you built yourself on this Mac opens without the steps above.
 
 It behaves as a Mac app does:
 
@@ -931,7 +935,7 @@ It behaves as a Mac app does:
 
 The app can update itself from the project's [releases on GitHub](https://github.com/Olanetsoft/agent-lookout/releases). About once a day while it runs, it asks GitHub whether a newer version is out. It sends nothing about your sessions: GitHub sees the app's version number and your IP address, as with any web request. [Updates (Mac app only)](../PRIVACY.md#updates-mac-app-only) has the details. To turn it off, open Settings and, under Updates, set Check for updates automatically to Off. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once either way. `npx agent-lookout` and the repository never check for anything.
 
-When a newer version is out, the app downloads it, checks it against the size and SHA-512 its release gives, and says so under Updates in Settings, as in "Version 0.2.1 is available", with a link to its release notes. The daily check also shows a notification, once for each version. Press Install and Restart, and the app quits, puts the new version in its place and opens it again. Nothing is installed until you press it. With the window closed, Check for Updates… shows its answer in a message, which can install a version that is ready. When the latest release has no Mac app yet, it says "The latest release has no Mac app yet", and when it has none for your kind of Mac, "The latest release has no app for this kind of Mac". Neither needs anything from you. If a version cannot be put in place, the app opens again as the version you had, on the Updates card, which says it could not be installed.
+When a newer version is out, the app downloads it, checks it against the size and SHA-512 its release gives, and says so under Updates in Settings, as in "Version 0.2.2 is available", with a link to its release notes. The daily check also shows a notification, once for each version. Press Install and Restart, and the app quits, puts the new version in its place and opens it again. Nothing is installed until you press it. With the window closed, Check for Updates… shows its answer in a message, which can install a version that is ready. When the latest release has no Mac app yet, it says "The latest release has no Mac app yet", and when it has none for your kind of Mac, "The latest release has no app for this kind of Mac". Neither needs anything from you. If a version cannot be put in place, the app opens again as the version you had, on the Updates card, which says it could not be installed.
 
 The app can replace itself only from a folder it can change, so keep it in Applications. Opened from its disk image or another disk, or opened where it was downloaded, which macOS runs from a read-only copy, it says it cannot update itself there. Drag it to Applications, open it from there and check again, or download the new version from its release page. A copy run with `npm run dev:desktop` checks only when you ask and never installs.
 

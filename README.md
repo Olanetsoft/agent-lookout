@@ -2,7 +2,7 @@
 
 Agent Lookout shows the AI agent sessions on your Mac or Linux computer in one browser page, and which need you.
 
-It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. It only watches: it never starts, stops or answers a session. By default Agent Lookout itself sends nothing anywhere. Start it with `npx agent-lookout`.
+It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. It only watches: it never starts, stops or answers a session. By default Agent Lookout itself sends nothing anywhere. Start it with `npx agent-lookout`, or download the [Mac app](#mac-app).
 
 [Install](#install) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Roadmap](https://github.com/Olanetsoft/agent-lookout/milestones) · [Website](https://agent-lookout.vercel.app)
 
@@ -42,6 +42,16 @@ Agent Lookout is developed and tested on macOS. On Linux, CI runs every test on 
 
 ## Install
 
+### Mac app
+
+Download the disk image for your Mac from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest): the one that ends in `mac-arm64.dmg` for Apple silicon, or `mac-x64.dmg` for Intel. Open it and drag Agent Lookout to Applications. The app needs no Node.js.
+
+It is not signed with an Apple Developer ID yet, so the first time you open it, macOS says “Agent Lookout” Not Opened. Press Done, then open System Settings › Privacy & Security and press Open Anyway. [Desktop app](docs/GUIDE.md#desktop-app) has the steps.
+
+Kept in Applications, it updates itself: about once a day it asks GitHub whether a newer version is out, and installs it when you press Install and Restart. Settings turns the daily check off. The app opens no port, so `agent-lookout status` and `agent-lookout mcp` cannot reach it. For those, start it with npx as well, and turn notifications on in only one of the two, or you get each one twice.
+
+### With npx
+
 1. Check what you have.
 
    ```sh
@@ -78,7 +88,7 @@ Agent Lookout is developed and tested on macOS. On Linux, CI runs every test on 
    curl -s http://127.0.0.1:4777/api/health
    ```
 
-   It prints `{"ok":true,"version":"0.2.0"}`, or a later version number.
+   It prints `{"ok":true,"version":"0.2.1"}`, or a later version number.
 
 4. Open <http://127.0.0.1:4777>. Your sessions appear within a few seconds. If none do, see [No sessions appear](docs/GUIDE.md#no-sessions-appear). If you used `npm run dev` before, turn notifications on again here: the browser keeps them for each address.
 
@@ -200,7 +210,7 @@ It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_L
 - It shows only sessions on this computer. Cloud sessions, Codex cloud tasks and chats in a browser tab do not appear.
 - Claude Code's session files and Codex's files are not documented by their makers. An update to either can make Agent Lookout show less, or nothing, until it is updated. [docs/adapters/codex.md](docs/adapters/codex.md#what-breaks-when-codex-changes) lists what breaks when Codex changes.
 - The Events log, the charts and the Timeline start empty each time Agent Lookout starts.
-- There is no Mac app yet. It is planned, with support for more agents, in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).
+- The Mac app is not signed with an Apple Developer ID yet, so the first time it is opened, macOS does not open it until you allow it in Privacy & Security. There is no app for Linux. Support for more agents is planned in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).
 
 [What it does not do yet](docs/GUIDE.md#what-it-does-not-do-yet) has the details.
 
