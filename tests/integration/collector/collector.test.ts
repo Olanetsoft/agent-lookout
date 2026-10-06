@@ -10,6 +10,7 @@ import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
 import { createSmtpSender } from "@collector/email/smtpSender";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
+import { NOTIFICATIONS_NOT_SHOWN_LINE } from "@collector/notifications/serverNotifications";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
@@ -478,6 +479,29 @@ describe("the collector's own notifications", () => {
     await server.poll(6_000, [waiting("docs-site")]);
     expect(6_000 - 2_000).toBeGreaterThanOrEqual(HANDOVER_GRACE_MS);
     expect(server.notifier.shown).toEqual([{ title: "docs-site", body: "Waiting for permission" }]);
+  });
+
+  test("with AGENT_LOOKOUT_NOTIFICATIONS=on away from macOS, it says once at start that it shows none itself", () => {
+    const said = (options: { platform: NodeJS.Platform; on?: boolean; notifier?: boolean }) => {
+      const warnings: string[] = [];
+      createCollector({
+        version: "9.9.9-test",
+        adapters: [],
+        env: options.on === false ? {} : { AGENT_LOOKOUT_NOTIFICATIONS: "on" },
+        platform: options.platform,
+        // Left out, the system's own notifier for that platform is made.
+        ...(options.notifier ? { notifier: fakeSystemNotifier() } : {}),
+        warn: (line) => warnings.push(line),
+      });
+      return warnings;
+    };
+
+    expect(said({ platform: "linux" })).toEqual([NOTIFICATIONS_NOT_SHOWN_LINE]);
+    expect(said({ platform: "win32" })).toEqual([NOTIFICATIONS_NOT_SHOWN_LINE]);
+    expect(said({ platform: "linux", on: false })).toEqual([]);
+    // A host that brings a notifier of its own, as a desktop app would, shows them.
+    expect(said({ platform: "linux", notifier: true })).toEqual([]);
+    expect(said({ platform: "darwin", notifier: true })).toEqual([]);
   });
 
   test("a page that says off turns the collector's notifications off, even with the environment on", async () => {

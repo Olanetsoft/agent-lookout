@@ -57,6 +57,15 @@ export function osascriptArgs(notice: Notice): string[] {
   ];
 }
 
+/**
+ * Whether the system's own notifications can be shown on this system: on
+ * macOS alone. Showing them on Linux, with `notify-send` or the like, is left
+ * out for now.
+ */
+export function systemNotificationsShownOn(platform: NodeJS.Platform): boolean {
+  return platform === "darwin";
+}
+
 /** Runs `osascript` the one way the collector runs it, with a notification's own timeout. */
 const runForNotification: RunOsascript = (args) =>
   runOsascript(args, { timeoutMs: OSASCRIPT_TIMEOUT_MS });
@@ -80,7 +89,7 @@ export function createSystemNotifier(options: SystemNotifierOptions = {}): Syste
 
   return {
     show(notice) {
-      if (platform !== "darwin") return;
+      if (!systemNotificationsShownOn(platform)) return;
       try {
         run(osascriptArgs(notice)).catch(() => {
           // Not shown. There is nobody to tell.

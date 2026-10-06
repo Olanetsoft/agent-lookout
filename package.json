@@ -15,6 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "start": "tsx src/collector/hosts/serve.ts",
+    "start:check": "node scripts/start-check.mjs",
     "status": "node bin/agent-lookout.mjs status",
     "preview": "vite preview",
     "typecheck": "tsc -b",

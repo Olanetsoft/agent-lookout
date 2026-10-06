@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import { HANDOVER_GRACE_MS, PAGE_GONE_AFTER_MS } from "@collector/notifications/heldWait";
 import {
   createServerNotifications,
+  notificationsAtStartLine,
   notificationsOnAtStart,
+  NOTIFICATIONS_NOT_SHOWN_LINE,
 } from "@collector/notifications/serverNotifications";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
@@ -133,6 +135,17 @@ describe("the one switch", () => {
     expect(notificationsOnAtStart({ AGENT_LOOKOUT_NOTIFICATIONS: "off" })).toBe(false);
     expect(notificationsOnAtStart({ AGENT_LOOKOUT_NOTIFICATIONS: "1" })).toBe(false);
     expect(notificationsOnAtStart({ AGENT_LOOKOUT_NOTIFICATIONS: "" })).toBe(false);
+  });
+
+  test("the environment turning them on where nothing can show one is said once, in a line", () => {
+    const on = { AGENT_LOOKOUT_NOTIFICATIONS: "on" };
+    expect(notificationsAtStartLine(on, false)).toBe(NOTIFICATIONS_NOT_SHOWN_LINE);
+    expect(NOTIFICATIONS_NOT_SHOWN_LINE).toBe(
+      "AGENT_LOOKOUT_NOTIFICATIONS is on, but Agent Lookout shows notifications itself on macOS only, so it shows none here. A dashboard tab with notifications on still shows them.",
+    );
+    expect(notificationsAtStartLine(on, true)).toBeNull();
+    expect(notificationsAtStartLine({}, false)).toBeNull();
+    expect(notificationsAtStartLine({ AGENT_LOOKOUT_NOTIFICATIONS: "off" }, false)).toBeNull();
   });
 
   test("a page that said on and then closed leaves them on", () => {

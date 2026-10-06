@@ -24,12 +24,20 @@ export interface FindBinaryOptions {
  * The places a `claude` binary is installed when it is not on `PATH`. An app
  * launched from the Finder or the Dock does not inherit the shell's `PATH`, so
  * without these a desktop build would never find it.
+ *
+ * `~/.local/bin` is the native installer's, on a Mac and on Linux. Homebrew's
+ * and npm's usual folder follow. The last two are for Linux: `~/.npm-global/bin`
+ * is where npm installs after the setup its own guide gives for installing
+ * without root, and `/usr/bin` where it installs when Node itself is there. The
+ * Mac's three come first, in the order they always had.
  */
 export function fixedLocations(homeDir: string): string[] {
   return [
     path.join(homeDir, ".local", "bin", "claude"),
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
+    path.join(homeDir, ".npm-global", "bin", "claude"),
+    "/usr/bin/claude",
   ];
 }
 

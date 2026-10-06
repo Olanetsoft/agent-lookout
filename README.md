@@ -1,6 +1,6 @@
 # Agent Lookout
 
-Agent Lookout puts the AI agent sessions running on your Mac on one page in your browser, and shows which of them are waiting for you. It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. By default it sends nothing anywhere.
+Agent Lookout puts the AI agent sessions running on your Mac or Linux computer on one page in your browser, and shows which of them are waiting for you. It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. By default it sends nothing anywhere.
 
 [Install](#install) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Website](https://agent-lookout.vercel.app)
 
@@ -12,6 +12,8 @@ Agent Lookout puts the AI agent sessions running on your Mac on one page in your
 For Claude Code it reads the list of sessions Claude Code keeps on your computer, so it finds sessions in a terminal, in VS Code or in the desktop app. For Codex it reads the session files Codex saves in `~/.codex`. It never starts, stops or answers a session. A Jump button takes you to a Claude Code session: it opens it in VS Code, selects its tmux pane, or brings its tab of Terminal or iTerm2 to the front. Turn on notifications in Settings to be told when a session starts waiting and, if you choose, when one finishes, fails or ends, on a Mac even after you close the dashboard's tab. If you set it up, it can also email you or post to a Slack channel.
 
 Codex does not record when it is waiting for your approval, so a Codex session shows as working, idle or finished, never as needing you. Codex support has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. To show another agent, including one you wrote yourself, see [Your own agents](docs/GUIDE.md#your-own-agents). Other coding agents, AI chat tabs in the browser and a Mac app are planned, in the [roadmap](https://github.com/Olanetsoft/agent-lookout/milestones).
+
+It runs on macOS and Linux. On Linux it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux desktop. Notifications with no dashboard tab open, and Jump to a tab of Terminal or iTerm2, are macOS only: [On Linux](docs/GUIDE.md#on-linux) has the rest.
 
 ## Install
 

@@ -3,11 +3,15 @@ import { runPs } from "./ps.ts";
 /** What `ps` says of one process: its parent, its terminal and its program. */
 export interface ProcessFacts {
   ppid: number;
-  /** The terminal as `ps` names it, `ttys003`, or `??` for none. */
+  /**
+   * The terminal as `ps` names it: on macOS `ttys003`, or `??` for none. The
+   * `ps` of Linux says `pts/3` and `?`.
+   */
   tty: string;
   /**
-   * The program, as the process names itself: for an app, the path of its
-   * executable. A process can name itself anything, so this is a clue, not proof.
+   * The program, as the process names itself: on macOS, for an app, the path of
+   * its executable. On Linux it is a short name, such as `bash`. A process can
+   * name itself anything, so this is a clue, not proof.
    */
   path: string;
 }
@@ -44,7 +48,8 @@ export function parseProcessTable(stdout: string): Map<number, ProcessFacts> {
 
 /**
  * Asks `ps` about every process, in one run. It is run on macOS alone, the one
- * system with a Terminal or an iTerm2.
+ * system with a Terminal or an iTerm2. The parser reads the `ps` of Linux too,
+ * but nothing there would come of it.
  */
 export const readProcessTableWithPs: ReadProcessTable = async () => {
   if (process.platform !== "darwin") return new Map();

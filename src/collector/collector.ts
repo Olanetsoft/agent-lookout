@@ -16,9 +16,14 @@ import { createHistoryStore } from "./historyStore.ts";
 import { createJumpRoute } from "./jumpRoute.ts";
 import {
   createServerNotifications,
+  notificationsAtStartLine,
   notificationsOnAtStart,
 } from "./notifications/serverNotifications.ts";
-import { createSystemNotifier, type SystemNotifier } from "./notifications/systemNotifier.ts";
+import {
+  createSystemNotifier,
+  systemNotificationsShownOn,
+  type SystemNotifier,
+} from "./notifications/systemNotifier.ts";
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
 import type { ReadProcessStarts } from "./processes/processStart.ts";
 import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
@@ -52,6 +57,11 @@ export interface CollectorOptions {
    * anywhere else. Tests pass one that shows nothing.
    */
   notifier?: SystemNotifier;
+  /**
+   * The system the collector runs on, which says whether the system's own
+   * notifications can be shown. Defaults to this machine's. Tests pass another.
+   */
+  platform?: NodeJS.Platform;
   /**
    * What runs tmux, to find the pane a session runs in and to select it when
    * the dashboard asks. Defaults to the tmux on this machine, when there is
@@ -141,14 +151,21 @@ export function createCollector(options: CollectorOptions): Collector {
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
+  const warn = options.warn ?? console.error;
+  const platform = options.platform ?? process.platform;
   const notifications = createServerNotifications({
-    notifier: options.notifier ?? createSystemNotifier(),
+    notifier: options.notifier ?? createSystemNotifier({ platform }),
     onAtStart: notificationsOnAtStart(env),
     now,
   });
+  // A notifier handed in, as a desktop host's would be, is taken to show them.
+  const notificationsLine = notificationsAtStartLine(
+    env,
+    options.notifier !== undefined || systemNotificationsShownOn(platform),
+  );
+  if (notificationsLine !== null) warn(notificationsLine);
   // Read once, here. With nothing set, nothing that could send an email is
   // made, and the mail library is never loaded.
-  const warn = options.warn ?? console.error;
   const emailSetup = readEmailSetup(env);
   if (!emailSetup.on && emailSetup.problem !== null) {
     warn(emailProblemLine(emailSetup.problem));

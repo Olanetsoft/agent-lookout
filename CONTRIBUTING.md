@@ -44,11 +44,22 @@ Run this before you open a pull request:
 npm run check
 ```
 
-It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five and `npm run build`. Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
+It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five, `npm run build`, and the start check described under [Running on Linux](#running-on-linux). Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
 
 A change in behaviour comes with a test. Every test lives under `tests/`, in `unit/`, `integration/` or `component/`, at the path that mirrors the module it covers. Nothing under `src/` is a test or imports from `tests/`. The layout check fails, and says where the file belongs, when one of those rules is broken.
 
 [tests/README.md](tests/README.md) says what belongs in each group, how to run one group or one file, how fixtures are written and how to run the opt-in check against the real `claude`.
+
+## Running on Linux
+
+The setup and the checks above are the same on Linux, with `--with-deps` on the Playwright step. CI runs every job on Ubuntu. To check that the built app starts and finds sessions, as the CI job `start` does:
+
+```sh
+npm run build
+npm run start:check
+```
+
+It starts the app with `npm start` on a port the system picks, pointed at folders it makes for the check, prints one line for each check, then stops the app as Ctrl+C would. It reads none of your own sessions and runs no `claude` command. Notifications with no dashboard tab open and Jump to a tab of Terminal or iTerm2 are macOS only, so on Linux their tests run with stand-ins for `osascript` and for Terminal's processes, as they do everywhere. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-linux) has what differs between the two systems.
 
 ## Where code goes
 

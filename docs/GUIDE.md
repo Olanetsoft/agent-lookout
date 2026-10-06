@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS. Agent Lookout is developed and tested there. Linux and Windows are untested.
+- macOS or Linux. Agent Lookout is developed and tested on macOS. On Linux it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux desktop. [On Linux](#on-linux) says what differs there. Windows is untested.
 - Node.js 20.19 or newer. On Node 22 it needs 22.12 or newer.
 - Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
@@ -765,6 +765,27 @@ The session appears in Sessions as `docs-site`, in Terminal, moves to Needs you 
 
 Agent Lookout only reads the folder. It never makes it, and never writes, renames or deletes anything in it. When a session ends, delete its file, or write `finished` or `failed` to keep it on screen for a day and delete the file after that, for example the next time the agent starts. A file that is no longer shown still takes one of the 200 places until it is deleted. Any program that can write in the folder can put a session on the dashboard. Under your home folder, that means programs you run.
 
+## On Linux
+
+Agent Lookout is installed and started on Linux as on a Mac, and reads the same folders: `~/.claude/sessions`, `~/.codex` and `~/.agent-lookout/sessions`. CI runs every test on Ubuntu, and there it also starts the built app with `npm start` and checks that it lists a Claude Code session, Codex sessions and a session from a status file, each with the right status. No one has yet used it on a Linux desktop.
+
+These are the same as on a Mac:
+
+- The dashboard, its notifications while a dashboard tab is open, [email](#email), the [webhook](#webhook), `agent-lookout status` and `agent-lookout mcp`.
+- [Jump](#a-session-in-tmux) for a session in tmux. tmux is looked for on your `PATH`, then in the same places as on a Mac, `/usr/local/bin` and `/usr/bin` among them.
+- Jump for a session in VS Code, which is a `vscode://` link, where VS Code has registered itself to open those links.
+
+The `claude` command is looked for on your `PATH`, then at `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin` and `/usr/bin`. If it is somewhere else, as when a version manager such as nvm installed it, start Agent Lookout from a terminal where `claude --version` works, or set `AGENT_LOOKOUT_CLAUDE_BIN`.
+
+These are macOS only:
+
+- Notifications with no dashboard tab open. On a Mac Agent Lookout shows those itself with `osascript`, which Linux does not have, so on Linux it shows none. Started with `AGENT_LOOKOUT_NOTIFICATIONS=on`, it prints a line saying so. Showing them with `notify-send` is left out for now. Keep a dashboard tab open to be notified.
+- [Jump to a tab of Terminal or iTerm2](#a-session-in-a-tab-of-terminal-or-iterm2), the two Mac apps it can bring forward. A session in a Linux terminal that is not running tmux has no Jump button.
+
+If the clock is set by more than a minute while a Claude Code session runs, that session can drop off the list until it is restarted. Linux's `ps` works out when a process started from the clock, so the start time it gives then no longer matches the one in the session's registry file, and the file looks like one a crashed session left behind.
+
+Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on NixOS, no session in tmux has a Jump button, and a registry file left behind by a session that crashed shows as a session if another program is given its process ID.
+
 ## What it does not do yet
 
 It cannot stop, resume or answer a session, and nor can an agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
@@ -803,7 +824,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 | `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                                                                                                                                    |
 | `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                                                                                                                                    |
 | `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                                                                                                                                       |
-| `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again.                                                                                                           |
+| `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. Anywhere else it prints a line saying it shows none itself.                                               |
 | `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                                                                                                                                         |
 | `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                                                                                                                             |
 | `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                                                                                                                                   |
@@ -853,7 +874,7 @@ It prints `{"ok":true,"version":"0.1.0"}`, or a later version number. If you run
 AGENT_LOOKOUT_PORT=4778 npm start
 ```
 
-To see which program holds a port on macOS:
+To see which program holds a port, on macOS or on Linux with `lsof` installed:
 
 ```sh
 lsof -nP -iTCP:4777 -sTCP:LISTEN

@@ -87,3 +87,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  # Starts the built app on Linux with `npm start`, as a person would, on
+  # folders of its own, and checks that it reads Claude Code, Codex and status
+  # files and lists their sessions with the right statuses, then stops it.
+  start:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run start:check

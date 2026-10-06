@@ -19,6 +19,16 @@ describe("parseProcessParents", () => {
     ]);
   });
 
+  test("reads the ps of Linux, procps, which pads to the width of the largest pid", () => {
+    const stdout = "      1       0\n      2       0\n   2318    2301\n4194303    2318\n";
+    expect([...parseProcessParents(stdout)]).toEqual([
+      [1, 0],
+      [2, 0],
+      [2318, 2301],
+      [4194303, 2318],
+    ]);
+  });
+
   test("a line that is not two numbers is left out", () => {
     const stdout = [
       "  PID  PPID",

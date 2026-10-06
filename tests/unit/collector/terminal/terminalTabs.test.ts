@@ -73,6 +73,8 @@ describe("ttyPathOf and isTtyPath", () => {
 
   test.each([
     "??",
+    "?",
+    "pts/3",
     "",
     "console",
     "ttyp1",
@@ -144,6 +146,15 @@ describe("tabOfProcess", () => {
     ],
   ])("a session under %s is in no tab Agent Lookout can drive", (_app, program) => {
     expect(tabOf(inTab(program, SESSION))).toBeUndefined();
+  });
+
+  test("a session in a Linux terminal, as the ps of Linux lists it, is in no tab", () => {
+    const rows: ProcessRow[] = [
+      [2301, 1, "?", "gnome-terminal-"],
+      [2318, 2301, "pts/3", "bash"],
+      [SESSION, 2318, "pts/3", "claude"],
+    ];
+    expect(tabOf(rows)).toBeUndefined();
   });
 
   test("a session in another app's terminal started from a Terminal tab is not in that tab", () => {

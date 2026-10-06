@@ -63,10 +63,30 @@ describe("findClaudeBinary", () => {
       });
       expect(result).toEqual({ found: true, path: location });
     }
+    // The Mac's three first, in the order they always had, then the two that
+    // are Linux's alone.
     expect(fixedLocations(HOME)).toEqual([
       "/Users/example/.local/bin/claude",
       "/opt/homebrew/bin/claude",
       "/usr/local/bin/claude",
+      "/Users/example/.npm-global/bin/claude",
+      "/usr/bin/claude",
+    ]);
+  });
+
+  test("a place that is on PATH and is a fixed location too is looked in once, where PATH has it", async () => {
+    const fake = executables();
+    await findClaudeBinary({
+      env: { PATH: "/usr/bin:/usr/local/bin" },
+      homeDir: HOME,
+      isExecutable: fake.isExecutable,
+    });
+    expect(fake.asked).toEqual([
+      "/usr/bin/claude",
+      "/usr/local/bin/claude",
+      "/Users/example/.local/bin/claude",
+      "/opt/homebrew/bin/claude",
+      "/Users/example/.npm-global/bin/claude",
     ]);
   });
 
@@ -83,11 +103,11 @@ describe("findClaudeBinary", () => {
   test("relative and empty PATH entries are never searched", async () => {
     const fake = executables();
     await findClaudeBinary({
-      env: { PATH: ":.:bin:./tools:/usr/bin:" },
+      env: { PATH: ":.:bin:./tools:/opt/tools:" },
       homeDir: HOME,
       isExecutable: fake.isExecutable,
     });
-    expect(fake.asked).toEqual(["/usr/bin/claude", ...fixedLocations(HOME)]);
+    expect(fake.asked).toEqual(["/opt/tools/claude", ...fixedLocations(HOME)]);
   });
 
   test("when nothing is found, it says where it looked in plain words", async () => {
@@ -99,7 +119,7 @@ describe("findClaudeBinary", () => {
     expect(result).toEqual({
       found: false,
       looked:
-        "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin",
+        "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/.npm-global/bin or /usr/bin",
     });
   });
 });

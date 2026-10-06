@@ -56,6 +56,22 @@ export function notificationsOnAtStart(env: NodeJS.ProcessEnv): boolean {
   return env[NOTIFICATIONS_ENV]?.trim().toLowerCase() === "on";
 }
 
+/** What is said at start when the setting is on and nothing here can show a notification. */
+export const NOTIFICATIONS_NOT_SHOWN_LINE = `${NOTIFICATIONS_ENV} is on, but Agent Lookout shows notifications itself on macOS only, so it shows none here. A dashboard tab with notifications on still shows them.`;
+
+/**
+ * The one line to say at start about `AGENT_LOOKOUT_NOTIFICATIONS`, or null.
+ * With the setting on and a notifier that shows nothing, as on Linux, the
+ * setting does nothing, and the person who set it is told so rather than left
+ * waiting for a notification that will never come.
+ */
+export function notificationsAtStartLine(
+  env: NodeJS.ProcessEnv,
+  notifierShows: boolean,
+): string | null {
+  return notificationsOnAtStart(env) && !notifierShows ? NOTIFICATIONS_NOT_SHOWN_LINE : null;
+}
+
 export interface ServerNotificationsOptions {
   notifier: SystemNotifier;
   /** Whether notifications are on, for a wait alone, before any page has said anything. */

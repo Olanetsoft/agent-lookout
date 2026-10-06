@@ -18,7 +18,7 @@ From each entry it keeps these fields and drops the rest: `pid`, `cwd`, `kind`, 
 
 The command is started directly, with no shell, with stdin closed and a 5 second timeout. It is not run at all when `AGENT_LOOKOUT_CLAUDE_FEED` is `off`, or when `AGENT_LOOKOUT_CLAUDE_HOME` is set and `AGENT_LOOKOUT_CLAUDE_BIN` is not.
 
-To find the `claude` binary, Agent Lookout reads the `PATH` environment variable and checks whether a program named `claude` exists in each `PATH` directory, then at `~/.local/bin/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. When `AGENT_LOOKOUT_CLAUDE_BIN` is set, it checks that path and nothing else.
+To find the `claude` binary, Agent Lookout reads the `PATH` environment variable and checks whether a program named `claude` exists in each `PATH` directory, then at `~/.local/bin/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`, `~/.npm-global/bin/claude` and `/usr/bin/claude`. When `AGENT_LOOKOUT_CLAUDE_BIN` is set, it checks that path and nothing else.
 
 ### `ps`
 

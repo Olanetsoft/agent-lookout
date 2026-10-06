@@ -9,7 +9,7 @@ describe("PS_TABLE_ARGS", () => {
 });
 
 describe("parseProcessTable", () => {
-  test("reads each line as a process, its parent, its terminal and its program, whatever the padding", () => {
+  test("reads the ps of macOS: each line a process, its parent, its terminal and its program's path, whatever the padding", () => {
     const stdout = [
       "    1     0 ??       /sbin/launchd",
       "  657     1 ??       /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal",
@@ -31,6 +31,28 @@ describe("parseProcessTable", () => {
       [4301, { ppid: 657, tty: "ttys004", path: "/usr/bin/login" }],
       [4302, { ppid: 4301, tty: "ttys004", path: "-zsh" }],
       [54321, { ppid: 4302, tty: "ttys004", path: "claude" }],
+    ]);
+  });
+
+  test("reads the ps of Linux, procps, which names terminals pts/3 and no terminal ?, and gives a program's short name", () => {
+    const stdout = [
+      "      1       0 ?        systemd",
+      "      2       0 ?        kthreadd",
+      "    812       2 ?        kworker/0:1H-kblockd",
+      "   2301       1 ?        gnome-terminal-",
+      "   2318    2301 pts/3    bash",
+      "4194303    2318 pts/3    claude",
+      "   2400       1 ?        tmux: server",
+    ].join("\n");
+
+    expect([...parseProcessTable(stdout)]).toEqual([
+      [1, { ppid: 0, tty: "?", path: "systemd" }],
+      [2, { ppid: 0, tty: "?", path: "kthreadd" }],
+      [812, { ppid: 2, tty: "?", path: "kworker/0:1H-kblockd" }],
+      [2301, { ppid: 1, tty: "?", path: "gnome-terminal-" }],
+      [2318, { ppid: 2301, tty: "pts/3", path: "bash" }],
+      [4194303, { ppid: 2318, tty: "pts/3", path: "claude" }],
+      [2400, { ppid: 1, tty: "?", path: "tmux: server" }],
     ]);
   });
 

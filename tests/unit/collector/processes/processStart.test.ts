@@ -3,11 +3,51 @@ import { describe, expect, test } from "vitest";
 import {
   compareProcessStart,
   createProcessStartCheck,
+  parseProcessStarts,
+  psStartArgs,
   START_CHECK_TTL_MS,
   type ReadProcessStarts,
 } from "@collector/processes/processStart";
 
 const recorded = "Tue Nov 14 22:13:20 2023";
+
+describe("psStartArgs", () => {
+  test("asks for each pid's start time and nothing else, with the pids in one list", () => {
+    expect(psStartArgs([4241, 4242])).toEqual(["-o", "pid=,lstart=", "-p", "4241,4242"]);
+  });
+});
+
+describe("parseProcessStarts", () => {
+  test("reads the ps of macOS, which pads the pid to five places and the time at its end", () => {
+    const stdout = "    1 Mon Aug 24 10:10:20 2026    \n57256 Tue Oct  6 04:52:23 2026    \n";
+    expect([...parseProcessStarts(stdout)]).toEqual([
+      [1, "Mon Aug 24 10:10:20 2026"],
+      [57256, "Tue Oct  6 04:52:23 2026"],
+    ]);
+  });
+
+  test("reads the ps of Linux, procps, which pads the pid to the width of the largest one", () => {
+    const stdout = "      1 Mon Aug 24 10:10:20 2026\n4194303 Tue Oct  6 04:52:23 2026\n";
+    expect([...parseProcessStarts(stdout)]).toEqual([
+      [1, "Mon Aug 24 10:10:20 2026"],
+      [4194303, "Tue Oct  6 04:52:23 2026"],
+    ]);
+  });
+
+  test("the same start time from either ps compares as the same process", () => {
+    const mac = parseProcessStarts("  4242 Tue Oct  6 04:52:23 2026    \n").get(4242);
+    const linux = parseProcessStarts("   4242 Tue Oct  6 04:52:23 2026\n").get(4242);
+    expect(compareProcessStart(mac, linux)).toBe("same");
+    expect(compareProcessStart(recorded, linux)).toBe("different");
+  });
+
+  test("a line that is not a pid and a time is left out", () => {
+    const stdout = ["  PID STARTED", "", "4242", "abc Tue Oct  6 04:52:23 2026", " 4243 x"].join(
+      "\n",
+    );
+    expect([...parseProcessStarts(stdout).keys()]).toEqual([]);
+  });
+});
 
 describe("compareProcessStart", () => {
   test("the same start time is the same process", () => {
@@ -20,9 +60,25 @@ describe("compareProcessStart", () => {
     );
   });
 
-  test("two different start times are a different process", () => {
-    expect(compareProcessStart(recorded, "Tue Nov 14 22:13:21 2023")).toBe("different");
+  test("start times a minute or less apart are the same process, as procps prints after the clock is set", () => {
+    expect(compareProcessStart(recorded, "Tue Nov 14 22:13:21 2023")).toBe("same");
+    expect(compareProcessStart(recorded, "Tue Nov 14 22:13:19 2023")).toBe("same");
+    expect(compareProcessStart(recorded, "Tue Nov 14 22:14:20 2023")).toBe("same");
+    // Across midnight and the end of a month and a year.
+    expect(compareProcessStart("Sun Dec 31 23:59:58 2023", "Mon Jan  1 00:00:03 2024")).toBe(
+      "same",
+    );
+  });
+
+  test("start times more than a minute apart are a different process", () => {
+    expect(compareProcessStart(recorded, "Tue Nov 14 22:14:21 2023")).toBe("different");
+    expect(compareProcessStart(recorded, "Tue Nov 14 22:12:19 2023")).toBe("different");
+    expect(compareProcessStart(recorded, "Wed Nov 15 22:13:20 2023")).toBe("different");
     expect(compareProcessStart(recorded, "Sat Oct  3 09:12:00 2026")).toBe("different");
+  });
+
+  test("a month name ps does not print is unknown, never different", () => {
+    expect(compareProcessStart(recorded, "Tue Xyz 14 22:13:20 2023")).toBe("unknown");
   });
 
   test("a missing value on either side is unknown, never different", () => {
@@ -60,6 +116,12 @@ describe("createProcessStartCheck", () => {
       { pid: 4242, procStart: recorded },
     ]);
     expect([...reused]).toEqual([4242]);
+  });
+
+  test("a session whose start ps prints a second later, after the clock was set, is kept", async () => {
+    const { read } = fakePs({ 4242: "Tue Nov 14 22:13:21 2023" });
+    const check = createProcessStartCheck(read, () => 0);
+    expect((await check.reused([{ pid: 4242, procStart: recorded }])).size).toBe(0);
   });
 
   test("an entry with no recorded start, or a pid ps says nothing about, is kept", async () => {

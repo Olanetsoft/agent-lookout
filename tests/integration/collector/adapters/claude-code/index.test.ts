@@ -84,7 +84,7 @@ function countedRun(stdout: () => string = () => feedJson) {
 const registryPath = (home: string, name: string) => path.join(home, "sessions", name);
 
 const NOT_FOUND =
-  "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin";
+  "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/.npm-global/bin or /usr/bin";
 
 const HEALTHY =
   "Sessions are read from Claude Code's session registry and checked against its own list of sessions.";

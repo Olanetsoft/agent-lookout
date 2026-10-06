@@ -4,6 +4,7 @@ import {
   createSystemNotifier,
   OSASCRIPT,
   osascriptArgs,
+  systemNotificationsShownOn,
 } from "@collector/notifications/systemNotifier";
 import type { RunOsascript } from "@collector/processes/osascript";
 import { oneLine } from "@core/text";
@@ -76,6 +77,11 @@ describe("the system notifier", () => {
     createSystemNotifier({ platform, run }).show({ title: "checkout-flow", body: "Waiting" });
 
     expect(run).not.toHaveBeenCalled();
+    expect(systemNotificationsShownOn(platform)).toBe(false);
+  });
+
+  test("macOS is the one system it shows them on", () => {
+    expect(systemNotificationsShownOn("darwin")).toBe(true);
   });
 
   test("when osascript is missing or fails, nothing is thrown and nothing is left unhandled", async () => {

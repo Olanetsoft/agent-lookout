@@ -24,18 +24,51 @@ export type StartMatch = "same" | "different" | "unknown";
 /** How long an answer for one pid is trusted before `ps` is asked again. */
 export const START_CHECK_TTL_MS = 30_000;
 
-/** What `ps -o lstart=` prints in the C locale, once runs of spaces are collapsed. */
-const LSTART_SHAPE = /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/;
+/**
+ * How far apart two start times can be and still be one process's.
+ *
+ * procps, the `ps` of Linux, does not keep a process's start time: it works it
+ * out each time from the time the system booted, and that moves whenever the
+ * clock is set, as it often is after waking from sleep. So the same process can
+ * print a start time a second or more away from the one Claude Code recorded
+ * when it started, which it never records again. A pid is given out again only
+ * after every other pid has been, tens of thousands on a Mac and up to millions
+ * on Linux, so a new process with the same pid that started within a minute of
+ * the old one is not a case that happens. A clock set by more than this still
+ * makes a running session look like a leftover.
+ */
+const SAME_START_WITHIN_MS = 60_000;
+
+/**
+ * What `ps -o lstart=` prints in the C locale, once runs of spaces are
+ * collapsed: `Tue Oct 6 04:09:12 2026`. The `ps` of macOS and the BSDs and the
+ * `ps` of Linux, procps, both print it this way.
+ */
+const LSTART_SHAPE = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function collapse(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
 /**
+ * The moment a collapsed `lstart` value names, in milliseconds, read as UTC as
+ * both Claude Code and this module ask `ps` for it. Undefined for any other value.
+ */
+function lstartMs(value: string): number | undefined {
+  const match = LSTART_SHAPE.exec(value);
+  const month = MONTHS.indexOf(match?.[1] ?? "");
+  if (!match || month === -1) return undefined;
+  const [day, hours, minutes, seconds, year] = match.slice(2).map(Number) as number[];
+  return Date.UTC(year as number, month, day, hours, minutes, seconds);
+}
+
+/**
  * Compares the start time a registry file recorded with the one `ps` reports now.
  *
- * Only two values that both look like `ps` output and differ are "different".
- * Anything that cannot be compared is "unknown".
+ * Only two values that both look like `ps` output and are more than a minute
+ * apart are "different". Anything that cannot be compared is "unknown".
  */
 export function compareProcessStart(
   recorded: string | undefined,
@@ -46,7 +79,29 @@ export function compareProcessStart(
   const now = collapse(actual);
   if (before === "" || now === "") return "unknown";
   if (before === now) return "same";
-  return LSTART_SHAPE.test(before) && LSTART_SHAPE.test(now) ? "different" : "unknown";
+  const beforeMs = lstartMs(before);
+  const nowMs = lstartMs(now);
+  if (beforeMs === undefined || nowMs === undefined) return "unknown";
+  return Math.abs(beforeMs - nowMs) <= SAME_START_WITHIN_MS ? "same" : "different";
+}
+
+/** The arguments that ask `ps` when each of these processes started, and nothing else. */
+export function psStartArgs(pids: readonly number[]): string[] {
+  return ["-o", "pid=,lstart=", "-p", pids.join(",")];
+}
+
+/**
+ * Reads what `ps -o pid=,lstart= -p <pids>` printed: each pid and its start
+ * time, as printed. The padding differs between the `ps` of macOS and that of
+ * Linux, and does not matter. A line that is not a pid and a time is left out.
+ */
+export function parseProcessStarts(stdout: string): Map<number, string> {
+  const starts = new Map<number, string>();
+  for (const line of stdout.split("\n")) {
+    const match = /^\s*(\d+)\s+(\S.*\S)\s*$/.exec(line);
+    if (match) starts.set(Number(match[1]), match[2] as string);
+  }
+  return starts;
 }
 
 /**
@@ -57,16 +112,11 @@ export function compareProcessStart(
  * directly, never through a shell, and found on a fixed `PATH`.
  */
 export const readProcessStartsWithPs: ReadProcessStarts = async (pids) => {
-  const starts = new Map<number, string>();
-  if (pids.length === 0) return starts;
-  const answer = await runPs(["-o", "pid=,lstart=", "-p", pids.join(",")], { utc: true });
+  if (pids.length === 0) return new Map();
+  const answer = await runPs(psStartArgs(pids), { utc: true });
   // `ps` reports an error when one of the pids has gone and still prints the
   // others, so the output is read whatever the exit code was.
-  for (const line of answer.stdout.split("\n")) {
-    const match = /^\s*(\d+)\s+(\S.*\S)\s*$/.exec(line);
-    if (match) starts.set(Number(match[1]), match[2] as string);
-  }
-  return starts;
+  return parseProcessStarts(answer.stdout);
 };
 
 export interface ProcessStartCheck {
