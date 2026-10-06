@@ -43,7 +43,7 @@ async function serve(initial: Session[] = []) {
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env: {},
+    env: { AGENT_LOOKOUT_HISTORY: "off" },
     notifier,
     now: () => state.now,
   });
@@ -112,6 +112,7 @@ describe("routes", () => {
   test("/api/sessions gives the Claude Code source its facts: the folder, the command and how often each is used", async () => {
     const home = await makeClaudeHome(registryFiles);
     const collector = createCollector({
+      env: { AGENT_LOOKOUT_HISTORY: "off" },
       version: "9.9.9-test",
       adapters: [
         createClaudeCodeAdapter({
@@ -146,6 +147,7 @@ describe("routes", () => {
 
   test("/api/sessions passes on a source's advice", async () => {
     const collector = createCollector({
+      env: { AGENT_LOOKOUT_HISTORY: "off" },
       version: "9.9.9-test",
       adapters: [
         createClaudeCodeAdapter({
@@ -206,7 +208,7 @@ describe("routes", () => {
     expect(body.events).toHaveLength(200);
   });
 
-  test("/api/history returns one point per poll, the default 15 minute window, and startedAt", async () => {
+  test("/api/history returns one point per poll, the default 15 minute window, startedAt, that history is kept in memory only, and no restarts", async () => {
     const server = await serve();
     const working = makeSession({ status: "working" });
 
@@ -219,6 +221,17 @@ describe("routes", () => {
     expect(recent).toEqual({
       points: [{ at: T0 + 20 * 60_000, needsYou: 0, working: 0, idle: 0, total: 0 }],
       startedAt: T0,
+      since: { at: T0, by: "started" },
+      kept: {
+        where: "memory",
+        folder: null,
+        bytes: null,
+        maxBytes: 20 * 1024 * 1024,
+        maxAgeMs: 8 * 24 * 60 * 60 * 1000,
+        canClear: false,
+        problem: null,
+      },
+      restarts: [],
     });
 
     const wide = (

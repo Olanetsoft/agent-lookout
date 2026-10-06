@@ -56,6 +56,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
+      AGENT_LOOKOUT_HISTORY: "off",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],

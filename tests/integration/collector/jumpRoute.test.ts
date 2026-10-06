@@ -92,6 +92,7 @@ async function serve(env: Record<string, string> = {}, processes: ProcessRow[] =
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
+      AGENT_LOOKOUT_HISTORY: "off",
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
@@ -192,6 +193,7 @@ describe("what the dashboard is told", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       env: {
+        AGENT_LOOKOUT_HISTORY: "off",
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: await tempDir(),

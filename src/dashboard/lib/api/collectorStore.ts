@@ -3,7 +3,7 @@ import { DEFAULT_HISTORY_WINDOW_MS } from "@core/history";
 import type { SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { timerBeat, type Beat } from "@dashboard/lib/api/beat";
-import { mergeHistory } from "@dashboard/lib/charts/historyChart";
+import { clearedSince, mergeHistory } from "@dashboard/lib/charts/historyChart";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
 
 /**
@@ -243,9 +243,12 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
 
       if (history.status === "fulfilled") {
         // A new start time means the collector restarted. Its event ids start
-        // again, so the old list is dropped rather than merged into.
+        // again, so the old list is dropped rather than merged into. So it is
+        // once the history has been cleared: what came before is gone.
         const restarted =
-          state.history !== null && state.history.startedAt !== history.value.startedAt;
+          state.history !== null &&
+          (state.history.startedAt !== history.value.startedAt ||
+            clearedSince(state.history, history.value));
         let held: CollectorHistory;
         if (wholeHour) {
           held = history.value;
@@ -263,7 +266,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         next = {
           ...next,
           history: {
-            startedAt: held.startedAt,
+            ...held,
             points: held.points.filter((point) => point.at >= oldest),
           },
           events: restarted ? [] : next.events,

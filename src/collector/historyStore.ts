@@ -8,6 +8,8 @@ export interface HistoryStore {
   add(point: HistoryPoint): void;
   /** The points from the last `windowMs` up to `now`, oldest first. */
   list(windowMs: number, now: number): HistoryPoint[];
+  /** Lets every point go, as clearing the history does. */
+  clear(): void;
   readonly size: number;
 }
 
@@ -28,6 +30,9 @@ export function createHistoryStore(capacity: number = HISTORY_CAPACITY): History
       let start = points.length;
       while (start > 0 && (points[start - 1] as HistoryPoint).at >= from) start -= 1;
       return points.slice(start);
+    },
+    clear() {
+      points = [];
     },
     get size() {
       return points.length;

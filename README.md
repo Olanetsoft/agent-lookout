@@ -24,7 +24,7 @@ It finds Claude Code and Codex sessions with no setup, and the sessions of any o
 | [`agent-lookout mcp`](docs/GUIDE.md#for-your-agents)              | Lets an AI agent ask which sessions need you. Its tools only read.                                                                                                                                                  |
 | [Status files](docs/GUIDE.md#your-own-agents)                     | Show any other agent, including one you wrote, when it writes one small JSON file for each session.                                                                                                                 |
 
-The Overview also has a chart of the last hour, a log of events and a timeline. Press `/` to search every session. Sources says what Agent Lookout reads for each agent. [The screen](docs/GUIDE.md#the-screen) covers each part.
+The Overview also has a chart of the last hour, a log of events and a timeline. What they show is kept on this computer for 8 days, so a restart does not empty them. Press `/` to search every session. Sources says what Agent Lookout reads for each agent. [The screen](docs/GUIDE.md#the-screen) covers each part.
 
 ## Supported agents and systems
 
@@ -187,12 +187,13 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_NOTIFICATIONS=on` | On a Mac, shows notifications of waits from the moment it starts, with no dashboard tab open.                                                                                     |
 | `AGENT_LOOKOUT_CLAUDE_FEED=off`  | Never runs the `claude` command. Sessions come from Claude Code's session files alone.                                                                                            |
 | `AGENT_LOOKOUT_WAITING_TEXT=off` | Never opens a Claude Code transcript. A waiting session shows its reason alone.                                                                                                   |
+| `AGENT_LOOKOUT_HISTORY=off`      | Keeps the Events log and the charts in memory only, so they start empty each time. Nothing is written to `~/.agent-lookout/history`.                                              |
 
 [The guide](docs/GUIDE.md#settings-you-can-change) lists every setting, those for [email](docs/GUIDE.md#email) and the [webhook](docs/GUIDE.md#webhook) among them. The theme and the page's notifications are in the dashboard's Settings view.
 
 ## Privacy
 
-By default Agent Lookout itself sends nothing anywhere: no telemetry, no analytics, no crash reports and no account. The one exception is the Mac app, which asks GitHub about once a day whether a newer version of it is out and sends nothing about your sessions: Settings turns that off, [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) says what it sends, and `npx agent-lookout` and the repository never check. Its fonts and scripts are bundled, so the page loads nothing from the internet. It stores no session data on disk: what it knows is held in memory and is gone when it stops. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and can send.
+By default Agent Lookout itself sends nothing anywhere: no telemetry, no analytics, no crash reports and no account. The one exception is the Mac app, which asks GitHub about once a day whether a newer version of it is out and sends nothing about your sessions: Settings turns that off, [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) says what it sends, and `npx agent-lookout` and the repository never check. Its fonts and scripts are bundled, so the page loads nothing from the internet. It keeps the Events log and the counts behind the charts on this computer, in `~/.agent-lookout/history`, so they are still there after a restart: for 8 days and up to 20 MB, with each session's name and status changes and no folder path, prompt or anything a waiting session is asking. Clear history in Settings deletes them, and `AGENT_LOOKOUT_HISTORY=off` keeps them in memory only. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs, keeps and can send.
 
 - Email and the webhook are off until you set them up. Then each goes only to the one address you name, and email goes through the mail server you name. A message holds the session's name, what happened and when, how long a wait has lasted, and the names of its folder, app and agent. It holds no path and no prompt.
 - Started with `npx agent-lookout`, npm contacts its registry: to download the package the first time, and each time after to ask whether a newer version is out. That is npm's own traffic, not Agent Lookout's. Installed with `npm install -g agent-lookout` and started as `agent-lookout`, npm is not involved.
@@ -202,14 +203,13 @@ By default Agent Lookout itself sends nothing anywhere: no telemetry, no analyti
 - `agent-lookout mcp` does nothing until you add it to an agent's app. That app usually hands its answers, with your session names, folders and branches, to its model, which for most agents runs on the vendor's servers. [The MCP server](PRIVACY.md#the-mcp-server) says what an answer holds.
 - Jump to a Terminal or iTerm2 tab needs macOS to let the program you start Agent Lookout from control that app. macOS asks once, and what you allow covers anything else you run from that program. Choose Don't Allow and only that Jump stops working. `AGENT_LOOKOUT_TERMINAL_JUMP=off` turns it off.
 
-It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_LOOKOUT_HOST`, and refuses any other, so other computers cannot reach it. It turns away requests from websites open in your browser. It has no password. While it runs, other programs and other user accounts on this computer can read it. They can also turn the notifications it shows on or off, and do what the Jump button does. It writes to no agent's files. The one thing it changes outside itself is which tmux pane, or which Terminal or iTerm2 tab, is in front, when you press Jump.
+It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_LOOKOUT_HOST`, and refuses any other, so other computers cannot reach it. It turns away requests from websites open in your browser. It has no password. While it runs, other programs and other user accounts on this computer can read it. They can also turn the notifications it shows on or off, do what the Jump button does, and clear the history. It writes to no agent's files. The one thing it changes outside itself is which tmux pane, or which Terminal or iTerm2 tab, is in front, when you press Jump.
 
 ## What it does not do yet
 
 - Neither it nor an agent using `agent-lookout mcp` can stop, resume or answer a session.
 - It shows only sessions on this computer. Cloud sessions, Codex cloud tasks and chats in a browser tab do not appear.
 - Claude Code's session files and Codex's files are not documented by their makers. An update to either can make Agent Lookout show less, or nothing, until it is updated. [docs/adapters/codex.md](docs/adapters/codex.md#what-breaks-when-codex-changes) lists what breaks when Codex changes.
-- The Events log, the charts and the Timeline start empty each time Agent Lookout starts.
 - The Mac app is not signed with an Apple Developer ID yet, so the first time it is opened, macOS does not open it until you allow it in Privacy & Security. There is no app for Linux. Support for more agents is planned in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).
 
 [What it does not do yet](docs/GUIDE.md#what-it-does-not-do-yet) has the details.

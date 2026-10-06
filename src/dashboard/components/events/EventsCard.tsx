@@ -24,8 +24,8 @@ import {
 } from "@dashboard/lib/events/events";
 import { countNew } from "@dashboard/lib/events/newSince";
 import {
+  clockAt,
   formatClock,
-  formatClockMinutes,
   formatDay,
   formatDuration,
   formatFullTime,
@@ -40,11 +40,14 @@ interface EventsCardProps {
   /** The sessions listed now. They say which waits are still open. */
   sessions?: readonly Pick<Session, "id" | "status">[];
   /**
-   * The history the page holds: when Agent Lookout started watching, and, from
-   * its points, where its polls broke off. Null when it could not be read.
+   * The history the page holds: when Agent Lookout started watching, or the
+   * history was cleared, when it started again, and, from its points, where
+   * its polls broke off. Null when it could not be read.
    */
   history?:
-    (Pick<CollectorHistory, "startedAt"> & Partial<Pick<CollectorHistory, "points">>) | null;
+    | (Pick<CollectorHistory, "startedAt" | "since" | "restarts"> &
+        Partial<Pick<CollectorHistory, "points">>)
+    | null;
   now: number;
   /**
    * Events after this moment arrived while the page was out of sight. The log
@@ -463,7 +466,7 @@ type Item =
       waitedMs: number | null;
     }
   | { kind: "resumed"; key: string; at: number; unmeasuredMs: number }
-  | { kind: "started"; key: string; at: number }
+  | { kind: "started"; key: string; at: number; cleared: boolean }
   | { kind: "new"; key: string; since: number };
 
 /**
@@ -472,13 +475,17 @@ type Item =
  * one that is over has the answered mark, so the only amber here is for what
  * needs the person now.
  *
- * Where the history the page holds has a break in the collector's polls, a row
- * says when watching resumed and how long was not measured, with the lookout
- * mark, and the thread turns dotted across the break.
+ * Where the history the page holds has a break in the collector's polls, or
+ * Agent Lookout started again, a row says when watching resumed and how long
+ * was not measured, with the lookout mark, and the thread turns dotted across
+ * the break.
  *
  * While the log holds everything since Agent Lookout started watching, it ends
- * with that moment, and the head says "since" it. Once it is full, the head
- * gives the oldest event held instead and claims nothing before it.
+ * with that moment, and the head says "since" it, with the day when that was
+ * not today. Since the history was cleared, it ends with that moment instead,
+ * "History cleared". Once it is full, the head gives the oldest event held
+ * instead and claims nothing before it, and so it does when the history kept
+ * reaches back only so far because what came before was let go.
  *
  * Before anything has changed, the log is that one moment, with a quiet line
  * under it that says nothing has changed since. Only when the start is not known
@@ -545,7 +552,7 @@ export function EventsCard({
   }
   if (start?.started) {
     dayOf(start.at);
-    items.push({ kind: "started", key: "started", at: start.at });
+    items.push({ kind: "started", key: "started", at: start.at, cleared: start.cleared === true });
   }
   if (lineAt !== null) items.push({ kind: "new", key: "new", since: lineAt });
   const lined = newCount > 0;
@@ -605,7 +612,7 @@ export function EventsCard({
             thread={thread}
             mark={<StatusMark kind='lookout' labelled />}
           >
-            <span>Started watching</span>
+            <span>{item.cleared ? "History cleared" : "Started watching"}</span>
           </Row>
         );
       case "new":
@@ -675,7 +682,7 @@ export function EventsCard({
       aside={
         start ? (
           <span data-part='since'>
-            since <span className='tabular-nums'>{formatClockMinutes(start.at)}</span>
+            since <span className='tabular-nums'>{clockAt(start.at, now)}</span>
           </span>
         ) : undefined
       }

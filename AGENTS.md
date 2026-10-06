@@ -5,7 +5,7 @@ Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one brow
 ## Commands
 
 - You need Node.js 20.19 or newer (on Node 22, 22.12 or newer). Run `npm install`, then `npx playwright install chromium` once for the component tests. On Linux, add `--with-deps`.
-- `npm run dev` serves the dashboard at http://localhost:5173 with the collector inside the dev server, and shows the sessions on the machine. To show none, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` to an empty folder.
+- `npm run dev` serves the dashboard at http://localhost:5173 with the collector inside the dev server, and shows the sessions on the machine. To show none, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR` and `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder. Without the last, the Events log and the charts show what earlier runs kept in `~/.agent-lookout/history`.
 - `npm run check` runs the layout check, the typecheck, the linter, the format check and the tests, and stops at the first failure. Run it before you finish. CI also runs `npm run build`.
 - `npm run format` and `npm run lint:fix` fix most format and lint failures.
 - `npm run test:unit`, `npm run test:integration` and `npm run test:component` run one group. `npx vitest run <file>` runs one file.
@@ -14,6 +14,7 @@ Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one brow
 
 - By default Agent Lookout sends nothing anywhere. Its code makes no network request to anything but its own local server, except email notifications and the webhook, which are off until the person sets them up. No telemetry, analytics, remote fonts, CDN links or update checks, in your code or in a dependency. The one exception is the Mac app's daily check of GitHub Releases, in `src/desktop/updates/`, which [PRIVACY.md](PRIVACY.md#updates-mac-app-only) describes.
 - No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Fixtures go in `tests/fixtures/`, written by hand with generic values such as `demo-project` and `/Users/example/code/demo`. Never copy a real session name or path into the repository.
+- No test writes to the person's own `~/.agent-lookout` or `~/.claude`. A test that builds a collector or starts the app sets `AGENT_LOOKOUT_HISTORY=off`, or `AGENT_LOOKOUT_HISTORY_DIR` to a temporary folder.
 - A change in behaviour comes with a test. Every test lives under `tests/unit/`, `tests/integration/` or `tests/component/`, named for the module it covers and at the mirrored path. Nothing under `src/` is a test or imports from `tests/`. [tests/README.md](tests/README.md) says which group a test belongs in.
 - Put a new module in the folder for its area. `npm run check` fails when a folder holds more than eight code files side by side.
 - Folders are kebab-case, React components `PascalCase.tsx`, hooks `useThing.ts` and every other module `camelCase.ts`.

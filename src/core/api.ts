@@ -23,8 +23,100 @@ export interface EventsResponse {
 /** `GET /api/history?windowMs=<n>`: one point per poll, oldest first. */
 export interface HistoryResponse {
   points: HistoryPoint[];
-  /** When the collector began. Time before this was not measured. */
+  /**
+   * When this run of the collector began. A new one means it was started
+   * again. Without `since`, time before this was not measured.
+   */
   startedAt: number;
+  /**
+   * How far back the history the collector holds reaches, and what began it.
+   * Time before `since.at` was not measured. With history kept on disk it can
+   * be before `startedAt`; in memory only it is `startedAt`, or when the
+   * history was cleared. Left out, it is `startedAt`, as `historySince` reads it.
+   */
+  since?: HistorySince;
+  /** Where the history is kept, and how much it holds. */
+  kept?: HistoryKept;
+  /**
+   * Each time Agent Lookout started again after `since`, with history kept
+   * from before it, oldest first: this run's start among them. Nothing was
+   * measured between the two moments each gives, however close they are.
+   * Left out, or empty, when there were none.
+   */
+  restarts?: HistoryRestart[];
+}
+
+/** A start of Agent Lookout that followed history kept from an earlier run. */
+export interface HistoryRestart {
+  /** When it started watching again. */
+  at: number;
+  /** The newest moment the history from before it holds. */
+  lastBefore: number;
+}
+
+/**
+ * What the history held begins with:
+ *
+ * started  Agent Lookout started watching
+ * cleared  the history was cleared
+ * trimmed  the oldest history kept: what came before was let go, for its age or the size
+ */
+export const HISTORY_BEGINNINGS = ["started", "cleared", "trimmed"] as const;
+
+export type HistoryBeginning = (typeof HISTORY_BEGINNINGS)[number];
+
+/** Where the history held begins. */
+export interface HistorySince {
+  at: number;
+  by: HistoryBeginning;
+}
+
+/**
+ * Where the history is kept: in files in a folder on this computer, so the
+ * Events log and the charts are still there after a restart, or in memory
+ * only, with `AGENT_LOOKOUT_HISTORY=off`, and gone when Agent Lookout stops.
+ */
+export interface HistoryKept {
+  where: "disk" | "memory";
+  /** The folder the files are in, with the home folder written `~`. Null in memory. */
+  folder: string | null;
+  /** How many bytes the files hold now. Null in memory. */
+  bytes: number | null;
+  /** The most the files may hold in all, in bytes. Past it the oldest go. */
+  maxBytes: number;
+  /** How long after its day a day's history is kept, in milliseconds. */
+  maxAgeMs: number;
+  /**
+   * Whether this copy of Agent Lookout writes the files and can clear them.
+   * False in memory, while another copy writes them, and while they cannot be
+   * written.
+   */
+  canClear: boolean;
+  /** While this copy is not writing the files: one sentence saying why. Null otherwise. */
+  problem: string | null;
+}
+
+/** What `ACTION_HEADER` says on a request that clears the history. */
+export const CLEAR_HISTORY_ACTION = "clear-history";
+
+/** `POST /api/history/clear`, when the history was cleared. */
+export interface ClearHistoryResponse {
+  ok: true;
+  clearedAt: number;
+}
+
+/**
+ * Why the history was not cleared:
+ *
+ * memory-only  409: history is kept in memory only, and nothing is on disk to clear
+ * not-writing  409: another copy of Agent Lookout writes the files, or they cannot be written
+ * failed       500: the files could not all be deleted
+ */
+export type ClearHistoryFailure = "memory-only" | "not-writing" | "failed";
+
+/** The body of an answer of `POST /api/history/clear` that says why it was not cleared. */
+export interface ClearHistoryRefusal extends ErrorResponse {
+  reason: ClearHistoryFailure;
 }
 
 /** The body of every response that is not a 200. */
@@ -82,9 +174,9 @@ export const JUMP_INTERVAL_MS = 1_000;
 
 /**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`. A browser sends no header of this kind to another origin
- * without asking first, and the collector never says yes, so a page at another
- * address cannot send it.
+ * naming what: `jump`, or `clear-history`. A browser sends no header of this
+ * kind to another origin without asking first, and the collector never says
+ * yes, so a page at another address cannot send it.
  */
 export const ACTION_HEADER = "X-Agent-Lookout-Action";
 

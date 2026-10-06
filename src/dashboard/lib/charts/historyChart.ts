@@ -4,6 +4,7 @@
  */
 
 import type { HistoryResponse } from "@core/api";
+import { historySince } from "@core/history";
 import type { HistoryPoint } from "@core/sessions/session";
 import type { SparkSample } from "@dashboard/lib/charts/sparkline";
 
@@ -77,8 +78,24 @@ export function timeTicks(start: number, end: number, maxTicks: number): number[
  * moves with every poll without asking for thousands of points each time.
  */
 export function mergeHistory(base: HistoryResponse, live: HistoryResponse | null): HistoryResponse {
-  const firstLive = live?.points[0];
-  if (!live || !firstLive || live.startedAt !== base.startedAt) return base;
+  if (!live) return base;
+  // Cleared since the window was asked for: what came before is gone.
+  if (clearedSince(base, live)) return live;
+  const firstLive = live.points[0];
+  if (!firstLive || live.startedAt !== base.startedAt) return base;
   const older = base.points.filter((point) => point.at < firstLive.at);
-  return { startedAt: base.startedAt, points: [...older, ...live.points] };
+  // Where the history begins and where it is kept are as the newest answer says.
+  return { ...live, startedAt: base.startedAt, points: [...older, ...live.points] };
+}
+
+/**
+ * Whether the history was cleared after `held` was read: `answer` begins with
+ * a clearing that `held` does not. What the page held from before it is gone.
+ */
+export function clearedSince(
+  held: Pick<HistoryResponse, "startedAt" | "since">,
+  answer: Pick<HistoryResponse, "startedAt" | "since">,
+): boolean {
+  const since = historySince(answer);
+  return since.by === "cleared" && since.at !== historySince(held).at;
 }

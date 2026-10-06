@@ -76,6 +76,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
   const collector = createCollector({
     version: "0.0.0-test",
     env: {
+      AGENT_LOOKOUT_HISTORY: "off",
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_CLAUDE_FEED: "off",
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
@@ -531,6 +532,7 @@ describe("agent-lookout start, as a process", () => {
         AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+        AGENT_LOOKOUT_HISTORY: "off",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

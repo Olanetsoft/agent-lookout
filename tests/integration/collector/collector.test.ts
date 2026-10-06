@@ -1,9 +1,9 @@
-import { appendFile, mkdir, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
 import path from "node:path";
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import type { Adapter } from "@collector/adapters/adapter";
 import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
@@ -18,10 +18,12 @@ import {
   NOTIFICATIONS_HEADER,
   SENDS_PER_HOUR,
   type EmailStatusResponse,
+  type EventsResponse,
+  type HistoryResponse,
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
-import { readSnapshot } from "@dashboard/lib/api/readApi";
+import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import {
   fixtureSessions,
@@ -62,6 +64,7 @@ async function serve(settings: Record<string, string>) {
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
+      AGENT_LOOKOUT_HISTORY: "off",
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
@@ -224,6 +227,7 @@ describe("createCollector", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       env: {
+        AGENT_LOOKOUT_HISTORY: "off",
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
@@ -288,6 +292,7 @@ describe("createCollector", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       env: {
+        AGENT_LOOKOUT_HISTORY: "off",
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: codexHome,
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
@@ -378,7 +383,7 @@ async function watch(source = standInSource(), env: Record<string, string> = {})
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env,
+    env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
     notifier,
     now: () => state.now,
   });
@@ -487,7 +492,10 @@ describe("the collector's own notifications", () => {
       createCollector({
         version: "9.9.9-test",
         adapters: [],
-        env: options.on === false ? {} : { AGENT_LOOKOUT_NOTIFICATIONS: "on" },
+        env: {
+          AGENT_LOOKOUT_HISTORY: "off",
+          ...(options.on === false ? {} : { AGENT_LOOKOUT_NOTIFICATIONS: "on" }),
+        },
         platform: options.platform,
         // Left out, the system's own notifier for that platform is made.
         ...(options.notifier ? { notifier: fakeSystemNotifier() } : {}),
@@ -634,7 +642,7 @@ describe("email notifications", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [adapter],
-      env,
+      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
       notifier: fakeSystemNotifier(),
       now: () => state.now,
       warn: (line) => warnings.push(line),
@@ -935,7 +943,7 @@ describe("webhook notifications", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [adapter],
-      env,
+      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
       notifier: fakeSystemNotifier(),
       now: () => state.now,
       warn: (line) => warnings.push(line),
@@ -1248,7 +1256,7 @@ describe("what a host is told", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: {},
+      env: { AGENT_LOOKOUT_HISTORY: "off" },
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       onSnapshot: (snapshot) => told.push(snapshot.sessions.map((session) => session.status)),
@@ -1267,7 +1275,7 @@ describe("what a host is told", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: {},
+      env: { AGENT_LOOKOUT_HISTORY: "off" },
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       onSnapshot: () => {
@@ -1278,5 +1286,212 @@ describe("what a host is told", () => {
     const snapshot = await collector.poller.pollOnce();
     expect(snapshot.sessions.map((session) => session.status)).toEqual(["needs-you"]);
     expect(collector.poller.getSnapshot()).toBe(snapshot);
+  });
+});
+
+describe("history kept on disk", () => {
+  /**
+   * A collector over a stand-in source, keeping its history in `dir`, served
+   * over real HTTP and started as a host starts it: once the history has been
+   * read back, it polls. It is stopped when the test finishes.
+   */
+  async function keeping(dir: string, source: ReturnType<typeof standInSource>, env = {}) {
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [source.adapter],
+      env: { AGENT_LOOKOUT_HISTORY_DIR: dir, ...env },
+      notifier: fakeSystemNotifier(),
+      now: () => source.state.now,
+      intervalMs: 1_000_000_000,
+    });
+    const port = await listen(createServer(collector.handler));
+    collector.start();
+    onTestFinished(() => collector.stop());
+    await collector.whenStarted();
+    await collector.poller.pollOnce();
+    return {
+      collector,
+      port,
+      async poll(atOffsetMs: number, sessions: Session[]) {
+        source.state.now = T0 + atOffsetMs;
+        source.state.sessions = sessions;
+        await collector.poller.pollOnce();
+      },
+    };
+  }
+
+  /** Every history file in the folder, as one text. */
+  async function files(dir: string): Promise<string> {
+    const names = (await readdir(dir)).filter((name) => name.endsWith(".jsonl")).sort();
+    return (await Promise.all(names.map((name) => readFile(path.join(dir, name), "utf8")))).join(
+      "",
+    );
+  }
+
+  test("the Events log and the history come back after a restart, with the time it was stopped not measured", async () => {
+    const dir = await tempDir();
+    const source = standInSource([working("checkout-flow")]);
+    const first = await keeping(dir, source);
+    await first.poll(2_000, [waiting("checkout-flow")]);
+    await first.poll(4_000, [working("checkout-flow")]);
+    first.collector.stop();
+
+    // A minute later it starts again, and the session is still working.
+    source.state.now = T0 + 64_000;
+    const second = await keeping(dir, source);
+    const { events } = (await request(second.port, "/api/events")).json<EventsResponse>();
+    expect(events.map((event) => [event.at - T0, event.from, event.to])).toEqual([
+      [4_000, "needs-you", "working"],
+      [2_000, "working", "needs-you"],
+    ]);
+
+    const history = (
+      await request(second.port, `/api/history?windowMs=${60 * 60_000}`)
+    ).json<HistoryResponse>();
+    expect(history.points.map((point) => [point.at - T0, point.needsYou, point.working])).toEqual([
+      [0, 0, 1],
+      [2_000, 1, 0],
+      [4_000, 0, 1],
+      [64_000, 0, 1],
+    ]);
+    // This run began now, and the history it holds began with the first.
+    expect(history.startedAt).toBe(T0 + 64_000);
+    expect(history.since).toEqual({ at: T0, by: "started" });
+    expect(history.kept).toMatchObject({
+      where: "disk",
+      folder: dir,
+      canClear: true,
+      problem: null,
+    });
+    // No point stands for the minute it was stopped, so the dashboard draws
+    // that minute as time not measured, as it draws a computer asleep.
+    const times = history.points.map((point) => point.at);
+    expect((times[3] as number) - (times[2] as number)).toBe(60_000);
+  });
+
+  test("what changed while it was stopped is recorded at the first poll after, and the restart is listed", async () => {
+    const dir = await tempDir();
+    const other = "claude-code:00000000-0000-4000-8000-000000000002";
+    const deploy = (status: Session["status"]) =>
+      makeSession({ id: other, name: "deploy-bot", status });
+    const idle = makeSession({ id, name: "checkout-flow", status: "idle" });
+    const source = standInSource([idle, deploy("working")]);
+    const first = await keeping(dir, source);
+    // checkout-flow starts working, and deploy-bot starts waiting, five minutes in.
+    for (let at = 2_000; at <= 30 * 60_000; at += 2_000) {
+      const later = at >= 5 * 60_000;
+      await first.poll(at, [
+        later ? working("checkout-flow") : idle,
+        deploy(later ? "needs-you" : "working"),
+      ]);
+    }
+    first.collector.stop();
+
+    // Five minutes later it starts again. Meanwhile checkout-flow began to
+    // wait, and deploy-bot, which was waiting, ended.
+    source.state.now = T0 + 35 * 60_000;
+    source.state.sessions = [waiting("checkout-flow")];
+    const second = await keeping(dir, source);
+    for (let at = 35 * 60_000 + 2_000; at <= 36 * 60_000; at += 2_000) {
+      await second.poll(at, [waiting("checkout-flow")]);
+    }
+
+    const events = readEvents((await request(second.port, "/api/events")).json()) ?? [];
+    expect(
+      events
+        .slice(0, 2)
+        .map((event) => [event.at - T0, event.sessionName, event.kind, event.from, event.to]),
+    ).toEqual([
+      [35 * 60_000, "deploy-bot", "ended", "needs-you", undefined],
+      [35 * 60_000, "checkout-flow", "status-changed", "working", "needs-you"],
+    ]);
+    const history = readHistory(
+      (await request(second.port, `/api/history?windowMs=${60 * 60_000}`)).json(),
+    );
+    expect(history?.restarts).toEqual([{ at: T0 + 35 * 60_000, lastBefore: T0 + 30 * 60_000 }]);
+    // No point stands for the five minutes it was stopped.
+    const times = history?.points.map((point) => point.at - T0) ?? [];
+    expect(times.filter((at) => at > 30 * 60_000 && at < 35 * 60_000)).toEqual([]);
+    expect(times.at(-1)).toBe(36 * 60_000);
+    // The dashboard counts the wait from the restart: tests/unit/dashboard/lib/sessions/waits.test.ts.
+    const snapshot = readSnapshot((await request(second.port, "/api/sessions")).json());
+    expect(snapshot?.sessions.map((session) => [session.name, session.status])).toEqual([
+      ["checkout-flow", "needs-you"],
+    ]);
+  });
+
+  test("a restart of a few seconds is a break all the same", async () => {
+    const dir = await tempDir();
+    const source = standInSource([working("checkout-flow")]);
+    const first = await keeping(dir, source);
+    await first.poll(2_000, [working("checkout-flow")]);
+    first.collector.stop();
+
+    source.state.now = T0 + 5_000;
+    const second = await keeping(dir, source);
+    await second.poll(7_000, [working("checkout-flow")]);
+    const history = (await request(second.port, "/api/history")).json<HistoryResponse>();
+    expect(history.restarts).toEqual([{ at: T0 + 5_000, lastBefore: T0 + 2_000 }]);
+  });
+
+  test("what a waiting session is asking is never written, though the snapshot holds it", async () => {
+    const dir = await tempDir();
+    const source = standInSource([working("checkout-flow")]);
+    const server = await keeping(dir, source);
+    const asking = { ...waiting("checkout-flow"), waitingText: "Run: ./scripts/release.sh" };
+    await server.poll(2_000, [asking]);
+    const snapshot = (await request(server.port, "/api/sessions")).json<SessionsSnapshot>();
+    expect(snapshot.sessions[0]?.waitingText).toBe("Run: ./scripts/release.sh");
+    await server.poll(4_000, [asking]);
+    await server.poll(6_000, [working("checkout-flow")]);
+    server.collector.stop();
+
+    const text = await files(dir);
+    expect(text).toContain('"to":"needs-you"');
+    expect(text).not.toContain("waitingText");
+    expect(text).not.toContain("release.sh");
+    expect(text).not.toContain("Run:");
+  });
+
+  test("with AGENT_LOOKOUT_HISTORY=off nothing is written, and the history starts empty each time", async () => {
+    const dir = path.join(await tempDir(), "history");
+    const source = standInSource([working("checkout-flow")]);
+    const first = await keeping(dir, source, { AGENT_LOOKOUT_HISTORY: "off" });
+    await first.poll(2_000, [waiting("checkout-flow")]);
+    first.collector.stop();
+    await expect(readdir(dir)).rejects.toMatchObject({ code: "ENOENT" });
+
+    source.state.now = T0 + 64_000;
+    const second = await keeping(dir, source, { AGENT_LOOKOUT_HISTORY: "off" });
+    expect((await request(second.port, "/api/events")).json<EventsResponse>().events).toEqual([]);
+    const history = (await request(second.port, "/api/history")).json<HistoryResponse>();
+    expect(history.since).toEqual({ at: T0 + 64_000, by: "started" });
+    expect(history.kept).toMatchObject({ where: "memory", folder: null, canClear: false });
+  });
+
+  test("while another copy writes the history, this one reads what was kept, writes nothing, and says so", async () => {
+    const dir = await tempDir();
+    const source = standInSource([working("checkout-flow")]);
+    const first = await keeping(dir, source);
+    await first.poll(2_000, [waiting("checkout-flow")]);
+    first.collector.stop();
+    // Another copy, a process that is running, has just taken the folder.
+    await writeFile(path.join(dir, "writer.lock"), `${JSON.stringify({ pid: process.ppid })}\n`);
+
+    const second = await keeping(dir, standInSource([waiting("checkout-flow")]));
+    await second.collector.history?.flush();
+    const history = (await request(second.port, "/api/history")).json<HistoryResponse>();
+    expect(history.kept).toMatchObject({ where: "disk", canClear: false });
+    expect(history.kept?.problem).toMatch(/^Another copy of Agent Lookout/);
+    expect((await request(second.port, "/api/events")).json<EventsResponse>().events).toHaveLength(
+      1,
+    );
+
+    const before = await files(dir);
+    await second.poll(4_000, [working("checkout-flow")]);
+    await second.collector.history?.flush();
+    second.collector.stop();
+    expect(await files(dir)).toBe(before);
+    expect(await readFile(path.join(dir, "writer.lock"), "utf8")).toContain(String(process.ppid));
   });
 });

@@ -61,6 +61,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
   const collector = createCollector({
     version: "0.0.0-test",
     env: {
+      AGENT_LOOKOUT_HISTORY: "off",
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_CLAUDE_FEED: "off",
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),

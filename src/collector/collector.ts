@@ -1,3 +1,4 @@
+import type { HistoryRestart } from "../core/api.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
@@ -10,10 +11,20 @@ import {
 } from "./email/emailNotifications.ts";
 import { emailProblemLine, readEmailSetup } from "./email/emailSettings.ts";
 import { createSmtpSender, type CreateEmailSender } from "./email/smtpSender.ts";
-import { createEventStore } from "./eventStore.ts";
+import { createEventStore, EVENT_CAPACITY } from "./eventStore.ts";
 import { createBranchFinder } from "./git/branchFinder.ts";
 import { createApiHandler, type ApiHandler } from "./handler.ts";
-import { createHistoryStore } from "./historyStore.ts";
+import { createClearHistoryRoute } from "./history/clearRoute.ts";
+import type { HistoryFs } from "./history/historyFiles.ts";
+import {
+  createHistoryKeeper,
+  keptEventStore,
+  keptHistoryStore,
+  type HistoryKeeper,
+} from "./history/historyKeeper.ts";
+import { memoryOnlyStatus } from "./history/historyLimits.ts";
+import { readHistorySetup } from "./history/historySettings.ts";
+import { createHistoryStore, HISTORY_CAPACITY } from "./historyStore.ts";
 import { createJumpRoute } from "./jumpRoute.ts";
 import {
   createServerNotifications,
@@ -49,9 +60,18 @@ export interface CollectorOptions {
    * Where the default adapters read their settings, such as
    * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
    * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
-   * email settings and the webhook settings are read. Defaults to `process.env`.
+   * history settings, the email settings and the webhook settings are read.
+   * Defaults to `process.env`.
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * What the history is read from and written to, in the folder
+   * `AGENT_LOOKOUT_HISTORY_DIR` names, or `~/.agent-lookout/history`. Defaults
+   * to the real file system. With `AGENT_LOOKOUT_HISTORY=off` nothing is.
+   */
+  historyFs?: HistoryFs;
+  /** How often the history held in memory is written. Defaults to every 5 seconds. */
+  historyFlushMs?: number;
   /**
    * What shows a notification on this machine when no dashboard page will.
    * Defaults to the system's own, which is `osascript` on macOS and nothing
@@ -116,9 +136,14 @@ export interface CollectorOptions {
 }
 
 export interface Collector {
-  /** Begins polling. */
+  /**
+   * Begins polling, once the history kept on disk has been read back, and
+   * begins writing it.
+   */
   start(): void;
-  /** Stops polling. */
+  /** Resolves once polling has begun: at once, or when the history has been read back. */
+  whenStarted(): Promise<void>;
+  /** Stops polling, and writes what is left of the history at once. */
   stop(): void;
   /** Answers `/api/*`. Mount it in any Node HTTP server. */
   handler: ApiHandler;
@@ -127,10 +152,13 @@ export interface Collector {
   email: EmailNotifications | null;
   /** The webhook notifications, or null while no webhook address is set. */
   webhook: WebhookNotifications | null;
+  /** What keeps the history on disk, or null with `AGENT_LOOKOUT_HISTORY=off`. */
+  history: HistoryKeeper | null;
 }
 
 /**
- * The collector in one piece: adapters, poller, stores, its own notifications,
+ * The collector in one piece: adapters, poller, stores, the history kept on
+ * disk unless `AGENT_LOOKOUT_HISTORY` is off, its own notifications,
  * the email and webhook notifications when they are set up, what finds and
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
  * what reads each session's git branch, and the request handler. Every host
@@ -141,8 +169,26 @@ export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
   const env = options.env ?? process.env;
   const intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
-  const events = createEventStore();
-  const history = createHistoryStore();
+  const warn = options.warn ?? console.error;
+  // The stores in memory are what the page reads. With history kept on disk,
+  // what they take is also written, and what was written is read back into
+  // them before the first poll.
+  const memoryEvents = createEventStore();
+  const memoryHistory = createHistoryStore();
+  const historySetup = readHistorySetup(env);
+  const keeper = historySetup.on
+    ? createHistoryKeeper({
+        dir: historySetup.dir,
+        folder: historySetup.folder,
+        fs: options.historyFs,
+        flushIntervalMs: options.historyFlushMs,
+        sources: historySetup.sources,
+        now,
+        warn,
+      })
+    : null;
+  const events = keeper ? keptEventStore(memoryEvents, keeper) : memoryEvents;
+  const history = keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory;
   // The panes the Claude Code adapter finds are the ones the jump route selects,
   // so the two share one finder and one way of running tmux.
   const tmux = options.tmux ?? createTmuxRunner({ env });
@@ -158,7 +204,6 @@ export function createCollector(options: CollectorOptions): Collector {
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
-  const warn = options.warn ?? console.error;
   const platform = options.platform ?? process.platform;
   const notifications = createServerNotifications({
     notifier: options.notifier ?? createSystemNotifier({ platform }),
@@ -241,15 +286,89 @@ export function createCollector(options: CollectorOptions): Collector {
     email: () => email?.status() ?? emailOff,
     webhook: () => webhook?.status() ?? webhookOff,
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
+    clearHistory: createClearHistoryRoute({
+      keeper,
+      forget: () => {
+        memoryEvents.clear();
+        memoryHistory.clear();
+        restarts = [];
+        lastKept = null;
+      },
+    }),
+    historyKept: () => ({
+      since: keeper?.since() ?? null,
+      kept: keeper?.status() ?? memoryOnlyStatus(),
+      restarts: restartsHeld(),
+    }),
+    ready: () => restoring,
     now,
   });
 
+  let running = false;
+  let restored = keeper === null;
+  /** While the history on disk is read back, before the first poll. */
+  let restoring: Promise<void> | null = null;
+  /** The restarts in the history read back, oldest first. */
+  let restarts: HistoryRestart[] = [];
+  /** The newest moment the history read back holds, or null when it held nothing. */
+  let lastKept: number | null = null;
+
+  /**
+   * The restarts in the history held, this run's start among them when it
+   * followed history kept from before. Nothing was measured from the last
+   * moment before each one to the start, however short the stop.
+   */
+  function restartsHeld(): HistoryRestart[] {
+    const startedAt = poller.startedAt;
+    if (lastKept === null || lastKept >= startedAt) return restarts;
+    return [...restarts, { at: startedAt, lastBefore: lastKept }];
+  }
+
+  function begin(): void {
+    keeper?.start();
+    poller.start();
+  }
+
   return {
-    start: () => poller.start(),
-    stop: () => poller.stop(),
+    start() {
+      if (running) return;
+      running = true;
+      if (restored || keeper === null) {
+        begin();
+        return;
+      }
+      restoring = keeper
+        .restore({ events: EVENT_CAPACITY, points: HISTORY_CAPACITY })
+        .then((kept) => {
+          restored = true;
+          memoryEvents.add(kept.events);
+          for (const point of kept.points) memoryHistory.add(point);
+          restarts = kept.restarts;
+          lastKept = kept.lastAt;
+          // What each session was last doing, so that what changed while
+          // Agent Lookout was stopped is recorded at the first poll.
+          poller.resume(kept.events);
+          if (running) begin();
+        })
+        .catch(() => {
+          // The keeper never rejects. Polling begins all the same.
+          restored = true;
+          if (running) begin();
+        })
+        .finally(() => {
+          restoring = null;
+        });
+    },
+    whenStarted: () => restoring ?? Promise.resolve(),
+    stop() {
+      running = false;
+      poller.stop();
+      keeper?.stop();
+    },
     handler,
     poller,
     email,
     webhook,
+    history: keeper,
   };
 }

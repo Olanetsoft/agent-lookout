@@ -10,7 +10,8 @@
 // adapter in `protocol/requestAdapter.ts`, so a request from the app's own
 // page carries the loopback `Origin` and one from anywhere else an `Origin` no
 // check accepts. On top of the checks every request has (`refusalFor`), each
-// POST must pass those the jump route makes (`actionRefusalFor`): a POST, from
+// POST must pass those every route that acts makes (`actionRefusalFor` in
+// `collector/handler.ts`, as the jump route does): a POST, from
 // the dashboard's own page, with its own `X-Agent-Lookout-Action`, JSON and
 // small. A body says nothing but what its route needs. Nothing from a request
 // reaches a command or a path: install takes no argument at all.
@@ -27,8 +28,12 @@ import {
   type AppUpdateInstallRefused,
   type AppUpdateStatus,
 } from "../../core/appUpdate.ts";
-import { refusalFor, type ApiAnswer } from "../../collector/handler.ts";
-import { actionRefusalFor, readBody } from "../../collector/jumpRoute.ts";
+import {
+  actionRefusalFor,
+  readRequestBody,
+  refusalFor,
+  type ApiAnswer,
+} from "../../collector/handler.ts";
 import type { Updater } from "./updater.ts";
 
 /** The most a body may hold. `{"automatic": false}` is 20 bytes. */
@@ -157,7 +162,7 @@ export function createUpdateRoute(
     if (post === undefined) return refuse(404, "There is nothing at that address.");
     const refused = actionRefusalFor(req, post.action, MAX_UPDATE_BODY_BYTES);
     if (refused) return refused;
-    const body = await readBody(req, MAX_UPDATE_BODY_BYTES);
+    const body = await readRequestBody(req, MAX_UPDATE_BODY_BYTES);
     if (!body.ok) {
       return body.tooLarge
         ? refuse(413, `The body must be no more than ${MAX_UPDATE_BODY_BYTES} bytes.`, {

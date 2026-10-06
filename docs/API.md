@@ -1,6 +1,6 @@
 # API
 
-Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but one only reads.
+Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but two only reads.
 
 The answers hold your session names and folder paths. Check one before you share it.
 
@@ -31,25 +31,26 @@ curl -s http://127.0.0.1:4777/api/sessions
 
 Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Every answer that is not a 200 has the body `{ "error": "<one sentence>" }`.
 
-| Status | When                                                                                       |
-| ------ | ------------------------------------------------------------------------------------------ |
-| 400    | The address, `since` or `windowMs` could not be read                                       |
-| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                         |
-| 404    | There is no route at that path                                                             |
-| 405    | Any method but `GET`, with `Allow: GET`. `/api/jump` takes only `POST`, with `Allow: POST` |
-| 500    | Something went wrong that the server did not expect                                        |
+| Status | When                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------ |
+| 400    | The address, `since` or `windowMs` could not be read                                                               |
+| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                                 |
+| 404    | There is no route at that path                                                                                     |
+| 405    | Any method but `GET`, with `Allow: GET`. `/api/jump` and `/api/history/clear` take only `POST`, with `Allow: POST` |
+| 500    | Something went wrong that the server did not expect                                                                |
 
 ## Routes
 
-| Route                              | Answers                                                                             |
-| ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET /api/health`                  | `{ ok: true, version }`                                                             |
-| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions }`                           |
-| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                             |
-| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt }`, one point for each poll, oldest first                      |
-| `GET /api/email`                   | `{ on, to, events, afterMs, problem, last, limitedUntil }`                          |
-| `GET /api/webhook`                 | `{ on, host, events, afterMs, problem, last, limitedUntil }`                        |
-| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. The one route that acts |
+| Route                              | Answers                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET /api/health`                  | `{ ok: true, version }`                                                                |
+| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions }`                              |
+| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                |
+| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first  |
+| `GET /api/email`                   | `{ on, to, events, afterMs, problem, last, limitedUntil }`                             |
+| `GET /api/webhook`                 | `{ on, host, events, afterMs, problem, last, limitedUntil }`                           |
+| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of two routes that act |
+| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. The other route that acts                                   |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -137,11 +138,40 @@ The [guide](GUIDE.md#what-each-agent-can-report) has the table `capabilities` ho
 
 ### `GET /api/events?since=<epoch ms>`
 
-`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed` or `ended`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. The collector keeps the last 1,000 in memory.
+`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed` or `ended`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. The collector keeps the last 1,000 in memory, and with history kept on disk it reads them back when it starts again.
 
 ### `GET /api/history?windowMs=<ms>`
 
-`{ "points": [...], "startedAt": 1791204000000 }`: one point for each poll, oldest first, each `{ at, needsYou, working, idle, total }`, over the last 15 minutes or the `windowMs` given, up to six hours. `startedAt` is when the collector began: the time before it was not measured.
+One point for each poll, oldest first, each `{ at, needsYou, working, idle, total }`, over the last 15 minutes or the `windowMs` given, up to six hours, with where the history begins, where it is kept and when Agent Lookout was started again:
+
+```json
+{
+  "points": [{ "at": 1791204002000, "needsYou": 1, "working": 2, "idle": 3, "total": 6 }],
+  "startedAt": 1791204000000,
+  "since": { "at": 1790944800000, "by": "started" },
+  "kept": {
+    "where": "disk",
+    "folder": "~/.agent-lookout/history",
+    "bytes": 1468006,
+    "maxBytes": 20971520,
+    "maxAgeMs": 691200000,
+    "canClear": true,
+    "problem": null
+  },
+  "restarts": [{ "at": 1791204000000, "lastBefore": 1791190800000 }]
+}
+```
+
+| Field       | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startedAt` | When this run of Agent Lookout began. A new one means it was started again                                                                                                                                                                                                                                                                                                                                                                |
+| `since`     | Where the history it holds begins: `at`, a time, and `by`, which is `started` when Agent Lookout started watching then, `cleared` when the history was cleared then, or `trimmed` when that is the oldest history kept and what came before it was deleted for its age or the size. Time before `since.at` was not measured. With history kept on disk it can be days before `startedAt`                                                  |
+| `kept`      | `where` is `disk` or `memory`, with `AGENT_LOOKOUT_HISTORY=off`. On disk, `folder` is the folder with the home folder written `~`, and `bytes` how much the files hold. `maxBytes` is the cap, 20 MB, and `maxAgeMs` how long after its day a day's history is kept, 8 days. `canClear` says whether this copy can clear it, and `problem`, while it does not write the files, one sentence saying why, such as another copy writing them |
+| `restarts`  | Each time Agent Lookout started again after `since.at` with history kept from before, oldest first, this run's start among them: `at`, when it started, and `lastBefore`, the newest moment the history before it holds. Nothing was measured between the two, however close they are. Empty in memory only, and before the first restart                                                                                                 |
+
+A poll adds no point when no source answered, or when a source that answered before did not. Two points further apart than a few polls had time between them that was not measured: the computer asleep, a source that stopped answering, or Agent Lookout not running. So had two points either side of a restart. The dashboard draws that time hatched.
+
+After a restart, the first poll that reads a source compares each session with the last event the history kept of it. A session whose status changed while Agent Lookout was stopped gets a `status-changed` event, one that ended an `ended` event, and one back after it ended an `appeared` event, all at that poll. A session the history kept no event of is taken as it is found.
 
 ### `GET /api/email` and `GET /api/webhook`
 
@@ -162,7 +192,7 @@ Neither ever holds the mail server's address, its user name or its password, or 
 
 ### `POST /api/jump`
 
-The one route that acts. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks are in `src/collector/jumpRoute.ts`, on top of the ones every request passes. It answers only a request that:
+One of the two routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer. A request with no `Origin` gets 403 here, though a read may go without one.
@@ -183,6 +213,28 @@ The server then looks the session up in its own latest snapshot and acts on the 
 | 500    | `reason: "failed"`: tmux or `osascript` could not be run, or did not answer in time                                                |
 
 Each of these has an `error` sentence beside its `reason`. [SECURITY.md](../SECURITY.md) says what the route can and cannot change.
+
+### `POST /api/history/clear`
+
+The other route that acts. It deletes the files the history is kept in, except any that a later version of Agent Lookout wrote, and empties the Events log and the history in memory, as Clear history in Settings does. The history then begins again from that moment, with `since` set to `{ at, by: "cleared" }`. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/history/clearRoute.ts`, and answers only a request that:
+
+- is a `POST`. Any other method gets 405, with `Allow: POST`.
+- has an `Origin` that names this computer, or gets 403.
+- is marked `same-origin` in `Sec-Fetch-Site`, when that header is sent, or gets 403.
+- carries `X-Agent-Lookout-Action: clear-history`, or gets 403.
+- has `Content-Type: application/json`, or gets 415.
+- has a body of 64 bytes or less, or gets 413, that is exactly `{}`, or gets 400.
+
+Nothing in the request names a file: the files are the ones in the history's own folder.
+
+| Status | Body                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 200    | `{ "ok": true, "clearedAt": 1791204000000 }`                                                                             |
+| 409    | `reason: "memory-only"`: history is kept in memory only, with `AGENT_LOOKOUT_HISTORY=off`, and there is nothing to clear |
+| 409    | `reason: "not-writing"`: another copy of Agent Lookout writes the files, or they cannot be written here                  |
+| 500    | `reason: "failed"`: the files could not all be deleted, and nothing in memory was emptied                                |
+
+Each of these has an `error` sentence beside its `reason`.
 
 ## In the Mac app only
 

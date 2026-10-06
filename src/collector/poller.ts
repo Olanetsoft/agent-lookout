@@ -5,6 +5,7 @@ import {
   type Session,
   type SessionEvent,
   type SessionsSnapshot,
+  type SessionStatus,
   type SourceHealth,
   type SourceId,
   type SourceState,
@@ -59,6 +60,17 @@ export interface Poller {
   pollOnce(): Promise<SessionsSnapshot>;
   /** The latest poll, or a "searching" snapshot before the first one has finished. */
   getSnapshot(): SessionsSnapshot;
+  /**
+   * What each session was last seen doing before this run, from the history
+   * kept on disk: its events, in any order. The first good poll of each
+   * source is compared with what they say of that source's sessions, instead
+   * of being taken as a baseline, so what changed while Agent Lookout was
+   * stopped is an event of that poll, as what changed while the computer
+   * slept is: a new status, a session that ended, or one back after it had
+   * ended. A session they say nothing of is taken as it is found. Called
+   * before `start`.
+   */
+  resume(events: readonly SessionEvent[]): void;
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
 }
@@ -94,6 +106,14 @@ interface Overdue {
   late?: AdapterResult;
 }
 
+/** A session as the history kept from before this run last saw it. */
+interface LastSeen {
+  id: string;
+  name: string;
+  /** Null for one whose last event is that it ended. */
+  status: SessionStatus | null;
+}
+
 /** What the poller remembers about one source between polls. */
 interface SourceMemory {
   /**
@@ -122,6 +142,12 @@ export function createPoller(options: PollerOptions): Poller {
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const memory = new Map<SourceId, SourceMemory>();
+  /**
+   * What the history kept from before this run says of each source's
+   * sessions, by the source a session's id begins with, until that source's
+   * first good poll.
+   */
+  const resumed = new Map<string, LastSeen[]>();
   const overdue = new Map<Adapter, Overdue>();
   /**
    * Each source's last settled answer: "ok", or "unavailable" or "not-set-up"
@@ -234,9 +260,12 @@ export function createPoller(options: PollerOptions): Poller {
       if (state !== "ok" && state !== "not-set-up") return;
       const id = (adapters[index] as Adapter).id;
       let remembered = memory.get(id);
+      let lastSeen: LastSeen[] | undefined;
       if (!remembered) {
         remembered = { baselines: new Map(), reported: new Map() };
         memory.set(id, remembered);
+        lastSeen = resumed.get(id);
+        resumed.delete(id);
       }
       const { baselines, reported } = remembered;
       const basis = result.basis ?? "";
@@ -252,6 +281,16 @@ export function createPoller(options: PollerOptions): Poller {
         // produces no events. It is not compared with a poll read another way
         // either: an adapter's fallback does not see exactly what its main feed
         // sees, and the difference between the two views is not news.
+        if (lastSeen) {
+          // But the first of all this run is compared with what the history
+          // kept from before it says, for the sessions it says anything of.
+          const known = new Set(lastSeen.map((session) => session.id));
+          const before = lastSeen.filter(
+            (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
+          );
+          const after = result.sessions.filter((session) => known.has(session.id));
+          changes.push(...diffSessions(before, after, at));
+        }
         for (const session of result.sessions) {
           if (!reported.has(session.id)) reported.set(session.id, session.status);
         }
@@ -314,6 +353,25 @@ export function createPoller(options: PollerOptions): Poller {
       timer = null;
     },
     pollOnce,
+    resume(kept) {
+      const newest = new Map<string, SessionEvent>();
+      for (const event of kept) {
+        const held = newest.get(event.sessionId);
+        if (!held || event.at >= held.at) newest.set(event.sessionId, event);
+      }
+      resumed.clear();
+      for (const event of newest.values()) {
+        const status = event.kind === "ended" ? null : (event.to ?? null);
+        if (event.kind !== "ended" && status === null) continue;
+        // A session's id begins with its source's: `claude-code:…`.
+        const colon = event.sessionId.indexOf(":");
+        if (colon <= 0) continue;
+        const source = event.sessionId.slice(0, colon);
+        const list = resumed.get(source) ?? [];
+        list.push({ id: event.sessionId, name: event.sessionName, status });
+        resumed.set(source, list);
+      }
+    },
     getSnapshot() {
       if (latest) return latest;
       const at = now();

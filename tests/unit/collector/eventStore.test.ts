@@ -101,3 +101,13 @@ test("the list is a copy: changing it does not change the store", () => {
   store.list().pop();
   expect(store.list()).toHaveLength(3);
 });
+
+test("clearing lets every event go, and the store takes new ones after", () => {
+  const store = createEventStore();
+  store.add(range(3));
+  store.clear();
+  expect(store.size).toBe(0);
+  expect(store.list()).toEqual([]);
+  store.add([event(10)]);
+  expect(store.list().map((item) => item.at)).toEqual([10]);
+});

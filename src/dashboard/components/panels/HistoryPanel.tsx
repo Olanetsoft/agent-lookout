@@ -167,8 +167,10 @@ function HistoryBody({
         <p className='mt-0.5 text-body text-ink-secondary'>{copy.explainer}</p>
         <p className='mt-1.5 text-body text-ink-secondary'>
           Hatched time was not measured: Agent Lookout was not running, or could not read its
-          source. It is never drawn as zero. History covers the last six hours and starts again when
-          Agent Lookout restarts.
+          source, or the history was cleared then. It is never drawn as zero.{" "}
+          {state.history?.kept?.where === "memory"
+            ? "History covers the last six hours and starts again when Agent Lookout restarts."
+            : "History covers the last six hours, and is kept when Agent Lookout restarts."}
         </p>
       </div>
     </>

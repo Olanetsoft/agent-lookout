@@ -82,6 +82,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
+      AGENT_LOOKOUT_HISTORY: "off",
       ...overrides,
     },
   };

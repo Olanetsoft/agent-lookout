@@ -185,7 +185,7 @@ export default function App({ store: providedStore }: AppProps) {
               {view === "sources" ? (
                 <SourcesView state={state} now={now} />
               ) : view === "settings" ? (
-                <SettingsView />
+                <SettingsView history={state.history} now={now} onHistoryCleared={store.refresh} />
               ) : (
                 <AnimatePresence mode='wait' initial={false}>
                   <motion.div

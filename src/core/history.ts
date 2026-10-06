@@ -1,3 +1,4 @@
+import type { HistoryResponse, HistorySince } from "./api.ts";
 import type { HistoryPoint, Session } from "./sessions/session.ts";
 
 /** The default window the dashboard charts: the last 15 minutes. */
@@ -18,4 +19,12 @@ export function historyPointFor(sessions: readonly Session[], at: number): Histo
     else if (session.status === "idle" && !session.stale) idle += 1;
   }
   return { at, needsYou, working, idle, total: sessions.length };
+}
+
+/**
+ * Where the history an answer of `/api/history` holds begins: its `since`, or,
+ * from a collector that does not say, the moment it started watching.
+ */
+export function historySince(history: Pick<HistoryResponse, "startedAt" | "since">): HistorySince {
+  return history.since ?? { at: history.startedAt, by: "started" };
 }

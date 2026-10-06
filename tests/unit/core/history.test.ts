@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { DEFAULT_HISTORY_WINDOW_MS, historyPointFor } from "@core/history";
+import { DEFAULT_HISTORY_WINDOW_MS, historyPointFor, historySince } from "@core/history";
 import { makeSession } from "@tests/fixtures/session";
 
 const at = 1_700_000_060_000;
@@ -46,5 +46,17 @@ test("a stale session is not counted as idle, as the tiles do not count it, but 
     working: 0,
     idle: 1,
     total: 3,
+  });
+});
+
+test("the history begins where the answer says, or, where it does not say, when watching started", () => {
+  expect(historySince({ startedAt: at })).toEqual({ at, by: "started" });
+  expect(historySince({ startedAt: at, since: { at: at - 86_400_000, by: "trimmed" } })).toEqual({
+    at: at - 86_400_000,
+    by: "trimmed",
+  });
+  expect(historySince({ startedAt: at, since: { at: at - 5_000, by: "cleared" } })).toEqual({
+    at: at - 5_000,
+    by: "cleared",
   });
 });

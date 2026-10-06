@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import type { EmailStatusResponse, WebhookStatusResponse } from "@core/api";
+import type { EmailStatusResponse, HistoryResponse, WebhookStatusResponse } from "@core/api";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -147,14 +147,22 @@ test("in a browser there is no Updates card, and nothing asks about updates", as
   expect(asked.some((path) => path.startsWith("/api/app/"))).toBe(false);
 });
 
-test("in the Mac app, Updates follows Notifications, among the settings the page changes", async () => {
+test("in the Mac app, Updates follows History, among the settings the page changes", async () => {
   const screen = await render(<SettingsView inApp />);
   await expect.element(screen.getByRole("region", { name: "Updates" })).toBeVisible();
   const titles = [...screen.container.querySelectorAll('[data-slot="section-card"] h2')].map(
     (title) => title.textContent,
   );
-  expect(titles).toEqual(["Theme", "Notifications", "Updates", "Email", "Webhook", "This copy"]);
-  // In the left column, with Theme and Notifications.
+  expect(titles).toEqual([
+    "Theme",
+    "Notifications",
+    "History",
+    "Updates",
+    "Email",
+    "Webhook",
+    "This copy",
+  ]);
+  // In the left column, with Theme, Notifications and History.
   const notifications = screen.getByRole("region", { name: "Notifications" }).element();
   const updates = screen.getByRole("region", { name: "Updates" }).element();
   expect(updates.parentElement).toBe(notifications.parentElement);
@@ -168,7 +176,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(5);
+    expect(cards).toHaveLength(6);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -711,7 +719,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme and notifications share the wide column, with email, the webhook and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications and the history share the wide column, with email, the webhook and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -719,9 +727,10 @@ test("the theme and notifications share the wide column, with email, the webhook
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
-  const [theme, notes, mail, hook, copy] = [
+  const [theme, notes, kept, mail, hook, copy] = [
     box("Theme"),
     box("Notifications"),
+    box("History"),
     box("Email"),
     box("Webhook"),
     box("This copy"),
@@ -730,6 +739,9 @@ test("the theme and notifications share the wide column, with email, the webhook
   expect(notes.left).toBe(theme.left);
   expect(notes.width).toBe(theme.width);
   expect(notes.top - theme.bottom).toBe(16);
+  expect(kept.left).toBe(theme.left);
+  expect(kept.width).toBe(theme.width);
+  expect(kept.top - notes.bottom).toBe(16);
   expect(mail.top).toBe(theme.top);
   expect(mail.left - theme.right).toBe(16);
   expect(hook.left).toBe(mail.left);
@@ -740,20 +752,38 @@ test("the theme and notifications share the wide column, with email, the webhook
   expect(copy.top - hook.bottom).toBe(16);
 });
 
+/** The history as `/api/history` gives it while another copy writes the files. */
+const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
+  startedAt: Date.now() - 60_000,
+  since: { at: Date.now() - 3 * 24 * 60 * 60 * 1000, by: "started" },
+  kept: {
+    where: "disk",
+    folder: "~/.agent-lookout/history",
+    bytes: 3 * 1024 * 1024,
+    maxBytes: 20 * 1024 * 1024,
+    maxAgeMs: 8 * 24 * 60 * 60 * 1000,
+    canClear: false,
+    problem:
+      "Another copy of Agent Lookout on this computer is writing the history. This one keeps what it sees in memory, and takes over when that one stops.",
+  },
+};
+
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, Email, Webhook, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
-    // The fullest the card gets: blocked, with its note.
+    // The fullest the cards get: notifications blocked, with its note, and
+    // the history kept on disk by another copy, with its facts and its note.
     host.state = "denied";
-    const screen = await render(<SettingsView />);
+    const screen = await render(<SettingsView history={KEPT_ELSEWHERE} now={Date.now()} />);
     await expect.element(notifications(screen).getByRole("status")).toBeVisible();
 
     const cards = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="section-card"]')];
     expect(cards.map((card) => card.querySelector("h2")?.textContent)).toEqual([
       "Theme",
       "Notifications",
+      "History",
       "Email",
       "Webhook",
       "This copy",

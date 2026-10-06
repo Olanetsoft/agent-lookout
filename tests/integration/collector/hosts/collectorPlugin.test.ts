@@ -39,7 +39,12 @@ function trackedPlugin() {
     createCollector: (): Collector => {
       built += 1;
       const number = built;
-      const real = createCollector({ version: "0.0.0-test", adapters: [adapter], intervalMs: 20 });
+      const real = createCollector({
+        version: "0.0.0-test",
+        adapters: [adapter],
+        intervalMs: 20,
+        env: { ...process.env, AGENT_LOOKOUT_HISTORY: "off" },
+      });
       return {
         ...real,
         start: () => {

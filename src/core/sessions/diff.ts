@@ -29,8 +29,8 @@ function eventId(sessionId: string, at: number, kind: EventKind): string {
  * running when the collector started did not appear at that moment.
  */
 export function diffSessions(
-  previous: readonly Session[],
-  next: readonly Session[],
+  previous: readonly Pick<Session, "id" | "name" | "status">[],
+  next: readonly Pick<Session, "id" | "name" | "status">[],
   at: number,
 ): SessionEvent[] {
   const before = new Map(previous.map((session) => [session.id, session]));

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { NOTIFICATIONS_HEADER } from "@core/api";
+import { NOTIFICATIONS_HEADER, type HistoryKept, type HistorySince } from "@core/api";
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { Beat } from "@dashboard/lib/api/beat";
@@ -59,6 +59,9 @@ interface FakeCollector {
   up: boolean;
   events: SessionEvent[];
   startedAt: number;
+  /** Where its history begins and where it is kept, when it says. */
+  since?: HistorySince;
+  kept?: HistoryKept;
   /**
    * Every point the collector holds. An answer carries the ones inside the
    * window asked for. Null answers with one point at the present, whatever is asked.
@@ -101,6 +104,8 @@ function fakeCollector(): FakeCollector {
           return json({
             points: collector.points?.filter((p) => p.at >= from) ?? [point(Date.now())],
             startedAt: collector.startedAt,
+            ...(collector.since && { since: collector.since }),
+            ...(collector.kept && { kept: collector.kept }),
           });
         }
         default:
@@ -576,6 +581,56 @@ test("a restarted collector replaces the event list instead of adding to it", as
 
   expect(store.getState().history?.startedAt).toBe(T0 + 500);
   expect(store.getState().events).toEqual([event(1, T0 + 1_000)]);
+  stop();
+});
+
+test("once the history has been cleared, what the page held from before goes, events and history alike", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000)];
+  collector.points = [point(T0 - 9_000), point(T0 - 7_000)];
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().events).toHaveLength(1);
+
+  // Cleared at T0 + 500, by the same collector: its start time stands.
+  collector.since = { at: T0 + 500, by: "cleared" };
+  collector.events = [event(2, T0 + 1_000)];
+  collector.points = [point(T0 + 1_000)];
+  await beat();
+
+  const state = store.getState();
+  expect(state.history?.startedAt).toBe(T0 - 60_000);
+  expect(state.history?.since).toEqual({ at: T0 + 500, by: "cleared" });
+  expect(state.history?.points.map((held) => held.at)).toEqual([T0 + 1_000]);
+  expect(state.events).toEqual([event(2, T0 + 1_000)]);
+
+  // The next beat joins on to it as usual.
+  collector.points = [point(T0 + 1_000), point(T0 + 3_000)];
+  await beat();
+  expect(store.getState().history?.points.map((held) => held.at)).toEqual([T0 + 1_000, T0 + 3_000]);
+  stop();
+});
+
+test("where the history is kept, and where it begins, go with the history the page holds", async () => {
+  const collector = fakeCollector();
+  collector.since = { at: T0 - 86_400_000, by: "started" };
+  collector.kept = {
+    where: "disk",
+    folder: "~/.agent-lookout/history",
+    bytes: 4_096,
+    maxBytes: 20 * 1024 * 1024,
+    maxAgeMs: 8 * 86_400_000,
+    canClear: true,
+    problem: null,
+  };
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  await beat();
+  expect(store.getState().history).toMatchObject({ since: collector.since, kept: collector.kept });
   stop();
 });
 

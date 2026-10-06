@@ -161,13 +161,13 @@ Repos then lists both sessions under `storefront`, each with its own folder and 
 
 #### Events
 
-The Events log records each session appearing, changing status and ending, newest first. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep, a row says when watching resumed and how long was not measured. While the log still holds everything since Agent Lookout started, it ends with Started watching.
+The Events log records each session appearing, changing status and ending, newest first. When a wait ends, it says how long the wait lasted if it saw the wait begin. When Agent Lookout measured nothing for a while in the last hour, such as while the computer was asleep or Agent Lookout was stopped, a row says when watching resumed and how long was not measured. The log is kept on this computer with the charts' counts, so a restart does not empty it: see [History](#history). While the log still holds everything since Agent Lookout started, it ends with Started watching, and its heading says since when, with the day when that was not today. Once the history has been cleared, it ends with History cleared instead.
 
 When you come back to the tab after it was in the background or minimised, or open the dashboard again, a line in the log marks where you left off, such as New since 14:02:37, and the log's heading says how many events arrived since, such as 3 new. The events above the line are the new ones. The line and the count go once the line has been in view for 10 seconds, or when you open Sources or Settings. If more arrived than the log shows at once, scroll down the log to the line. With the tab in front all the time there is never a line. Events that arrive while the line is showing join the new ones above it. A wait among the new events has its usual mark, and nothing else changes colour. The one thing kept for this is the time you left off, in your browser.
 
 #### Timeline
 
-The Timeline draws each session's status over the last hour, one row for each session. Hatched stretches are time Agent Lookout did not measure, such as the time before it started. The legend at the top of the card names each mark.
+The Timeline draws each session's status over the last hour, one row for each session. Hatched stretches are time Agent Lookout did not measure, such as the time before it started or while it was stopped. The legend at the top of the card names each mark.
 
 ### Sources
 
@@ -214,7 +214,7 @@ Why, for each No and Partly:
 
 ### Settings
 
-Settings has five cards, and in the Mac app a sixth, [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
+Settings has six cards, and in the Mac app a seventh, [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
 
 #### Notifications
 
@@ -272,6 +272,20 @@ Notifications have been checked in Chrome 154 on macOS. There one arrived within
 A notification shows the session's name outside the dashboard: over other apps, in Notification Centre and, depending on your Mac's settings, on the lock screen and while you share or record the screen. To keep names off those, open Notifications in System Settings and change what your browser's notifications may show, or leave notifications off. The ones Agent Lookout shows itself are Script Editor's as far as macOS is concerned, so what you set there for your browser does not cover them.
 
 The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npx agent-lookout` and `npm start` serve Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
+
+#### History
+
+The Events log and the counts behind the charts are written to `~/.agent-lookout/history` every 5 seconds, and once more as Agent Lookout stops, so they are still there when it starts again. The time it was not running shows as time not measured, as the time the computer was asleep does: a Watching resumed row in the Events log, and hatching in the Timeline and the Last hour chart. Every restart gets that row, however short the stop and however long ago the history before it ends.
+
+A session that changed status or ended while Agent Lookout was stopped is found by the first poll after it starts again, and the Events log and the charts record the change at that poll, as they do when the computer wakes. A session the history holds no event of, because nothing about it changed while Agent Lookout watched, is shown with its present status only from the restart, unless its agent says when that status began.
+
+The History card says that history is kept on this computer for 8 days, and gives the folder, how much the files hold out of 20 MB, and how far back they go. Each day's history is deleted once that day ended more than 8 days ago, and when the files would hold more than 20 MB the oldest is deleted first, so they never hold more. They hold the events and counts the dashboard shows, and no folder path, prompt or anything a waiting session is asking. [PRIVACY.md](../PRIVACY.md#the-history) has the details.
+
+Clear history asks first, in the card: Clear history again to go ahead, or Cancel. It deletes the files and empties the Events log and the charts, which then start with History cleared. The card says when it was cleared. Files written by a later version of Agent Lookout are left alone.
+
+`AGENT_LOOKOUT_HISTORY_DIR` keeps the files in another folder. With `AGENT_LOOKOUT_HISTORY=off` nothing is written: the card says history is kept in memory only and has no button, and the Events log and the charts start empty each time Agent Lookout starts.
+
+When two copies run at once, such as the Mac app and `npx agent-lookout`, one of them writes the history. The other shows what had been kept when it started and keeps what it sees in memory. Its card says another copy is writing the history, and whether that copy reads sessions from other folders, and has no button. It takes over when the first one stops. To try Agent Lookout on empty folders without writing to your history, set `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder too.
 
 #### Email
 
@@ -817,7 +831,7 @@ Codex sessions and sessions from status files have no Jump button. Nor do Claude
 
 Email and a webhook are the two ways it can tell you of a session away from this computer, and each sends to one address. A post is one line of text, with no buttons, and nothing can be answered from it. An email or a post that could not be sent is not tried again. The events are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_EVENTS`, and not in Settings.
 
-The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
+The history is kept for 8 days, but the charts show at most the last six hours of it, and the Events log its newest 200 events.
 
 A repository reached through a symbolic link by one session and by its real path from another is two groups of one name. A session's branch shows in the Sessions list, on its board card, in the Needs you panel, in the search and in the answers of `agent-lookout mcp`, and nowhere else: not in the Timeline, the Events log, a notification, an email, a webhook post or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
 
@@ -842,6 +856,8 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                                                                                                                                    |
 | `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                                                                                                                                    |
 | `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                                                                                                                                       |
+| `AGENT_LOOKOUT_HISTORY`        | Set to `off` and Agent Lookout keeps the Events log and the charts in memory only and writes nothing to disk, so they start empty each time it starts. See [History](#history).                                                                                                     |
+| `AGENT_LOOKOUT_HISTORY_DIR`    | A folder to keep the [history](#history) in, in place of `~/.agent-lookout/history`.                                                                                                                                                                                                |
 | `AGENT_LOOKOUT_NOTIFICATIONS`  | Set to `on` and, on a Mac, Agent Lookout shows notifications of waits itself from the moment it starts. A dashboard page that has notifications off turns them off again. Anywhere else it prints a line saying it shows none itself.                                               |
 | `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                                                                                                                                         |
 | `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                                                                                                                             |
@@ -855,9 +871,9 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_WEBHOOK_AFTER`  | How many seconds a wait lasts before it is posted, from 0 to 86400. The default is 60.                                                                                                                                                                                              |
 | `AGENT_LOOKOUT_URL`            | The address `agent-lookout status` and `agent-lookout mcp` ask, such as `http://127.0.0.1:4778`, in place of `http://127.0.0.1:4777` and then `http://localhost:5173`. Only an address on this computer is accepted. Set it where the command runs, not where Agent Lookout starts. |
 
-To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
+To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR` and `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
 
-The Claude Code, transcript, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, transcript, Codex, status file, history, notification, tmux, terminal tab, email and webhook settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -929,6 +945,7 @@ It behaves as a Mac app does:
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
 - It opens where you left it, at the size you left it.
+- It keeps its [history](#history) in the same folder as `npx agent-lookout`, so the Events log and the charts carry over between the two.
 - Check for Updates…, in the Agent Lookout menu under About, checks for a newer version at once. [Updates](#updates) says how.
 
 ### Updates

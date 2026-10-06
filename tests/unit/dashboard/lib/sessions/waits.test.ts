@@ -373,3 +373,63 @@ describe("the last wait that is over", () => {
     expect(after.lastWait).toBeNull();
   });
 });
+
+describe("across a restart of Agent Lookout", () => {
+  // The history kept from a run that polled from 13:40 to 14:10, and this run,
+  // which started at 14:15 and has polled since: what the collector answers
+  // after a restart.
+  const RESTART = at(14, 15);
+  const acrossRestart = (): HistoryResponse => ({
+    startedAt: RESTART,
+    since: { at: at(13, 40), by: "started" },
+    points: [...polls(at(13, 40), at(14, 10)), ...polls(RESTART, NOW)],
+    restarts: [{ at: RESTART, lastBefore: at(14, 10) }],
+  });
+
+  test("a wait that began while it was stopped counts from the poll that found it, not from before the stop", () => {
+    // Working from 13:41. The first poll after the restart found it waiting,
+    // and the collector recorded that then. Its source does not say when.
+    const result = waits({
+      history: acrossRestart(),
+      sessions: [session(1, { status: "needs-you", statusSince: null })],
+      events: [
+        changed(1, at(13, 41), "idle", "working"),
+        changed(1, RESTART, "working", "needs-you"),
+      ],
+    });
+    expect(result.sessions).toEqual([
+      expect.objectContaining({ id: id(1), ms: NOW - RESTART, open: true, startKnown: false }),
+    ]);
+    expect(result.unmeasuredMs).toBe(5 * MINUTE);
+  });
+
+  test("a wait that ended while it was stopped is closed by the ending found then, and the stop is not counted", () => {
+    const result = waits({
+      history: acrossRestart(),
+      sessions: [],
+      events: [changed(2, at(14, 0), "working", "needs-you"), ended(2, RESTART)],
+    });
+    expect(result.sessions).toEqual([
+      expect.objectContaining({ id: id(2), ms: 10 * MINUTE, open: false }),
+    ]);
+  });
+
+  test("a session the page holds no event of is not counted as waiting before the restart", () => {
+    // Found waiting by the first poll after the restart, and in no event: what
+    // it did before is not known.
+    const result = waits({
+      history: acrossRestart(),
+      sessions: [session(3, { status: "needs-you", statusSince: null })],
+    });
+    expect(result.sessions).toEqual([
+      expect.objectContaining({ id: id(3), ms: NOW - RESTART, open: true, startKnown: false }),
+    ]);
+
+    // Unless its source says when its wait began.
+    const said = waits({
+      history: acrossRestart(),
+      sessions: [session(3, { status: "needs-you", statusSince: at(14, 5) })],
+    });
+    expect(said.sessions[0]?.ms).toBe(NOW - at(14, 5));
+  });
+});

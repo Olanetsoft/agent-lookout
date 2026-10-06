@@ -23,6 +23,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}): Promise<Node
     AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+    AGENT_LOOKOUT_HISTORY: "off",
     ...overrides,
   };
 }

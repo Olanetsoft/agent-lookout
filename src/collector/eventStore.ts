@@ -12,6 +12,8 @@ export interface EventStore {
    * passes the time of the newest event it holds gets no repeats.
    */
   list(options?: { since?: number; limit?: number }): SessionEvent[];
+  /** Lets every event go, as clearing the history does. */
+  clear(): void;
   readonly size: number;
 }
 
@@ -37,6 +39,9 @@ export function createEventStore(capacity: number = EVENT_CAPACITY): EventStore 
         newestFirst.push(event);
       }
       return newestFirst;
+    },
+    clear() {
+      events = [];
     },
     get size() {
       return events.length;

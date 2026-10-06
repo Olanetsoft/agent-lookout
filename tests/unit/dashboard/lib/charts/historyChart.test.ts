@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import {
+  clearedSince,
   countAxis,
   HISTORY_WINDOWS,
   mergeHistory,
@@ -102,6 +103,36 @@ test("a long window is its older part followed by everything polled since", () =
   expect(merged.points.map((p) => p.at)).toEqual([1_000, 3_000, 5_000, 7_000]);
   expect(merged.points[3]?.needsYou).toBe(4);
   expect(merged.startedAt).toBe(500);
+});
+
+test("where the history begins and where it is kept come from what was polled last", () => {
+  const base = {
+    startedAt: 500,
+    since: { at: 100, by: "started" as const },
+    points: [point(1_000, 0)],
+  };
+  const live = {
+    startedAt: 500,
+    since: { at: 900, by: "trimmed" as const },
+    points: [point(3_000, 1)],
+  };
+  expect(mergeHistory(base, live)).toEqual({
+    startedAt: 500,
+    since: { at: 900, by: "trimmed" },
+    points: [point(1_000, 0), point(3_000, 1)],
+  });
+});
+
+test("once the history has been cleared, what the long window held from before goes", () => {
+  const base = { startedAt: 500, points: [point(1_000, 0), point(3_000, 1)] };
+  const live = { startedAt: 500, since: { at: 4_000, by: "cleared" as const }, points: [] };
+  expect(mergeHistory(base, live)).toBe(live);
+  expect(clearedSince(base, live)).toBe(true);
+  // A clearing the page already held is not news.
+  const later = { ...live, points: [point(5_000, 0)] };
+  expect(clearedSince(live, later)).toBe(false);
+  // Nor is a beginning that was not a clearing.
+  expect(clearedSince(base, { ...live, since: { at: 4_000, by: "trimmed" } })).toBe(false);
 });
 
 test("with nothing polled, or polled from a restarted collector, the long window stands alone", () => {

@@ -249,6 +249,68 @@ test("while the log has room it ends where Agent Lookout started watching, and t
   expect(getComputedStyle(time).fontVariantNumeric).toBe("tabular-nums");
 });
 
+test("since the history was cleared, the log ends with that moment, History cleared, and the head says since when", async () => {
+  const screen = await render(
+    <EventsCard
+      events={EVENTS.slice(0, 2)}
+      history={{ startedAt: at(9, 0, 2), since: { at: at(17, 30, 0), by: "cleared" } }}
+      now={NOW}
+    />,
+  );
+  const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+  const start = [...list.children].at(-1) as HTMLElement;
+  expect(start.getAttribute("data-slot")).toBe("event-start");
+  expect(start.textContent).toBe("17:30:00History cleared");
+  expect((start.querySelector('[data-slot="status-mark"]') as SVGSVGElement).dataset.kind).toBe(
+    "lookout",
+  );
+  expect(screen.container.querySelector('[data-part="since"]')?.textContent).toBe("since 17:30");
+  expect(list.textContent).not.toContain("Started watching");
+});
+
+test("cleared, with nothing changed since, the one row is that moment", async () => {
+  const screen = await render(
+    <EventsCard
+      events={[]}
+      history={{ startedAt: at(9, 0, 2), since: { at: at(17, 30, 0), by: "cleared" } }}
+      now={NOW}
+    />,
+  );
+  const start = screen.container.querySelector('[data-slot="event-start"]') as HTMLElement;
+  expect(start.textContent).toBe("17:30:00History cleared");
+  expect(screen.container.querySelector('[data-part="unchanged"]')?.textContent).toBe(
+    "17:30:00Nothing has changed since.",
+  );
+});
+
+test("with history kept from an earlier day, the log ends where it began, and the head gives that day", async () => {
+  const began = new Date(2026, 0, 3, 8, 15, 0).getTime();
+  const screen = await render(
+    <EventsCard
+      events={[...EVENTS, event(4, began + 60_000, "older-project", "working")]}
+      history={{ startedAt: at(9, 0, 2), since: { at: began, by: "started" } }}
+      now={NOW}
+    />,
+  );
+  const start = screen.container.querySelector('[data-slot="event-start"]') as HTMLElement;
+  expect(start.textContent).toBe("08:15:00Started watching");
+  expect(screen.container.querySelector('[data-part="since"]')?.textContent).toBe(
+    `since 08:15 on ${formatDay(began, NOW)}`,
+  );
+});
+
+test("where what came before was let go, the log claims no start", async () => {
+  const screen = await render(
+    <EventsCard
+      events={EVENTS}
+      history={{ startedAt: at(9, 0, 2), since: { at: at(8, 0, 0), by: "trimmed" } }}
+      now={NOW}
+    />,
+  );
+  expect(screen.container.querySelector('[data-slot="event-start"]')).toBeNull();
+  expect(screen.container.querySelector('[data-part="since"]')?.textContent).toBe("since 08:00");
+});
+
 test("once the log is full it claims only as far back as its oldest event, and shows no start", async () => {
   const full = Array.from({ length: MAX_EVENTS }, (_, index) =>
     event(100 + (index % 5), at(17, 0, 0) - index * 30_000, `session-${index % 5}`, "idle"),
@@ -614,6 +676,46 @@ test("with no events, a break alone is still said, above the start", async () =>
     "6m 00s not measured",
   );
   expect(screen.container.textContent).not.toContain("No events yet");
+});
+
+test("after a restart, the log says watching resumed there, however long ago the history before it ends, and however short the stop", async () => {
+  // History kept from yesterday evening, and from earlier today, before this
+  // run began at 17:20, with a stop of four seconds at 17:30.
+  const history = {
+    startedAt: at(17, 30, 4),
+    since: { at: NOW - 24 * 60 * 60_000, by: "started" as const },
+    points: [...polls(at(17, 20, 0), at(17, 30, 0)), ...polls(at(17, 30, 4), NOW)],
+    restarts: [
+      { at: at(17, 20, 0), lastBefore: at(13, 50, 0) },
+      { at: at(17, 30, 4), lastBefore: at(17, 30, 0) },
+    ],
+  };
+  const screen = await render(
+    <EventsCard
+      events={[
+        event(1, at(17, 35, 0), "demo-project", "working"),
+        event(1, at(13, 45, 0), "demo-project", "idle"),
+      ]}
+      history={history}
+      now={NOW}
+    />,
+  );
+  const resumed = [
+    ...screen.container.querySelectorAll<HTMLElement>('[data-slot="event-resumed"]'),
+  ].map((row) => row.textContent);
+  expect(resumed).toEqual([
+    "17:30:04Watching resumed, 4s not measured",
+    "17:20:00Watching resumed, 3h 30m not measured",
+  ]);
+  expect(threadOf(screen.container).map(([slot]) => slot)).toEqual([
+    "event-row",
+    "event-resumed",
+    "event-resumed",
+    "event-row",
+    // The history began yesterday.
+    "event-day",
+    "event-start",
+  ]);
 });
 
 test("the log can be scrolled from the keyboard", async () => {

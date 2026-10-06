@@ -12,7 +12,8 @@
 // It reads none of this machine's own agents. It makes folders of its own, in
 // the system's temporary folder or, with `-- --dir <folder>`, in that folder: a
 // Claude Code folder whose registry names a `sleep` this script starts, a copy
-// of tests/fixtures/codex-home, and a folder with one status file. It starts
+// of tests/fixtures/codex-home, a folder with one status file, and a folder
+// for the history the app keeps, so nothing is written to this machine's. It starts
 // the app on a port the system picks, with the claude command, tmux and
 // Terminal left alone, and asks only `/api/health`, `/api/sessions`, the
 // dashboard's page and its script. Then it stops the app, and every process it
@@ -186,6 +187,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const claudeHome = path.join(dir, "claude");
   const codexHome = path.join(dir, "codex");
   const statusDir = path.join(dir, "status");
+  const historyDir = path.join(dir, "history");
   const work = path.join(dir, "work");
   await mkdir(path.join(claudeHome, "sessions"), { recursive: true });
   await mkdir(statusDir, { recursive: true });
@@ -239,7 +241,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     }),
   );
 
-  return { claudeHome, codexHome, statusDir, procStart };
+  return { claudeHome, codexHome, statusDir, historyDir, procStart };
 }
 
 /**
@@ -262,6 +264,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_CLAUDE_FEED: "off",
     AGENT_LOOKOUT_CODEX_HOME: folders.codexHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
+    AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",
     npm_config_update_notifier: "false",

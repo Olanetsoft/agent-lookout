@@ -59,3 +59,14 @@ test("the list is a copy: changing it does not change the store", () => {
   store.list(900_000, T0).pop();
   expect(store.list(900_000, T0)).toHaveLength(1);
 });
+
+test("clearing lets every point go, and the store takes new ones after", () => {
+  const store = createHistoryStore();
+  store.add(point(T0));
+  store.add(point(T0 + 2_000));
+  store.clear();
+  expect(store.size).toBe(0);
+  expect(store.list(900_000, T0 + 2_000)).toEqual([]);
+  store.add(point(T0 + 4_000));
+  expect(store.list(900_000, T0 + 4_000).map((item) => item.at)).toEqual([T0 + 4_000]);
+});

@@ -17,16 +17,35 @@ export interface Span {
 }
 
 /**
+ * The moments Agent Lookout started again, oldest first: each restart the
+ * history lists, and the start of the run that answered.
+ */
+export function restartTimes(history: Pick<HistoryResponse, "startedAt" | "restarts">): number[] {
+  const times = new Set((history.restarts ?? []).map((restart) => restart.at));
+  times.add(history.startedAt);
+  return [...times].sort((a, b) => a - b);
+}
+
+/**
  * The unbroken runs of polls, oldest first. A value holds from one poll to the
- * next, so the newest run reaches `until` while polls are still arriving.
+ * next, so the newest run reaches `until` while polls are still arriving. A
+ * restart of Agent Lookout ends a run, however soon after it the polls came
+ * back: nothing was measured from the last poll before it to the first after.
  */
 export function pollRuns(history: HistoryResponse | null, until: number, gapMs: number): Span[] {
   const runs: Span[] = [];
   if (!history) return runs;
   const times = history.points.map((point) => point.at).sort((a, b) => a - b);
+  const restarts = restartTimes(history);
+  let next = 0;
   let run: Span | null = null;
   for (const at of times) {
-    if (run && at - run.to <= gapMs) run.to = at;
+    let restarted = false;
+    while (next < restarts.length && (restarts[next] as number) <= at) {
+      if (run && (restarts[next] as number) > run.to) restarted = true;
+      next += 1;
+    }
+    if (run && !restarted && at - run.to <= gapMs) run.to = at;
     else runs.push((run = { from: at, to: at }));
   }
   if (run && until > run.to && until - run.to <= gapMs) run.to = until;

@@ -12,6 +12,7 @@
  */
 
 import type { HistoryResponse } from "@core/api";
+import { historySince } from "@core/history";
 import type { Session, SessionEvent } from "@core/sessions/session";
 import { countAxis, type CountAxis } from "@dashboard/lib/charts/historyChart";
 import {
@@ -173,7 +174,13 @@ export function buildLastHour(input: LastHourInput): LastHour {
   const until = Math.min(input.asOf ?? now, now);
 
   const runs = pollRuns(history, until, gapMs);
-  const measured = measuredSpans(runs, window, until, history?.startedAt ?? -Infinity, gapMs);
+  const measured = measuredSpans(
+    runs,
+    window,
+    until,
+    history ? historySince(history).at : -Infinity,
+    gapMs,
+  );
 
   const buckets: LastHourBucket[] = [];
   for (let mark = bucketMark(start); mark < now; mark += BUCKET_MS) {

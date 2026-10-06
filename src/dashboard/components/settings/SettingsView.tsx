@@ -1,3 +1,4 @@
+import type { HistoryResponse } from "@core/api";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { NOTICE_EVENT_LABEL } from "@core/notices/waiting";
 import { Button } from "@dashboard/components/ui/controls/Button";
@@ -6,7 +7,9 @@ import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
+import { useNow } from "@dashboard/hooks/data/useNow";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
 import {
   useOutboundStatus,
@@ -203,19 +206,36 @@ function whereDataGoes(emailing: boolean, posting: boolean): string {
   return "Agent Lookout sends it nowhere";
 }
 
+interface SettingsViewProps {
+  /** The history the page holds, as `/api/history` last answered. Null before the app has answered. */
+  history?: Pick<HistoryResponse, "startedAt" | "since" | "kept"> | null;
+  now?: number;
+  /** Told once the history has been cleared, so the page reads it again at once. */
+  onHistoryCleared?: () => void;
+  /** Whether the page is in the Mac app's window, which alone shows the Updates card. */
+  inApp?: boolean;
+}
+
 /**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified and of what, in the Mac app its updates, whether
- * email and a webhook have been set up, and a few facts about this copy of
- * the app.
+ * whether to be notified and of what, where the history is kept and the button
+ * that clears it, in the Mac app its updates, whether email and a webhook have
+ * been set up, and a few facts about this copy of the app.
  *
  * The page knows it is in the app's window by its address. In a browser there
  * is no Updates card: `npx agent-lookout` and the repository never check for
  * anything. Tests say which it is with `inApp`.
  */
-export function SettingsView({ inApp = inAppWindow() }: { inApp?: boolean }) {
+export function SettingsView({
+  history = null,
+  now,
+  onHistoryCleared,
+  inApp = inAppWindow(),
+}: SettingsViewProps = {}) {
   const { preference, setPreference } = useTheme();
+  // The page's own clock, when the page does not hand one in.
+  const ticking = useNow();
   const email = useOutboundStatus(fetchEmailStatus);
   const webhook = useOutboundStatus(fetchWebhookStatus);
   // Emails and webhook posts are the only things Agent Lookout sends off this
@@ -229,7 +249,7 @@ export function SettingsView({ inApp = inAppWindow() }: { inApp?: boolean }) {
       className='grid grid-cols-12 items-start gap-4 max-wide:flex max-wide:flex-col'
     >
       {/*
-       * The two settings on the left, and on the right what is only read: email,
+       * The settings on the left, and on the right what is only read: email,
        * the webhook and the facts about this copy, as Sources keeps its
        * explanations in the right third. When the view narrows the right stacks
        * under the left.
@@ -251,6 +271,8 @@ export function SettingsView({ inApp = inAppWindow() }: { inApp?: boolean }) {
         </SectionCard>
 
         <NotificationsCard />
+
+        <HistoryCard history={history} now={now ?? ticking} onCleared={onHistoryCleared} />
 
         {inApp && <UpdatesCard />}
       </div>

@@ -485,6 +485,66 @@ test("history keeps the points that are all numbers, and needs to know when the 
   expect(readHistory({ points: {}, startedAt: T })).toBeNull();
 });
 
+const KEPT = {
+  where: "disk",
+  folder: "~/.agent-lookout/history",
+  bytes: 1_468_000,
+  maxBytes: 20 * 1024 * 1024,
+  maxAgeMs: 8 * 24 * 60 * 60 * 1000,
+  canClear: true,
+  problem: null,
+};
+
+test("where the history begins and where it is kept are read as they were sent", () => {
+  const history = readHistory({
+    startedAt: T,
+    points: [],
+    since: { at: T - 86_400_000, by: "started" },
+    kept: KEPT,
+  });
+  expect(history).toEqual({
+    startedAt: T,
+    points: [],
+    since: { at: T - 86_400_000, by: "started" },
+    kept: KEPT,
+  });
+
+  const memory = readHistory({
+    startedAt: T,
+    points: [],
+    since: { at: T, by: "cleared" },
+    kept: { ...KEPT, where: "memory", folder: null, bytes: null, canClear: false },
+  });
+  expect(memory?.since).toEqual({ at: T, by: "cleared" });
+  expect(memory?.kept).toEqual({
+    ...KEPT,
+    where: "memory",
+    folder: null,
+    bytes: null,
+    canClear: false,
+  });
+});
+
+test("a beginning or a place that cannot be read is left out, and clearing is offered only when the answer says so", () => {
+  const read = (since: unknown, kept: unknown) =>
+    readHistory({ startedAt: T, points: [], since, kept });
+
+  expect(read({ at: T, by: "restarted" }, KEPT)?.since).toBeUndefined();
+  expect(read({ at: "then", by: "started" }, KEPT)?.since).toBeUndefined();
+  expect(read(null, null)).toEqual({ startedAt: T, points: [] });
+  // On disk, it names its folder, or it is not read.
+  expect(read(null, { ...KEPT, folder: null })?.kept).toBeUndefined();
+  expect(read(null, { ...KEPT, where: "cloud" })?.kept).toBeUndefined();
+  expect(read(null, { ...KEPT, maxBytes: -1 })?.kept).toBeUndefined();
+  // Anything but true is no.
+  expect(read(null, { ...KEPT, canClear: "yes" })?.kept?.canClear).toBe(false);
+  // In memory, nothing can be cleared, whatever is said.
+  expect(read(null, { ...KEPT, where: "memory", canClear: true })?.kept?.canClear).toBe(false);
+  // A size that cannot be read is not known, and a sentence too long is not shown.
+  expect(read(null, { ...KEPT, bytes: "a lot" })?.kept?.bytes).toBeNull();
+  expect(read(null, { ...KEPT, problem: "x".repeat(2_000) })?.kept?.problem).toBeNull();
+});
+
 test("the email status is read as it was sent, on and off", () => {
   const on = {
     on: true,
@@ -613,4 +673,29 @@ test("a webhook status that cannot be read never claims that posts are going out
     sent: false,
     reason: "the post could not be sent",
   });
+});
+
+test("the restarts a history lists are read oldest first, and one that cannot be one is left out", () => {
+  const history = readHistory({
+    startedAt: T,
+    points: [],
+    restarts: [
+      { at: T, lastBefore: T - 60_000 },
+      { at: T - 120_000, lastBefore: T - 180_000 },
+      // The moment before a restart comes before it.
+      { at: T - 5_000, lastBefore: T - 1_000 },
+      { at: "then", lastBefore: T - 1_000 },
+      { at: T - 9_000 },
+      null,
+    ],
+  });
+  expect(history?.restarts).toEqual([
+    { at: T - 120_000, lastBefore: T - 180_000 },
+    { at: T, lastBefore: T - 60_000 },
+  ]);
+  // None, or none the page can read, is no list at all.
+  expect(readHistory({ startedAt: T, points: [], restarts: [] })).not.toHaveProperty("restarts");
+  expect(readHistory({ startedAt: T, points: [], restarts: "many" })).not.toHaveProperty(
+    "restarts",
+  );
 });

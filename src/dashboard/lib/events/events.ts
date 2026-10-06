@@ -5,6 +5,7 @@
  */
 
 import type { HistoryResponse } from "@core/api";
+import { historySince } from "@core/history";
 import type { Session, SessionEvent } from "@core/sessions/session";
 import type { MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
@@ -75,29 +76,39 @@ export interface LogStart {
   /** The moment the log reaches back to. */
   at: number;
   /**
-   * True when that is the moment Agent Lookout started watching, and the log
-   * holds everything since: the log then ends in a "Started watching" row.
+   * True when that is the moment Agent Lookout started watching, or the
+   * history was cleared, and the log holds everything since: the log then
+   * ends in a "Started watching" row, or a "History cleared" one.
    */
   started: boolean;
+  /** Set when the history was cleared then: the row says so. */
+  cleared?: true;
 }
 
 /**
  * How far back the log reaches. While it holds every event since Agent Lookout
- * started, that is the start, read from the history. Once it is full, older
- * events may have been let go, so it reaches only as far as the oldest one held,
- * and it does not claim to show the start. Without the history's start, and
- * with room to spare, nothing is claimed.
+ * started, or since the history was cleared, that is the start, read from the
+ * history. Once it is full, older events may have been let go, so it reaches
+ * only as far as the oldest one held, and it does not claim to show the start.
+ * Where the history kept begins only because what came before it was let go,
+ * the log reaches back that far and claims no start either. Without the
+ * history's start, and with room to spare, nothing is claimed.
  */
 export function logStart(
   events: readonly SessionEvent[],
-  history: Pick<HistoryResponse, "startedAt"> | null,
+  history: Pick<HistoryResponse, "startedAt" | "since"> | null,
   full: boolean,
 ): LogStart | null {
   if (full) {
     const oldest = events[events.length - 1];
     return oldest ? { at: oldest.at, started: false } : null;
   }
-  return history ? { at: history.startedAt, started: true } : null;
+  if (!history) return null;
+  const since = historySince(history);
+  if (since.by === "trimmed") return { at: since.at, started: false };
+  return since.by === "cleared"
+    ? { at: since.at, started: true, cleared: true }
+    : { at: since.at, started: true };
 }
 
 /** A break in the collector's polls, found in the history the page holds. */
@@ -109,31 +120,51 @@ export interface WatchGap {
 }
 
 /**
- * Every break in the history the page holds, newest first: two polls further
- * apart than `gapMs` were not measuring in between. Each is found at the poll
- * that ended it, which is when watching resumed.
+ * Every break in the history the page holds, newest first.
+ *
+ * - Two polls further apart than `gapMs` were not measuring in between, as
+ *   while the computer slept. The break is found at the poll that ended it,
+ *   which is when watching resumed.
+ * - Each time Agent Lookout started again is a break too, from the newest
+ *   moment the history before it holds, however short or long ago: the page
+ *   holds only the last hour of polls, and a stop of a few seconds leaves no
+ *   gap between them. One the polls already show is not said twice.
  *
  * The oldest poll held has nothing before it to measure a break from, so the
  * edge of the held history is never a break, and nor is anything before
- * Agent Lookout started.
+ * where the history begins.
  */
 export function watchGaps(
-  history: (Pick<HistoryResponse, "startedAt"> & Partial<Pick<HistoryResponse, "points">>) | null,
+  history:
+    | (Pick<HistoryResponse, "startedAt" | "since" | "restarts"> &
+        Partial<Pick<HistoryResponse, "points">>)
+    | null,
   gapMs: number = DEFAULT_GAP_MS,
 ): WatchGap[] {
-  if (!history?.points) return [];
-  const times = history.points
+  if (!history) return [];
+  const from = historySince(history).at;
+  const times = (history.points ?? [])
     .map((point) => point.at)
-    .filter((at) => at >= history.startedAt)
+    .filter((at) => at >= from)
     .sort((a, b) => a - b);
-  const gaps: WatchGap[] = [];
+  const gaps: (WatchGap & { before: number })[] = [];
   times.forEach((at, index) => {
     const before = times[index - 1];
     if (before !== undefined && at - before > gapMs) {
-      gaps.push({ at, unmeasuredMs: at - before });
+      gaps.push({ at, unmeasuredMs: at - before, before });
     }
   });
-  return gaps.reverse();
+  for (const restart of history.restarts ?? []) {
+    if (restart.at <= from) continue;
+    const shown = gaps.some((gap) => gap.before < restart.at && restart.at <= gap.at);
+    if (shown) continue;
+    gaps.push({
+      at: restart.at,
+      unmeasuredMs: restart.at - restart.lastBefore,
+      before: restart.lastBefore,
+    });
+  }
+  return gaps.sort((a, b) => b.at - a.at).map(({ at, unmeasuredMs }) => ({ at, unmeasuredMs }));
 }
 
 /** One row of the log: an event, or the moment watching resumed after a break. */

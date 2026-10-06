@@ -1,13 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
+  ACTION_HEADER,
   NOTIFICATIONS_HEADER,
   readNotificationsHeader,
   type EmailStatusResponse,
   type ErrorResponse,
   type EventsResponse,
   type HealthResponse,
+  type HistoryKept,
   type HistoryResponse,
+  type HistoryRestart,
+  type HistorySince,
   type NotificationsSaid,
   type WebhookStatusResponse,
 } from "../core/api.ts";
@@ -15,6 +19,7 @@ import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
 import { emailOffStatus } from "./email/emailNotifications.ts";
 import type { EventStore } from "./eventStore.ts";
+import { memoryOnlyStatus } from "./history/historyLimits.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import type { ServerNotifications } from "./notifications/serverNotifications.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
@@ -33,8 +38,9 @@ export interface ApiAnswer {
   headers?: Record<string, string>;
 }
 
-/** Where the one route that does something is. Every other route only reads. */
+/** Where the collector's two routes that do something are. Every other route only reads. */
 export const JUMP_PATH = "/api/jump";
+export const CLEAR_HISTORY_PATH = "/api/history/clear";
 
 export interface ApiHandlerOptions {
   version: string;
@@ -63,6 +69,28 @@ export interface ApiHandlerOptions {
    * such route.
    */
   jump?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `POST /api/history/clear`, with the same checks of its own as the
+   * jump route: `createClearHistoryRoute` in `history/clearRoute.ts`. Left
+   * out, there is no such route.
+   */
+  clearHistory?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Where the history held begins, where it is kept and the restarts in it,
+   * for `/api/history`. Left out, it is kept in memory only and begins when
+   * the poller started.
+   */
+  historyKept?: () => {
+    since: HistorySince | null;
+    kept: HistoryKept;
+    restarts?: HistoryRestart[];
+  };
+  /**
+   * While the history kept on disk is being read back, as the collector
+   * starts: what to wait for before answering, so no page is told of an empty
+   * history that is about to fill. Null once it has been read.
+   */
+  ready?: () => Promise<unknown> | null;
   now?: () => number;
 }
 
@@ -118,6 +146,110 @@ export function refusalFor(req: IncomingMessage): string | null {
   return null;
 }
 
+/** A header that was sent once. Node joins repeats of most headers with a comma. */
+function header(req: Pick<IncomingMessage, "headers">, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * An answer that turns away a request to a route that acts. Its body may not
+ * have been read, so its connection is not used again.
+ */
+export function refusal(
+  status: number,
+  error: string,
+  headers: Record<string, string> = {},
+): ApiAnswer {
+  return {
+    status,
+    body: { error } satisfies ErrorResponse,
+    headers: { Connection: "close", ...headers },
+  };
+}
+
+/**
+ * Why a request to a route that acts is refused before its body is read, or
+ * null when it may proceed. The collector's two such routes,
+ * `POST /api/jump` and `POST /api/history/clear`, and the Mac app's routes for
+ * its updates, in `src/desktop/updates/updateRoute.ts`, make these checks on
+ * top of the ones every request has already passed in `refusalFor`, so each is
+ * a request only the dashboard's own page can send:
+ *
+ * - A POST, so that no link, image or address typed into a browser sends it.
+ * - With an `Origin` that is a page served from this machine. A browser puts
+ *   `Origin` on every POST a page makes, so a request without one did not come
+ *   from a page, and here that is refused, where a GET may go without.
+ * - Marked `same-origin` by a browser that marks its requests at all.
+ * - Carrying `X-Agent-Lookout-Action` with the route's own action, such as
+ *   `jump`, and a JSON content type. A page at another origin may send neither without asking
+ *   first, with a preflight. A preflight is an OPTIONS request. One from
+ *   another site never gets this far, and one that does is refused here like
+ *   any other method. No answer to either has a CORS header.
+ * - No larger than `maxBodyBytes`.
+ */
+export function actionRefusalFor(
+  req: Pick<IncomingMessage, "method" | "headers">,
+  action: string,
+  maxBodyBytes: number,
+): ApiAnswer | null {
+  if (req.method !== "POST") {
+    return refusal(405, "This address only answers POST requests.", { Allow: "POST" });
+  }
+
+  const origin = header(req, "origin");
+  if (origin === undefined || !isLoopbackOrigin(origin)) {
+    return refusal(403, "This address only acts for the dashboard page served from this machine.");
+  }
+  const site = req.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin") {
+    return refusal(403, "This address only acts for the dashboard page served from this machine.");
+  }
+  if (header(req, ACTION_HEADER) !== action) {
+    return refusal(
+      403,
+      `A request to this address must carry the header ${ACTION_HEADER}: ${action}.`,
+    );
+  }
+
+  const contentType = header(req, "content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json") {
+    return refusal(415, "The body must be JSON, sent as application/json.");
+  }
+
+  const length = header(req, "content-length");
+  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBodyBytes)) {
+    return refusal(413, `The body must be no more than ${maxBodyBytes} bytes.`);
+  }
+  return null;
+}
+
+/** A request's body as text, or why it could not be read. */
+export type RequestBody = { ok: true; text: string } | { ok: false; tooLarge: boolean };
+
+/** Reads a request's body, and stops as soon as it is larger than the limit. */
+export function readRequestBody(req: IncomingMessage, limit: number): Promise<RequestBody> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let received = 0;
+    let done = false;
+    const finish = (body: RequestBody) => {
+      if (done) return;
+      done = true;
+      resolve(body);
+    };
+    req.on("data", (chunk: Buffer) => {
+      if (done) return;
+      received += chunk.byteLength;
+      if (received > limit) finish({ ok: false, tooLarge: true });
+      else chunks.push(chunk);
+    });
+    req.on("end", () => finish({ ok: true, text: Buffer.concat(chunks).toString("utf8") }));
+    req.on("error", () => finish({ ok: false, tooLarge: false }));
+    req.on("close", () => finish({ ok: false, tooLarge: false }));
+  });
+}
+
 function send(res: ServerResponse, status: number, body: unknown, headers = {}): void {
   // A host may have run its own middleware first. Vite's dev server does, and it
   // adds CORS headers that would let a page on another local port read the
@@ -167,6 +299,10 @@ function numberParam(value: string | null): number | undefined | "invalid" {
 export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
   const { version, poller, events, history, notifications, email, webhook, jump } = options;
   const now = options.now ?? Date.now;
+  /** The routes that act, by path. Each makes its own checks, method included. */
+  const actions = new Map<string, (req: IncomingMessage) => Promise<ApiAnswer>>();
+  if (jump) actions.set(JUMP_PATH, jump);
+  if (options.clearHistory) actions.set(CLEAR_HISTORY_PATH, options.clearHistory);
 
   function route(req: IncomingMessage, res: ServerResponse): void {
     const refusal = refusalFor(req);
@@ -182,10 +318,11 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
       url = null;
     }
 
-    // The one route that is not a GET. It makes its own checks, method included,
-    // after the ones above, which every request has passed by now.
-    if (jump && url?.pathname === JUMP_PATH) {
-      jump(req)
+    // The routes that are not a GET. Each makes its own checks, method
+    // included, after the ones above, which every request has passed by now.
+    const action = url === null ? undefined : actions.get(url.pathname);
+    if (action) {
+      action(req)
         .then((answer) => send(res, answer.status, answer.body, answer.headers))
         .catch(() => {
           if (res.headersSent) res.end();
@@ -248,9 +385,15 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
           return;
         }
         const windowMs = Math.min(requested ?? DEFAULT_HISTORY_WINDOW_MS, MAX_HISTORY_WINDOW_MS);
+        const held = options.historyKept?.();
+        const since = held?.since ?? { at: poller.startedAt, by: "started" as const };
         send(res, 200, {
           points: history.list(windowMs, now()),
           startedAt: poller.startedAt,
+          since,
+          kept: held?.kept ?? memoryOnlyStatus(),
+          // A restart before where the history now begins was cleared, or let go.
+          restarts: (held?.restarts ?? []).filter((restart) => restart.at > since.at),
         } satisfies HistoryResponse);
         return;
       }
@@ -260,12 +403,26 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
     }
   }
 
-  return (req, res) => {
+  function answer(req: IncomingMessage, res: ServerResponse): void {
     try {
       route(req, res);
     } catch {
       if (res.headersSent) res.end();
       else fail(res, 500, "The collector ran into an unexpected problem.");
     }
+  }
+
+  return (req, res) => {
+    const reading = options.ready?.() ?? null;
+    if (reading === null) {
+      answer(req, res);
+      return;
+    }
+    // Read back in well under a second, and never rejected: the collector
+    // gives up on the files itself if they take too long.
+    void reading.then(
+      () => answer(req, res),
+      () => answer(req, res),
+    );
   };
 }

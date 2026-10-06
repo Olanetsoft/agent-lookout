@@ -120,6 +120,25 @@ test("once the log is full it claims only as far back as its oldest event, and n
   expect(logStart(events, { startedAt: ago(40) }, true)).toEqual({ at: ago(9), started: false });
 });
 
+test("since the history was cleared, a log with room starts there, and says it was cleared", () => {
+  const events = [changed(1, ago(2), "idle", "working")];
+  const history = { startedAt: ago(40), since: { at: ago(10), by: "cleared" as const } };
+
+  expect(logStart(events, history, false)).toEqual({ at: ago(10), started: true, cleared: true });
+  // Full, it claims only its oldest event, as ever.
+  expect(logStart(events, history, true)).toEqual({ at: ago(2), started: false });
+});
+
+test("with history kept from before this run, a log with room starts where the history kept began", () => {
+  const events = [changed(1, ago(2), "idle", "working")];
+  const kept = { startedAt: ago(5), since: { at: ago(3 * 24 * 60), by: "started" as const } };
+  expect(logStart(events, kept, false)).toEqual({ at: ago(3 * 24 * 60), started: true });
+
+  // Where what came before was let go, it reaches that far and claims no start.
+  const trimmed = { startedAt: ago(5), since: { at: ago(8 * 24 * 60), by: "trimmed" as const } };
+  expect(logStart(events, trimmed, false)).toEqual({ at: ago(8 * 24 * 60), started: false });
+});
+
 test("without the history's start, a log with room claims nothing", () => {
   expect(logStart([changed(1, ago(2), "idle", "working")], null, false)).toBeNull();
 });
@@ -169,9 +188,60 @@ test("the edge of the history held is not a break, and nor is anything before Ag
   expect(watchGaps(restarted, 8_000)).toEqual([]);
 });
 
+test("each restart is a break, from the newest moment before it, however short or long ago", () => {
+  // The page holds the last hour of polls. Agent Lookout was stopped from
+  // 70 minutes ago to 20 minutes ago, and for three seconds 10 minutes ago.
+  const history = {
+    startedAt: ago(10) + 3_000,
+    since: { at: ago(300), by: "started" as const },
+    points: [...polls(ago(20), ago(10)), ...polls(ago(10) + 3_500, NOW)],
+    restarts: [
+      { at: ago(20), lastBefore: ago(70) },
+      { at: ago(10) + 3_000, lastBefore: ago(10) },
+    ],
+  };
+  expect(watchGaps(history, 8_000)).toEqual([
+    { at: ago(10) + 3_000, unmeasuredMs: 3_000 },
+    { at: ago(20), unmeasuredMs: 50 * MINUTE },
+  ]);
+});
+
+test("a restart the polls already show as a break is said once, at the poll that ended it", () => {
+  const history = {
+    startedAt: ago(20),
+    since: { at: ago(40), by: "started" as const },
+    points: [...polls(ago(40), ago(30)), ...polls(ago(20) + 1_000, NOW)],
+    restarts: [{ at: ago(20), lastBefore: ago(30) }],
+  };
+  expect(watchGaps(history, 8_000)).toEqual([
+    { at: ago(20) + 1_000, unmeasuredMs: 10 * MINUTE + 1_000 },
+  ]);
+});
+
+test("a restart before where the history begins is not a break of it", () => {
+  const history = {
+    startedAt: ago(5),
+    since: { at: ago(15), by: "cleared" as const },
+    points: polls(ago(5), NOW),
+    restarts: [
+      { at: ago(15), lastBefore: ago(30) },
+      { at: ago(5), lastBefore: ago(6) },
+    ],
+  };
+  expect(watchGaps(history, 8_000)).toEqual([{ at: ago(5), unmeasuredMs: MINUTE }]);
+});
+
 test("without the history, or its points, there are no breaks", () => {
   expect(watchGaps(null)).toEqual([]);
   expect(watchGaps({ startedAt: ago(10) })).toEqual([]);
+  // Restarts alone are breaks all the same.
+  expect(
+    watchGaps({
+      startedAt: ago(10),
+      since: { at: ago(30), by: "started" },
+      restarts: [{ at: ago(10), lastBefore: ago(12) }],
+    }),
+  ).toEqual([{ at: ago(10), unmeasuredMs: 2 * MINUTE }]);
 });
 
 test("a break sits below the events that share its time, and among the rest by time", () => {
@@ -215,4 +285,23 @@ test("a break newer than every event comes first, and with no events the breaks 
   expect(logRows([], [{ at: ago(5), unmeasuredMs: MINUTE }])).toEqual([
     { kind: "resumed", gap: { at: ago(5), unmeasuredMs: MINUTE } },
   ]);
+});
+
+test("a restart under history kept on disk is a break like any other: the time it was not running was not measured", () => {
+  // The last run stopped 30 minutes ago, and this one started 20 minutes ago.
+  const history = {
+    startedAt: ago(20),
+    since: { at: ago(50), by: "started" as const },
+    points: [...polls(ago(50), ago(30)), ...polls(ago(20), NOW)],
+  };
+  expect(watchGaps(history, 8_000)).toEqual([{ at: ago(20), unmeasuredMs: 10 * MINUTE }]);
+});
+
+test("nothing before the history was cleared is a break", () => {
+  const history = {
+    startedAt: ago(50),
+    since: { at: ago(20), by: "cleared" as const },
+    points: [...polls(ago(50), ago(30)), ...polls(ago(20), NOW)],
+  };
+  expect(watchGaps(history, 8_000)).toEqual([]);
 });

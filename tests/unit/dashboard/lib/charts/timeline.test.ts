@@ -129,6 +129,38 @@ test("an idle session with no status time, on a collector that began ten minutes
   expect(minutesByKind(segments)).toEqual({ unmeasured: 50, idle: 10 });
 });
 
+test("across a restart, a session with no events is not drawn with its present status before the restart, though the run before was polling", () => {
+  // The history kept from a run that polled until 30 minutes ago, and this
+  // run, which started 20 minutes ago.
+  const history: HistoryResponse = {
+    startedAt: ago(20),
+    since: { at: ago(120), by: "started" },
+    points: [...polls(ago(120), ago(30)), ...polls(ago(20), NOW)],
+    restarts: [{ at: ago(20), lastBefore: ago(30) }],
+  };
+  const segments = segmentsOf({ sessions: [session(1, { status: "needs-you" })], history });
+  expect(segments).toEqual([
+    { from: START, to: ago(20), kind: "unmeasured", startKnown: false },
+    { from: ago(20), to: NOW, kind: "needs-you", startKnown: false, ongoing: true, open: true },
+  ]);
+
+  // A session that started during this run is drawn from its start, as ever.
+  const late = segmentsOf({
+    sessions: [session(2, { status: "working", startedAt: ago(10) })],
+    history,
+  });
+  expect(late).toEqual([
+    { from: ago(10), to: NOW, kind: "working", startKnown: true, ongoing: true },
+  ]);
+
+  // And one whose source says when its status began is drawn from then.
+  const said = segmentsOf({
+    sessions: [session(3, { status: "working", statusSince: ago(50) })],
+    history,
+  });
+  expect(minutesByKind(said)).toEqual({ unmeasured: 10, working: 50 });
+});
+
 test("the present status reaches back to when its source says it began, past the collector's start", () => {
   const segments = segmentsOf({
     sessions: [session(1, { statusSince: ago(40) })],

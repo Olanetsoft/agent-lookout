@@ -5,6 +5,7 @@ import {
   HISTORY_WINDOW_MS,
   type CollectorHistory,
 } from "@dashboard/lib/api/collectorStore";
+import { historySince } from "@core/history";
 import { mergeHistory } from "@dashboard/lib/charts/historyChart";
 
 /** How often a long window is asked for again while a panel shows it. */
@@ -30,8 +31,11 @@ export function useHistoryWindow(windowMs: number, live: CollectorHistory | null
   );
   const [failedFor, setFailedFor] = useState<number | null>(null);
   const long = windowMs > HISTORY_WINDOW_MS;
-  // A new start time means the collector restarted, and what was loaded is of the old one.
+  // A new start time means the collector restarted, and what was loaded is of
+  // the old one. A new beginning means the history was cleared, or the oldest
+  // of it let go, and what was loaded holds what is gone.
   const startedAt = live?.startedAt ?? null;
+  const sinceAt = live ? historySince(live).at : null;
 
   useEffect(() => {
     if (!long) return;
@@ -54,12 +58,14 @@ export function useHistoryWindow(windowMs: number, live: CollectorHistory | null
       current = false;
       clearInterval(timer);
     };
-  }, [long, windowMs, startedAt]);
+  }, [long, windowMs, startedAt, sinceAt]);
 
   if (!long) return { history: live, status: live ? "ready" : "loading" };
 
   const base =
-    loaded?.windowMs === windowMs && (startedAt === null || loaded.history.startedAt === startedAt)
+    loaded?.windowMs === windowMs &&
+    (startedAt === null || loaded.history.startedAt === startedAt) &&
+    (sinceAt === null || historySince(loaded.history).at === sinceAt)
       ? loaded.history
       : null;
   if (!base) return { history: null, status: failedFor === windowMs ? "failed" : "loading" };

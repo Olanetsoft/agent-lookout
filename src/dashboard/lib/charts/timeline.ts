@@ -16,6 +16,11 @@
  * exception. A source reports when a session's present status began, so that
  * status may reach back to that moment over time nobody polled.
  *
+ * Nor is a status known before Agent Lookout last started, for a session the
+ * page holds no event of: that it has not changed is known only for as long
+ * as this run has watched it. Before that its row is not measured, though
+ * something was polling, unless its source says when its status began.
+ *
  * "Not measured" is worked out row by row, so each row is hatched only where its
  * own status is not known. A row whose status its source vouches for has no
  * hatch there, though nothing was polling, and time before anything is known of
@@ -23,6 +28,7 @@
  */
 
 import type { HistoryResponse } from "@core/api";
+import { historySince } from "@core/history";
 import type { Session, SessionEvent, SessionStatus } from "@core/sessions/session";
 import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
 import type { TrackSegment } from "@dashboard/components/ui/charts/StatusTrack";
@@ -93,15 +99,21 @@ interface Piece extends Span {
   startObserved: boolean;
   /** The present status, back to when its source says it began. Drawn over unmeasured time. */
   reaches: boolean;
+  /** Its status is not known, though it was running: drawn as not measured, polled or not. */
+  notKnown?: true;
 }
 
-/** One session's events, oldest first, as stretches of status. */
+/**
+ * One session's events, oldest first, as stretches of status. `runStart` is
+ * when this run of Agent Lookout began.
+ */
 function statusPieces(
   session: Session | undefined,
   events: readonly SessionEvent[],
   window: Span,
   until: number,
   gapMs: number,
+  runStart: number,
 ): Piece[] {
   const pieces: Piece[] = [];
   const startedAt = session?.startedAt ?? null;
@@ -155,12 +167,26 @@ function statusPieces(
     });
   } else if (session) {
     // No event means no change: it has had its present status for as long as
-    // anyone was looking.
+    // anyone was looking. That is since this run began: a session found as it
+    // was when Agent Lookout started again is not known to have been doing
+    // the same before, unless its source says when its status began.
+    const began = startedAt ?? -Infinity;
+    const from = Math.max(began, Math.min(runStart, session.statusSince ?? Infinity));
+    if (from > began) {
+      pieces.push({
+        from: began,
+        to: from,
+        status: "unknown",
+        startObserved: startedAt !== null,
+        reaches: false,
+        notKnown: true,
+      });
+    }
     pieces.push({
-      from: startedAt ?? -Infinity,
+      from,
       to: window.to,
       status: session.status,
-      startObserved: startedAt !== null,
+      startObserved: from !== -Infinity,
       reaches: false,
     });
   }
@@ -245,6 +271,10 @@ function segmentsFor(
     const to = Math.min(piece.to, window.to);
     if (to <= from) continue;
 
+    if (piece.notKnown) {
+      unmeasured(from, to, piece);
+      continue;
+    }
     if (piece.reaches && piece.status !== "unseen") {
       const startKnown = piece.startObserved && from === piece.from;
       segments.push({ from, to, kind: piece.status, startKnown });
@@ -316,13 +346,20 @@ export function buildTimeline(input: TimelineInput): Timeline {
 
   const runs = pollRuns(history, until, gapMs);
   const vouchFrom = Math.max(
-    history?.startedAt ?? -Infinity,
+    history ? historySince(history).at : -Infinity,
     input.eventsFull && oldestEvent !== Infinity ? oldestEvent : -Infinity,
   );
   const measured = measuredSpans(runs, window, until, vouchFrom, gapMs);
 
   const rowFor = (id: string, name: string, session: Session | undefined): TimelineRow => {
-    const pieces = statusPieces(session, eventsBySession.get(id) ?? [], window, until, gapMs);
+    const pieces = statusPieces(
+      session,
+      eventsBySession.get(id) ?? [],
+      window,
+      until,
+      gapMs,
+      history?.startedAt ?? -Infinity,
+    );
     let segments = segmentsFor(pieces, measured, runs, window);
     if (session?.stale && session.status === "idle" && session.statusSince !== null) {
       segments = splitStale(segments, session.statusSince + STALE_THRESHOLD_MS);

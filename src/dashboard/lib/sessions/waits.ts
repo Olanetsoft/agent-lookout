@@ -14,6 +14,7 @@
  */
 
 import type { HistoryResponse } from "@core/api";
+import { historySince } from "@core/history";
 import type { Session, SessionEvent } from "@core/sessions/session";
 import { formatClockMinutes, formatDuration, startOfDay } from "@dashboard/lib/format";
 import {
@@ -116,7 +117,7 @@ function periodOf(input: WaitsInput, history: HistoryResponse): Period {
   for (const event of events) if (event.at < oldestEvent) oldestEvent = event.at;
 
   const candidates: [number, PeriodBound][] = [
-    [history.startedAt, "started"],
+    [historySince(history).at, "started"],
     [Math.max(oldestPoint === Infinity ? now : oldestPoint, now - heldMs), "held"],
   ];
   if (input.eventsFull && oldestEvent !== Infinity) candidates.push([oldestEvent, "events"]);
@@ -229,7 +230,7 @@ export function waitedOnYou(input: WaitsInput): WaitedOnYou | null {
     pollRuns(history, until, gapMs),
     window,
     until,
-    history.startedAt,
+    historySince(history).at,
     gapMs,
   );
   const gaps = uncovered(measured, window);

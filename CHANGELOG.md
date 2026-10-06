@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- The Events log and the charts are kept on this computer, in `~/.agent-lookout/history`, so they are still there after Agent Lookout restarts, with the time it was not running shown as not measured and a Watching resumed row for each restart. A session that changed status or ended while it was stopped is recorded at the first poll after it starts again. They are kept for 8 days and up to 20 MB, and hold no folder path, prompt or anything a waiting session is asking. The History card in Settings says where they are, how much they hold and since when, and Clear history deletes them, after asking. `AGENT_LOOKOUT_HISTORY_DIR` keeps them in another folder, and `AGENT_LOOKOUT_HISTORY=off` keeps them in memory only, as before.
+
 ## 0.2.1 - 2026-10-06
 
 The first version with a Mac app to download: its [release on GitHub](https://github.com/Olanetsoft/agent-lookout/releases/tag/v0.2.1) has a disk image for Apple silicon and one for Intel.

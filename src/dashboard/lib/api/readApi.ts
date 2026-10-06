@@ -1,7 +1,11 @@
 import {
+  HISTORY_BEGINNINGS,
   isWebhookHost,
   type EmailStatusResponse,
+  type HistoryKept,
   type HistoryResponse,
+  type HistoryRestart,
+  type HistorySince,
   type SendResult,
   type WebhookStatusResponse,
 } from "@core/api";
@@ -305,6 +309,74 @@ function readPoint(value: unknown): HistoryPoint | null {
   return { at, needsYou, working, idle, total };
 }
 
+/** Where the history begins, or null when the answer does not say in a way the page can read. */
+function readSince(value: unknown): HistorySince | null {
+  if (!isRecord(value)) return null;
+  const at = number(value.at);
+  const by = oneOf(HISTORY_BEGINNINGS, value.by);
+  return at === null || by === null ? null : { at, by };
+}
+
+/** The longest folder or sentence the History card shows. The collector's own are far shorter. */
+const MAX_KEPT_TEXT = 1024;
+
+function keptText(value: unknown): string | null {
+  const words = text(value);
+  return words && words.length <= MAX_KEPT_TEXT ? words : null;
+}
+
+/** A count of bytes or of milliseconds: a whole number, not below zero. */
+function amount(value: unknown): number | null {
+  const read = number(value);
+  return read !== null && read >= 0 && Number.isInteger(read) ? read : null;
+}
+
+/**
+ * Where the history is kept, or null when it cannot be read. On disk it is
+ * read only with its folder named, and it can be cleared only when the answer
+ * says so in so many words.
+ */
+function readKept(value: unknown): HistoryKept | null {
+  if (!isRecord(value)) return null;
+  const where = oneOf(["disk", "memory"] as const, value.where);
+  const maxBytes = amount(value.maxBytes);
+  const maxAgeMs = amount(value.maxAgeMs);
+  if (where === null || maxBytes === null || maxAgeMs === null) return null;
+  const folder = where === "disk" ? keptText(value.folder) : null;
+  if (where === "disk" && folder === null) return null;
+  return {
+    where,
+    folder,
+    bytes: where === "disk" ? amount(value.bytes) : null,
+    maxBytes,
+    maxAgeMs,
+    canClear: where === "disk" && value.canClear === true,
+    problem: keptText(value.problem),
+  };
+}
+
+/** The most restarts read from one answer. The collector sends far fewer. */
+const MAX_RESTARTS = 1_000;
+
+/** A restart, or null when it is not one: the moment before it must come before it. */
+function readRestart(value: unknown): HistoryRestart | null {
+  if (!isRecord(value)) return null;
+  const at = number(value.at);
+  const lastBefore = number(value.lastBefore);
+  return at === null || lastBefore === null || lastBefore >= at ? null : { at, lastBefore };
+}
+
+/** The restarts an answer lists, oldest first, or none when it lists none the page can read. */
+function readRestarts(value: unknown): HistoryRestart[] {
+  if (!Array.isArray(value)) return [];
+  const restarts: HistoryRestart[] = [];
+  for (const item of value.slice(0, MAX_RESTARTS)) {
+    const restart = readRestart(item);
+    if (restart) restarts.push(restart);
+  }
+  return restarts.sort((a, b) => a.at - b.at);
+}
+
 /** The answer of `/api/history`. */
 export function readHistory(data: unknown): HistoryResponse | null {
   if (!isRecord(data) || !Array.isArray(data.points)) return null;
@@ -316,7 +388,16 @@ export function readHistory(data: unknown): HistoryResponse | null {
     const point = readPoint(value);
     if (point) points.push(point);
   }
-  return { points, startedAt };
+  const since = readSince(data.since);
+  const kept = readKept(data.kept);
+  const restarts = readRestarts(data.restarts);
+  return {
+    points,
+    startedAt,
+    ...(since !== null && { since }),
+    ...(kept !== null && { kept }),
+    ...(restarts.length > 0 && { restarts }),
+  };
 }
 
 /** The longest reason or problem the page shows. The collector's own are far shorter. */

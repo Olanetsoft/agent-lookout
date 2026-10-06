@@ -2,12 +2,8 @@ import type { IncomingMessage } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import {
-  actionRefusalFor,
-  jumpRefusalFor,
-  MAX_JUMP_BODY_BYTES,
-  sessionIdIn,
-} from "@collector/jumpRoute";
+import { actionRefusalFor } from "@collector/handler";
+import { jumpRefusalFor, MAX_JUMP_BODY_BYTES, sessionIdIn } from "@collector/jumpRoute";
 
 /** The headers the dashboard's own page sends. Node gives header names in lower case. */
 const FROM_THE_PAGE = {

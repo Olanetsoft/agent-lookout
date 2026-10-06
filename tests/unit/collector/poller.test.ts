@@ -4,7 +4,14 @@ import type { Adapter, AdapterResult } from "@collector/adapters/adapter";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller, POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@collector/poller";
-import type { Session, SourceHealth, SourceId, SourceState } from "@core/sessions/session";
+import type {
+  Session,
+  SessionEvent,
+  SessionStatus,
+  SourceHealth,
+  SourceId,
+  SourceState,
+} from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -458,6 +465,90 @@ describe("events", () => {
     expect(events.list().map((event) => [event.sessionId, event.kind])).toEqual([
       ["claude-code:b", "ended"],
     ]);
+  });
+});
+
+describe("events after a restart, with history kept from before it", () => {
+  /** An event of the history kept, as the poller wrote it then. */
+  function kept(
+    sessionId: string,
+    kind: SessionEvent["kind"],
+    to: SessionStatus | undefined,
+    at = T0 - 60_000,
+  ): SessionEvent {
+    return {
+      id: `${sessionId}@${at}:${kind}`,
+      at,
+      sessionId,
+      sessionName: sessionId.split(":")[1] as string,
+      kind,
+      ...(to !== undefined && { to }),
+      severity: "advisory",
+    };
+  }
+
+  test("the first poll is compared with what each session was last doing: what changed while stopped is an event of that poll", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "needs-you" });
+    const b = makeSession({ id: "claude-code:b", name: "demo-b", status: "working" });
+    const c = makeSession({ id: "claude-code:c", name: "demo-c", status: "idle" });
+    const d = makeSession({ id: "claude-code:d", name: "demo-d", status: "working" });
+    const { adapter } = scriptedAdapter(result([a, b, c, d]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      // a was working, then started waiting while Agent Lookout was stopped.
+      kept("claude-code:a", "appeared", "idle", T0 - 120_000),
+      kept("claude-code:a", "status-changed", "working"),
+      // b is working, as it was.
+      kept("claude-code:b", "status-changed", "working"),
+      // e was waiting, and ended while Agent Lookout was stopped.
+      kept("claude-code:e", "status-changed", "needs-you"),
+      // d had ended, and is back.
+      kept("claude-code:d", "ended", undefined),
+      // c is not in the history at all: it is taken as it is found.
+    ]);
+    vi.setSystemTime(T0 + 5 * 60_000);
+    await poller.pollOnce();
+    expect(
+      events
+        .list()
+        .map((event) => [event.at - T0, event.sessionName, event.kind, event.from, event.to]),
+    ).toEqual([
+      [300_000, "e", "ended", "needs-you", undefined],
+      [300_000, "demo-d", "appeared", undefined, "working"],
+      [300_000, "demo-a", "status-changed", "working", "needs-you"],
+    ]);
+
+    // The polls after it are compared with the one before, as ever.
+    vi.setSystemTime(T0 + 5 * 60_000 + 2_000);
+    await poller.pollOnce();
+    expect(events.list()).toHaveLength(3);
+  });
+
+  test("a source that does not answer at first is compared once it does, and only with its own sessions", async () => {
+    const a = makeSession({ id: "claude-code:a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([], "error"), result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      kept("claude-code:a", "status-changed", "working"),
+      // Another source's session, which this source knows nothing of.
+      kept("status-files:night-shift.json", "status-changed", "working"),
+      kept("no-source", "status-changed", "working"),
+    ]);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(
+      events.list().map((event) => [event.sessionId, event.kind, event.from, event.to]),
+    ).toEqual([["claude-code:a", "status-changed", "working", "idle"]]);
+  });
+
+  test("without history from before, the first poll is a baseline", async () => {
+    const { adapter } = scriptedAdapter(result([makeSession({ id: "claude-code:a" })]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([]);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
   });
 });
 
