@@ -9,7 +9,13 @@ import {
   type RefObject,
 } from "react";
 
-import type { Session, SessionEvent } from "@core/sessions/session";
+import {
+  machineInId,
+  nameOnMachine,
+  type Session,
+  type SessionEvent,
+} from "@core/sessions/session";
+import { OnMachine } from "@dashboard/components/sessions/Machine";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
@@ -169,6 +175,9 @@ const EventRow = memo(function EventRow({
   below: Thread["below"];
 }) {
   const phrase = eventPhrase(event, waitedMs);
+  // A session on another machine says which, so two of one name are told apart.
+  const machine = machineInId(event.sessionId);
+  const who = nameOnMachine(event.sessionName, machine);
   return (
     <Row
       data-slot='event-row'
@@ -177,13 +186,10 @@ const EventRow = memo(function EventRow({
       thread={{ above, below }}
       mark={<StatusMark kind={mark} labelled />}
     >
-      <Truncated
-        data-part='name'
-        tooltip={`${event.sessionName} ${phrase}`}
-        className='font-semibold text-ink'
-      >
+      <Truncated data-part='name' tooltip={`${who} ${phrase}`} className='font-semibold text-ink'>
         {event.sessionName}
       </Truncated>
+      <OnMachine machine={machine} className='shrink-0 whitespace-nowrap' />
       <span data-part='phrase' className='max-w-full shrink-0'>
         {waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
           <>

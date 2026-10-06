@@ -278,3 +278,42 @@ test("in a narrow window each bar takes the whole width under its name and value
   expect(track.top).toBeGreaterThanOrEqual(who.bottom);
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
 });
+
+/** Where the words of a session's own name end on screen, inside what draws them. */
+function nameShown(element: HTMLElement): boolean {
+  const text = element.firstChild as Text;
+  const range = document.createRange();
+  range.selectNodeContents(text);
+  return range.getBoundingClientRect().right <= element.getBoundingClientRect().right + 0.5;
+}
+
+test.each([375, 1280])(
+  "at %ipx, two sessions of one name, one here and one on another machine, are told apart",
+  async (width) => {
+    await page.viewport(width, 800);
+    const value = waits();
+    value.sessions[0] = { ...value.sessions[0]!, id: "claude-code:a", name: "demo-local" };
+    value.sessions[1] = {
+      ...value.sessions[1]!,
+      id: "remote:devbox:claude-code:a",
+      name: "demo-local",
+    };
+    const screen = await render(
+      <div style={{ width: width === 375 ? 296 : 760 }}>
+        <WaitedOnYou waits={value} />
+      </div>,
+    );
+    const [here, there] = rows(screen.container) as [HTMLElement, HTMLElement];
+    expect(piece(here, "machine")).toBeNull();
+    // Words after the name, in its own cut text, so the machine is what is cut first.
+    expect(piece(there, "machine").textContent).toBe(" on devbox");
+    expect(piece(there, "who").textContent).toBe("demo-local on devbox");
+    expect(nameShown(piece(there, "who"))).toBe(true);
+    expect(piece(there, "track").getAttribute("aria-label")).toMatch(
+      /^demo-local on devbox waited/,
+    );
+    expect(piece(here, "track").getAttribute("aria-label")).toMatch(/^demo-local has waited/);
+    expect(warmPaint(piece(there, "machine"))).toEqual([]);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);

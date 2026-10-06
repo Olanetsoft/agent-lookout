@@ -553,6 +553,32 @@ describe("the finder", () => {
     expect(JSON.stringify(annotated)).not.toContain(`"${common}"`);
   });
 
+  test("a session on another machine keeps the branch read there, and its folder is never looked for here", async () => {
+    const files = memoryFiles();
+    // A folder of the same path on this machine, on another branch.
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    const { finder } = finderFor(files);
+    const there = makeSession({
+      id: "remote:devbox:claude-code:1",
+      source: "remote:devbox",
+      machine: "devbox",
+      cwd: `${CODE}/storefront`,
+      git: { branch: "checkout-flow" },
+    });
+    const elsewhere = makeSession({
+      id: "remote:devbox:claude-code:2",
+      source: "remote:devbox",
+      machine: "devbox",
+      cwd: `${CODE}/storefront`,
+    });
+
+    const annotated = await finder.annotate([there, elsewhere]);
+
+    expect(annotated[0]).toBe(there);
+    expect(annotated[1]).toBe(elsewhere);
+    expect(annotated[1]).not.toHaveProperty("git");
+  });
+
   test(`reads a folder once however many sessions are in it, then not again for ${BRANCH_READ_MS / 1000} seconds`, async () => {
     const files = memoryFiles();
     repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");

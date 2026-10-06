@@ -2,10 +2,67 @@
 // Adding a field is fine. Renaming or removing one is not.
 
 /**
- * Where sessions come from. `status-files` is not one tool: it is a folder in
- * which any agent writes a small file for each of its sessions.
+ * Another machine's Agent Lookout, read over SSH: `remote:` and the name
+ * `AGENT_LOOKOUT_REMOTES` gives the machine, such as `remote:devbox`.
  */
-export type SourceId = "claude-code" | "codex" | "status-files";
+export type RemoteSourceId = `remote:${string}`;
+
+/**
+ * Where sessions come from. `status-files` is not one tool: it is a folder in
+ * which any agent writes a small file for each of its sessions. Nor is another
+ * machine: its sessions belong to the agents on it, which each session names.
+ */
+export type SourceId = "claude-code" | "codex" | "status-files" | RemoteSourceId;
+
+/** What every remote source's id begins with. */
+export const REMOTE_SOURCE_PREFIX = "remote:";
+
+/**
+ * The longest name a machine may have. A name is letters, digits and dashes,
+ * and short enough to sit beside a session's name on a phone.
+ */
+export const MAX_MACHINE_NAME_LENGTH = 24;
+
+const MACHINE_NAME = new RegExp(`^[A-Za-z0-9][A-Za-z0-9-]{0,${MAX_MACHINE_NAME_LENGTH - 1}}$`);
+
+/**
+ * Whether text is a machine's name as `AGENT_LOOKOUT_REMOTES` allows one:
+ * letters, digits and dashes, starting with a letter or a digit.
+ */
+export function isMachineName(value: unknown): value is string {
+  return typeof value === "string" && MACHINE_NAME.test(value);
+}
+
+/** The source of the sessions read from the machine of this name: `remote:devbox`. */
+export function remoteSourceId(machine: string): RemoteSourceId {
+  return `${REMOTE_SOURCE_PREFIX}${machine}`;
+}
+
+/** Whether a source is another machine's, rather than an agent tool on this one. */
+export function isRemoteSource(id: string): id is RemoteSourceId {
+  return id.startsWith(REMOTE_SOURCE_PREFIX);
+}
+
+/**
+ * The other machine a session's id names, "devbox" for
+ * `remote:devbox:claude-code:…`, or null for a session on this machine. An
+ * event, a wait or a row of the timeline carries the session's id and name
+ * alone, and this is how each says which machine, so that two sessions of
+ * the same name, one here and one there, can be told apart.
+ */
+export function machineInId(sessionId: string): string | null {
+  if (!sessionId.startsWith(REMOTE_SOURCE_PREFIX)) return null;
+  const rest = sessionId.slice(REMOTE_SOURCE_PREFIX.length);
+  const colon = rest.indexOf(":");
+  if (colon < 0) return null;
+  const name = rest.slice(0, colon);
+  return isMachineName(name) ? name : null;
+}
+
+/** "demo-local on devbox": a session's name and the other machine it runs on, in plain words. */
+export function nameOnMachine(name: string, machine: string | null | undefined): string {
+  return machine === null || machine === undefined ? name : `${name} on ${machine}`;
+}
 
 /**
  * Every value of each kind below, as a list each type is made from, so a reader
@@ -272,16 +329,29 @@ export interface GitRepository {
 }
 
 export interface Session {
-  /** Stable across polls: `${source}:${vendor session id, or pid when there is none}`. */
+  /**
+   * Stable across polls: `${source}:${vendor session id, or pid when there is
+   * none}`. A session on another machine has that machine's id for it after its
+   * own source, `remote:devbox:claude-code:…`, so two machines' ids never clash.
+   */
   id: string;
   source: SourceId;
   /**
    * The agent's own name, in plain text, for a source whose sessions belong to
    * many agents: a status file names the agent that wrote it, such as
-   * "Night Shift". Shown wherever a session's agent is named. Left out, the
-   * agent is the source's own label.
+   * "Night Shift", and a session on another machine the agent it runs in there,
+   * such as "Claude Code". Shown wherever a session's agent is named. Left
+   * out, the agent is the source's own label.
    */
   agent?: string;
+  /**
+   * The name of the other machine the session runs on, as
+   * `AGENT_LOOKOUT_REMOTES` gives it, such as "devbox". Shown beside the
+   * session's name. Left out, the session runs on this machine. A session on
+   * another machine has no Jump, no Stop and no request to answer: those act
+   * on this machine only.
+   */
+  machine?: string;
   surface: Surface;
   /** Display name. Falls back to the project folder name, then to the id. */
   name: string;
@@ -303,8 +373,9 @@ export interface Session {
   /**
    * What the session is asking, in a line or two: "Run: npm test", "Edit:
    * src/app.ts", or the question it put to the person. Present only when status
-   * is "needs-you" and source is "claude-code", and only when the last message
-   * of the session's transcript says. Plain text, cleaned and cut to 200
+   * is "needs-you" and source is "claude-code", or is another machine's whose
+   * Agent Lookout sent it, and only when the last message of the session's
+   * transcript says. Plain text, cleaned and cut to 200
    * characters by the collector. It lives as long as the wait does: nothing
    * that is stored or remembered past the wait keeps it.
    */
@@ -339,7 +410,8 @@ export interface Session {
   /**
    * Present while Agent Lookout holds a permission request of the session's,
    * which the person can answer from the dashboard: see `PermissionAsk`. Only
-   * for a Claude Code session waiting for permission, with the plugin.
+   * for a Claude Code session on this computer waiting for permission, with
+   * the plugin.
    */
   ask?: PermissionAsk;
   /** True when the session has been idle longer than the stale threshold. */
@@ -434,6 +506,17 @@ export type CapabilityCell = { level: "yes" } | { level: "no" | "partly"; reason
 /** What a source can tell of every capability. Each adapter declares its own, once. */
 export type SourceCapabilities = Readonly<Record<Capability, CapabilityCell>>;
 
+/**
+ * What one agent on another machine can report, as it is seen from here: what
+ * that machine's Agent Lookout says its agent can report, with no Jump, no
+ * Stop and no Answer, which act on this machine only.
+ */
+export interface AgentCapabilities {
+  /** The agent's name, "Claude Code", as the other machine gives it. */
+  label: string;
+  capabilities: SourceCapabilities;
+}
+
 export interface SourceHealth {
   id: SourceId;
   /** Plain label, for example "Claude Code". */
@@ -455,9 +538,19 @@ export interface SourceHealth {
   /**
    * What the source's agent can report at all, whatever state the source is in:
    * fixed for each adapter, which declares it. The Sources view draws its table
-   * of what each agent can report from this alone.
+   * of what each agent can report from this and from `agents`.
    */
   capabilities?: SourceCapabilities;
+  /**
+   * For another machine's source: the machine's name, as `AGENT_LOOKOUT_REMOTES`
+   * gives it, which its sessions carry as their `machine`.
+   */
+  machine?: string;
+  /**
+   * For another machine's source: what each agent there can report, as last
+   * read from it. A row each in the table of what each agent can report.
+   */
+  agents?: AgentCapabilities[];
   checkedAt: number;
 }
 

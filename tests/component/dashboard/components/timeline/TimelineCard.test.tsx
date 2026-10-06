@@ -914,3 +914,56 @@ test("nothing in the timeline is animated", async () => {
   }
   expect(card.getAnimations({ subtree: true })).toHaveLength(0);
 });
+
+test.each([375, 1280])(
+  "at %ipx, two sessions of one name, one here and one on another machine, are told apart",
+  async (width) => {
+    await page.viewport(width, 900);
+    const devbox: SourceHealth = {
+      id: "remote:devbox",
+      label: "devbox",
+      machine: "devbox",
+      state: "ok",
+      checkedAt: NOW,
+    };
+    const twins = [
+      session(1, { name: "demo-local", status: "working" }),
+      makeSession({
+        id: "remote:devbox:claude-code:00000000-0000-4000-8000-000000000001",
+        source: "remote:devbox",
+        machine: "devbox",
+        agent: "Claude Code",
+        name: "demo-local",
+        status: "working",
+        startedAt: null,
+        statusSince: null,
+      }),
+    ];
+    const screen = await render(
+      <TimelineCard
+        sessions={twins}
+        sources={[SOURCE, devbox]}
+        events={[]}
+        history={running(120)}
+        now={NOW}
+      />,
+    );
+    const [here, there] = [
+      ...screen.container.querySelectorAll<HTMLElement>('[data-slot="timeline-row"]'),
+    ];
+    expect(here?.querySelector('[data-part="machine"]')).toBeNull();
+    // Words after the name, in its own cut text, so the machine is what is cut first.
+    const name = there?.querySelector<HTMLElement>('[data-part="name"]') as HTMLElement;
+    expect(name.querySelector('[data-part="machine"]')?.textContent).toBe(" on devbox");
+    expect(name.textContent).toBe("demo-local on devbox");
+    const words = document.createRange();
+    words.selectNodeContents(name.firstChild as Text);
+    expect(words.getBoundingClientRect().right).toBeLessThanOrEqual(
+      name.getBoundingClientRect().right + 0.5,
+    );
+    await expect
+      .element(screen.getByRole("group", { name: /^demo-local on devbox: status over time/ }))
+      .toBeVisible();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);

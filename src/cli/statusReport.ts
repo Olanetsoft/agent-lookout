@@ -8,6 +8,7 @@ import { formatDuration } from "../core/duration.ts";
 import { pullRequestSummaryOf, type PullRequestSummary } from "../core/sessions/pullRequest.ts";
 import {
   agentName,
+  isMachineName,
   WAITING_REASONS,
   type Session,
   type SourceHealth,
@@ -22,6 +23,7 @@ export type ReportedSession = Pick<
   | "id"
   | "source"
   | "agent"
+  | "machine"
   | "name"
   | "project"
   | "status"
@@ -46,6 +48,11 @@ export interface WaitingSession {
   name: string;
   /** The agent's own name, or its source's label: "Claude Code". */
   agent: string;
+  /**
+   * The other machine it runs on, as `AGENT_LOOKOUT_REMOTES` names it, such as
+   * "devbox", or null for a session on this computer.
+   */
+  machine: string | null;
   reason: WaitingReason;
   /** When the wait began, in epoch milliseconds, or null when the source did not say. */
   waitingSince: number | null;
@@ -93,6 +100,14 @@ function reasonOf(session: ReportedSession): WaitingReason {
   return reason !== undefined && WAITING_REASONS.includes(reason) ? reason : "other";
 }
 
+/**
+ * The other machine a session runs on, or null: only a name as
+ * `AGENT_LOOKOUT_REMOTES` allows one, so it is safe to print as it is.
+ */
+export function machineOf(session: Pick<ReportedSession, "machine">): string | null {
+  return isMachineName(session.machine) ? session.machine : null;
+}
+
 export function statusReport(snapshot: ReportedSnapshot, now: number): StatusReport {
   const report: StatusReport = {
     counted:
@@ -118,6 +133,7 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
           id: session.id,
           name: sessionTitle(session),
           agent: agentName(session, snapshot.sources) ?? session.source,
+          machine: machineOf(session),
           reason: reasonOf(session),
           waitingSince: since,
           waitedMs: since === null ? null : Math.max(0, now - since),
@@ -225,7 +241,8 @@ export function countsLine(report: StatusReport): string {
 
 /**
  * What a person reads: the counts, then a line for each session that needs
- * them with its name, the reason and how long it has waited, in columns.
+ * them with its name, the other machine it runs on after "on" when it runs on
+ * one, the reason and how long it has waited, in columns.
  *
  * tmux shows the last line a status-line command prints, and reads `#` in it
  * as the start of its own formatting, such as `#[fg=red]` or `#{pane_title}`.
@@ -234,7 +251,9 @@ export function countsLine(report: StatusReport): string {
 export function statusText(report: StatusReport, forTmux = false): string {
   const rows = report.waiting.map((session) => {
     // A name made only of escape sequences leaves nothing, so the id stands in.
-    const name = terminalText(session.name) || terminalText(session.id);
+    const cut = terminalText(session.name) || terminalText(session.id);
+    // A machine's name is letters, digits and dashes, so it needs no cleaning.
+    const name = session.machine === null ? cut : `${cut} on ${session.machine}`;
     return {
       name: forTmux ? name.replaceAll("#", "##") : name,
       reason: waitingLabel({ waitingReason: session.reason }),

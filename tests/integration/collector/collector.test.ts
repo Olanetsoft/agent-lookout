@@ -54,6 +54,8 @@ import {
   tempDir,
 } from "@tests/support/node/tempFiles";
 import { startWebhookServer } from "@tests/support/channels/webhook";
+import { snapshotThere, waitingThere, workingThere } from "@tests/fixtures/remote";
+import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
 
 /**
  * A collector built the way every host builds it, with its default adapters,
@@ -1831,5 +1833,189 @@ describe("pull requests", () => {
       gh: null,
       last: null,
     });
+  });
+});
+
+describe("another machine over SSH", () => {
+  /**
+   * The collector as every host builds it, with nothing of this machine to
+   * read, and one other machine named: a stand-in Agent Lookout reached
+   * through the stand-in ssh. Started, so its tunnel starts, and stopped when
+   * the test finishes.
+   */
+  async function withMachine(lookoutPort: number, settings: Record<string, string> = {}) {
+    const ssh = await makeStandInSsh();
+    const warnings: string[] = [];
+    const notifier = fakeSystemNotifier();
+    const collector = createCollector({
+      version: "0.2.3",
+      env: {
+        ...ssh.env,
+        AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+        AGENT_LOOKOUT_CODEX_HOME: path.join(await tempDir(), "no-codex-here"),
+        AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
+        AGENT_LOOKOUT_TMUX: "off",
+        AGENT_LOOKOUT_NOTIFICATIONS: "on",
+        // Answering is on, with its socket in a folder of the test's own.
+        AGENT_LOOKOUT_ANSWER_SOCKET: path.join(await tempDir(), "al", "answer.sock"),
+        AGENT_LOOKOUT_REMOTES: `devbox=dev@devbox.local:${lookoutPort}`,
+        ...settings,
+      },
+      notifier,
+      platform: "darwin",
+      warn: (line) => warnings.push(line),
+    });
+    onTestFinished(async () => {
+      collector.stop();
+      await collector.remotes.stop();
+    });
+    collector.start();
+    const port = await listen(createServer(collector.handler));
+    /** Polls until the machine's card is in the state given, and returns what the page is sent. */
+    const until = (state: string) =>
+      vi.waitFor(
+        async () => {
+          await collector.poller.pollOnce();
+          const snapshot = readSnapshot((await request(port, "/api/sessions")).json());
+          const card = snapshot?.sources.find((source) => source.id === "remote:devbox");
+          if (!snapshot || card?.state !== state) throw new Error(`still ${card?.state}`);
+          return snapshot;
+        },
+        { timeout: 8_000, interval: 100 },
+      );
+    return { collector, ssh, warnings, notifier, port, until };
+  }
+
+  test("its sessions are listed with the machine's name, waiting ones among them, with no Jump, no Stop and nothing to answer", async () => {
+    const lookout = await startStandInLookout(snapshotThere());
+    const { until, warnings } = await withMachine(lookout.port);
+    const snapshot = await until("ok");
+
+    expect(warnings).toEqual([]);
+    const card = snapshot.sources.find((source) => source.id === "remote:devbox");
+    expect(card).toMatchObject({ label: "devbox", machine: "devbox", state: "ok" });
+    expect(card?.agents?.map((agent) => agent.label)).toEqual(["Claude Code", "Status files"]);
+    expect(
+      snapshot.sessions.map((session) => [
+        session.id,
+        session.machine,
+        session.agent,
+        session.status,
+      ]),
+    ).toEqual([
+      [
+        "remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa",
+        "devbox",
+        "Claude Code",
+        "needs-you",
+      ],
+      ["remote:devbox:status-files:night-shift.json", "devbox", "Night Shift", "working"],
+    ]);
+    // The waiting one was sent with a Jump, a Stop and a held request to answer,
+    // which act on that machine only.
+    for (const session of snapshot.sessions) {
+      expect(session.jump).toBeUndefined();
+      expect(session.stop).toBeUndefined();
+      expect(session.ask).toBeUndefined();
+      expect(session.git?.pullRequest).toBeUndefined();
+      expect(session.links).toEqual({});
+    }
+    expect(snapshot.answering?.state).toBe("on");
+    const cells = card?.agents?.map((agent) => [
+      agent.capabilities.jump.level,
+      agent.capabilities.stop.level,
+      agent.capabilities.answer.level,
+    ]);
+    expect(cells).toEqual([
+      ["no", "no", "no"],
+      ["no", "no", "no"],
+    ]);
+    // The other machine sent what the waiting session is asking, so it is shown.
+    expect(snapshot.sessions[0]?.waitingText).toBe("Run: npm test");
+  });
+
+  test("a wait that begins there is an event here, and a notification that names the machine", async () => {
+    const lookout = await startStandInLookout(snapshotThere([workingThere()]));
+    const { until, port, notifier, collector } = await withMachine(lookout.port);
+    await until("ok");
+
+    lookout.answer(
+      snapshotThere([workingThere({ status: "needs-you", waitingReason: "question" })]),
+    );
+    await vi.waitFor(
+      async () => {
+        await collector.poller.pollOnce();
+        const events = readEvents((await request(port, "/api/events?since=0")).json()) ?? [];
+        expect(events.map((event) => [event.sessionId, event.kind, event.to])).toEqual([
+          ["remote:devbox:status-files:night-shift.json", "status-changed", "needs-you"],
+        ]);
+      },
+      { timeout: 8_000, interval: 100 },
+    );
+    await vi.waitFor(() => expect(notifier.shown).toHaveLength(1), { timeout: 8_000 });
+    expect(notifier.shown[0]).toEqual({
+      title: "demo-docs on devbox",
+      body: "Asked you a question",
+    });
+  });
+
+  test("when Agent Lookout there stops, the card says so, nothing of its sessions is said to have ended, and the history goes on", async () => {
+    const lookout = await startStandInLookout(snapshotThere([waitingThere()]));
+    const { until, port, collector } = await withMachine(lookout.port);
+    await until("ok");
+
+    await lookout.close();
+    const snapshot = await until("unavailable");
+    const card = snapshot.sources.find((source) => source.id === "remote:devbox");
+    expect(card?.detail).toBe(
+      `ssh is connected to devbox, but no Agent Lookout answers on its port ${lookout.port}.`,
+    );
+    expect(snapshot.sessions).toEqual([]);
+    const events = readEvents((await request(port, "/api/events?since=0")).json()) ?? [];
+    expect(events).toEqual([]);
+
+    // After one gap, this computer's history goes on being kept without it.
+    const points = async () =>
+      readHistory((await request(port, "/api/history")).json())?.points.length ?? 0;
+    await collector.poller.pollOnce();
+    const before = await points();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await collector.poller.pollOnce();
+    expect(await points()).toBeGreaterThan(before);
+  });
+
+  test("a setting that cannot be read is one line on the console and a card in Sources, and nothing is started", async () => {
+    const lookout = await startStandInLookout(snapshotThere());
+    const { collector, warnings, ssh } = await withMachine(lookout.port, {
+      AGENT_LOOKOUT_REMOTES: "devbox=dev box",
+    });
+    expect(warnings).toEqual([
+      "Other machines are not read: AGENT_LOOKOUT_REMOTES gives devbox a target that Agent Lookout does not hand to ssh. Give a host alias from your ssh config, a host name or user@host, with no spaces, no leading dash and no other punctuation.",
+    ]);
+    const snapshot = await collector.poller.pollOnce();
+    expect(snapshot.sources.map((source) => source.id)).toEqual([
+      "claude-code",
+      "codex",
+      "status-files",
+      "remote:",
+    ]);
+    expect(snapshot.sources.at(-1)).toMatchObject({
+      label: "Other machines",
+      state: "not-set-up",
+      detail:
+        "AGENT_LOOKOUT_REMOTES gives devbox a target that Agent Lookout does not hand to ssh. Give a host alias from your ssh config, a host name or user@host, with no spaces, no leading dash and no other punctuation.",
+    });
+    expect(snapshot.sessions.filter((session) => session.source === "remote:")).toEqual([]);
+    expect(await ssh.runs()).toEqual([]);
+  });
+
+  test("stopping the collector ends its ssh", async () => {
+    const lookout = await startStandInLookout(snapshotThere());
+    const { until, collector, ssh } = await withMachine(lookout.port);
+    await until("ok");
+    const [run] = await ssh.runs();
+    collector.stop();
+    await vi.waitFor(() => expect(isRunning(run?.pid as number)).toBe(false), { timeout: 4_000 });
   });
 });

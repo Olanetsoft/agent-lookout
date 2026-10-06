@@ -34,6 +34,10 @@ import { agentLabel } from "@dashboard/lib/sources/sources";
 import { DESKTOP_NO_STOP } from "@dashboard/lib/stop/stopWords";
 import { cn } from "@dashboard/lib/utils";
 
+/** Why a session on another machine has no Jump, no Stop and no Allow or Deny, in one line, for its details. */
+const MACHINE_NOTE =
+  "Read over SSH. Jump, Stop, Allow and Deny work on this computer only, so use that machine to go to it, stop it or answer it.";
+
 const NO_SESSIONS: readonly Session[] = [];
 
 /**
@@ -267,6 +271,12 @@ function Details({
       <FactList className='mt-3'>
         <StatusFact session={session} gone={gone} asOf={asOf} now={now} />
         <FactRow label='Agent'>{agentLabel(session, sources)}</FactRow>
+        {session.machine !== undefined && (
+          // Jump, Stop, Allow and Deny act on this computer only, so the details say why there are none.
+          <FactRow label='Machine' note={MACHINE_NOTE}>
+            <span data-part='machine'>{session.machine}</span>
+          </FactRow>
+        )}
         {app !== null && <FactRow label='App'>{app}</FactRow>}
         <FactRow label='Folder' mono={session.cwd !== null}>
           {session.cwd !== null ? (
@@ -506,10 +516,11 @@ interface SessionPanelProps {
  * it asks first, at the top of the details, and says there what it came to.
  * A session in the desktop app has no Stop, and its process fact says why.
  * Under them, as facts: its status with how long and since when, its agent,
- * its app when known, its folder's whole path, its branch, with
- * `AGENT_LOOKOUT_PULL_REQUESTS=on` the branch's pull request and its checks,
- * when it started, its process, and how often and how long it waited over the
- * period the page holds. Then its own events, newest first, as the Events log draws
+ * the other machine it runs on, when it runs on one, its app when known, its
+ * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the
+ * branch's pull request and its checks, when it started, its process, and how
+ * often and how long it waited over the period the page holds. Then its own
+ * events, newest first, as the Events log draws
  * them, and its row of the Timeline across the whole width.
  *
  * The only warm things are the needs-you signals the rest of the page has for

@@ -10,6 +10,7 @@ import {
   sourceList,
   TOOL_NAMES,
   TOOLS,
+  type ToolSession,
   type ToolSnapshot,
 } from "@cli/mcp/toolAnswers";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
@@ -110,6 +111,7 @@ describe("list_sessions", () => {
       id: "claude-code:00000000-0000-4000-8000-000000000001",
       name: "checkout-flow",
       agent: "Claude Code",
+      machine: null,
       status: "needs-you",
       reason: "permission",
       folder: "storefront",
@@ -126,6 +128,7 @@ describe("list_sessions", () => {
       id: "status-files:billing.json",
       name: "billing-webhooks",
       agent: "Night Shift",
+      machine: null,
       status: "working",
       reason: null,
       folder: "billing",
@@ -245,6 +248,7 @@ describe("sessions_needing_you", () => {
         id: "claude-code:00000000-0000-4000-8000-000000000001",
         name: "checkout-flow",
         agent: "Claude Code",
+        machine: null,
         reason: "permission",
         folder: "storefront",
         branch: "checkout-flow",
@@ -269,6 +273,48 @@ describe("sessions_needing_you", () => {
         waitedMs: null,
       }),
     ]);
+  });
+
+  test("a session on another machine says which, in its fields and in the sentence", () => {
+    const remote = snapshot();
+    remote.sessions = [
+      ...remote.sessions.filter((session) => session.name === "search-indexing"),
+      {
+        ...remote.sessions.find((session) => session.name === "checkout-flow"),
+        id: "remote:devbox:claude-code:00000000-0000-4000-8000-000000000001",
+        source: "remote:devbox",
+        agent: "Claude Code",
+        machine: "devbox",
+      } as ToolSession,
+    ];
+    const answer = sessionsNeedingYou(remote, NOW);
+    expect(answer.sessions.map((session) => [session.name, session.machine])).toEqual([
+      ["checkout-flow", "devbox"],
+      ["search-indexing", null],
+    ]);
+    expect(answer.summary).toBe(
+      '2 sessions need you: "checkout-flow" on devbox (permission, 4m 12s), "search-indexing" (question, 31s).',
+    );
+    expect(listSessions(remote, NOW).sessions[0]).toMatchObject({
+      machine: "devbox",
+      agent: "Claude Code",
+      folder: "storefront",
+    });
+  });
+
+  test("a machine that is not a machine's name is not given", () => {
+    const odd = snapshot();
+    odd.sessions = odd.sessions.map((session) => ({
+      ...session,
+      machine: "dev box\u001b[2J",
+    }));
+    for (const session of listSessions(odd, NOW).sessions) expect(session.machine).toBeNull();
+  });
+
+  test("the instructions say a session on another machine has its folder there", () => {
+    expect(INSTRUCTIONS).toContain("other machines it reads over SSH");
+    expect(INSTRUCTIONS).toContain("its folder is a path there, not on this computer");
+    expect(TOOLS.list_sessions.description).toContain("the other machine it runs on");
   });
 
   test("sums them up in one sentence, each name in quotation marks", () => {

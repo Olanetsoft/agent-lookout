@@ -152,6 +152,34 @@ describe("the waiting sessions", () => {
     );
   });
 
+  test("a session on another machine says which, after its name", () => {
+    const text = statusText(
+      report([
+        waiting("checkout-flow", {
+          id: "remote:devbox:claude-code:1",
+          source: "remote:devbox",
+          agent: "Claude Code",
+          machine: "devbox",
+          statusSince: NOW - (4 * MINUTE + 12 * SECOND),
+        }),
+        waiting("search-indexing", { waitingReason: "question", statusSince: NOW - 31 * SECOND }),
+      ]),
+    );
+    expect(text.split("\n").slice(1, 3)).toEqual([
+      "checkout-flow on devbox  Waiting for permission  4m 12s",
+      "search-indexing          Asked you a question    31s",
+    ]);
+    const json = JSON.parse(
+      statusJson(report([waiting("checkout-flow", { machine: "devbox" }), waiting("docs-site")])),
+    ) as { waiting: { machine: string | null }[] };
+    expect(json.waiting.map((session) => session.machine)).toEqual(["devbox", null]);
+  });
+
+  test("a machine that is not a machine's name is not printed", () => {
+    const text = statusText(report([waiting("docs-site", { machine: "dev\u001b[2Jbox" })]));
+    expect(text.split("\n")[1]).toBe("docs-site  Waiting for permission  1m 00s");
+  });
+
   test.each([
     ["permission", "Waiting for permission"],
     ["question", "Asked you a question"],
@@ -369,6 +397,7 @@ describe("--json", () => {
           id: "claude-code:1",
           name: "checkout-flow",
           agent: "Claude Code",
+          machine: null,
           reason: "permission",
           waitingSince: NOW - 4 * MINUTE,
           waitedMs: 4 * MINUTE,
@@ -377,6 +406,7 @@ describe("--json", () => {
           id: "status-files:docs-site.json",
           name: "docs-site",
           agent: "Night Shift",
+          machine: null,
           reason: "question",
           waitingSince: null,
           waitedMs: null,

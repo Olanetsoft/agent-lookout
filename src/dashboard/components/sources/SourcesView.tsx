@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { Session, SourceHealth } from "@core/sessions/session";
+import { isRemoteSource, type Session, type SourceHealth } from "@core/sessions/session";
 import { ProblemAdvice } from "@dashboard/components/dashboard/ConnectionNotices";
 import { CapabilitiesCard } from "@dashboard/components/sources/CapabilitiesCard";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
@@ -36,7 +36,8 @@ interface SourcesViewProps {
 
 /**
  * One source, as a card: its state in words, the collector's own sentence about
- * how it is being read, and a row for each thing it reads or runs. Those facts
+ * how it is being read, what to do about it when the collector says, and a
+ * row for each thing it reads or runs. Those facts
  * come from the collector as labels and values, because it is the only part of
  * the app that knows them. The page shows each as it is given and looks for
  * none of them inside the sentence.
@@ -75,6 +76,15 @@ function SourceCard({
         {source.detail && (
           <p data-part='detail' className='text-body wrap-break-word text-ink-secondary'>
             <FactText>{source.detail}</FactText>
+          </p>
+        )}
+        {/* What to do about it, when the collector knows: the card is where a person looks. */}
+        {source.advice && (
+          <p
+            data-part='advice'
+            className={cn("text-body wrap-break-word text-ink-secondary", source.detail && "mt-2")}
+          >
+            <FactText>{source.advice}</FactText>
           </p>
         )}
 
@@ -126,14 +136,20 @@ function MessageCard({ children }: { children: ReactNode }) {
   );
 }
 
+/** What About sources says of other machines, once one is named. */
+const MACHINES =
+  "Another machine is one named in AGENT_LOOKOUT_REMOTES, with Agent Lookout running there. It is read over SSH, with your own ssh, and asked for its sessions and nothing else. Its sessions carry its name, and Jump, Stop, Allow and Deny act on this computer only.";
+
 /**
  * Where the sessions come from: each source's health, and what it reads and
  * runs, in plain language, and under them what each agent can report at all.
- * It sits in the main area in place of the Overview.
+ * Another machine has a card of its own, which says whether it is connected
+ * and, when it is not, why. It sits in the main area in place of the Overview.
  */
 export function SourcesView({ state, now }: SourcesViewProps) {
   const { snapshot, phase } = state;
   const stalled = phase === "stalled";
+  const machines = snapshot?.sources.some((source) => isRemoteSource(source.id)) ?? false;
 
   let sources;
   if (snapshot) {
@@ -209,6 +225,11 @@ export function SourcesView({ state, now }: SourcesViewProps) {
             command listed under a source is that tool&apos;s own program, and may reach the
             tool&apos;s own servers, as it does whenever it runs.
           </p>
+          {machines && (
+            <p data-part='machines'>
+              <FactText>{MACHINES}</FactText>
+            </p>
+          )}
         </div>
       </SectionCard>
     </div>

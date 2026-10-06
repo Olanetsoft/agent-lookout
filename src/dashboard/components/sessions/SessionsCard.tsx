@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import type { Session, SourceHealth } from "@core/sessions/session";
+import { isRemoteSource, type Session, type SourceHealth } from "@core/sessions/session";
 import { SessionRow } from "@dashboard/components/sessions/SessionRow";
 import { Count, SessionsBoard } from "@dashboard/components/sessions/SessionsBoard";
 import { LeftRunning } from "@dashboard/components/stop/LeftRunning";
@@ -19,6 +19,8 @@ import {
   overviewSources,
   showsAgents,
   sourceNames,
+  unseenMachines,
+  unseenSentence,
 } from "@dashboard/lib/sources/sources";
 import { jumpWay } from "@dashboard/lib/sessions/status";
 import type { SessionsLayout } from "@dashboard/lib/shell/sessionsLayout";
@@ -46,6 +48,9 @@ interface SessionsCardProps {
 
 /**
  * A source that cannot be read. Missing is said calmly; broken is said as an error.
+ * Another machine that cannot be read is not connected, said calmly, since the
+ * collector says it is unavailable, and it is named only when nothing on this
+ * computer is found either.
  *
  * What to do about it comes from the collector when it knows. A person who
  * pointed Agent Lookout at the wrong program is told to correct that, not to
@@ -53,11 +58,13 @@ interface SessionsCardProps {
  */
 function SourceNotice({ source }: { source: SourceHealth }) {
   const missing = source.state === "unavailable";
+  const title = isRemoteSource(source.id)
+    ? `${source.label} is not connected`
+    : missing
+      ? `${source.label} was not found`
+      : `${source.label} could not be read`;
   return (
-    <Callout
-      tone={missing ? "info" : "error"}
-      title={missing ? `${source.label} was not found` : `${source.label} could not be read`}
-    >
+    <Callout tone={missing ? "info" : "error"} title={title}>
       <p>
         <FactText>
           {source.detail ??
@@ -88,6 +95,23 @@ function SourceNotices({ sources, last }: { sources: readonly SourceHealth[]; la
       ))}
     </div>
   );
+}
+
+/**
+ * What is being watched, for the empty state: "Agent Lookout is watching
+ * Claude Code on this computer.", with "and the sessions on devbox" when
+ * another machine is read too, and, for a machine that is not, which one and
+ * that its sessions are not known: "devbox is not connected, so its sessions
+ * are not known."
+ */
+function watchingWhere(watched: readonly SourceHealth[], sources: readonly SourceHealth[]): string {
+  const here = watched.filter((source) => !isRemoteSource(source.id));
+  const machines = watched.filter((source) => isRemoteSource(source.id));
+  const parts: string[] = [];
+  if (here.length > 0 || machines.length === 0) parts.push(`${sourceNames(here)} on this computer`);
+  if (machines.length > 0) parts.push(`the sessions on ${sourceNames(machines)}`);
+  const unseen = unseenSentence(unseenMachines(sources));
+  return [`Agent Lookout is watching ${parts.join(" and ")}.`, unseen].filter(Boolean).join(" ");
 }
 
 /** First run: the collector is still looking. Says where, so it never reads as stuck. */
@@ -481,8 +505,8 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
         {broken.length > 0 && <SourceNotices sources={broken} last={false} />}
         <EmptyState title='No agents are running'>
           <p>
-            Agent Lookout is watching {sourceNames(watched)} on this computer. A session shows up
-            here within a few seconds of starting.
+            {watchingWhere(watched, sources)} A session shows up here within a few seconds of
+            starting.
           </p>
         </EmptyState>
       </>

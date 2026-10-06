@@ -58,7 +58,8 @@ interface ResultProps {
 
 /**
  * One session the search found, as an option of the list: its mark, its name,
- * its status and how long, then its folder, its branch and its agent. The
+ * its status and how long, then its folder, its branch and its agent, and the
+ * other machine it runs on, "Claude Code on devbox". The
  * session that needs the person carries the lamp's mark, and nothing else of
  * it is warm. A stale or ended session is quiet, as its row is.
  *
@@ -74,7 +75,7 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
     session.name,
     `${word} ${lasted.said}`,
     placeInWords(session),
-    agent,
+    session.machine === undefined ? agent : `${agent} on ${session.machine}`,
     way && `Jump to ${way.where}`,
   ]
     .filter(Boolean)
@@ -150,6 +151,12 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
               </span>
             )}
             <span data-part='agent'>{agent}</span>
+            {session.machine !== undefined && (
+              <>
+                {" "}
+                on <span data-part='machine'>{session.machine}</span>
+              </>
+            )}
           </span>
         </p>
       </div>

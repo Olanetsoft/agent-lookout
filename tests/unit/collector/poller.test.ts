@@ -565,6 +565,41 @@ describe("events after a restart, with history kept from before it", () => {
     ]);
   });
 
+  test("a session on another machine is compared with what that machine's source last said of it", async () => {
+    const devbox: Adapter = {
+      id: "remote:devbox",
+      label: "devbox",
+      poll: async () => ({
+        health: { id: "remote:devbox", label: "devbox", state: "ok", checkedAt: Date.now() },
+        sessions: [
+          makeSession({
+            id: "remote:devbox:claude-code:a",
+            source: "remote:devbox",
+            machine: "devbox",
+            name: "demo-a",
+            status: "needs-you",
+          }),
+        ],
+      }),
+    };
+    // A machine whose name begins the other's is a source of its own.
+    const dev: Adapter = {
+      id: "remote:dev",
+      label: "dev",
+      poll: async () => ({
+        health: { id: "remote:dev", label: "dev", state: "ok", checkedAt: Date.now() },
+        sessions: [],
+      }),
+    };
+    const events = createEventStore();
+    const poller = createPoller({ adapters: [dev, devbox], events, history: createHistoryStore() });
+    poller.resume([kept("remote:devbox:claude-code:a", "status-changed", "working")]);
+    await poller.pollOnce();
+    expect(
+      events.list().map((event) => [event.sessionId, event.kind, event.from, event.to]),
+    ).toEqual([["remote:devbox:claude-code:a", "status-changed", "working", "needs-you"]]);
+  });
+
   test("without history from before, the first poll is a baseline", async () => {
     const { adapter } = scriptedAdapter(result([makeSession({ id: "claude-code:a" })]));
     const { poller, events } = setUp(adapter);

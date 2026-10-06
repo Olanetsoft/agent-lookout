@@ -623,3 +623,214 @@ describe("the card for status files", () => {
       .toHaveTextContent("Status files are how any other agent appears");
   });
 });
+
+describe("the card for another machine", () => {
+  const COMMAND =
+    "/usr/bin/ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -L 127.0.0.1:53211:127.0.0.1:4777 -- dev@devbox.local";
+
+  const machine = (overrides: Partial<SourceHealth>): SourceHealth => ({
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    watching: [
+      { label: "Connects to", value: "dev@devbox.local" },
+      { label: "Command", value: COMMAND },
+      { label: "Asks for", value: "/api/health and /api/sessions" },
+      { label: "Read", value: "every 2 seconds" },
+      { label: "Agent Lookout there", value: "0.2.3" },
+      { label: "Claude Code there", value: "Watching" },
+    ],
+    checkedAt: NOW - 2_000,
+    ...overrides,
+  });
+
+  const there = (n: number) =>
+    makeSession({
+      id: `remote:devbox:claude-code:${n}`,
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+      name: `demo-there-${n}`,
+    });
+
+  function withMachine(card: SourceHealth, sessions = [there(1)]): CollectorState {
+    const base = snapshot([SOURCE, card]);
+    return state({ snapshot: { ...base, sessions: [...base.sessions, ...sessions] } });
+  }
+
+  test("connected, it says so, how it is read, and counts the sessions there alone", async () => {
+    const screen = await render(
+      <SourcesView
+        state={withMachine(
+          machine({
+            detail:
+              "Sessions are read from Agent Lookout 0.2.3 on devbox, through ssh to dev@devbox.local. Jump, Stop, Allow and Deny act on this computer only.",
+          }),
+        )}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "devbox" });
+    await expect.element(card).toBeVisible();
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Connected");
+    await expect
+      .element(card)
+      .toHaveTextContent("Jump, Stop, Allow and Deny act on this computer only.");
+    const rows = [...card.element().querySelectorAll('[data-slot="fact-row"]')];
+    const fact = (label: string) =>
+      rows.find((row) => row.querySelector("dt")?.textContent === label)?.querySelector("dd");
+    expect(fact("Command")?.textContent).toBe(COMMAND);
+    expect(getComputedStyle(fact("Command") as Element).fontFamily).toMatch(
+      /^"?Atkinson Hyperlegible Mono/,
+    );
+    expect(fact("Asks for")?.textContent).toBe("/api/health and /api/sessions");
+    expect(fact("Sessions found")?.textContent).toBe("1");
+    // This computer's card counts its own two.
+    const here = screen.getByRole("region", { name: "Claude Code" }).element();
+    expect(
+      [...here.querySelectorAll('[data-slot="fact-row"]')]
+        .find((row) => row.querySelector("dt")?.textContent === "Sessions found")
+        ?.querySelector("dd")?.textContent,
+    ).toBe("2");
+    expect(warmPaint(card.element())).toEqual([]);
+  });
+
+  test("while ssh signs in, it is connecting", async () => {
+    const screen = await render(
+      <SourcesView
+        state={withMachine(
+          machine({
+            state: "searching",
+            detail: "Connecting to devbox over SSH, as dev@devbox.local.",
+          }),
+          [],
+        )}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "devbox" });
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Connecting");
+    await expect.element(card).toHaveTextContent("Connecting to devbox over SSH");
+  });
+
+  test.each([
+    "The ssh command was not found on PATH or in /usr/bin, /opt/homebrew/bin, /usr/local/bin, so devbox cannot be reached. Looking again in 5 seconds.",
+    "devbox turned the SSH connection away: dev@devbox.local: Permission denied (publickey). Trying again in 5 seconds.",
+    "The SSH connection to devbox dropped: Connection to devbox.local closed by remote host. Connecting again.",
+    "ssh is connected to devbox, but no Agent Lookout answers on its port 4777.",
+    "devbox runs Agent Lookout 9.0.0, and this computer's, 0.2.3, cannot read its list of sessions.",
+  ])("not connected, it gives the plain reason: %s", async (detail) => {
+    const screen = await render(
+      <SourcesView state={withMachine(machine({ state: "unavailable", detail }), [])} now={NOW} />,
+    );
+    const card = screen.getByRole("region", { name: "devbox" });
+    expect(card.element().querySelector('[data-part="state"]')?.textContent).toBe("Not connected");
+    expect(card.element().querySelector('[data-part="detail"]')?.textContent).toBe(detail);
+  });
+
+  test.each([
+    [
+      "devbox turned the SSH connection away: dev@devbox.local: Permission denied (publickey). Trying again in 5 seconds.",
+      "Check that ssh dev@devbox.local connects without asking for anything. Agent Lookout runs ssh with BatchMode, so it never types a password or answers a question.",
+    ],
+    [
+      "ssh is connected to devbox, but no Agent Lookout answers on its port 4777.",
+      "Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as devbox=dev@devbox.local:<port>.",
+    ],
+  ])("not connected, it says what to do under the reason: %s", async (detail, advice) => {
+    const screen = await render(
+      <SourcesView
+        state={withMachine(machine({ state: "unavailable", detail, advice }), [])}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "devbox" }).element();
+    const said = card.querySelector<HTMLElement>('[data-part="advice"]');
+    if (!said) throw new Error("expected what to do");
+    expect(said.textContent).toBe(advice);
+    // A second paragraph under the reason, in the body's secondary ink, as the reason is.
+    const reason = card.querySelector('[data-part="detail"]') as HTMLElement;
+    expect(said.getBoundingClientRect().top).toBeGreaterThan(reason.getBoundingClientRect().bottom);
+    expect(getComputedStyle(said).color).toBe(getComputedStyle(reason).color);
+    expect(getComputedStyle(said).fontSize).toBe(getComputedStyle(reason).fontSize);
+    expect(warmPaint(card)).toEqual([]);
+  });
+
+  test("a card with no advice has no paragraph for it", async () => {
+    const screen = await render(<SourcesView state={withMachine(machine({}))} now={NOW} />);
+    const card = screen.getByRole("region", { name: "devbox" }).element();
+    expect(card.querySelector('[data-part="advice"]')).toBeNull();
+  });
+
+  test("a setting that cannot be read is an Other machines card, not set up, that says why and what to do", async () => {
+    const setting: SourceHealth = {
+      id: "remote:",
+      label: "Other machines",
+      state: "not-set-up",
+      detail:
+        "AGENT_LOOKOUT_REMOTES gives devbox a target that Agent Lookout does not hand to ssh. Give a host alias from your ssh config, a host name or user@host, with no spaces, no leading dash and no other punctuation.",
+      advice:
+        "Correct AGENT_LOOKOUT_REMOTES, or unset it, and start Agent Lookout again. Until then no other machine is read and ssh is never run.",
+      watching: [{ label: "Setting", value: "AGENT_LOOKOUT_REMOTES" }],
+      checkedAt: NOW - 2_000,
+    };
+    const screen = await render(
+      <SourcesView state={state({ snapshot: snapshot([SOURCE, setting]) })} now={NOW} />,
+    );
+    const card = screen.getByRole("region", { name: "Other machines" }).element();
+    expect(card.querySelector('[data-part="state"]')?.textContent).toBe("Not set up");
+    expect(card.querySelector('[data-part="detail"]')?.textContent).toBe(setting.detail);
+    expect(card.querySelector('[data-part="advice"]')?.textContent).toBe(setting.advice);
+    expect(warmPaint(card)).toEqual([]);
+  });
+
+  test("each agent there has a row in what each agent can report, with No under Jump, Stop and Answer", async () => {
+    const there = {
+      "working-and-idle": { level: "yes" },
+      "needs-you": { level: "yes" },
+      finished: { level: "partly", reason: "Only background jobs." },
+      failed: { level: "partly", reason: "Only background jobs." },
+      names: { level: "yes" },
+      jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+      "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
+      stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
+      answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
+    } as const;
+    const screen = await render(
+      <SourcesView
+        state={withMachine(machine({ agents: [{ label: "Claude Code", capabilities: there }] }))}
+        now={NOW}
+      />,
+    );
+    const table = screen.getByRole("region", { name: "What each agent can report" });
+    await expect.element(table).toBeVisible();
+    const heads = [...table.element().querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(heads.at(-1)).toBe("Answer");
+    const row = table.element().querySelector('[data-agent="Claude Code"]') as HTMLElement;
+    expect(row.querySelector("th")?.textContent).toBe("Claude Code on devbox");
+    const levels = [...row.querySelectorAll('[data-part="capability"]')].map((cell) =>
+      cell.getAttribute("data-level"),
+    );
+    expect(levels).toHaveLength(9);
+    // Jump, Stop and Answer, the sixth, the eighth and the ninth.
+    expect([levels[5], levels[7], levels[8]]).toEqual(["no", "no", "no"]);
+  });
+
+  test("About sources says what another machine is, once one is named, and not before", async () => {
+    const without = await render(<SourcesView state={state()} now={NOW} />);
+    expect(without.container.querySelector('[data-part="machines"]')).toBeNull();
+    without.unmount();
+
+    const screen = await render(<SourcesView state={withMachine(machine({}))} now={NOW} />);
+    const about = screen.getByRole("region", { name: "About sources" });
+    await expect
+      .element(about)
+      .toHaveTextContent(
+        "Another machine is one named in AGENT_LOOKOUT_REMOTES, with Agent Lookout running there.",
+      );
+    await expect
+      .element(about)
+      .toHaveTextContent("Jump, Stop, Allow and Deny act on this computer only.");
+  });
+});

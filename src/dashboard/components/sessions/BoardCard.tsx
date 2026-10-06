@@ -2,6 +2,7 @@ import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
+import { Machine } from "@dashboard/components/sessions/Machine";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
@@ -22,7 +23,7 @@ interface BoardCardProps {
 
 /**
  * One session on the board: what a row of the list says, stacked to fit a
- * column. Its mark and name; where it works, "storefront on checkout-flow",
+ * column. Its mark and name, with the other machine it runs on beside it; where it works, "storefront on checkout-flow",
  * led by the repository's name when the folder's is another, as a worktree's
  * is, "storefront · storefront-checkout on checkout-flow";
  * the app when it is known, and the tool once more than one is found; its
@@ -91,6 +92,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
             {session.name}
           </Truncated>
         </div>
+        <Machine session={session} />
         {orphaned && <Badge tone='outline'>Process ended</Badge>}
         <JumpNote session={session} jump={jump} />
       </div>

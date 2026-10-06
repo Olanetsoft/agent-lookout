@@ -110,6 +110,34 @@ describe("asking", () => {
     expect(sessions[0]?.git).not.toHaveProperty("pullRequest");
   });
 
+  test("a session on another machine, in a folder of the same path as one here, is never asked about or given one", async () => {
+    const { asked, read, poll } = setUp({
+      "checkout-flow": { kind: "found", pullRequest: pullRequest(51) },
+    });
+    const there = makeSession({
+      ...on(2, "storefront-checkout", "checkout-flow"),
+      id: "remote:devbox:claude-code:2",
+      source: "remote:devbox",
+      machine: "devbox",
+    });
+    const sessions = [on(1, "storefront-checkout", "checkout-flow"), there];
+
+    await poll(sessions);
+    const annotated = await poll(sessions);
+    expect(pullRequestsOf(annotated)).toEqual([pullRequest(51), undefined]);
+    expect(annotated[1]).toBe(there);
+    // Asked once, for the session here alone.
+    expect(asked).toEqual(["checkout-flow"]);
+    expect(read).toHaveLength(1);
+
+    // With only the session there, nothing is read or asked.
+    const alone = setUp({ "checkout-flow": { kind: "found", pullRequest: pullRequest(51) } });
+    await alone.poll([there]);
+    expect(pullRequestsOf(await alone.poll([there]))).toEqual([undefined]);
+    expect(alone.asked).toEqual([]);
+    expect(alone.read).toEqual([]);
+  });
+
   test(`gh is asked once for each branch, then not again for ${PULL_REQUEST_CHECK_MS / 1000} seconds, however often the sessions are polled`, async () => {
     const { clock, asked, read, poll } = setUp();
     const sessions = [on(1, "storefront-checkout", "checkout-flow")];

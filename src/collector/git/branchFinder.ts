@@ -205,7 +205,10 @@ function within(work: Promise<unknown>, ms: number): Promise<void> {
 
 /**
  * Gives every session, whatever its source, the branch of the folder it works
- * in. The poller calls it with each poll's sessions.
+ * in. The poller calls it with each poll's sessions. A session on another
+ * machine works in a folder on that machine, which this one cannot read: it
+ * keeps the branch that machine's Agent Lookout read, and its folder is
+ * never looked for here.
  *
  * It keeps what it read for each session's folder for `BRANCH_READ_MS`, so a
  * folder's `HEAD` is read at most once in 10 seconds however many sessions work
@@ -236,7 +239,9 @@ export function createBranchFinder(options: BranchFinderOptions = {}): BranchFin
   return {
     async annotate(sessions) {
       const folders = new Set<string>();
-      for (const session of sessions) if (session.cwd) folders.add(session.cwd);
+      for (const session of sessions) {
+        if (session.cwd && session.machine === undefined) folders.add(session.cwd);
+      }
       for (const folder of known.keys()) if (!folders.has(folder)) known.delete(folder);
 
       // Reads a poll before have not answered: none is started, and they are
@@ -256,6 +261,7 @@ export function createBranchFinder(options: BranchFinderOptions = {}): BranchFin
       }
 
       return sessions.map((session) => {
+        if (session.machine !== undefined) return session;
         const head = session.cwd ? known.get(session.cwd)?.found?.head : null;
         return head ? { ...session, git: head } : session;
       });

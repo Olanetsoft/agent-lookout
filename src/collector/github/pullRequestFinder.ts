@@ -54,11 +54,15 @@ interface Asked {
   askedAt: number;
 }
 
+/**
+ * Where a session's branch is, or null for one with nothing to ask. A session
+ * on another machine works in a folder there, which may share its path with
+ * one here, so it is never given a pull request of this computer's.
+ */
 function placeOf(session: Session, gitFolderOf: (cwd: string) => string | null): Place | null {
   const branch = session.git?.branch;
-  if (session.cwd === null || branch === undefined || session.git?.repository === undefined) {
-    return null;
-  }
+  if (session.machine !== undefined || session.cwd === null || branch === undefined) return null;
+  if (session.git?.repository === undefined) return null;
   const gitFolder = gitFolderOf(session.cwd);
   return gitFolder === null ? null : { key: `${gitFolder}\0${branch}`, gitFolder, branch };
 }

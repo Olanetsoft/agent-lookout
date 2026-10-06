@@ -328,3 +328,144 @@ test("when no session's app is known, no app is named", () => {
     fact: { text: "checked 2s ago", ticking: true },
   });
 });
+
+test("another machine is connected or not, and once answers stop, the last known of that", () => {
+  const machine = (state: SourceHealth["state"]): SourceHealth => ({
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state,
+    checkedAt: NOW - 2_000,
+  });
+  expect(sourceLine(machine("ok"), false)).toEqual({
+    key: "remote:devbox",
+    name: "devbox",
+    state: "Connected",
+  });
+  expect(sourceLine(machine("searching"), false).state).toBe("Connecting");
+  expect(sourceLine(machine("unavailable"), false).state).toBe("Not connected");
+  expect(sourceLine(machine("error"), false).state).toBe("Not connected");
+  expect(sourceLine(machine("ok"), true).state).toBe("Last known: connected");
+  expect(sourceLine(machine("unavailable"), true).state).toBe("Last known: not connected");
+});
+
+const devbox = (state: SourceHealth["state"], label = "devbox"): SourceHealth => ({
+  id: `remote:${label}`,
+  label,
+  machine: label,
+  state,
+  checkedAt: NOW - 2_000,
+});
+
+function remoteSessions(count: number): Session[] {
+  return Array.from({ length: count }, (_, index) =>
+    makeSession({
+      id: `remote:devbox:claude-code:${index}`,
+      source: "remote:devbox",
+      machine: "devbox",
+      name: `demo-there-${index}`,
+      surface: "terminal",
+    }),
+  );
+}
+
+test("a machine read is named after the tools, over SSH, and never as one of them", () => {
+  const all = [source("ok"), codex("ok"), devbox("ok")];
+  const list = [...sessions("terminal", "vscode"), ...remoteSessions(1)];
+  expect(statusSentence("live", { sources: all, sessions: list }, NOW)).toMatchObject({
+    key: "watching",
+    text: "Watching 3 sessions from Claude Code and Codex, and from devbox over SSH",
+    short: "3 sessions",
+  });
+  // With one tool here, it is named, since the apps would be both machines'.
+  expect(
+    statusSentence("live", { sources: [source("ok"), devbox("ok")], sessions: list }, NOW).text,
+  ).toBe("Watching 3 sessions from Claude Code, and from devbox over SSH");
+  // With no tool here, the machine alone.
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("unavailable"), devbox("ok")], sessions: remoteSessions(2) },
+      NOW,
+    ).text,
+  ).toBe("Watching 2 sessions from devbox over SSH");
+  expect(
+    statusSentence("live", { sources: [source("ok"), devbox("ok")], sessions: [] }, NOW).text,
+  ).toBe("Watching Claude Code, and devbox over SSH, no sessions running");
+});
+
+test("a machine that is not connected is said after the sentence, in its short form too", () => {
+  const list = sessions("terminal");
+  const status = statusSentence(
+    "live",
+    { sources: [source("ok"), codex("ok"), devbox("unavailable")], sessions: list },
+    NOW,
+  );
+  expect(status).toEqual({
+    key: "watching",
+    text: "Watching 1 session from Claude Code and Codex · devbox not connected",
+    short: "1 session · devbox not connected",
+    fact: { text: "checked 2s ago", ticking: true },
+  });
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("ok"), devbox("unavailable"), devbox("error", "gpu")], sessions: [] },
+      NOW,
+    ),
+  ).toMatchObject({
+    key: "none-running",
+    text: "Watching Claude Code, no sessions running · devbox and gpu not connected",
+    short: "No sessions · devbox and gpu not connected",
+  });
+  // With no tool on this computer, the machine is the whole sentence.
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("unavailable"), devbox("unavailable")], sessions: [] },
+      NOW,
+    ),
+  ).toMatchObject({
+    key: "not-found",
+    text: "Claude Code was not found · devbox not connected",
+  });
+  expect(statusSentence("live", { sources: [devbox("unavailable")], sessions: [] }, NOW)).toEqual({
+    key: "not-found",
+    text: "devbox is not connected",
+    short: "devbox not connected",
+    fact: { text: "checked 2s ago", ticking: true },
+  });
+});
+
+test("a machine still connecting is said as connecting, not as sessions looked for", () => {
+  expect(
+    statusSentence("live", { sources: [source("ok"), devbox("searching")], sessions: [] }, NOW),
+  ).toMatchObject({
+    key: "searching",
+    text: "Connecting to devbox over SSH",
+    short: "Connecting over SSH",
+  });
+  expect(
+    statusSentence(
+      "live",
+      { sources: [source("searching"), devbox("searching")], sessions: [] },
+      NOW,
+    ),
+  ).toMatchObject({
+    text: "Looking for Claude Code sessions, and connecting to devbox over SSH",
+    short: "Looking for sessions",
+  });
+});
+
+test("the card that says why no machine is read is never named in the status line", () => {
+  const setting: SourceHealth = {
+    id: "remote:",
+    label: "Other machines",
+    state: "not-set-up",
+    checkedAt: NOW - 2_000,
+  };
+  expect(statusSentence("live", { sources: [source("ok"), setting], sessions: [] }, NOW).text).toBe(
+    "Watching Claude Code, no sessions running",
+  );
+  expect(sourceLine(setting, false).state).toBe("Not set up");
+});

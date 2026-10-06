@@ -169,6 +169,7 @@ describe("with sessions waiting", () => {
         id: "status-files:checkout-flow.json",
         name: "checkout-flow",
         agent: "Night Shift",
+        machine: null,
         reason: "permission",
         waitingSince: expect.any(Number),
         waitedMs: expect.any(Number),

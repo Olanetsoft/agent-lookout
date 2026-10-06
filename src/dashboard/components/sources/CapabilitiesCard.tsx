@@ -2,6 +2,7 @@ import {
   CAPABILITIES,
   CAPABILITY_LABEL,
   CAPABILITY_LEVEL_LABEL,
+  type Capability,
   type CapabilityCell,
   type SourceCapabilities,
   type SourceHealth,
@@ -11,10 +12,44 @@ import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useNarrow } from "@dashboard/hooks/dom/useMediaQuery";
 
-type Declared = SourceHealth & { capabilities: SourceCapabilities };
+/** One row of the table: a source on this computer, or an agent on another machine. */
+interface Row {
+  key: string;
+  /** The source it belongs to. */
+  source: string;
+  /** For an agent on another machine: its name there. */
+  agent?: string;
+  /** "Claude Code", or "Claude Code on devbox". */
+  label: string;
+  capabilities: SourceCapabilities;
+}
 
-function isDeclared(source: SourceHealth): source is Declared {
-  return source.capabilities !== undefined;
+/**
+ * A row for each source that declared what it can report, and after another
+ * machine's, a row for each agent there, named "Claude Code on devbox".
+ */
+function rowsOf(sources: readonly SourceHealth[]): Row[] {
+  const rows: Row[] = [];
+  for (const source of sources) {
+    if (source.capabilities) {
+      rows.push({
+        key: source.id,
+        source: source.id,
+        label: source.label,
+        capabilities: source.capabilities,
+      });
+    }
+    for (const agent of source.agents ?? []) {
+      rows.push({
+        key: `${source.id}\n${agent.label}`,
+        source: source.id,
+        agent: agent.label,
+        label: `${agent.label} on ${source.label}`,
+        capabilities: agent.capabilities,
+      });
+    }
+  }
+  return rows;
 }
 
 /**
@@ -46,7 +81,7 @@ function Cell({ cell }: { cell: CapabilityCell }) {
 }
 
 /** A row for each agent and a column for each thing it can report. */
-function Table({ sources }: { sources: readonly Declared[] }) {
+function Table({ rows }: { rows: readonly Row[] }) {
   const head = "pr-2 pb-2 align-bottom text-caption font-medium text-ink-secondary";
   return (
     <table data-part='table' className='mt-3 w-full table-fixed border-collapse text-left'>
@@ -69,18 +104,19 @@ function Table({ sources }: { sources: readonly Declared[] }) {
         </tr>
       </thead>
       <tbody>
-        {sources.map((source) => (
+        {rows.map((row) => (
           <tr
-            key={source.id}
-            data-source={source.id}
+            key={row.key}
+            data-source={row.source}
+            data-agent={row.agent}
             className='border-b border-hairline last:border-b-0'
           >
             <th scope='row' className='py-2.5 pr-2 text-body font-semibold text-ink'>
-              {source.label}
+              {row.label}
             </th>
             {CAPABILITIES.map((capability) => (
               <td key={capability} className='py-2.5 pr-2 text-body'>
-                <Cell cell={source.capabilities[capability]} />
+                <Cell cell={row.capabilities[capability]} />
               </td>
             ))}
           </tr>
@@ -90,39 +126,98 @@ function Table({ sources }: { sources: readonly Declared[] }) {
   );
 }
 
+/** Whether two cells say the same: the same word, and the same reason for it. */
+function sameCell(a: CapabilityCell, b: CapabilityCell): boolean {
+  if (a.level === "yes" || b.level === "yes") return a.level === b.level;
+  return a.level === b.level && a.reason === b.reason;
+}
+
+/** What acts on this computer only, and so is No for every agent on another machine. */
+const ACTS_HERE: readonly Capability[] = ["jump", "stop", "answer"];
+
+/**
+ * The row on this computer that an agent on another machine reports as, all
+ * but Jump, Stop and Answer, which act on this computer only: "Claude Code"
+ * for Claude Code on devbox, when each of its other cells says the same. Null
+ * when there is none, or one says otherwise.
+ */
+function sameAsHere(row: Row, rows: readonly Row[]): Row | null {
+  if (row.agent === undefined) return null;
+  const here = rows.find((other) => other.agent === undefined && other.label === row.agent);
+  if (!here) return null;
+  const same = CAPABILITIES.every(
+    (capability) =>
+      ACTS_HERE.includes(capability) ||
+      sameCell(here.capabilities[capability], row.capabilities[capability]),
+  );
+  return same ? here : null;
+}
+
 /**
  * The same, for a phone: a block for each agent with a fact row for each thing
  * it can report. A touch screen has no hover, so each reason is a line of its
  * own under its row.
+ *
+ * An agent on another machine that reports what the same agent here does, all
+ * but Jump, Stop and Answer, is one line, so a phone is not made to read the
+ * same nine rows again: "As Claude Code on this computer, but Jump: No, Stop:
+ * No and Answer: No, which act on this computer only."
  */
-function Blocks({ sources }: { sources: readonly Declared[] }) {
+function Blocks({ rows }: { rows: readonly Row[] }) {
   return (
     <div data-part='blocks' className='mt-3 flex flex-col gap-4'>
-      {sources.map((source) => (
-        <div key={source.id} data-source={source.id}>
-          <h3 className='text-row font-semibold text-ink'>{source.label}</h3>
-          <FactList className='mt-1'>
-            {CAPABILITIES.map((capability) => {
-              const cell = source.capabilities[capability];
-              return (
-                <FactRow
-                  key={capability}
-                  label={CAPABILITY_LABEL[capability]}
-                  note={cell.level === "yes" ? undefined : cell.reason}
-                >
-                  <span
-                    data-part='capability'
-                    data-level={cell.level}
-                    className={cell.level === "yes" ? "font-normal text-ink-secondary" : undefined}
+      {rows.map((row) => {
+        const here = sameAsHere(row, rows);
+        if (here) {
+          return (
+            <div key={row.key} data-source={row.source} data-agent={row.agent}>
+              <h3 className='text-row font-semibold text-ink'>{row.label}</h3>
+              <p data-part='same-as' className='mt-1 text-body text-ink-secondary'>
+                As {here.label} on this computer, but{" "}
+                <span className='font-medium text-ink'>
+                  Jump: {CAPABILITY_LEVEL_LABEL[row.capabilities.jump.level]}
+                </span>
+                ,{" "}
+                <span className='font-medium text-ink'>
+                  Stop: {CAPABILITY_LEVEL_LABEL[row.capabilities.stop.level]}
+                </span>{" "}
+                and{" "}
+                <span className='font-medium text-ink'>
+                  Answer: {CAPABILITY_LEVEL_LABEL[row.capabilities.answer.level]}
+                </span>
+                , which act on this computer only.
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div key={row.key} data-source={row.source} data-agent={row.agent}>
+            <h3 className='text-row font-semibold text-ink'>{row.label}</h3>
+            <FactList className='mt-1'>
+              {CAPABILITIES.map((capability) => {
+                const cell = row.capabilities[capability];
+                return (
+                  <FactRow
+                    key={capability}
+                    label={CAPABILITY_LABEL[capability]}
+                    note={cell.level === "yes" ? undefined : cell.reason}
                   >
-                    {CAPABILITY_LEVEL_LABEL[cell.level]}
-                  </span>
-                </FactRow>
-              );
-            })}
-          </FactList>
-        </div>
-      ))}
+                    <span
+                      data-part='capability'
+                      data-level={cell.level}
+                      className={
+                        cell.level === "yes" ? "font-normal text-ink-secondary" : undefined
+                      }
+                    >
+                      {CAPABILITY_LEVEL_LABEL[cell.level]}
+                    </span>
+                  </FactRow>
+                );
+              })}
+            </FactList>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -133,14 +228,17 @@ function Blocks({ sources }: { sources: readonly Declared[] }) {
  * quiet for, each yes, no or partly. Every word and every reason is what the
  * agent's adapter declared, carried on its source's health. The page knows
  * none of them itself, and draws no row for a source that declared nothing.
+ * Another machine has a row for each agent there, as that machine's Agent
+ * Lookout declared it, with no Jump, no Stop and no Answer: "Claude Code on
+ * devbox".
  *
  * It is a table while there is room for one, and a block for each agent on a
  * phone. Nothing in it is coloured: yes and no are words.
  */
 export function CapabilitiesCard({ sources }: { sources: readonly SourceHealth[] }) {
   const narrow = useNarrow();
-  const declared = sources.filter(isDeclared);
-  if (declared.length === 0) return null;
+  const rows = rowsOf(sources);
+  if (rows.length === 0) return null;
 
   return (
     <SectionCard data-slot='capabilities' title='What each agent can report'>
@@ -149,7 +247,7 @@ export function CapabilitiesCard({ sources }: { sources: readonly SourceHealth[]
           A signal marked No never appears for that agent, so not seeing it is not good news.
           {!narrow && " Point at No or Partly, or move to it with Tab, to read why."}
         </p>
-        {narrow ? <Blocks sources={declared} /> : <Table sources={declared} />}
+        {narrow ? <Blocks rows={rows} /> : <Table rows={rows} />}
       </div>
     </SectionCard>
   );

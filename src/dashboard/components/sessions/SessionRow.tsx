@@ -4,6 +4,7 @@ import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
+import { Machine } from "@dashboard/components/sessions/Machine";
 import { Duration, QuietFor } from "@dashboard/components/sessions/StatusTime";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
@@ -47,8 +48,9 @@ interface SessionRowProps {
 const CELL = "px-3 first:pl-6 last:pr-4.5";
 
 /**
- * One session, as a row of the Sessions table: mark and name, the tool when
- * more than one is found, the folder, the app, the status and how long it has
+ * One session, as a row of the Sessions table: mark and name, with the other
+ * machine it runs on in a badge after the name, the tool when more than one
+ * is found, the folder, the app, the status and how long it has
  * lasted read as one phrase, and Jump. A folder or an app that is not known is
  * a dash, so the columns stay in line.
  *
@@ -88,7 +90,9 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * a terminal tab came to is said for a few seconds in a badge beside the name.
  * Where the line cannot hold both, the badge goes under the name, so the name
  * is never cut for it, and the row's height holds the two lines. In a narrow
- * window it is always under the name. The two sentences about macOS that a
+ * window it is always under the name. The badge with the other machine's name
+ * does the same, so a long machine's name never cuts the session's.
+ * The two sentences about macOS that a
  * terminal tab's Jump can say take a line of their own under the name, and the
  * row grows for as long as one is said.
  *
@@ -214,9 +218,12 @@ export function SessionRow({
                 </Truncated>
                 {orphaned && <Badge tone='outline'>Process ended</Badge>}
               </div>
+              {/* The machine, like what Jump came to, goes under the name when the line cannot hold both. */}
+              {!narrow && <Machine session={session} />}
               {!narrow && <JumpNote session={session} jump={jump} />}
             </div>
-            {/* Narrow, there is no room beside the name, so it has a line of its own. */}
+            {/* Narrow, there is no room beside the name, so each has a line of its own. */}
+            {narrow && <Machine session={session} className='justify-self-start' />}
             {narrow && <JumpNote session={session} jump={jump} className='justify-self-start' />}
             {narrow &&
               statusUnder(

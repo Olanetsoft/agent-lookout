@@ -199,3 +199,18 @@ test("nothing is found among no sessions, and the sessions given are not changed
   searchSessions(PAGE, "a", agentOf);
   expect(names(PAGE)).toEqual(before);
 });
+
+test("it finds a session on another machine by the machine's name", () => {
+  const sessions = [
+    session("billing-webhooks"),
+    session("search-indexing", {
+      id: "remote:devbox:claude-code:search-indexing",
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+    }),
+  ];
+  expect(find(sessions, "devbox")).toEqual(["search-indexing"]);
+  expect(find(sessions, "DEV search")).toEqual(["search-indexing"]);
+  expect(find(sessions, "devbox billing")).toEqual([]);
+});

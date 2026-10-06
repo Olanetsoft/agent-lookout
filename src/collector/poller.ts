@@ -143,6 +143,20 @@ export function createPoller(options: PollerOptions): Poller {
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const memory = new Map<SourceId, SourceMemory>();
+
+  /**
+   * The source a session's id names, of the ones polled: the longest id that,
+   * with a colon after it, begins the session's. A machine's name holds no
+   * colon, so `remote:dev:` never begins `remote:devbox:…`.
+   */
+  function sourceOf(sessionId: string): SourceId | null {
+    let found: SourceId | null = null;
+    for (const adapter of adapters) {
+      if (!sessionId.startsWith(`${adapter.id}:`)) continue;
+      if (found === null || adapter.id.length > found.length) found = adapter.id;
+    }
+    return found;
+  }
   /**
    * What the history kept from before this run says of each source's
    * sessions, by the source a session's id begins with, until that source's
@@ -367,10 +381,10 @@ export function createPoller(options: PollerOptions): Poller {
       for (const event of newest.values()) {
         const status = event.kind === "ended" ? null : (event.to ?? null);
         if (event.kind !== "ended" && status === null) continue;
-        // A session's id begins with its source's: `claude-code:…`.
-        const colon = event.sessionId.indexOf(":");
-        if (colon <= 0) continue;
-        const source = event.sessionId.slice(0, colon);
+        // A session's id begins with its source's: `claude-code:…`, or
+        // `remote:devbox:…` for one on another machine.
+        const source = sourceOf(event.sessionId);
+        if (source === null) continue;
         const list = resumed.get(source) ?? [];
         list.push({ id: event.sessionId, name: event.sessionName, status });
         resumed.set(source, list);

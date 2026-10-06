@@ -1,9 +1,10 @@
 /**
  * Finding a session by what the page shows of it: its name, its folder's name,
- * its branch, or the commit in the branch's place, and its agent.
+ * its branch, or the commit in the branch's place, its agent, and the other
+ * machine it runs on.
  *
  * The matching is plain and forgiving. Case and accents are set aside, the
- * words can come in any order, and each must appear somewhere in those four,
+ * words can come in any order, and each must appear somewhere in those,
  * as part of a word or a whole one. Nothing is scored: the order is the page's
  * own, so a session is where the person expects to find it.
  */
@@ -27,7 +28,14 @@ export function searchWords(query: string): string[] {
  */
 function searchedText(session: Session, agent: string): string {
   return fold(
-    [session.name, session.project, session.git?.branch, session.git?.commit, agent]
+    [
+      session.name,
+      session.project,
+      session.git?.branch,
+      session.git?.commit,
+      agent,
+      session.machine,
+    ]
       .filter((part): part is string => typeof part === "string")
       .join(" "),
   );

@@ -1086,3 +1086,32 @@ test("the card says whether the line is in view, and that it is not once it has 
   expect(said.at(-1)).toBe(false);
   expect(newLine(screen.container)).toBeNull();
 });
+
+test.each([375, 1280])(
+  "at %ipx, two sessions of one name, one here and one on another machine, are told apart",
+  async (width) => {
+    await page.viewport(width, 900);
+    const twins = [
+      event(5, at(17, 50, 0), "demo-local", undefined, "advisory", {
+        sessionId: "remote:devbox:claude-code:00000000-0000-4000-8000-000000000005",
+        kind: "appeared",
+        from: undefined,
+      }),
+      event(5, at(17, 49, 0), "demo-local", undefined, "advisory", {
+        kind: "appeared",
+        from: undefined,
+      }),
+    ];
+    const screen = await render(<EventsCard events={twins} now={NOW} />);
+    const [there, here] = rows(screen.container) as [HTMLElement, HTMLElement];
+    expect(here.querySelector('[data-part="machine"]')).toBeNull();
+    const machine = there.querySelector<HTMLElement>('[data-part="machine"]');
+    expect(machine?.textContent).toBe(" on devbox");
+    expect(there.querySelector('[data-part="name"]')?.textContent).toBe("demo-local");
+    // Read as "demo-local on devbox appeared", and the name's tooltip says it too.
+    expect(there.textContent).toMatch(/demo-local on devbox\s*appeared/);
+    expect(warmPaint(machine as HTMLElement)).toEqual([]);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    await page.viewport(414, 896);
+  },
+);

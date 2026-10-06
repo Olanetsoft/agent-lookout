@@ -2562,3 +2562,194 @@ test("hiding the last session left running gives focus to the card's title", asy
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sessions" }).element());
   localStorage.removeItem("agent-lookout-hidden-sessions");
 });
+
+test.each([375, 1280])(
+  "at %ipx, a session on another machine has the machine's name beside its own, and no Jump",
+  async (width) => {
+    await page.viewport(width, 900);
+    const devbox: SourceHealth = {
+      id: "remote:devbox",
+      label: "devbox",
+      machine: "devbox",
+      state: "ok",
+      checkedAt: NOW,
+    };
+    const sessions = [
+      session(1, {
+        name: "here-one",
+        surface: "vscode",
+        status: "working",
+        statusSince: NOW - MINUTE,
+        links: { open: jumpLink(1) },
+      }),
+      makeSession({
+        id: `remote:devbox:claude-code:${uuid(2)}`,
+        source: "remote:devbox",
+        agent: "Claude Code",
+        machine: "devbox",
+        name: "there-one",
+        status: "working",
+        statusSince: NOW - MINUTE,
+      }),
+    ];
+    const screen = await render(
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK, devbox]} now={NOW} />,
+    );
+
+    const row = rowOf(screen.container, "there-one");
+    const badge = row.querySelector<HTMLElement>('[data-part="machine"]');
+    if (!badge) throw new Error("expected the machine's name");
+    // Read as "on devbox", and seen as the name alone, in a quiet badge.
+    expect(badge.textContent).toBe("on devbox");
+    expect(badge.getAttribute("data-slot")).toBe("badge");
+    expect(badge.getAttribute("data-tone")).toBe("neutral");
+    // Beside the name, on its line, and whole, inside the row; narrow, on a line of its own under it.
+    const name = row.querySelector('[data-part="name"]') as HTMLElement;
+    const named = name.getBoundingClientRect();
+    const said = badge.getBoundingClientRect();
+    expect(said.width).toBeGreaterThan(20);
+    if (width === 375) {
+      expect(said.top).toBeGreaterThanOrEqual(named.bottom - 1);
+      expect(said.left).toBe(named.left);
+    } else {
+      expect(said.left).toBeGreaterThanOrEqual(named.right);
+      expect(Math.abs((said.top + said.bottom) / 2 - (named.top + named.bottom) / 2)).toBeLessThan(
+        4,
+      );
+    }
+    expect(said.right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
+    expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth);
+    // One agent here and there is one agent, so no row names it.
+    expect(row.querySelector('[data-part="agent"]')).toBeNull();
+    // Jump acts on this computer only.
+    expect(row.querySelector('[data-part="jump"]')).toBeNull();
+    const here = rowOf(screen.container, "here-one");
+    expect(here.querySelector('[data-part="jump"]')).not.toBeNull();
+    expect(here.querySelector('[data-part="machine"]')).toBeNull();
+    expect(warmPaint(screen.container)).toEqual([]);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);
+
+test("with only another machine read, the empty card says it is watching that machine", async () => {
+  const devbox: SourceHealth = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    checkedAt: NOW,
+  };
+  const screen = await render(
+    <SessionsCard sessions={[]} sources={[SOURCE_OK, devbox]} now={NOW} />,
+  );
+  await expect
+    .element(
+      screen.getByText(
+        "Agent Lookout is watching Claude Code on this computer and the sessions on devbox. A session shows up here within a few seconds of starting.",
+      ),
+    )
+    .toBeVisible();
+});
+
+test.each([375, 1280])(
+  "at %ipx, a machine's name as long as one can be never cuts the session's name, and goes under it when the line cannot hold both",
+  async (width) => {
+    await page.viewport(width, 900);
+    const long = "build-server-eu-west-02a";
+    const there: SourceHealth = {
+      id: `remote:${long}`,
+      label: long,
+      machine: long,
+      state: "ok",
+      checkedAt: NOW,
+    };
+    const sessions = ["demo-local", "checkout-flow-and-payments-retry"].map((name, index) =>
+      makeSession({
+        id: `remote:${long}:claude-code:${uuid(index + 1)}`,
+        source: `remote:${long}`,
+        agent: "Claude Code",
+        machine: long,
+        name,
+        status: "working",
+        statusSince: NOW - MINUTE,
+      }),
+    );
+    const screen = await render(
+      <div style={{ width: width === 375 ? 319 : 760 }}>
+        <SessionsCard sessions={sessions} sources={[SOURCE_OK, there]} now={NOW} />
+      </div>,
+    );
+    for (const sessionName of ["demo-local", "checkout-flow-and-payments-retry"]) {
+      const row = rowOf(screen.container, sessionName);
+      const name = row.querySelector('[data-part="name"]') as HTMLElement;
+      const badge = row.querySelector('[data-part="machine"]') as HTMLElement;
+      // The badge is whole, and the name keeps the room of its line.
+      expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth);
+      expect(name.getBoundingClientRect().width).toBeGreaterThan(60);
+      if (sessionName === "demo-local") expect(name.getAttribute("data-cut")).toBe("false");
+      const said = badge.getBoundingClientRect();
+      const named = name.getBoundingClientRect();
+      if (width === 375 || said.top > named.top + 2) {
+        expect(said.top).toBeGreaterThanOrEqual(named.bottom - 1);
+      }
+      expect(said.right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
+    }
+    // In a wide row, a name and the badge that cannot share the line keep the row's height.
+    if (width === 1280) {
+      const tall = rowOf(screen.container, "checkout-flow-and-payments-retry");
+      const short = rowOf(screen.container, "demo-local");
+      expect(tall.getBoundingClientRect().height).toBe(short.getBoundingClientRect().height);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);
+
+test("with this computer read and another machine not connected, the empty card names the machine", async () => {
+  const devbox: SourceHealth = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "unavailable",
+    checkedAt: NOW,
+  };
+  const screen = await render(
+    <SessionsCard sessions={[]} sources={[SOURCE_OK, devbox]} now={NOW} />,
+  );
+  await expect
+    .element(
+      screen.getByText(
+        "Agent Lookout is watching Claude Code on this computer. devbox is not connected, so its sessions are not known. A session shows up here within a few seconds of starting.",
+      ),
+    )
+    .toBeVisible();
+});
+
+test("a machine that is not connected is left to Sources while this computer is read, and named when nothing is", async () => {
+  const devbox: SourceHealth = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "unavailable",
+    detail: "ssh is connected to devbox, but no Agent Lookout answers on its port 4777.",
+    advice: "Start it there with npx agent-lookout, and leave it running.",
+    checkedAt: NOW,
+  };
+  const calm = await render(
+    <SessionsCard sessions={CALM} sources={[SOURCE_OK, devbox]} now={NOW} />,
+  );
+  expect(calm.container.textContent).not.toContain("devbox");
+  calm.unmount();
+
+  const screen = await render(
+    <SessionsCard
+      sessions={[]}
+      sources={[{ ...SOURCE_OK, state: "unavailable" }, devbox]}
+      now={NOW}
+    />,
+  );
+  await expect.element(screen.getByText("devbox is not connected")).toBeVisible();
+  await expect.element(screen.getByText(/no Agent Lookout answers on its port 4777/)).toBeVisible();
+  await expect
+    .element(screen.getByText("Start it there with npx agent-lookout, and leave it running."))
+    .toBeVisible();
+});

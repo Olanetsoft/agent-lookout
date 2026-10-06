@@ -317,3 +317,80 @@ test("a source that declares nothing has no row, and with none at all there is n
   await screen.rerender(<CapabilitiesCard sources={[]} />);
   expect(card()).toBeNull();
 });
+
+/** Another machine, with the agents its Agent Lookout found there. */
+const MACHINE: SourceHealth = {
+  id: "remote:devbox",
+  label: "devbox",
+  machine: "devbox",
+  state: "ok",
+  checkedAt: NOW,
+  agents: [
+    {
+      label: "Claude Code",
+      capabilities: {
+        ...FIRST,
+        jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+        stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
+        answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
+      },
+    },
+    { label: "Status files", capabilities: THIRD },
+  ],
+};
+
+test.each([1440, 375] as const)(
+  "at %i another machine has a row for each agent there, named for the machine, with no Jump, no Stop and no Answer",
+  async (width) => {
+    await renderAt(width, [source("claude-code", "Claude Code", FIRST), MACHINE]);
+    const rows = [...card().querySelectorAll<HTMLElement>("[data-source]")];
+    expect(rows.map((row) => [row.dataset.source, row.dataset.agent])).toEqual([
+      ["claude-code", undefined],
+      ["remote:devbox", "Claude Code"],
+      ["remote:devbox", "Status files"],
+    ]);
+    const label = (row: HTMLElement) => row.querySelector(width === 375 ? "h3" : "th")?.textContent;
+    expect(rows.map(label)).toEqual([
+      "Claude Code",
+      "Claude Code on devbox",
+      "Status files on devbox",
+    ]);
+    const there = rows[1] as HTMLElement;
+    if (width === 375) {
+      // On a phone, an agent there that reports what it does here is one line.
+      expect(cellsOf(there)).toEqual([]);
+      expect(there.querySelector('[data-part="same-as"]')?.textContent).toBe(
+        "As Claude Code on this computer, but Jump: No, Stop: No and Answer: No, which act on this computer only.",
+      );
+      // One that has no match here keeps its rows.
+      expect(cellsOf(rows[2] as HTMLElement)).toHaveLength(9);
+    } else {
+      const levels = cellsOf(there).map((cell) => cell.getAttribute("data-level"));
+      // Jump, Stop and Answer, the sixth, the eighth and the ninth, are no.
+      expect([levels[5], levels[7], levels[8]]).toEqual(["no", "no", "no"]);
+    }
+    expectCalmCard();
+  },
+);
+
+test("on a phone, an agent there that reports otherwise than here, beyond Jump, Stop and Answer, keeps its rows", async () => {
+  const different: SourceHealth = {
+    ...MACHINE,
+    agents: [
+      {
+        label: "Claude Code",
+        capabilities: {
+          ...FIRST,
+          names: { level: "no", reason: "That version names no session." },
+          jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+          stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
+          answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
+        },
+      },
+    ],
+  };
+  await renderAt(375, [source("claude-code", "Claude Code", FIRST), different]);
+  const there = card().querySelector<HTMLElement>('[data-agent="Claude Code"]') as HTMLElement;
+  expect(there.querySelector('[data-part="same-as"]')).toBeNull();
+  expect(cellsOf(there)).toHaveLength(9);
+});

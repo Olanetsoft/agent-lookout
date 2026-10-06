@@ -33,6 +33,8 @@ import {
   SURFACES,
   TERMINAL_APPS,
   WAITING_REASONS,
+  isMachineName,
+  type AgentCapabilities,
   type AnsweringStatus,
   type AskInput,
   type CapabilityCell,
@@ -110,6 +112,9 @@ export function readSession(value: unknown): Session | null {
 
   const project = text(value.project);
   const status = oneOf(SESSION_STATUSES, value.status) ?? "unknown";
+  // A session on another machine is never given a Jump, a Stop or a request
+  // to answer, whatever is sent: each acts on this computer only.
+  const here = !isMachineName(value.machine);
   const session: Session = {
     id,
     // A source this build has never heard of is kept. Anything that looks a
@@ -133,11 +138,13 @@ export function readSession(value: unknown): Session | null {
     if (detail) session.waitingDetail = detail;
     const asking = text(value.waitingText);
     if (asking) session.waitingText = asking;
-    const ask = readAsk(value.ask);
+    const ask = here ? readAsk(value.ask) : null;
     if (ask) session.ask = ask;
   }
   const agent = text(value.agent);
   if (agent) session.agent = agent;
+  // A machine is named as the setting names it, or not at all.
+  if (isMachineName(value.machine)) session.machine = value.machine;
   const lastWriteAt = number(value.lastWriteAt);
   if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
   const pid = number(value.pid);
@@ -147,10 +154,10 @@ export function readSession(value: unknown): Session | null {
     const open = text(value.links.open);
     if (open) session.links.open = open;
   }
-  const jump = readJump(value.jump);
+  const jump = here ? readJump(value.jump) : null;
   if (jump) session.jump = jump;
   // That it can be stopped, and how. Anything else is read as not.
-  const how = isRecord(value.stop) ? oneOf(STOP_WAYS, value.stop.how) : null;
+  const how = here && isRecord(value.stop) ? oneOf(STOP_WAYS, value.stop.how) : null;
   if (how) session.stop = { how };
   const git = readGit(value.git);
   if (git) session.git = git;
@@ -365,7 +372,27 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   if (basis) source.basis = basis;
   const capabilities = readCapabilities(value.capabilities);
   if (capabilities) source.capabilities = capabilities;
+  if (isMachineName(value.machine)) source.machine = value.machine;
+  if (Array.isArray(value.agents)) {
+    const agents: AgentCapabilities[] = [];
+    for (const item of value.agents.slice(0, MAX_AGENTS)) {
+      const agent = readAgent(item);
+      if (agent) agents.push(agent);
+    }
+    if (agents.length > 0) source.agents = agents;
+  }
   return source;
+}
+
+/** The most agents read for one machine. A machine sends one for each of its sources. */
+const MAX_AGENTS = 20;
+
+/** What one agent on another machine can report: its name and every cell, or null. */
+function readAgent(value: unknown): AgentCapabilities | null {
+  if (!isRecord(value)) return null;
+  const label = text(value.label);
+  const capabilities = readCapabilities(value.capabilities);
+  return label && capabilities ? { label, capabilities } : null;
 }
 
 /** One cell of what a source can report: yes, or no or partly with the reason why. */

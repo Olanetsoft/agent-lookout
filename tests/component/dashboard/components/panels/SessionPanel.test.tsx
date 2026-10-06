@@ -13,6 +13,7 @@ import type {
 import { SessionPanel } from "@dashboard/components/panels/SessionPanel";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { readSession } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
@@ -926,4 +927,105 @@ test("what Stop came to is not said again once the details have closed and opene
   await expect.element(dialog("checkout-flow")).toBeVisible();
   expect(document.querySelector('[data-part="stop-outcome"]')).toBeNull();
   expect(document.querySelector('[data-part="stop-confirm"]')).toBeNull();
+});
+
+test("a session on another machine names the machine, says why it has no Jump, no Stop and no Allow or Deny, and has none", async () => {
+  const id = "remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa";
+  const there = makeSession({
+    id,
+    source: "remote:devbox",
+    agent: "Claude Code",
+    machine: "devbox",
+    name: "demo-there",
+    status: "working",
+    statusSince: ago(3),
+  });
+  const devbox = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    checkedAt: NOW,
+  } as const;
+  await renderPanel(
+    id,
+    state({
+      snapshot: {
+        generatedAt: NOW,
+        sources: [...SOURCES, devbox],
+        sessions: [...sessions(), there],
+      },
+    }),
+  );
+  const panel = dialog("demo-there");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+  // The machine, with why there is no Jump, no Stop and no Allow or Deny as its note.
+  expect(facts(root)).toMatchObject({
+    Agent: "Claude Code",
+    Machine:
+      "devbox | Read over SSH. Jump, Stop, Allow and Deny work on this computer only, so use that machine to go to it, stop it or answer it.",
+  });
+  const head = root.querySelector("header") as HTMLElement;
+  expect(
+    [...head.querySelectorAll("a, button")].map((control) => control.getAttribute("aria-label")),
+  ).toEqual(["Close"]);
+});
+
+test("a session on another machine waiting for permission, as the page reads it, has no Allow, no Deny and no Stop, whatever was sent", async () => {
+  const id = "remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa";
+  // Sent with everything that acts, as only a session here may be.
+  const there = readSession({
+    ...makeSession({
+      id,
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+      name: "demo-there",
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingText: "Run: npm test",
+      statusSince: ago(2),
+    }),
+    jump: { kind: "tmux", place: "work:1.0" },
+    stop: { how: "signal" },
+    ask: {
+      requestId: "0123456789abcdef0123456789abcdef",
+      tool: "Bash",
+      command: "npm test",
+      allow: true,
+      until: NOW + 300_000,
+    },
+  });
+  if (!there) throw new Error("expected a session");
+  const devbox = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    checkedAt: NOW,
+  } as const;
+  await renderPanel(
+    id,
+    state({
+      snapshot: {
+        generatedAt: NOW,
+        sources: [...SOURCES, devbox],
+        sessions: [...sessions(), there],
+      },
+    }),
+  );
+  const panel = dialog("demo-there");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+  expect(root.querySelector('[data-slot="answer"]')).toBeNull();
+  const buttons = [...root.querySelectorAll("button")].map((button) => button.textContent);
+  expect(buttons).not.toContain("Allow");
+  expect(buttons).not.toContain("Deny");
+  const head = root.querySelector("header") as HTMLElement;
+  expect(
+    [...head.querySelectorAll("a, button")].map((control) => control.getAttribute("aria-label")),
+  ).toEqual(["Close"]);
+  // What it asks is still said, as the other machine sent it.
+  await expect.element(panel).toHaveTextContent("Run: npm test");
 });

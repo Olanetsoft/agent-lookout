@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
   changeNotice,
   NOTICE_EVENT_LABEL,
+  noticeTitle,
   overPhrase,
   sessionTitle,
   waitingLabel,
@@ -131,4 +132,25 @@ test("a notification of a wait says what the session is asking after the reason,
   expect(waitNotice({ ...session, waitingText: "  " }).body).toBe("Waiting for permission");
   // A session that is over says only what happened.
   expect(changeNotice({ event: "ended", session }).body).toBe("Ended");
+});
+
+test("a notification of a session on another machine names the machine after the session", () => {
+  const session = makeSession({
+    id: "remote:devbox:claude-code:4242",
+    source: "remote:devbox",
+    machine: "devbox",
+    name: "billing-webhooks",
+    status: "needs-you",
+    waitingReason: "question",
+  });
+  expect(noticeTitle(session)).toBe("billing-webhooks on devbox");
+  expect(waitNotice(session)).toEqual({
+    title: "billing-webhooks on devbox",
+    body: "Asked you a question",
+  });
+  expect(changeNotice({ event: "ended", session })).toEqual({
+    title: "billing-webhooks on devbox",
+    body: "Ended",
+  });
+  expect(noticeTitle(makeSession({ name: "billing-webhooks" }))).toBe("billing-webhooks");
 });

@@ -1,4 +1,9 @@
-import type { SessionsSnapshot, SourceHealth, Surface } from "@core/sessions/session";
+import {
+  isRemoteSource,
+  type SessionsSnapshot,
+  type SourceHealth,
+  type Surface,
+} from "@core/sessions/session";
 import type { CollectorPhase, ProblemKind } from "@dashboard/lib/api/collectorStore";
 import { formatAgo, formatClock, sentenceStart } from "@dashboard/lib/format";
 import { sourceNames } from "@dashboard/lib/sources/sources";
@@ -20,6 +25,29 @@ const LAST_KNOWN_LABEL: Record<SourceHealth["state"], string> = {
   error: "Last known: not working",
 };
 
+/**
+ * The same states for another machine, which is connected or not: "Connected"
+ * while its sessions are read, "Connecting" while ssh signs in the first time,
+ * and "Not connected" for every reason it is not read. The collector says a
+ * machine that is not connected is unavailable, as a tool that is not on this
+ * computer is, and the card gives the reason.
+ */
+const MACHINE_STATE_LABEL: Record<SourceHealth["state"], string> = {
+  ok: "Connected",
+  searching: "Connecting",
+  unavailable: "Not connected",
+  "not-set-up": "Not set up",
+  error: "Not connected",
+};
+
+const MACHINE_LAST_KNOWN_LABEL: Record<SourceHealth["state"], string> = {
+  ok: "Last known: connected",
+  searching: "Last known: connecting",
+  unavailable: "Last known: not connected",
+  "not-set-up": "Last known: not set up",
+  error: "Last known: not connected",
+};
+
 /** A state the page does not know is read as a problem, never as healthy. */
 function knownState(state: SourceHealth["state"]): SourceHealth["state"] {
   return Object.hasOwn(SOURCE_STATE_LABEL, state) ? state : "error";
@@ -29,18 +57,22 @@ function knownState(state: SourceHealth["state"]): SourceHealth["state"] {
  * How one source reads in the Sources view. While answers arrive it is the
  * source's own state. Once they stop, the state is only what was last heard, and
  * the words say so, so a source never reads as healthy under a notice that
- * updates have stopped.
+ * updates have stopped. Another machine is connected or not, in those words.
  */
 export function sourceLine(
   source: Pick<SourceHealth, "id" | "label" | "state">,
   stalled: boolean,
 ): SourceLine {
   const state = knownState(source.state);
-  return {
-    key: source.id,
-    name: source.label,
-    state: stalled ? LAST_KNOWN_LABEL[state] : SOURCE_STATE_LABEL[state],
-  };
+  const machine = isRemoteSource(source.id);
+  const label = machine
+    ? stalled
+      ? MACHINE_LAST_KNOWN_LABEL
+      : MACHINE_STATE_LABEL
+    : stalled
+      ? LAST_KNOWN_LABEL
+      : SOURCE_STATE_LABEL;
+  return { key: source.id, name: source.label, state: label[state] };
 }
 
 /** Which sentence the header's status line is. */
@@ -117,8 +149,14 @@ function sourcesIn(sources: readonly SourceHealth[], state: SourceHealth["state"
  * A source that is not set up, such as a folder of status files nobody has
  * made, is never named: it is not being watched.
  *
+ * Another machine is no agent tool, so it is named apart, after them: "and
+ * from devbox over SSH" while it is read, and "devbox not connected" after
+ * the sentence while it is not, so its sessions are never missing from the
+ * line without a word.
+ *
  * Each sentence also has a short form, for a window too narrow for the whole
- * line. It keeps the count and the fact beside it, and drops the names.
+ * line. It keeps the count and the fact beside it, and drops the names, all
+ * but a machine's that is not connected.
  */
 export function statusSentence(
   phase: CollectorPhase,
@@ -151,9 +189,9 @@ export function statusSentence(
     };
   }
 
-  const sources = (snapshot?.sources ?? []).filter((source) => source.state !== "not-set-up");
+  const listed = (snapshot?.sources ?? []).filter((source) => source.state !== "not-set-up");
   const sessions = snapshot?.sessions ?? [];
-  if (sources.length === 0) {
+  if (listed.length === 0) {
     return {
       key: "no-sources",
       text: "Not watching any agent tool",
@@ -162,60 +200,94 @@ export function statusSentence(
     };
   }
 
-  const checkedAt = Math.max(...sources.map((source) => source.checkedAt));
+  const checkedAt = Math.max(...listed.map((source) => source.checkedAt));
   const fact = { text: `checked ${formatAgo(now - checkedAt)}`, ticking: true };
+
+  // This computer's tools, and the other machines, which are said apart: a
+  // machine is no agent tool, and one that is not connected is never left out.
+  const sources = listed.filter((source) => !isRemoteSource(source.id));
+  const machines = listed.filter((source) => isRemoteSource(source.id));
+  const connected = sourcesIn(machines, "ok");
+  const connecting = sourcesIn(machines, "searching");
+  const away = machines.filter((source) => {
+    const state = knownState(source.state);
+    return state === "unavailable" || state === "error";
+  });
+  const overSsh = connected.length > 0 ? `${sourceNames(connected)} over SSH` : "";
+  const sentence = (base: Omit<StatusSentence, "fact">): StatusSentence => {
+    if (away.length === 0) return { ...base, fact };
+    const note = `${sourceNames(away)} not connected`;
+    return { ...base, text: `${base.text} · ${note}`, short: `${base.short} · ${note}`, fact };
+  };
 
   if (sessions.length > 0) {
     const count = `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`;
     // With one tool the sentence names the apps the sessions run in. With more,
     // it names the tools instead, since which tools are watched matters more
-    // than where, and the line has room for only one list.
+    // than where, and the line has room for only one list. Another machine
+    // read is named after them, "and from devbox over SSH".
     const watched = sourcesIn(sources, "ok");
     const apps = appsIn(sessions);
-    const where = watched.length > 1 ? ` from ${sourceNames(watched)}` : apps ? ` in ${apps}` : "";
-    return {
+    const here =
+      watched.length > 1 || (watched.length === 1 && overSsh)
+        ? `from ${sourceNames(watched)}`
+        : apps && !overSsh
+          ? `in ${apps}`
+          : "";
+    const there = overSsh ? `from ${overSsh}` : "";
+    const where = [here, there].filter(Boolean).join(", and ");
+    return sentence({
       key: "watching",
-      text: `Watching ${count}${where}`,
+      text: `Watching ${count}${where ? ` ${where}` : ""}`,
       short: count,
-      fact,
-    };
+    });
   }
 
   const searching = sourcesIn(sources, "searching");
-  if (searching.length > 0) {
-    return {
+  if (searching.length > 0 || connecting.length > 0) {
+    const looking = searching.length > 0 ? `Looking for ${sourceNames(searching)} sessions` : "";
+    const signing =
+      connecting.length > 0 ? `connecting to ${sourceNames(connecting)} over SSH` : "";
+    return sentence({
       key: "searching",
-      text: `Looking for ${sourceNames(searching)} sessions`,
-      short: "Looking for sessions",
-      fact,
-    };
+      text: looking ? [looking, signing].filter(Boolean).join(", and ") : sentenceStart(signing),
+      short: looking ? "Looking for sessions" : "Connecting over SSH",
+    });
   }
   const ok = sourcesIn(sources, "ok");
-  if (ok.length > 0) {
-    return {
+  if (ok.length > 0 || connected.length > 0) {
+    const watched = [ok.length > 0 ? sourceNames(ok) : "", overSsh].filter(Boolean).join(", and ");
+    return sentence({
       key: "none-running",
-      text: `Watching ${sourceNames(ok)}, no sessions running`,
+      text: `Watching ${watched}, no sessions running`,
       short: "No sessions",
-      fact,
-    };
+    });
   }
   // The short forms use the words the Sources view puts beside each source.
   const broken = sourcesIn(sources, "error");
   if (broken.length > 0) {
-    return {
+    return sentence({
       key: "not-working",
       text: `${sentenceStart(sourceNames(broken))} could not be read`,
       short: broken.length === 1 ? "Source not working" : "Sources not working",
+    });
+  }
+  const missing = sourcesIn(sources, "unavailable");
+  if (missing.length === 0) {
+    // Only other machines are named, and none is connected.
+    const one = away.length === 1;
+    return {
+      key: "not-found",
+      text: `${sourceNames(away)} ${one ? "is" : "are"} not connected`,
+      short: `${sourceNames(away)} not connected`,
       fact,
     };
   }
-  const missing = sourcesIn(sources, "unavailable");
-  return {
+  return sentence({
     key: "not-found",
     text: `${sentenceStart(sourceNames(missing))} ${missing.length === 1 ? "was" : "were"} not found`,
     short: missing.length === 1 ? "Source not found" : "Sources not found",
-    fact,
-  };
+  });
 }
 
 /**

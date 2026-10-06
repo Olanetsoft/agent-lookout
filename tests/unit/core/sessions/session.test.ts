@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 
 import {
+  isMachineName,
+  isRemoteSource,
+  machineInId,
+  nameOnMachine,
+  remoteSourceId,
   surfaceLabel,
   withoutWaitingText,
   type HistoryPoint,
@@ -38,6 +43,29 @@ const snapshot: SessionsSnapshot = {
       },
       checkedAt: 1_700_000_060_000,
     },
+    {
+      id: "remote:devbox",
+      label: "devbox",
+      machine: "devbox",
+      state: "ok",
+      agents: [
+        {
+          label: "Claude Code",
+          capabilities: {
+            "working-and-idle": { level: "yes" },
+            "needs-you": { level: "yes" },
+            finished: { level: "partly", reason: "Only background jobs." },
+            failed: { level: "partly", reason: "Only background jobs." },
+            names: { level: "yes" },
+            jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+            "quiet-for": { level: "no", reason: "The file read is not rewritten." },
+            stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
+            answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
+          },
+        },
+      ],
+      checkedAt: 1_700_000_060_000,
+    },
   ],
   sessions: [
     {
@@ -58,6 +86,21 @@ const snapshot: SessionsSnapshot = {
       links: {
         open: "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000001",
       },
+      stale: false,
+    },
+    {
+      id: "remote:devbox:claude-code:00000000-0000-4000-8000-000000000002",
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+      surface: "terminal",
+      name: "demo-api",
+      cwd: "/Users/example/code/demo-api",
+      project: "demo-api",
+      status: "working",
+      startedAt: 1_700_000_000_000,
+      statusSince: 1_700_000_040_000,
+      links: {},
       stale: false,
     },
   ],
@@ -130,4 +173,34 @@ test("a held permission request is forgotten with what the session was asking", 
   expect(kept).not.toHaveProperty("ask");
   expect(kept).not.toHaveProperty("waitingText");
   expect(JSON.stringify(kept)).not.toContain("npm test");
+});
+
+test("another machine's source is remote: and its name, and its name is letters, digits and dashes", () => {
+  expect(remoteSourceId("devbox")).toBe("remote:devbox");
+  expect(isRemoteSource("remote:devbox")).toBe(true);
+  expect(isRemoteSource("claude-code")).toBe(false);
+  expect(isRemoteSource("status-files")).toBe(false);
+  expect(isMachineName("gpu-vm-2")).toBe(true);
+  for (const name of ["", "-devbox", "dev box", "dev:box", "a".repeat(25), 7]) {
+    expect(isMachineName(name), String(name)).toBe(false);
+  }
+});
+
+test("the machine a session's id names, for what carries its id and not the session", () => {
+  expect(machineInId("remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa")).toBe(
+    "devbox",
+  );
+  expect(machineInId("remote:gpu-vm-2:status-files:night-shift.json")).toBe("gpu-vm-2");
+  expect(machineInId("claude-code:00000000-0000-4000-8000-0000000000aa")).toBeNull();
+  // An id that is not one a machine's source gives names no machine.
+  expect(machineInId("remote:")).toBeNull();
+  expect(machineInId("remote:devbox")).toBeNull();
+  expect(machineInId("remote:dev box:claude-code:1")).toBeNull();
+  expect(machineInId("remote::claude-code:1")).toBeNull();
+});
+
+test("a session's name says the other machine it runs on after it, and nothing for this one", () => {
+  expect(nameOnMachine("demo-local", "devbox")).toBe("demo-local on devbox");
+  expect(nameOnMachine("demo-local", null)).toBe("demo-local");
+  expect(nameOnMachine("demo-local", undefined)).toBe("demo-local");
 });

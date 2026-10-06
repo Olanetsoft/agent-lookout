@@ -216,6 +216,8 @@ The card for status files gives the folder it reads, normally `~/.agent-lookout/
 
 When an agent is not on this computer, its card says Not found, and after the first few seconds the Overview does not mention it, unless neither is found.
 
+Each [other machine](#another-machine-over-ssh) named in `AGENT_LOOKOUT_REMOTES` has a card too, titled with its name. It says Connected, Connecting or Not connected, and why when it is not, and its rows give the ssh target, the command Agent Lookout runs, the two routes it asks for, how often, the version of Agent Lookout there and what each source there is doing.
+
 #### What each agent can report
 
 Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session) and [Answer](#answer-a-permission-prompt), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
@@ -250,6 +252,8 @@ Why, for each No and Partly:
 - Status files, Quiet for: If the agent writes its file again as it works.
 - Status files, Stop: Any program can write a status file, so nothing in one is used to stop a session.
 - Status files, Answer: A status file only says a session waits, and holds nothing to answer it through.
+
+Each [other machine](#another-machine-over-ssh) adds a row for each agent found there, such as Claude Code on devbox, with what that machine's Agent Lookout says its agent can report, and No for Jump, Stop and Answer, which act on this computer only.
 
 ### Settings
 
@@ -736,6 +740,7 @@ With `--json` it prints:
       "id": "claude-code:00000000-0000-4000-8000-000000000001",
       "name": "checkout-flow",
       "agent": "Claude Code",
+      "machine": null,
       "reason": "permission",
       "waitingSince": 1791205668000,
       "waitedMs": 252000
@@ -752,6 +757,7 @@ With `--json` it prints:
 | `id`                                   | The session's id, as `/api/sessions` gives it                                                                                                                                     |
 | `name`                                 | The session's name, exactly as its agent gave it                                                                                                                                  |
 | `agent`                                | `Claude Code`, or the agent a [status file](#your-own-agents) names                                                                                                               |
+| `machine`                              | The [other machine](#another-machine-over-ssh) it runs on, such as `devbox`, or `null` for this computer. Its line in the text says `on devbox` after the name                    |
 | `reason`                               | `permission`, `question` or `other`                                                                                                                                               |
 | `waitingSince`                         | When the wait began, in milliseconds since 1970, or `null` when that is not known                                                                                                 |
 | `waitedMs`                             | How long it has waited, in milliseconds, or `null`                                                                                                                                |
@@ -852,11 +858,11 @@ It finds Agent Lookout as `agent-lookout status` does: at `http://127.0.0.1:4777
 
 It has three tools:
 
-| Tool                   | Answers                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `list_sessions`        | Every session, those that need you first, longest wait first, then the rest by status, with its `id`, `name`, `agent`, `status`, the `reason` when it needs you, its `folder`, `branch` or `commit`, with [pull requests](#pull-requests) on its `pullRequest`, `app`, `since` and, for a working session, `quietFor`. Give it a `status` to list only those |
-| `sessions_needing_you` | The sessions that need you, longest wait first, with how long each has waited, and a `summary` in one sentence                                                                                                                                                                                                                                               |
-| `sources`              | Each source's state, as the Sources view says it, and its row of [what each agent can report](#what-each-agent-can-report), with the reason for each no and partly                                                                                                                                                                                           |
+| Tool                   | Answers                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_sessions`        | Every session, those that need you first, longest wait first, then the rest by status, with its `id`, `name`, `agent`, the `machine` it runs on, or `null` for this computer, `status`, the `reason` when it needs you, its `folder`, `branch` or `commit`, with [pull requests](#pull-requests) on its `pullRequest`, `app`, `since` and, for a working session, `quietFor`. Give it a `status` to list only those |
+| `sessions_needing_you` | The sessions that need you, longest wait first, with how long each has waited, and a `summary` in one sentence                                                                                                                                                                                                                                                                                                      |
+| `sources`              | Each source's state, as the Sources view says it, and its row of [what each agent can report](#what-each-agent-can-report), with the reason for each no and partly                                                                                                                                                                                                                                                  |
 
 Each answers in JSON. `sessions_needing_you` gives, for example:
 
@@ -870,6 +876,7 @@ Each answers in JSON. `sessions_needing_you` gives, for example:
       "id": "status-files:checkout-flow.json",
       "name": "checkout-flow",
       "agent": "Night Shift",
+      "machine": null,
       "reason": "permission",
       "folder": "storefront",
       "branch": null,
@@ -885,7 +892,7 @@ Each answers in JSON. `sessions_needing_you` gives, for example:
 }
 ```
 
-Times are in ISO 8601. A field that is not known is `null`. `counted` is `false` until Agent Lookout has read an agent, when an empty list says nothing, and the summary says so. When an agent's sessions could not be read, such as Claude Code's, the summary names that agent and says its sessions are not counted. `pullRequest` is `{ "number": 51, "checks": "failing" }` for a branch whose pull request Agent Lookout found, with `checks` one of `failing`, `pending`, `passing` and `none`, and `null` for every other session and whenever `AGENT_LOOKOUT_PULL_REQUESTS` is not `on`. It never holds the title, which someone else may have written. `quietFor` is how long a working session's agent has written nothing to the file it is read from, given whenever the agent's source gives that time. From 5 minutes it is what the Sessions list shows as [Quiet for](#quiet-for). Not every agent can report a wait: a Codex session waiting for your approval shows as working. `sources` says which can report what.
+Times are in ISO 8601. A field that is not known is `null`. A session on [another machine](#another-machine-over-ssh) has that machine's name in `machine`, and the summary says it after the name, `"checkout-flow" on devbox`: its `folder` is on that machine, not this one. `counted` is `false` until Agent Lookout has read an agent, when an empty list says nothing, and the summary says so. When an agent's sessions could not be read, such as Claude Code's, the summary names that agent and says its sessions are not counted. `pullRequest` is `{ "number": 51, "checks": "failing" }` for a branch whose pull request Agent Lookout found, with `checks` one of `failing`, `pending`, `passing` and `none`, and `null` for every other session and whenever `AGENT_LOOKOUT_PULL_REQUESTS` is not `on`. It never holds the title, which someone else may have written. `quietFor` is how long a working session's agent has written nothing to the file it is read from, given whenever the agent's source gives that time. From 5 minutes it is what the Sessions list shows as [Quiet for](#quiet-for). Not every agent can report a wait: a Codex session waiting for your approval shows as working. `sources` says which can report what.
 
 A session's name, its agent's name, its folder and its branch are written by other programs, such as an agent that writes a [status file](#your-own-agents). The tools say so in their descriptions and in each answer, the summary puts each name in quotation marks, and anything a terminal would act on is taken out of them, as `agent-lookout status` does, and so is any character that shows nothing, in which words could be hidden from you but not from a model. An agent should still treat them as data, never as instructions.
 
@@ -937,6 +944,53 @@ The session appears in Sessions as `docs-site`, in Terminal, moves to Needs you 
 
 Agent Lookout only reads the folder. It never makes it, and never writes, renames or deletes anything in it. When a session ends, delete its file, or write `finished` or `failed` to keep it on screen for a day and delete the file after that, for example the next time the agent starts. A file that is no longer shown still takes one of the 200 places until it is deleted. Any program that can write in the folder can put a session on the dashboard. Under your home folder, that means programs you run.
 
+## Another machine over SSH
+
+Agent Lookout can show the sessions on another machine you reach with ssh, such as a dev box or a cloud VM, beside the ones on this computer. It takes two steps, and a third to check.
+
+1. On the other machine, start Agent Lookout as usual, and leave it running:
+
+   ```sh
+   npx agent-lookout
+   ```
+
+   There it listens on that machine's `127.0.0.1:4777` only, as it does here, so nothing else on its network can reach it.
+
+2. On this computer, name the machine when you start Agent Lookout:
+
+   ```sh
+   AGENT_LOOKOUT_REMOTES=devbox=dev@devbox.local npx agent-lookout
+   ```
+
+   `devbox` is the name shown beside its sessions, and `dev@devbox.local` is what you type after `ssh` to reach it: a host from your `~/.ssh/config`, a host name, or `user@host`. Name more machines with commas, up to eight: `devbox=dev@devbox.local,gpu=gpu-vm`. When Agent Lookout listens on another port there, give it after a colon: `gpu=gpu-vm:4800`.
+
+3. Open Sources. The devbox card says Connected, with the version of Agent Lookout there, and its sessions are in the lists on the Overview with `devbox` beside each. If it says Not connected, its card says why and what to do, and [If a machine's card says Not connected](#if-a-machines-card-says-not-connected) has more.
+
+`ssh dev@devbox.local` must connect from a terminal here without asking you anything first: Agent Lookout runs ssh so that it never asks for a password, a passphrase or whether to trust a host key, and never sees a key or a password itself.
+
+### How it works
+
+For each machine Agent Lookout runs your own `ssh`, as this command, with a free port of this computer's in place of `53211`:
+
+```sh
+ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -L 127.0.0.1:53211:127.0.0.1:4777 -- dev@devbox.local
+```
+
+It forwards that port on this computer's loopback to Agent Lookout's on the other machine's loopback, and runs no command there. ssh signs in with your ssh config and your agent. BatchMode stops it asking anything. `ControlMaster=no` and `ControlPath=none` make it a connection of its own every time, even when your ssh config shares connections, so it never joins an ssh you have open, never leaves one running in the background, and its forward ends when it ends.
+
+- Every 2 seconds, Agent Lookout asks the other machine's Agent Lookout for two things through the tunnel, `GET /api/health` and `GET /api/sessions`, and nothing else. Nothing is installed there, and nothing is kept there.
+- Its sessions appear in the same lists as this computer's, each with the machine's name beside its own, and so do its waits and its events in the charts and the Events log, so two sessions of one name, one here and one there, are told apart. A waiting one is in Needs you and is counted there, and its notification names the machine after the session, `docs-site on devbox`. What a waiting session is asking shows when the other machine sends it, as it does, unless `AGENT_LOOKOUT_WAITING_TEXT=off` is set here, which turns it off for every machine. `agent-lookout status` and `agent-lookout mcp` name the machine too.
+- Its sessions have no Jump, no Stop and no Allow or Deny. Each acts on this computer only.
+- Sources has a card for each machine. It says Connected, with the version of Agent Lookout there and what each of its sources is doing; Connecting, while ssh signs in the first time; or Not connected, with the reason and what to do: ssh was not found, the machine turned ssh away and ssh's own words for why, the connection dropped, no Agent Lookout is answering on its port, or what answers there is not Agent Lookout or sends a list this version cannot read. A first connection that has not answered within 10 seconds is Not connected, still connecting, until ssh connects or gives up. [What each agent can report](#what-each-agent-can-report) has a row for each agent found there, such as Claude Code on devbox.
+- A machine that is not connected, as when it is switched off, is no fault: nothing on the Overview turns red or amber for it. The header says `devbox not connected`, and while nothing on this computer needs you the hero says `Nothing on this computer needs you`, and that devbox's sessions are not known. The charts go on without its sessions.
+- When ssh ends, Agent Lookout starts it again after 1 second, then 2, 5, 10 and 30 seconds, and then every minute, until it connects. ssh notices within a minute that the other machine has gone. When Agent Lookout stops, it ends every ssh it started, with SIGKILL if one has not ended 2 seconds after SIGTERM.
+- A machine that is slow or cannot be reached does not hold up this computer's sessions. Each read waits for it half a second at most, and a slower answer is used at the next read.
+- A name is letters, digits and dashes, up to 24, starting with a letter or a digit. A target is letters, digits, dots, dashes and underscores, with at most one `@`. A space, a leading dash or any other punctuation, a name given twice, or more than eight machines, and no machine is read: Agent Lookout prints one line saying which entry is wrong, Sources shows an Other machines card that says the same, and it carries on with this computer alone.
+- ssh is looked for on your `PATH`, then in `/usr/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. `AGENT_LOOKOUT_SSH_BIN` names another, and then it is the only one looked at.
+- While a tunnel is up, any program or user on this computer can reach the other machine's Agent Lookout through its port, as [SECURITY.md](../SECURITY.md) says. Name a machine only from a computer whose other users you trust with it.
+
+A session on another machine is read as that machine's Agent Lookout reads it, so what it can show is what its agent can show there. Each machine is read on its own: Agent Lookout there does not pass on the sessions of a machine it reads in turn.
+
 ## On Linux
 
 Agent Lookout is installed and started on Linux as on a Mac, and reads the same folders: `~/.claude/sessions`, `~/.codex` and `~/.agent-lookout/sessions`. CI runs every test on Ubuntu, and there it also starts the built app with `npm start` and checks that it lists a Claude Code session, Codex sessions and a session from a status file, each with the right status. No one has yet used it on a Linux desktop.
@@ -960,7 +1014,7 @@ Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on 
 
 ## What it does not do yet
 
-It cannot resume a session or send it a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
+It cannot resume a session or send it a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), on this computer and on [another machine](#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
@@ -993,7 +1047,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_CLAUDE_BIN`     | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                                                                                                                                                                                                                 |
 | `AGENT_LOOKOUT_CLAUDE_HOME`    | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                                                                                                                                                                                                                          |
 | `AGENT_LOOKOUT_CLAUDE_FEED`    | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.                                                                                                                                                                                                         |
-| `AGENT_LOOKOUT_WAITING_TEXT`   | Set to `off` and Agent Lookout never opens a Claude Code transcript. A waiting session then shows its reason alone, without what it is asking.                                                                                                                                                                                                                             |
+| `AGENT_LOOKOUT_WAITING_TEXT`   | Set to `off` and Agent Lookout never opens a Claude Code transcript. A waiting session then shows its reason alone, without what it is asking, and so does one on [another machine](#another-machine-over-ssh).                                                                                                                                                            |
 | `AGENT_LOOKOUT_CODEX_HOME`     | A folder to read in place of the Codex folder. A folder with no `sessions` folder in it shows no Codex sessions.                                                                                                                                                                                                                                                           |
 | `CODEX_HOME`                   | Codex's own setting for where it keeps its files. When it is set, Agent Lookout reads that folder too, unless `AGENT_LOOKOUT_CODEX_HOME` is set.                                                                                                                                                                                                                           |
 | `AGENT_LOOKOUT_STATUS_DIR`     | A folder of [status files](#your-own-agents) to read in place of `~/.agent-lookout/sessions`.                                                                                                                                                                                                                                                                              |
@@ -1017,11 +1071,13 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_WEBHOOK_AFTER`  | How many seconds a wait lasts before it is posted, from 0 to 86400. The default is 60.                                                                                                                                                                                                                                                                                     |
 | `AGENT_LOOKOUT_WEBHOOK_ASKING` | Set to `on` and the post for a wait says what the session is asking, as `AGENT_LOOKOUT_EMAIL_ASKING` does for email. The default is `off`. See [Webhook](#what-a-waiting-session-is-asking-in-a-post).                                                                                                                                                                     |
 | `AGENT_LOOKOUT_PULL_REQUESTS`  | Set to `on` and Agent Lookout asks your own `gh` for each session's [pull request](#pull-requests) on github.com and its checks, and shows them. The default is `off`. With it on, the names of the repository and the branch go to GitHub, through `gh`, with `gh`'s own login. Any value but `on` or `off` leaves it off, and the card and the terminal name the setting |
+| `AGENT_LOOKOUT_REMOTES`        | Other machines to read over SSH, as `name=target`, separated by commas, such as `devbox=dev@devbox.local,gpu=gpu-vm:4800`. Unset, none is read. See [Another machine over SSH](#another-machine-over-ssh).                                                                                                                                                                 |
+| `AGENT_LOOKOUT_SSH_BIN`        | The full path of the `ssh` program used to reach those machines. When set, it is the only place Agent Lookout looks.                                                                                                                                                                                                                                                       |
 | `AGENT_LOOKOUT_URL`            | The address `agent-lookout status` and `agent-lookout mcp` ask, such as `http://127.0.0.1:4778`, in place of `http://127.0.0.1:4777` and then `http://localhost:5173`. Only an address on this computer is accepted. Set it where the command runs, not where Agent Lookout starts.                                                                                        |
 
 To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR` and `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
 
-The Claude Code, transcript, Codex, status file, history, notification, tmux, terminal tab, stop, email, webhook and pull request settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, transcript, Codex, status file, history, notification, tmux, terminal tab, stop, other machine, email, webhook and pull request settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -1198,6 +1254,32 @@ Use `http://localhost:5173` if you started it with `npm run dev`. It prints the 
 ### No pull request shows
 
 Pull requests are off unless Agent Lookout was started with `AGENT_LOOKOUT_PULL_REQUESTS=on`. The Pull requests card in Settings says whether they are on, and whether `gh` was found and is signed in: run `gh auth status` in a terminal to check, and `gh auth login` to sign in. A session shows one only when its branch has a pull request on github.com, its repository's remote is on github.com, and the branch is not the default one and is not named with digits alone, such as `51`. A new pull request, or a check that has finished, shows within about 2 minutes. The Mac app opened from the Finder or the Dock gets none of your shell's settings: [Desktop app](#desktop-app) says how to give it one.
+
+### If a machine's card says Not connected
+
+A machine named in `AGENT_LOOKOUT_REMOTES` is read through ssh, then through Agent Lookout on that machine, so check each in turn. Its card in Sources says which went wrong, and what to do.
+
+1. In a terminal on this computer, run ssh as Agent Lookout does, with the target you named:
+
+   ```sh
+   ssh -o BatchMode=yes dev@devbox.local true
+   ```
+
+   It should end at once and print nothing. If it asks for a password or a passphrase, or whether to trust the host's key, or fails, Agent Lookout's ssh fails the same way: add your key to your ssh agent, or answer the question once in a plain `ssh dev@devbox.local`, then try again.
+
+2. On the other machine, check that Agent Lookout is running there:
+
+   ```sh
+   curl -s http://127.0.0.1:4777/api/health
+   ```
+
+   It should print `{"ok":true,"version":"…"}`. If nothing answers, start it there with `npx agent-lookout`. If it listens on another port there, give that port after the target here, `devbox=dev@devbox.local:4800`.
+
+3. If the card says `AGENT_LOOKOUT_SSH_BIN` names a program that cannot be run, correct it, or unset it to use the ssh on your `PATH`.
+
+4. If Sources has an Other machines card that says Not set up, `AGENT_LOOKOUT_REMOTES` could not be read: the card says which entry is wrong. Correct it and start Agent Lookout again.
+
+A machine that is switched off, or asleep, is Not connected until it is back, and is connected again on its own within a minute of that.
 
 ### The page says Agent Lookout has stopped updating
 

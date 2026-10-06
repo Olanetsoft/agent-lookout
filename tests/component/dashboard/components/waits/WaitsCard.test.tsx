@@ -457,3 +457,42 @@ test("a long session name is cut, and stays reachable in full", async () => {
   expect(name.textContent).toBe(long);
   expect(name.getAttribute("tabindex")).toBe("0");
 });
+
+test.each([375, 1280])(
+  "at %ipx, two sessions of one name in the longest waits, one here and one on another machine, are told apart",
+  async (width) => {
+    await page.viewport(width, 900);
+    answering(() => {
+      const answer = waits();
+      answer.today.sessions = [
+        {
+          sessionId: "claude-code:1",
+          name: "demo-local",
+          waitedMs: 22 * MINUTE,
+          waits: 3,
+          open: false,
+        },
+        {
+          sessionId: "remote:devbox:claude-code:1",
+          name: "demo-local",
+          waitedMs: 8 * MINUTE,
+          waits: 1,
+          open: false,
+        },
+      ];
+      return answer;
+    });
+    const screen = await render(
+      <WaitsCard history={history(NOW - HOUR)} sessions={[]} asOf={NOW} />,
+    );
+    await expect.element(screen.getByText("By day")).toBeVisible();
+    const [here, there] = [
+      ...screen.container.querySelectorAll<HTMLElement>('[data-part="session"]'),
+    ] as [HTMLElement, HTMLElement];
+    expect(part(here, "machine")).toBeNull();
+    expect(part(there, "machine").textContent).toBe(" on devbox");
+    expect(part(there, "name").textContent).toBe("demo-local on devbox");
+    expect(part(here, "name").textContent).toBe("demo-local");
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);

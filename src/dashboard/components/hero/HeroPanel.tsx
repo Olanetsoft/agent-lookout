@@ -1,12 +1,19 @@
 import { useId, useMemo, type ReactNode } from "react";
 
-import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import {
+  isRemoteSource,
+  machineInId,
+  type Session,
+  type SessionEvent,
+  type SourceHealth,
+} from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
+import { Machine } from "@dashboard/components/sessions/Machine";
 import { Badge } from "@dashboard/components/ui/status/Badge";
 import { DurationFigure } from "@dashboard/components/ui/status/DurationFigure";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
@@ -27,7 +34,13 @@ import {
   waitingSessions,
   type CountState,
 } from "@dashboard/lib/sessions/sessions";
-import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
+import {
+  agentLabel,
+  showsAgents,
+  sourceNames,
+  unseenMachines,
+  unseenSentence,
+} from "@dashboard/lib/sources/sources";
 import { surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";
 import { openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
@@ -304,12 +317,13 @@ function Lead({
       className='mt-3.5 flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4'
     >
       <div className='min-w-0 flex-1'>
-        {/* What Jump came to goes under the name when the line cannot hold both. */}
+        {/* The machine, and what Jump came to, go under the name when the line cannot hold both. */}
         <div className='flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
           <div className='flex max-w-full min-w-0 items-center gap-3'>
             <Name session={session} className='text-name font-semibold' />
             <Ended session={session} />
           </div>
+          <Machine session={session} />
           <JumpNote session={session} jump={jump} />
         </div>
         <p data-part='reason' className='mt-2 flex min-w-0 text-lead font-medium'>
@@ -390,6 +404,7 @@ function Other({
             <Name session={session} className='text-lead font-semibold text-ink' />
             <Ended session={session} />
           </div>
+          <Machine session={session} />
           <JumpNote session={session} jump={jump} />
         </div>
         <p
@@ -432,12 +447,14 @@ function Other({
 /**
  * "demo-project, answered at 09:40", and, for a wait that was under way when
  * the period began, "demo-project, answered at 09:40, waiting since before 09:15".
+ * A session on another machine says which: "demo-project on devbox, answered…".
  */
 function lastWaitNote(last: LastWait, from: number): ReactNode {
+  const machine = machineInId(last.id);
   return (
     <>
-      <span className='font-semibold text-ink'>{last.name}</span>,{" "}
-      {last.how === "ended" ? "ended at" : "answered at"}{" "}
+      <span className='font-semibold text-ink'>{last.name}</span>
+      {machine !== null && ` on ${machine}`}, {last.how === "ended" ? "ended at" : "answered at"}{" "}
       <span className='tabular-nums'>{formatClockMinutes(last.at)}</span>
       {!last.startKnown && (
         <>
@@ -448,14 +465,43 @@ function lastWaitNote(last: LastWait, from: number): ReactNode {
   );
 }
 
+/** Which machines' sessions the quiet hero can speak for, and which it cannot. */
+interface Seen {
+  /** The other machines read, "gpu", named with this computer. */
+  connected: readonly Pick<SourceHealth, "label">[];
+  /** Why the others cannot be spoken for, or null when every one is read. */
+  unseen: string | null;
+}
+
 /**
  * Nothing needs the person. It says so at the hero's size, with the lamp out,
  * and on the right gives the last wait that is over, so the panel stays worth
  * looking at. With none in the period, it says that instead, once: "None since
  * 13:05", and how much of that time nobody measured. It never says none while
  * the bars of waits under it show one.
+ *
+ * While another machine is not connected, or still connecting, nothing is
+ * known of its sessions, so the hero never says that nothing needs the
+ * person: it says "Nothing on this computer needs you", with any machine
+ * that is read named too, and under it which machine is not known and a link
+ * to Sources, which says why. It is said in plain words, with nothing warm or
+ * red: a machine that is switched off is no fault.
  */
-function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?: () => void }) {
+function Quiet({
+  id,
+  waits,
+  onOpen,
+  seen,
+}: {
+  id: string;
+  waits: Waits | null;
+  onOpen?: () => void;
+  seen: Seen;
+}) {
+  const places = ["this computer", ...seen.connected.map((source) => source.label)];
+  const where =
+    places.length > 1 ? `${places.slice(0, -1).join(", ")} or ${places.at(-1)}` : places[0];
+  const title = seen.unseen === null ? "Nothing needs you" : `Nothing on ${where} needs you`;
   const last = waits?.lastWait ?? null;
   // The bars under the hero can show a wait the page could not say was the last.
   const none = waits !== null && waits.sessions.length === 0;
@@ -477,15 +523,24 @@ function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?
           className='mt-1 flex items-center gap-3.5 text-name font-semibold text-ink outline-none'
         >
           <StatusMark kind='needs-you' unlit className='size-6.5' />
-          {onOpen ? (
-            <OpensHistory onOpen={onOpen}>Nothing needs you</OpensHistory>
-          ) : (
-            <span>Nothing needs you</span>
-          )}
+          {onOpen ? <OpensHistory onOpen={onOpen}>{title}</OpensHistory> : <span>{title}</span>}
         </h2>
-        <p className='mt-2.5 max-w-md text-row text-ink-secondary'>
-          When a session stops to ask for something, it will show here.
-        </p>
+        {seen.unseen === null ? (
+          <p className='mt-2.5 max-w-md text-row text-ink-secondary'>
+            When a session stops to ask for something, it will show here.
+          </p>
+        ) : (
+          <p data-part='unseen' className='mt-2.5 max-w-md text-row text-ink-secondary'>
+            {seen.unseen}{" "}
+            <a
+              href='#sources'
+              className='rounded-bar underline decoration-rule-strong underline-offset-2 transition-colors duration-120 hover:text-ink'
+            >
+              Sources
+            </a>{" "}
+            says why.
+          </p>
+        )}
       </div>
 
       <div data-part='last-wait' className='shrink-0 text-right max-mid:text-left'>
@@ -522,8 +577,21 @@ function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?
   );
 }
 
-/** Before anything is counted: the hero's title with the lamp out, and what is still to come. */
-function Uncounted({ id, counts }: { id: string; counts: CountState }) {
+/**
+ * Before anything is counted: the hero's title with the lamp out, and what is
+ * still to come. While only another machine is still being reached, it says
+ * that, not that agents on this computer are being looked for.
+ */
+function Uncounted({
+  id,
+  counts,
+  connecting,
+}: {
+  id: string;
+  counts: CountState;
+  /** The other machines still connecting, when nothing on this computer is still looked for. */
+  connecting: readonly Pick<SourceHealth, "label">[];
+}) {
   return (
     <div>
       <h2
@@ -549,7 +617,9 @@ function Uncounted({ id, counts }: { id: string; counts: CountState }) {
           </p>
           <p data-part='uncounted' className='mt-2 max-w-md text-row text-ink-secondary'>
             {counts.searching
-              ? "Agent Lookout is still looking for agents on this computer. The count follows as soon as one is read."
+              ? connecting.length > 0
+                ? `Agent Lookout is still connecting to ${sourceNames(connecting)} over SSH. The count follows as soon as ${connecting.length === 1 ? "it is" : "one is"} read.`
+                : "Agent Lookout is still looking for agents on this computer. The count follows as soon as one is read."
               : "No agent tool could be read, so nothing could be counted. The Sessions card says why."}
           </p>
         </>
@@ -565,8 +635,11 @@ function Uncounted({ id, counts }: { id: string; counts: CountState }) {
  * behind it.
  *
  *   loading          the title with the lamp out and a spinner; no light, no zero
- *   not counted      a dash and why: still looking, or no source could be read
- *   quiet            "Nothing needs you", and the last wait that is over
+ *   not counted      a dash and why: still looking, still connecting to
+ *                    another machine, or no source could be read
+ *   quiet            "Nothing needs you", and the last wait that is over; or,
+ *                    while another machine is not read, "Nothing on this
+ *                    computer needs you" and which machine is not known
  *   one waiting      its name large, why, what it asks and where, a timer
  *                    and the Jump
  *   several waiting  the longest in full, then each of the others, each with
@@ -596,6 +669,15 @@ export function HeroPanel({
   const waiting = useMemo(() => (sessions ? waitingSessions(sessions) : []), [sessions]);
   const agents = showsAgents(sources, sessions ?? []);
   const agentOf = (session: Session) => (agents ? agentLabel(session, sources) : undefined);
+  // What the hero can speak for: this computer, and each other machine that is read.
+  const unseen = unseenMachines(sources);
+  const seen: Seen = {
+    connected: sources.filter((source) => isRemoteSource(source.id) && source.state === "ok"),
+    unseen: unseenSentence(unseen),
+  };
+  const lookingHere = sources.some(
+    (source) => source.state === "searching" && !isRemoteSource(source.id),
+  );
 
   const waits = useMemo(
     () =>
@@ -619,11 +701,18 @@ export function HeroPanel({
   let state: string;
   if (!light) {
     state = counts.summary === null ? "loading" : "uncounted";
-    top = <Uncounted id={titleId} counts={counts} />;
+    top = (
+      <Uncounted id={titleId} counts={counts} connecting={lookingHere ? [] : unseen.connecting} />
+    );
   } else if (!first) {
     state = "quiet";
     top = (
-      <Quiet id={titleId} waits={waits} onOpen={openHistory && (() => openHistory("needsYou"))} />
+      <Quiet
+        id={titleId}
+        waits={waits}
+        onOpen={openHistory && (() => openHistory("needsYou"))}
+        seen={seen}
+      />
     );
   } else {
     state = rest.length > 0 ? "several" : "one";

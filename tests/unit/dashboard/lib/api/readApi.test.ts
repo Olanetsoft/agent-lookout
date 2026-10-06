@@ -488,6 +488,92 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
   }
 });
 
+test("a session on another machine keeps the machine's name, and only a name as the setting allows one", () => {
+  const sent = makeSession({
+    id: "remote:devbox:claude-code:1",
+    source: "remote:devbox",
+    agent: "Claude Code",
+    machine: "devbox",
+  });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  for (const machine of ["", "dev box", "-devbox", 7, { name: "devbox" }, "a".repeat(25)]) {
+    expect(readSession({ ...sent, machine }), String(machine)).not.toHaveProperty("machine");
+  }
+});
+
+test("a session on another machine is given no Jump, no Stop and no request to answer, whatever is sent", () => {
+  const acting = {
+    status: "needs-you",
+    waitingReason: "permission",
+    jump: { kind: "tmux", place: "work:1.0" },
+    stop: { how: "signal" },
+    ask: {
+      requestId: "0123456789abcdef0123456789abcdef",
+      tool: "Bash",
+      command: "npm test",
+      allow: true,
+      until: T + 60_000,
+    },
+  };
+  const there = readSession({
+    ...makeSession({
+      id: "remote:devbox:claude-code:1",
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+    }),
+    ...acting,
+  });
+  expect(there).toMatchObject({ machine: "devbox", status: "needs-you" });
+  expect(there).not.toHaveProperty("jump");
+  expect(there).not.toHaveProperty("stop");
+  expect(there).not.toHaveProperty("ask");
+  // The same sent for a session here is read whole.
+  const here = readSession({ ...makeSession({ id: "claude-code:1" }), ...acting });
+  expect(here).toMatchObject({
+    jump: { kind: "tmux", place: "work:1.0" },
+    stop: { how: "signal" },
+    ask: { requestId: "0123456789abcdef0123456789abcdef", tool: "Bash", command: "npm test" },
+  });
+});
+
+test("another machine's source keeps its name and a row for each agent there that is whole", () => {
+  const capabilities = {
+    "working-and-idle": { level: "yes" },
+    "needs-you": { level: "yes" },
+    finished: { level: "partly", reason: "Only background jobs." },
+    failed: { level: "partly", reason: "Only background jobs." },
+    names: { level: "yes" },
+    jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+    "quiet-for": { level: "no", reason: "The file read is not rewritten." },
+    stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
+    answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
+  };
+  const source = readSource(
+    {
+      id: "remote:devbox",
+      label: "devbox",
+      machine: "devbox",
+      state: "ok",
+      agents: [
+        { label: "Claude Code", capabilities },
+        { label: "Half", capabilities: { ...capabilities, jump: undefined } },
+        { capabilities },
+        "Codex",
+      ],
+    },
+    T,
+  );
+  expect(source).toMatchObject({ id: "remote:devbox", machine: "devbox" });
+  expect(source?.agents).toEqual([{ label: "Claude Code", capabilities }]);
+  expect(readSource({ id: "remote:devbox", state: "ok", agents: [] }, T)).not.toHaveProperty(
+    "agents",
+  );
+  expect(
+    readSource({ id: "remote:devbox", state: "ok", machine: "dev box" }, T),
+  ).not.toHaveProperty("machine");
+});
+
 test("events with no id, no time or a kind this page does not know are left out, and unknown words become the plain ones", () => {
   const events = readEvents({
     events: [

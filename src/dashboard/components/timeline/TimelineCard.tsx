@@ -1,6 +1,13 @@
 import { useMemo, type ReactNode } from "react";
 
-import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import {
+  machineInId,
+  nameOnMachine,
+  type Session,
+  type SessionEvent,
+  type SourceHealth,
+} from "@core/sessions/session";
+import { OnMachine } from "@dashboard/components/sessions/Machine";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
@@ -60,8 +67,9 @@ function markOf(row: TimelineRow): MarkKind | null {
 }
 
 /**
- * One session: its mark and name, and its status over the hour beside it, with
- * the time rules. Unnamed, the track has the row to itself.
+ * One session: its mark and name, with the other machine it runs on after
+ * the name, and its status over the hour beside it, with the time rules.
+ * Unnamed, the track has the row to itself.
  */
 function Row({
   row,
@@ -76,6 +84,9 @@ function Row({
 }) {
   const mark = markOf(row);
   const lit = row.status === "needs-you";
+  // A session on another machine says which, so two of one name are told apart.
+  const machine = machineInId(row.id);
+  const said = nameOnMachine(row.name, machine);
   return (
     <li
       data-slot='timeline-row'
@@ -94,14 +105,17 @@ function Row({
           ) : (
             <span aria-hidden data-part='no-mark' className='size-mark shrink-0' />
           )}
-          <Truncated data-part='name'>{row.name}</Truncated>
+          <Truncated data-part='name' tooltip={said}>
+            {row.name}
+            <OnMachine machine={machine} className='text-ink-muted' />
+          </Truncated>
         </div>
       )}
       <StatusTrack
         segments={row.segments}
         start={timeline.start}
         end={timeline.end}
-        label={row.ended ? `${row.name}, ended` : row.name}
+        label={row.ended ? `${said}, ended` : said}
         rules={rules}
         className='min-w-0 flex-1'
       />

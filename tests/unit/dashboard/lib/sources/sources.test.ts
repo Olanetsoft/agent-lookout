@@ -6,6 +6,8 @@ import {
   overviewSources,
   showsAgents,
   sourceNames,
+  unseenMachines,
+  unseenSentence,
 } from "@dashboard/lib/sources/sources";
 
 const NOW = 1_700_000_000_000;
@@ -112,4 +114,53 @@ test("a session from a status file is its own agent's", () => {
   const sources = [claude("ok"), statusFiles("ok")];
   expect(agentLabel({ source: "status-files", agent: "Night Shift" }, sources)).toBe("Night Shift");
   expect(agentLabel({ source: "status-files" }, sources)).toBe("Status files");
+});
+
+test("another machine is no agent: its sessions each name the agent they run in there", () => {
+  const devbox: SourceHealth = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    checkedAt: NOW,
+  };
+  // Claude Code here and Claude Code there are one agent.
+  expect(showsAgents([claude("ok"), devbox], [{ agent: "Claude Code" }])).toBe(false);
+  expect(showsAgents([claude("ok"), devbox], [{ agent: "Codex" }])).toBe(true);
+  expect(
+    agentLabel({ source: "remote:devbox", agent: "Claude Code" }, [claude("ok"), devbox]),
+  ).toBe("Claude Code");
+});
+
+test("a machine not connected, or still connecting, is one whose sessions are not known", () => {
+  const machine = (label: string, state: SourceHealth["state"]): SourceHealth => ({
+    id: `remote:${label}`,
+    label,
+    machine: label,
+    state,
+    checkedAt: NOW,
+  });
+  const setting: SourceHealth = {
+    id: "remote:",
+    label: "Other machines",
+    state: "not-set-up",
+    checkedAt: NOW,
+  };
+  const unseen = unseenMachines([
+    claude("unavailable"),
+    machine("devbox", "unavailable"),
+    machine("gpu", "error"),
+    machine("build", "searching"),
+    machine("lab", "ok"),
+    setting,
+  ]);
+  expect(unseen.away.map((source) => source.label)).toEqual(["devbox", "gpu"]);
+  expect(unseen.connecting.map((source) => source.label)).toEqual(["build"]);
+  expect(unseenSentence(unseen)).toBe(
+    "devbox and gpu are not connected, so their sessions are not known. build is still connecting, so its sessions are not known yet.",
+  );
+  expect(unseenSentence({ away: [machine("devbox", "unavailable")], connecting: [] })).toBe(
+    "devbox is not connected, so its sessions are not known.",
+  );
+  expect(unseenSentence(unseenMachines([claude("ok"), machine("lab", "ok")]))).toBeNull();
 });

@@ -1,3 +1,5 @@
+import { machineInId, nameOnMachine } from "@core/sessions/session";
+import { OnMachine } from "@dashboard/components/sessions/Machine";
 import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { durationInWords, formatDuration } from "@dashboard/lib/format";
 import { cn } from "@dashboard/lib/utils";
@@ -60,6 +62,9 @@ export function WaitedOnYou({ waits }: WaitedOnYouProps) {
         <ul data-part='bars' className='grid grid-cols-1 gap-1.75'>
           {waits.sessions.map((session) => {
             const words = `${session.startKnown ? "" : "at least "}${durationInWords(session.ms)}`;
+            // A session on another machine says which, so two of one name are told apart.
+            const machine = machineInId(session.id);
+            const who = nameOnMachine(session.name, machine);
             return (
               <li
                 key={session.id}
@@ -69,20 +74,22 @@ export function WaitedOnYou({ waits }: WaitedOnYouProps) {
               >
                 <Truncated
                   data-part='who'
+                  tooltip={who}
                   className={cn(
                     "w-waited-name shrink-0 max-mid:w-auto max-mid:min-w-0 max-mid:flex-1",
                     session.open ? "font-semibold text-ink" : "font-medium text-ink-secondary",
                   )}
                 >
                   {session.name}
+                  <OnMachine machine={machine} className='text-ink-muted' />
                 </Truncated>
                 <span
                   data-part='track'
                   role='img'
                   aria-label={
                     session.open
-                      ? `${session.name} has waited ${words}, still waiting`
-                      : `${session.name} waited ${words}, answered`
+                      ? `${who} has waited ${words}, still waiting`
+                      : `${who} waited ${words}, answered`
                   }
                   className='relative h-2.5 min-w-0 flex-1 before:absolute before:inset-x-0 before:top-1/2 before:h-px before:bg-hairline max-mid:order-last max-mid:basis-full'
                 >

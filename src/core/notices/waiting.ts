@@ -1,4 +1,4 @@
-import type { Session, WaitingReason } from "../sessions/session.ts";
+import { nameOnMachine, type Session, type WaitingReason } from "../sessions/session.ts";
 import type { NoticeEvent } from "./sessionChanges.ts";
 
 // What is said about a session that waits for the person, or that finished,
@@ -37,6 +37,14 @@ export function sessionTitle(session: Pick<Session, "id" | "name" | "project">):
   return session.name.trim() !== "" ? session.name : session.project || session.id;
 }
 
+/**
+ * What a notification calls a session: its name, and the other machine it runs
+ * on when it runs on one, "checkout-flow on devbox".
+ */
+export function noticeTitle(session: Pick<Session, "id" | "name" | "project" | "machine">): string {
+  return nameOnMachine(sessionTitle(session), session.machine);
+}
+
 /** What a notification says. */
 export interface Notice {
   title: string;
@@ -45,7 +53,7 @@ export interface Notice {
 
 /**
  * The notification for a session that started waiting: its name as the title,
- * and the reason as the text, followed by what the session is asking when that
+ * with the other machine it runs on when it runs on one, and the reason as the text, followed by what the session is asking when that
  * is known: "Waiting for permission: Run: npm test". It holds none of the
  * vendor's own wording, and not the session's folder, but what the session is
  * asking can hold a command, a web address, or a file's full path when the
@@ -58,11 +66,11 @@ export interface Notice {
  * `outboundChannel.ts` is the one place it is let through to them.
  */
 export function waitNotice(
-  session: Pick<Session, "id" | "name" | "project" | "waitingReason" | "waitingText">,
+  session: Pick<Session, "id" | "name" | "project" | "machine" | "waitingReason" | "waitingText">,
 ): Notice {
   const reason = waitingLabel(session);
   const asking = session.waitingText?.trim();
-  return { title: sessionTitle(session), body: asking ? `${reason}: ${asking}` : reason };
+  return { title: noticeTitle(session), body: asking ? `${reason}: ${asking}` : reason };
 }
 
 /** Each event as Settings lists it, and as a notification of any but a wait says it. */
@@ -86,14 +94,14 @@ export function overPhrase(event: Exclude<NoticeEvent, "needs-you">): string {
 }
 
 /**
- * The notification for one change: the session's name as the title, and what
- * happened as the text. A wait gives its reason and what it is asking, as
+ * The notification for one change: the session's name as the title, as
+ * `noticeTitle` gives it, and what happened as the text. A wait gives its reason and what it is asking, as
  * `waitNotice` does, and the others say Finished, Failed or Ended.
  */
 export function changeNotice(change: {
   event: NoticeEvent;
-  session: Pick<Session, "id" | "name" | "project" | "waitingReason" | "waitingText">;
+  session: Pick<Session, "id" | "name" | "project" | "machine" | "waitingReason" | "waitingText">;
 }): Notice {
   if (change.event === "needs-you") return waitNotice(change.session);
-  return { title: sessionTitle(change.session), body: NOTICE_EVENT_LABEL[change.event] };
+  return { title: noticeTitle(change.session), body: NOTICE_EVENT_LABEL[change.event] };
 }

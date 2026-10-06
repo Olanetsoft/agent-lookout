@@ -6,6 +6,7 @@ import type { HistoryResponse } from "@core/api";
 import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/sessions/session";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { readSession } from "@dashboard/lib/api/readApi";
 import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
@@ -720,6 +721,173 @@ test("a waiting session whose process has gone says so beside its name", async (
   const badge = screen.container.querySelector('[data-slot="badge"]') as HTMLElement;
   expect(badge.getAttribute("data-tone")).toBe("outline");
   expect(badge.parentElement?.contains(part(hero(screen.container), "name"))).toBe(true);
+});
+
+test.each([375, 1280])(
+  "at %ipx, a wait on another machine has the machine's name beside its name, no Jump, no Allow or Deny, and counts",
+  async (width) => {
+    await page.viewport(width, 900);
+    // As the page reads it, whatever was sent: a Jump and a request to answer act here only.
+    const there = readSession({
+      ...makeSession({
+        ...WAITING,
+        id: `remote:devbox:claude-code:${uuid(1)}`,
+        source: "remote:devbox",
+        agent: "Claude Code",
+        machine: "devbox",
+        links: {},
+      }),
+      jump: { kind: "tmux", place: "work:1.0" },
+      ask: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        tool: "Bash",
+        command: "npm test",
+        allow: true,
+        until: NOW + 300_000,
+      },
+    });
+    if (!there) throw new Error("expected a session");
+    const devbox: SourceHealth = {
+      id: "remote:devbox",
+      label: "devbox",
+      machine: "devbox",
+      state: "ok",
+      checkedAt: NOW,
+    };
+    const screen = await render(
+      <div style={{ width: width === 375 ? 343 : 820 }}>
+        <HeroPanel
+          sessions={[there, BUSY]}
+          sources={[CLAUDE, devbox]}
+          history={watched()}
+          now={NOW}
+        />
+      </div>,
+    );
+    const panel = hero(screen.container);
+    const badge = part(panel, "machine");
+    expect(badge.textContent).toBe("on devbox");
+    expect(badge.getAttribute("data-tone")).toBe("neutral");
+    expect(badge.parentElement?.contains(part(panel, "name"))).toBe(true);
+    // The wait is counted under Needs you, and has no Jump of its own.
+    expect(panel.querySelectorAll('[data-slot="hero-session"]')).toHaveLength(1);
+    expect(panel.querySelector('[data-part="jump"]')).toBeNull();
+    expect(panel.querySelector('[data-slot="answer"]')).toBeNull();
+    // Only the needs-you signals are warm: the badge is not.
+    expect(warmPaint(badge)).toEqual([]);
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);
+
+/** Another machine's source, read or not. */
+function machine(name: string, state: SourceHealth["state"]): SourceHealth {
+  return { id: `remote:${name}`, label: name, machine: name, state, checkedAt: NOW };
+}
+
+test.each([375, 1280])(
+  "at %ipx, a machine's name as long as one can be goes under the session's name, which is not cut for it",
+  async (width) => {
+    await page.viewport(width, 900);
+    const long = "build-server-eu-west-02a";
+    const there = (n: number, name: string) =>
+      makeSession({
+        ...WAITING,
+        id: `remote:${long}:claude-code:${uuid(n)}`,
+        source: `remote:${long}`,
+        agent: "Claude Code",
+        machine: long,
+        name,
+        statusSince: NOW - n * MINUTE,
+        links: {},
+      });
+    const screen = await render(
+      <div style={{ width: width === 375 ? 283 : 820 }}>
+        <HeroPanel
+          sessions={[there(9, "demo-local"), there(3, "demo-local-two")]}
+          sources={[CLAUDE, machine(long, "ok")]}
+          history={watched()}
+          now={NOW}
+        />
+      </div>,
+    );
+    const panel = hero(screen.container);
+    for (const row of panel.querySelectorAll('[data-slot="hero-session"]')) {
+      const name = part(row, "name");
+      const badge = part(row, "machine");
+      // Every letter of the session's name is shown, and the machine's whole.
+      expect(name.getAttribute("data-cut")).toBe("false");
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+      expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth);
+      expect(badge.textContent).toBe(`on ${long}`);
+      if (width === 375) {
+        expect(badge.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+          name.getBoundingClientRect().bottom - 1,
+        );
+      }
+    }
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);
+
+test("with another machine not connected, the quiet hero speaks for this computer only, and says which is not known", async () => {
+  const screen = await renderHero({
+    sessions: [BUSY, RESTING],
+    sources: [CLAUDE, machine("devbox", "unavailable")],
+  });
+  const panel = hero(screen.container);
+  expect(panel.dataset.state).toBe("quiet");
+  await expect
+    .element(screen.getByRole("heading", { level: 2, name: "Nothing on this computer needs you" }))
+    .toBeVisible();
+  expect(panel.textContent).not.toContain("Nothing needs you");
+  expect(part(panel, "unseen").textContent).toBe(
+    "devbox is not connected, so its sessions are not known. Sources says why.",
+  );
+  const link = screen.getByRole("link", { name: "Sources" });
+  await expect.element(link).toHaveAttribute("href", "#sources");
+  // Said plainly: a machine that is switched off is no fault, so nothing is warm.
+  expect(warmPaint(part(panel, "unseen"))).toEqual([]);
+});
+
+test("a machine that is read is named with this computer, and one still connecting is not known yet", async () => {
+  const screen = await renderHero({
+    sessions: [BUSY],
+    sources: [CLAUDE, machine("gpu", "ok"), machine("devbox", "searching")],
+  });
+  const panel = hero(screen.container);
+  await expect
+    .element(
+      screen.getByRole("heading", { level: 2, name: "Nothing on this computer or gpu needs you" }),
+    )
+    .toBeVisible();
+  expect(part(panel, "unseen").textContent).toBe(
+    "devbox is still connecting, so its sessions are not known yet. Sources says why.",
+  );
+});
+
+test("with every machine read, the quiet hero says Nothing needs you as before", async () => {
+  const screen = await renderHero({
+    sessions: [BUSY],
+    sources: [CLAUDE, machine("devbox", "ok")],
+  });
+  await expect
+    .element(screen.getByRole("heading", { level: 2, name: "Nothing needs you" }))
+    .toBeVisible();
+  expect(part(hero(screen.container), "unseen")).toBeNull();
+});
+
+test("while only another machine is still being reached, the hero says so, not that agents here are looked for", async () => {
+  const screen = await renderHero({
+    sessions: [],
+    sources: [{ ...CLAUDE, state: "unavailable" }, machine("devbox", "searching")],
+  });
+  const panel = hero(screen.container);
+  expect(panel.dataset.state).toBe("uncounted");
+  expect(part(panel, "uncounted").textContent).toBe(
+    "Agent Lookout is still connecting to devbox over SSH. The count follows as soon as it is read.",
+  );
 });
 
 test("the timer ticks with the clock, and stops at the last answer once answers stop", async () => {

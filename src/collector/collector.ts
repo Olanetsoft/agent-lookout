@@ -50,6 +50,8 @@ import {
   type SystemNotifier,
 } from "./notifications/systemNotifier.ts";
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
+import { createRemotes, type Remotes, type RemotesOptions } from "./remotes/remotes.ts";
+import { remotesProblemLine } from "./remotes/remoteSettings.ts";
 import type { ReadProcessStarts } from "./processes/processStart.ts";
 import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
 import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
@@ -163,6 +165,13 @@ export interface CollectorOptions {
    */
   answering?: Pick<AnsweringOptions, "homeDir" | "status" | "every" | "platform">;
   /**
+   * How the other machines `AGENT_LOOKOUT_REMOTES` names are reached: how ssh
+   * is found, started and started again, and how a machine is read through
+   * its tunnel. Defaults to the real ones. Tests shorten the waits, and name a
+   * stand-in ssh in the environment.
+   */
+  remotes?: Pick<RemotesOptions, "tunnels" | "read">;
+  /**
    * Told each poll's sessions, after the collector's own notifications, email
    * and webhook have been. The Mac app puts the count that needs you on its
    * Dock icon. A listener that throws changes nothing for the others.
@@ -175,12 +184,12 @@ export interface CollectorOptions {
 export interface Collector {
   /**
    * Begins polling, once the history kept on disk has been read back, and
-   * begins writing it.
+   * begins writing it. The tunnels to other machines start at once.
    */
   start(): void;
   /** Resolves once polling has begun: at once, or when the history has been read back. */
   whenStarted(): Promise<void>;
-  /** Stops polling, and writes what is left of the history at once. */
+  /** Stops polling, writes what is left of the history at once, and ends every ssh it started. */
   stop(): void;
   /** Answers `/api/*`. Mount it in any Node HTTP server. */
   handler: ApiHandler;
@@ -195,6 +204,8 @@ export interface Collector {
   history: HistoryKeeper | null;
   /** Answering permission prompts: resolves once its socket listens, or has said why not. */
   answering: Pick<Answering, "start" | "stop">;
+  /** The other machines read over SSH, none unless `AGENT_LOOKOUT_REMOTES` names them. */
+  remotes: Remotes;
 }
 
 /**
@@ -207,8 +218,9 @@ export interface Collector {
  * request and answers it when the person presses Allow or Deny, unless
  * `AGENT_LOOKOUT_ANSWER` is off, what reads each session's git branch, with
  * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
- * and the request handler. Every host builds it the same way: the dev server,
- * the standalone server, and later a desktop app.
+ * the other machines `AGENT_LOOKOUT_REMOTES` names, each read through an ssh
+ * tunnel of its own, and the request handler. Every host builds it the same
+ * way: the dev server, the standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -324,21 +336,32 @@ export function createCollector(options: CollectorOptions): Collector {
       })
     : null;
   const webhookOff = webhookOffStatus(webhookSetup.on ? null : webhookSetup.problem);
+  // The other machines: with none named, no ssh is looked for or run.
+  const remotes = createRemotes({
+    env,
+    version: options.version,
+    now,
+    pollIntervalMs: intervalMs,
+    ...options.remotes,
+  });
+  if (remotes.problem !== null) warn(remotesProblemLine(remotes.problem));
+  const localAdapters = options.adapters ?? [
+    createClaudeCodeAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      panes,
+      terminals: tabs,
+      readProcessStarts: options.readProcessStarts,
+      stops: stopTargets,
+    }),
+    createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+  ];
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
-    adapters: options.adapters ?? [
-      createClaudeCodeAdapter({
-        env: options.env,
-        now,
-        pollIntervalMs: intervalMs,
-        panes,
-        terminals: tabs,
-        readProcessStarts: options.readProcessStarts,
-        stops: stopTargets,
-      }),
-      createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
-      createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
-    ],
+    // The other machines come after this one's own sources.
+    adapters: [...localAdapters, ...remotes.adapters],
     events,
     history,
     intervalMs,
@@ -459,6 +482,7 @@ export function createCollector(options: CollectorOptions): Collector {
       if (running) return;
       running = true;
       answerStart ??= answering?.start() ?? Promise.resolve();
+      remotes.start();
       if (restored || keeper === null) {
         begin();
         return;
@@ -495,6 +519,7 @@ export function createCollector(options: CollectorOptions): Collector {
       keeper?.stop();
       answerStart = null;
       void answering?.stop();
+      void remotes.stop();
     },
     handler,
     poller,
@@ -508,5 +533,6 @@ export function createCollector(options: CollectorOptions): Collector {
         await answering?.stop();
       },
     },
+    remotes,
   };
 }

@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
 
 import type { WaitDay, WaitPeriod, WaitsResponse, WaitTotal } from "@core/api";
-import type { Session } from "@core/sessions/session";
+import { machineInId, nameOnMachine, type Session } from "@core/sessions/session";
+import { OnMachine } from "@dashboard/components/sessions/Machine";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
@@ -237,8 +238,17 @@ function Longest({
                 className='flex items-start justify-between gap-4 border-b border-hairline py-2.5 last:border-b-0'
               >
                 <div className='min-w-0 flex-1'>
-                  <Truncated data-part='name' className='block text-body font-semibold text-ink'>
+                  {/* A session on another machine says which, so two of one name are told apart. */}
+                  <Truncated
+                    data-part='name'
+                    tooltip={nameOnMachine(session.name, machineInId(session.sessionId))}
+                    className='block text-body font-semibold text-ink'
+                  >
                     {session.name}
+                    <OnMachine
+                      machine={machineInId(session.sessionId)}
+                      className='text-ink-secondary'
+                    />
                   </Truncated>
                   <p data-part='times' className='mt-0.5 text-caption text-ink-secondary'>
                     {session.waits} {session.waits === 1 ? "wait" : "waits"}
