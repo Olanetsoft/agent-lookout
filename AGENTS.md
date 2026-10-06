@@ -4,7 +4,7 @@ Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one brow
 
 ## Commands
 
-- You need Node.js 20.19 or newer (on Node 22, 22.12 or newer). Run `npm install`, then `npx playwright install chromium` once for the component tests. On Linux, add `--with-deps`.
+- You need Node.js 22.12 or newer. Run `npm install`, then `npx playwright install chromium` once for the component tests. On Linux, add `--with-deps`.
 - `npm run dev` serves the dashboard at http://localhost:5173 with the collector inside the dev server, and shows the sessions on the machine. To show none, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR` and `AGENT_LOOKOUT_HISTORY_DIR` to an empty folder. Without the last, the Events log and the charts show what earlier runs kept in `~/.agent-lookout/history`.
 - `npm run check` runs the layout check, the typecheck, the linter, the format check and the tests, and stops at the first failure. Run it before you finish. CI also runs `npm run build`.
 - `npm run format` and `npm run lint:fix` fix most format and lint failures.

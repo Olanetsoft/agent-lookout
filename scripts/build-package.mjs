@@ -116,7 +116,7 @@ async function main() {
     splitting: true,
     format: "esm",
     platform: "node",
-    target: "node20.19",
+    target: "node22.12",
     packages: "external",
     chunkNames: "[name]-[hash]",
     sourcemap: false,

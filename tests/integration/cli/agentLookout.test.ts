@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { copyFile, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { createCollector } from "@collector/collector";
@@ -23,6 +23,7 @@ import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 
 const bin = fileURLToPath(new URL("../../../bin/agent-lookout.mjs", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const moduleLogUrl = new URL("../../support/node/moduleLog.mjs", import.meta.url).href;
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -38,16 +39,18 @@ interface RunHow {
   program?: string;
   /** An output closed before the command can write to it, as `| head -0` closes stdout. */
   close?: "stdout" | "stderr";
+  /** Options for Node itself, given before the command's file. */
+  nodeOptions?: string[];
 }
 
 /** Runs the command with an environment that holds nothing from the shell but PATH. */
 function run(
   args: string[],
   env: Record<string, string> = {},
-  { program = bin, close }: RunHow = {},
+  { program = bin, close, nodeOptions = [] }: RunHow = {},
 ): Promise<Ran> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [program, ...args], {
+    const child = spawn(process.execPath, [...nodeOptions, program, ...args], {
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", ...env },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -490,7 +493,7 @@ describe("which code it runs", () => {
       splitting: true,
       format: "esm",
       platform: "node",
-      target: "node20.19",
+      target: "node22.12",
       packages: "external",
       chunkNames: "[name]-[hash]",
       logLevel: "silent",
@@ -513,6 +516,80 @@ describe("which code it runs", () => {
     expect(ran.code).toBe(2);
     expect(ran.stdout).toBe("");
     expect(ran.stderr).toMatch(/^agent-lookout could not run: .+\n$/);
+  }, 20_000);
+});
+
+/**
+ * The option that makes this Node say it is `version`, in `process.versions`
+ * and `process.version`, before the command's file runs, as an older Node would.
+ */
+function asNode(version: string): string {
+  const code = [
+    `Object.defineProperty(process.versions, "node", { value: ${JSON.stringify(version)} });`,
+    `Object.defineProperty(process, "version", { value: ${JSON.stringify(`v${version}`)} });`,
+  ].join("");
+  return `--import=data:text/javascript,${encodeURIComponent(code)}`;
+}
+
+const tooOld = (version: string) =>
+  `Agent Lookout needs Node.js 22.12 or newer, and this is Node.js ${version}.\n`;
+
+describe("on a Node.js older than 22.12", () => {
+  test("it says in one line which version it needs and which it has, and exits with 1", async () => {
+    for (const version of ["16.20.2", "20.19.4", "21.6.1", "22.11.0"]) {
+      for (const args of [[], ["start", "--port", "0"], ["mcp"], ["--help"], ["--version"]]) {
+        const ran = await run(args, {}, { nodeOptions: [asNode(version)] });
+        expect(ran, `${version} ${JSON.stringify(args)}`).toEqual({
+          code: 1,
+          stdout: "",
+          stderr: tooOld(version),
+        });
+      }
+    }
+  }, 30_000);
+
+  test("status says the same and exits with 2, because 1 would say a session needs you", async () => {
+    for (const args of [["status"], ["status", "--count"], ["status", "--json"]]) {
+      expect(await run(args, {}, { nodeOptions: [asNode("20.19.4")] })).toEqual({
+        code: 2,
+        stdout: "",
+        stderr: tooOld("20.19.4"),
+      });
+    }
+  }, 20_000);
+
+  test("it says so before it loads anything, and from 22.12.0 it runs as before", async () => {
+    const loaded = async (version: string) => {
+      const log = path.join(await tempDir(), "modules.txt");
+      await writeFile(log, "");
+      const ran = await run(
+        ["--version"],
+        { MODULE_LOG_FILE: log },
+        { nodeOptions: [`--import=${moduleLogUrl}`, asNode(version)] },
+      );
+      const modules = (await readFile(log, "utf8")).split("\n").filter(Boolean);
+      // Less the option that set the version, which Node loads before the command's file.
+      return { ran, modules: modules.filter((url) => !url.startsWith("data:")) };
+    };
+
+    const old = await loaded("22.11.0");
+    expect(old.ran.stderr).toBe(tooOld("22.11.0"));
+    expect(old.modules).toEqual([pathToFileURL(bin).href]);
+
+    const enough = await loaded("22.12.0");
+    expect(enough.ran).toMatchObject({ code: 0, stderr: "" });
+    expect(enough.ran.stdout).toMatch(/^\d+\.\d+\.\d+/);
+    expect(enough.modules).toContain("node:fs");
+  }, 20_000);
+
+  test("the command's file uses nothing newer than Node 14 can read", async () => {
+    // An older Node reads the whole file before it runs the check, so it must
+    // be able to read all of it. esbuild rewrites, or refuses, whatever Node
+    // 14 cannot read, so the file comes out the same only if it holds none.
+    const source = await readFile(bin, "utf8");
+    const as = async (target: string) =>
+      (await transform(source, { target, format: "esm", loader: "js" })).code;
+    expect(await as("node14")).toBe(await as("esnext"));
   }, 20_000);
 });
 

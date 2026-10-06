@@ -12,7 +12,7 @@ A pull request that breaks either rule will not be merged.
 
 ## Set up
 
-You need Node.js 20.19 or newer and, to see real sessions, Claude Code or Codex. `.nvmrc` holds 22, the version most CI jobs use.
+You need Node.js 22.12 or newer and, to see real sessions, Claude Code or Codex. `.nvmrc` holds 22, the version most CI jobs use.
 
 Fork the repository, clone your fork, then:
 

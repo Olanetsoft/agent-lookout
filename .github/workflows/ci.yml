@@ -64,8 +64,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 22 is the development version. 20 is the oldest version the package supports.
-        node: [22, 20]
+        # 22 is the development line and holds the oldest version the package supports, 22.12. 24 is the LTS line after it.
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

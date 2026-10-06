@@ -9,6 +9,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 - The email and the webhook post for a wait can say what the session is asking, as the dashboard does, such as `Run: npm test`. Each has its own setting, off unless you set it: `AGENT_LOOKOUT_EMAIL_ASKING=on` puts it in the email, as an `Asking:` line in the body and never in the subject, and `AGENT_LOOKOUT_WEBHOOK_ASKING=on` puts it in the post, after the reason in the line Slack shows and in a field of its own, `asking`. That line can hold a command, a web address or a file's full path, so with either on it leaves this computer. It is taken at the moment the email or post is sent, is never kept, and is never sent for a session that finished, failed or ended, and `agent-lookout mcp` still never carries it. The Email and Webhook cards in Settings say whether each one includes it.
 - The Mac app shows in the menu bar how many sessions need you, beside its icon, with the window open or closed, and the icon alone when none do. Click it to list those sessions, the longest wait first, each with how long it has waited, its reason and what it is asking, cut to one line. Two sessions with the same name show their agent, project, branch or app in brackets. Choose one to open its details in the window, which opens if it was closed. The menu also has Open Agent Lookout, Check for Updates…, Settings… and Quit Agent Lookout. Show in menu bar, under Menu bar in Settings, takes the icon away. [Menu bar](docs/GUIDE.md#menu-bar) has the details.
 
+### Changed
+
+- Agent Lookout needs Node.js 22.12 or newer. Node.js 20 reached the end of its life on 30 April 2026 and no longer gets security fixes, so it is no longer supported. On an older Node, `npx agent-lookout` and `agent-lookout` stop at once with one line that names the version needed and the version found, and exit with 1, or with 2 for `agent-lookout status`. The Mac app needs no Node.js.
+
 ## 0.2.2 - 2026-10-06
 
 History now survives a restart. The Mac app offers this version as its first update.

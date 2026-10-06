@@ -63,7 +63,7 @@ Kept in Applications, it updates itself: about once a day it asks GitHub whether
    codex --version
    ```
 
-   `node --version` prints `v20.19.0` or a later 20.x version, or `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number.
+   `node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number.
 
    You need Node.js, and Claude Code, Codex or both. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, so the Codex desktop app needs no CLI. Without `claude agents` the rest works, but Claude Code's finished and failed background jobs are not listed.
 
@@ -127,8 +127,8 @@ A coding agent such as Claude Code or Codex can start it for you. Give it this p
 
 ```text
 Start Agent Lookout on this computer. First check that node --version
-prints v20.19.0 or a later 20.x version, or v22.12.0 or later. Then
-run npx --yes agent-lookout in the background and leave it running.
+prints v22.12.0 or later. Then run npx --yes agent-lookout in the
+background and leave it running.
 It should print "Agent Lookout is running at http://127.0.0.1:4777".
 If it prints anything else, or says the port is in use, stop and tell
 me what it printed.

@@ -3,7 +3,7 @@
 ## Requirements
 
 - macOS or Linux. Agent Lookout is developed and tested on macOS. On Linux it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux desktop. [On Linux](#on-linux) says what differs there. Windows is untested.
-- Node.js 20.19 or newer. On Node 22 it needs 22.12 or newer. The [Mac app](#desktop-app) needs no Node.js.
+- Node.js 22.12 or newer. The [Mac app](#desktop-app) needs no Node.js.
 - Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
@@ -1015,6 +1015,16 @@ open -a "Agent Lookout" --env AGENT_LOOKOUT_NOTIFICATIONS=on
 To work on the app, `npm run dev:desktop` builds it and opens it from `dist-electron/`, with reload and the developer tools in its View menu.
 
 ## When something goes wrong
+
+### It says it needs a newer Node.js
+
+`npx agent-lookout` stops at once with one line, such as:
+
+```text
+Agent Lookout needs Node.js 22.12 or newer, and this is Node.js 20.19.4.
+```
+
+The `node` your terminal runs is older than that, and npm may also have printed `EBADENGINE Unsupported engine` as it installed the package. Install Node.js 22.12 or newer, from [nodejs.org](https://nodejs.org) or with a version manager, as `nvm install 22` does with nvm. Check that `node --version` prints `v22.12.0` or later, then start it again. `agent-lookout` says the same and exits with 1, and `agent-lookout status` exits with 2, so a script never takes it for a session that needs you. The [Mac app](#desktop-app) needs no Node.js.
 
 ### The port is in use
 
