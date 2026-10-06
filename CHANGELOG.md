@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.5 - 2026-10-07
+
+Answer a Claude Code permission prompt from the dashboard, watch the sessions on another machine over SSH, copy the command that resumes a finished session, and set reminders, quiet hours and how long a session is idle before it counts as stale.
 
 ### Added
 
