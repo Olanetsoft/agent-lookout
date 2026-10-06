@@ -59,7 +59,7 @@ npm run build
 npm run start:check
 ```
 
-It starts the app with `npm start` on a port the system picks, pointed at folders it makes for the check, prints one line for each check, then stops the app as Ctrl+C would. It reads none of your own sessions and runs no `claude` command. Notifications with no dashboard tab open and Jump to a tab of Terminal or iTerm2 are macOS only, so on Linux their tests run with stand-ins for `osascript` and for Terminal's processes, as they do everywhere. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-linux) has what differs between the two systems.
+It starts the app with `npm start` on a port the system picks, pointed at folders it makes for the check, prints one line for each check, runs `agent-lookout mcp` beside it and asks it for its tools and the sessions that need you, as an agent's app would, then stops the app as Ctrl+C would. It reads none of your own sessions and runs no `claude` command. Notifications with no dashboard tab open and Jump to a tab of Terminal or iTerm2 are macOS only, so on Linux their tests run with stand-ins for `osascript` and for Terminal's processes, as they do everywhere. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-linux) has what differs between the two systems.
 
 ## The npm package
 
@@ -69,7 +69,9 @@ The package holds only what `npx agent-lookout` needs: the built dashboard and t
 npm run build:package
 ```
 
-builds it. It runs `npm run build`, then `scripts/build-package.mjs`, which bundles `src/cli/agentLookout.ts`, with the collector that `agent-lookout start` runs, into plain JavaScript in `dist/cli/` with esbuild, so a person who installs the package needs no TypeScript. `@modelcontextprotocol/sdk`, `zod` and `nodemailer` stay outside the bundle and are the package's only dependencies. Everything else, React and the rest of the dashboard's libraries included, is a devDependency, since the dashboard ships built. The script stops if the bundle imports any other package. `npm pack` and `npm publish` run it first, through `prepack`.
+builds it. It runs `npm run build`, then `scripts/build-package.mjs`, which bundles `src/cli/agentLookout.ts`, with the collector that `agent-lookout start` runs, into plain JavaScript in `dist/cli/` with esbuild, so a person who installs the package needs no TypeScript. The parts of `@modelcontextprotocol/sdk` and `zod` that `agent-lookout mcp` uses are bundled too, into the file only `mcp` loads, with the licence of every package that goes in added to `dist/THIRD-PARTY-LICENSES.md`. So the package installs neither, nor the web servers the SDK depends on for transports the command does not use. `nodemailer` stays outside the bundle and is the package's only dependency. Everything else, React and the rest of the dashboard's libraries included, is a devDependency, since the dashboard ships built. The script stops if the command's code imports any other package: add it to `BUNDLED` in the script, or to `dependencies`. `npm pack` and `npm publish` run it first, through `prepack`.
+
+A bundled package is never updated where Agent Lookout is installed, and `npm audit` there does not see it. So when the SDK or zod has a security fix, update it in `package-lock.json` and publish a new version.
 
 `bin/agent-lookout.mjs` runs the bundle only where there is no `src/` beside it, as in the installed package. In a clone it runs `src/` through tsx, so a bundle left in `dist/cli/` is never used by mistake, and `npm run build` removes it.
 
@@ -80,10 +82,13 @@ npm pack --pack-destination /tmp
 mkdir /tmp/try && cd /tmp/try && echo '{ "private": true }' > package.json
 npm install /tmp/agent-lookout-*.tgz
 npx --yes=false agent-lookout --help
+node /path/to/agent-lookout/scripts/package-size.mjs /tmp/agent-lookout-*.tgz /tmp/try
 node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false agent-lookout
 ```
 
 `npm pack --dry-run` lists what would go in without writing the tarball. `--yes=false` stops npx installing the published package in place of the one you installed.
+
+`scripts/package-size.mjs` prints three sizes and fails when one has grown past its limit: the tarball, 0.66 MB with a limit of 1 MB, the files in it, 2.37 MB with a limit of 3 MB, and the installed `node_modules`, the package and nodemailer, 3.96 MB with a limit of 5 MB. Before the MCP SDK was bundled they were 0.63 MB, 1.69 MB and 20.45 MB. The CI job `package` runs it, and so does the release workflow before it publishes. Raise a limit only on purpose, and say why in the pull request. The package holds only `.woff2` fonts, and the same job fails if a `.woff` gets in.
 
 ## Publishing
 

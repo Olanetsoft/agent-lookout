@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { playwright } from "@vitest/browser-playwright";
-import type { Plugin } from "vite";
+import type { CSSOptions, Plugin } from "vite";
 // `defineConfig` comes from vitest so the `test` block is typed.
 import { defineConfig } from "vitest/config";
 import type { BrowserCommand } from "vitest/node";
@@ -38,7 +38,10 @@ const vendorChunks: Record<string, RegExp> = {
     /\/node_modules\/(radix-ui|@radix-ui|@floating-ui|aria-hidden|react-remove-scroll|react-remove-scroll-bar|react-style-singleton|get-nonce|use-callback-ref|use-sidecar|detect-node-es)\//,
 };
 
-/** The file in `dist/` that holds the licences of the libraries and fonts the dashboard includes. */
+/**
+ * The file in `dist/` that holds the licences of the libraries and fonts the
+ * dashboard includes. `scripts/build-package.mjs` adds those the command bundles.
+ */
 const LICENSES_FILE = "THIRD-PARTY-LICENSES.md";
 
 /**
@@ -139,6 +142,50 @@ function cssAndFontLicenses(): Plugin {
   };
 }
 
+/**
+ * A PostCSS plugin object: of the plugin shapes `css.postcss.plugins` takes,
+ * the one with a `postcssPlugin` name that is not a function. It is read from
+ * Vite's own options because PostCSS comes with Vite and is not a dependency
+ * here, so nothing in this package imports `postcss` by name.
+ */
+type PostcssPlugin = Exclude<
+  Extract<
+    NonNullable<Exclude<CSSOptions["postcss"], string | undefined>["plugins"]>[number],
+    { postcssPlugin: string }
+  >,
+  (...args: never[]) => unknown
+>;
+
+/** A source in a `@font-face` that is a `.woff` file, the format before `.woff2`. */
+const WOFF_SOURCE =
+  /\bformat\(\s*["']?woff["']?\s*\)|\burl\(\s*["']?[^"')]*\.woff(?:[?#][^"')]*)?["']?\s*\)/i;
+
+/**
+ * Each `@font-face` from the fontsource packages names a `.woff2` file and,
+ * after it, a `.woff` for browsers that cannot read `.woff2`. Every browser
+ * the dashboard is built for reads `.woff2`: Vite builds for Chrome and Edge
+ * 107, Firefox 104 and Safari 16 by default, and each of them has read it
+ * since 2018 at the latest. So a `.woff` would never be fetched, only shipped.
+ * This takes each one out of `src` before Vite looks for the files a
+ * stylesheet names, so none is copied into `dist/`. It works in `Once`, which
+ * runs before Vite's own plugin for those files, also in `Once`: a listener
+ * for each rule would run only after that plugin had copied them.
+ */
+function woff2Only(): PostcssPlugin {
+  return {
+    postcssPlugin: "agent-lookout:woff2-only",
+    Once(root, { postcss }) {
+      root.walkAtRules("font-face", (rule) => {
+        rule.walkDecls("src", (declaration) => {
+          const sources = postcss.list.comma(declaration.value);
+          const kept = sources.filter((source) => !WOFF_SOURCE.test(source));
+          if (kept.length > 0 && kept.length < sources.length) declaration.value = kept.join(", ");
+        });
+      });
+    },
+  };
+}
+
 /** The media features a component test can set, as a person's computer would. */
 interface EmulatedMedia {
   colorScheme?: "light" | "dark" | null;
@@ -158,6 +205,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), cssAndFontLicenses(), !isTest && collectorPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+  },
+  css: {
+    postcss: { plugins: [woff2Only()] },
   },
   resolve: {
     alias: {

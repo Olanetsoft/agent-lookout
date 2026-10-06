@@ -110,11 +110,12 @@ jobs:
 
   # Checks the package as a person gets it from npm. `npm pack` runs prepack,
   # which builds the dashboard and bundles the command into dist/cli/. The
-  # tarball must hold only what the package needs. It is installed into a
-  # folder of its own, with nothing from this checkout, and started there with
-  # `npx --yes=false agent-lookout`, which never installs the published package
-  # in its place, on folders of the check's own. Then it is stopped as Ctrl+C
-  # would stop it.
+  # tarball must hold only what the package needs, and it and the install must
+  # stay within the size limits in scripts/package-size.mjs. It is installed
+  # into a folder of its own, with nothing from this checkout, and started
+  # there with `npx --yes=false agent-lookout`, which never installs the
+  # published package in its place, on folders of the check's own. Then it is
+  # stopped as Ctrl+C would stop it.
   package:
     runs-on: ubuntu-latest
     steps:
@@ -136,6 +137,10 @@ jobs:
             echo "The package holds a source map."
             exit 1
           fi
+          if grep -E '\.woff$' "$RUNNER_TEMP/files.txt"; then
+            echo "The package holds a .woff font. The dashboard needs only the .woff2 files."
+            exit 1
+          fi
           for file in LICENSE dist/THIRD-PARTY-LICENSES.md; do
             if [ "$(tar -xzOf "$RUNNER_TEMP"/agent-lookout-*.tgz "package/$file" | wc -c)" -eq 0 ]; then
               echo "package/$file is missing or empty."
@@ -150,6 +155,10 @@ jobs:
           echo '{ "private": true }' > package.json
           npm install --no-audit --no-fund "$RUNNER_TEMP"/agent-lookout-*.tgz
           test ! -e node_modules/agent-lookout/src
+      # Prints the sizes of the tarball, its files and the install, and fails
+      # when one has grown past its limit in scripts/package-size.mjs.
+      - name: The package is no bigger than its limits
+        run: node "$GITHUB_WORKSPACE/scripts/package-size.mjs" "$RUNNER_TEMP"/agent-lookout-*.tgz "$RUNNER_TEMP/try"
       - run: npx --yes=false agent-lookout --help
         working-directory: ${{ runner.temp }}/try
       # The bundle in dist/cli/ reads the version from the package.json two folders up.

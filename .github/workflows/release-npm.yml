@@ -185,6 +185,10 @@ jobs:
             echo "The package holds a source map."
             exit 1
           fi
+          if grep -E '\.woff$' "$RUNNER_TEMP/files.txt"; then
+            echo "The package holds a .woff font. The dashboard needs only the .woff2 files."
+            exit 1
+          fi
           for file in LICENSE dist/THIRD-PARTY-LICENSES.md; do
             if [ "$(tar -xzOf "$TARBALL" "package/$file" | wc -c)" -eq 0 ]; then
               echo "package/$file is missing or empty."
@@ -200,6 +204,10 @@ jobs:
           echo '{ "private": true }' > package.json
           npm install --no-audit --no-fund "$TARBALL"
           test ! -e node_modules/agent-lookout/src
+      # Prints the sizes of the tarball, its files and the install, and fails
+      # when one has grown past its limit in scripts/package-size.mjs.
+      - name: The package is no bigger than its limits
+        run: node "$GITHUB_WORKSPACE/scripts/package-size.mjs" "$TARBALL" "$RUNNER_TEMP/try"
       - run: npx --yes=false agent-lookout --help
         working-directory: ${{ runner.temp }}/try
       - name: Version is the package's
@@ -317,7 +325,8 @@ jobs:
       # rather than publish without it.
       - name: Publish
         if: steps.npm.outputs.published == 'false'
-        run: npm publish "$TARBALL" --provenance --access public --ignore-scripts
+        # Verbose, so a refused trusted-publishing exchange says why in the log.
+        run: npm publish "$TARBALL" --provenance --access public --ignore-scripts --loglevel verbose
 
       # The registry can take a moment to show a new version.
       - name: npm has this tarball, with provenance

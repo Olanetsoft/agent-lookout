@@ -73,7 +73,7 @@ Kept in Applications, it updates itself: about once a day it asks GitHub whether
    npx agent-lookout
    ```
 
-   The first time, npm names the package and asks `Ok to proceed? (y)`. Press Enter. npm downloads about 30 MB and keeps it in its cache. Then Agent Lookout prints:
+   The first time, npm names the package and asks `Ok to proceed? (y)`. Press Enter. npm downloads under 2 MB and keeps it in its cache. Then Agent Lookout prints:
 
    ```text
    Agent Lookout is running at http://127.0.0.1:4777
@@ -235,4 +235,4 @@ Bug reports, fixes and support for other agents are welcome. For anything larger
 
 ## License
 
-Agent Lookout is [MIT licensed](LICENSE). The package's `dist/THIRD-PARTY-LICENSES.md` lists the licences of the libraries and fonts the dashboard includes. It is an unofficial project, not affiliated with or endorsed by Anthropic, OpenAI or any other agent maker. See [DISCLAIMER.md](DISCLAIMER.md).
+Agent Lookout is [MIT licensed](LICENSE). The package's `dist/THIRD-PARTY-LICENSES.md` lists the licences of the libraries and fonts the dashboard and the command include. It is an unofficial project, not affiliated with or endorsed by Anthropic, OpenAI or any other agent maker. See [DISCLAIMER.md](DISCLAIMER.md).

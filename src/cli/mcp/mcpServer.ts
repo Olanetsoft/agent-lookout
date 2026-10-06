@@ -7,13 +7,18 @@
 //
 // stdout carries the protocol and nothing else. `agentLookout.ts` loads this
 // file only for this command, so `status` never loads the protocol's library.
+// In the npm package, the parts of the protocol's library and of zod that this
+// file uses are bundled into the file built from it, so the package installs
+// neither.
 
 import type { Readable, Writable } from "node:stream";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
+// A namespace import, so the package's bundle keeps only the parts of zod used
+// here. `import { z }` would keep far more, every language of its messages too.
+import * as z from "zod";
 
 import { readAppVersion } from "../../collector/version.ts";
 import { STATUS_ORDER } from "../../core/sessions/sorting.ts";

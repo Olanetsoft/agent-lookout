@@ -950,7 +950,7 @@ It prints `{"ok":true,"version":"0.2.1"}`, or a later version number. If you run
 
 Every other setting under [Settings you can change](#settings-you-can-change) works with it as with `npm start`. It ends with 0 when you press Ctrl+C, and with 1 when it cannot start, such as when the port is in use. Under `npx agent-lookout`, the shell reports the interrupt instead, as exit code 130.
 
-Agent Lookout is on npm, so `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, about 30 MB with what it needs, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
+Agent Lookout is on npm, so `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, under 2 MB with what it needs and about 4 MB once installed, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
 
 In a clone, run `npm run build` and `npm link` once in the `agent-lookout` folder, then `agent-lookout` from any folder.
 

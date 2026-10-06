@@ -2,6 +2,13 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Changed
+
+- `npx agent-lookout` installs about 4 MB, down from about 30 MB, and downloads under 2 MB. The parts of the MCP SDK and zod that `agent-lookout mcp` uses are now inside the package, so neither is installed, nor are the web servers that came with the SDK, and `mcp` works as before. The one package it installs besides itself is nodemailer, for email.
+- The dashboard's fonts are `.woff2` files only. Every browser the dashboard supports reads them, so the `.woff` copies, which none of them downloaded, are no longer in the package.
+
 ## 0.2.3 - 2026-10-06
 
 The Mac app shows waiting sessions in the menu bar, the Overview says how long sessions waited on you today and over seven days, email and the webhook can carry what a waiting session is asking, new versions on npm come with provenance, and Node.js 22.12 is now the minimum.

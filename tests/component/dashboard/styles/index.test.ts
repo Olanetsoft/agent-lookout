@@ -717,6 +717,26 @@ test("the bundled fonts load from the app itself, in the three weights the inter
   );
 });
 
+test("each font face is a .woff2 file and nothing else, so no .woff is shipped", () => {
+  const sources: string[] = [];
+  const visit = (rules: CSSRuleList) => {
+    for (const rule of rules) {
+      if (rule instanceof CSSFontFaceRule) sources.push(rule.style.getPropertyValue("src"));
+      else if ("cssRules" in rule) visit((rule as CSSGroupingRule).cssRules);
+    }
+  };
+  for (const sheet of document.styleSheets) visit(sheet.cssRules);
+
+  // Two families in three weights, each in a Latin and an extended Latin file.
+  expect(sources).toHaveLength(12);
+  for (const src of sources) {
+    const urls = [...src.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)].map((match) => match[1]);
+    expect(urls, src).toHaveLength(1);
+    expect(new URL(urls[0], location.href).pathname, src).toMatch(/\.woff2$/);
+    expect(src).toMatch(/format\(["']?woff2["']?\)/);
+  }
+});
+
 test("the focus ring is 2px of the focus colour, 2px outside what has focus", async () => {
   const button = document.createElement("button");
   button.textContent = "probe";

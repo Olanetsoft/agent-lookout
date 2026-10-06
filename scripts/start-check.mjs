@@ -16,8 +16,12 @@
 // for the history the app keeps, so nothing is written to this machine's. It starts
 // the app on a port the system picks, with the claude command, tmux and
 // Terminal left alone, and asks only `/api/health`, `/api/sessions`, the
-// dashboard's page and its script. Then it stops the app, and every process it
-// started, each by its own process ID, and removes the folders.
+// dashboard's page and its script. Then it runs the same command's `mcp`, as
+// an agent's app would, and checks over its stdin and stdout that it lists its
+// tools and names the session that needs you. In the package, `mcp` runs the
+// MCP SDK bundled into it, so this is what shows that bundle works. Then it
+// stops the app, and every process it started, each by its own process ID,
+// and removes the folders.
 //
 // It prints one line for each check and exits with 0 when all pass, 1 when one
 // fails and 2 when it could not get as far as checking.
@@ -37,6 +41,11 @@ const START_TIMEOUT_MS = 30_000;
 const FIND_TIMEOUT_MS = 20_000;
 /** How long the app gets to stop once `npm start` has been asked to. */
 const STOP_TIMEOUT_MS = 15_000;
+/** How long `mcp` gets to answer each message, and to end once its stdin is closed. */
+const MCP_TIMEOUT_MS = 15_000;
+
+/** The tools `mcp` serves. */
+const MCP_TOOLS = ["list_sessions", "sessions_needing_you", "sources"];
 
 /** The ids the stand-in registry files give their sessions. */
 const WAITING_ID = "00000000-0000-4000-8000-00000000a001";
@@ -65,7 +74,7 @@ const SOURCES = [
 ];
 
 /** What this script started, so that everything is stopped whatever happens. */
-const started = { sleeps: [], npm: null, dir: null };
+const started = { sleeps: [], npm: null, mcp: null, dir: null };
 let failures = 0;
 
 function pass(line) {
@@ -383,6 +392,112 @@ async function checkPage(address) {
 }
 
 /**
+ * The command that runs `mcp` and asks the app at `address`: the command
+ * `--command` gives, or `bin/agent-lookout.mjs` in this folder for `npm start`.
+ */
+function mcpCommandOf(address) {
+  const args = ["mcp", "--url", address];
+  if (start.label === "npm start") {
+    const bin = path.join(root, "bin", "agent-lookout.mjs");
+    return { file: process.execPath, args: [bin, ...args], cwd: root, label: "agent-lookout mcp" };
+  }
+  return {
+    file: start.file,
+    args: [...start.args, ...args],
+    cwd: start.cwd,
+    label: `${start.label} mcp`,
+  };
+}
+
+/**
+ * Starts `mcp` and speaks the Model Context Protocol to it over its stdin and
+ * stdout, one JSON message a line, as an agent's app does. Checks that it
+ * lists its tools, and that sessions_needing_you names the Claude Code session
+ * that needs you, then closes its stdin and checks that it ends with 0.
+ */
+async function checkMcp(address, env) {
+  const command = mcpCommandOf(address);
+  const mcp = await startProcess(command.file, command.args, {
+    cwd: command.cwd,
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  started.mcp = mcp;
+  let stderr = "";
+  mcp.stderr.on("data", (chunk) => (stderr += chunk));
+  const answers = new Map();
+  let unread = "";
+  mcp.stdout.on("data", (chunk) => {
+    unread += chunk;
+    let end;
+    while ((end = unread.indexOf("\n")) !== -1) {
+      const line = unread.slice(0, end).trim();
+      unread = unread.slice(end + 1);
+      if (line === "") continue;
+      try {
+        const message = JSON.parse(line);
+        answers.get(message.id)?.(message);
+      } catch {
+        fail(`${command.label} printed a line that is not JSON: ${line.slice(0, 200)}`);
+      }
+    }
+  });
+  let lastId = 0;
+  const send = (message) => mcp.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  const ask = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = ++lastId;
+      const timer = setTimeout(() => reject(new Error(`no answer to ${method}`)), MCP_TIMEOUT_MS);
+      answers.set(id, (message) => {
+        clearTimeout(timer);
+        if (message.error) reject(new Error(`${method}: ${message.error.message}`));
+        else resolve(message.result);
+      });
+      send({ id, method, params });
+    });
+
+  try {
+    const hello = await ask("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "start-check", version: "1" },
+    });
+    send({ method: "notifications/initialized" });
+    const listed = (await ask("tools/list", {})).tools.map((tool) => tool.name).sort();
+    if (JSON.stringify(listed) === JSON.stringify(MCP_TOOLS)) {
+      pass(`${command.label} ${hello.serverInfo.version} lists its tools: ${listed.join(", ")}`);
+    } else {
+      fail(
+        `${command.label} lists ${listed.join(", ") || "no tools"}, not ${MCP_TOOLS.join(", ")}`,
+      );
+    }
+    const needing = await ask("tools/call", { name: "sessions_needing_you", arguments: {} });
+    const waiting = needing.structuredContent?.sessions ?? [];
+    if (
+      !needing.isError &&
+      waiting.some((session) => session.name === "checkout-flow" && session.reason === "permission")
+    ) {
+      pass(`Its sessions_needing_you says checkout-flow needs you, for permission`);
+    } else {
+      fail(`Its sessions_needing_you answered ${JSON.stringify(needing).slice(0, 300)}`);
+    }
+  } catch (error) {
+    fail(`${command.label} did not answer: ${error.message}. It printed on stderr:\n${stderr}`);
+  }
+
+  mcp.stdin.end();
+  const code = await exitOf(mcp, MCP_TIMEOUT_MS);
+  if (code === 0) {
+    pass(`${command.label} ended with exit code 0 once its stdin was closed`);
+  } else {
+    const ended = code === null ? "went on running" : `ended with ${code}`;
+    fail(`${command.label} ${ended} once its stdin was closed`);
+    for (const pid of [mcp.pid, ...(await descendantsOf(mcp.pid))]) signal(pid, "SIGKILL");
+  }
+  started.mcp = null;
+}
+
+/**
  * Stops the app as Ctrl+C in its terminal does, by sending SIGINT to npm
  * and to every process under it at once, each by its own ID, and checks that
  * the app stopped with it.
@@ -425,6 +540,11 @@ async function stopApp(address) {
 
 /** Stops whatever is still running, each process by its own ID, and removes the folders. */
 async function cleanUp() {
+  if (started.mcp) {
+    const below = await descendantsOf(started.mcp.pid);
+    for (const pid of [started.mcp.pid, ...below]) signal(pid, "SIGKILL");
+    started.mcp = null;
+  }
   if (started.npm) {
     const below = await descendantsOf(started.npm.pid);
     for (const pid of [started.npm.pid, ...below]) signal(pid, "SIGKILL");
@@ -464,9 +584,10 @@ async function main() {
   const [waitingSleep, leftoverSleep] = started.sleeps;
   const folders = await makeFolders(started.dir, waitingSleep.pid, leftoverSleep.pid);
 
+  const env = appEnv(folders);
   let app;
   try {
-    app = await startApp(appEnv(folders));
+    app = await startApp(env);
   } catch (error) {
     console.error(error.message);
     return 2;
@@ -484,6 +605,8 @@ async function main() {
   const snapshot = await readSessions(app.address);
   if (snapshot === null) fail(`${start.label} did not answer /api/sessions`);
   else check(snapshot, folders.procStart);
+
+  await checkMcp(app.address, env);
 
   await stopApp(app.address);
 

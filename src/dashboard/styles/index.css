@@ -44,6 +44,8 @@
 /*
  * Fonts are bundled with the app. Nothing is fetched from the network. Only the
  * weights the interface uses are imported: every weight adds files to the build.
+ * Each face is a .woff2 file alone: `woff2Only` in vite.config.ts takes out the
+ * .woff that fontsource names after it, which no browser the app is built for needs.
  */
 @import "@fontsource/atkinson-hyperlegible-next/400.css";
 @import "@fontsource/atkinson-hyperlegible-next/500.css";
