@@ -1,19 +1,26 @@
-// What the app's own scheme answers: `/api/*` from the collector's handler, and
+// What the app's own scheme answers: `/api/app/*`, the routes only the app has,
+// from the app's own handler, the rest of `/api/*` from the collector's, and
 // every other path from the built dashboard, by the same rules and with the
-// same Content-Security-Policy as the standalone server's static files. Both
+// same Content-Security-Policy as the standalone server's static files. All
 // are Node handlers, reached through the adapter in `requestAdapter.ts`.
 //
 // It imports nothing from Electron, so it runs, and is tested, in plain Node.
 // `main.ts` hands it to `protocol.handle`.
 
 import { APP_HOST, APP_ORIGIN, APP_PROTOCOL } from "../../core/appAddress.ts";
+import { isAppApiPath } from "../../core/appUpdate.ts";
 import { isApiPath, type ApiHandler } from "../../collector/handler.ts";
 import { createStaticHandler } from "../../collector/hosts/staticFiles.ts";
-import { answerWith, originOf, type AppRequest } from "./requestAdapter.ts";
+import { answerWith, originOf, type AppRequest, type NodeHandler } from "./requestAdapter.ts";
 
 export interface AppProtocolOptions {
   /** The collector's handler for `/api/*`. */
   api: ApiHandler;
+  /**
+   * The app's own handler for `/api/app/*`: its updates. Left out, those
+   * addresses go to the collector, which has nothing there.
+   */
+  app?: NodeHandler;
   /** The built dashboard: the folder that holds `index.html`. */
   distDir: string;
 }
@@ -56,7 +63,12 @@ export function createAppProtocolHandler(
     if (origin !== undefined && origin !== APP_ORIGIN) {
       return plain(403, "This address only answers the app's own window.");
     }
-    const handler = isApiPath(url.pathname) ? options.api : serveFile;
+    const handler =
+      options.app && isAppApiPath(url.pathname)
+        ? options.app
+        : isApiPath(url.pathname)
+          ? options.api
+          : serveFile;
     return answerWith(handler, request, APP_ORIGIN);
   };
 }

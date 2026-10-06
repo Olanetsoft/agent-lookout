@@ -62,6 +62,8 @@ One block of tests is skipped in every ordinary run: "the real claude binary, ru
 AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1 npx vitest run --project integration tests/integration/collector/adapters/claude-code/feed.test.ts -t "real claude binary"
 ```
 
+No test asks GitHub for a release. The Mac app's updater is tested against a release of the test's own, a server on `127.0.0.1` that answers as GitHub does, with its redirects, a `latest-mac.yml` and a zip, and the app it would replace is a made-up bundle in a temporary folder. Its helper, which would replace a real app, is a stand-in that starts nothing. On macOS the zip is made and unpacked with the real `ditto`, and elsewhere a stand-in unpacks it.
+
 No other test reads the real `~/.claude` folder or runs the real `claude` command. No test reads the real `~/.codex` folder or the real `~/.agent-lookout` folder: every test that builds the collector names a Codex folder and a folder of status files of its own. No test reads a real git repository either. The branch finder's tests make repositories of plain files in a temporary folder, writing `.git/HEAD` themselves, so they need no git, and the sessions in the fixtures work in folders under `/Users/example`, which is in none.
 
 ### The tests against the real tmux

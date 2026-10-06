@@ -12,7 +12,7 @@ Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one brow
 
 ## Rules
 
-- By default Agent Lookout sends nothing anywhere. Its code makes no network request to anything but its own local server, except email notifications and the webhook, which are off until the person sets them up. No telemetry, analytics, remote fonts, CDN links or update checks, in your code or in a dependency.
+- By default Agent Lookout sends nothing anywhere. Its code makes no network request to anything but its own local server, except email notifications and the webhook, which are off until the person sets them up. No telemetry, analytics, remote fonts, CDN links or update checks, in your code or in a dependency. The one exception is the Mac app's daily check of GitHub Releases, in `src/desktop/updates/`, which [PRIVACY.md](PRIVACY.md#updates-mac-app-only) describes.
 - No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Fixtures go in `tests/fixtures/`, written by hand with generic values such as `demo-project` and `/Users/example/code/demo`. Never copy a real session name or path into the repository.
 - A change in behaviour comes with a test. Every test lives under `tests/unit/`, `tests/integration/` or `tests/component/`, named for the module it covers and at the mirrored path. Nothing under `src/` is a test or imports from `tests/`. [tests/README.md](tests/README.md) says which group a test belongs in.
 - Put a new module in the folder for its area. `npm run check` fails when a folder holds more than eight code files side by side.

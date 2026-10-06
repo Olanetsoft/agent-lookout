@@ -214,7 +214,7 @@ Why, for each No and Partly:
 
 ### Settings
 
-Settings has five cards. Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
+Settings has five cards, and in the Mac app a sixth, [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
 
 #### Notifications
 
@@ -925,6 +925,15 @@ It behaves as a Mac app does:
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
 - It opens where you left it, at the size you left it.
+- Check for Updates…, in the Agent Lookout menu under About, checks for a newer version at once. [Updates](#updates) says how.
+
+### Updates
+
+The app can update itself from the project's [releases on GitHub](https://github.com/Olanetsoft/agent-lookout/releases). About once a day while it runs, it asks GitHub whether a newer version is out. It sends nothing about your sessions: GitHub sees the app's version number and your IP address, as with any web request. [Updates (Mac app only)](../PRIVACY.md#updates-mac-app-only) has the details. To turn it off, open Settings and, under Updates, set Check for updates automatically to Off. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once either way. `npx agent-lookout` and the repository never check for anything.
+
+When a newer version is out, the app downloads it, checks it against the size and SHA-512 its release gives, and says so under Updates in Settings, as in "Version 0.2.1 is available", with a link to its release notes. The daily check also shows a notification, once for each version. Press Install and Restart, and the app quits, puts the new version in its place and opens it again. Nothing is installed until you press it. With the window closed, Check for Updates… shows its answer in a message, which can install a version that is ready. When the latest release has no Mac app yet, it says "The latest release has no Mac app yet", and when it has none for your kind of Mac, "The latest release has no app for this kind of Mac". Neither needs anything from you. If a version cannot be put in place, the app opens again as the version you had, on the Updates card, which says it could not be installed.
+
+The app can replace itself only from a folder it can change, so keep it in Applications. Opened from its disk image or another disk, or opened where it was downloaded, which macOS runs from a read-only copy, it says it cannot update itself there. Drag it to Applications, open it from there and check again, or download the new version from its release page. A copy run with `npm run dev:desktop` checks only when you ask and never installs.
 
 What the app cannot show you it writes in its log, `~/Library/Logs/Agent Lookout/main.log`: an error, and the lines `npm start` would print, such as the one that says an email or webhook setting is wrong. If the app cannot start at all, it says so in a message and quits. The log stays on this computer.
 

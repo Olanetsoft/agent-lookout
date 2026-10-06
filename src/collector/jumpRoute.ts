@@ -91,27 +91,31 @@ function header(req: Pick<IncomingMessage, "headers">, name: string): string | u
 }
 
 /**
- * Why a request to the jump route is refused before its body is read, or null
- * when it may proceed.
+ * Why a request to a route that acts is refused before its body is read, or
+ * null when it may proceed. The jump route is one, and the Mac app's routes
+ * for its updates are the others.
  *
- * Every other route only reads. This one changes which tmux pane is selected,
- * or which Terminal or iTerm2 tab is in front, so on top of the checks every
- * request has already passed (`refusalFor` in `handler.ts`) it must be one
- * only the dashboard's own page can send:
+ * Every other route only reads. These change something on this computer, so
+ * on top of the checks every request has already passed (`refusalFor` in
+ * `handler.ts`) each must be one only the dashboard's own page can send:
  *
  * - A POST, so that no link, image or address typed into a browser sends it.
  * - With an `Origin` that is a page served from this machine. A browser puts
  *   `Origin` on every POST a page makes, so a request without one did not come
  *   from a page, and here that is refused, where a GET may go without.
  * - Marked `same-origin` by a browser that marks its requests at all.
- * - Carrying `X-Agent-Lookout-Action: jump` and a JSON content type. A page at
- *   another origin may send neither without asking first, with a preflight.
- *   A preflight is an OPTIONS request. One from another site never gets this
- *   far, and one that does is refused here like any other method. No answer
- *   to either has a CORS header.
- * - Small.
+ * - Carrying `X-Agent-Lookout-Action` with the route's own action, such as
+ *   `jump`, and a JSON content type. A page at another origin may send neither
+ *   without asking first, with a preflight. A preflight is an OPTIONS request.
+ *   One from another site never gets this far, and one that does is refused
+ *   here like any other method. No answer to either has a CORS header.
+ * - No larger than `maxBodyBytes`.
  */
-export function jumpRefusalFor(req: Pick<IncomingMessage, "method" | "headers">): ApiAnswer | null {
+export function actionRefusalFor(
+  req: Pick<IncomingMessage, "method" | "headers">,
+  action: string,
+  maxBodyBytes: number,
+): ApiAnswer | null {
   if (req.method !== "POST") {
     return refuse(405, "This address only answers POST requests.", { Allow: "POST" });
   }
@@ -124,10 +128,10 @@ export function jumpRefusalFor(req: Pick<IncomingMessage, "method" | "headers">)
   if (site !== undefined && site !== "same-origin") {
     return refuse(403, "This address only acts for the dashboard page served from this machine.");
   }
-  if (header(req, ACTION_HEADER) !== ACTION) {
+  if (header(req, ACTION_HEADER) !== action) {
     return refuse(
       403,
-      `A request to this address must carry the header ${ACTION_HEADER}: ${ACTION}.`,
+      `A request to this address must carry the header ${ACTION_HEADER}: ${action}.`,
     );
   }
 
@@ -137,10 +141,20 @@ export function jumpRefusalFor(req: Pick<IncomingMessage, "method" | "headers">)
   }
 
   const length = header(req, "content-length");
-  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > MAX_JUMP_BODY_BYTES)) {
-    return refuse(413, `The body must be no more than ${MAX_JUMP_BODY_BYTES} bytes.`);
+  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBodyBytes)) {
+    return refuse(413, `The body must be no more than ${maxBodyBytes} bytes.`);
   }
   return null;
+}
+
+/**
+ * Why a request to the jump route is refused before its body is read, or null
+ * when it may proceed: `actionRefusalFor` with the action `jump`. This route
+ * changes which tmux pane is selected, or which Terminal or iTerm2 tab is in
+ * front.
+ */
+export function jumpRefusalFor(req: Pick<IncomingMessage, "method" | "headers">): ApiAnswer | null {
+  return actionRefusalFor(req, ACTION, MAX_JUMP_BODY_BYTES);
 }
 
 /**
@@ -163,15 +177,16 @@ export function sessionIdIn(body: string): string | null {
   return sessionId.length <= MAX_SESSION_ID_LENGTH ? sessionId : null;
 }
 
-type Body = { ok: true; text: string } | { ok: false; tooLarge: boolean };
+/** A request's body as text, or why it could not be read. */
+export type RequestBody = { ok: true; text: string } | { ok: false; tooLarge: boolean };
 
 /** Reads a request's body, and stops as soon as it is larger than the limit. */
-function readBody(req: IncomingMessage, limit: number): Promise<Body> {
+export function readBody(req: IncomingMessage, limit: number): Promise<RequestBody> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let received = 0;
     let done = false;
-    const finish = (body: Body) => {
+    const finish = (body: RequestBody) => {
       if (done) return;
       done = true;
       resolve(body);

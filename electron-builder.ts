@@ -66,7 +66,16 @@ const config: Configuration = {
   dmg: {
     title: "Agent Lookout ${version}",
   },
-  publish: null,
+  // A provider, so electron-builder writes latest-mac.yml beside the zips and
+  // disk images: each file's name, size and SHA-512, which the app checks what
+  // it downloads against. "generic" is the one provider electron-builder never
+  // uploads to, whatever --publish says, so nothing is published from here.
+  // The release workflow attaches the files to the GitHub release itself. The
+  // address only goes into the app's app-update.yml, which nothing in it reads.
+  publish: {
+    provider: "generic",
+    url: "https://github.com/Olanetsoft/agent-lookout/releases/latest/download",
+  },
 };
 
 export default config;

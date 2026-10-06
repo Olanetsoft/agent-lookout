@@ -1,9 +1,12 @@
+import { UPDATES_HASH } from "@core/appUpdate";
+
 /**
  * The three views the rail moves between. Each has its own address in the
  * fragment of the page's URL, so the browser's back button, a reload and a
  * bookmark all land on the same view. Anything the page does not know is the
  * Overview, so a mistyped address is never an empty page. So is the address of
- * a session's details, which open over it: see `sessionDetails.ts`.
+ * a session's details, which open over it: see `sessionDetails.ts`. The Mac
+ * app also opens `#settings/updates`, Settings with its Updates card in sight.
  */
 
 export type ViewId = "overview" | "sources" | "settings";
@@ -29,6 +32,7 @@ export function viewFromHash(hash: string): ViewId {
     case "#sources":
       return "sources";
     case "#settings":
+    case UPDATES_HASH:
       return "settings";
     default:
       return "overview";

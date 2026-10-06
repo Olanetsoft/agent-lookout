@@ -140,6 +140,27 @@ test("the facts about this copy say its version and that Agent Lookout sends its
   expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+/);
 });
 
+test("in a browser there is no Updates card, and nothing asks about updates", async () => {
+  const screen = await render(<SettingsView />);
+  await expect.element(screen.getByRole("region", { name: "This copy" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Updates" }).elements()).toHaveLength(0);
+  expect(asked.some((path) => path.startsWith("/api/app/"))).toBe(false);
+});
+
+test("in the Mac app, Updates follows Notifications, among the settings the page changes", async () => {
+  const screen = await render(<SettingsView inApp />);
+  await expect.element(screen.getByRole("region", { name: "Updates" })).toBeVisible();
+  const titles = [...screen.container.querySelectorAll('[data-slot="section-card"] h2')].map(
+    (title) => title.textContent,
+  );
+  expect(titles).toEqual(["Theme", "Notifications", "Updates", "Email", "Webhook", "This copy"]);
+  // In the left column, with Theme and Notifications.
+  const notifications = screen.getByRole("region", { name: "Notifications" }).element();
+  const updates = screen.getByRole("region", { name: "Updates" }).element();
+  expect(updates.parentElement).toBe(notifications.parentElement);
+  expect(asked).toContain("/api/app/update");
+});
+
 test.each(["dark", "light"] as const)(
   "in the %s theme the view is glass cards, with no warm colour",
   async (theme) => {

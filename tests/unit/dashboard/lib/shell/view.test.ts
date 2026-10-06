@@ -8,6 +8,11 @@ test("#sources and #settings are their views", () => {
   expect(viewFromHash("#overview")).toBe("overview");
 });
 
+test("#settings/updates, which the Mac app opens, is Settings", () => {
+  expect(viewFromHash("#settings/updates")).toBe("settings");
+  expect(viewFromHash("#settings/other")).toBe("overview");
+});
+
 test.each(["", "#", "#unknown", "#Sources", "#sources/", "sources", "#settings?x=1", "##sources"])(
   "%j is the Overview",
   (hash) => {

@@ -182,7 +182,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 
 ## Privacy
 
-By default Agent Lookout itself sends nothing anywhere: no telemetry, no analytics, no crash reports, no update check and no account. Its fonts and scripts are bundled, so the page loads nothing from the internet. It stores no session data on disk: what it knows is held in memory and is gone when it stops. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and can send.
+By default Agent Lookout itself sends nothing anywhere: no telemetry, no analytics, no crash reports and no account. The one exception is the Mac app, which asks GitHub about once a day whether a newer version of it is out and sends nothing about your sessions: Settings turns that off, [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) says what it sends, and `npx agent-lookout` and the repository never check. Its fonts and scripts are bundled, so the page loads nothing from the internet. It stores no session data on disk: what it knows is held in memory and is gone when it stops. [PRIVACY.md](PRIVACY.md) lists everything it reads, runs and can send.
 
 - Email and the webhook are off until you set them up. Then each goes only to the one address you name, and email goes through the mail server you name. A message holds the session's name, what happened and when, how long a wait has lasted, and the names of its folder, app and agent. It holds no path and no prompt.
 - Started with `npx agent-lookout`, npm contacts its registry: to download the package the first time, and each time after to ask whether a newer version is out. That is npm's own traffic, not Agent Lookout's. Installed with `npm install -g agent-lookout` and started as `agent-lookout`, npm is not involved.

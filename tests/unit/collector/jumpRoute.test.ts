@@ -2,7 +2,12 @@ import type { IncomingMessage } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { jumpRefusalFor, MAX_JUMP_BODY_BYTES, sessionIdIn } from "@collector/jumpRoute";
+import {
+  actionRefusalFor,
+  jumpRefusalFor,
+  MAX_JUMP_BODY_BYTES,
+  sessionIdIn,
+} from "@collector/jumpRoute";
 
 /** The headers the dashboard's own page sends. Node gives header names in lower case. */
 const FROM_THE_PAGE = {
@@ -23,6 +28,26 @@ function request(
 }
 
 const status = (req: Pick<IncomingMessage, "method" | "headers">) => jumpRefusalFor(req)?.status;
+
+describe("actionRefusalFor", () => {
+  test("holds a route that acts to its own action and its own size", () => {
+    const update = request({
+      "x-agent-lookout-action": "check-for-updates",
+      "content-length": "2",
+    });
+    expect(actionRefusalFor(update, "check-for-updates", 256)).toBeNull();
+    // The jump's action does not open another route, and another route's does not open the jump.
+    expect(actionRefusalFor(request(), "check-for-updates", 256)?.status).toBe(403);
+    expect(jumpRefusalFor(update)?.status).toBe(403);
+    expect(
+      actionRefusalFor(
+        request({ "x-agent-lookout-action": "check-for-updates", "content-length": "257" }),
+        "check-for-updates",
+        256,
+      )?.status,
+    ).toBe(413);
+  });
+});
 
 describe("jumpRefusalFor", () => {
   test("a POST from the dashboard's own page may proceed", () => {

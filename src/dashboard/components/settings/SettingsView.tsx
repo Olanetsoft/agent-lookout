@@ -6,6 +6,7 @@ import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
 import {
   useOutboundStatus,
@@ -15,6 +16,7 @@ import { useTheme } from "@dashboard/hooks/shell/useTheme";
 import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
 import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
+import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 import type { ThemePreference } from "@dashboard/lib/shell/theme";
 
 const THEME_OPTIONS = [
@@ -204,10 +206,15 @@ function whereDataGoes(emailing: boolean, posting: boolean): string {
 /**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified and of what, whether email and a webhook have been
- * set up, and a few facts about this copy of the app.
+ * whether to be notified and of what, in the Mac app its updates, whether
+ * email and a webhook have been set up, and a few facts about this copy of
+ * the app.
+ *
+ * The page knows it is in the app's window by its address. In a browser there
+ * is no Updates card: `npx agent-lookout` and the repository never check for
+ * anything. Tests say which it is with `inApp`.
  */
-export function SettingsView() {
+export function SettingsView({ inApp = inAppWindow() }: { inApp?: boolean }) {
   const { preference, setPreference } = useTheme();
   const email = useOutboundStatus(fetchEmailStatus);
   const webhook = useOutboundStatus(fetchWebhookStatus);
@@ -244,6 +251,8 @@ export function SettingsView() {
         </SectionCard>
 
         <NotificationsCard />
+
+        {inApp && <UpdatesCard />}
       </div>
 
       <div className='col-span-4 flex min-w-0 flex-col gap-4 max-wide:w-full'>

@@ -6,8 +6,9 @@ import { appMenuTemplate, GUIDE_URL } from "@desktop/menu/appMenu";
 function menus(development = false) {
   const openSettings = vi.fn();
   const openGuide = vi.fn();
-  const template = appMenuTemplate({ development, openSettings, openGuide });
-  return { template, openSettings, openGuide };
+  const checkForUpdates = vi.fn();
+  const template = appMenuTemplate({ development, openSettings, openGuide, checkForUpdates });
+  return { template, openSettings, openGuide, checkForUpdates };
 }
 
 /** A menu's items, each by its role, its label or a dash for a separator. */
@@ -34,11 +35,12 @@ describe("the app's menus", () => {
     ]);
   });
 
-  test("the app's own menu has About, Settings…, Services, Hide and Quit", () => {
+  test("the app's own menu has About, Check for Updates…, Settings…, Services, Hide and Quit", () => {
     const { template, openSettings } = menus();
     const appMenu = template[0];
     expect(itemsOf(appMenu)).toEqual([
       "about",
+      "Check for Updates…",
       "-",
       "Settings…",
       "-",
@@ -50,10 +52,21 @@ describe("the app's menus", () => {
       "-",
       "quit",
     ]);
-    const settings = (appMenu?.submenu as MenuItemConstructorOptions[])[2];
+    const settings = (appMenu?.submenu as MenuItemConstructorOptions[])[3];
     expect(settings?.accelerator).toBe("CmdOrCtrl+,");
     click(settings);
     expect(openSettings).toHaveBeenCalledOnce();
+  });
+
+  test("Check for Updates…, under About, checks now whether or not the automatic check is on", () => {
+    const { template, checkForUpdates, openSettings } = menus();
+    const item = (template[0]?.submenu as MenuItemConstructorOptions[])[1];
+    expect(item?.label).toBe("Check for Updates…");
+    // It has no key of its own, as in other Mac apps.
+    expect(item?.accelerator).toBeUndefined();
+    click(item);
+    expect(checkForUpdates).toHaveBeenCalledOnce();
+    expect(openSettings).not.toHaveBeenCalled();
   });
 
   test("Help opens the guide", () => {

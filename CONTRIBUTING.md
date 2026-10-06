@@ -4,7 +4,7 @@ Agent Lookout has one maintainer. Bug reports, fixes and adapters for other agen
 
 ## Two rules
 
-By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, or a webhook, whose posts go only to the address they set. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
+By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, or a webhook, whose posts go only to the address they set. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. The one exception is the Mac app's check of GitHub Releases for a newer version, about once a day, which the maintainer decided on and [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) describes. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
 
 No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Sample sessions, placeholder numbers and demo modes stay out of the product. Fixtures exist only under `tests/`.
 
@@ -102,6 +102,22 @@ The maintainer publishes. The README, `docs/GUIDE.md` and `CHANGELOG.md` go into
 4. Commit the changes once `npm publish` has succeeded. If it failed, nothing was published.
 
 `npm publish` runs `prepack`, which builds the dashboard and the bundle afresh, then uploads the tarball, made from the files on disk. npm asks for a one-time password when the account has two-factor authentication on. `publishConfig` in `package.json` makes the package public.
+
+### The Mac app
+
+The release workflow, `.github/workflows/release-mac.yml`, attaches the Mac app to the release. The version only ever changes in its last number, and the tag is `v` and the version, such as `v0.2.1`.
+
+1. Once the version is published and its changes are committed, tag that commit and push the tag:
+
+   ```sh
+   git tag v0.2.1
+   git push origin v0.2.1
+   ```
+
+2. The workflow runs on a Mac runner for the tag. It stops unless the tag is `v` and the version in `package.json`. It runs `npm ci` and `npm run check`, and builds the app with `npm run dist:mac`, signed ad hoc, with read access to the repository only. A second job, the only one with `contents: write`, takes the two disk images, the two zips and `latest-mac.yml` from the first and attaches them to the tag's release with `gh release upload --clobber`, making the release as a draft first if there is none. It runs nothing else, so no dependency's install script, test or build step is ever in reach of a token that can change a release. The workflow uses only its own `GITHUB_TOKEN` and publishes nothing to npm.
+3. Write the release's notes on GitHub and publish it, if it is a draft. The apps already installed find it within a day, or at once with Check for Updates…: they read `latest-mac.yml` from the latest published release, and never see a draft or a prerelease.
+
+To run it again for a tag already pushed, as after a failure, start it by hand from the Actions tab with that tag. It replaces the files of the same name. `latest-mac.yml` gives each file's size and SHA-512, and an app checks what it downloads against it, so never attach a file by hand that it does not name.
 
 ## Where code goes
 

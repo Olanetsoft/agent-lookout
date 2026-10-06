@@ -15,6 +15,13 @@
 // count of sessions that need you on the Dock icon; clicking its Dock icon
 // opens the window again; Cmd+Q quits, and the collector stops.
 //
+// It asks the internet one thing: whether GitHub has a newer version of it, at
+// start and then about once a day while the switch in Settings is on, or when
+// the person chooses Check for Updates…. A newer one is downloaded and checked,
+// and installed only when the person presses Install and Restart
+// (`updates/updater.ts`). The page reaches that through `/api/app/*` on the
+// app's own scheme, which only this host answers (`updates/updateRoute.ts`).
+//
 // What would otherwise be lost, an error here or a warning from the collector,
 // goes to the app's log (`process/appLog.ts`). A startup that fails says so in
 // a dialog and quits, rather than leaving an icon in the Dock with no window.
@@ -23,9 +30,19 @@
 
 import path from "node:path";
 
-import { app, dialog, Menu, protocol, session, shell, type BrowserWindow } from "electron";
+import {
+  app,
+  dialog,
+  Menu,
+  Notification,
+  protocol,
+  session,
+  shell,
+  type BrowserWindow,
+} from "electron";
 
 import { APP_SCHEME, APP_START_URL } from "../core/appAddress.ts";
+import { UPDATES_HASH, type InstallRefusal } from "../core/appUpdate.ts";
 import { createCollector, type Collector } from "../collector/collector.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
 import { applySessionRules } from "./navigation/sessionRules.ts";
@@ -34,10 +51,18 @@ import { createDockBadge } from "./notifications/dockBadge.ts";
 import { createAppLog, describeError, LOG_FILE } from "./process/appLog.ts";
 import { refusedSwitch } from "./process/launchSwitches.ts";
 import { createAppProtocolHandler } from "./protocol/appProtocol.ts";
+import { bundleOf } from "./updates/install/installLocation.ts";
+import { foundNotice, updateDialog } from "./updates/updateDialog.ts";
+import { createUpdateRoute } from "./updates/updateRoute.ts";
+import { settingsFile } from "./updates/updateSettings.ts";
+import { createUpdater, type Updater } from "./updates/updater.ts";
 import { createMainWindow } from "./window/mainWindow.ts";
 
 /** The dashboard's Settings view, which the app menu's Settings… opens. */
 const SETTINGS_URL = `${APP_START_URL}#settings`;
+
+/** The Settings view, scrolled to its Updates card. */
+const UPDATES_URL = `${APP_START_URL}${UPDATES_HASH}`;
 
 const log = createAppLog({
   dir: () => app.getPath("logs"),
@@ -63,6 +88,13 @@ function whereTheLogIs(): string {
 
 let window: BrowserWindow | null = null;
 let collector: Collector | null = null;
+let updater: Updater | null = null;
+
+/** Notifications the app has shown of its own, held so a click on one is still heard. */
+const shownNotices: Notification[] = [];
+
+/** Whether Check for Updates…, with the window closed, waits for an answer or shows one. */
+let answering = false;
 
 /**
  * Brings the window forward, making it again if it was closed. With an
@@ -92,6 +124,73 @@ function showWindow(address?: string): void {
   window.focus();
 }
 
+function openOutside(url: string): void {
+  shell.openExternal(url).catch(() => {
+    // Nothing on this machine opens it. There is nobody to tell.
+  });
+}
+
+/** Tells the person, once for each version, that the daily check found one. */
+function noticeFound(version: string, refusal: InstallRefusal | null): void {
+  try {
+    if (!Notification.isSupported()) return;
+    const notice = new Notification(foundNotice(version, refusal));
+    notice.on("click", () => showWindow(UPDATES_URL));
+    shownNotices.push(notice);
+    if (shownNotices.length > 5) shownNotices.shift();
+    notice.show();
+  } catch {
+    // Not shown. Settings says it all the same.
+  }
+}
+
+/**
+ * Check for Updates… in the app menu. With the window open, it shows the
+ * Updates card in Settings, which shows the answer. With it closed, the answer
+ * comes in a dialog, which can install a version that is ready. Chosen again
+ * while that answer is on its way or shown, it does nothing, so two dialogs
+ * never stack.
+ */
+function checkForUpdates(): void {
+  const updates = updater;
+  if (updates === null) return;
+  if (window !== null && !window.isDestroyed()) {
+    showWindow(UPDATES_URL);
+    void updates.check();
+    return;
+  }
+  if (answering) return;
+  answering = true;
+  void updates
+    .check()
+    .then(async (status) => {
+      const words = updateDialog(status);
+      const { response } = await dialog.showMessageBox({
+        type: "info",
+        message: words.message,
+        detail: words.detail,
+        buttons: words.buttons.map((button) => button.label),
+        defaultId: 0,
+        cancelId: words.buttons.length - 1,
+      });
+      const choice = words.buttons[response]?.choice;
+      if (choice === "install") {
+        const installed = await updates.install();
+        if (!installed.ok) showWindow(UPDATES_URL);
+      } else if (choice === "settings") {
+        showWindow(UPDATES_URL);
+      } else if (choice === "release") {
+        openOutside(words.releaseUrl);
+      }
+    })
+    .catch((error: unknown) => {
+      log(`Check for Updates… did not work: ${describeError(error)}`);
+    })
+    .finally(() => {
+      answering = false;
+    });
+}
+
 function start(): void {
   // Every page in a sandbox, and the app's scheme treated as a secure origin of
   // its own that `fetch` can reach, both before the app is ready, as Electron
@@ -116,6 +215,7 @@ function start(): void {
   app.on("will-quit", () => {
     collector?.stop();
     collector = null;
+    updater?.stop();
   });
 
   app
@@ -133,11 +233,8 @@ function start(): void {
           appMenuTemplate({
             development: !app.isPackaged,
             openSettings: () => showWindow(SETTINGS_URL),
-            openGuide: () => {
-              shell.openExternal(GUIDE_URL).catch(() => {
-                // Nothing on this machine opens it. There is nobody to tell.
-              });
-            },
+            checkForUpdates,
+            openGuide: () => openOutside(GUIDE_URL),
           }),
         ),
       );
@@ -154,15 +251,33 @@ function start(): void {
         warn: log,
         onSnapshot: badge,
       });
+      // The one thing the app asks the internet: whether GitHub has a newer
+      // version of it, about once a day while the switch in Settings is on.
+      updater = createUpdater({
+        version: app.getVersion(),
+        // An Intel copy on Apple silicon moves to the Apple silicon build.
+        arch: process.arch === "arm64" || app.runningUnderARM64Translation ? "arm64" : "x64",
+        packaged: app.isPackaged,
+        bundle: bundleOf(app.getPath("exe")),
+        settings: settingsFile(app.getPath("userData")),
+        tempDir: app.getPath("temp"),
+        onFound: noticeFound,
+        quit: () => app.quit(),
+        warn: log,
+      });
       protocol.handle(
         APP_SCHEME,
         createAppProtocolHandler({
           api: collector.handler,
+          app: createUpdateRoute(updater),
           distDir: path.join(app.getAppPath(), "dist"),
         }),
       );
       collector.start();
-      showWindow();
+      updater.start();
+      // An update that could not be installed opens on the card that says why.
+      const { update } = updater.status();
+      showWindow(update.phase === "failed" && update.step === "install" ? UPDATES_URL : undefined);
     })
     .catch((error: unknown) => {
       log(`Agent Lookout could not start: ${describeError(error)}`);

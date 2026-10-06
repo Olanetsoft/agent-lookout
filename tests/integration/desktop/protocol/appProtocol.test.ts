@@ -139,6 +139,35 @@ describe("the app's own scheme", () => {
     },
   );
 
+  test("/api/app/* goes to the app's own handler, and the rest of /api/* to the collector", async () => {
+    const { dist } = await makeApp();
+    const app: ApiHandler = (req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ app: req.url, origin: req.headers.origin }));
+    };
+    const serve = createAppProtocolHandler({ api: echo, app, distDir: dist });
+    expect(await (await serve(from(`${APP_ORIGIN}/api/app/update`, APP_ORIGIN))).json()).toEqual({
+      app: "/api/app/update",
+      origin: "http://127.0.0.1",
+    });
+    expect(await (await serve(from(`${APP_ORIGIN}/api/application`, APP_ORIGIN))).json()).toEqual({
+      url: "/api/application",
+      host: "127.0.0.1",
+      origin: "http://127.0.0.1",
+    });
+    // Another page's request never reaches it.
+    expect((await serve(from(`${APP_ORIGIN}/api/app/update`, "https://evil.example"))).status).toBe(
+      403,
+    );
+  });
+
+  test("with no handler of the app's own, /api/app/* is the collector's, which has nothing there", async () => {
+    const { dist } = await makeApp();
+    const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
+    const answer = await serve(from(`${APP_ORIGIN}/api/app/update`, APP_ORIGIN));
+    expect(answer.status).toBe(404);
+  });
+
   test.each(["agent-lookout://other/", "agent-lookout://other/api/sessions"])(
     "another host under the scheme, %s, has nothing",
     async (url) => {

@@ -184,6 +184,19 @@ The server then looks the session up in its own latest snapshot and acts on the 
 
 Each of these has an `error` sentence beside its `reason`. [SECURITY.md](../SECURITY.md) says what the route can and cannot change.
 
+## In the Mac app only
+
+The Mac app serves the dashboard and this API from its own address, `agent-lookout://app/`, with no port, and answers four more routes there, for its updates. `npm start`, `npx agent-lookout` and `npm run dev` do not have them: there, each answers 404.
+
+| Route                          | Body                               | Does                                                                                                                              |
+| ------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/app/update`          |                                    | Where updates stand: the version, the switch, the last check, what was found and how far a download has got                       |
+| `POST /api/app/update/check`   | `{}`                               | Checks GitHub now, and answers once it has                                                                                        |
+| `POST /api/app/update/install` | `{}`                               | Installs the version that is ready, then quits and opens it. 409 when none is ready, or it cannot be installed where the app runs |
+| `POST /api/app/update/setting` | `{ "automatic": true }` or `false` | Turns the daily check on or off                                                                                                   |
+
+Each POST passes the checks `POST /api/jump` does, with its own `X-Agent-Lookout-Action`: `check-for-updates`, `install-update` or `update-setting`, and a body of 256 bytes or less that is exactly what the table says. Each answers with the status `GET /api/app/update` gives, `AppUpdateStatus` in `src/core/appUpdate.ts`. Nothing in a request reaches a command or a path.
+
 ## The notifications header
 
 A dashboard page sends `X-Agent-Lookout-Notifications` on every request, to say which events its notifications are on for: `off`, `on` for a session starting to wait, or `on; events=` followed by names, such as `on; events=needs-you,finished`. Any other value, or the header sent twice, says nothing. It changes no answer. The server reads it only from a `GET` that passed the checks above, and keeps the last thing a page said, to decide whether it shows notifications itself while no page is open. [ARCHITECTURE.md](ARCHITECTURE.md#notifications-from-the-collector) has the rules.
