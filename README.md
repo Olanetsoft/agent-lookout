@@ -90,7 +90,7 @@ Kept in Applications, it updates itself: about once a day it asks GitHub whether
 
    It prints `{"ok":true,"version":"0.2.1"}`, or a later version number.
 
-4. Open <http://127.0.0.1:4777>. Your sessions appear within a few seconds. If none do, see [No sessions appear](docs/GUIDE.md#no-sessions-appear). If you used `npm run dev` before, turn notifications on again here: the browser keeps them for each address.
+4. Open <http://127.0.0.1:4777>. Your sessions appear within a few seconds. If none do, see [No sessions appear](docs/GUIDE.md#no-sessions-appear). If you used `npm run dev` before, turn notifications on again here: the browser keeps them for each address. To update later, run `npx agent-lookout@latest`, which also makes sure npx does not reuse an older copy it keeps.
 
 If a step prints something else, [When something goes wrong](docs/GUIDE.md#when-something-goes-wrong) says what to do for the common problems.
 
