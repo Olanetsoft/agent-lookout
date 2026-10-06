@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.3 - 2026-10-06
+
+The Mac app shows waiting sessions in the menu bar, the Overview says how long sessions waited on you today and over seven days, email and the webhook can carry what a waiting session is asking, new versions on npm come with provenance, and Node.js 22.12 is now the minimum.
 
 ### Added
 

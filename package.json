@@ -1,6 +1,6 @@
 {
   "name": "agent-lookout",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Shows the AI agent sessions on your computer in one browser page, and which need you.",
   "keywords": [
     "ai-agents",
