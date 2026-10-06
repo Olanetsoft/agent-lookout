@@ -1,0 +1,12 @@
+Agent Lookout's landing page, https://agent-lookout.vercel.app
+
+The page is MIT licensed, as the rest of Agent Lookout is:
+https://github.com/Olanetsoft/agent-lookout/blob/main/LICENSE
+
+It carries the work of others, each under its own licence:
+
+- Motion 14.0.0, MIT licence, in vendor/motion.mjs, which carries the licence in full.
+- Atkinson Hyperlegible Next and Atkinson Hyperlegible Mono, SIL Open Font License 1.1,
+  in assets/fonts/, beside their licence in assets/fonts/LICENSE.txt.
+- The libraries and fonts the dashboard in tour/ is built with, each listed with its
+  licence in tour/THIRD-PARTY-LICENSES.md.

@@ -30,6 +30,7 @@
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],
       "@desktop/*": ["./src/desktop/*"],
+      "@site-tour/*": ["./src/site-tour/*"],
       "@tests/*": ["./tests/*"]
     }
   },
@@ -42,6 +43,7 @@
     "tests/unit/cli",
     "tests/unit/collector",
     "tests/unit/core",
-    "tests/unit/desktop"
+    "tests/unit/desktop",
+    "tests/unit/site-tour/feed/sources.test.ts"
   ]
 }

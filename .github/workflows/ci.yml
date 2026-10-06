@@ -126,6 +126,27 @@ jobs:
       # binary comes only when something runs it, and no job does.
       - run: node scripts/build-desktop.mjs
 
+  # The landing page's tour in site/tour/ and Motion's bundle in site/vendor/
+  # are built from a release, as one of its steps, so the page never shows a
+  # dashboard feature before it ships. Every run checks their sizes and the
+  # licence line. A run whose package.json has a new version, a release, also
+  # builds them again and fails when what is committed is not what it builds.
+  tour:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit before this push or pull request, to read its version.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/site-tour/build.mjs --check --since "$BEFORE"
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
   # Starts the built app on Linux with `npm start`, as a person would, on
   # folders of its own, and checks that it reads Claude Code, Codex and status
   # files and lists their sessions with the right statuses, then stops it.

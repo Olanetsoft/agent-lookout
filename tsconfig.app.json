@@ -30,16 +30,21 @@
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],
       "@desktop/*": ["./src/desktop/*"],
+      "@site-tour/*": ["./src/site-tour/*"],
       "@tests/*": ["./tests/*"]
     }
   },
   "include": [
     "src/dashboard",
     "src/core",
+    "src/site-tour",
     "tests/component",
     "tests/unit/dashboard",
     "tests/unit/core",
+    "tests/unit/site-tour",
     // Vitest loads this by path and no test imports it, so it is named here.
     "tests/support/browser/componentSetup.ts"
-  ]
+  ],
+  // This one holds the tour's words to the adapters', which are Node code: tsconfig.collector.json checks it.
+  "exclude": ["tests/unit/site-tour/feed/sources.test.ts"]
 }

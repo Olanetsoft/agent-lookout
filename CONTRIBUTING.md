@@ -100,7 +100,7 @@ The maintainer publishes. A version tag starts `.github/workflows/release-npm.ym
 
 The README, `docs/INSTALL.md`, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
 
-1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Commit, push, and wait for CI to pass for that commit.
+1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Then run `npm run build:tour`, which builds the landing page's dashboard in `site/tour/` and `site/vendor/` from this version, and bring what `site/index.html` says up to what the version ships. CI checks that a change with a new version has the tour that version builds. Commit, push, and wait for CI to pass for that commit.
 2. Tag the commit and push the tag:
 
    ```sh
@@ -155,7 +155,7 @@ In the dashboard, primitives are in `src/dashboard/components/ui/` and features 
 
 Modules are grouped by what they are about, not left in one long folder: `src/dashboard/lib/` has `api/`, `sessions/`, `sources/`, `charts/`, `notifications/` and `shell/`, and the hooks, the primitives and `src/core/` are grouped the same way. Put a new module in the folder for its area, and its test at the mirrored path under `tests/`. `npm run check` fails when a folder holds more than eight code files side by side.
 
-The dashboard and the tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard`, `@desktop` and `@tests`. Only tests can use `@tests`. The collector, the command in `src/cli/` and `src/core/` import by relative path with the `.ts` extension, because `npm start` and the command run them without a bundler, and the Mac app's main process in `src/desktop/` does the same.
+The dashboard, the landing page's tour in `src/site-tour/` and the tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard`, `@desktop`, `@site-tour` and `@tests`. Only tests can use `@tests`. The collector, the command in `src/cli/` and `src/core/` import by relative path with the `.ts` extension, because `npm start` and the command run them without a bundler, and the Mac app's main process in `src/desktop/` does the same.
 
 ## Names
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 
 import type { Session } from "@core/sessions/session";
 import { jumpWay } from "@dashboard/lib/sessions/status";
+import { goTo } from "@dashboard/lib/shell/addressHost";
 import { openSession } from "@dashboard/lib/shell/sessionDetails";
 import type { ViewId } from "@dashboard/lib/shell/view";
 
@@ -78,7 +79,7 @@ export function useShowSession(
         return;
       }
       pending.current = session;
-      window.location.hash = "#overview";
+      goTo("#overview");
     },
     [main, view],
   );

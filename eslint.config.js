@@ -17,6 +17,9 @@ export default defineConfig(
     "tests/.artifacts",
     ".claude",
     ".reference",
+    // Built by scripts/site-tour/build.mjs for the landing page.
+    "site/tour",
+    "site/vendor",
   ]),
 
   // One block for every source file, so a new folder is linted the day it appears.

@@ -216,6 +216,7 @@ export default defineConfig({
       "@collector": fromRoot("./src/collector"),
       "@dashboard": fromRoot("./src/dashboard"),
       "@desktop": fromRoot("./src/desktop"),
+      "@site-tour": fromRoot("./src/site-tour"),
     },
   },
   server: {

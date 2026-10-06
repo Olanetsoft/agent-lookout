@@ -8,6 +8,8 @@ coverage
 # Generated
 package-lock.json
 tests/.artifacts/
+site/tour/
+site/vendor/
 
 # Owner-only files. Builders never edit these, so `npm run format` must not either.
 .claude/

@@ -1,4 +1,5 @@
 import { sessionHash, sessionIdFromHash } from "@core/sessions/sessionHash";
+import { goTo } from "@dashboard/lib/shell/addressHost";
 
 /**
  * The address of one session's details, which open over the Overview:
@@ -27,13 +28,14 @@ export function sessionFromHash(hash: string): string | null {
 
 /**
  * Opens a session's details, as a new entry in the browser's history, so Back
- * closes them again. The entry is marked as added here.
+ * closes them again. The entry is marked as added here. A host that moves the
+ * address without adding an entry, as a frame on another page does, leaves
+ * nothing to mark, so closing them replaces the address in turn.
  */
 export function openSession(sessionId: string): void {
   const href = sessionHref(sessionId);
   if (window.location.hash === href) return;
-  window.location.hash = href;
-  window.history.replaceState({ [OPENED_HERE]: true }, "");
+  if (goTo(href)) window.history.replaceState({ [OPENED_HERE]: true }, "");
 }
 
 /** Set while the step back that closes the details is on its way. */

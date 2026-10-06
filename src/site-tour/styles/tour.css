@@ -1,0 +1,138 @@
+/*
+ * The dashboard as the landing page holds it. Everything here is about the
+ * frame around it: the dashboard's own stylesheet draws the rest.
+ */
+
+/*
+ * While the page drives the tour, the page scrolls and the dashboard does not:
+ * the director moves it. Once it is the visitor's, it scrolls as a page does,
+ * and hands the scroll on to the landing page at either end.
+ */
+html[data-mode="tour"] {
+  overflow: hidden;
+}
+html[data-mode="yours"] {
+  overflow: auto;
+  overscroll-behavior: auto;
+}
+
+/* The ring a key would draw on the Jump the tour presses. */
+[data-tour-pressed] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/*
+ * What a scene is about: in History, the row for watching resumed, after the
+ * gap, and in Allow or Deny, the waiting session's request in the hero. The
+ * request is lit as far again outside its edge, so its words keep their place.
+ */
+[data-tour-point] {
+  border-radius: 8px;
+  background-color: var(--fill-hover);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+[data-tour-point][data-slot="answer"] {
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 8px var(--fill-hover),
+    0 0 0 9px var(--rule-strong);
+}
+
+/*
+ * The motion of a scene, only where motion is welcome. A scene that changes
+ * what the dashboard shows comes in as a view transition: the screen holds the
+ * last scene while the next is drawn, then the two cross over 240ms, and the
+ * view rises 8px into place, as a dialog does in the app. The rail and the
+ * header are the same on both sides, so they stay still. The tour presses Jump
+ * and Stop as a finger would, what the dashboard says Jump came to arrives the
+ * same way, and what a scene points at is lit in over the same 240ms.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 240ms;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  html[data-tour-rise="a"] main[data-view] {
+    animation: tour-rise-a 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  html[data-tour-rise="b"] main[data-view] {
+    animation: tour-rise-b 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  [data-tour-press] {
+    animation: tour-press 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  [data-tour-point] {
+    transition:
+      background-color 240ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  [data-slot="hero"] [data-part="jump-note"] {
+    animation: tour-note 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+@keyframes tour-rise-a {
+  from {
+    transform: translate3d(0, 8px, 0);
+  }
+}
+@keyframes tour-rise-b {
+  from {
+    transform: translate3d(0, 8px, 0);
+  }
+}
+@keyframes tour-press {
+  50% {
+    transform: scale(0.96);
+  }
+}
+@keyframes tour-note {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.92);
+  }
+}
+
+/*
+ * A still scene: the lamp's breathing and the ground's drift, the motion that
+ * goes on by itself, hold where they are. Named one by one, so holding them
+ * restyles those few elements and not the whole page.
+ */
+html[data-still] :is([class*="animate-lamp"], .ground > i) {
+  animation-play-state: paused !important;
+}
+
+/*
+ * The Mac app's window, as an inactive window draws its three buttons: grey,
+ * 14px round, 23px apart, centred across the rail's top cell, where macOS
+ * puts them.
+ */
+[data-host="app"] [data-slot="rail-buttons"] {
+  --button: rgba(255, 248, 238, 0.2);
+  --button-edge: rgba(255, 248, 238, 0.1);
+  background-image:
+    radial-gradient(
+      circle at 15px 28px,
+      var(--button) 6px,
+      var(--button-edge) 6.5px,
+      transparent 7px
+    ),
+    radial-gradient(
+      circle at 38px 28px,
+      var(--button) 6px,
+      var(--button-edge) 6.5px,
+      transparent 7px
+    ),
+    radial-gradient(
+      circle at 61px 28px,
+      var(--button) 6px,
+      var(--button-edge) 6.5px,
+      transparent 7px
+    );
+}
+[data-theme="light"] [data-host="app"] [data-slot="rail-buttons"],
+[data-host="app"][data-theme="light"] [data-slot="rail-buttons"] {
+  --button: rgba(38, 32, 26, 0.16);
+  --button-edge: rgba(38, 32, 26, 0.12);
+}

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agent Lookout: your Claude Code and Codex sessions on one page</title>
+    <title>Agent Lookout: your agent sessions on one page</title>
     <meta
       name="description"
-      content="Agent Lookout puts every Claude Code and Codex session running on your Mac on one page in your browser, and shows which Claude Code sessions are waiting for you. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#090908" media="(prefers-color-scheme: dark)" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Agent Lookout" />
     <meta
       property="og:description"
-      content="Every Claude Code and Codex session running on your Mac, on one page in your browser. It shows which Claude Code sessions are waiting for you. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta property="og:url" content="https://agent-lookout.vercel.app/" />
     <meta property="og:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Agent Lookout" />
     <meta
       name="twitter:description"
-      content="Every Claude Code and Codex session running on your Mac, on one page in your browser. It shows which Claude Code sessions are waiting for you. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="twitter:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
     <meta
@@ -87,7 +87,9 @@
         <span class="wordmark">Agent Lookout</span>
       </a>
       <span class="bar-rule" aria-hidden="true"></span>
-      <p class="bar-status">Runs on macOS and Linux, in your browser <span>MIT licence</span></p>
+      <p class="bar-status">
+        A Mac app, or a page in your browser on macOS, Linux and Windows <span>MIT licence</span>
+      </p>
 
       <nav class="bar-nav" aria-label="Page">
         <a href="#install">Install</a>
@@ -129,8 +131,9 @@
 
         <div class="pitch">
           <h1>
-            <span>Agent Lookout</span> puts every Claude Code and Codex session running on your Mac
-            on one page in your browser, and shows which Claude Code sessions are waiting for you.
+            <span>Agent Lookout</span> puts every Claude Code and Codex session on your computer on
+            one page, and shows which Claude Code sessions are waiting for you and what each one is
+            asking.
           </h1>
           <div class="actions">
             <a class="btn btn-solid" href="https://github.com/Olanetsoft/agent-lookout"
@@ -144,213 +147,349 @@
         </div>
       </section>
 
-      <section class="instrument" aria-label="The dashboard">
-        <div class="seg lamp-switch" role="radiogroup" aria-label="Show the dashboard with">
-          <input type="radio" name="lamp" id="lamp-out" autocomplete="off" checked />
-          <label for="lamp-out">Nothing waiting</label>
-          <input type="radio" name="lamp" id="lamp-lit" autocomplete="off" />
-          <label for="lamp-lit">One waiting</label>
-          <i class="seg-thumb" aria-hidden="true"></i>
-        </div>
+      <section class="tour" id="tour" aria-label="The dashboard">
+        <div class="tour-stage">
+          <div class="tour-line">
+            <p id="tour-line" aria-live="polite">
+              <span class="tour-name">One screen</span>
+              <span class="tour-said"
+                >Every Claude Code and Codex session on this computer, and any agent that writes a
+                status file, on one page.</span
+              >
+            </p>
+            <button type="button" class="btn btn-quiet btn-small tour-back" hidden>
+              Back to the tour
+            </button>
+          </div>
 
-        <div class="stage">
-          <i class="light light-rest" aria-hidden="true"></i>
-          <i class="light light-lamp" aria-hidden="true"></i>
+          <div class="tour-controls">
+            <div class="seg lamp-switch" role="radiogroup" aria-label="Show the dashboard with">
+              <input type="radio" name="lamp" id="lamp-out" autocomplete="off" checked />
+              <label for="lamp-out">Nothing waiting</label>
+              <input type="radio" name="lamp" id="lamp-lit" autocomplete="off" />
+              <label for="lamp-lit">One waiting</label>
+              <i class="seg-thumb" aria-hidden="true"></i>
+            </div>
+          </div>
 
-          <div class="frame glass-raised">
-            <i class="frame-lamp" aria-hidden="true"></i>
-            <div class="screen">
-              <picture>
-                <source
-                  data-day="(width < 761px)"
-                  media="(width < 761px) and (prefers-color-scheme: light)"
-                  srcset="
-                    /assets/phone-quiet-day-780.webp   780w,
-                    /assets/phone-quiet-day-1170.webp 1170w
-                  "
-                  sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
-                  width="1170"
-                  height="2532"
-                />
-                <source
-                  media="(width < 761px)"
-                  srcset="
-                    /assets/phone-quiet-night-780.webp   780w,
-                    /assets/phone-quiet-night-1170.webp 1170w
-                  "
-                  sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
-                  width="1170"
-                  height="2532"
-                />
-                <source
-                  data-day=""
-                  media="(prefers-color-scheme: light)"
-                  srcset="
-                    /assets/dashboard-quiet-day-1180.webp 1180w,
-                    /assets/dashboard-quiet-day-1770.webp 1770w,
-                    /assets/dashboard-quiet-day-2360.webp 2360w
-                  "
-                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
-                />
-                <img
-                  class="shot shot-out"
-                  id="shot-out"
-                  src="/assets/dashboard-quiet-night-1180.webp"
-                  srcset="
-                    /assets/dashboard-quiet-night-1180.webp 1180w,
-                    /assets/dashboard-quiet-night-1770.webp 1770w,
-                    /assets/dashboard-quiet-night-2360.webp 2360w
-                  "
-                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
-                  width="2360"
-                  height="1475"
-                  fetchpriority="high"
-                  alt="The Agent Lookout dashboard with nothing waiting. The panel at the top says Nothing needs you and gives the last wait, 2 minutes, by search-indexing. Under that are a bar for that wait and counts of 4 working, 2 idle and 1 stale session out of 8. The Last hour chart follows."
-                />
-              </picture>
-              <picture>
-                <source
-                  data-day="(width < 761px)"
-                  media="(width < 761px) and (prefers-color-scheme: light)"
-                  srcset="
-                    /assets/phone-waiting-day-780.webp   780w,
-                    /assets/phone-waiting-day-1170.webp 1170w
-                  "
-                  sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
-                  width="1170"
-                  height="2532"
-                />
-                <source
-                  media="(width < 761px)"
-                  srcset="
-                    /assets/phone-waiting-night-780.webp   780w,
-                    /assets/phone-waiting-night-1170.webp 1170w
-                  "
-                  sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
-                  width="1170"
-                  height="2532"
-                />
-                <source
-                  data-day=""
-                  media="(prefers-color-scheme: light)"
-                  srcset="
-                    /assets/dashboard-waiting-day-1180.webp 1180w,
-                    /assets/dashboard-waiting-day-1770.webp 1770w,
-                    /assets/dashboard-waiting-day-2360.webp 2360w
-                  "
-                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
-                />
-                <img
-                  class="shot shot-lit"
-                  id="shot-lit"
-                  src="/assets/dashboard-waiting-night-1180.webp"
-                  srcset="
-                    /assets/dashboard-waiting-night-1180.webp 1180w,
-                    /assets/dashboard-waiting-night-1770.webp 1770w,
-                    /assets/dashboard-waiting-night-2360.webp 2360w
-                  "
-                  sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
-                  width="2360"
-                  height="1475"
-                  alt="The Agent Lookout dashboard with one session waiting. The Needs you panel at the top names checkout-flow, a Claude Code session in VS Code that has waited 4 minutes 12 seconds for permission, with a Jump button beside it. Under that are bars of how long sessions waited on you and counts of 3 working, 2 idle and 1 stale session out of 8. The Last hour chart follows."
-                />
-              </picture>
+          <div class="tour-steps">
+            <a class="link tour-skip" href="#facts">Skip the tour</a>
+            <div class="tour-list">
+              <ol aria-label="What the dashboard shows">
+                <li>
+                  <button
+                    type="button"
+                    aria-current="step"
+                    data-parts="2"
+                    data-line="Every Claude Code and Codex session on this computer, and any agent that writes a status file, on one page."
+                  >
+                    One screen
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-lit=""
+                    data-line="A Claude Code session stops to ask. The lamp lights, and it moves to the top with what it is asking."
+                  >
+                    Needs you
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-lit=""
+                    data-line="With the Agent Lookout plugin in Claude Code, the whole command is shown, with Deny and Allow."
+                  >
+                    Allow or Deny
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-lit=""
+                    data-banner=""
+                    data-line="With notifications on, your browser tells you. The Mac app tells you itself, with its window closed too."
+                  >
+                    Notifi&shy;cation
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="2"
+                    data-lit=""
+                    data-press="jump"
+                    data-line="Jump takes you to a Claude Code session in VS Code, tmux, Terminal or iTerm2, from the top or its row."
+                  >
+                    Jump
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-lit=""
+                    data-line="With pull requests on, a session’s details show its checks. Stop, which asks first, is for Claude Code only."
+                  >
+                    Stop
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="2"
+                    data-lit=""
+                    data-line="Each session shows its git branch. Group them by repository, or lay them out as a board."
+                  >
+                    Board
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-line="A Claude Code background job that has finished has Resume, which copies the command that continues it."
+                  >
+                    Resume
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="3"
+                    data-line="The Events log and the charts are kept across restarts. Waits adds up how long sessions waited on you."
+                  >
+                    History
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="3"
+                    data-line="Sources says what is read for each agent, and from another machine over SSH that runs Agent Lookout."
+                  >
+                    Sources
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="2"
+                    data-line="Time and permission rules, notifications, email, the webhook and pull requests stay off until you set them up."
+                  >
+                    Settings
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    data-parts="1"
+                    data-lit=""
+                    data-app=""
+                    data-line="Or use the Mac app. Its menu bar and its Dock icon count the sessions that need you, and it updates itself."
+                  >
+                    Mac app
+                  </button>
+                </li>
+              </ol>
+              <i class="tour-track" aria-hidden="true"><i class="tour-fill"></i></i>
+            </div>
+          </div>
+
+          <div class="stage">
+            <div class="rig">
+              <i class="light light-rest" aria-hidden="true"></i>
+              <i class="light light-lamp" aria-hidden="true"></i>
+
+              <div class="frame glass-raised">
+                <i class="frame-lamp" aria-hidden="true"></i>
+                <div class="screen">
+                  <picture>
+                    <source
+                      data-day="(width < 761px)"
+                      media="(width < 761px) and (prefers-color-scheme: light)"
+                      srcset="
+                        /assets/phone-quiet-day-780.webp   780w,
+                        /assets/phone-quiet-day-1170.webp 1170w
+                      "
+                      sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
+                      width="1170"
+                      height="2532"
+                    />
+                    <source
+                      media="(width < 761px)"
+                      srcset="
+                        /assets/phone-quiet-night-780.webp   780w,
+                        /assets/phone-quiet-night-1170.webp 1170w
+                      "
+                      sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
+                      width="1170"
+                      height="2532"
+                    />
+                    <source
+                      data-day=""
+                      media="(prefers-color-scheme: light)"
+                      srcset="
+                        /assets/dashboard-quiet-day-1180.webp 1180w,
+                        /assets/dashboard-quiet-day-1770.webp 1770w,
+                        /assets/dashboard-quiet-day-2360.webp 2360w
+                      "
+                      sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
+                    />
+                    <img
+                      class="shot shot-out"
+                      id="shot-out"
+                      src="/assets/dashboard-quiet-night-1180.webp"
+                      srcset="
+                        /assets/dashboard-quiet-night-1180.webp 1180w,
+                        /assets/dashboard-quiet-night-1770.webp 1770w,
+                        /assets/dashboard-quiet-night-2360.webp 2360w
+                      "
+                      sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
+                      width="2360"
+                      height="1475"
+                      fetchpriority="high"
+                      alt="The Agent Lookout dashboard with nothing waiting. The header counts 10 sessions. The panel at the top says Nothing needs you and gives the last wait, 2 minutes, by search-indexing. Under that are a bar for that wait and counts of 6 working, 2 idle and 1 stale session out of 10. The Last hour chart follows."
+                    />
+                  </picture>
+                  <picture>
+                    <source
+                      data-day="(width < 761px)"
+                      media="(width < 761px) and (prefers-color-scheme: light)"
+                      srcset="
+                        /assets/phone-waiting-day-780.webp   780w,
+                        /assets/phone-waiting-day-1170.webp 1170w
+                      "
+                      sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
+                      width="1170"
+                      height="2532"
+                    />
+                    <source
+                      media="(width < 761px)"
+                      srcset="
+                        /assets/phone-waiting-night-780.webp   780w,
+                        /assets/phone-waiting-night-1170.webp 1170w
+                      "
+                      sizes="(min-width: 524px) 480px, calc(100vw - 44px)"
+                      width="1170"
+                      height="2532"
+                    />
+                    <source
+                      data-day=""
+                      media="(prefers-color-scheme: light)"
+                      srcset="
+                        /assets/dashboard-waiting-day-1180.webp 1180w,
+                        /assets/dashboard-waiting-day-1770.webp 1770w,
+                        /assets/dashboard-waiting-day-2360.webp 2360w
+                      "
+                      sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
+                    />
+                    <img
+                      class="shot shot-lit"
+                      id="shot-lit"
+                      src="/assets/dashboard-waiting-night-1180.webp"
+                      srcset="
+                        /assets/dashboard-waiting-night-1180.webp 1180w,
+                        /assets/dashboard-waiting-night-1770.webp 1770w,
+                        /assets/dashboard-waiting-night-2360.webp 2360w
+                      "
+                      sizes="(min-width: 1248px) 1180px, calc(100vw - 68px)"
+                      width="2360"
+                      height="1475"
+                      fetchpriority="low"
+                      alt="The Agent Lookout dashboard with one session waiting. The Needs you panel at the top names checkout-flow, a Claude Code session in Terminal that has waited 4 minutes 12 seconds for permission to run npm test. The whole command is shown, with Deny and Allow under it and a Jump button beside it. Under that are bars of how long sessions waited on you and counts of 5 working, 2 idle and 1 stale session out of 10. The Last hour chart follows."
+                    />
+                  </picture>
+                  <div class="tour-switched" aria-hidden="true">
+                    <p class="glass-float glass-blur">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <rect x="1.5" y="2.5" width="13" height="11" rx="2.5" />
+                        <path d="M4.5 6.5 6.5 8l-2 1.5M8.5 10h3" />
+                      </svg>
+                      <span>Switched to Terminal</span>
+                    </p>
+                  </div>
+                  <div class="tour-cover" aria-hidden="true"></div>
+                  <div class="tour-banner glass-float glass-blur" aria-hidden="true">
+                    <img
+                      class="tour-banner-icon"
+                      data-src="/assets/app-icon-256.webp"
+                      width="256"
+                      height="256"
+                      alt=""
+                      decoding="async"
+                    />
+                    <span class="tour-banner-head">
+                      <span class="tour-banner-from">Agent Lookout</span>
+                      <span class="tour-banner-when">now</span>
+                    </span>
+                    <strong class="tour-banner-title">checkout-flow</strong>
+                    <span class="tour-banner-body">Waiting for permission: Run: npm test</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tour-menubar" aria-hidden="true">
+                <span class="tour-menubar-item">
+                  <svg viewBox="0 0 32 32" aria-hidden="true">
+                    <path d="M4 21a13 13 0 0 0 24 0z" opacity=".22" />
+                    <circle class="lens" cx="16" cy="16" r="13" />
+                    <rect x="4" y="20" width="24" height="2" />
+                    <circle cx="20" cy="14" r="4" />
+                  </svg>
+                  <span>1</span>
+                </span>
+              </div>
+
+              <div class="tour-dock" aria-hidden="true">
+                <div class="tour-shelf glass-float glass-blur">
+                  <span class="tour-tile">
+                    <img
+                      data-src="/assets/app-icon-256.webp"
+                      width="256"
+                      height="256"
+                      alt=""
+                      decoding="async"
+                    />
+                    <span class="tour-badge">1</span>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        <div class="plate-slot at-night">
-          <figure class="plate glass-float glass-blur" data-theme="light">
-            <div class="screen">
-              <img
-                class="shot shot-out"
-                src="/assets/panel-quiet-day-727.webp"
-                srcset="
-                  /assets/panel-quiet-day-727.webp   727w,
-                  /assets/panel-quiet-day-1454.webp 1454w
-                "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
-                width="1454"
-                height="310"
-                loading="lazy"
-                alt="The head of the same panel in the Day theme. It says Nothing needs you and gives the last wait, 2 minutes."
-              />
-              <img
-                class="shot shot-lit"
-                src="/assets/panel-waiting-day-727.webp"
-                srcset="
-                  /assets/panel-waiting-day-727.webp   727w,
-                  /assets/panel-waiting-day-1454.webp 1454w
-                "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
-                width="1454"
-                height="310"
-                loading="lazy"
-                alt="The head of the same panel in the Day theme: checkout-flow, waiting for permission for 4 minutes 12 seconds, and the Jump button, on pale glass."
-              />
-            </div>
-            <figcaption><strong>Day</strong> <span>the same panel in daylight</span></figcaption>
-          </figure>
-        </div>
-        <div class="plate-slot by-day">
-          <figure class="plate glass-float glass-blur" data-theme="dark">
-            <div class="screen">
-              <img
-                class="shot shot-out"
-                src="/assets/panel-quiet-night-727.webp"
-                srcset="
-                  /assets/panel-quiet-night-727.webp   727w,
-                  /assets/panel-quiet-night-1454.webp 1454w
-                "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
-                width="1454"
-                height="310"
-                loading="lazy"
-                alt="The head of the same panel in the Night theme. It says Nothing needs you and gives the last wait, 2 minutes."
-              />
-              <img
-                class="shot shot-lit"
-                src="/assets/panel-waiting-night-727.webp"
-                srcset="
-                  /assets/panel-waiting-night-727.webp   727w,
-                  /assets/panel-waiting-night-1454.webp 1454w
-                "
-                sizes="(min-width: 1248px) 550px, (min-width: 901px) calc(50vw - 74px), calc(58.33vw - 77px)"
-                width="1454"
-                height="310"
-                loading="lazy"
-                alt="The head of the same panel in the Night theme: checkout-flow, waiting for permission for 4 minutes 12 seconds, and the Jump button, on smoked glass."
-              />
-            </div>
-            <figcaption><strong>Night</strong> <span>the same panel at night</span></figcaption>
-          </figure>
-        </div>
-
-        <div class="about">
-          <p class="lights">
-            <span>Night is the app’s default.</span>
-            <span>Day is the same screen in daylight.</span>
-          </p>
-          <button type="button" class="btn btn-quiet btn-small" data-turn>
-            <span class="at-night">Show this page by day</span>
-            <span class="by-day">Show this page at night</span>
-          </button>
-        </div>
       </section>
 
-      <section class="facts" aria-labelledby="facts-title">
+      <section class="facts" id="facts" aria-labelledby="facts-title">
         <h2 id="facts-title" class="vh">In short</h2>
 
         <article class="fact fact-finds glass-card">
           <h3>It finds the sessions already running</h3>
           <p>
-            It reads the list of sessions Claude Code keeps on your Mac and the session files Codex
-            saves. A session in a terminal, in VS Code or in a desktop app appears with no setup.
-            Agent Lookout starts nothing.
+            It reads the list of sessions Claude Code keeps and the session files Codex saves. A
+            session in a terminal, in VS Code or in a desktop app appears with no setup, and any
+            other agent can show its sessions by writing a small status file. Another machine’s
+            sessions can be read over SSH too, from the Agent Lookout running there. Agent Lookout
+            starts nothing.
           </p>
 
           <div class="found">
-            <p class="group">Working <span>3</span></p>
+            <p class="group">Working <span>4</span></p>
             <ul class="rows">
               <li>
                 <svg class="mark mark-working" viewBox="0 0 14 14" aria-hidden="true">
@@ -359,7 +498,7 @@
                 </svg>
                 <span class="name">billing-webhooks</span>
                 <span class="where"
-                  ><span class="agent">Claude Code</span> <span class="app">Terminal</span></span
+                  ><span class="agent">Claude Code</span> <span class="app">Desktop app</span></span
                 >
                 <span class="time"><span class="vh">working for </span>5m</span>
               </li>
@@ -373,6 +512,17 @@
                   ><span class="agent">Codex</span> <span class="app">Desktop app</span></span
                 >
                 <span class="time"><span class="vh">working for </span>12m</span>
+              </li>
+              <li>
+                <svg class="mark mark-working" viewBox="0 0 14 14" aria-hidden="true">
+                  <circle cx="7" cy="7" r="5.25" />
+                  <path d="M7 1.75a5.25 5.25 0 0 0 0 10.5z" />
+                </svg>
+                <span class="name">release-notes</span>
+                <span class="where"
+                  ><span class="agent">my-agent</span> <span class="app">Terminal</span></span
+                >
+                <span class="time"><span class="vh">working for </span>25m</span>
               </li>
               <li>
                 <svg class="mark mark-working" viewBox="0 0 14 14" aria-hidden="true">
@@ -417,9 +567,11 @@
           <h3>It shows which one needs you</h3>
           <p>
             A Claude Code session that stops for permission or asks you a question moves to the top
-            of the page, with its reason, what it is asking and a timer. The browser tab counts the
-            sessions that are waiting, as in <code>(1) Agent Lookout</code>, and a notification can
-            tell you when one starts waiting.
+            of the page, with its reason, what it is asking and a timer. With the Agent Lookout
+            plugin installed in Claude Code, a permission prompt shows its whole command, with Deny
+            and Allow. The browser tab counts the sessions that are waiting, as in
+            <code>(1) Agent Lookout</code>, and so do the Mac app’s menu bar and Dock icon. Once you
+            turn notifications on, your browser or your Mac tells you when one starts waiting.
           </p>
 
           <div class="lamp-pair">
@@ -464,15 +616,18 @@
             <p>
               The one exception is the Mac app, which asks GitHub about once a day whether a newer
               version is out, sends nothing about your sessions, and stops asking when you turn that
-              off in its Settings. Email and webhook notifications are off until you set them up. It
-              does run Claude Code’s own listing command, which may contact Anthropic the way Claude
-              Code normally does.
+              off in its Settings. Email and a Slack-compatible webhook are off until you set them
+              up, and then send only what
               <a
                 class="link"
                 href="https://github.com/Olanetsoft/agent-lookout/blob/main/PRIVACY.md"
                 >PRIVACY.md</a
               >
-              lists everything it reads and runs.
+              lists. Pull requests are off too, and once on, your own <code>gh</code> sends GitHub
+              the names of the repository and branch. Another machine is read only once you name it,
+              through your own <code>ssh</code>. It does run Claude Code’s own listing command,
+              which may contact Anthropic the way Claude Code normally does. PRIVACY.md lists
+              everything it reads and runs.
             </p>
           </div>
           <ul class="counts">
@@ -541,8 +696,8 @@
                 <p>You need Node.js 22.12 or newer, and Claude Code, Codex or both.</p>
                 <pre><code><span>npx agent-lookout</span></code></pre>
                 <p>
-                  The first time, npm asks <code>Ok to proceed? (y)</code>: press Enter. Then it
-                  prints
+                  The first time, npm asks <code>Ok to proceed? (y)</code>: press Enter, and it
+                  downloads under 2 MB. Then it prints
                   <code class="printed">Agent Lookout is running at http://127.0.0.1:4777</code>.
                   Open that address, and your sessions appear within a few seconds. It listens on
                   this machine only and runs until you press Ctrl+C. <code>--port</code> picks
@@ -589,7 +744,11 @@
           </ol>
           <p class="after">
             The
-            <a class="link" href="https://github.com/Olanetsoft/agent-lookout#install">README</a>
+            <a
+              class="link"
+              href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/INSTALL.md"
+              >install guide</a
+            >
             has every step, with what each command prints. The
             <a
               class="link"
@@ -605,10 +764,10 @@
         <div class="intro">
           <h2 id="today-title">What it does today</h2>
           <p>
-            It watches your sessions, takes you to a Claude Code session in VS Code, tmux, Terminal
-            or iTerm2, notifies you if you ask it to, stops a Claude Code session when you press
-            Stop and confirm, copies the command that resumes one that has ended, and answers a
-            permission prompt when you press Allow or Deny.
+            It watches your sessions, here and on another machine over SSH, and notifies you if you
+            ask it to. For Claude Code it also takes you to a session, stops one when you press Stop
+            and confirm, copies the command that resumes one that has ended, and answers a
+            permission prompt when you press Allow or Deny, or by a permission rule you set.
           </p>
         </div>
 
@@ -616,13 +775,39 @@
           <dl class="sheet">
             <div>
               <dt>Runs on</dt>
-              <dd>macOS and Linux, as a local page in your browser, and on a Mac as an app.</dd>
+              <dd>
+                macOS, Linux and Windows, as a local page in your browser, and on a Mac as an app
+                that updates itself and counts in the menu bar the sessions that need you. Linux and
+                Windows are checked in CI, not yet by a person at a desktop. On Windows, Stop, Allow
+                and Deny, permission rules, Resume, Jump to tmux, Terminal or iTerm2, and
+                notifications with no tab open are not offered:
+                <a
+                  class="link"
+                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#on-windows"
+                  >On Windows</a
+                >
+                says why.
+              </dd>
             </div>
             <div>
               <dt>Finds</dt>
               <dd>
                 Claude Code and Codex sessions already running, in a terminal, in VS Code or in a
-                desktop app.
+                desktop app, and the sessions of any agent that writes a
+                <a
+                  class="link"
+                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#your-own-agents"
+                  >status file</a
+                >.
+              </dd>
+            </div>
+            <div>
+              <dt>Other machines</dt>
+              <dd>
+                Another computer’s sessions, beside this one’s, once you name it in
+                <code>AGENT_LOOKOUT_REMOTES</code>. It needs Agent Lookout running there, and is
+                read through your own <code>ssh</code>. Its sessions have no Jump, Stop, Allow or
+                Deny.
               </dd>
             </div>
             <div>
@@ -636,18 +821,51 @@
               <dt>Codex</dt>
               <dd>
                 Shows a session as working, idle or finished. Codex does not record that it is
-                waiting, so Agent Lookout cannot show it. Codex support is new: it has been checked
-                with the Codex desktop app, and not yet with the Codex CLI or its IDE extension.
+                waiting, so Agent Lookout cannot show it. It has been checked with the Codex desktop
+                app, and not yet with the Codex CLI or its IDE extension.
+              </dd>
+            </div>
+            <div>
+              <dt>Sessions</dt>
+              <dd>
+                Each one’s git branch, grouped by repository if you choose, as a list or a board,
+                with a search (<code>/</code>, or <code>⌘K</code> on a Mac and
+                <code>Ctrl+K</code> elsewhere) and a page of details for each. With pull requests
+                on, the details show the branch’s pull request and its checks, through your own
+                <code>gh</code>.
+              </dd>
+            </div>
+            <div>
+              <dt>History</dt>
+              <dd>
+                The Events log and the charts are kept on this computer across restarts, for 8 days,
+                and Settings clears them. Waits says how long sessions waited on you today and over
+                7 days.
               </dd>
             </div>
             <div>
               <dt>Notifications</dt>
               <dd>
-                Off until you turn them on in Settings. Then your browser shows one when a Claude
-                Code session starts waiting, with the session’s name, the reason and what it is
-                asking, and it is cleared when the session moves on. On a Mac, once the dashboard
-                tab is closed, Agent Lookout shows the notification itself for as long as it keeps
-                running, and that one stays until you clear it. Nothing is sent off your computer.
+                Off until you turn them on. Then your browser tells you when a session starts
+                waiting, and, as you choose, when one finishes, fails or ends. On a Mac, Agent
+                Lookout tells you itself once the tab is closed. Nothing is sent off your computer.
+              </dd>
+            </div>
+            <div>
+              <dt>Time rules</dt>
+              <dd>
+                Off until you turn them on in Settings. One reminds you of a long wait, and again
+                every few minutes while it goes on if you choose, one sets how long a session is
+                idle before it is stale, and quiet hours hold notifications, emails and posts back,
+                with one summary when they end.
+              </dd>
+            </div>
+            <div>
+              <dt>Email and webhook</dt>
+              <dd>
+                Off until you set them up. Then an email, or a post to a Slack-compatible webhook,
+                when a session has waited a minute, and, if you choose, when one finishes, fails or
+                ends. What the session is asking goes in only if you turn that on too.
               </dd>
             </div>
             <div>
@@ -656,17 +874,23 @@
                 Opens a Claude Code session that runs in VS Code, selects its pane when it runs
                 inside tmux, and brings its tab forward in Terminal or iTerm2 (macOS asks once
                 whether that is allowed). Codex sessions, sessions in Claude Code’s desktop app and
-                sessions in other terminals have no Jump button.
+                sessions in other terminals outside tmux have no Jump button.
+              </dd>
+            </div>
+            <div>
+              <dt>From a terminal</dt>
+              <dd>
+                <code>agent-lookout status</code> prints which sessions need you, and
+                <code>agent-lookout mcp</code> lets an agent ask the same. Both only read.
               </dd>
             </div>
             <div>
               <dt>Stop</dt>
               <dd>
-                Ends a Claude Code session’s process when you press Stop in its details and confirm,
-                and ends the sessions left running for a day or more, after a confirmation that
-                lists each one. The conversation is kept, and <code>claude --resume</code> opens it
-                again. Agent Lookout never stops a session on its own, and not one in Claude Code’s
-                desktop app. There is no pause button.
+                Stop, in a Claude Code session’s details, ends its process, and End all… ends the
+                sessions left running, idle a day or more or as long as the idle rule says. Each
+                asks first. Agent Lookout never stops a session on its own, nor one in Claude Code’s
+                desktop app. The conversation is kept.
               </dd>
             </div>
             <div>
@@ -682,12 +906,31 @@
             <div>
               <dt>Allow and Deny</dt>
               <dd>
-                With the Agent Lookout plugin installed in Claude Code, a session waiting for
-                permission shows Allow and Deny on the dashboard. The whole command is shown first,
-                every line, and an edit, a plan, a question, or a request that cannot be shown whole
-                can only be denied there. The prompt in the session still works, and whichever you
-                answer first wins. Agent Lookout never answers on its own, rewrites no command and
-                saves no rule.
+                With the
+                <a
+                  class="link"
+                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/INSTALL.md#claude-code-plugin"
+                  >Agent Lookout plugin</a
+                >
+                installed in Claude Code, a session waiting for permission shows Allow and Deny on
+                the dashboard. The whole command is shown first, every line, and an edit, a plan, a
+                question, or a request that cannot be shown whole can only be denied there. The
+                prompt in the session still works, and whichever you answer first wins. Agent
+                Lookout answers only when you press one or a permission rule you set matches,
+                rewrites no command and saves no rule in Claude Code.
+              </dd>
+            </div>
+            <div>
+              <dt>Permission rules</dt>
+              <dd>
+                None until you add one in Settings. With the plugin installed, a rule decides how a
+                kind of Claude Code permission prompt is answered: always allow, always ask or
+                always deny, by tool and, for Bash, by command, such as <code>npm test:*</code>. An
+                allow rule answers only what you could allow by hand, for Bash one plain command,
+                and never one that begins with a program on Agent Lookout’s list of those that run
+                another command, send requests or run the code they are given, such as
+                <code>sudo</code>, <code>curl</code> or <code>python</code>. The Events log records
+                each answer.
               </dd>
             </div>
             <div>
@@ -695,13 +938,13 @@
               <dd>MIT, free and open source.</dd>
             </div>
             <div>
-              <dt>On the roadmap</dt>
+              <dt>Coming next</dt>
               <dd>
-                Other coding agents and AI chat tabs in the browser. The
+                The
                 <a class="link" href="https://github.com/Olanetsoft/agent-lookout/milestones"
                   >milestones</a
                 >
-                on GitHub list what is planned.
+                on GitHub say what is being built, in order.
               </dd>
             </div>
           </dl>
