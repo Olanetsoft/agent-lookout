@@ -10,7 +10,7 @@ import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { quietFor } from "@dashboard/lib/sessions/quiet";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
+import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface SessionRowProps {
@@ -47,7 +47,8 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
 /**
  * One session, as a row of the Sessions table: mark and name, the tool when
  * more than one is found, the folder, the app, the status and how long it has
- * lasted read as one phrase, and Jump.
+ * lasted read as one phrase, and Jump. A folder or an app that is not known is
+ * a dash, so the columns stay in line.
  *
  * Rows have no rules. Under the pointer the row lights as one rounded shape
  * 10px inside the card, drawn from its first cell and placed against the row,
@@ -112,7 +113,7 @@ export function SessionRow({
   const mark: MarkKind = stale ? "stale" : session.status;
   const statusWord = stale ? "Stale" : STATUS_LABEL[session.status];
   const jump = useJump(session);
-  const surface = SURFACE_LABEL[session.surface];
+  const surface = surfaceLabel(session.surface);
 
   const duration = <Duration session={session} now={now} quiet={quiet} />;
 
@@ -253,7 +254,13 @@ export function SessionRow({
 
       {appColumn && (
         <td data-part='app' className={cn(CELL, "truncate max-mid:hidden")}>
-          {surface}
+          {/* An app that is not known has the dash a missing folder has, and is read as words. */}
+          {surface ?? (
+            <>
+              <span aria-hidden>–</span>
+              <span className='sr-only'>app not known</span>
+            </>
+          )}
         </td>
       )}
 

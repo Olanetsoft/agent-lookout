@@ -223,7 +223,7 @@ test("a card gives the name, the folder and its branch, the app, and its status 
 
 test("once two tools are found, a card names its own after the app", async () => {
   const sessions = [
-    session(1, { name: "docs-site", status: "idle", agent: "my-agent", surface: "unknown" }),
+    session(1, { name: "docs-site", status: "idle", agent: "my-agent", surface: "terminal" }),
   ];
   const screen = await render(
     <div style={{ width: 835 }}>
@@ -232,10 +232,46 @@ test("once two tools are found, a card names its own after the app", async () =>
   );
   const where = screen.container.querySelector('[data-part="where"]') as HTMLElement;
 
-  expect(where.querySelector('[data-part="app"]')?.textContent).toBe("Unknown app");
+  expect(where.querySelector('[data-part="app"]')?.textContent).toBe("Terminal");
   expect(where.querySelector('[data-part="agent"]')?.textContent).toBe("my-agent");
-  // Read as "Unknown app, my-agent"; on screen a dot sets the two apart.
-  expect(where.textContent).toBe("Unknown app, ·my-agent");
+  // Read as "Terminal, my-agent"; on screen a dot sets the two apart.
+  expect(where.textContent).toBe("Terminal, ·my-agent");
+});
+
+test("a card leaves out an app that is not known, and the tool then stands alone", async () => {
+  const sessions = [
+    session(1, { name: "docs-site", status: "idle", agent: "my-agent", surface: "unknown" }),
+    session(2, { name: "search-indexing", status: "working", surface: "unknown" }),
+  ];
+  const screen = await render(
+    <div style={{ width: 835 }}>
+      <SessionsBoard sessions={sessions} now={NOW} agentOf={(s) => s.agent ?? "Claude Code"} />
+    </div>,
+  );
+
+  // With a tool to name, the line holds the tool alone, with no dot before it.
+  const named = cardOf(screen.container, "docs-site");
+  const where = named.querySelector('[data-part="where"]') as HTMLElement;
+  expect(where.querySelector('[data-part="app"]')).toBeNull();
+  expect(where.textContent).toBe("my-agent");
+  expect(where.querySelector('[aria-hidden="true"]')).toBeNull();
+  // The folder still says where it works.
+  expect(named.querySelector('[data-part="place"]')?.textContent).toBe("demo");
+
+  // With no tool to name either, there is no line at all.
+  const alone = await render(
+    <div style={{ width: 835 }}>
+      <SessionsBoard sessions={[sessions[1]!]} now={NOW} />
+    </div>,
+  );
+  const card = cardOf(alone.container, "search-indexing");
+  expect(card.querySelector('[data-part="where"]')).toBeNull();
+  expect(card.querySelector('[data-part="app"]')).toBeNull();
+
+  for (const root of [screen.container, alone.container]) {
+    expect(root.textContent).not.toContain("Unknown app");
+    expect(root.textContent).not.toMatch(/unknown/i);
+  }
 });
 
 test("a working session's card says how long its agent has been quiet, under its status", async () => {

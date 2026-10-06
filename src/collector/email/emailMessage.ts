@@ -1,4 +1,4 @@
-import { SURFACE_LABEL, type Session } from "../../core/sessions/session.ts";
+import { surfaceLabel, type Session } from "../../core/sessions/session.ts";
 import { overPhrase, sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
 import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
 import { oneLine } from "../outbound/outboundText.ts";
@@ -67,7 +67,8 @@ function emailOf(
   const lines = [`${happened}.`, "", when, ""];
   const folder = session.project ? oneLine(session.project) : "";
   if (folder) lines.push(`Folder: ${folder}`);
-  if (session.surface !== "unknown") lines.push(`App: ${SURFACE_LABEL[session.surface]}`);
+  const app = surfaceLabel(session.surface);
+  if (app) lines.push(`App: ${app}`);
   const agent = agentName ? oneLine(agentName) : "";
   if (agent) lines.push(`Agent: ${agent}`);
   lines.push(

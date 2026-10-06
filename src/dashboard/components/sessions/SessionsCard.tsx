@@ -172,7 +172,7 @@ function GroupBody({
 /**
  * The widths of the columns beside Session, in rem, as the classes of the
  * table's columns set them. Each holds what goes in it and little more: Agent
- * w-25 holds "Claude Code", App w-28 "Unknown app", Status w-40 the longest
+ * w-25 holds "Claude Code", App w-28 "Desktop app", Status w-40 the longest
  * phrase, "Finished 23h 59m ago", and Jump w-24 the 64px button. Folder w-28
  * holds a folder name of about 12 letters and cuts a longer one, whose whole
  * path is in its tooltip. A change to one of those classes changes this.

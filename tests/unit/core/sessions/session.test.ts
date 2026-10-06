@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 
-import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
+import {
+  surfaceLabel,
+  type HistoryPoint,
+  type SessionEvent,
+  type SessionsSnapshot,
+} from "@core/sessions/session";
 
 // These fixtures name every field of the session model. `tsc -b` checks this file,
 // so renaming or removing a field fails the typecheck here before it reaches an
@@ -85,4 +90,13 @@ test("a session id starts with its source", () => {
   for (const session of snapshot.sessions) {
     expect(session.id.startsWith(`${session.source}:`)).toBe(true);
   }
+});
+
+test("each app the model knows has a name, and an app that is not known has none", () => {
+  expect(surfaceLabel("terminal")).toBe("Terminal");
+  expect(surfaceLabel("vscode")).toBe("VS Code");
+  expect(surfaceLabel("desktop")).toBe("Desktop app");
+  expect(surfaceLabel("cloud")).toBe("Cloud");
+  expect(surfaceLabel("browser")).toBe("Browser");
+  expect(surfaceLabel("unknown")).toBeNull();
 });

@@ -1,5 +1,5 @@
 import {
-  SURFACE_LABEL,
+  surfaceLabel,
   type Session,
   type SessionEvent,
   type SessionStatus,
@@ -9,8 +9,9 @@ import {
 } from "@core/sessions/session";
 import { formatDuration } from "@dashboard/lib/format";
 
-// The core keeps the surfaces' words, which an email uses too.
-export { SURFACE_LABEL };
+// The core keeps the surfaces' words, which an email uses too. An app that is
+// not known has none, and is left out wherever the app would be named.
+export { surfaceLabel };
 
 /** The words the interface uses for each status. Colour is never the only signal. */
 export const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -124,7 +125,9 @@ export function jumpWay(
   session: Pick<Session, "source" | "surface" | "links" | "jump">,
 ): JumpWay | null {
   const href = safeJumpLink(session);
-  if (href !== null) return { by: "link", href, where: SURFACE_LABEL[session.surface] };
+  if (href !== null) {
+    return { by: "link", href, where: surfaceLabel(session.surface) ?? "its app" };
+  }
   if (session.jump?.kind === "tmux") return { by: "tmux", where: `tmux, ${session.jump.place}` };
   if (session.jump?.kind === "terminal") {
     return { by: "terminal", app: session.jump.app, where: session.jump.place };

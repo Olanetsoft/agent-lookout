@@ -1,5 +1,5 @@
 import { formatDuration } from "../../core/duration.ts";
-import { SURFACE_LABEL, type Session, type WaitingReason } from "../../core/sessions/session.ts";
+import { surfaceLabel, type Session, type WaitingReason } from "../../core/sessions/session.ts";
 import type { NoticeEvent } from "../../core/sessions/waitChanges.ts";
 import { overPhrase, sessionTitle, waitingPhrase } from "../../core/sessions/waiting.ts";
 import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
@@ -59,7 +59,7 @@ function sessionOf(
     name: oneLine(sessionTitle(session)),
     agent: (agent && oneLine(agent)) || null,
     folder: (session.project && oneLine(session.project)) || null,
-    app: session.surface === "unknown" ? null : SURFACE_LABEL[session.surface],
+    app: surfaceLabel(session.surface),
   };
 }
 

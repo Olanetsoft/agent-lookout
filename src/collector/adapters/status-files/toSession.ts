@@ -1,4 +1,4 @@
-import { mapStatusFileStatus } from "../../../core/mapping/statusFileMapping.ts";
+import { mapStatusFileApp, mapStatusFileStatus } from "../../../core/mapping/statusFileMapping.ts";
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
@@ -38,8 +38,10 @@ const WRITE_ORDER_SLACK_MS = 1_000;
  *   file as it works. A time that could not be right, or that is before the
  *   `since` the file holds, as a copy that kept an older time can be, is not
  *   known.
- * - There is no app, no start time, no link and no Jump: the file says nothing
- *   of them, and nothing in it is used as a link.
+ * - The app is the file's `app` when it is `terminal`, `vscode` or `desktop`,
+ *   and not known otherwise.
+ * - There is no start time, no link and no Jump: the file says nothing of
+ *   them, and nothing in it is used as a link.
  */
 export function statusFileSession(input: StatusFileSessionInput): Session {
   const { fileName, file, statusSince, now } = input;
@@ -50,7 +52,7 @@ export function statusFileSession(input: StatusFileSessionInput): Session {
     id: `${SOURCE_ID}:${fileName}`,
     source: SOURCE_ID,
     agent: file.agent,
-    surface: "unknown",
+    surface: mapStatusFileApp(file.app),
     // The file's name is as untrusted as its contents, so it is cleaned and cut
     // as a name in the file is. The agent is never empty, so there is always one.
     name: file.name ?? project ?? sessionName(fileName.replace(/\.json$/, "")) ?? file.agent,

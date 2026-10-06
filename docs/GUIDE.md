@@ -24,7 +24,7 @@ The Overview has five parts. The Needs you panel and the Last hour chart share t
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. An app that is not known is left out. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -56,7 +56,7 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 - the session's name
 - the agent it belongs to, such as Claude Code, Codex or the name a [status file](#your-own-agents) gives, once there is more than one
 - its project folder and, under it, the [git branch](#branches) when the folder is in a repository
-- the app it runs in: Terminal, VS Code or Desktop app
+- the app it runs in: Terminal, VS Code or Desktop app, or a dash when it is not known
 - its status, and how long it has had that status
 - for a working session whose agent has written nothing for a while, how long, as in `quiet for 12m`: see [Quiet for](#quiet-for)
 
@@ -75,7 +75,7 @@ The switch at the top right of the Sessions list, or under its title on a phone,
 | Idle               | Sessions ready for a new prompt, then stale ones with their own mark. The heading counts them apart: `Idle 1 Stale 1` |
 | Finished or failed | Sessions that finished or failed, failures first                                                                      |
 
-Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab.
+Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab.
 
 The board only shows what Agent Lookout found. When a session's status changes, its card moves to its new column by itself the next time Agent Lookout reads the sessions, within about 2 seconds. Cards cannot be dragged, because Agent Lookout does not change a session's status.
 
@@ -280,7 +280,7 @@ To check that it worked, open Settings. The Email card says where emails go and 
 
 The card can say where emails go before any has been tried, so a wrong password or port shows only once a wait has lasted the delay. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_EMAIL_AFTER=0` as well, and let a session ask for permission. The card then says whether the email went. Start it again without that setting afterwards.
 
-An email's subject names the session and what happened: "checkout-flow is waiting for permission", "checkout-flow asked you a question" or "checkout-flow is waiting for you", and "billing-webhooks finished", "billing-webhooks failed" or "billing-webhooks ended". Its text says how long the session has waited and since when, or when Agent Lookout saw it finish, fail or end, then the name of its project folder, its app and its agent, and how to stop these emails. It holds no path, no prompt and no link. [PRIVACY.md](../PRIVACY.md#email) lists all it holds.
+An email's subject names the session and what happened: "checkout-flow is waiting for permission", "checkout-flow asked you a question" or "checkout-flow is waiting for you", and "billing-webhooks finished", "billing-webhooks failed" or "billing-webhooks ended". Its text says how long the session has waited and since when, or when Agent Lookout saw it finish, fail or end, then the name of its project folder, its app and its agent, leaving out any that is not known, and how to stop these emails. It holds no path, no prompt and no link. [PRIVACY.md](../PRIVACY.md#email) lists all it holds.
 
 - One email goes for a wait that has lasted the delay and is still open. A wait you answer before then sends nothing.
 - Each wait sends one email at most. A session you answer that waits again later sends another.
@@ -338,7 +338,7 @@ For Discord, create a webhook in the channel's settings, under Integrations, cop
 
 To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or why it did not, such as "The last post failed: the address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off." and names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npm start)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
 
-A post shows in the channel as one line, such as "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)" or "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)": the session's name, what happened, and in brackets how long it has waited, its project folder's name, its app and its agent. The post also carries the same in fields of its own, for a program to read. It holds no path and no prompt, and a link only where a session's name has a web address written out in it. [PRIVACY.md](../PRIVACY.md#webhook) lists all it holds.
+A post shows in the channel as one line, such as "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)" or "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)": the session's name, what happened, and in brackets how long it has waited, its project folder's name, its app and its agent, leaving out any that is not known. The post also carries the same in fields of its own, for a program to read. It holds no path and no prompt, and a link only where a session's name has a web address written out in it. [PRIVACY.md](../PRIVACY.md#webhook) lists all it holds.
 
 Posts follow the rules emails do. One goes for a wait that has lasted the delay and is still open, and one at most for each wait. A finish, a failure or an end goes as soon as it is seen. Nothing is sent for what was already true when Agent Lookout starts. At most 20 posts are tried in any hour, counted apart from emails. A post that could not be sent is not tried again, and a redirect is never followed.
 
@@ -612,16 +612,16 @@ Paste this into a terminal while Agent Lookout is running. It makes the folder, 
 dir=~/.agent-lookout/sessions
 mkdir -p "$dir"
 echo "Working: look at Sessions"
-printf '{"agent": "my-agent", "name": "docs-site", "status": "working", "pid": %d}\n' $$ > "$dir/my-agent.json"
+printf '{"agent": "my-agent", "name": "docs-site", "status": "working", "app": "terminal", "pid": %d}\n' $$ > "$dir/my-agent.json"
 sleep 8
 echo "Waiting: look at Needs you"
-printf '{"agent": "my-agent", "name": "docs-site", "status": "waiting", "reason": "question", "pid": %d}\n' $$ > "$dir/my-agent.json"
+printf '{"agent": "my-agent", "name": "docs-site", "status": "waiting", "reason": "question", "app": "terminal", "pid": %d}\n' $$ > "$dir/my-agent.json"
 sleep 8
 rm "$dir/my-agent.json"
 echo "Deleted: the session has gone"
 ```
 
-The session appears in Sessions as `docs-site`, moves to Needs you as Asked you a question, and leaves the list when the file is deleted. Once there is more than one agent on the screen, each row names its own, here `my-agent`. If you set `AGENT_LOOKOUT_STATUS_DIR`, put that folder in the first line instead.
+The session appears in Sessions as `docs-site`, in Terminal, moves to Needs you as Asked you a question, and leaves the list when the file is deleted. Once there is more than one agent on the screen, each row names its own, here `my-agent`. If you set `AGENT_LOOKOUT_STATUS_DIR`, put that folder in the first line instead.
 
 | Field    | Needed | What it holds                                                                                                                                                                                                                                                                                                         |
 | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -632,6 +632,7 @@ The session appears in Sessions as `docs-site`, moves to Needs you as Asked you 
 | `reason` | No     | For `waiting` only: `permission` or `question`. Anything else is shown as Waiting for you.                                                                                                                                                                                                                            |
 | `since`  | No     | When this status began: an ISO 8601 time such as `2026-10-05T14:30:00Z`, or a whole number of milliseconds since 1970. Not seconds: `date +%s` gives seconds, and `date -u +%Y-%m-%dT%H:%M:%SZ` gives a time Agent Lookout reads. Leave it alone while the status stays the same, or each change reads as a new wait. |
 | `pid`    | No     | The ID of the agent's process, as a number, not in quotes.                                                                                                                                                                                                                                                            |
+| `app`    | No     | The app the session runs in: `terminal`, `vscode` or `desktop`, shown as Terminal, VS Code or Desktop app. Any other word is ignored, and no app is shown.                                                                                                                                                            |
 
 - One file is one session. Its name can be anything that ends in `.json`, and it is what tells one session from another, so keep it for as long as the session lasts.
 - When the process named by `pid` has gone, a session that is working, waiting or idle is not shown, because its agent stopped without deleting the file. A finished or failed session is expected to have no process, and stays. Without `pid`, a session stays until its file is deleted.
@@ -640,7 +641,7 @@ The session appears in Sessions as `docs-site`, moves to Needs you as Asked you 
 - Without `since`, the time is when Agent Lookout first saw that status. For a file that was already there when Agent Lookout started, it is not known until the status changes, and a dash is shown.
 - A name that starts with a dot is not read. To change a file without Agent Lookout ever reading half of it, write the new one under such a name and rename it over the old one with `mv`. A file caught half written is shown as it was for one more read.
 - Agent Lookout reads at most 200 files, each 16 KB or less, directly in the folder. When there are more, it reads the 200 written most recently. It does not follow a symbolic link in the folder, and it does not look in folders inside it. A file over a limit, or one that is not JSON with an `agent` and a `status`, is skipped, and the Sources card counts it and names the first one, with why. Fields it does not know are ignored.
-- Everything in a file is shown as plain text. Nothing in it is used as a link, so these sessions have no Jump button.
+- Everything in a file is shown as plain text. Nothing in it is used as a link, so these sessions have no Jump button, whatever their `app`.
 - A waiting session sends a [notification](#notifications) like any other.
 
 Agent Lookout only reads the folder. It never makes it, and never writes, renames or deletes anything in it. When a session ends, delete its file, or write `finished` or `failed` to keep it on screen for a day and delete the file after that, for example the next time the agent starts. A file that is no longer shown still takes one of the 200 places until it is deleted. Any program that can write in the folder can put a session on the dashboard. Under your home folder, that means programs you run.
@@ -655,7 +656,7 @@ A Codex session never shows as needing you. Codex's session files do not record 
 
 A Claude Code background job is shown as finished or failed, and its row stays for 24 hours. A Codex session is shown as finished once no Codex program has it open, and its row stays until 24 hours after Codex last wrote to it. A session started by a Codex older than 0.155 is never shown as finished. Any other session that ends leaves the list. The Events log records that it ended, without saying whether it finished or failed.
 
-Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal other than Terminal and iTerm2 that is not running tmux. A session from a status file has no app either, so its app is shown as Unknown app. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a session in a tab of Terminal or iTerm2, it brings the tab forward, after macOS has asked you once. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
+Codex sessions and sessions from status files have no Jump button. Nor do Claude Code sessions in the desktop app, or in a terminal other than Terminal and iTerm2 that is not running tmux. A session from a status file shows its app only when its file names one in `app`. For a session in tmux, Jump selects its pane and leaves you to switch to your terminal. For a session in a tab of Terminal or iTerm2, it brings the tab forward, after macOS has asked you once. For a VS Code session, Jump finds the session only when its folder is open in the VS Code window that has focus. [Jump](#jump) has the rest.
 
 Email and a webhook are the two ways it can tell you of a session away from this computer, and each sends to one address. A post is one line of text, with no buttons, and nothing can be answered from it. An email or a post that could not be sent is not tried again. The events are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_EVENTS`, and not in Settings.
 

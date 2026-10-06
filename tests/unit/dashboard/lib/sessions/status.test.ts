@@ -122,6 +122,11 @@ test("Jump reaches a VS Code session by its link, and says where in the app's na
   expect(jumpWay(session)).toEqual({ by: "link", href: JUMP, where: "VS Code" });
 });
 
+test("a link to a session whose app is not known says where in plain words, not as an unknown app", () => {
+  const session = makeSession({ surface: "unknown", links: { open: JUMP } });
+  expect(jumpWay(session)).toEqual({ by: "link", href: JUMP, where: "its app" });
+});
+
 test("Jump reaches a session the collector found in tmux by its pane, and names the place", () => {
   const session = makeSession({ jump: { kind: "tmux", place: "work:2.1" } });
   expect(jumpWay(session)).toEqual({ by: "tmux", where: "tmux, work:2.1" });

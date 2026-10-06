@@ -2,7 +2,7 @@
 // today and a browser or desktop host later share one mapping. The format is
 // Agent Lookout's own, described in docs/GUIDE.md under "Your own agents".
 
-import type { Session, SessionStatus, WaitingReason } from "../sessions/session.ts";
+import type { Session, SessionStatus, Surface, WaitingReason } from "../sessions/session.ts";
 
 const STATUS = new Map<string, SessionStatus>([
   ["working", "working"],
@@ -48,4 +48,20 @@ export function mapStatusFileStatus(
   if (status !== "needs-you") return { status };
   const reason = typeof fields.reason === "string" ? REASON.get(fields.reason) : undefined;
   return { status, waitingReason: reason ?? "other" };
+}
+
+/** The apps a status file can name, as the format writes them. */
+const APP = new Map<string, Surface>([
+  ["terminal", "terminal"],
+  ["vscode", "vscode"],
+  ["desktop", "desktop"],
+]);
+
+/**
+ * Maps a status file's `app` to the app the session runs in: `terminal`,
+ * `vscode` or `desktop`, the apps the session model has. Anything else, or
+ * nothing, leaves the app unknown rather than a guess.
+ */
+export function mapStatusFileApp(app: unknown): Surface {
+  return (typeof app === "string" && APP.get(app)) || "unknown";
 }

@@ -94,9 +94,14 @@ function listOf(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
 }
 
-/** "VS Code, the desktop app and a terminal": the apps the sessions run in. */
+/**
+ * "VS Code, the desktop app and a terminal": the apps the sessions run in. An
+ * app that is not known is named only beside one that is, "a terminal and
+ * another app". Alone it says nothing, so no app is named.
+ */
 export function appsIn(sessions: readonly { surface: Surface }[]): string {
   const present = new Set(sessions.map((session) => session.surface));
+  if (present.size === 1 && present.has("unknown")) return "";
   return listOf(SURFACE_IN_SENTENCE.filter(([surface]) => present.has(surface)).map(([, w]) => w));
 }
 

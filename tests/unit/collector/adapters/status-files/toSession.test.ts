@@ -45,6 +45,24 @@ test("a status file becomes a session of its own source, named by its file and i
   });
 });
 
+test("its app is the one the file names, and not known when the file names none or one the format does not have", () => {
+  expect(session({ app: "terminal" }).surface).toBe("terminal");
+  expect(session({ app: "vscode" }).surface).toBe("vscode");
+  expect(session({ app: "desktop" }).surface).toBe("desktop");
+  expect(session().surface).toBe("unknown");
+  for (const app of ["emacs", "cloud", "browser", "unknown"]) {
+    expect(session({ app }).surface, app).toBe("unknown");
+  }
+});
+
+test("naming its app gives it no link and no Jump", () => {
+  for (const app of ["terminal", "vscode", "desktop"]) {
+    const made = session({ app, pid: 4242 }, { alive: true });
+    expect(made.links, app).toEqual({});
+    expect(made, app).not.toHaveProperty("jump");
+  }
+});
+
 test("it never has a link or a Jump, whatever the file holds", () => {
   const made = session();
   expect(made.links).toEqual({});

@@ -27,7 +27,7 @@ import {
   type CountState,
 } from "@dashboard/lib/sessions/sessions";
 import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
-import { SURFACE_LABEL, waitingDetail } from "@dashboard/lib/sessions/status";
+import { surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 import {
   unmeasuredNote,
@@ -133,7 +133,8 @@ function Reason({ session, className }: { session: Session; className?: string }
  * Where it runs: the folder, whose whole path is one hover or one Tab away, the
  * branch or commit it has checked out when it is in a git repository, the app,
  * and the tool when more than one is found: "storefront on checkout-flow in
- * VS Code · Claude Code".
+ * VS Code · Claude Code". An app that is not known is left out, "storefront on
+ * checkout-flow · my-agent", and with nothing at all to say there is no line.
  *
  * It is positioned, so a cut line also clips the words only a screen reader
  * meets, which would otherwise sit past its end and widen the page.
@@ -147,7 +148,9 @@ function Place({
   agent?: string;
   className?: string;
 }) {
-  const surface = SURFACE_LABEL[session.surface];
+  const app = surfaceLabel(session.surface);
+  const where = Boolean(session.project) || app !== null;
+  if (!where && agent === undefined) return null;
   return (
     <span
       data-part='place'
@@ -163,9 +166,10 @@ function Place({
             >
               {session.project}
             </span>
-          </Tooltip>{" "}
+          </Tooltip>
           {session.git && (
             <>
+              {" "}
               <span data-part='git'>
                 {/* Cut at the line's width, a branch keeps the line's baseline. */}
                 <Branch
@@ -173,23 +177,34 @@ function Place({
                   inSentence
                   className='inline-block max-w-full align-top font-medium text-ink'
                 />
-              </span>{" "}
+              </span>
             </>
           )}
-          in <span data-part='app'>{surface}</span>
+          {app !== null && (
+            <>
+              {" "}
+              in <span data-part='app'>{app}</span>
+            </>
+          )}
         </>
       ) : (
-        <>
-          In <span data-part='app'>{surface}</span>
-        </>
+        app !== null && (
+          <>
+            In <span data-part='app'>{app}</span>
+          </>
+        )
       )}
       {agent !== undefined && (
         <>
-          {/* Read as "in VS Code, Codex". On screen the two are set apart by a dot. */}
-          <span className='sr-only'>, </span>
-          <span aria-hidden className='mx-1.5'>
-            ·
-          </span>
+          {where && (
+            <>
+              {/* Read as "in VS Code, Codex". On screen the two are set apart by a dot. */}
+              <span className='sr-only'>, </span>
+              <span aria-hidden className='mx-1.5'>
+                ·
+              </span>
+            </>
+          )}
           <span data-part='agent'>{agent}</span>
         </>
       )}

@@ -9,15 +9,22 @@ export type SourceId = "claude-code" | "codex" | "status-files";
 
 export type Surface = "terminal" | "vscode" | "desktop" | "cloud" | "browser" | "unknown";
 
-/** What each surface is called, in the dashboard and in an email. */
-export const SURFACE_LABEL: Record<Surface, string> = {
+/**
+ * What each surface is called, in the dashboard and in an email. A surface that
+ * is not known has no name: wherever the app would be named, it is left out.
+ */
+const SURFACE_LABEL: Record<Exclude<Surface, "unknown">, string> = {
   terminal: "Terminal",
   vscode: "VS Code",
   desktop: "Desktop app",
   cloud: "Cloud",
   browser: "Browser",
-  unknown: "Unknown app",
 };
+
+/** The app's name, "VS Code", or null when the app is not known. */
+export function surfaceLabel(surface: Surface): string | null {
+  return surface === "unknown" ? null : SURFACE_LABEL[surface];
+}
 
 export type SessionStatus = "needs-you" | "working" | "idle" | "finished" | "failed" | "unknown";
 

@@ -307,6 +307,50 @@ test("a session with no folder has nothing to show and no stop for Tab", async (
   expect(project.hasAttribute("tabindex")).toBe(false);
 });
 
+test("an app that is not known is the folder's quiet dash, read as words, and its column stays in line", async () => {
+  const sessions = [
+    ...CALM,
+    session(11, {
+      name: "adrift",
+      status: "working",
+      surface: "unknown",
+      cwd: null,
+      project: null,
+      statusSince: NOW - 3 * MINUTE,
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: 900 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const row = rowOf(screen.container, "adrift");
+  const app = row.querySelector('[data-part="app"]') as HTMLElement;
+  const folder = row.querySelector('[data-part="project"]') as HTMLElement;
+
+  // On screen the same dash as a missing folder, in the same ink.
+  expect(app.querySelector('[aria-hidden="true"]')?.textContent).toBe("–");
+  expect(folder.textContent).toBe("–");
+  expect(getComputedStyle(app).color).toBe(getComputedStyle(folder).color);
+  expect(getComputedStyle(app).color).toBe(rgbOf("var(--ink-secondary)"));
+  // A screen reader hears words, not a dash.
+  expect(app.querySelector(".sr-only")?.textContent).toBe("app not known");
+  await expect
+    .element(page.getByRole("cell", { name: "app not known", exact: true }))
+    .toBeInTheDocument();
+  expect(screen.container.textContent).not.toContain("Unknown app");
+
+  // The column is kept, so every row's app and status start where the others' do.
+  const heads = [...screen.container.querySelectorAll("thead th")].map((th) => th.textContent);
+  expect(heads).toContain("App");
+  const rows = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')];
+  const lefts = (selector: string) =>
+    new Set(rows.map((r) => Math.round(r.querySelector(selector)!.getBoundingClientRect().left)));
+  expect(lefts('[data-part="app"]').size).toBe(1);
+  expect(lefts('[data-part="status"]').size).toBe(1);
+  expect(new Set(rows.map((r) => r.getBoundingClientRect().height))).toEqual(new Set([44]));
+});
+
 /** Sessions in a worktree on a branch, in a repository at a commit, and in no repository. */
 const IN_REPOSITORIES: Session[] = [
   session(1, {

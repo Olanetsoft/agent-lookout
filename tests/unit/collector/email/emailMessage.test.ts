@@ -90,6 +90,33 @@ describe("waitEmail", () => {
     expect(text).toContain("It has waited 1 minute 5 seconds, since 14:01.");
   });
 
+  test("a session whose app is not known has no App line, and the folder and the agent keep theirs", () => {
+    const email = waitEmail(facts({ surface: "unknown" }, { agent: "my-agent" }));
+    expect(email.text).toBe(
+      [
+        "checkout-flow is waiting for permission.",
+        "",
+        "It has waited 1 minute 5 seconds, since 14:01.",
+        "",
+        "Folder: checkout-flow",
+        "Agent: my-agent",
+        "",
+        "Sent by Agent Lookout on your computer. To stop these emails, start it again without AGENT_LOOKOUT_EMAIL_TO.",
+        "",
+      ].join("\n"),
+    );
+    expect(`${email.subject}\n${email.text}`).not.toMatch(/unknown|App:/i);
+    const over = overEmail({
+      event: "finished",
+      session: facts({ surface: "unknown" }).session,
+      agent: "my-agent",
+      seenAt: BEGUN,
+      now: BEGUN,
+    });
+    expect(over.text).toContain("Folder: checkout-flow\nAgent: my-agent\n");
+    expect(over.text).not.toMatch(/unknown|App:/i);
+  });
+
   test("a wait that began on another day says the day", () => {
     const text = waitEmail(facts({}, { now: BEGUN + 12 * 3_600_000 })).text;
     expect(text).toContain("It has waited 12 hours, since Oct 5, 14:01.");

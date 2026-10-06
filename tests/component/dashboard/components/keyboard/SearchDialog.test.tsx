@@ -375,6 +375,47 @@ test("typing narrows the list to sessions with every word somewhere in the name,
   expect(onChoose).not.toHaveBeenCalled();
 });
 
+test("a session whose app is not known is shown and named with nothing said of the app, and is not found by it", async () => {
+  const sessions = [
+    ...SESSIONS,
+    session(7, {
+      name: "infra-terraform",
+      source: "status-files",
+      agent: "night-shift",
+      surface: "unknown",
+      status: "idle",
+      statusSince: NOW - 5 * MINUTE,
+      cwd: null,
+      project: null,
+    }),
+  ];
+  await openSearch({ state: stateWith(sessions) });
+  const optionOf = (name: string) =>
+    options().find((option) => part(option, "name").textContent === name)!;
+
+  // With a folder: the folder, its branch and the agent, and no app.
+  const billing = optionOf("billing-webhooks");
+  expect(part(billing, "place").textContent).toBe("payments on billing-webhooks·night-shift");
+  expect(billing.querySelector('[data-part="app"]')).toBeNull();
+  // With no folder: the agent alone.
+  const infra = optionOf("infra-terraform");
+  expect(part(infra, "place").textContent).toBe("night-shift");
+  await expect
+    .element(
+      page.getByRole("option", {
+        name: /^infra-terraform, Idle for 5 minutes, night-shift$/,
+      }),
+    )
+    .toBeInTheDocument();
+  for (const option of options()) {
+    expect(`${option.textContent} ${option.getAttribute("aria-label")}`).not.toMatch(/unknown/i);
+  }
+
+  // Words the page does not show find nothing.
+  await userEvent.keyboard("unknown");
+  expect(options()).toEqual([]);
+});
+
 test("Up and Down move the lit session, round from the last to the first and from the first to the last, and the pointer lights one too", async () => {
   await openSearch();
   const activeIs = () => field_().getAttribute("aria-activedescendant");

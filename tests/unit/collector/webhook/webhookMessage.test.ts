@@ -122,6 +122,39 @@ describe("overPost", () => {
   });
 });
 
+describe("a session whose app is not known", () => {
+  test("its line names the folder and the agent and leaves the app out, and its field is null", () => {
+    const post = waitPost(facts({ surface: "unknown" }, { agent: "my-agent" }));
+    expect(post.text).toBe(
+      "checkout-flow is waiting for permission (4m 12s, storefront, my-agent)",
+    );
+    expect(post.session).toEqual({
+      name: "checkout-flow",
+      agent: "my-agent",
+      folder: "storefront",
+      app: null,
+    });
+    expect(Object.keys(post.session)).toEqual(["name", "agent", "folder", "app"]);
+    expect(JSON.stringify(post)).not.toMatch(/unknown/i);
+  });
+
+  test("so does the line of one that finished, failed or ended", () => {
+    const session = makeSession({
+      name: "billing-webhooks",
+      project: "billing-webhooks",
+      surface: "unknown",
+      status: "finished",
+    });
+    const seenAt = Date.UTC(2026, 9, 5, 9, 30);
+    for (const event of ["finished", "failed", "ended"] as const) {
+      const post = overPost({ event, session, agent: "my-agent", seenAt, now: seenAt });
+      expect(post.text).toBe(`billing-webhooks ${event} (billing-webhooks, my-agent)`);
+      expect(post.session.app).toBeNull();
+      expect(JSON.stringify(post)).not.toMatch(/unknown/i);
+    }
+  });
+});
+
 describe("a session name that tries to change the post", () => {
   const HOSTILE = [
     'say "hi" \\ and {"text": "injected"}',

@@ -389,6 +389,26 @@ describe("its sessions", () => {
     expect(result.sessions[1]?.waitingReason).toBe("permission");
   });
 
+  test("a file that names its app runs in it, and one that names none or a word it does not know is in no app it can name", async () => {
+    const { files, first } = setUp();
+    put(files, "a-terminal.json", statusFile({ app: "terminal" }));
+    put(files, "b-vscode.json", statusFile({ app: "VSCode" }));
+    put(files, "c-desktop.json", statusFile({ app: "desktop" }));
+    put(files, "d-none.json", statusFile());
+    put(files, "e-junk.json", statusFile({ app: "Visual Studio" }));
+    const result = await first();
+
+    expect(result.sessions.map((session) => [session.id, session.surface])).toEqual([
+      ["status-files:a-terminal.json", "terminal"],
+      ["status-files:b-vscode.json", "vscode"],
+      ["status-files:c-desktop.json", "desktop"],
+      ["status-files:d-none.json", "unknown"],
+      ["status-files:e-junk.json", "unknown"],
+    ]);
+    // None of them is skipped for it.
+    expect(result.health.watching).toEqual(facts(5, 0));
+  });
+
   test("a session whose process has gone is dropped, and the sentence says why", async () => {
     const { files, alive, first } = setUp();
     alive.add(100);

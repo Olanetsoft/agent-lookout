@@ -7,7 +7,7 @@ import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/Statu
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
-import { STATUS_LABEL, SURFACE_LABEL } from "@dashboard/lib/sessions/status";
+import { STATUS_LABEL, surfaceLabel } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface BoardCardProps {
@@ -20,9 +20,9 @@ interface BoardCardProps {
 /**
  * One session on the board: what a row of the list says, stacked to fit a
  * column. Its mark and name; where it works, "storefront on checkout-flow";
- * the app, and the tool once more than one is found; its status and how long,
- * read as one phrase, "Working 12m", with how long the agent has been quiet
- * under it when it says so; and Jump.
+ * the app when it is known, and the tool once more than one is found; its
+ * status and how long, read as one phrase, "Working 12m", with how long the
+ * agent has been quiet under it when it says so; and Jump.
  *
  * It is an inner surface of the card's glass: a faint fill inside a hairline,
  * on the corners of a selection 10px inside the panel. Nothing about it is
@@ -48,6 +48,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
   const quiet = stale || ended || gone;
   const mark: MarkKind = stale ? "stale" : session.status;
   const jump = useJump(session);
+  const app = surfaceLabel(session.surface);
 
   return (
     <li
@@ -109,29 +110,36 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
       {/*
        * The app, then the tool. The dot that sets the tool apart sits in the gap
        * before it, and the line clips it if the tool starts a line of its own.
+       * An app that is not known is left out, and the tool then stands alone.
        */}
-      <p
-        data-part='where'
-        className='mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-px overflow-x-clip leading-tight'
-      >
-        <span data-part='app' className='whitespace-nowrap'>
-          {SURFACE_LABEL[session.surface]}
-        </span>
-        {agent !== undefined && (
-          <>
-            {/* Read as "Terminal, Codex". */}
-            <span className='sr-only'>, </span>
-            <span className='relative flex min-w-0'>
-              <span aria-hidden className='absolute right-full mr-1'>
-                ·
-              </span>
-              <Truncated data-part='agent' className='min-w-0'>
-                {agent}
-              </Truncated>
+      {(app !== null || agent !== undefined) && (
+        <p
+          data-part='where'
+          className='mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-px overflow-x-clip leading-tight'
+        >
+          {app !== null && (
+            <span data-part='app' className='whitespace-nowrap'>
+              {app}
             </span>
-          </>
-        )}
-      </p>
+          )}
+          {agent !== undefined && (
+            <>
+              {/* Read as "Terminal, Codex". */}
+              {app !== null && <span className='sr-only'>, </span>}
+              <span className='relative flex min-w-0'>
+                {app !== null && (
+                  <span aria-hidden className='absolute right-full mr-1'>
+                    ·
+                  </span>
+                )}
+                <Truncated data-part='agent' className='min-w-0'>
+                  {agent}
+                </Truncated>
+              </span>
+            </>
+          )}
+        </p>
+      )}
 
       {/*
        * Jump keeps to the card's right edge, as every other Jump on the board

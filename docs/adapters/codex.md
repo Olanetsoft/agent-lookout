@@ -98,13 +98,13 @@ A session is listed while its lock exists, and otherwise for 24 hours after the 
 
 Also left out: a session whose last turn line was imported from another agent. It is listed from the first turn Codex runs in it.
 
-| `originator`, then `source`                | Shown as    |
-| ------------------------------------------ | ----------- |
-| `originator` `Codex Desktop`, any `source` | Desktop app |
-| `cli`, `exec`                              | Terminal    |
-| `vscode`                                   | VS Code     |
-| `{"custom":"chatgpt"}`                     | Desktop app |
-| anything else, or none                     | Unknown app |
+| `originator`, then `source`                | Shown as                                 |
+| ------------------------------------------ | ---------------------------------------- |
+| `originator` `Codex Desktop`, any `source` | Desktop app                              |
+| `cli`, `exec`                              | Terminal                                 |
+| `vscode`                                   | VS Code                                  |
+| `{"custom":"chatgpt"}`                     | Desktop app                              |
+| anything else, or none                     | A dash in the list, and no app elsewhere |
 
 ## Status
 

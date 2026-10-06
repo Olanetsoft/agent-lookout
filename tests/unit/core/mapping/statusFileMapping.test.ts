@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
+import { mapStatusFileApp, mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 
 test("each status in the format maps to the session status of the same meaning", () => {
   expect(mapStatusFileStatus({ status: "working" })).toEqual({ status: "working" });
@@ -40,5 +40,29 @@ test("a reason is kept only while waiting", () => {
 test("a status the format does not have is unknown, not a guess", () => {
   for (const status of ["busy", "paused", "Working", "needs-you", "", 1, null, undefined]) {
     expect(mapStatusFileStatus({ status })).toEqual({ status: "unknown" });
+  }
+});
+
+test("each app in the format maps to the app of the same name", () => {
+  expect(mapStatusFileApp("terminal")).toBe("terminal");
+  expect(mapStatusFileApp("vscode")).toBe("vscode");
+  expect(mapStatusFileApp("desktop")).toBe("desktop");
+});
+
+test("an app the format does not have is not known, not a guess", () => {
+  for (const app of [
+    "emacs",
+    "VS Code",
+    "vs-code",
+    "Terminal",
+    "cloud",
+    "browser",
+    "unknown",
+    "",
+    7,
+    null,
+    undefined,
+  ]) {
+    expect(mapStatusFileApp(app), String(app)).toBe("unknown");
   }
 });

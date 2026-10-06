@@ -49,6 +49,7 @@ describe("a file with every field", () => {
           reason: "permission",
           since: "2026-10-05T11:58:00Z",
           pid: 4242,
+          app: "terminal",
         }),
       ),
     ).toEqual({
@@ -59,6 +60,7 @@ describe("a file with every field", () => {
       reason: "permission",
       since: Date.UTC(2026, 9, 5, 11, 58, 0),
       pid: 4242,
+      app: "terminal",
     });
   });
 
@@ -172,6 +174,17 @@ describe("each optional field", () => {
     expect(parseStatusFile(statusFile({ since: "2099-01-01T00:00:00Z" }))?.since).toBe(
       Date.UTC(2099, 0, 1),
     );
+  });
+
+  test("an app is kept in lower case, and one this version does not know is kept as written", () => {
+    const app = (value: unknown) => parseStatusFile(statusFile({ app: value }))?.app;
+    expect(app("terminal")).toBe("terminal");
+    expect(app(" VSCode ")).toBe("vscode");
+    expect(app("Desktop")).toBe("desktop");
+    expect(app("emacs")).toBe("emacs");
+    for (const value of [undefined, "", "   ", 3, null, true, ["terminal"], "a".repeat(41)]) {
+      expect(parseStatusFile(statusFile({ app: value })), String(value)).not.toHaveProperty("app");
+    }
   });
 
   test("a pid is a whole number above zero", () => {

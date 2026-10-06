@@ -7,7 +7,8 @@ import { validPid } from "../claude-code/feed.ts";
  *
  * ```json
  * { "agent": "Night Shift", "name": "checkout-flow", "cwd": "/Users/example/code/checkout-flow",
- *   "status": "waiting", "reason": "permission", "since": "2026-10-05T18:00:00Z", "pid": 4242 }
+ *   "status": "waiting", "reason": "permission", "since": "2026-10-05T18:00:00Z", "pid": 4242,
+ *   "app": "terminal" }
  * ```
  *
  * `agent` and `status` are required. Everything else is optional, and a field
@@ -30,6 +31,8 @@ export interface StatusFile {
   since?: number;
   /** The process the session runs in. */
   pid?: number;
+  /** As written, in lower case: `terminal`, `vscode` or `desktop`, or a word this version does not know. */
+  app?: string;
 }
 
 /** The most files read in one poll. The rest are skipped and counted. */
@@ -47,7 +50,7 @@ export const MAX_NAME_LENGTH = 200;
 /** The longest working folder kept. A longer one is not kept at all, since a cut path is a wrong one. */
 export const MAX_CWD_LENGTH = 1024;
 
-/** A status or a reason longer than this is no word this format has. */
+/** A status, a reason or an app longer than this is no word this format has. */
 const MAX_WORD_LENGTH = 40;
 
 /**
@@ -137,5 +140,7 @@ export function parseStatusFile(content: string): StatusFile | null {
   if (since !== undefined) file.since = since;
   const pid = validPid(raw.pid);
   if (pid !== undefined) file.pid = pid;
+  const app = word(raw.app);
+  if (app !== undefined) file.app = app;
   return file;
 }

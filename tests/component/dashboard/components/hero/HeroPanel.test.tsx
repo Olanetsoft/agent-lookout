@@ -480,6 +480,59 @@ test("a waiting session from a status file names its own agent, and has no Jump"
   expect(panel.querySelector("a")).toBeNull();
 });
 
+test("where a session runs leaves out an app that is not known, in the longest wait and in a later one", async () => {
+  const sessions = [
+    custom("checkout-flow", {
+      agent: "my-agent",
+      cwd: "/Users/example/code/storefront",
+      project: "storefront",
+      git: { branch: "checkout-flow" },
+      statusSince: NOW - 10 * MINUTE,
+    }),
+    custom("billing-webhooks", { agent: "my-agent", statusSince: NOW - MINUTE }),
+  ];
+  const screen = await renderHero({ sessions, sources: [CLAUDE, STATUS_FILES] });
+  const panel = hero(screen.container);
+  const [lead, later] = [...panel.querySelectorAll<HTMLElement>('[data-slot="hero-session"]')].map(
+    (row) => part(row, "place"),
+  );
+
+  // "storefront on checkout-flow · my-agent", read as "on branch checkout-flow, my-agent".
+  expect(lead?.textContent).toBe("storefront on branch checkout-flow, ·my-agent");
+  expect(later?.textContent).toBe("billing-webhooks, ·my-agent");
+  for (const place of [lead!, later!]) {
+    expect(part(place, "app")).toBeNull();
+    expect(part(place, "agent").textContent).toBe("my-agent");
+  }
+  expect(panel.textContent).not.toContain("Unknown app");
+
+  // With no folder, the tool stands alone, with no dot before it.
+  await screen.rerender(
+    <HeroPanel
+      sessions={[custom("checkout-flow", { agent: "my-agent", cwd: null, project: null })]}
+      sources={[CLAUDE, STATUS_FILES]}
+      history={watched()}
+      now={NOW}
+    />,
+  );
+  const alone = part(hero(screen.container), "place");
+  expect(alone.textContent).toBe("my-agent");
+  expect(alone.querySelector('[aria-hidden="true"]')).toBeNull();
+
+  // With no tool to name either, there is nothing to say, and no line.
+  await screen.rerender(
+    <HeroPanel
+      sessions={[{ ...WAITING, surface: "unknown", cwd: null, project: null }]}
+      sources={[CLAUDE]}
+      history={watched()}
+      now={NOW}
+    />,
+  );
+  expect(hero(screen.container).querySelector('[data-part="place"]')).toBeNull();
+  expect(part(hero(screen.container), "name").textContent).toBe("demo-project");
+  expect(hero(screen.container).textContent).not.toContain("Unknown app");
+});
+
 test.each([
   ["in the longest wait", 0],
   ["in a later wait", 1],

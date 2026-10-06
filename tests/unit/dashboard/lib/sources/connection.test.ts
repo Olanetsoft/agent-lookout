@@ -313,3 +313,18 @@ test("a folder of status files that is read is named with the tools, as status f
     ).text,
   ).toBe("Status files could not be read");
 });
+
+test("when no session's app is known, no app is named", () => {
+  expect(appsIn(sessions("unknown", "unknown"))).toBe("");
+  const status = statusSentence(
+    "live",
+    { sources: [statusFiles("ok")], sessions: sessions("unknown", "unknown") },
+    NOW,
+  );
+  expect(status).toEqual({
+    key: "watching",
+    text: "Watching 2 sessions",
+    short: "2 sessions",
+    fact: { text: "checked 2s ago", ticking: true },
+  });
+});

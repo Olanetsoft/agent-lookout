@@ -96,7 +96,7 @@ Any agent can write one small JSON file for each of its sessions into a folder f
 
 Every 2 seconds Agent Lookout lists that folder and reads each file directly in it whose name ends in `.json` and does not start with a dot: at most 200 files. When there are more, it looks up when each was last written, without opening it, and reads the 200 written most recently. It reads only ordinary files of 16 KB or less, and on macOS and Linux it does not follow a symbolic link in the folder. The folder itself is followed when it is a link. It does not look in folders inside it. When the folder is not there, it lists nothing else.
 
-From each file it keeps these fields and drops the rest: `agent`, `name`, `cwd`, `status`, `reason`, `since` and `pid`. `agent` is the agent's name, `cwd` the folder the session works in, `since` when its status began and `pid` the ID of its process. It also keeps each file's name, which tells one session from another, and the time the file was last written, taken from the file it opened, which says how long a finished session stays and how long a working session has been quiet. The Sources card names the first file it skipped, so you can find it.
+From each file it keeps these fields and drops the rest: `agent`, `name`, `cwd`, `status`, `reason`, `since`, `pid` and `app`. `agent` is the agent's name, `cwd` the folder the session works in, `since` when its status began, `pid` the ID of its process and `app` the app the session runs in. It also keeps each file's name, which tells one session from another, and the time the file was last written, taken from the file it opened, which says how long a finished session stays and how long a working session has been quiet. The Sources card names the first file it skipped, so you can find it.
 
 For a file that names a `pid`, Agent Lookout asks the operating system whether that process still exists, with the same signal-0 check it makes for Claude Code, which sends nothing to the process. Nothing from a file is run or used as a link. The `cwd` is shown, and is looked in for a git repository as it is for every session, as [Git repositories](#git-repositories) describes. Nothing else in it is read.
 
@@ -205,7 +205,7 @@ An email is plain text. Its subject is the session's name followed by the reason
 - that same sentence
 - how long the session has waited, and the time on this computer's clock when it began, or the time on that clock when Agent Lookout saw it finish, fail or end
 - the name of the session's project folder: the last part of its path, never the path
-- the app it runs in, such as VS Code or Terminal
+- the app it runs in, such as VS Code or Terminal, when it is known
 - the agent, such as Claude Code or Codex, or the agent a status file names
 - one line saying Agent Lookout sent it and how to stop these emails
 
