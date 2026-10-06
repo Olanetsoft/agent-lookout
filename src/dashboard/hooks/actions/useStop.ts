@@ -6,7 +6,12 @@ import { requestStop, type StopOutcome } from "@dashboard/lib/stop/stopRequest";
 export type StopStep =
   | { kind: "idle" }
   | { kind: "confirming"; busy: boolean }
-  | { kind: "answered"; outcome: StopOutcome };
+  | {
+      kind: "answered";
+      outcome: StopOutcome;
+      /** When the answer came, by the page's clock, to tell a list read before it from one read after. */
+      at: number;
+    };
 
 export interface StopPress {
   step: StopStep;
@@ -111,7 +116,7 @@ export function useStop(
         return;
       }
       focusNext.current = "outcome";
-      setStep({ kind: "answered", outcome: result });
+      setStep({ kind: "answered", outcome: result, at: Date.now() });
     });
   }, [sessionId, request, onStopped]);
 

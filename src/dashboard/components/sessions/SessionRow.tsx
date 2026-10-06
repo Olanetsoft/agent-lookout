@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { ResumeButton, ResumeNote } from "@dashboard/components/resume/Resume";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
 import { Machine } from "@dashboard/components/sessions/Machine";
@@ -10,6 +11,7 @@ import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/actions/useJump";
+import { useResume } from "@dashboard/hooks/actions/useResume";
 import { quietFor } from "@dashboard/lib/sessions/quiet";
 import { rowLook } from "@dashboard/lib/sessions/sessions";
 import { surfaceLabel } from "@dashboard/lib/sessions/status";
@@ -19,8 +21,11 @@ import { cn } from "@dashboard/lib/utils";
 interface SessionRowProps {
   session: Session;
   now: number;
-  /** Whether the table has a Jump column. It is left out when no session can be jumped to. */
-  jumpColumn: boolean;
+  /**
+   * Whether the table has a column for each row's action: Jump, or Resume for
+   * a Claude Code session that is over. It is left out when no session has either.
+   */
+  actionColumn: boolean;
   /**
    * A narrow window: the status and its time move under the name, in place of
    * their own column, so the name keeps its room.
@@ -51,8 +56,9 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * One session, as a row of the Sessions table: mark and name, with the other
  * machine it runs on in a badge after the name, the tool when more than one
  * is found, the folder, the app, the status and how long it has
- * lasted read as one phrase, and Jump. A folder or an app that is not known is
- * a dash, so the columns stay in line.
+ * lasted read as one phrase, and Jump, or for a Claude Code session that is
+ * over, Resume. A folder or an app that is not known is a dash, so the
+ * columns stay in line.
  *
  * Rows have no rules. Under the pointer the row lights as one rounded shape
  * 10px inside the card, drawn from its first cell and placed against the row,
@@ -96,6 +102,11 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * terminal tab's Jump can say take a line of their own under the name, and the
  * row grows for as long as one is said.
  *
+ * Resume, in the place a Jump has, copies the command that goes to the
+ * session's folder and resumes it, and runs nothing. Should the clipboard
+ * refuse it, a line of its own under the name says so and holds the command
+ * to select by hand, and the row grows for as long as it is there.
+ *
  * A click anywhere on the row opens the session's details over the Overview,
  * except on what the row already answers to: Jump, and the folder and the
  * quiet time, which open their tooltips. The name is a link to the same place,
@@ -110,7 +121,7 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
 export function SessionRow({
   session,
   now,
-  jumpColumn,
+  actionColumn,
   narrow = false,
   agent,
   folderColumn = true,
@@ -119,6 +130,7 @@ export function SessionRow({
   // The badge is for a session that still claims to be running when its process has gone.
   const { mark, word: statusWord, stale, quiet, orphaned } = rowLook(session);
   const jump = useJump(session);
+  const resume = useResume(session);
   const surface = surfaceLabel(session.surface);
 
   const duration = <Duration session={session} now={now} quiet={quiet} />;
@@ -221,6 +233,7 @@ export function SessionRow({
               {/* The machine, like what Jump came to, goes under the name when the line cannot hold both. */}
               {!narrow && <Machine session={session} />}
               {!narrow && <JumpNote session={session} jump={jump} />}
+              <ResumeNote resume={resume} />
             </div>
             {/* Narrow, there is no room beside the name, so each has a line of its own. */}
             {narrow && <Machine session={session} className='justify-self-start' />}
@@ -302,11 +315,16 @@ export function SessionRow({
         </td>
       )}
 
-      {jumpColumn && (
+      {actionColumn && (
         <td className={cn(CELL, "overflow-visible text-right")}>
           <Jump
             session={session}
             jump={jump}
+            className='group-hover:bg-fill-selected group-hover:text-ink'
+          />
+          <ResumeButton
+            session={session}
+            resume={resume}
             className='group-hover:bg-fill-selected group-hover:text-ink'
           />
         </td>

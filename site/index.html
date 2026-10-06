@@ -607,7 +607,8 @@
           <p>
             It watches your sessions, takes you to a Claude Code session in VS Code, tmux, Terminal
             or iTerm2, notifies you if you ask it to, stops a Claude Code session when you press
-            Stop and confirm, and answers a permission prompt when you press Allow or Deny.
+            Stop and confirm, copies the command that resumes one that has ended, and answers a
+            permission prompt when you press Allow or Deny.
           </p>
         </div>
 
@@ -666,6 +667,16 @@
                 lists each one. The conversation is kept, and <code>claude --resume</code> opens it
                 again. Agent Lookout never stops a session on its own, and not one in Claude Code’s
                 desktop app. There is no pause button.
+              </dd>
+            </div>
+            <div>
+              <dt>Resume</dt>
+              <dd>
+                Copies the command that continues a Claude Code session that has ended,
+                <code>cd</code> to its folder and <code>claude --resume</code> with its ID, for you
+                to run in a terminal. A background job that finished, failed or was stopped has it,
+                and so does a session you stop with Stop, in its details. Agent Lookout runs
+                nothing, and a session still running has no Resume.
               </dd>
             </div>
             <div>

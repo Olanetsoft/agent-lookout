@@ -64,7 +64,7 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 
 When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
-A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too.
+A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too. A Claude Code background job that has finished, failed or been stopped has a [Resume](#resume-a-session) button in the same place.
 
 Claude Code sessions idle for a day or more whose process still runs are also listed over the list, under Left running, where they can be hidden or ended: see [Sessions left running](#sessions-left-running).
 
@@ -83,7 +83,7 @@ Board shows the same sessions in a column for each status, so you can see at a g
 | Idle               | Sessions ready for a new prompt, then stale ones with their own mark. The heading counts them apart: `Idle 1 Stale 1` |
 | Finished or failed | Sessions that finished or failed, failures first                                                                      |
 
-Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab. Click a card, or move to its name and press Enter, to open the session's [details](#a-sessions-details).
+Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump or a Resume button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab. Click a card, or move to its name and press Enter, to open the session's [details](#a-sessions-details).
 
 When a card's folder is named other than its repository, as a worktree's usually is, the card names the repository first: `storefront · storefront-checkout on checkout-flow`. The repository's name, the folder and the branch then take a line each when the column is too narrow for them side by side.
 
@@ -111,7 +111,7 @@ The details show everything Agent Lookout knows about the session:
 - its own events, newest first, as the Events log shows them
 - its row of the Timeline over the last hour
 
-A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you. A session Agent Lookout can stop has a [Stop](#stop-a-session) button beside it. A session with a permission prompt Agent Lookout holds shows it at the top of its details, with [Allow and Deny](#answer-a-permission-prompt).
+A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you. A session Agent Lookout can stop has a [Stop](#stop-a-session) button beside it. A session that can be [resumed](#resume-a-session) has Resume there instead, with the command it copies at the top of the details. A session with a permission prompt Agent Lookout holds shows it at the top of its details, with [Allow and Deny](#answer-a-permission-prompt).
 
 Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's name. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
 
@@ -581,7 +581,7 @@ A Claude Code session that runs in a terminal or in VS Code, and a Claude Code b
 
 Stop asks first, at the top of the details: it names the session, says that its process ends now and how to open the conversation again, and, for a session that is working or waiting for you, that what it is doing stops part-way or that its question is left unanswered. Focus goes to Cancel, so pressing Enter does not stop it. Press Stop session to stop it.
 
-Agent Lookout then checks again that the process is that session: it reads the session's file in `~/.claude/sessions` again and asks `ps` when the process started, and does nothing unless both agree with what it found before. A session in a terminal or VS Code is sent SIGTERM, which ends Claude Code the way closing it does, and Agent Lookout waits up to 10 seconds for it to end. A background job is stopped with `claude stop` and its ID, since Claude Code would start its process again if it were ended another way. The session leaves the list within a second or two, a background job shows as finished, and the Events log says it was stopped from Agent Lookout.
+Agent Lookout then checks again that the process is that session: it reads the session's file in `~/.claude/sessions` again and asks `ps` when the process started, and does nothing unless both agree with what it found before. A session in a terminal or VS Code is sent SIGTERM, which ends Claude Code the way closing it does, and Agent Lookout waits up to 10 seconds for it to end. A background job is stopped with `claude stop` and its ID, since Claude Code would start its process again if it were ended another way. The session leaves the list within a second or two, a background job shows as finished, and the Events log says it was stopped from Agent Lookout. The details then offer [Resume](#resume-a-session), until you close them.
 
 | What the details say                                                              | Why                                                                                                                                    |
 | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -607,6 +607,23 @@ Hide until it changes takes one out of Left running, in this browser only, until
 End all… lists each one again with a tick, all ticked, up to 20, which is as many as it ends at a time. Untick any you want to keep, and press End, which says how many it ends, such as End 3 sessions. Each one is stopped as Stop stops it, after the same checks, and only if it is still idle since the moment the list showed: a session that has done anything since is left running, even if it is idle again. A line then says what came of it, such as Ended 2. Left 1 running because it became active., and each row says what became of it. A session in the desktop app is listed with a line that says to stop it there, and has no tick.
 
 To take Stop and the ending of sessions left running away altogether, start Agent Lookout with `AGENT_LOOKOUT_STOP=off`. [PRIVACY.md](../PRIVACY.md#stopping-a-session) says what Agent Lookout checks and runs to stop a session.
+
+## Resume a session
+
+A Claude Code session that has ended can be continued with `claude --resume` and its session ID. Its Resume button copies the command that does it, such as:
+
+```sh
+cd '/Users/example/code/storefront' && claude --resume 6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f
+```
+
+Paste it in a terminal and run it. It goes to the session's folder first, because Claude Code keeps a conversation under the folder it ran in, so it works from any folder. The folder is in single quotes, so one with spaces, quotes or `$` in its name works in sh, bash and zsh, and `&&` keeps `claude` from starting anywhere else when the folder has gone. Agent Lookout runs nothing: it puts the text on the clipboard. For two seconds the button says Copied. Hover over it, or move to it with Tab, to see the command. In a session's details the command is shown in full under the head, so you can read it, or select it, before you run it. If the browser or the Mac app does not let the page write to the clipboard, a line says Not copied, and the command is shown to select and copy by hand: under the session's name in the list and on the board, and in the details under the command.
+
+#### Which sessions have Resume
+
+- A Claude Code background job that Claude Code lists as finished, failed or stopped, with its process gone, for as long as its row stays: 24 hours. These come from the `claude` command, so they are not listed with `AGENT_LOOKOUT_CLAUDE_FEED=off`.
+- A Claude Code session you stopped with [Stop](#stop-a-session), in its details, once Stop has said it stopped, until you close them, or until the list shows it running again, as a background job does once `claude attach` opens it.
+- Only when Claude Code gave the session's ID, a UUID, and its folder is known as a whole path. A job listed without its session ID has no Resume, and nor does a folder holding a line break or another control character, or a backslash, which fish would read inside the quotes.
+- Not a session whose process still runs: resuming it would open a second copy of the same conversation. Not one that left the list on its own, since Agent Lookout cannot tell whether its process ended. Not a Codex session, and not a session from a status file.
 
 ## Answer a permission prompt
 
@@ -1117,7 +1134,7 @@ Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on 
 
 ## What it does not do yet
 
-It cannot resume a session or send it a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), on this computer and on [another machine](#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
+It does not resume a session itself: for a Claude Code session that has ended, [Resume](#resume-a-session) copies the command that does, and you run it. It cannot send a session a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), on this computer and on [another machine](#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
@@ -1252,6 +1269,7 @@ It behaves as a Mac app does:
 - Its icon in the menu bar shows the same count, and lists those sessions when you click it. Choose one to open its details. [Menu bar](#menu-bar) says more.
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
+- [Resume](#resume-a-session) copies its command as it does in a browser. The window may write to the clipboard when you press a button that copies, and never reads it.
 - It opens where you left it, at the size you left it.
 - It keeps its [history](#history) in the same folder as `npx agent-lookout`, so the Events log and the charts carry over between the two.
 - Check for Updates…, in the Agent Lookout menu under About, checks for a newer version at once. [Updates](#updates) says how.

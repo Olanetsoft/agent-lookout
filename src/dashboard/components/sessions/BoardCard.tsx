@@ -1,5 +1,6 @@
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { ResumeButton, ResumeNote } from "@dashboard/components/resume/Resume";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { ChecksMark } from "@dashboard/components/sessions/ChecksMark";
 import { Machine } from "@dashboard/components/sessions/Machine";
@@ -8,6 +9,7 @@ import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/actions/useJump";
+import { useResume } from "@dashboard/hooks/actions/useResume";
 import { repositoryBeside } from "@dashboard/lib/sessions/repositories";
 import { rowLook } from "@dashboard/lib/sessions/sessions";
 import { surfaceLabel } from "@dashboard/lib/sessions/status";
@@ -28,7 +30,9 @@ interface BoardCardProps {
  * is, "storefront · storefront-checkout on checkout-flow";
  * the app when it is known, and the tool once more than one is found; its
  * status and how long, read as one phrase, "Working 12m", with how long the
- * agent has been quiet under it when it says so; and Jump.
+ * agent has been quiet under it when it says so; and Jump, or for a Claude
+ * Code session that is over, Resume, which copies the command that resumes
+ * it, as in the list.
  *
  * It is an inner surface of the card's glass: a faint fill inside a hairline,
  * on the corners of a selection 10px inside the panel. Nothing about it is
@@ -56,6 +60,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
   // As in the list: the badge is for a session still claiming to run.
   const { mark, word, stale, quiet, orphaned } = rowLook(session);
   const jump = useJump(session);
+  const resume = useResume(session);
   const app = surfaceLabel(session.surface);
   const repository = repositoryBeside(session);
 
@@ -95,6 +100,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
         <Machine session={session} />
         {orphaned && <Badge tone='outline'>Process ended</Badge>}
         <JumpNote session={session} jump={jump} />
+        <ResumeNote resume={resume} />
       </div>
 
       {/*
@@ -197,6 +203,11 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
         <Jump
           session={session}
           jump={jump}
+          className='ml-auto group-hover:bg-fill-selected group-hover:text-ink'
+        />
+        <ResumeButton
+          session={session}
+          resume={resume}
           className='ml-auto group-hover:bg-fill-selected group-hover:text-ink'
         />
       </div>

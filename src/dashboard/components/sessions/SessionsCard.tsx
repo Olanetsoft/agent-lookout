@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import { sessionResumeCommand } from "@core/mapping/claudeCodeResume";
 import { isRemoteSource, type Session, type SourceHealth } from "@core/sessions/session";
 import { SessionRow } from "@dashboard/components/sessions/SessionRow";
 import { Count, SessionsBoard } from "@dashboard/components/sessions/SessionsBoard";
@@ -136,7 +137,8 @@ function Searching({ sources }: { sources: readonly SourceHealth[] }) {
 /** What a group's rows are drawn with, the same in every group of the table. */
 interface RowsProps {
   now: number;
-  jumpColumn: boolean;
+  /** Whether the table has a column for Jump, and for Resume. */
+  actionColumn: boolean;
   columns: number;
   narrow: boolean;
   /** The tool each session belongs to, when the table names it. */
@@ -155,7 +157,7 @@ function GroupBody({
   head,
   sessions,
   now,
-  jumpColumn,
+  actionColumn,
   columns,
   narrow,
   agentOf,
@@ -184,7 +186,7 @@ function GroupBody({
           key={session.id}
           session={session}
           now={now}
-          jumpColumn={jumpColumn}
+          actionColumn={actionColumn}
           narrow={narrow}
           agent={agentOf?.(session)}
           folderColumn={folderColumn}
@@ -270,11 +272,12 @@ function Groups({
  * The widths of the columns beside Session, in rem, as the classes of the
  * table's columns set them. Each holds what goes in it and little more: Agent
  * w-25 holds "Claude Code", App w-28 "Desktop app", Status w-40 the longest
- * phrase, "Finished 23h 59m ago", and Jump w-24 the 64px button. Folder is at
- * least 7rem, a folder name of about 12 letters, and cuts a longer one, whose
- * whole path is in its tooltip. A change to one of those classes changes this.
+ * phrase, "Finished 23h 59m ago", and the actions w-24 the 64px button, Jump
+ * or Resume. Folder is at least 7rem, a folder name of about 12 letters, and
+ * cuts a longer one, whose whole path is in its tooltip. A change to one of
+ * those classes changes this.
  */
-const COLUMN_REM = { agent: 6.25, folder: 7, app: 7, status: 10, jump: 6 } as const;
+const COLUMN_REM = { agent: 6.25, folder: 7, app: 7, status: 10, actions: 6 } as const;
 /** The least the Session column keeps: its mark and a name of about 18 letters. */
 const SESSION_REM = 12.5;
 /** The most the Folder column takes, a folder or a branch of about 22 letters. */
@@ -312,7 +315,7 @@ function useColumns(
   table: RefObject<HTMLTableElement | null>,
   measured: boolean,
   agentColumn: boolean,
-  jumpColumn: boolean,
+  actionColumn: boolean,
 ): Columns {
   const [columns, setColumns] = useState<Columns>(ALL_COLUMNS);
 
@@ -325,7 +328,7 @@ function useColumns(
         SESSION_REM +
         COLUMN_REM.status +
         (agentColumn ? COLUMN_REM.agent : 0) +
-        (jumpColumn ? COLUMN_REM.jump : 0);
+        (actionColumn ? COLUMN_REM.actions : 0);
       const width = card.clientWidth / rem;
       const folder = width >= always + COLUMN_REM.folder;
       const app = folder && width >= always + COLUMN_REM.folder + COLUMN_REM.app;
@@ -343,7 +346,7 @@ function useColumns(
     const observer = new ResizeObserver(measure);
     observer.observe(card);
     return () => observer.disconnect();
-  }, [table, measured, agentColumn, jumpColumn]);
+  }, [table, measured, agentColumn, actionColumn]);
 
   return measured ? columns : ALL_COLUMNS;
 }
@@ -402,6 +405,9 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
   // and the switch is not offered.
   const board = layout === "board" && sessions.length > 0;
   const jumpColumn = listed.some((session) => jumpWay(session) !== null);
+  // A Claude Code session that is over has Resume where a Jump would be.
+  const resumeColumn = listed.some((session) => sessionResumeCommand(session) !== null);
+  const actionColumn = jumpColumn || resumeColumn;
   // What Jump does depends on where a session runs, and the head says only
   // what the Jumps on the card do: the table's, or the board's, which has
   // the sessions that need the person too. Bringing a terminal's tab forward
@@ -422,13 +428,13 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
     folder: folderColumn,
     app: appColumn,
     folderRem,
-  } = useColumns(table, listed.length > 0 && !narrow && !board, agentColumn, jumpColumn);
+  } = useColumns(table, listed.length > 0 && !narrow && !board, agentColumn, actionColumn);
   // A group row spans the columns there are. A span wider than that would add
   // empty columns of its own and squeeze the ones with something in them.
   // Wide, those are Session and Status, with Agent, Folder and App when shown.
   const columns =
     (narrow ? 1 : 2 + (agentColumn ? 1 : 0) + (folderColumn ? 1 : 0) + (appColumn ? 1 : 0)) +
-    (jumpColumn ? 1 : 0);
+    (actionColumn ? 1 : 0);
   // A count that nobody could make is not a zero: while no source has been
   // read, the head says no number at all, as the counts in the hero do.
   const { counted } = countState(sessions, sources);
@@ -457,7 +463,7 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
             {folderColumn && !narrow && <col style={{ width: `${folderRem}rem` }} />}
             {appColumn && !narrow && <col className='w-28' />}
             {!narrow && <col className='w-40' />}
-            {jumpColumn && <col className='w-24' />}
+            {actionColumn && <col className='w-24' />}
           </colgroup>
           <thead className='sr-only'>
             <tr>
@@ -466,14 +472,18 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
               {folderColumn && !narrow && <th scope='col'>Folder</th>}
               {appColumn && !narrow && <th scope='col'>App</th>}
               {!narrow && <th scope='col'>Status and time</th>}
-              {jumpColumn && <th scope='col'>Jump</th>}
+              {actionColumn && (
+                <th scope='col'>
+                  {jumpColumn && resumeColumn ? "Jump or resume" : jumpColumn ? "Jump" : "Resume"}
+                </th>
+              )}
             </tr>
           </thead>
           <Groups
             sessions={sessions}
             byRepository={layout === "repositories"}
             now={now}
-            jumpColumn={jumpColumn}
+            actionColumn={actionColumn}
             columns={columns}
             narrow={narrow}
             agentOf={agentOf}

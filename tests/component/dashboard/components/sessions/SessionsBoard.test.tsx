@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -324,6 +324,96 @@ test("a card has Jump where one exists: the quiet capsule, a link for VS Code an
   expect(cardOf(screen.container, "docs-site").querySelector('[data-part="jump"]')).toBeNull();
 });
 
+test("a card of a Claude Code session that is over has Resume at its right edge, which copies the command that resumes it", async () => {
+  const written: string[] = [];
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(async (text) => {
+    written.push(text);
+  });
+  onTestFinished(() => write.mockRestore());
+  const screen = await renderBoard(SESSIONS);
+
+  const holders = [...screen.container.querySelectorAll('[data-part="resume"]')].map(
+    (button) =>
+      button.closest('[data-slot="board-card"]')?.querySelector('[data-part="name"]')?.textContent,
+  );
+  expect(holders.sort()).toEqual(["email-templates", "infra-terraform"]);
+
+  const card = cardOf(screen.container, "infra-terraform");
+  const button = card.querySelector('[data-part="resume"]') as HTMLElement;
+  expect(button.dataset.variant).toBe("quiet");
+  // At the card's right edge, 14px in, as a Jump is.
+  expect(
+    Math.round(card.getBoundingClientRect().right - button.getBoundingClientRect().right),
+  ).toBe(14);
+  const before = location.hash;
+  await userEvent.click(button);
+  expect(written).toEqual([`cd '/Users/example/code/demo' && claude --resume ${uuid(7)}`]);
+  expect(location.hash).toBe(before);
+  expect(warmPaint(card)).toEqual([]);
+  // A key pressed puts the page back in the keyboard's hands, so a test after
+  // this one that focuses from script still shows the focus, and its tooltip.
+  await userEvent.keyboard("{Shift}");
+});
+
+test.each([
+  [1280, 835],
+  [375, 279],
+])(
+  "at %ipx, when the clipboard is refused a card says so under its name and leaves the command to select by hand",
+  async (viewport, width) => {
+    await page.viewport(viewport, 900);
+    const write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValue(new DOMException("Write permission denied.", "NotAllowedError"));
+    onTestFinished(() => write.mockRestore());
+    // A key pressed after puts the page back in the keyboard's hands, as the tests after this
+    // one that focus from script need, even when this one fails partway.
+    onTestFinished(() => userEvent.keyboard("{Shift}"));
+    const folder = "/Users/example/code/a-folder-with-a-rather-long-name/storefront";
+    const sessions = SESSIONS.map((each) =>
+      each.name === "infra-terraform" ? { ...each, cwd: folder } : each,
+    );
+    const screen = await renderBoard(sessions, width);
+    if (viewport === 375) {
+      // One column, as on a phone.
+      const columns = [...screen.container.querySelectorAll('[data-slot="board-column"]')];
+      expect(new Set(columns.map((column) => column.getBoundingClientRect().left)).size).toBe(1);
+    }
+
+    const card = cardOf(screen.container, "infra-terraform");
+    const before = location.hash;
+    await userEvent.click(card.querySelector('[data-part="resume"]') as HTMLElement);
+    await expect.poll(() => card.querySelector('[data-part="resume-line"]')).not.toBeNull();
+    const line = card.querySelector('[data-part="resume-line"]') as HTMLElement;
+    const command = `cd '${folder}' && claude --resume ${uuid(7)}`;
+    expect(line.textContent).toBe(`Not copied. Select the command to copy it: ${command}`);
+    expect(line.querySelector('[data-part="resume-command"]')?.textContent).toBe(command);
+    // Only on the card that was pressed.
+    expect(screen.container.querySelectorAll('[data-part="resume-line"]')).toHaveLength(1);
+    // Under the name, inside the card.
+    const name = card.querySelector('[data-part="name"]') as HTMLElement;
+    expect(line.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      name.getBoundingClientRect().bottom - 1,
+    );
+    expect(line.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      card.getBoundingClientRect().left,
+    );
+    expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+      card.getBoundingClientRect().right,
+    );
+    // Nothing runs past the card, the board or the page.
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+    const board = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    expect(board.scrollWidth).toBeLessThanOrEqual(board.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+    // A click on the command selects it, and does not open the session's details.
+    await userEvent.click(line.querySelector('[data-part="resume-command"]') as HTMLElement);
+    expect(location.hash).toBe(before);
+    expect(warmPaint(card)).toEqual([]);
+  },
+);
+
 test("at the width the Overview gives the board at 1440, every Jump keeps to its card's right edge, under the status when a long wait leaves no room beside it", async () => {
   const waiting = session(1, {
     name: "checkout-flow",
@@ -605,7 +695,7 @@ test("a card's Jump to a Terminal tab says, while macOS asks, that it will ask o
   localStorage.removeItem(AUTOMATION_NOTE_STORAGE_KEY);
 });
 
-test("Tab goes through the cards column by column, top to bottom, each card's name, its folder and then its Jump", async () => {
+test("Tab goes through the cards column by column, top to bottom, each card's name, its folder and then its Jump or its Resume", async () => {
   const screen = await renderBoard(SESSIONS);
   startAtTop();
 
@@ -637,8 +727,10 @@ test("Tab goes through the cards column by column, top to bottom, each card's na
     "mobile-onboarding project",
     "email-templates name",
     "email-templates project",
+    "email-templates resume",
     "infra-terraform name",
     "infra-terraform project",
+    "infra-terraform resume",
   ]);
   await pointAway();
 });

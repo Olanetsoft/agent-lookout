@@ -6,6 +6,7 @@ import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import { PullRequestFact } from "@dashboard/components/panels/PullRequestFact";
+import { ResumeBlock, ResumeButton } from "@dashboard/components/resume/Resume";
 import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
 import { Button } from "@dashboard/components/ui/controls/Button";
@@ -16,6 +17,7 @@ import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/Statu
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
 import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/actions/useJump";
+import { useResume } from "@dashboard/hooks/actions/useResume";
 import { useStop } from "@dashboard/hooks/actions/useStop";
 import { MAX_EVENTS, type CollectorState } from "@dashboard/lib/api/collectorStore";
 import { buildTimeline } from "@dashboard/lib/charts/timeline";
@@ -421,6 +423,19 @@ function SessionDialog({
         : now;
   const saying = jump.outcome !== null || jump.asking !== null;
   const stop = useStop(sessionId, { open, onStopped });
+  // A session Stop ended here can be resumed at once, whatever a list read before then said of
+  // it, but not once a list read after has it running again, as `claude attach` can open a
+  // stopped background job: resuming it then would start a second copy of the conversation.
+  const runningAgain =
+    stop.step.kind === "answered" &&
+    listed?.alive === true &&
+    (state.snapshot?.generatedAt ?? 0) > stop.step.at;
+  const stoppedHere =
+    stop.step.kind === "answered" && stop.step.outcome === "stopped" && !runningAgain;
+  const resume = useResume(
+    session ?? { id: sessionId, source: "status-files", status: "unknown", cwd: null },
+    stoppedHere ? true : undefined,
+  );
   // What Stop asks is no question once the session has gone, but what it came to is still said.
   const stopSaying =
     stop.step.kind === "answered" || (stop.step.kind === "confirming" && (stop.step.busy || !gone));
@@ -439,6 +454,7 @@ function SessionDialog({
         )}
         {stopSaying && <StopNote session={session} stop={stop} className='mt-3' />}
         {!gone && <AnswerAsk session={session} onAnswered={onAnswered} className='mt-3' />}
+        <ResumeBlock resume={resume} className='mt-3' />
         <Details session={session} gone={gone} state={state} now={now} asOf={asOf} />
       </>
     );
@@ -475,15 +491,20 @@ function SessionDialog({
         nameOf(sessionId, opener) ?? document.querySelector<HTMLElement>("main")
       }
       actions={
-        session &&
-        !gone && (
+        session && (
           <>
-            <Jump
-              session={session}
-              jump={jump}
-              variant={session.status === "needs-you" ? "needs-you" : "quiet"}
-            />
-            <StopButton session={session} stop={stop} />
+            {!gone && (
+              <>
+                <Jump
+                  session={session}
+                  jump={jump}
+                  variant={session.status === "needs-you" ? "needs-you" : "quiet"}
+                />
+                <StopButton session={session} stop={stop} />
+              </>
+            )}
+            {/* The command is on the page under the head, so it needs no tooltip. */}
+            <ResumeButton session={session} resume={resume} tooltip={false} />
           </>
         )
       }
@@ -515,6 +536,10 @@ interface SessionPanelProps {
  * otherwise. After it comes Stop, when the collector can stop the session:
  * it asks first, at the top of the details, and says there what it came to.
  * A session in the desktop app has no Stop, and its process fact says why.
+ * A Claude Code session that is over, or that Stop has just ended here and
+ * that no list read since has running again, has Resume there, which copies
+ * the command that resumes it, and the command itself is at the top of the
+ * details, to read and to select.
  * Under them, as facts: its status with how long and since when, its agent,
  * the other machine it runs on, when it runs on one, its app when known, its
  * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the
@@ -529,7 +554,8 @@ interface SessionPanelProps {
  * reason and its waits are in the ink.
  *
  * A session that leaves the list while it is open keeps what was last known,
- * under one calm line that says so, and has no Jump and no Stop. An address that names no
+ * under one calm line that says so, and has no Jump and no Stop, though Resume
+ * stays for one that Stop ended or that was over. An address that names no
  * session says so and offers the Overview.
  */
 export function SessionPanel({

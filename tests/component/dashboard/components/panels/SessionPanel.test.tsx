@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -844,6 +844,208 @@ test("a session that leaves the list has no Stop, though what Stop came to is st
     <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
   );
   expect(document.querySelector('[data-part="stop"]')).toBeNull();
+});
+
+const RESUME =
+  "cd '/Users/example/code/storefront' && claude --resume 00000000-0000-4000-8000-000000000001";
+
+/** The controls in the details' head, in order, by what each is. */
+function headControls(root: Element): (string | null)[] {
+  const head = root.querySelector("header") as HTMLElement;
+  return [...head.querySelectorAll("a, button")].map(
+    (control) => control.getAttribute("data-part") ?? control.getAttribute("aria-label"),
+  );
+}
+
+/** A stand-in for the clipboard, so no test writes to the real one. */
+function clipboard(): string[] {
+  const written: string[] = [];
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(async (text) => {
+    written.push(text);
+  });
+  onTestFinished(() => write.mockRestore());
+  return written;
+}
+
+test.each([375, 1440])(
+  "at %ipx, a background job that finished has Resume in its head, and the command it copies at the top of its details",
+  async (width) => {
+    await page.viewport(width, 900);
+    const written = clipboard();
+    await renderPanel(
+      CLAUDE_ID,
+      withClaude({
+        status: "finished",
+        waitingReason: undefined,
+        waitingDetail: undefined,
+        surface: "unknown",
+        links: {},
+        pid: undefined,
+        alive: undefined,
+      }),
+    );
+    const panel = dialog("checkout-flow");
+    await expect.element(panel).toBeVisible();
+    const root = panel.element();
+
+    expect(headControls(root)).toEqual(["resume", "Close"]);
+    const block = root.querySelector('[data-part="resume-block"]') as HTMLElement;
+    expect(block.querySelector('[data-part="resume-command"]')?.textContent).toBe(RESUME);
+    // Above the facts, and nothing runs past the dialog.
+    expect(
+      block.compareDocumentPosition(root.querySelector('[data-slot="fact-row"]') as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(block.scrollWidth).toBeLessThanOrEqual(block.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+    await userEvent.click(
+      page.getByRole("button", { name: "Copy the command that resumes checkout-flow" }),
+    );
+    expect(written).toEqual([RESUME]);
+    expect(warmBeyondTheSignals(root)).toEqual([]);
+  },
+);
+
+test("a running session has no Resume", async () => {
+  await renderPanel(CLAUDE_ID, withClaude({ stop: { how: "signal" } }));
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+  expect(document.querySelector('[data-part="resume"]')).toBeNull();
+  expect(document.querySelector('[data-part="resume-block"]')).toBeNull();
+});
+
+test("a finished Codex session has no Resume", async () => {
+  const value = state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CODEX_ID ? { ...session, status: "finished" as const } : session,
+      ),
+    },
+  });
+  await renderPanel(CODEX_ID, value);
+  await expect.element(dialog("api-rate-limits")).toBeVisible();
+  expect(document.querySelector('[data-part="resume"]')).toBeNull();
+  expect(document.querySelector('[data-part="resume-block"]')).toBeNull();
+});
+
+test("a session Stop has ended is offered Resume at once, and keeps it once it has left the list", async () => {
+  const written = clipboard();
+  setApiHost(
+    vi.fn<ApiHost>(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ),
+  );
+  const listed = withClaude({ surface: "terminal", links: {}, stop: { how: "signal" } });
+  const screen = await render(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={listed} now={NOW} />,
+  );
+  expect(document.querySelector('[data-part="resume"]')).toBeNull();
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+  await expect.element(page.getByRole("status").filter({ hasText: "Stopped." })).toBeVisible();
+  const root = dialog("checkout-flow").element();
+  expect(headControls(root)).toEqual(["stop", "resume", "Close"]);
+  // What Stop came to, then the command, then the facts.
+  const outcome = root.querySelector('[data-part="stop-outcome"]') as HTMLElement;
+  const block = root.querySelector('[data-part="resume-block"]') as HTMLElement;
+  expect(outcome.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(block.querySelector('[data-part="resume-command"]')?.textContent).toBe(RESUME);
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(headControls(root)).toEqual(["resume", "Close"]);
+  await userEvent.click(
+    page.getByRole("button", { name: "Copy the command that resumes checkout-flow" }),
+  );
+  expect(written).toEqual([RESUME]);
+});
+
+test("a session Stop has ended loses Resume once a list read after the stop has it running again", async () => {
+  setApiHost(
+    vi.fn<ApiHost>(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ),
+  );
+  const job = {
+    status: "idle" as const,
+    waitingReason: undefined,
+    surface: "unknown" as const,
+    links: {},
+    stop: { how: "background" as const },
+  };
+  const screen = await render(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={withClaude(job)} now={NOW} />,
+  );
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+  await expect.element(page.getByRole("status").filter({ hasText: "Stopped." })).toBeVisible();
+  // The list read before the stop still says it runs, and Resume is offered all the same.
+  const root = dialog("checkout-flow").element();
+  expect(root.querySelector('[data-part="resume"]')).not.toBeNull();
+
+  // Opened again with `claude attach`, it is listed working, its process alive.
+  const later = Date.now() + MINUTE;
+  const again = state({
+    snapshot: {
+      generatedAt: later,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CLAUDE_ID
+          ? { ...session, ...job, status: "working" as const, alive: true, pid: 4242 }
+          : session,
+      ),
+    },
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={again} now={NOW} />,
+  );
+  await expect.poll(() => root.querySelector('[data-part="resume"]')).toBeNull();
+  expect(root.querySelector('[data-part="resume-block"]')).toBeNull();
+  expect(root.textContent).not.toContain("Resume copies this command");
+});
+
+test("a session that leaves the list on its own is not offered Resume, since its process may still run", async () => {
+  const screen = await renderPanel(
+    CLAUDE_ID,
+    withClaude({ status: "idle", waitingReason: undefined }),
+  );
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(document.querySelector('[data-part="resume"]')).toBeNull();
+  expect(document.querySelector('[data-part="resume-block"]')).toBeNull();
 });
 
 test("a waiting session with no Jump still has the quiet Stop, alone before the close button", async () => {

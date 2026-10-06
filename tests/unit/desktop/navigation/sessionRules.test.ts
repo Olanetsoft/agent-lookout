@@ -10,14 +10,19 @@ test("the app's own page may show notifications", () => {
   expect(mayUse("notifications", APP_ORIGIN)).toBe(true);
 });
 
+test("the app's own page may write text to the clipboard, for a button that copies, and never read it", () => {
+  expect(mayUse("clipboard-sanitized-write", APP_ORIGIN)).toBe(true);
+  expect(mayUse("clipboard-read", APP_ORIGIN)).toBe(false);
+});
+
 test("no other origin may, and the page may use nothing else", () => {
   for (const origin of ["https://example.com", "http://127.0.0.1:4777", "null", undefined]) {
     expect(mayUse("notifications", origin), String(origin)).toBe(false);
+    expect(mayUse("clipboard-sanitized-write", origin), String(origin)).toBe(false);
   }
   for (const permission of [
     "openExternal",
     "clipboard-read",
-    "clipboard-sanitized-write",
     "media",
     "geolocation",
     "fullscreen",
@@ -94,7 +99,7 @@ function granted(session: FakeSession, permission: string, requestingUrl: string
 }
 
 describe("the window's session", () => {
-  test("grants notifications to the app's own page, and nothing else to anyone", () => {
+  test("grants notifications and clipboard writes to the app's own page, and nothing else to anyone", () => {
     const session = ruled();
     expect(granted(session, "notifications", APP_START_URL)).toBe(true);
     expect(granted(session, "notifications", `${APP_ORIGIN}/#settings`)).toBe(true);
@@ -104,6 +109,8 @@ describe("the window's session", () => {
     for (const permission of ["media", "clipboard-read", "openExternal", "geolocation", "hid"]) {
       expect(granted(session, permission, APP_START_URL), permission).toBe(false);
     }
+    expect(granted(session, "clipboard-sanitized-write", APP_START_URL)).toBe(true);
+    expect(granted(session, "clipboard-sanitized-write", "https://example.com/")).toBe(false);
   });
 
   test("says the same when asked whether a permission is held", () => {
@@ -112,6 +119,8 @@ describe("the window's session", () => {
     expect(session.check?.(null, "notifications", `${APP_ORIGIN}/`)).toBe(true);
     expect(session.check?.(null, "notifications", "https://example.com")).toBe(false);
     expect(session.check?.(null, "clipboard-read", APP_ORIGIN)).toBe(false);
+    expect(session.check?.(null, "clipboard-sanitized-write", APP_ORIGIN)).toBe(true);
+    expect(session.check?.(null, "clipboard-sanitized-write", "https://example.com")).toBe(false);
   });
 
   test("lets the page reach no device", () => {

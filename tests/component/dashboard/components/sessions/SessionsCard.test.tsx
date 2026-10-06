@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -120,7 +120,7 @@ test("the sessions are a table with a head for each column, kept for assistive t
     "Folder",
     "App",
     "Status and time",
-    "Jump",
+    "Jump or resume",
   ]);
   for (const head of heads) expect(head.getAttribute("scope")).toBe("col");
   // The heads are in the page and out of sight: the columns speak for themselves.
@@ -868,6 +868,123 @@ test("without any link there is no Jump column, no empty head for it and no hint
   ).toBe(18);
 });
 
+test("a Claude Code session that finished or failed has Resume where a Jump would be, which copies the command that resumes it", async () => {
+  const written: string[] = [];
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(async (text) => {
+    written.push(text);
+  });
+  onTestFinished(() => write.mockRestore());
+  const codexDone = makeSession({
+    id: `codex:${uuid(23)}`,
+    source: "codex",
+    name: "codex-done",
+    status: "finished",
+    statusSince: NOW - HOUR,
+  });
+  const screen = await render(
+    <SessionsCard sessions={[...MIXED, codexDone]} sources={[SOURCE_OK, CODEX_OK]} now={NOW} />,
+  );
+
+  const resumes = [...screen.container.querySelectorAll('[data-part="resume"]')].map(
+    (button) => button.closest<HTMLElement>('[data-slot="session-row"]')?.dataset.session,
+  );
+  // Only the two that are over; never a running session, nor Codex's.
+  expect(resumes.sort()).toEqual([`claude-code:${uuid(4)}`, `claude-code:${uuid(7)}`]);
+  const done = rowOf(screen.container, "done-one");
+  const button = done.querySelector('[data-part="resume"]') as HTMLElement;
+  expect(button.closest("td")).toBe(done.lastElementChild);
+  expect(button.getAttribute("aria-label")).toBe("Copy the command that resumes done-one");
+  expect(button.dataset.variant).toBe("quiet");
+  // As wide as the Jumps above it, and its right edge where theirs is.
+  const jump = rowOf(screen.container, "stale-one").querySelector('[data-part="jump"]')!;
+  expect(button.getBoundingClientRect().width).toBe(jump.getBoundingClientRect().width);
+  expect(button.getBoundingClientRect().right).toBe(jump.getBoundingClientRect().right);
+  expect(done.getBoundingClientRect().height).toBe(44);
+
+  const before = location.hash;
+  await userEvent.click(button);
+  expect(written).toEqual([`cd '/Users/example/code/demo' && claude --resume ${uuid(4)}`]);
+  // A press copies, and does not open the session's details.
+  expect(location.hash).toBe(before);
+  expect(warmPaint(done)).toEqual([]);
+});
+
+test("with no Jump on the card, Resume alone makes the column, and its head says Resume", async () => {
+  const sessions = [
+    session(1, { name: "plain", status: "idle", statusSince: NOW - MINUTE }),
+    session(2, { name: "nightly-report", status: "finished", statusSince: NOW - HOUR }),
+  ];
+  const screen = await render(
+    <div style={{ width: 900 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  expect(
+    [...screen.container.querySelectorAll("thead th")].map((head) => head.textContent),
+  ).toEqual(["Session", "Folder", "App", "Status and time", "Resume"]);
+  // The hint is about Jump, so with no Jump there is none.
+  expect(screen.container.querySelector('[data-part="hint"]')).toBeNull();
+  expect(rowOf(screen.container, "plain").querySelector("button")).toBeNull();
+  const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  const button = rowOf(screen.container, "nightly-report").querySelector(
+    '[data-part="resume"]',
+  ) as HTMLElement;
+  expect(
+    Math.round(card.getBoundingClientRect().right - button.getBoundingClientRect().right),
+  ).toBe(18);
+});
+
+test("at the width of a phone a refused copy puts the command under the name, and nothing is cut or runs past the card", async () => {
+  await page.viewport(375, 900);
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockRejectedValue(new DOMException("Write permission denied.", "NotAllowedError"));
+  onTestFinished(() => write.mockRestore());
+  const sessions = [
+    session(2, {
+      name: "nightly-report",
+      status: "finished",
+      statusSince: NOW - HOUR,
+      cwd: "/Users/example/code/a-folder-with-a-rather-long-name/storefront",
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: 279 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const row = rowOf(screen.container, "nightly-report");
+  const height = row.getBoundingClientRect().height;
+  await userEvent.click(row.querySelector('[data-part="resume"]') as HTMLElement);
+
+  await expect.poll(() => row.querySelector('[data-part="resume-line"]')).not.toBeNull();
+  const line = row.querySelector('[data-part="resume-line"]') as HTMLElement;
+  expect(line.textContent).toBe(
+    `Not copied. Select the command to copy it: cd '/Users/example/code/a-folder-with-a-rather-long-name/storefront' && claude --resume ${uuid(2)}`,
+  );
+  // Under the name, above the status, and the row grows to hold it.
+  const name = row.querySelector('[data-part="name"]') as HTMLElement;
+  const status = row.querySelector('[data-part="status-under"]') as HTMLElement;
+  expect(line.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    name.getBoundingClientRect().bottom - 1,
+  );
+  expect(line.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    status.getBoundingClientRect().top + 1,
+  );
+  expect(row.getBoundingClientRect().height).toBeGreaterThan(height);
+  const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+  expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+    card.getBoundingClientRect().right,
+  );
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+  // A click on the command selects it, and does not open the session's details.
+  const before = location.hash;
+  await userEvent.click(line.querySelector('[data-part="resume-command"]') as HTMLElement);
+  expect(location.hash).toBe(before);
+});
+
 test("with a Jump column the head says what Jump does", async () => {
   const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
 
@@ -889,7 +1006,9 @@ test.each([
   const visible = (element: Element) => getComputedStyle(element).display !== "none";
 
   expect(heads.map((head) => head.textContent)).toEqual(
-    shown ? ["Session", "Folder", "App", "Status and time", "Jump"] : ["Session", "Jump"],
+    shown
+      ? ["Session", "Folder", "App", "Status and time", "Jump or resume"]
+      : ["Session", "Jump or resume"],
   );
   expect(visible(rowOf(screen.container, "busy-one").querySelector('[data-part="app"]')!)).toBe(
     shown,
@@ -1242,7 +1361,7 @@ test("a session from a status file names its own agent in the Agent column, and 
   );
 
   const heads = [...screen.container.querySelectorAll("thead th")].map((th) => th.textContent);
-  expect(heads).toEqual(["Session", "Agent", "Folder", "App", "Status and time", "Jump"]);
+  expect(heads).toEqual(["Session", "Agent", "Folder", "App", "Status and time", "Jump or resume"]);
   const billing = rowOf(screen.container, "billing-webhooks");
   expect(billing.querySelector('[data-part="agent"]')?.textContent).toBe("Night Shift");
   expect(billing.querySelector('[data-part="status"]')?.textContent).toBe("Working");
@@ -1329,7 +1448,7 @@ test("with both tools found, each row names its tool in plain words in an Agent 
     <SessionsCard sessions={BOTH} sources={[SOURCE_OK, CODEX_OK]} now={NOW} />,
   );
   const heads = [...screen.container.querySelectorAll("thead th")].map((th) => th.textContent);
-  expect(heads).toEqual(["Session", "Agent", "Folder", "App", "Status and time", "Jump"]);
+  expect(heads).toEqual(["Session", "Agent", "Folder", "App", "Status and time", "Jump or resume"]);
   // The group row spans every column there is.
   for (const th of screen.container.querySelectorAll<HTMLTableCellElement>(
     '[data-slot="group-row"] th',
@@ -1367,9 +1486,9 @@ test("with both tools found, each row names its tool in plain words in an Agent 
   }
 });
 
-const EVERY_COLUMN = ["Session", "Agent", "Folder", "App", "Status and time", "Jump"];
-const WITHOUT_APP = ["Session", "Agent", "Folder", "Status and time", "Jump"];
-const WITHOUT_APP_OR_FOLDER = ["Session", "Agent", "Status and time", "Jump"];
+const EVERY_COLUMN = ["Session", "Agent", "Folder", "App", "Status and time", "Jump or resume"];
+const WITHOUT_APP = ["Session", "Agent", "Folder", "Status and time", "Jump or resume"];
+const WITHOUT_APP_OR_FOLDER = ["Session", "Agent", "Status and time", "Jump or resume"];
 
 // The card's widths on the Overview: beside the Events card in a window 1440
 // pixels wide, alone at 1000, beside it at 1280 and 1181, and alone at 761, the
@@ -1505,7 +1624,7 @@ test("at the width of a phone the tool leads the line under the name, and neithe
   );
   expect([...screen.container.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
     "Session",
-    "Jump",
+    "Jump or resume",
   ]);
   for (const row of screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')) {
     const what = row.querySelector('[data-part="name"]')?.textContent ?? "";
