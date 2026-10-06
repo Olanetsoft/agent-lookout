@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -336,6 +336,13 @@ test.each([
     const screen = await render(<Row session={IN_TMUX} />);
     const jump = screen.getByRole("button", { name: /^Jump to checkout-flow/ });
 
+    // The row measures its second with performance.now. The clock is held still
+    // while the three presses are made, so a slow machine cannot run the second out.
+    const realNow = performance.now.bind(performance);
+    let heldAt: number | null = realNow();
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => heldAt ?? realNow());
+    onTestFinished(() => clock.mockRestore());
+
     await jump.click();
     await expect.element(screen.getByRole("status")).toHaveTextContent(words);
     await jump.click();
@@ -346,6 +353,7 @@ test.each([
     expect(said(screen.container)?.textContent).toBe(words);
 
     // Once that second is over, a press is sent again.
+    heldAt = null;
     await secondOver();
     await jump.click();
     expect(sent).toHaveLength(2);

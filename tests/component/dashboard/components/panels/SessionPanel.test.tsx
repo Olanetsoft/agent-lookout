@@ -390,7 +390,8 @@ test("Escape and the close button ask to close it, and closing gives focus back 
     <SessionPanel sessionId={null} onClose={onClose} state={state()} now={NOW} />,
   );
   await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
-  expect(document.activeElement).toBe(row.querySelector("a"));
+  // Focus moves once the dialog has closed, which can be a frame later on a slow machine.
+  await expect.poll(() => document.activeElement).toBe(row.querySelector("a"));
   row.remove();
 });
 
