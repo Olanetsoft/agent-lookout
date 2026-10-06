@@ -252,7 +252,7 @@ The button and the switches in Settings cover these too. Every request a dashboa
 To have them from the moment it starts, without opening the dashboard, start Agent Lookout with `AGENT_LOOKOUT_NOTIFICATIONS=on`. That turns on Needs you alone, until a page says otherwise:
 
 ```sh
-AGENT_LOOKOUT_NOTIFICATIONS=on npm start
+AGENT_LOOKOUT_NOTIFICATIONS=on npx agent-lookout
 ```
 
 A dashboard page still has the last word. Opening one that has notifications off turns Agent Lookout's own off too, until a page says they are on or Agent Lookout is started again.
@@ -271,7 +271,7 @@ Notifications have been checked in Chrome 154 on macOS. There one arrived within
 
 A notification shows the session's name outside the dashboard: over other apps, in Notification Centre and, depending on your Mac's settings, on the lock screen and while you share or record the screen. To keep names off those, open Notifications in System Settings and change what your browser's notifications may show, or leave notifications off. The ones Agent Lookout shows itself are Script Editor's as far as macOS is concerned, so what you set there for your browser does not cover them.
 
-The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npm start` serves Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
+The browser gives its permission to the address, not to Agent Lookout. Another program you later serve at the same address, such as another project's dev server on `localhost:5173`, can show notifications without asking. To take the permission back, remove it for that address in the browser's site settings. `npx agent-lookout` and `npm start` serve Agent Lookout at `127.0.0.1:4777`, an address other tools are less likely to use. [PRIVACY.md](../PRIVACY.md#notifications) says what a notification holds and where it is kept.
 
 #### Email
 
@@ -300,10 +300,10 @@ For Gmail, for example:
    ```sh
    AGENT_LOOKOUT_EMAIL_TO=YOUR_ADDRESS@gmail.com \
    AGENT_LOOKOUT_SMTP_URL='smtps://YOUR_ADDRESS%40gmail.com:YOUR_APP_PASSWORD@smtp.gmail.com:465' \
-   npm start
+   npx agent-lookout
    ```
 
-   To use the development server instead, put the same two settings in front of `npm run dev`.
+   In a clone, put the same two settings in front of `npm start` or `npm run dev` instead.
 
 Other providers work the same way: look up the name and port of their SMTP server, and create an app password in their settings. Use `smtps://` for a server that takes TLS from the start, usually on port 465, and `smtp://` for one that switches to TLS after connecting, usually on port 587. Over `smtp://`, Agent Lookout sends nothing to a server that does not switch to TLS. Only a mail server on your own computer, at `127.0.0.1` or `localhost`, is used without TLS.
 
@@ -323,10 +323,10 @@ export AGENT_LOOKOUT_SMTP_URL='smtps://YOUR_ADDRESS%40gmail.com:YOUR_APP_PASSWOR
 Then start Agent Lookout with them, brackets included:
 
 ```sh
-(source ~/.agent-lookout-email && npm start)
+(source ~/.agent-lookout-email && npx agent-lookout)
 ```
 
-The brackets keep the settings to this one run, so the terminal does not keep them afterwards, and no program you start from it later is handed the password. For the development server, use `npm run dev` in place of `npm start`, inside the same brackets.
+The brackets keep the settings to this one run, so the terminal does not keep them afterwards, and no program you start from it later is handed the password. In a clone, use `npm start` or `npm run dev` in place of `npx agent-lookout`, inside the same brackets.
 
 To check that it worked, open Settings. The Email card says where emails go and after how long, with most of the address hidden, such as "Emails go to Y…@gmail.com after a wait of 1 minute." With other events set, it names each one, such as "Emails go to Y…@gmail.com when a session has waited 1 minute or finishes." Once an email has been tried, the line under it says when the last one was sent, such as "Last sent at 14:02.", or, in a note headed "The last email could not be sent", why it could not be, such as "The mail server did not accept the user name and password." If a setting cannot be read, email stays off: the card says "Email is off.", and a note headed "Email is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the password.
 
@@ -381,14 +381,14 @@ For Slack:
 6. Start Agent Lookout with it, brackets included:
 
    ```sh
-   (source ~/.agent-lookout-webhook && npm start)
+   (source ~/.agent-lookout-webhook && npx agent-lookout)
    ```
 
-   For the development server, use `npm run dev` in place of `npm start`, inside the same brackets. To use email as well, read both files in: `(source ~/.agent-lookout-email && source ~/.agent-lookout-webhook && npm start)`.
+   In a clone, use `npm start` or `npm run dev` in place of `npx agent-lookout`, inside the same brackets. To use email as well, read both files in: `(source ~/.agent-lookout-email && source ~/.agent-lookout-webhook && npx agent-lookout)`.
 
 For Discord, create a webhook in the channel's settings, under Integrations, copy its address and add `/slack` to the end of it: Discord then takes the same posts.
 
-To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or, in a note headed "The last post failed", why it did not, such as "The address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off.", and a note headed "The webhook is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npm start)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
+To check that it worked, open Settings. The Webhook card says where posts go and when, naming only the host, such as "Posts go to hooks.slack.com after a wait of 1 minute." Once a post has been tried, the line under it says when the last one went, such as "Last posted at 14:02.", or, in a note headed "The last post failed", why it did not, such as "The address refused the post (status 403)." If a setting cannot be read, the webhook stays off: the card says "The webhook is off.", and a note headed "The webhook is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the address. To try it at once, start Agent Lookout with `AGENT_LOOKOUT_WEBHOOK_AFTER=0` as well, `(source ~/.agent-lookout-webhook && AGENT_LOOKOUT_WEBHOOK_AFTER=0 npx agent-lookout)`, and let a session ask for permission. The card then says whether the post went. Start it again without that setting afterwards, or every wait is posted as soon as it begins.
 
 A post shows in the channel as one line, such as "checkout-flow is waiting for permission (4m 12s, storefront, VS Code, Claude Code)" or "billing-webhooks finished (billing-webhooks, Terminal, Claude Code)": the session's name, what happened, and in brackets how long it has waited, its project folder's name, its app and its agent, leaving out any that is not known. The post also carries the same in fields of its own, for a program to read. It holds no path and no prompt, and a link only where a session's name has a web address written out in it. [PRIVACY.md](../PRIVACY.md#webhook) lists all it holds.
 
@@ -520,13 +520,13 @@ Some browsers use two of these keys when the page leaves them alone. In Firefox,
 
 `agent-lookout status` prints which sessions need you, for when the dashboard is not in view, such as over SSH or inside tmux. It asks the Agent Lookout that is already running on this computer, and starts nothing.
 
-In the `agent-lookout` folder, run it through npm:
-
 ```sh
-npm run --silent status
+npx agent-lookout status
 ```
 
-To run it from any folder as `agent-lookout status`, run `npm link` once in the `agent-lookout` folder. That puts the command on your `PATH`, pointing at this folder, so it keeps up when you pull new code. `npm uninstall -g agent-lookout` takes it away again. It is not published to npm yet.
+Each time, npx asks npm's registry whether a newer version is out. A tmux status line or a shell prompt runs the command every few seconds, so for those install it once with `npm install -g agent-lookout`. Then `agent-lookout status` runs it from any folder, and npm is not involved. `npm uninstall -g agent-lookout` takes it away again.
+
+In a clone, run it through npm in the `agent-lookout` folder, as `npm run --silent status`. `npm link`, run once in that folder, puts `agent-lookout` on your `PATH` pointing at the clone, so it keeps up when you pull new code.
 
 It prints the counts, then a line for each session that needs you: its name, the reason in the words the Needs you panel uses, and how long it has waited, longest first.
 
@@ -611,7 +611,7 @@ Put this in `~/.tmux.conf`, then run `tmux source-file ~/.tmux.conf`:
 set -g status-right 'Needs you #(agent-lookout status --count) '
 ```
 
-Without `npm link`, run it from the folder instead, with the path to yours. tmux then needs `npm` and `node` on its `PATH`:
+In a clone without `npm link`, run it from the folder instead, with the path to yours. tmux then needs `npm` and `node` on its `PATH`:
 
 ```sh
 set -g status-right 'Needs you #(cd ~/agent-lookout && npm run --silent status -- --count) '
@@ -658,32 +658,38 @@ The prompt then runs the command each time it is drawn, which adds about a tenth
 
 `agent-lookout mcp` lets an AI agent ask which sessions are running and which need you, so one agent can keep track of the others. It is a [Model Context Protocol](https://modelcontextprotocol.io) server. The agent's app starts it and speaks to it over stdin and stdout, so it listens on no port. It asks the Agent Lookout that is already running, the way `agent-lookout status` does, and starts nothing. Its tools only read: none of them can jump to a session, answer one or change a notification.
 
-To add it to Claude Code, run this once, with the path to your clone:
+To add it to Claude Code, run this once:
 
 ```sh
-claude mcp add agent-lookout -- /path/to/agent-lookout/bin/agent-lookout.mjs mcp
+claude mcp add agent-lookout -- npx -y agent-lookout mcp
 ```
 
-After `npm link`, the command is on your `PATH`, and this does the same:
+`-y` lets npx start it without asking, since the app gives it no terminal to answer in. Each time the app starts the server, npx asks npm's registry whether a newer version is out. After `npm install -g agent-lookout`, or `npm link` in a clone, the command is on your `PATH`, and this does the same without asking the registry:
 
 ```sh
 claude mcp add agent-lookout -- agent-lookout mcp
 ```
 
-Claude Code adds it for the folder you run that in. Put `--scope user` after `add` to have it in every folder. Any other app that takes MCP servers starts it with the same command: the program `/path/to/agent-lookout/bin/agent-lookout.mjs`, or `agent-lookout` after `npm link`, with the one argument `mcp`. Many take it as JSON in this shape:
+In a clone without `npm link`, give the path to yours:
+
+```sh
+claude mcp add agent-lookout -- /path/to/agent-lookout/bin/agent-lookout.mjs mcp
+```
+
+Claude Code adds it for the folder you run that in. Put `--scope user` after `add` to have it in every folder. Any other app that takes MCP servers starts it with the same command: the program `npx` with the arguments `-y`, `agent-lookout` and `mcp`, or `agent-lookout` with the one argument `mcp`. Many take it as JSON in this shape:
 
 ```json
 {
   "mcpServers": {
-    "agent-lookout": { "command": "/path/to/agent-lookout/bin/agent-lookout.mjs", "args": ["mcp"] }
+    "agent-lookout": { "command": "npx", "args": ["-y", "agent-lookout", "mcp"] }
   }
 }
 ```
 
-The command needs `node` on the `PATH` the app gives it. If the app says the server failed to start, as it can when Node was installed with nvm, give the full path of `node` first, which `command -v node` prints:
+The command needs `node` on the `PATH` the app gives it, and so does `npx`. If the app says the server failed to start, as it can when Node was installed with nvm, install it with `npm install -g agent-lookout` and give the full paths of `node` and `agent-lookout`, which `command -v node` and `command -v agent-lookout` print. In a clone, the second is `/path/to/agent-lookout/bin/agent-lookout.mjs`:
 
 ```sh
-claude mcp add agent-lookout -- /path/to/node /path/to/agent-lookout/bin/agent-lookout.mjs mcp
+claude mcp add agent-lookout -- /path/to/node /path/to/agent-lookout mcp
 ```
 
 It finds Agent Lookout as `agent-lookout status` does: at `http://127.0.0.1:4777`, then `http://localhost:5173`, or at the address that `--url`, after `mcp`, or `AGENT_LOOKOUT_URL` gives, on this computer only.
@@ -820,13 +826,13 @@ The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list wh
 Put a setting in front of the command that starts Agent Lookout:
 
 ```sh
-AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
+AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 ```
 
 | Setting                        | What it does                                                                                                                                                                                                                                                                        |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_LOOKOUT_PORT`           | The port `npm start` uses. The default is 4777.                                                                                                                                                                                                                                     |
-| `AGENT_LOOKOUT_HOST`           | The address `npm start` uses: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                                                                                                                                |
+| `AGENT_LOOKOUT_PORT`           | The port `npx agent-lookout`, `agent-lookout` and `npm start` listen on. The default is 4777.                                                                                                                                                                                       |
+| `AGENT_LOOKOUT_HOST`           | The address `npx agent-lookout`, `agent-lookout` and `npm start` listen on: `127.0.0.1`, which is the default, `localhost` or `::1`. Anything else is refused, so other computers cannot reach it.                                                                                  |
 | `AGENT_LOOKOUT_CLAUDE_BIN`     | The full path of the `claude` program. When set, it is the only place Agent Lookout looks.                                                                                                                                                                                          |
 | `AGENT_LOOKOUT_CLAUDE_HOME`    | A folder to read in place of `~/.claude`. When set, the `claude` command is not run unless `AGENT_LOOKOUT_CLAUDE_BIN` is set too.                                                                                                                                                   |
 | `AGENT_LOOKOUT_CLAUDE_FEED`    | Set to `off` and Agent Lookout never runs the `claude` command. Sessions come from the session files alone, and finished or failed background jobs are not listed.                                                                                                                  |
@@ -849,7 +855,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npm run dev
 
 To see the empty screen, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` to an empty folder. With only the first set, Codex sessions and sessions from status files still appear.
 
-The Claude Code, transcript, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npm run dev` and `npm start`. The port and address settings apply to `npm start` and to `agent-lookout` when it starts Agent Lookout, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
+The Claude Code, transcript, Codex, status file, notification, tmux, terminal tab, email and webhook settings work with `npx agent-lookout` and `agent-lookout`, and in a clone with `npm start` and `npm run dev`. The port and address settings apply to `npx agent-lookout`, `agent-lookout` and `npm start`, and `AGENT_LOOKOUT_URL` to `agent-lookout status` and `agent-lookout mcp` only. To choose the port for `npm run dev`, pass it after `--`:
 
 ```sh
 npm run dev -- --port 5180
@@ -857,7 +863,7 @@ npm run dev -- --port 5180
 
 ## Run the built version
 
-`npm run dev` runs Agent Lookout with its development tools. To run it from built files instead:
+In a clone, `npm run dev` runs Agent Lookout with its development tools. To run it from built files instead:
 
 ```sh
 npm run build
@@ -870,7 +876,7 @@ npm start
 curl -s http://127.0.0.1:4777/api/health
 ```
 
-It prints `{"ok":true,"version":"0.1.0"}`, or a later version number. If you run `npm start` before `npm run build`, it stops and tells you to build first. After you pull new code, run `npm run build` again.
+It prints `{"ok":true,"version":"0.2.0"}`, or a later version number. If you run `npm start` before `npm run build`, it stops and tells you to build first. After you pull new code, run `npm run build` again.
 
 ## Start it with one command
 
@@ -884,23 +890,21 @@ It prints `{"ok":true,"version":"0.1.0"}`, or a later version number. If you run
 
 Every other setting under [Settings you can change](#settings-you-can-change) works with it as with `npm start`. It ends with 0 when you press Ctrl+C, and with 1 when it cannot start, such as when the port is in use.
 
-Once Agent Lookout is on npm, `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, about 30 MB with what it needs, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
+Agent Lookout is on npm, so `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, about 30 MB with what it needs, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
 
-Until then, run it from a clone: run `npm run build` and `npm link` once in the `agent-lookout` folder, then `agent-lookout` from any folder.
+In a clone, run `npm run build` and `npm link` once in the `agent-lookout` folder, then `agent-lookout` from any folder.
 
 ## When something goes wrong
 
 ### The port is in use
 
-`npm run dev` moves to the next free number and prints the address it chose. To pick one yourself, run `npm run dev -- --port 5180`.
-
-`npm start` stops with `Port 4777 is already in use`. Choose another port:
+`npx agent-lookout` stops with `Port 4777 is already in use`. Choose another port:
 
 ```sh
-AGENT_LOOKOUT_PORT=4778 npm start
+npx agent-lookout --port 4778
 ```
 
-`agent-lookout` stops the same way, and takes the port as `agent-lookout --port 4778`.
+`agent-lookout` stops the same way, and takes the port as `agent-lookout --port 4778`. In a clone, `npm start` stops the same way too, and takes the port as `AGENT_LOOKOUT_PORT=4778 npm start`. `npm run dev` moves to the next free number and prints the address it chose. To pick one yourself, run `npm run dev -- --port 5180`.
 
 To see which program holds a port, on macOS or on Linux with `lsof` installed:
 
@@ -920,10 +924,10 @@ lsof -nP -iTCP:4777 -sTCP:LISTEN
 To see what Agent Lookout sees without opening a browser:
 
 ```sh
-curl -s http://localhost:5173/api/sessions
+curl -s http://127.0.0.1:4777/api/sessions
 ```
 
-Use port 4777 if you started it with `npm start`. It prints the sessions it found and, under `sources`, whether Claude Code and Codex could be read. The output holds your session names and folder paths, so check it before you share it.
+Use `http://localhost:5173` if you started it with `npm run dev`. It prints the sessions it found and, under `sources`, whether Claude Code and Codex could be read. The output holds your session names and folder paths, so check it before you share it.
 
 ### No notification appears
 
@@ -950,7 +954,7 @@ Use port 4777 if you started it with `npm start`. It prints the sessions it foun
 
 ### The page says Agent Lookout has stopped updating
 
-The program serving the page has stopped. The page keeps the last thing it saw, under a notice that says how old it is, and its timers stop at the last moment it heard from Agent Lookout. Start it again with `npm run dev` or `npm start`, and the page catches up on its own.
+The program serving the page has stopped. The page keeps the last thing it saw, under a notice that says how old it is, and its timers stop at the last moment it heard from Agent Lookout. Start it again with `npx agent-lookout`, or in a clone with `npm start` or `npm run dev`, and the page catches up on its own.
 
 ## How it finds sessions
 
