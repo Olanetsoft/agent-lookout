@@ -119,17 +119,25 @@ export async function textBackdrops(
     box: element.getBoundingClientRect(),
   }));
 
+  // Words that fade on hover, such as a link's, would fade out over 120ms when
+  // their colour is taken away, and a screenshot taken inside that fade reads
+  // half-drawn glyphs as the backdrop. With transitions off the glyphs go at
+  // once, and come back at once, so no fade outlasts this reading either.
   const hide = document.createElement("style");
   hide.textContent = `
-    [data-hide-glyphs], [data-hide-glyphs] * { color: transparent !important; caret-color: transparent !important; text-shadow: none !important; }
-    [data-hide-glyphs] svg { visibility: hidden !important; }
+    [data-hide-glyphs], [data-hide-glyphs] * { transition: none !important; }
+    [data-hide-glyphs="on"], [data-hide-glyphs="on"] * { color: transparent !important; caret-color: transparent !important; text-shadow: none !important; }
+    [data-hide-glyphs="on"] svg { visibility: hidden !important; }
   `;
   document.head.append(hide);
-  root.setAttribute("data-hide-glyphs", "");
+  root.setAttribute("data-hide-glyphs", "on");
   let pixels: Pixels;
   try {
     pixels = await pixelsOf(root);
   } finally {
+    root.setAttribute("data-hide-glyphs", "off");
+    // Restyle with the glyphs back while transitions are still off.
+    root.getBoundingClientRect();
     root.removeAttribute("data-hide-glyphs");
     hide.remove();
   }

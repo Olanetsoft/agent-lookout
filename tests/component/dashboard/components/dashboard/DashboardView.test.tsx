@@ -115,6 +115,32 @@ function settle() {
   }
 }
 
+/**
+ * Holds the ground's three fields still at one point of their drift: 0 where
+ * each starts, 1 where each turns back. Each field takes its own time to cross,
+ * so the same point is the same share of each one's way.
+ */
+function driftTo(point: number) {
+  const fields = document
+    .getAnimations()
+    .filter(
+      (animation): animation is CSSAnimation =>
+        animation instanceof CSSAnimation && animation.animationName.startsWith("drift-"),
+    );
+  expect(fields.map((field) => field.animationName).sort()).toEqual([
+    "drift-deep",
+    "drift-far",
+    "drift-main",
+  ]);
+  for (const field of fields) {
+    field.pause();
+    field.currentTime = point * Number(field.effect?.getComputedTiming().duration);
+  }
+}
+
+/** Five evenly spaced points along the drift, both ends included. */
+const DRIFT_POINTS = [0, 0.25, 0.5, 0.75, 1];
+
 /** Whether two boxes share any area. */
 function overlaps(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -302,7 +328,7 @@ test("with nothing waiting the silver rest light holds the hero instead, and bef
 });
 
 test.each(["dark", "light"] as const)(
-  "in the %s theme every word in the hero keeps AA against the brightest of what is drawn behind it, busy and quiet",
+  "in the %s theme every word in the hero keeps AA against the brightest of what is drawn behind it, busy and quiet, all along the drift of the ground's light",
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
     await atFullSize();
@@ -327,13 +353,25 @@ test.each(["dark", "light"] as const)(
       // The lamp rises into place over a second: measure it where it settles.
       settle();
 
-      const runs = await textBackdrops(hero, worst);
-      expect(runs.length, name).toBeGreaterThan(10);
-      for (const { text, ink, backdrop } of runs) {
-        const ratio = contrastOf(ink, backdrop);
+      // The ground's light drifts behind the hero for as long as the page is
+      // open. Each word is held to the worst point along the drift, not to
+      // wherever the drift happens to be when it is measured.
+      const lowest = new Map<Element, { text: string; ratio: number; point: number }>();
+      for (const point of DRIFT_POINTS) {
+        driftTo(point);
+        const runs = await textBackdrops(hero, worst);
+        expect(runs.length, `${name} at ${point}`).toBeGreaterThan(10);
+        for (const { element, text, ink, backdrop } of runs) {
+          const ratio = contrastOf(ink, backdrop);
+          if (ratio < (lowest.get(element)?.ratio ?? Infinity)) {
+            lowest.set(element, { text, ratio, point });
+          }
+        }
+      }
+      for (const { text, ratio, point } of lowest.values()) {
         expect(
           ratio,
-          `${theme} ${name}: "${text}" is ${ratio.toFixed(2)}:1`,
+          `${theme} ${name}: "${text}" is ${ratio.toFixed(2)}:1 at ${point} of the drift`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     }
