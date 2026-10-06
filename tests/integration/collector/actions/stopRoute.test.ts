@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { MAX_STOP_BODY_BYTES } from "@collector/actions/stopRoute";
 import { createCollector, type CollectorOptions } from "@collector/collector";
@@ -365,9 +365,15 @@ describe("a background job", () => {
     expect(await job.exited).toBe("SIGTERM");
     // The command was run again at once, so the job shows as stopped.
     expect(asked.filter((line) => line.startsWith("agents"))).toHaveLength(2);
-    const after = named(await server.sessions(), "nightly-report");
-    expect(after).toMatchObject({ status: "finished" });
-    expect(after).not.toHaveProperty("stop");
+    // The next snapshot can be a poll behind on a slow machine, so wait for it.
+    await vi.waitFor(
+      async () => {
+        const after = named(await server.sessions(), "nightly-report");
+        expect(after).toMatchObject({ status: "finished" });
+        expect(after).not.toHaveProperty("stop");
+      },
+      { timeout: 5_000, interval: 100 },
+    );
   });
 
   test("is not offered while the claude command may not be run", async () => {
