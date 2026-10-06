@@ -3,7 +3,8 @@ import path from "node:path";
 
 import type { GitHead, Session } from "../../core/sessions/session.ts";
 import { isMissing, nodeIo, type ReadOnlyIo, type FileInfo } from "../files/readOnlyIo.ts";
-import { MAX_GIT_FILE_BYTES, parseGitFile, parseHead } from "./gitHead.ts";
+import { MAX_GIT_FILE_BYTES, parseCommonDir, parseGitFile, parseHead } from "./gitHead.ts";
+import { repositoryOf } from "./repository.ts";
 
 /** How long what was read for a folder stands before its `HEAD` is read again. */
 export const BRANCH_READ_MS = 10_000;
@@ -12,7 +13,7 @@ export const BRANCH_READ_MS = 10_000;
 export const MAX_LEVELS = 24;
 
 /**
- * How long a poll waits for the reads it starts. Reading two small files takes
+ * How long a poll waits for the reads it starts. Reading three small files takes
  * far less. Past it, as on a network drive that has gone away, the poll goes on
  * with what was read before, and the reads' answers are used once they arrive.
  */
@@ -34,14 +35,15 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /**
  * One small file's text: an ordinary file, never a link, a pipe or a folder, of
- * no more than `MAX_GIT_FILE_BYTES` of UTF-8. Null for anything else.
+ * no more than `MAX_GIT_FILE_BYTES` of UTF-8. Undefined when there is nothing
+ * at all by that name, and null for anything else.
  */
-async function readSmall(io: GitIo, file: string): Promise<string | null> {
+async function readSmall(io: GitIo, file: string): Promise<string | null | undefined> {
   let open;
   try {
     open = await io.openRegular(file);
-  } catch {
-    return null;
+  } catch (error) {
+    return isMissing(error) ? undefined : null;
   }
   try {
     // The size is checked before a byte is read, and one byte over the limit
@@ -58,9 +60,24 @@ async function readSmall(io: GitIo, file: string): Promise<string | null> {
 }
 
 /**
- * What the `.git` found in `dir` says is checked out. A folder holds `HEAD`
- * itself. A file names the folder that does, as a worktree's or a submodule's
- * does. Anything else, such as a link, gives nothing.
+ * The repository's own git folder, for the git folder a `.git` file names:
+ * what its `commondir` names, resolved against it, as a worktree's does. Null
+ * when it has no `commondir`, as a submodule's has not, and undefined when it
+ * has one that cannot be read, which says no repository.
+ */
+async function commonDirOf(io: GitIo, gitDir: string): Promise<string | null | undefined> {
+  const content = await readSmall(io, path.join(gitDir, "commondir"));
+  if (content === undefined) return null;
+  const target = content === null ? null : parseCommonDir(content);
+  return target === null ? undefined : path.resolve(gitDir, target);
+}
+
+/**
+ * What the `.git` found in `dir` says is checked out, and which repository it
+ * is. A folder holds `HEAD` itself. A file names the folder that does, as a
+ * worktree's or a submodule's does, and that folder's `commondir`, when it has
+ * one, names the repository's own. Anything else, such as a link, gives
+ * nothing. `repository.ts` works out the repository from those paths.
  */
 async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<GitHead | null> {
   const marker = path.join(dir, ".git");
@@ -69,25 +86,31 @@ async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<G
     gitDir = marker;
   } else if (kind === "file") {
     const content = await readSmall(io, marker);
-    const target = content === null ? null : parseGitFile(content);
+    const target = typeof content === "string" ? parseGitFile(content) : null;
     if (target === null) return null;
     gitDir = path.resolve(dir, target);
   } else {
     return null;
   }
-  const head = await readSmall(io, path.join(gitDir, "HEAD"));
-  return head === null ? null : parseHead(head);
+  const content = await readSmall(io, path.join(gitDir, "HEAD"));
+  const head = typeof content === "string" ? parseHead(content) : null;
+  if (head === null) return null;
+  // Only a git folder a `.git` file names can be a worktree's.
+  const commonDir = kind === "file" ? await commonDirOf(io, gitDir) : null;
+  const repository = commonDir === undefined ? null : repositoryOf({ dir, gitDir, commonDir });
+  return repository === null ? head : { ...head, repository };
 }
 
 /**
- * The branch or commit checked out in the git repository a folder is in, or
- * null when it is in none that can be read. Never rejects.
+ * The branch or commit checked out in the git repository a folder is in, with
+ * the repository, or null when it is in none that can be read. Never rejects.
  *
  * From the folder up, it looks for `.git` in each folder in turn, without
  * following a link, and the nearest wins, as it does for git. It never looks in
  * the home folder or the root, nor above them, nor more than `MAX_LEVELS`
  * folders up. A folder that does not exist is in no repository. It reads only
- * `.git` when that is a file, and `HEAD`: `gitHead.ts` has what each holds.
+ * `.git` when that is a file, `HEAD`, and beside a `HEAD` that a `.git` file
+ * leads to, `commondir`: `gitHead.ts` has what each holds.
  */
 export async function findGitHead(cwd: string, { io, homeDir }: Where): Promise<GitHead | null> {
   if (!path.isAbsolute(cwd)) return null;

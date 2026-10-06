@@ -84,10 +84,35 @@ export type JumpTarget =
  * The collector reads it from the repository's `HEAD` file, for the sessions of
  * every source alike. The branch is cleaned and cut to a length as any text
  * from a file is, and is shown as plain text.
+ *
+ * With it comes the repository the folder belongs to, which the worktrees of
+ * one repository share: see `GitRepository`.
  */
 export interface GitHead {
   branch?: string;
   commit?: string;
+  /** The repository, whenever the collector could tell it. */
+  repository?: GitRepository;
+}
+
+/**
+ * The repository a session's folder belongs to, worked out from the `.git` the
+ * branch was read through and, for a worktree, the `commondir` beside its
+ * `HEAD`. A worktree belongs to the repository it was made from. A submodule,
+ * and a repository inside another, is a repository of its own.
+ */
+export interface GitRepository {
+  /**
+   * What sessions are grouped by, and never shown: a hash of the path of the
+   * repository's own git folder, the same for every worktree of it, so that
+   * path is not sent where a session's own folder is not already.
+   */
+  id: string;
+  /**
+   * Its name, such as "storefront", cleaned as a session's name is: its main
+   * working folder's, or for a worktree the one its git folder gives.
+   */
+  name: string;
 }
 
 export interface Session {
@@ -108,7 +133,10 @@ export interface Session {
   cwd: string | null;
   /** Last path segment of cwd. */
   project: string | null;
-  /** Present when cwd is in a git repository whose `HEAD` could be read: see `GitHead`. */
+  /**
+   * Present when cwd is in a git repository whose `HEAD` could be read: the
+   * branch or commit, and the repository. See `GitHead`.
+   */
   git?: GitHead;
   status: SessionStatus;
   /** Present only when status is "needs-you". */

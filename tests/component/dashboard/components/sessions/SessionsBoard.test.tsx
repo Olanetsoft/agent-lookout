@@ -422,6 +422,128 @@ test("a folder and a long branch take two lines at most, with on kept beside its
   ).toBe("false");
 });
 
+const STOREFRONT = { id: "9aaa5f0ab35a5f84", name: "storefront" };
+
+/** A worktree of storefront, storefront's main folder, and a folder in no repository. */
+const IN_WORKTREES: Session[] = [
+  session(1, {
+    name: "checkout-flow",
+    status: "working",
+    statusSince: NOW - 12 * MINUTE,
+    cwd: "/Users/example/code/storefront-checkout",
+    project: "storefront-checkout",
+    git: { branch: "checkout-flow", repository: STOREFRONT },
+  }),
+  session(2, {
+    name: "billing-webhooks",
+    status: "idle",
+    statusSince: NOW - 26 * MINUTE,
+    cwd: "/Users/example/code/storefront",
+    project: "storefront",
+    git: { branch: "main", repository: STOREFRONT },
+  }),
+  session(3, {
+    name: "mobile-onboarding",
+    status: "idle",
+    statusSince: NOW - 41 * MINUTE,
+    cwd: "/Users/example/code/mobile-app",
+    project: "mobile-app",
+  }),
+];
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme a worktree's card names its repository before its folder, in the folder's own ink and size, and the main folder's card does not",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    // One column of a board as wide as a phone's, where the whole line fits.
+    const screen = await renderBoard(IN_WORKTREES, 283);
+    await document.fonts.ready;
+    const place = cardOf(screen.container, "checkout-flow").querySelector(
+      '[data-part="place"]',
+    ) as HTMLElement;
+    const repository = place.querySelector('[data-part="repository"]') as HTMLElement;
+    const folder = place.querySelector('[data-part="project"]') as HTMLElement;
+
+    // Shown as "storefront · storefront-checkout on checkout-flow", and read
+    // as "storefront, storefront-checkout on branch checkout-flow".
+    expect(repository.textContent).toBe("storefront");
+    expect(place.querySelector('[aria-hidden="true"]')?.textContent).toBe(" ·");
+    expect(place.textContent).toBe("storefront ·, storefront-checkout on branch checkout-flow");
+    expect(repository.getBoundingClientRect().right).toBeLessThan(
+      folder.getBoundingClientRect().left,
+    );
+    expect(repository.getBoundingClientRect().top).toBe(folder.getBoundingClientRect().top);
+    // No colour or size of its own: the folder's.
+    for (const property of ["color", "fontSize", "fontWeight", "fontFamily", "lineHeight"]) {
+      expect(getComputedStyle(repository).getPropertyValue(property), property).toBe(
+        getComputedStyle(folder).getPropertyValue(property),
+      );
+    }
+    expect(getComputedStyle(repository).color).toBe(rgbOf("var(--ink-secondary)"));
+    // The folder's whole path is still one Tab away, and the repository's name, whole, is no stop.
+    expect(folder.tabIndex).toBe(0);
+    expect(repository.dataset.cut).toBe("false");
+    expect(repository.hasAttribute("tabindex")).toBe(false);
+
+    // The main folder is named for its repository already, and a folder in none has none.
+    const main = cardOf(screen.container, "billing-webhooks").querySelector('[data-part="place"]')!;
+    expect(main.querySelector('[data-part="repository"]')).toBeNull();
+    expect(main.textContent).toBe("storefront on branch main");
+    expect(
+      cardOf(screen.container, "mobile-onboarding").querySelector('[data-part="place"]')
+        ?.textContent,
+    ).toBe("mobile-app");
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);
+
+test("in a narrow column the dot stays with the repository, the folder and the branch take a line each, and nothing runs past the card", async () => {
+  const screen = await renderBoard(IN_WORKTREES);
+  await document.fonts.ready;
+  const card = cardOf(screen.container, "checkout-flow");
+  const place = card.querySelector('[data-part="place"]') as HTMLElement;
+  const repository = place.querySelector('[data-part="repository"]')!.getBoundingClientRect();
+  const dot = place.querySelector('[aria-hidden="true"]')!.getBoundingClientRect();
+  const folder = place.querySelector('[data-part="project"]')!.getBoundingClientRect();
+  const branch = place.querySelector('[data-part="branch"]')!.getBoundingClientRect();
+  const lineHeight = parseFloat(getComputedStyle(place).lineHeight);
+
+  // The line ends with the dot: no line starts with one.
+  expect(dot.top).toBe(repository.top);
+  expect(dot.left).toBeGreaterThanOrEqual(repository.right - 0.5);
+  expect(folder.top).toBeGreaterThanOrEqual(repository.bottom - 0.5);
+  expect(branch.top).toBeGreaterThanOrEqual(folder.bottom - 0.5);
+  expect(place.getBoundingClientRect().height).toBeLessThanOrEqual(3 * lineHeight + 0.5);
+  for (const part of [repository, dot, folder, branch]) {
+    expect(part.right).toBeLessThanOrEqual(place.getBoundingClientRect().right + 0.5);
+  }
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+});
+
+test("a repository's name too long for its card is cut, and stays one hover or one Tab away", async () => {
+  const long = { id: "1c2d3e4f5a6b7c8d", name: `platform-${"services-".repeat(5)}api` };
+  const sessions = [
+    session(1, {
+      name: "api-rate-limits",
+      status: "working",
+      cwd: "/Users/example/code/rate-limits",
+      project: "rate-limits",
+      git: { branch: "fix/rate-limits", repository: long },
+    }),
+  ];
+  const screen = await renderBoard(sessions);
+  const repository = screen.container.querySelector('[data-part="repository"]') as HTMLElement;
+
+  await expect.poll(() => repository.getAttribute("data-cut")).toBe("true");
+  expect(repository.tabIndex).toBe(0);
+  repository.focus();
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(long.name);
+  const place = repository.closest('[data-part="place"]') as HTMLElement;
+  expect(repository.getBoundingClientRect().right).toBeLessThanOrEqual(
+    place.getBoundingClientRect().right + 0.5,
+  );
+});
+
 test.each([
   ["the pane is selected", 200, { ok: true, kind: "tmux", place: "work:2.1" }, "Selected in tmux"],
   ["the pane has gone", 409, { error: "x", reason: "pane-gone" }, "That pane has closed"],

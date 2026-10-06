@@ -2052,12 +2052,16 @@ test("anything else in storage is the list", async () => {
   expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
 });
 
-test("Tab reaches the switch, the arrow keys move between List and Board, and the next Tab goes into the board", async () => {
+test("Tab reaches the switch, the arrow keys move between List, Repos and Board, and the next Tab goes into the board", async () => {
   const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
   startAtTop();
 
   await userEvent.tab();
   await expect.element(screen.getByRole("radio", { name: "List" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(screen.getByRole("radio", { name: "Repos" })).toBeChecked();
+  expect(screen.container.querySelector('[data-group="no-repository"]')).not.toBeNull();
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("repositories");
   await userEvent.keyboard("{ArrowRight}");
   await expect.element(screen.getByRole("radio", { name: "Board" })).toHaveFocus();
   await expect.element(screen.getByRole("radio", { name: "Board" })).toBeChecked();
@@ -2072,6 +2076,7 @@ test("Tab reaches the switch, the arrow keys move between List and Board, and th
   );
 
   await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await userEvent.keyboard("{ArrowLeft}");
   await userEvent.keyboard("{ArrowLeft}");
   await expect.element(screen.getByRole("radio", { name: "List" })).toBeChecked();
   expect(screen.container.querySelector('[data-slot="session-list"]')).not.toBeNull();
@@ -2101,7 +2106,48 @@ test("the switch leaves the head as tall as a head without one, so its title sta
   expect(card.getBoundingClientRect().right - control.getBoundingClientRect().right).toBe(24);
 });
 
-test.each(["list", "board"] as const)(
+// The card's widths on the Overview, as above, and at 761 with a scrollbar
+// that takes 15px, as on Windows or a Mac set to show them always.
+test.each([
+  [888, true],
+  [835, true],
+  [733, true],
+  [670, false],
+  [649, false],
+  [634, false],
+])(
+  "in a card %i pixels wide the head stays one line, the longest hint and a count of hundreds with it, and the hint is shown: %s",
+  async (width, shown) => {
+    const idle = Array.from({ length: 120 }, (_, n) =>
+      session(100 + n, { name: `idle-${n}`, status: "idle", statusSince: NOW - MINUTE }),
+    );
+    for (const sessions of [
+      [IN_TMUX, IN_VSCODE],
+      [IN_TMUX, IN_VSCODE, ...idle],
+    ]) {
+      const screen = await render(
+        <div style={{ width }}>
+          <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+        </div>,
+      );
+      const head = screen.container.querySelector('[data-part="head"]') as HTMLElement;
+      const hint = head.querySelector('[data-part="hint"]') as HTMLElement;
+      const title = head.querySelector("h2")!.getBoundingClientRect();
+      const control = head
+        .querySelector('[data-slot="segmented-control"]')!
+        .getBoundingClientRect();
+
+      expect(hint.textContent).toBe("Jump opens the session, or selects its pane in tmux");
+      expect(getComputedStyle(hint).display !== "none", `${sessions.length} sessions`).toBe(shown);
+      // As tall as any card's head, with the switch beside the title, never under it.
+      expect(head.getBoundingClientRect().height, `${sessions.length} sessions`).toBe(51.5);
+      expect(control.left).toBeGreaterThan(title.right);
+      await screen.unmount();
+    }
+  },
+);
+
+test.each(["list", "repositories", "board"] as const)(
   "on a phone the switch is the card's first line, 12px under the title, and the %s starts under it",
   async (layout) => {
     localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, layout);
@@ -2123,7 +2169,7 @@ test.each(["list", "board"] as const)(
     expect(box.top).toBeGreaterThanOrEqual(title.bottom + 12);
     expect(box.left).toBe(title.left);
     const first = screen.container.querySelector(
-      layout === "list" ? '[data-slot="group-row"]' : '[data-slot="board-column"]',
+      layout === "board" ? '[data-slot="board-column"]' : '[data-slot="group-row"]',
     )!;
     expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(box.bottom);
     // It is still the first stop on the way into the card.
@@ -2186,3 +2232,274 @@ test("a source that cannot be read is said above the board, as above the list", 
     board.getBoundingClientRect().top,
   );
 });
+
+const STOREFRONT = { id: "9aaa5f0ab35a5f84", name: "storefront" };
+const PLATFORM_API = { id: "1c2d3e4f5a6b7c8d", name: "platform-api" };
+const DOCS = { id: "7ba69a8b81747824", name: "docs" };
+
+/**
+ * Storefront's main folder and two of its worktrees, with a third waiting on
+ * the person, platform-api, docs at a commit, and two sessions in no
+ * repository, one of them with no folder at all.
+ */
+const BY_REPOSITORY: Session[] = [
+  session(1, {
+    name: "billing-webhooks",
+    status: "idle",
+    statusSince: NOW - 26 * MINUTE,
+    cwd: "/Users/example/code/storefront",
+    project: "storefront",
+    git: { branch: "main", repository: STOREFRONT },
+  }),
+  session(2, {
+    name: "checkout-flow",
+    status: "working",
+    statusSince: NOW - 12 * MINUTE,
+    cwd: "/Users/example/code/storefront-checkout",
+    project: "storefront-checkout",
+    git: { branch: "checkout-flow", repository: STOREFRONT },
+  }),
+  session(3, {
+    name: "search-indexing",
+    status: "finished",
+    statusSince: NOW - 2 * HOUR,
+    alive: false,
+    cwd: "/Users/example/code/storefront-search",
+    project: "storefront-search",
+    git: { branch: "search-indexing", repository: STOREFRONT },
+  }),
+  session(4, {
+    name: "payment-retries",
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: NOW - 3 * MINUTE,
+    cwd: "/Users/example/code/storefront-payments",
+    project: "storefront-payments",
+    git: { branch: "payment-retries", repository: STOREFRONT },
+  }),
+  session(5, {
+    name: "api-rate-limits",
+    status: "working",
+    statusSince: NOW - 34 * MINUTE,
+    cwd: "/Users/example/code/platform-api",
+    project: "platform-api",
+    git: { branch: "fix/rate-limits", repository: PLATFORM_API },
+  }),
+  session(6, {
+    name: "docs-site",
+    status: "idle",
+    statusSince: NOW - 8 * MINUTE,
+    cwd: "/Users/example/code/docs",
+    project: "docs",
+    git: { commit: "3f9a2c1", repository: DOCS },
+  }),
+  session(7, {
+    name: "mobile-onboarding",
+    status: "idle",
+    statusSince: NOW - 41 * MINUTE,
+    cwd: "/Users/example/code/mobile-app",
+    project: "mobile-app",
+  }),
+  session(8, {
+    name: "infra-terraform",
+    status: "working",
+    statusSince: NOW - 4 * MINUTE,
+    cwd: null,
+    project: null,
+  }),
+];
+
+/** Each group of the table: its kind, its head's words, and the names of its rows. */
+function tableOf(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLElement>('tbody[data-slot="session-group"]')].map(
+    (group) => [
+      group.dataset.group,
+      group.querySelector('[data-slot="group-row"]')?.textContent,
+      [...group.querySelectorAll('[data-part="name"]')].map((name) => name.textContent),
+    ],
+  );
+}
+
+test("the switch offers List, Repos and Board, and Repos groups the list under a head for each repository, the ones in none last", async () => {
+  const screen = await render(
+    <SessionsCard sessions={BY_REPOSITORY} sources={[SOURCE_OK]} now={NOW} />,
+  );
+  const choice = screen.getByRole("radiogroup", { name: "Show sessions as" }).element();
+
+  expect([...choice.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent)).toEqual([
+    "List",
+    "Repos",
+    "Board",
+  ]);
+  await screen.getByRole("radio", { name: "Repos" }).click();
+
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("repositories");
+  // In order of name, each with how many it holds. The session that needs the
+  // person is the hero's, as in the list by status, and storefront counts the
+  // three left. Inside each group, the order of the status groups: working,
+  // idle, then the endings.
+  expect(tableOf(screen.container)).toEqual([
+    ["repository", "docs1", ["docs-site"]],
+    ["repository", "platform-api1", ["api-rate-limits"]],
+    ["repository", "storefront3", ["checkout-flow", "billing-webhooks", "search-indexing"]],
+    ["no-repository", "No repository2", ["infra-terraform", "mobile-onboarding"]],
+  ]);
+  expect(screen.container.textContent).not.toContain("payment-retries");
+  // Each repository's group is told apart by its id, never by a path.
+  const groups = [...screen.container.querySelectorAll<HTMLElement>('[data-group="repository"]')];
+  expect(groups.map((group) => group.dataset.repository)).toEqual([
+    DOCS.id,
+    PLATFORM_API.id,
+    STOREFRONT.id,
+  ]);
+  // The card's count is still every session.
+  expect(
+    screen.container.querySelector('[data-part="head"] [data-part="count"]')?.textContent,
+  ).toBe("8");
+  // Each row is the list's own row, its folder and branch included.
+  const checkout = rowOf(screen.container, "checkout-flow");
+  expect(checkout.querySelector('[data-part="project"]')?.textContent).toBe("storefront-checkout");
+  expect(checkout.querySelector('[data-part="git"]')?.textContent).toBe("on branch checkout-flow");
+  expect(checkout.querySelector('[data-part="status"]')?.textContent).toBe("Working");
+
+  await screen.getByRole("radio", { name: "List" }).click();
+  expect(tableOf(screen.container).map(([group]) => group)).toEqual(["working", "idle", "ended"]);
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("list");
+});
+
+test("the choice of Repos is remembered: a card drawn again, as on the next visit, opens grouped by repository", async () => {
+  const first = await render(
+    <SessionsCard sessions={BY_REPOSITORY} sources={[SOURCE_OK]} now={NOW} />,
+  );
+  await first.getByRole("radio", { name: "Repos" }).click();
+  await first.unmount();
+
+  const again = await render(
+    <SessionsCard sessions={BY_REPOSITORY} sources={[SOURCE_OK]} now={NOW} />,
+  );
+
+  await expect.element(again.getByRole("radio", { name: "Repos" })).toBeChecked();
+  expect(tableOf(again.container).map(([, head]) => head)).toEqual([
+    "docs1",
+    "platform-api1",
+    "storefront3",
+    "No repository2",
+  ]);
+});
+
+test("with no session in a repository, Repos puts them all under No repository", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "repositories");
+  const screen = await render(<SessionsCard sessions={CALM} sources={[SOURCE_OK]} now={NOW} />);
+
+  expect(tableOf(screen.container)).toEqual([
+    [
+      "no-repository",
+      `No repository${CALM.length}`,
+      ["busy-one", "idle-one", "stale-one", "failed-one", "done-one"],
+    ],
+  ]);
+});
+
+test("a repository's name too long for its head is cut, and stays one hover or one Tab away", async () => {
+  localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "repositories");
+  const long = { id: "0f0f0f0f0f0f0f0f", name: `platform-${"services-".repeat(12)}api` };
+  const sessions = [{ ...BY_REPOSITORY[4]!, git: { branch: "main", repository: long } }];
+  const screen = await render(
+    <div style={{ width: 600 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const name = screen.container.querySelector(
+    '[data-slot="group-row"] [data-part="repository"]',
+  ) as HTMLElement;
+  const head = name.closest("th") as HTMLElement;
+
+  await expect.poll(() => name.dataset.cut).toBe("true");
+  expect(name.tabIndex).toBe(0);
+  // Its count stays in sight, and the head keeps its height.
+  const count = head.querySelector('[data-part="count"]') as HTMLElement;
+  expect(count.getBoundingClientRect().right).toBeLessThanOrEqual(
+    head.getBoundingClientRect().right,
+  );
+  expect(head.getBoundingClientRect().height).toBe(40);
+  // The switch is the first stop on the way into the card, and the name the next.
+  startAtTop();
+  await userEvent.tab();
+  await userEvent.tab();
+  expect(document.activeElement).toBe(name);
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(long.name);
+});
+
+test.each([
+  ["dark", 1440],
+  ["light", 1440],
+  ["dark", 375],
+  ["light", 375],
+] as const)(
+  "in the %s theme at %ipx the list by repository has the status groups' quiet heads and rows, and nothing warm or new",
+  async (theme, width) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "repositories");
+    await page.viewport(width, 900);
+    // The width the Overview gives the card at each.
+    const screen = await render(
+      <div style={{ width: width === 1440 ? 832 : 283 }}>
+        <SessionsCard sessions={BY_REPOSITORY} sources={[SOURCE_OK]} now={NOW} />
+      </div>,
+    );
+    await document.fonts.ready;
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    const heads = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="group-row"] th')];
+
+    expect(heads).toHaveLength(4);
+    for (const head of heads) {
+      const style = getComputedStyle(head);
+      // A head of words on the glass, as every status group's is.
+      expect(head.getAttribute("scope")).toBe("rowgroup");
+      expect(head.getBoundingClientRect().height).toBe(40);
+      expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+      expect(style.borderBottomWidth).toBe("0px");
+      expect(style.fontSize).toBe("12px");
+      expect(style.fontWeight).toBe("600");
+      expect(style.color).toBe(rgbOf("var(--ink-secondary)"));
+      const count = head.querySelector('[data-part="count"]') as HTMLElement;
+      expect(getComputedStyle(count).color).toBe(rgbOf("var(--ink-muted)"));
+      expect(getComputedStyle(count).fontVariantNumeric).toBe("tabular-nums");
+      // The name is whole, and its words start where every row's name does.
+      const name = head.querySelector('[data-part="repository"]');
+      if (name) expect((name as HTMLElement).dataset.cut).toBe("false");
+    }
+    const rows = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')];
+    expect(rows).toHaveLength(7);
+    if (width === 1440) {
+      // Every row is the list's 44px, and the columns line up across the groups.
+      expect(new Set(rows.map((row) => row.getBoundingClientRect().height))).toEqual(new Set([44]));
+      const lefts = new Set(
+        rows.map((row) =>
+          Math.round(row.querySelector('[data-part="status"]')!.getBoundingClientRect().left),
+        ),
+      );
+      expect(lefts.size).toBe(1);
+    } else {
+      // On a phone, the switch's three options sit on one line inside the card,
+      // each word whole, and every row has its status under its name.
+      const control = screen.getByRole("radiogroup", { name: "Show sessions as" }).element();
+      const radios = [...control.querySelectorAll<HTMLElement>('[role="radio"]')];
+      expect(new Set(radios.map((radio) => radio.getBoundingClientRect().top)).size).toBe(1);
+      for (const radio of radios) expect(radio.scrollWidth).toBeLessThanOrEqual(radio.clientWidth);
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(
+        card.getBoundingClientRect().right - 24,
+      );
+      for (const row of rows) {
+        const name = row.querySelector('[data-part="name"]') as HTMLElement;
+        const status = row.querySelector('[data-part="status"]') as HTMLElement;
+        expect(status.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+          name.getBoundingClientRect().bottom - 1,
+        );
+      }
+    }
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    expect(warmPaint(screen.container)).toEqual([]);
+  },
+);

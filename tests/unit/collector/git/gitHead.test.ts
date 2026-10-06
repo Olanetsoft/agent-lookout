@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { MAX_BRANCH_LENGTH, parseGitFile, parseHead } from "@collector/git/gitHead";
+import { MAX_BRANCH_LENGTH, parseCommonDir, parseGitFile, parseHead } from "@collector/git/gitHead";
 
 const COMMIT = "3f9a2c17be04d5e6a7b8c9d0e1f2a3b4c5d6e7f8";
 const COMMIT_256 = "3f9a2c17be04d5e6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0";
@@ -96,5 +96,28 @@ describe("a .git file", () => {
     ["junk", "\u0001\u0002ÿ"],
   ])("%s names no folder", (_what, content) => {
     expect(parseGitFile(content)).toBeNull();
+  });
+});
+
+describe("a worktree's commondir file", () => {
+  test.each([
+    // What git writes.
+    ["../..\n", "../.."],
+    ["../..", "../.."],
+    ["../..\r\n", "../.."],
+    ["/code/storefront/.git\n", "/code/storefront/.git"],
+    ["/srv/git/storefront.git\n", "/srv/git/storefront.git"],
+  ])("%j names the shared git folder %s", (content, target) => {
+    expect(parseCommonDir(content)).toBe(target);
+  });
+
+  test.each([
+    ["nothing", ""],
+    ["an empty line", "\n"],
+    ["two lines", "../..\n/code/other\n"],
+    ["a control character in the path", "../\u0007..\n"],
+    ["junk", "\u0001\u0002ÿ"],
+  ])("%s names no folder", (_what, content) => {
+    expect(parseCommonDir(content)).toBeNull();
   });
 });

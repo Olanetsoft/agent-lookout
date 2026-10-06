@@ -35,6 +35,17 @@ test("the choice is kept under agent-lookout-sessions-layout, and the list is th
   expect(readSessionsLayout()).toBe("board");
 });
 
+test("the list by repository is kept as repositories, and anything else stored is the list", () => {
+  keepSessionsLayout("repositories");
+  expect(localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY)).toBe("repositories");
+  expect(readSessionsLayout()).toBe("repositories");
+
+  for (const kept of ["repos", "Repositories", "list,board", ""]) {
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, kept);
+    expect(readSessionsLayout(), kept).toBe("list");
+  }
+});
+
 test("when storage is blocked the choice still holds until the page is closed, however often the card is drawn again", () => {
   const unblock = blockStorage({ reads: true });
   onTestFinished(() => {

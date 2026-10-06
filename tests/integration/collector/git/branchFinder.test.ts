@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import { nodeIo } from "@collector/files/readOnlyIo";
 import { BRANCH_READ_MS, createBranchFinder, findGitHead } from "@collector/git/branchFinder";
+import { repositoryId } from "@collector/git/repository";
 import type { GitHead, Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 import { handClock } from "@tests/support/adapters/codexAdapter";
@@ -22,11 +23,12 @@ async function put(file: string, content: string) {
 /**
  * Repositories made of plain files, as git lays them out, with no git needed:
  *
- *   storefront/           on main, with a worktree's git folder in it
+ *   storefront/           on main, with two worktrees' git folders in it
  *   storefront-checkout/  a worktree of storefront, on checkout-flow, by a relative path
  *   platform-api/         a worktree of storefront, on fix/rate-limits, by a whole path
  *   docs/                 on no branch, at a commit
  *   infra/                on main, with modules/network, a repository of its own, inside
+ *   billing/              a bare repository in billing/.bare, with worktrees main/ and invoices/ beside it
  *   mobile-app/           in no repository
  *
  * The temporary folder stands in for the home folder, so no walk leaves it.
@@ -37,14 +39,14 @@ async function code() {
   await put(at("storefront", ".git", "HEAD"), "ref: refs/heads/main\n");
   await put(at("storefront", ".git", "config"), "[core]\n\tbare = false\n");
   await put(at("storefront", ".git", "packed-refs"), `${COMMIT} refs/heads/main\n`);
-  await put(
-    at("storefront", ".git", "worktrees", "checkout-flow", "HEAD"),
-    "ref: refs/heads/checkout-flow\n",
-  );
-  await put(
-    at("storefront", ".git", "worktrees", "api-rate-limits", "HEAD"),
-    "ref: refs/heads/fix/rate-limits\n",
-  );
+  // Each worktree's git folder, with the commondir git writes in it.
+  const worktree = async (common: string, name: string, branch: string) => {
+    await put(path.join(common, "worktrees", name, "HEAD"), `ref: refs/heads/${branch}\n`);
+    await put(path.join(common, "worktrees", name, "commondir"), "../..\n");
+    return path.join(common, "worktrees", name);
+  };
+  await worktree(at("storefront", ".git"), "checkout-flow", "checkout-flow");
+  await worktree(at("storefront", ".git"), "api-rate-limits", "fix/rate-limits");
   await mkdir(at("storefront", "src", "checkout"), { recursive: true });
   await put(
     at("storefront-checkout", ".git"),
@@ -59,12 +61,31 @@ async function code() {
   await put(at("infra", ".git", "HEAD"), "ref: refs/heads/main\n");
   await put(at("infra", "modules", "network", ".git", "HEAD"), "ref: refs/heads/infra-terraform\n");
   await mkdir(at("infra", "modules", "dns"), { recursive: true });
+  await put(at("billing", ".bare", "HEAD"), "ref: refs/heads/main\n");
+  await put(at("billing", ".git"), "gitdir: ./.bare\n");
+  for (const [name, branch] of [
+    ["main", "main"],
+    ["invoices", "invoice-export"],
+  ] as const) {
+    await put(
+      at("billing", name, ".git"),
+      `gitdir: ${await worktree(at("billing", ".bare"), name, branch)}\n`,
+    );
+  }
   await mkdir(at("mobile-app"), { recursive: true });
   return { home, at };
 }
 
 function find(cwd: string, home: string): Promise<GitHead | null> {
   return findGitHead(cwd, { io: nodeIo, homeDir: home });
+}
+
+/** What is checked out in a folder, without the repository. */
+async function checkedOut(cwd: string, home: string): Promise<Omit<GitHead, "repository"> | null> {
+  const head = await find(cwd, home);
+  if (head === null) return null;
+  const { repository: _repository, ...rest } = head;
+  return rest;
 }
 
 /** Every file and folder under a folder, with when it was last changed. */
@@ -81,23 +102,56 @@ describe("real repositories made of plain files", () => {
   test("each folder has the branch or commit git would give it", async () => {
     const { home, at } = await code();
 
-    expect(await find(at("storefront"), home)).toEqual({ branch: "main" });
-    expect(await find(at("storefront", "src", "checkout"), home)).toEqual({ branch: "main" });
-    expect(await find(at("storefront-checkout"), home)).toEqual({ branch: "checkout-flow" });
-    expect(await find(at("storefront-checkout", "src"), home)).toEqual({
+    expect(await checkedOut(at("storefront"), home)).toEqual({ branch: "main" });
+    expect(await checkedOut(at("storefront", "src", "checkout"), home)).toEqual({ branch: "main" });
+    expect(await checkedOut(at("storefront-checkout"), home)).toEqual({ branch: "checkout-flow" });
+    expect(await checkedOut(at("storefront-checkout", "src"), home)).toEqual({
       branch: "checkout-flow",
     });
-    expect(await find(at("platform-api"), home)).toEqual({ branch: "fix/rate-limits" });
-    expect(await find(at("docs"), home)).toEqual({ commit: "3f9a2c1" });
-    expect(await find(at("infra", "modules", "network"), home)).toEqual({
+    expect(await checkedOut(at("platform-api"), home)).toEqual({ branch: "fix/rate-limits" });
+    expect(await checkedOut(at("docs"), home)).toEqual({ commit: "3f9a2c1" });
+    expect(await checkedOut(at("infra", "modules", "network"), home)).toEqual({
       branch: "infra-terraform",
     });
-    expect(await find(at("infra", "modules", "dns"), home)).toEqual({ branch: "main" });
+    expect(await checkedOut(at("infra", "modules", "dns"), home)).toEqual({ branch: "main" });
     expect(await find(at("mobile-app"), home)).toBeNull();
     expect(await find(at("gone"), home)).toBeNull();
   });
 
-  test("nothing is written, and nothing but the .git file and HEAD is opened", async () => {
+  test("each folder is in the repository git would say, and the worktrees in the one they were made from", async () => {
+    const { home, at } = await code();
+    const repository = async (...parts: string[]) => (await find(at(...parts), home))?.repository;
+    const named = (folder: string) => ({
+      id: repositoryId(at(folder, ".git")),
+      name: path.basename(folder),
+    });
+
+    // The main folder, a folder inside it, and both worktrees, wherever they are.
+    for (const folder of [
+      ["storefront"],
+      ["storefront", "src", "checkout"],
+      ["storefront-checkout"],
+      ["storefront-checkout", "src"],
+      ["platform-api"],
+    ]) {
+      expect(await repository(...folder), folder.join("/")).toEqual(named("storefront"));
+    }
+    expect(await repository("docs")).toEqual(named("docs"));
+    // A repository inside another is its own.
+    expect((await repository("infra", "modules", "network"))?.name).toBe("network");
+    expect(await repository("infra", "modules", "dns")).toEqual(named("infra"));
+    // Worktrees beside a bare repository are in it, with the folder around them, and named for it.
+    for (const folder of [["billing"], ["billing", "main"], ["billing", "invoices"]]) {
+      expect(await repository(...folder), folder.join("/")).toEqual({
+        id: repositoryId(at("billing", ".bare")),
+        name: "billing",
+      });
+    }
+    // The id is never the path.
+    expect(JSON.stringify(await find(at("platform-api"), home))).not.toContain(home);
+  });
+
+  test("nothing is written, and nothing but the .git file, HEAD and a worktree's commondir is opened", async () => {
     const { home, at } = await code();
     const before = await everything(home);
     const opened: string[] = [];
@@ -114,8 +168,10 @@ describe("real repositories made of plain files", () => {
       "storefront/.git/HEAD",
       "storefront-checkout/.git",
       "storefront/.git/worktrees/checkout-flow/HEAD",
+      "storefront/.git/worktrees/checkout-flow/commondir",
       "platform-api/.git",
       "storefront/.git/worktrees/api-rate-limits/HEAD",
+      "storefront/.git/worktrees/api-rate-limits/commondir",
       "docs/.git/HEAD",
     ]);
     expect(await everything(home)).toEqual(before);
@@ -136,7 +192,7 @@ describe("real repositories made of plain files", () => {
     const { home, at } = await code();
     await symlink(at("storefront-checkout"), at("checkout-link"));
 
-    expect(await find(at("checkout-link"), home)).toEqual({ branch: "checkout-flow" });
+    expect(await checkedOut(at("checkout-link"), home)).toEqual({ branch: "checkout-flow" });
   });
 
   test.skipIf(process.platform === "win32")(
@@ -159,7 +215,12 @@ describe("real repositories made of plain files", () => {
       makeSession({ id: "status-files:docs-site.json", cwd: at("docs") }),
       makeSession({ id: "status-files:mobile-onboarding.json", cwd: at("mobile-app") }),
     ];
-    const heads = async () => (await finder.annotate(sessions)).map((session) => session.git);
+    const heads = async () =>
+      (await finder.annotate(sessions)).map((session) => {
+        if (session.git === undefined) return undefined;
+        const { repository: _repository, ...head } = session.git;
+        return head;
+      });
 
     expect(await heads()).toEqual([{ branch: "checkout-flow" }, { commit: "3f9a2c1" }, undefined]);
 

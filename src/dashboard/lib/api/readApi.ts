@@ -16,6 +16,7 @@ import {
   WAITING_REASONS,
   type CapabilityCell,
   type GitHead,
+  type GitRepository,
   type HistoryPoint,
   type JumpTarget,
   type Session,
@@ -131,12 +132,23 @@ const MAX_BRANCH_LENGTH = MAX_NAME_LENGTH;
 /** A commit's ID in short, as the collector sends it, or longer. */
 const COMMIT_ID = /^[0-9a-f]{7,64}$/;
 
+/** A repository's id, as the collector makes it: lower-case hexadecimal, or longer. */
+const REPOSITORY_ID = /^[0-9a-f]{16,64}$/;
+
 /**
  * What a session's folder has checked out: a branch, as text, or a commit, as
- * an ID. Null for anything else, and for both at once.
+ * an ID, with the repository when that can be read. Null for anything else,
+ * and for both at once. A repository that cannot be read leaves the branch.
  */
 function readGit(value: unknown): GitHead | null {
   if (!isRecord(value)) return null;
+  const head = readHead(value);
+  if (head === null) return null;
+  const repository = readRepository(value.repository);
+  return repository === null ? head : { ...head, repository };
+}
+
+function readHead(value: Record<string, unknown>): GitHead | null {
   if (value.commit === undefined) {
     const branch = text(value.branch);
     return branch !== null && Array.from(branch).length <= MAX_BRANCH_LENGTH ? { branch } : null;
@@ -144,6 +156,15 @@ function readGit(value: unknown): GitHead | null {
   if (value.branch !== undefined) return null;
   const { commit } = value;
   return typeof commit === "string" && COMMIT_ID.test(commit) ? { commit } : null;
+}
+
+/** The repository a folder belongs to: its id and its name, as text no longer than a session's name. */
+function readRepository(value: unknown): GitRepository | null {
+  if (!isRecord(value)) return null;
+  const name = text(value.name);
+  if (name === null || Array.from(name).length > MAX_NAME_LENGTH) return null;
+  const { id } = value;
+  return typeof id === "string" && REPOSITORY_ID.test(id) ? { id, name } : null;
 }
 
 /** The longest place a label carries. The collector cuts a long name well short of this. */

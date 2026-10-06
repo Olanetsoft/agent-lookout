@@ -173,6 +173,11 @@ describe("createCollector", () => {
       path.join(code, "storefront", ".git", "worktrees", "checkout-flow", "HEAD"),
       "ref: refs/heads/checkout-flow\n",
     );
+    // What git writes in a worktree's git folder to name the repository's own.
+    await writeFile(
+      path.join(code, "storefront", ".git", "worktrees", "checkout-flow", "commondir"),
+      "../..\n",
+    );
     await mkdir(path.join(code, "storefront-checkout"));
     await writeFile(
       path.join(code, "storefront-checkout", ".git"),
@@ -199,8 +204,12 @@ describe("createCollector", () => {
     });
 
     const git = (name: string) => snapshot.sessions.find((found) => found.name === name)?.git;
-    expect(git("billing-webhooks")).toEqual({ branch: "main" });
-    expect(git("checkout-flow")).toEqual({ branch: "checkout-flow" });
+    expect(git("billing-webhooks")?.branch).toBe("main");
+    expect(git("checkout-flow")?.branch).toBe("checkout-flow");
+    // The worktree is in the repository it was made from, which the API names without its path.
+    expect(git("checkout-flow")?.repository?.name).toBe("storefront");
+    expect(git("checkout-flow")?.repository).toEqual(git("billing-webhooks")?.repository);
+    expect(git("checkout-flow")?.repository?.id).toMatch(/^[0-9a-f]{16}$/);
     expect(
       snapshot.sessions.find((found) => found.name === "mobile-onboarding"),
     ).not.toHaveProperty("git");

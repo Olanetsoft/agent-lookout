@@ -66,9 +66,11 @@ A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 
 
 Click a row, or move to its name with Tab and press Enter, to open the session's [details](#a-sessions-details).
 
+The switch at the top right of the Sessions list, or under its title on a phone, chooses List, Repos or Board. Repos groups the same rows by [repository](#repositories), and Board lays them out in columns.
+
 #### Board
 
-The switch at the top right of the Sessions list, or under its title on a phone, chooses List or Board. Board shows the same sessions in a column for each status, so you can see at a glance how many are in each state and which are waiting. Each column's heading gives its count.
+Board shows the same sessions in a column for each status, so you can see at a glance how many are in each state and which are waiting. Each column's heading gives its count.
 
 | Column             | What it holds                                                                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------- |
@@ -79,13 +81,15 @@ The switch at the top right of the Sessions list, or under its title on a phone,
 
 Each card gives what a row of the list does: the session's name, its folder and [branch](#branches), as in `storefront on checkout-flow`, the app it runs in when it is known, the agent once there is more than one, its status and how long it has had it, and [Quiet for](#quiet-for) when that applies. A session that has a Jump button in the list has one on its card, and it works the same way. A long name is cut, and the whole name shows when you hover over it or move to it with Tab. Click a card, or move to its name and press Enter, to open the session's [details](#a-sessions-details).
 
+When a card's folder is named other than its repository, as a worktree's usually is, the card names the repository first: `storefront · storefront-checkout on checkout-flow`. The repository's name, the folder and the branch then take a line each when the column is too narrow for them side by side.
+
 The board only shows what Agent Lookout found. When a session's status changes, its card moves to its new column by itself the next time Agent Lookout reads the sessions, within about 2 seconds. Cards cannot be dragged, because Agent Lookout does not change a session's status.
 
 A column with nothing in it says so, such as `Nothing waiting`. A column shows at most five cards and then says how many more there are, such as `and 3 more in the list`. Switch to List to see them all. A session whose status is unknown has no column. A line under the board says how many there are, and the list shows them.
 
 In a wide window the four columns stand side by side. In a narrower one they are two by two, and on a phone one under another.
 
-Your choice of List or Board is kept in your browser, so the Overview opens the same way next time. [PRIVACY.md](../PRIVACY.md#storage) lists what the browser keeps.
+Your choice of List, Repos or Board is kept in your browser, so the Overview opens the same way next time. [PRIVACY.md](../PRIVACY.md#storage) lists what the browser keeps.
 
 #### A session's details
 
@@ -96,7 +100,7 @@ The details show everything Agent Lookout knows about the session:
 - its status, with how long it has had it and since when, the reason when it is waiting for you, and how long it has been [quiet](#quiet-for) when that applies
 - its agent, and the app it runs in when that is known
 - the full path of its folder, which you can select and copy
-- its [branch](#branches), or the commit when no branch is checked out
+- its [repository](#repositories), and its [branch](#branches) or the commit when no branch is checked out
 - when it started and its process ID, when its agent reports them
 - how many times it waited for you and how long in all, over the same time as the bars in the Needs you panel
 - its own events, newest first, as the Events log shows them
@@ -129,6 +133,22 @@ Sessions that run in worktrees of one repository often have folder names that sa
 When no branch is checked out, as in the middle of a rebase or after checking out a commit or a tag, the first seven characters of the commit's ID take the branch's place, such as `3f9a2c1`, set in the typeface used for commands. In the Needs you panel it reads `docs at 3f9a2c1`. A branch too long for its space is cut, and the whole name is shown when you hover over it or move to it with Tab. A session in no repository shows neither.
 
 Agent Lookout reads the branch from the repository's own files, and runs no git command. It reads each session's branch at most every 10 seconds, so after you switch branches the session shows the new one within about 10 seconds. [How it finds sessions](#how-it-finds-sessions) says where it looks.
+
+#### Repositories
+
+Several sessions often run in worktrees of one repository, each in its own folder on its own branch. Choose Repos in the switch at the top of the Sessions list to see them together: the list is grouped under one heading for each repository, with its name and how many sessions it has, such as `storefront 3`, in order of name. Inside each group the sessions keep the list's order: working first, then idle, then those that finished or failed. Sessions in no repository come last, under `No repository`. Sessions that need you stay in the Needs you panel, as they do in the list by status.
+
+What counts as one repository:
+
+- The folder that holds a repository's `.git` folder, and every folder inside it.
+- Every worktree made from that repository with `git worktree add`, wherever its folder is. Its sessions are grouped under the repository's own folder's name, not the worktree's.
+- Worktrees made from a bare repository, and the folder that holds it. With worktrees kept beside a bare repository in `storefront/.bare`, they are grouped under `storefront`, and those of a bare repository in `storefront.git` are too.
+- A repository whose git folder is kept apart, made with `git init --separate-git-dir`, and its worktrees.
+- A submodule is a repository of its own, with its worktrees, and so is a repository inside another one's folder. Each is grouped under its own folder's name.
+
+Two repositories whose folders have the same name, in different places, are two groups of that name. A session shows a repository only when it shows a branch or a commit: a folder whose `HEAD` cannot be read is in `No repository`, and so is a worktree whose `commondir`, the file beside its `HEAD` that names its repository, cannot be read, though it shows its branch.
+
+On the board, each card names the repository before its folder when the two names differ, as [Board](#board) shows.
 
 #### Events
 
@@ -761,7 +781,7 @@ Email and a webhook are the two ways it can tell you of a session away from this
 
 The Events log, the charts and the Timeline are kept in memory. They start empty each time Agent Lookout starts.
 
-Sessions are not grouped by repository. A session's branch shows in the Sessions list, on its board card, in the Needs you panel, in the search and in the answers of `agent-lookout mcp`, and nowhere else: not in the Timeline, the Events log, a notification, an email, a webhook post or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
+A repository reached through a symbolic link by one session and by its real path from another is two groups of one name. A session's branch shows in the Sessions list, on its board card, in the Needs you panel, in the search and in the answers of `agent-lookout mcp`, and nowhere else: not in the Timeline, the Events log, a notification, an email, a webhook post or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
 
 The [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) list what is planned.
 
@@ -893,7 +913,7 @@ For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seco
 
 While a Claude Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button. On a Mac it also asks `ps`, once for each new Claude Code session, which terminal the session's process has and which programs are its parents. A session in a tab of Terminal or iTerm2 gets a Jump button too.
 
-For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. It reads nothing else in the repository.
+For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. Which [repository](#repositories) the folder belongs to it works out from where those files are and, for a worktree, from the `commondir` file beside its `HEAD`, which names the repository's own git folder. It reads nothing else in the repository.
 
 Agent Lookout never writes to `~/.claude`, `~/.codex`, `~/.agent-lookout` or any git repository. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
 

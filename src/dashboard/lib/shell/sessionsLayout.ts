@@ -1,11 +1,14 @@
 /**
  * How the Sessions card lays out its sessions: as the list, grouped by status,
- * or as the board, a column for each status. The choice is kept in local
- * storage, so it belongs to this browser at this address, and is written only
- * when the person makes it. Until then it is the list.
+ * as the list grouped by repository, or as the board, a column for each
+ * status. The choice is kept in local storage, so it belongs to this browser
+ * at this address, and is written only when the person makes it. Until then it
+ * is the list.
  */
 
-export type SessionsLayout = "list" | "board";
+export const SESSIONS_LAYOUTS = ["list", "repositories", "board"] as const;
+
+export type SessionsLayout = (typeof SESSIONS_LAYOUTS)[number];
 
 export const SESSIONS_LAYOUT_STORAGE_KEY = "agent-lookout-sessions-layout";
 
@@ -22,7 +25,8 @@ let chosenHere: SessionsLayout | null = null;
 export function readSessionsLayout(): SessionsLayout {
   if (chosenHere !== null) return chosenHere;
   try {
-    return localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY) === "board" ? "board" : DEFAULT_LAYOUT;
+    const kept = localStorage.getItem(SESSIONS_LAYOUT_STORAGE_KEY);
+    return SESSIONS_LAYOUTS.find((layout) => layout === kept) ?? DEFAULT_LAYOUT;
   } catch {
     // Storage can be blocked. Keep the default.
     return DEFAULT_LAYOUT;

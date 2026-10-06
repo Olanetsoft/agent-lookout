@@ -262,6 +262,13 @@ function Details({
             "Not known"
           )}
         </FactRow>
+        {session.git?.repository !== undefined && (
+          <FactRow label='Repository'>
+            <span data-part='repository' className='wrap-anywhere'>
+              {session.git.repository.name}
+            </span>
+          </FactRow>
+        )}
         {session.git?.branch !== undefined ? (
           <FactRow label='Branch'>
             <span data-part='branch' className='wrap-anywhere'>

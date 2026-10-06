@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { GitIo } from "@collector/git/branchFinder";
@@ -9,6 +11,7 @@ import {
   READ_WAIT_MS,
 } from "@collector/git/branchFinder";
 import { MAX_GIT_FILE_BYTES } from "@collector/git/gitHead";
+import { repositoryId } from "@collector/git/repository";
 import { makeSession } from "@tests/fixtures/session";
 import { handClock, memoryFiles } from "@tests/support/adapters/codexAdapter";
 
@@ -26,6 +29,26 @@ function find(files: ReturnType<typeof memoryFiles>, cwd: string, homeDir = HOME
   return findGitHead(cwd, { io: files.io, homeDir });
 }
 
+/**
+ * A worktree's git folder in `common`, the repository's own, on the branch
+ * given, with the `commondir` git writes in it.
+ */
+function worktreeIn(
+  files: ReturnType<typeof memoryFiles>,
+  common: string,
+  name: string,
+  head: string,
+) {
+  files.write(`${common}/worktrees/${name}/HEAD`, head);
+  files.write(`${common}/worktrees/${name}/commondir`, "../..\n");
+  return `${common}/worktrees/${name}`;
+}
+
+/** The repository whose main working folder is `folder`, with its .git folder, as the finder gives it. */
+function inRepository(folder: string) {
+  return { id: repositoryId(`${folder}/.git`), name: path.basename(folder) };
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -35,7 +58,10 @@ describe("finding the repository", () => {
     const files = memoryFiles();
     repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
 
-    expect(await find(files, `${CODE}/storefront`)).toEqual({ branch: "main" });
+    expect(await find(files, `${CODE}/storefront`)).toEqual({
+      branch: "main",
+      repository: inRepository(`${CODE}/storefront`),
+    });
     // Only the folder, its .git and the HEAD are touched, and nothing is listed.
     expect(files.calls).toEqual([
       { method: "stat", path: `${CODE}/storefront` },
@@ -52,6 +78,7 @@ describe("finding the repository", () => {
 
     expect(await find(files, `${CODE}/platform-api/src/routes/billing`)).toEqual({
       branch: "fix/rate-limits",
+      repository: inRepository(`${CODE}/platform-api`),
     });
   });
 
@@ -59,7 +86,10 @@ describe("finding the repository", () => {
     const files = memoryFiles();
     repository(files, `${CODE}/docs`, `${COMMIT}\n`);
 
-    expect(await find(files, `${CODE}/docs`)).toEqual({ commit: "3f9a2c1" });
+    expect(await find(files, `${CODE}/docs`)).toEqual({
+      commit: "3f9a2c1",
+      repository: inRepository(`${CODE}/docs`),
+    });
   });
 
   test("in repositories one inside another, the nearest wins", async () => {
@@ -69,10 +99,15 @@ describe("finding the repository", () => {
     files.mkdir(`${CODE}/infra/modules/network/vpc`);
     files.mkdir(`${CODE}/infra/modules/dns`);
 
+    // Each is a repository of its own.
     expect(await find(files, `${CODE}/infra/modules/network/vpc`)).toEqual({
       branch: "checkout-flow",
+      repository: inRepository(`${CODE}/infra/modules/network`),
     });
-    expect(await find(files, `${CODE}/infra/modules/dns`)).toEqual({ branch: "main" });
+    expect(await find(files, `${CODE}/infra/modules/dns`)).toEqual({
+      branch: "main",
+      repository: inRepository(`${CODE}/infra`),
+    });
   });
 
   test("the nearest .git that cannot be read gives nothing, not the repository above it", async () => {
@@ -156,8 +191,10 @@ describe("a .git file, as in a worktree or a submodule", () => {
   test("a relative path is followed from the folder the file is in", async () => {
     const files = memoryFiles();
     repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
-    files.write(
-      `${CODE}/storefront/.git/worktrees/checkout-flow/HEAD`,
+    worktreeIn(
+      files,
+      `${CODE}/storefront/.git`,
+      "checkout-flow",
       "ref: refs/heads/checkout-flow\n",
     );
     files.write(
@@ -166,27 +203,37 @@ describe("a .git file, as in a worktree or a submodule", () => {
     );
     files.mkdir(`${CODE}/storefront-checkout/src`);
 
+    // The worktree belongs to the repository it was made from.
     expect(await find(files, `${CODE}/storefront-checkout/src`)).toEqual({
       branch: "checkout-flow",
+      repository: inRepository(`${CODE}/storefront`),
     });
-    // The file, then the HEAD it leads to, and nothing else in either git folder.
+    // The file, then the HEAD it leads to and the commondir beside it, and
+    // nothing else in either git folder.
     expect(files.opened()).toEqual([
       `${CODE}/storefront-checkout/.git`,
       `${CODE}/storefront/.git/worktrees/checkout-flow/HEAD`,
+      `${CODE}/storefront/.git/worktrees/checkout-flow/commondir`,
     ]);
     // The repository the worktree belongs to is on its own branch.
-    expect(await find(files, `${CODE}/storefront`)).toEqual({ branch: "main" });
+    expect(await find(files, `${CODE}/storefront`)).toEqual({
+      branch: "main",
+      repository: inRepository(`${CODE}/storefront`),
+    });
   });
 
   test("an absolute path is followed as it is", async () => {
     const files = memoryFiles();
-    files.write(`${CODE}/storefront/.git/worktrees/api-rate-limits/HEAD`, `${COMMIT}\n`);
+    worktreeIn(files, `${CODE}/storefront/.git`, "api-rate-limits", `${COMMIT}\n`);
     files.write(
       `${CODE}/platform-api/.git`,
       `gitdir: ${CODE}/storefront/.git/worktrees/api-rate-limits\n`,
     );
 
-    expect(await find(files, `${CODE}/platform-api`)).toEqual({ commit: "3f9a2c1" });
+    expect(await find(files, `${CODE}/platform-api`)).toEqual({
+      commit: "3f9a2c1",
+      repository: inRepository(`${CODE}/storefront`),
+    });
   });
 
   test("a submodule's file leads into the git folder of the repository around it", async () => {
@@ -195,7 +242,153 @@ describe("a .git file, as in a worktree or a submodule", () => {
     files.write(`${CODE}/platform-api/.git/modules/docs/HEAD`, "ref: refs/heads/docs-site\n");
     files.write(`${CODE}/platform-api/docs/.git`, "gitdir: ../.git/modules/docs\n");
 
-    expect(await find(files, `${CODE}/platform-api/docs`)).toEqual({ branch: "docs-site" });
+    // A submodule is a repository of its own, named for its folder. Its git
+    // folder has no commondir: it is the repository's own.
+    expect(await find(files, `${CODE}/platform-api/docs`)).toEqual({
+      branch: "docs-site",
+      repository: { id: repositoryId(`${CODE}/platform-api/.git/modules/docs`), name: "docs" },
+    });
+    expect(files.opened()).toEqual([
+      `${CODE}/platform-api/docs/.git`,
+      `${CODE}/platform-api/.git/modules/docs/HEAD`,
+      `${CODE}/platform-api/.git/modules/docs/commondir`,
+    ]);
+  });
+
+  test("a submodule at the path worktrees/x is a repository of its own, not a worktree", async () => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/platform-api`, "ref: refs/heads/main\n");
+    files.write(`${CODE}/platform-api/.git/modules/worktrees/x/HEAD`, "ref: refs/heads/main\n");
+    files.write(
+      `${CODE}/platform-api/worktrees/x/.git`,
+      "gitdir: ../../.git/modules/worktrees/x\n",
+    );
+
+    expect((await find(files, `${CODE}/platform-api/worktrees/x`))?.repository).toEqual({
+      id: repositoryId(`${CODE}/platform-api/.git/modules/worktrees/x`),
+      name: "x",
+    });
+  });
+
+  test("a submodule and a worktree made from it are one repository", async () => {
+    const files = memoryFiles();
+    const modules = `${CODE}/platform-api/.git/modules`;
+    files.write(`${modules}/docs/HEAD`, "ref: refs/heads/main\n");
+    files.write(`${CODE}/platform-api/docs/.git`, "gitdir: ../.git/modules/docs\n");
+    const review = worktreeIn(files, `${modules}/docs`, "docs-review", "ref: refs/heads/review\n");
+    files.write(`${CODE}/docs-review/.git`, `gitdir: ${review}\n`);
+
+    const docs = await find(files, `${CODE}/platform-api/docs`);
+    expect(docs?.repository).toEqual({ id: repositoryId(`${modules}/docs`), name: "docs" });
+    expect((await find(files, `${CODE}/docs-review`))?.repository).toEqual(docs?.repository);
+  });
+
+  test("worktrees beside a bare repository in .bare are one repository with the folder around them", async () => {
+    const files = memoryFiles();
+    const bare = `${CODE}/billing/.bare`;
+    files.write(`${bare}/HEAD`, "ref: refs/heads/main\n");
+    files.write(`${CODE}/billing/.git`, "gitdir: ./.bare\n");
+    files.write(
+      `${CODE}/billing/main/.git`,
+      `gitdir: ${worktreeIn(files, bare, "main", "ref: refs/heads/main\n")}\n`,
+    );
+    files.write(
+      `${CODE}/billing/invoices/.git`,
+      `gitdir: ${worktreeIn(files, bare, "invoices", "ref: refs/heads/invoice-export\n")}\n`,
+    );
+
+    const heads = [
+      await find(files, `${CODE}/billing`),
+      await find(files, `${CODE}/billing/main`),
+      await find(files, `${CODE}/billing/invoices`),
+    ];
+
+    expect(heads.map((head) => head?.branch)).toEqual(["main", "main", "invoice-export"]);
+    for (const head of heads) {
+      expect(head?.repository).toEqual({ id: repositoryId(bare), name: "billing" });
+    }
+  });
+
+  test("a main folder whose git folder is kept apart, and its worktree, are one repository", async () => {
+    const files = memoryFiles();
+    const apart = "/srv/git/storefront.git";
+    files.write(`${apart}/HEAD`, "ref: refs/heads/main\n");
+    files.write(`${CODE}/storefront/.git`, `gitdir: ${apart}\n`);
+    files.write(
+      `${CODE}/storefront-checkout/.git`,
+      `gitdir: ${worktreeIn(files, apart, "checkout", "ref: refs/heads/checkout-flow\n")}\n`,
+    );
+
+    const main = await find(files, `${CODE}/storefront`);
+    expect(main?.repository).toEqual({ id: repositoryId(apart), name: "storefront" });
+    expect((await find(files, `${CODE}/storefront-checkout`))?.repository).toEqual(
+      main?.repository,
+    );
+  });
+
+  test("the main folder and two worktrees are one repository, as each worktree's commondir says", async () => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    worktreeIn(files, `${CODE}/storefront/.git`, "checkout", "ref: refs/heads/checkout-flow\n");
+    worktreeIn(files, `${CODE}/storefront/.git`, "rates", "ref: refs/heads/fix/rate-limits\n");
+    // One commondir as git writes it, the other a whole path.
+    files.rewrite(`${CODE}/storefront/.git/worktrees/rates/commondir`, `${CODE}/storefront/.git\n`);
+    // A relative path that climbs, with a slash at its end, and a whole path elsewhere.
+    files.write(
+      `${CODE}/worktrees/storefront-checkout/.git`,
+      "gitdir: ../../storefront/./.git/worktrees/checkout/\n",
+    );
+    files.write("/srv/builds/rates/.git", `gitdir: ${CODE}/storefront/.git/worktrees/rates\n`);
+
+    const heads = [
+      await find(files, `${CODE}/storefront`),
+      await find(files, `${CODE}/worktrees/storefront-checkout`),
+      await find(files, "/srv/builds/rates"),
+    ];
+
+    expect(heads.map((head) => head?.branch)).toEqual(["main", "checkout-flow", "fix/rate-limits"]);
+    for (const head of heads) expect(head?.repository).toEqual(inRepository(`${CODE}/storefront`));
+    // Nothing is listed, and nothing else is opened.
+    expect(files.opened()).toEqual([
+      `${CODE}/storefront/.git/HEAD`,
+      `${CODE}/worktrees/storefront-checkout/.git`,
+      `${CODE}/storefront/.git/worktrees/checkout/HEAD`,
+      `${CODE}/storefront/.git/worktrees/checkout/commondir`,
+      "/srv/builds/rates/.git",
+      `${CODE}/storefront/.git/worktrees/rates/HEAD`,
+      `${CODE}/storefront/.git/worktrees/rates/commondir`,
+    ]);
+    expect(files.count("readdir")).toBe(0);
+  });
+
+  test.each<[string, (files: ReturnType<typeof memoryFiles>, file: string) => void]>([
+    ["says nothing", (files, file) => files.write(file, "")],
+    ["says it on two lines", (files, file) => files.write(file, "../..\n../..\n")],
+    ["has a control character in it", (files, file) => files.write(file, "../\u0000..\n")],
+    ["is not text", (files, file) => files.write(file, new Uint8Array([0x2e, 0xff, 0x0a]))],
+    [
+      "is over the limit",
+      (files, file) => files.write(file, `${"../".repeat(MAX_GIT_FILE_BYTES)}\n`),
+    ],
+    ["is a link or a pipe", (files, file) => files.special(file)],
+    ["is a folder", (files, file) => files.mkdir(file)],
+    ["cannot be opened", (files, file) => files.fail(file)],
+  ])("a worktree whose commondir %s has its branch, and no repository", async (_what, spoil) => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    const gitDir = worktreeIn(
+      files,
+      `${CODE}/storefront/.git`,
+      "checkout",
+      "ref: refs/heads/checkout-flow\n",
+    );
+    files.remove(`${gitDir}/commondir`);
+    spoil(files, `${gitDir}/commondir`);
+    files.write(`${CODE}/storefront-checkout/.git`, `gitdir: ${gitDir}\n`);
+
+    // The repository is never guessed at from where the git folder is.
+    expect(await find(files, `${CODE}/storefront-checkout`)).toEqual({ branch: "checkout-flow" });
+    expect(files.openHandles()).toBe(0);
   });
 
   test.each([
@@ -320,8 +513,8 @@ describe("the finder", () => {
     const annotated = await finder.annotate(sessions);
 
     expect(annotated.map((session) => session.git)).toEqual([
-      { branch: "main" },
-      { commit: "3f9a2c1" },
+      { branch: "main", repository: inRepository(`${CODE}/storefront`) },
+      { commit: "3f9a2c1", repository: inRepository(`${CODE}/docs`) },
       undefined,
       undefined,
     ]);
@@ -345,16 +538,13 @@ describe("the finder", () => {
     files.rewrite(`${CODE}/storefront/.git/HEAD`, "ref: refs/heads/checkout-flow\n");
     for (let poll = 1; poll < BRANCH_READ_MS / 2_000; poll += 1) {
       clock.advance(2_000);
-      expect((await finder.annotate(sessions))[0]?.git).toEqual({ branch: "main" });
+      expect((await finder.annotate(sessions))[0]?.git?.branch).toBe("main");
     }
     expect(files.opened()).toHaveLength(1);
 
     clock.advance(2_000);
     const later = await finder.annotate(sessions);
-    expect(later.map((session) => session.git)).toEqual([
-      { branch: "checkout-flow" },
-      { branch: "checkout-flow" },
-    ]);
+    expect(later.map((session) => session.git?.branch)).toEqual(["checkout-flow", "checkout-flow"]);
     expect(files.opened()).toHaveLength(2);
   });
 
@@ -367,7 +557,10 @@ describe("the finder", () => {
     expect((await finder.annotate(sessions))[0]).not.toHaveProperty("git");
     repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
     clock.advance(BRANCH_READ_MS);
-    expect((await finder.annotate(sessions))[0]?.git).toEqual({ branch: "main" });
+    expect((await finder.annotate(sessions))[0]?.git).toEqual({
+      branch: "main",
+      repository: inRepository(`${CODE}/storefront`),
+    });
   });
 
   test("forgets a folder no session is in, so one that comes back is read afresh", async () => {
@@ -397,13 +590,13 @@ describe("the finder", () => {
     expect(first).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
     // The folder read before it has its commit. The one that did not answer has nothing yet.
-    expect(first?.map((session) => session.git)).toEqual([{ commit: "3f9a2c1" }, undefined]);
+    expect(first?.map((session) => session.git?.commit)).toEqual(["3f9a2c1", undefined]);
 
     // The next poll does not wait for it again, and starts no read while it has not answered.
     clock.advance(BRANCH_READ_MS);
     const callsBefore = files.calls.length;
     const second = await finder.annotate(sessions);
-    expect(second.map((session) => session.git)).toEqual([{ commit: "3f9a2c1" }, undefined]);
+    expect(second.map((session) => session.git?.commit)).toEqual(["3f9a2c1", undefined]);
     expect(files.calls).toHaveLength(callsBefore);
     expect(drive.asked).toHaveLength(1);
 
@@ -411,8 +604,8 @@ describe("the finder", () => {
     drive.answer();
     await vi.advanceTimersByTimeAsync(0);
     expect((await finder.annotate(sessions)).map((session) => session.git)).toEqual([
-      { commit: "3f9a2c1" },
-      { branch: "main" },
+      { commit: "3f9a2c1", repository: inRepository(`${CODE}/docs`) },
+      { branch: "main", repository: inRepository(`${CODE}/storefront`) },
     ]);
   });
 

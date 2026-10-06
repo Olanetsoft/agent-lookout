@@ -144,6 +144,42 @@ test.each([
   expect(read && "git" in read).toBe(false);
 });
 
+test("the repository a folder belongs to is read as it was sent, with its branch or its commit", () => {
+  const repository = { id: "9aaa5f0ab35a5f84", name: "storefront" };
+  for (const git of [
+    { branch: "checkout-flow", repository },
+    { commit: "3f9a2c1", repository },
+    { branch: "main", repository: { id: "7ba69a8b81747824", name: "<b>docs</b>" } },
+  ]) {
+    const sent = makeSession({ git });
+    expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  }
+});
+
+test.each([
+  ["not a record", "storefront"],
+  ["without an id", { name: "storefront" }],
+  ["with an id that is a path", { id: "/Users/example/code/storefront", name: "storefront" }],
+  ["with an id too short", { id: "9aaa5f0a", name: "storefront" }],
+  ["with an id in capitals", { id: "9AAA5F0AB35A5F84", name: "storefront" }],
+  ["without a name", { id: "9aaa5f0ab35a5f84" }],
+  ["with an empty name", { id: "9aaa5f0ab35a5f84", name: " " }],
+  ["with a name too long to be one", { id: "9aaa5f0ab35a5f84", name: "s".repeat(201) }],
+])("a repository %s is none, and the branch is still read", (_what, repository) => {
+  const read = readSession({ ...makeSession(), git: { branch: "checkout-flow", repository } });
+
+  expect(read?.git).toEqual({ branch: "checkout-flow" });
+});
+
+test("a repository with no branch or commit is no git at all", () => {
+  const read = readSession({
+    ...makeSession(),
+    git: { repository: { id: "9aaa5f0ab35a5f84", name: "storefront" } },
+  });
+
+  expect(read && "git" in read).toBe(false);
+});
+
 test("when the agent last wrote is read as it was sent, and is none when it is not a number", () => {
   const sent = makeSession({ status: "working", lastWriteAt: T - 12 * 60_000 });
   expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);

@@ -6,6 +6,7 @@ import { Badge } from "@dashboard/components/ui/status/Badge";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
+import { repositoryBeside } from "@dashboard/lib/sessions/repositories";
 import { rowLook } from "@dashboard/lib/sessions/sessions";
 import { surfaceLabel } from "@dashboard/lib/sessions/status";
 import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
@@ -20,7 +21,9 @@ interface BoardCardProps {
 
 /**
  * One session on the board: what a row of the list says, stacked to fit a
- * column. Its mark and name; where it works, "storefront on checkout-flow";
+ * column. Its mark and name; where it works, "storefront on checkout-flow",
+ * led by the repository's name when the folder's is another, as a worktree's
+ * is, "storefront · storefront-checkout on checkout-flow";
  * the app when it is known, and the tool once more than one is found; its
  * status and how long, read as one phrase, "Working 12m", with how long the
  * agent has been quiet under it when it says so; and Jump.
@@ -35,7 +38,8 @@ interface BoardCardProps {
  * a card cannot be dragged, and nothing about it looks as if it could. It
  * moves to another column on its own, when its session changes status.
  *
- * A long name, folder, branch or tool is cut, and stays a hover or a Tab away.
+ * A long name, repository, folder, branch or tool is cut, and stays a hover or
+ * a Tab away.
  * What a press of Jump came to is a badge beside the name, or under it where
  * the line cannot hold both, and the two sentences about macOS take a line of
  * their own, as in the list.
@@ -50,6 +54,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
   const { mark, word, stale, quiet, orphaned } = rowLook(session);
   const jump = useJump(session);
   const app = surfaceLabel(session.surface);
+  const repository = repositoryBeside(session);
 
   return (
     <li
@@ -92,9 +97,27 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
        * The folder's name, its whole path one Tab or one hover away, and its
        * branch after it. "on" stays with the branch, which is cut rather than
        * leave the word on a line alone, so the two take two lines at most.
+       *
+       * Before them, the repository's name when the folder's is another. The
+       * dot after it stays with it, so a line that breaks there ends with the
+       * dot rather than start with one.
        */}
       {session.project && (
         <p data-part='place' className='mt-1.5 min-w-0 leading-tight'>
+          {repository !== null && (
+            <>
+              <span className='inline-flex max-w-full align-top'>
+                <Truncated data-part='repository' className='min-w-0'>
+                  {repository}
+                </Truncated>
+                <span aria-hidden className='whitespace-pre'>
+                  {" ·"}
+                </span>
+              </span>
+              {/* Read as "storefront, storefront-checkout". */}
+              <span className='sr-only'>,</span>{" "}
+            </>
+          )}
           <Tooltip content={session.cwd} mono>
             <span
               data-part='project'
