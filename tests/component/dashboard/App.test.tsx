@@ -2512,7 +2512,8 @@ describe("finding a session from the keyboard", () => {
     await expect.element(search()).toBeVisible();
     await userEvent.keyboard("{Escape}");
     await expect.element(search()).not.toBeInTheDocument();
-    expect(document.activeElement).toBe(input);
+    // The dialog gives focus back as it unmounts, which can land a frame later.
+    await expect.poll(() => document.activeElement).toBe(input);
   });
 
   test("the header's quiet round button opens the search for a pointer, names its keys, and has focus again after Escape", async () => {
