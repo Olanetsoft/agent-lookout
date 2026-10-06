@@ -1,0 +1,26 @@
+# AGENTS.md
+
+Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one browser page. `src/collector/` is the Node code that finds sessions and serves them on a loopback address, `src/dashboard/` is the React app, `src/core/` is logic with no DOM and no Node APIs, and `src/cli/` is the `agent-lookout` command. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the map.
+
+## Commands
+
+- You need Node.js 20.19 or newer (on Node 22, 22.12 or newer). Run `npm install`, then `npx playwright install chromium` once for the component tests. On Linux, add `--with-deps`.
+- `npm run dev` serves the dashboard at http://localhost:5173 with the collector inside the dev server, and shows the sessions on the machine. To show none, set `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and `AGENT_LOOKOUT_STATUS_DIR` to an empty folder.
+- `npm run check` runs the layout check, the typecheck, the linter, the format check and the tests, and stops at the first failure. Run it before you finish. CI also runs `npm run build`.
+- `npm run format` and `npm run lint:fix` fix most format and lint failures.
+- `npm run test:unit`, `npm run test:integration` and `npm run test:component` run one group. `npx vitest run <file>` runs one file.
+
+## Rules
+
+- By default Agent Lookout sends nothing anywhere. Its code makes no network request to anything but its own local server, except email notifications and the webhook, which are off until the person sets them up. No telemetry, analytics, remote fonts, CDN links or update checks, in your code or in a dependency.
+- No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Fixtures go in `tests/fixtures/`, written by hand with generic values such as `demo-project` and `/Users/example/code/demo`. Never copy a real session name or path into the repository.
+- A change in behaviour comes with a test. Every test lives under `tests/unit/`, `tests/integration/` or `tests/component/`, named for the module it covers and at the mirrored path. Nothing under `src/` is a test or imports from `tests/`. [tests/README.md](tests/README.md) says which group a test belongs in.
+- Put a new module in the folder for its area. `npm run check` fails when a folder holds more than eight code files side by side.
+- Folders are kebab-case, React components `PascalCase.tsx`, hooks `useThing.ts` and every other module `camelCase.ts`.
+- The collector, `src/cli/` and `src/core/` import by relative path with the `.ts` extension. The dashboard and the tests import through `@cli`, `@core`, `@collector` and `@dashboard`, and only tests can use `@tests`.
+- An adapter is read-only. It never writes to the tool's files and never sends input to a session. Start a program directly, never through a shell, with stdin closed and a timeout. Read [Adding an adapter](CONTRIBUTING.md#adding-an-adapter) before you write one.
+- Before you add or change anything under `src/dashboard/`, read the tokens in `src/dashboard/styles/index.css` and the primitives in `src/dashboard/components/ui/`.
+- If a user would notice the change, add a line to `CHANGELOG.md` under Unreleased. If the app now runs a new command or reads a new file, update `PRIVACY.md` in the same change.
+- Keep a pull request to one topic and fill in the template. Commit messages are short and plain, in the imperative: `Mark idle sessions as stale after a day`.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
