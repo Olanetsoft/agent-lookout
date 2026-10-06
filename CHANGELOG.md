@@ -12,6 +12,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Changed
 
 - Agent Lookout needs Node.js 22.12 or newer. Node.js 20 reached the end of its life on 30 April 2026 and no longer gets security fixes, so it is no longer supported. On an older Node, `npx agent-lookout` and `agent-lookout` stop at once with one line that names the version needed and the version found, and exit with 1, or with 2 for `agent-lookout status`. The Mac app needs no Node.js.
+- The Overview has a Waits card that says how long sessions waited on you today and over the last 7 days, with a bar for each day and the five sessions that waited longest, today or over the 7 days, with how many times each waited. It is worked out on this computer from the history Agent Lookout keeps, counts only the time Agent Lookout was running, and says how much of each day and of the 7 days that was. With `AGENT_LOOKOUT_HISTORY=off` it covers only the time since Agent Lookout started, and says so. `GET /api/waits` gives the same totals to a program on this computer.
 
 ## 0.2.2 - 2026-10-06
 

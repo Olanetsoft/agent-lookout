@@ -6,6 +6,7 @@ import { SessionsCard } from "@dashboard/components/sessions/SessionsCard";
 import { TimelineCard } from "@dashboard/components/timeline/TimelineCard";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
+import { WaitsCard } from "@dashboard/components/waits/WaitsCard";
 import { useFocusFollowsRow } from "@dashboard/hooks/dom/useFocusFollowsRow";
 import { SESSION_ROWS } from "@dashboard/hooks/dom/useShowSession";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
@@ -27,8 +28,9 @@ interface DashboardViewProps {
 
 /*
  * Where each card sits. Wide, the hero and Last hour share the first row, the
- * Sessions and Events cards the second, and the timeline the third across both.
- * Below the `wide` breakpoint it is one column in that order, hero first.
+ * Sessions and Events cards the second, the timeline the third across both,
+ * and Waits, a review of the day and the week, the fourth across both. Below
+ * the `wide` breakpoint it is one column in that order, hero first.
  */
 const PLACE = {
   hero: "col-start-1 row-start-1",
@@ -36,6 +38,7 @@ const PLACE = {
   sessions: "col-start-1 row-start-2 max-wide:row-start-3",
   events: "col-start-2 row-start-2 max-wide:col-start-1 max-wide:row-start-4",
   timeline: "col-span-2 col-start-1 row-start-3 max-wide:col-span-1 max-wide:row-start-5",
+  waits: "col-span-2 col-start-1 row-start-4 max-wide:col-span-1 max-wide:row-start-6",
 } as const;
 
 /**
@@ -43,7 +46,8 @@ const PLACE = {
  *
  *   no answer yet            the layout, holding its place, with a spinner
  *   never answered           a connection problem, in place of the dashboard
- *   answered                 the hero, Last hour, the sessions, the events and the timeline
+ *   answered                 the hero, Last hour, the sessions, the events, the
+ *                            timeline and the waits of the day and the week
  *   answered, then stopped   the same, under a notice that says how old it is
  *
  * The light behind the hero is laid in the hero's own grid cell, under it, so
@@ -158,6 +162,20 @@ export function DashboardView({
           asOf={asOf}
           className={cn("z-1", PLACE.timeline)}
         />
+
+        {/* Asked for once the first answer is in, as the cards above it are drawn. */}
+        {snapshot ? (
+          <WaitsCard
+            history={state.history}
+            sessions={snapshot.sessions}
+            asOf={asOf}
+            className={cn("z-1", PLACE.waits)}
+          />
+        ) : (
+          <SectionCard title='Waits' className={cn("z-1", PLACE.waits)}>
+            <Loading label='Reading waits' />
+          </SectionCard>
+        )}
       </div>
     </div>
   );

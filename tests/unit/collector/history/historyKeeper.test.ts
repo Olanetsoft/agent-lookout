@@ -10,7 +10,13 @@ const DAY = 24 * 60 * 60 * 1000;
 const T0 = Date.parse("2026-10-06T09:00:00.000Z");
 const LIMITS = { events: 1_000, points: 10_800 };
 /** What restoring gives when nothing could be read. */
-const NOTHING = { events: [], points: [], restarts: [], lastAt: null };
+const NOTHING = {
+  events: [],
+  points: [],
+  restarts: [],
+  lastAt: null,
+  whole: { waitEvents: [], measured: [] },
+};
 
 const file = (name: string) => `${DIR}/${name}`;
 
@@ -280,6 +286,58 @@ describe("reading back", () => {
     ]);
     expect(keeper.since()).toEqual({ at: T0 - DAY, by: "started" });
     expect(keeper.status()).toMatchObject({ where: "disk", folder: "~/.agent-lookout/history" });
+  });
+
+  test("all of it comes back as well, however much memory takes: every event of a wait, and the stretches measured, broken at each start", async () => {
+    const { fs, keeper } = setUp();
+    fs.folders.add(DIR);
+    const answered: SessionEvent = {
+      ...event(T0 - DAY + 6_000),
+      id: "status-files:demo-project@answered",
+      from: "needs-you",
+      to: "working",
+      severity: "advisory",
+    };
+    const idle: SessionEvent = {
+      ...answered,
+      id: "status-files:demo-project@idle",
+      at: T0 - 30_000,
+      from: "working",
+      to: "idle",
+    };
+    fs.put(
+      file("v1-2026-10-05.jsonl"),
+      lines(
+        { kind: "start", at: T0 - DAY },
+        { kind: "point", point: point(T0 - DAY + 2_000) },
+        { kind: "event", event: event(T0 - DAY + 2_000) },
+        { kind: "point", point: point(T0 - DAY + 4_000) },
+        { kind: "point", point: point(T0 - DAY + 6_000) },
+        { kind: "event", event: answered },
+      ),
+    );
+    fs.put(
+      file("v1-2026-10-06.jsonl"),
+      lines(
+        { kind: "start", at: T0 - 60_000 },
+        { kind: "point", point: point(T0 - 58_000) },
+        // A stop of a second and a half is a break all the same.
+        { kind: "start", at: T0 - 56_500 },
+        { kind: "point", point: point(T0 - 56_000) },
+        { kind: "point", point: point(T0 - 54_000) },
+        { kind: "event", event: idle },
+      ),
+    );
+    const restored = await keeper.restore({ events: 1, points: 1 });
+    expect(restored.events).toEqual([idle]);
+    expect(restored.points).toEqual([point(T0 - 54_000)]);
+    // A move from working to idle is no part of a wait.
+    expect(restored.whole.waitEvents).toEqual([event(T0 - DAY + 2_000), answered]);
+    expect(restored.whole.measured).toEqual([
+      { from: T0 - DAY + 2_000, to: T0 - DAY + 6_000 },
+      { from: T0 - 58_000, to: T0 - 58_000 },
+      { from: T0 - 56_000, to: T0 - 54_000 },
+    ]);
   });
 
   test("each start that followed history kept from before is a restart, from the newest moment before it", async () => {

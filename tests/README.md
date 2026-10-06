@@ -4,13 +4,13 @@ Every test, fixture and test helper lives in this folder. Nothing under `src/` i
 
 ## What goes where
 
-| Folder         | Holds                                                                                                                                         | Runs in           |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `unit/`        | Tests of one module. No sockets, no child processes, no real files. What a module needs from outside is passed in                             | Node              |
-| `integration/` | Tests that open a socket, start a server, start a process or touch the real file system                                                       | Node              |
-| `component/`   | React components, and the dashboard code that needs a real page, such as the theme and the stylesheet                                         | Headless Chromium |
-| `fixtures/`    | Session data shared by tests: `session.ts`, `claudeCode.ts`, `claudeTranscript.ts`, `codex.ts`, `statusFiles.ts` and the folder `codex-home/` |                   |
-| `support/`     | Setup files and helpers                                                                                                                       |                   |
+| Folder         | Holds                                                                                                                                                     | Runs in           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `unit/`        | Tests of one module. No sockets, no child processes, no real files. What a module needs from outside is passed in                                         | Node              |
+| `integration/` | Tests that open a socket, start a server, start a process or touch the real file system                                                                   | Node              |
+| `component/`   | React components, and the dashboard code that needs a real page, such as the theme and the stylesheet                                                     | Headless Chromium |
+| `fixtures/`    | Session data shared by tests: `session.ts`, `claudeCode.ts`, `claudeTranscript.ts`, `codex.ts`, `statusFiles.ts`, `waits.ts` and the folder `codex-home/` |                   |
+| `support/`     | Setup files and helpers                                                                                                                                   |                   |
 
 A test that only calls functions belongs in `unit/`, even when the module is part of the dashboard, and even when the module would touch files or start programs if it were not handed stand-ins. A test goes in `integration/` as soon as it needs something real from the operating system. A test goes in `component/` when it renders, or when it reads computed styles, local storage or a media query.
 
@@ -109,7 +109,7 @@ Fixtures are written by hand and are generic. Nothing in them is copied from a r
 
 Use values that could belong to nobody: `demo-project` for a name, `/Users/example/code/demo` for a path, `00000000-0000-4000-8000-000000000001` for a session ID. The same rule covers values written inside a test file, and screenshots.
 
-`fixtures/session.ts` builds one generic session, and a test overrides the fields it cares about. `fixtures/claudeCode.ts` holds output shaped like `claude agents --json` and files shaped like the session registry. `fixtures/statusFiles.ts` writes the text of a status file, which a test changes field by field.
+`fixtures/session.ts` builds one generic session, and a test overrides the fields it cares about. `fixtures/waits.ts` builds an answer of `GET /api/waits` in which no session waited, for the tests of the Overview that are not about the Waits card. `fixtures/claudeCode.ts` holds output shaped like `claude agents --json` and files shaped like the session registry. `fixtures/statusFiles.ts` writes the text of a status file, which a test changes field by field.
 
 `fixtures/codex-home/` is a folder laid out as Codex lays out its own, as `docs/adapters/codex.md` describes: session files under `sessions/YYYY/MM/DD/` that are working, idle, finished, stopped, only just begun, malformed, a subagent, an `mcp` thread, a reverted pair, a day too old, run by the Codex desktop app, and imported by that app from another agent; a resumed session in an older folder; a compressed file; an archived session; `thread-writer-locks/` with a lock for each open session and `.coordination.lock`; `session_index.jsonl`; and placeholders for the files the adapter never opens. `fixtures/codex.ts` names its sessions, says what the adapter reports for them with the clock at its `NOW`, and builds lines of the same shapes for tests that write their own. The clock is midday UTC on the day of its day folder, so the folder is today's or yesterday's in every time zone. Tests read `codex-home/` and never write in it; a test that changes files works on a copy. A link and a named pipe cannot be kept in git, so the tests that need them make them in a copy.
 

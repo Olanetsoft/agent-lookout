@@ -7,6 +7,7 @@ import {
   readSession,
   readSnapshot,
   readSource,
+  readWaits,
   readWebhookStatus,
 } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
@@ -717,4 +718,80 @@ test("the restarts a history lists are read oldest first, and one that cannot be
   expect(readHistory({ startedAt: T, points: [], restarts: "many" })).not.toHaveProperty(
     "restarts",
   );
+});
+
+/** An answer of `/api/waits` as the collector sends it, for one day of three waits. */
+function waitsAnswer() {
+  const day = {
+    day: "2023-11-14",
+    from: T - 3_600_000,
+    to: T,
+    waitedMs: 120_000,
+    openMs: 30_000,
+    waits: 3,
+    measuredMs: 3_000_000,
+  };
+  const period = {
+    from: T - 3_600_000,
+    to: T,
+    waitedMs: 120_000,
+    openMs: 30_000,
+    waits: 3,
+    measuredMs: 3_000_000,
+    days: [day],
+    sessions: [
+      { sessionId: "claude-code:1", name: "demo-project", waitedMs: 90_000, waits: 2, open: true },
+      { sessionId: "claude-code:2", name: "project-2", waitedMs: 30_000, waits: 1, open: false },
+    ],
+    sessionCount: 2,
+  };
+  return {
+    at: T,
+    today: period,
+    sevenDays: { ...period, days: [day, { ...day, day: "2023-11-13" }] },
+    since: { at: T - 3_600_000, by: "started" },
+    where: "disk",
+  };
+}
+
+test("an answer of the waits is read as it was sent", () => {
+  const sent = waitsAnswer();
+  expect(readWaits(sent)).toEqual(sent);
+});
+
+test("in an answer of the waits, a day or a session that cannot be read is left out, and a broken answer is none", () => {
+  const sent = waitsAnswer();
+  const read = readWaits({
+    ...sent,
+    today: {
+      ...sent.today,
+      // Open is part of what was waited, and never more.
+      openMs: 999_999,
+      days: [
+        ...sent.today.days,
+        { day: "today", from: T, to: T },
+        { ...sent.today.days[0], waits: -1 },
+      ],
+      sessions: [
+        ...sent.today.sessions,
+        { sessionId: "claude-code:1", name: "again", waitedMs: 1, waits: 1 },
+        { name: "no id", waitedMs: 1, waits: 1 },
+        { sessionId: "claude-code:3", name: "x".repeat(500), waitedMs: 1, waits: 1, open: "yes" },
+      ],
+    },
+  });
+  expect(read?.today.openMs).toBe(120_000);
+  expect(read?.today.days).toHaveLength(1);
+  expect(read?.today.sessions.map((session) => [session.name, session.open])).toEqual([
+    ["demo-project", true],
+    ["project-2", false],
+    ["claude-code:3", false],
+  ]);
+  expect(read?.today.sessionCount).toBe(3);
+
+  expect(readWaits({ ...sent, where: "cloud" })).toBeNull();
+  expect(readWaits({ ...sent, since: undefined })).toBeNull();
+  expect(readWaits({ ...sent, today: { ...sent.today, waitedMs: "a lot" } })).toBeNull();
+  expect(readWaits({ ...sent, sevenDays: null })).toBeNull();
+  expect(readWaits("<!doctype html>")).toBeNull();
 });

@@ -20,7 +20,7 @@ The header over each view says how many sessions are being watched and, in a wid
 
 ### Overview
 
-The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board), and any session, in it or in the Needs you panel, can be opened to see its [details](#a-sessions-details).
+The Overview has six parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both, with Waits under it. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board), and any session, in it or in the Needs you panel, can be opened to see its [details](#a-sessions-details).
 
 #### Needs you
 
@@ -168,6 +168,12 @@ When you come back to the tab after it was in the background or minimised, or op
 #### Timeline
 
 The Timeline draws each session's status over the last hour, one row for each session. Hatched stretches are time Agent Lookout did not measure, such as the time before it started or while it was stopped. The legend at the top of the card names each mark.
+
+#### Waits
+
+Waits says how long sessions waited on you today and over the last 7 days, which are today and the six days before it, so you can see whether waiting on you is getting better or worse, and which sessions wait the longest. Each figure gives how many waits it took. By day has a bar for each of the 7 days, oldest first, with how long sessions waited that day and how much of it Agent Lookout measured. A day it did not measure at all is hatched, with a dash. Longest waits lists the five sessions that waited longest, with how many times each waited and whether it is waiting now, today or over the 7 days, by the switch beside it.
+
+Waits counts only the time Agent Lookout was running, from the [history](#history) it keeps, and the line under the figures says how much of today and of the 7 days that was. Time it was stopped, the computer was asleep, or a source did not answer is left out, and a wait that went on across it counts for the time either side and is still one wait. A wait already under way when Agent Lookout started counts from when it started, so it can be shorter here than in the Needs you panel, which shows how long the session has waited in all. When two sessions wait at once, each one's wait counts, so two waiting for a minute is two minutes. With `AGENT_LOOKOUT_HISTORY=off` it covers only the time since Agent Lookout started, and says so. Only Claude Code sessions and sessions from a status file can be seen waiting, so a Codex session never counts. A wait that is still open is amber at the end of today's bar, as in the Last hour chart, and goes on second by second. The page asks for the totals every 30 seconds, and at once when a wait opens or ends or you come back to the page, and they are worked out on this computer and sent nowhere.
 
 ### Sources
 
@@ -864,7 +870,7 @@ Codex sessions and sessions from status files have no Jump button. Nor do Claude
 
 Email and a webhook are the two ways it can tell you of a session away from this computer, and each sends to one address. A post is one line of text, with no buttons, and nothing can be answered from it. An email or a post that could not be sent is not tried again. The events are chosen when Agent Lookout starts, with `AGENT_LOOKOUT_EMAIL_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_EVENTS`, and not in Settings.
 
-The history is kept for 8 days, but the charts show at most the last six hours of it, and the Events log its newest 200 events.
+The history is kept for 8 days, but the charts show at most the last six hours of it, the Events log its newest 200 events, and Waits the last 7 days.
 
 A repository reached through a symbolic link by one session and by its real path from another is two groups of one name. A session's branch shows in the Sessions list, on its board card, in the Needs you panel, in the search and in the answers of `agent-lookout mcp`, and nowhere else: not in the Timeline, the Events log, a notification, an email, a webhook post or `agent-lookout status`. A repository in your home folder itself, as some people keep their settings in, is not looked in, so a session in a folder under it that is in no other repository shows no branch.
 

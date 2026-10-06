@@ -1,5 +1,6 @@
 import type { HistoryRestart } from "../core/api.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
+import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
@@ -43,6 +44,7 @@ import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts"
 import { createTabFinder } from "./terminal/tabFinder.ts";
 import { createPaneFinder } from "./tmux/paneFinder.ts";
 import { createTmuxRunner, type RunTmux } from "./tmux/program.ts";
+import { createWaitLedger, ledgerEventStore, ledgerHistoryStore } from "./waits/waitLedger.ts";
 import {
   createWebhookNotifications,
   webhookOffStatus,
@@ -187,8 +189,18 @@ export function createCollector(options: CollectorOptions): Collector {
         warn,
       })
     : null;
-  const events = keeper ? keptEventStore(memoryEvents, keeper) : memoryEvents;
-  const history = keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory;
+  // What `GET /api/waits` is worked out from: the waits and the stretches
+  // measured over nine days, further back than the stores hold. It takes what
+  // the stores take, and what the history on disk held as it is read back.
+  const ledger = createWaitLedger();
+  const events = ledgerEventStore(
+    keeper ? keptEventStore(memoryEvents, keeper) : memoryEvents,
+    ledger,
+  );
+  const history = ledgerHistoryStore(
+    keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory,
+    ledger,
+  );
   // The panes the Claude Code adapter finds are the ones the jump route selects,
   // so the two share one finder and one way of running tmux.
   const tmux = options.tmux ?? createTmuxRunner({ env });
@@ -291,6 +303,7 @@ export function createCollector(options: CollectorOptions): Collector {
       forget: () => {
         memoryEvents.clear();
         memoryHistory.clear();
+        ledger.clear();
         restarts = [];
         lastKept = null;
       },
@@ -300,6 +313,16 @@ export function createCollector(options: CollectorOptions): Collector {
       kept: keeper?.status() ?? memoryOnlyStatus(),
       restarts: restartsHeld(),
     }),
+    waits: () => {
+      const since = keeper?.since() ?? { at: poller.startedAt, by: "started" as const };
+      return ledger.answer({
+        now: now(),
+        snapshot: poller.getSnapshot(),
+        since,
+        runStarts: [since.at, ...restartsHeld().map((restart) => restart.at), poller.startedAt],
+        where: keeper ? "disk" : "memory",
+      });
+    },
     ready: () => restoring,
     now,
   });
@@ -325,6 +348,7 @@ export function createCollector(options: CollectorOptions): Collector {
   }
 
   function begin(): void {
+    ledger.beginRun();
     keeper?.start();
     poller.start();
   }
@@ -345,9 +369,12 @@ export function createCollector(options: CollectorOptions): Collector {
           for (const point of kept.points) memoryHistory.add(point);
           restarts = kept.restarts;
           lastKept = kept.lastAt;
+          ledger.restore(kept.whole);
           // What each session was last doing, so that what changed while
-          // Agent Lookout was stopped is recorded at the first poll.
-          poller.resume(kept.events);
+          // Agent Lookout was stopped is recorded at the first poll. A session
+          // whose wait began before the newest events held is among them, so
+          // its wait is ended by the first poll that finds it answered or gone.
+          poller.resume([...unendedWaits(kept.whole.waitEvents), ...kept.events]);
           if (running) begin();
         })
         .catch(() => {

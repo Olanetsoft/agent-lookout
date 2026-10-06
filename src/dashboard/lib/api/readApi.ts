@@ -7,6 +7,11 @@ import {
   type HistoryRestart,
   type HistorySince,
   type SendResult,
+  type SessionWaitTotal,
+  type WaitDay,
+  type WaitPeriod,
+  type WaitsResponse,
+  type WaitTotal,
   type WebhookStatusResponse,
 } from "@core/api";
 import {
@@ -398,6 +403,90 @@ export function readHistory(data: unknown): HistoryResponse | null {
     ...(kept !== null && { kept }),
     ...(restarts.length > 0 && { restarts }),
   };
+}
+
+/** The most days and sessions read from one period. The collector sends seven days and ten sessions. */
+const MAX_WAIT_ITEMS = 50;
+
+/** How long was waited in a stretch, or null unless every figure is a count of milliseconds or of waits. */
+function readWaitTotal(value: Record<string, unknown>): WaitTotal | null {
+  const waitedMs = amount(value.waitedMs);
+  const openMs = amount(value.openMs);
+  const waits = amount(value.waits);
+  const measuredMs = amount(value.measuredMs);
+  if (waitedMs === null || openMs === null || waits === null || measuredMs === null) return null;
+  // The part still open is part of the whole.
+  return { waitedMs, openMs: Math.min(openMs, waitedMs), waits, measuredMs };
+}
+
+function readWaitDay(value: unknown): WaitDay | null {
+  if (!isRecord(value)) return null;
+  const day = text(value.day);
+  const from = number(value.from);
+  const to = number(value.to);
+  const total = readWaitTotal(value);
+  if (day === null || !/^\d{4}-\d{2}-\d{2}$/.test(day) || from === null || to === null) return null;
+  return total && to >= from ? { day, from, to, ...total } : null;
+}
+
+function readSessionWait(value: unknown): SessionWaitTotal | null {
+  if (!isRecord(value)) return null;
+  const sessionId = text(value.sessionId);
+  const waitedMs = amount(value.waitedMs);
+  const waits = amount(value.waits);
+  if (sessionId === null || waitedMs === null || waits === null) return null;
+  const name = text(value.name);
+  return {
+    sessionId,
+    name: name !== null && Array.from(name).length <= MAX_NAME_LENGTH ? name : sessionId,
+    waitedMs,
+    waits,
+    open: value.open === true,
+  };
+}
+
+function readWaitPeriod(value: unknown): WaitPeriod | null {
+  if (!isRecord(value) || !Array.isArray(value.days) || !Array.isArray(value.sessions)) return null;
+  const from = number(value.from);
+  const to = number(value.to);
+  const total = readWaitTotal(value);
+  const sessionCount = amount(value.sessionCount);
+  if (from === null || to === null || to < from || total === null || sessionCount === null) {
+    return null;
+  }
+  const days: WaitDay[] = [];
+  for (const item of value.days.slice(0, MAX_WAIT_ITEMS)) {
+    const day = readWaitDay(item);
+    if (day) days.push(day);
+  }
+  const sessions: SessionWaitTotal[] = [];
+  const seen = new Set<string>();
+  for (const item of value.sessions.slice(0, MAX_WAIT_ITEMS)) {
+    const session = readSessionWait(item);
+    if (!session || seen.has(session.sessionId)) continue;
+    seen.add(session.sessionId);
+    sessions.push(session);
+  }
+  return {
+    from,
+    to,
+    ...total,
+    days: days.sort((a, b) => a.from - b.from),
+    sessions: sessions.sort((a, b) => b.waitedMs - a.waitedMs),
+    sessionCount: Math.max(sessionCount, sessions.length),
+  };
+}
+
+/** The answer of `/api/waits`, or null when it is not one: both periods, where the history begins and where it is kept. */
+export function readWaits(data: unknown): WaitsResponse | null {
+  if (!isRecord(data)) return null;
+  const at = number(data.at);
+  const today = readWaitPeriod(data.today);
+  const sevenDays = readWaitPeriod(data.sevenDays);
+  const since = readSince(data.since);
+  const where = oneOf(["disk", "memory"] as const, data.where);
+  if (at === null || !today || !sevenDays || !since || !where) return null;
+  return { at, today, sevenDays, since, where };
 }
 
 /** The longest reason or problem the page shows. The collector's own are far shorter. */

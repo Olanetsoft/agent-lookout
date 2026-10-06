@@ -119,6 +119,79 @@ export interface ClearHistoryRefusal extends ErrorResponse {
   reason: ClearHistoryFailure;
 }
 
+/**
+ * `GET /api/waits`: how long sessions waited on the person today and over the
+ * last seven days, worked out from the whole of the history kept, and how much
+ * of each Agent Lookout measured. Only time it measured is counted: while it
+ * was running and every source it reads answered. It only reads.
+ */
+export interface WaitsResponse {
+  /** When it was worked out, by the collector's clock. Both periods end here. */
+  at: number;
+  /** From local midnight. */
+  today: WaitPeriod;
+  /** Today and the six local days before it, from midnight. */
+  sevenDays: WaitPeriod;
+  /** Where the history held begins. Nothing before it is counted. */
+  since: HistorySince;
+  /**
+   * Where the history is kept. In memory only, with `AGENT_LOOKOUT_HISTORY=off`,
+   * it begins when this run of Agent Lookout started.
+   */
+  where: HistoryKept["where"];
+}
+
+/** How long sessions waited in a stretch of time, and how much of it was measured. */
+export interface WaitTotal {
+  /**
+   * How long sessions waited on the person, in milliseconds: each session's
+   * waits added up, so two waiting at once for a minute are two minutes. Only
+   * time that was measured counts.
+   */
+  waitedMs: number;
+  /** The part of it that is a wait still open: a session that needs the person now. */
+  openMs: number;
+  /** How many waits had time in it. A wait that runs on across midnight, or across time not measured, is one. */
+  waits: number;
+  /** How much of the stretch Agent Lookout measured. */
+  measuredMs: number;
+}
+
+/** One local day of a period. */
+export interface WaitDay extends WaitTotal {
+  /** The local day, as `2026-10-06`. */
+  day: string;
+  /** Its local midnight. */
+  from: number;
+  /** The next midnight, or the present for today. */
+  to: number;
+}
+
+/** A period: today, or the last seven days. */
+export interface WaitPeriod extends WaitTotal {
+  from: number;
+  /** The present. */
+  to: number;
+  /** Each local day in it, oldest first: one for today, seven for the last seven days. */
+  days: WaitDay[];
+  /** The sessions that waited longest in it, longest first: ten at most. */
+  sessions: SessionWaitTotal[];
+  /** How many sessions waited in it in all. */
+  sessionCount: number;
+}
+
+/** One session's waits in a period. */
+export interface SessionWaitTotal {
+  sessionId: string;
+  /** Its name, as it was last seen. */
+  name: string;
+  waitedMs: number;
+  /** How many times it waited. */
+  waits: number;
+  /** Whether one of its waits is still open: it needs the person now. */
+  open: boolean;
+}
+
 /** The body of every response that is not a 200. */
 export interface ErrorResponse {
   error: string;

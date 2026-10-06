@@ -24,6 +24,7 @@ import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout
 import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/theme";
 import type { ViewId } from "@dashboard/lib/shell/view";
 import { makeSession } from "@tests/fixtures/session";
+import { quietWaits } from "@tests/fixtures/waits";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { preferColorScheme, preferReducedMotion } from "@tests/support/browser/media";
@@ -243,9 +244,14 @@ beforeEach(async () => {
   // The app of the test before was still on the page while that test tidied up,
   // and may have read the notification setting again after it was cleared.
   resetNotificationSettingForTests();
-  // The app tells its server when the notification setting changes. No test
-  // here has a server, so that goes to a stand-in unless a test puts its own in.
-  setApiHost(async () => new Response("{}"));
+  // The app tells its server when the notification setting changes, and the
+  // Waits card asks it for its totals. No test here has a server, so these go
+  // to a stand-in unless a test puts its own in: no session waited this week.
+  setApiHost(async (path) =>
+    path === "/api/waits"
+      ? new Response(JSON.stringify(quietWaits(Date.now())))
+      : new Response("{}"),
+  );
 });
 
 afterEach(() => {

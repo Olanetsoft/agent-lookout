@@ -24,7 +24,7 @@ It finds Claude Code and Codex sessions with no setup, and the sessions of any o
 | [`agent-lookout mcp`](docs/GUIDE.md#for-your-agents)              | Lets an AI agent ask which sessions need you. Its tools only read.                                                                                                                                                  |
 | [Status files](docs/GUIDE.md#your-own-agents)                     | Show any other agent, including one you wrote, when it writes one small JSON file for each session.                                                                                                                 |
 
-The Overview also has a chart of the last hour, a log of events and a timeline. What they show is kept on this computer for 8 days, so a restart does not empty them. Press `/` to search every session. Sources says what Agent Lookout reads for each agent. [The screen](docs/GUIDE.md#the-screen) covers each part.
+The Overview also has a chart of the last hour, a log of events, a timeline, and how long sessions waited on you today and over the last 7 days, day by day, with the sessions that waited longest. What they show is kept on this computer for 8 days, so a restart does not empty them. Press `/` to search every session. Sources says what Agent Lookout reads for each agent. [The screen](docs/GUIDE.md#the-screen) covers each part.
 
 ## Supported agents and systems
 

@@ -7,6 +7,8 @@ import type {
   HistorySince,
 } from "../../core/api.ts";
 import type { HistoryPoint, SessionEvent } from "../../core/sessions/session.ts";
+import { pollRuns, type Span } from "../../core/waits/measured.ts";
+import { isWaitEvent } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
 import { nodeHistoryFs, type HistoryFs } from "./historyFiles.ts";
@@ -96,6 +98,15 @@ export interface RestoredHistory {
   restarts: HistoryRestart[];
   /** The newest moment the files hold, or null when they hold nothing. */
   lastAt: number | null;
+  /**
+   * All that the files hold, compactly, for what reads further back than the
+   * stores: every event into or out of needs-you, and the stretches the
+   * points cover, broken at each start. `GET /api/waits` is worked out from it.
+   */
+  whole: {
+    waitEvents: SessionEvent[];
+    measured: Span[];
+  };
 }
 
 /** How much of what is restored goes into memory: what the stores hold. */
@@ -342,21 +353,22 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       }
     }
 
-    const eventList = newest(
-      [...events.values()].sort((a, b) => a.at - b.at),
-      limits.events,
-    );
+    const allEvents = [...events.values()].sort((a, b) => a.at - b.at);
     points.sort((a, b) => a.at - b.at);
-    const pointList = newest(
-      points.filter((point, index) => point.at !== points[index - 1]?.at),
-      limits.points,
-    );
+    const allPoints = points.filter((point, index) => point.at !== points[index - 1]?.at);
     return {
       history: {
-        events: eventList,
-        points: pointList,
+        events: newest(allEvents, limits.events),
+        points: newest(allPoints, limits.points),
         restarts: newest(restartsAmong(starts, times), MAX_RESTARTS),
         lastAt,
+        whole: {
+          waitEvents: allEvents.filter(isWaitEvent),
+          measured: pollRuns(
+            allPoints.map((point) => point.at),
+            starts,
+          ),
+        },
       },
       found,
       notFiles,
@@ -611,7 +623,13 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
 
   return {
     async restore(limits) {
-      const none: RestoredHistory = { events: [], points: [], restarts: [], lastAt: null };
+      const none: RestoredHistory = {
+        events: [],
+        points: [],
+        restarts: [],
+        lastAt: null,
+        whole: { waitEvents: [], measured: [] },
+      };
       if (restored) return none;
       restored = true;
       let deadline: ReturnType<typeof setTimeout> | undefined;

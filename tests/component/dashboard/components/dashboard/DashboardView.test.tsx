@@ -1,12 +1,14 @@
-import { afterEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
+import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
+import { quietWaits } from "@tests/fixtures/waits";
 import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
@@ -118,23 +120,41 @@ function overlaps(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
+beforeEach(() => {
+  // The Waits card asks the app for its totals. Here no session waited this week.
+  setApiHost(async (path) =>
+    path === "/api/waits" ? new Response(JSON.stringify(quietWaits(NOW))) : new Response("{}"),
+  );
+});
+
 afterEach(async () => {
+  setApiHost();
   document.documentElement.removeAttribute("data-theme");
   localStorage.removeItem(SESSIONS_LAYOUT_STORAGE_KEY);
   await page.viewport(414, 896);
 });
 
-test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessions and Events, then the timeline across both, 16px apart", async () => {
+/** Once the Waits card has its answer, so what the page shows has settled. */
+async function waitsRead(screen: { container: HTMLElement }) {
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[data-part="waits"]')).not.toBeNull(),
+  );
+}
+
+test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessions and Events, then the timeline and Waits across both, 16px apart", async () => {
   await page.viewport(1440, 1000);
   const screen = await renderView(state({}));
+  await waitsRead(screen);
   const grid = slot(screen.container, "overview-grid");
-  const [hero, lastHour, sessions, events, timeline] = [
+  const [hero, lastHour, sessions, events, timeline, waits] = [
     slot(screen.container, "hero"),
     screen.getByRole("region", { name: "Last hour" }).element(),
     screen.getByRole("region", { name: /^Sessions/ }).element(),
     screen.getByRole("region", { name: "Events" }).element(),
     screen.getByRole("region", { name: "Timeline" }).element(),
+    screen.getByRole("region", { name: "Waits", exact: true }).element(),
   ].map((element) => element as HTMLElement) as [
+    HTMLElement,
     HTMLElement,
     HTMLElement,
     HTMLElement,
@@ -143,7 +163,7 @@ test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessio
   ];
 
   // In the document, and so for the keyboard and a screen reader, in that order.
-  const order = [hero, lastHour, sessions, events, timeline];
+  const order = [hero, lastHour, sessions, events, timeline, waits];
   for (let index = 1; index < order.length; index += 1) {
     expect(
       order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -156,7 +176,14 @@ test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessio
   expect(getComputedStyle(grid).columnGap).toBe("16px");
   expect(getComputedStyle(grid).rowGap).toBe("16px");
 
-  const [h, l, s, e, t] = order.map(rectOf) as [DOMRect, DOMRect, DOMRect, DOMRect, DOMRect];
+  const [h, l, s, e, t, w] = order.map(rectOf) as [
+    DOMRect,
+    DOMRect,
+    DOMRect,
+    DOMRect,
+    DOMRect,
+    DOMRect,
+  ];
   // The hero at the top left, Last hour beside it.
   expect(h.top).toBe(l.top);
   expect(l.left - h.right).toBe(16);
@@ -171,6 +198,10 @@ test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessio
   expect(t.top - Math.max(s.bottom, e.bottom)).toBe(16);
   expect(t.left).toBe(h.left);
   expect(t.right).toBe(l.right);
+  // Waits, the review of the day and the week, last and across both.
+  expect(w.top - t.bottom).toBe(16);
+  expect(w.left).toBe(h.left);
+  expect(w.right).toBe(l.right);
 
   // One timeline row per session, in the order of the Sessions list with the
   // waiting ones first: the hero's sessions, then the table's.
@@ -185,16 +216,18 @@ test("wide, the hero and Last hour share the first row at 1.75 to 1, then Sessio
 });
 
 test.each([1180, 760, 375])(
-  "at %i pixels the layout is one column, hero first, then Last hour, Sessions, Events and the timeline, and nothing runs off the side",
+  "at %i pixels the layout is one column, hero first, then Last hour, Sessions, Events, the timeline and Waits, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 1000);
     const screen = await renderView(state({}));
+    await waitsRead(screen);
     const order = [
       slot(screen.container, "hero"),
       screen.getByRole("region", { name: "Last hour" }).element(),
       screen.getByRole("region", { name: /^Sessions/ }).element(),
       screen.getByRole("region", { name: "Events" }).element(),
       screen.getByRole("region", { name: "Timeline" }).element(),
+      screen.getByRole("region", { name: "Waits", exact: true }).element(),
     ].map(rectOf);
 
     expect(
@@ -311,8 +344,8 @@ test("before the first answer the layout holds its place with spinners, no numbe
   const screen = await renderView(LOADING);
 
   await expect.element(screen.getByText("Reading sessions").first()).toBeVisible();
-  // The hero, Last hour, Sessions, Events and the timeline each hold their place.
-  expect(screen.container.querySelectorAll('[data-slot="loading"]')).toHaveLength(5);
+  // The hero, Last hour, Sessions, Events, the timeline and Waits each hold their place.
+  expect(screen.container.querySelectorAll('[data-slot="loading"]')).toHaveLength(6);
   expect(screen.container.querySelectorAll('[data-part="placeholder"]')).toHaveLength(4);
   expect(screen.container.querySelector('[data-part="value"]')).toBeNull();
   // Waiting is not a failure and not an empty result, and nothing is lit.
@@ -556,6 +589,8 @@ test.each(["dark", "light"] as const)(
     const signatures: string[] = [];
     for (const [name, collector] of Object.entries(states)) {
       await screen.rerender(<DashboardView state={collector} now={NOW} onRetry={() => {}} />);
+      // With an answer in, the Waits card asks for its own, which comes at once here.
+      if (collector.snapshot) await waitsRead(screen);
       const has = (selector: string) => screen.container.querySelector(selector) !== null;
       signatures.push(
         [

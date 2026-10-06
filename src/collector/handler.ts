@@ -13,6 +13,7 @@ import {
   type HistoryRestart,
   type HistorySince,
   type NotificationsSaid,
+  type WaitsResponse,
   type WebhookStatusResponse,
 } from "../core/api.ts";
 import { DEFAULT_HISTORY_WINDOW_MS } from "../core/history.ts";
@@ -85,6 +86,12 @@ export interface ApiHandlerOptions {
     kept: HistoryKept;
     restarts?: HistoryRestart[];
   };
+  /**
+   * What `GET /api/waits` answers: how long sessions waited on the person
+   * today and over the last seven days, from the whole of the history kept.
+   * Left out, there is no such route.
+   */
+  waits?: () => WaitsResponse;
   /**
    * While the history kept on disk is being read back, as the collector
    * starts: what to wait for before answering, so no page is told of an empty
@@ -395,6 +402,14 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
           // A restart before where the history now begins was cleared, or let go.
           restarts: (held?.restarts ?? []).filter((restart) => restart.at > since.at),
         } satisfies HistoryResponse);
+        return;
+      }
+      case "/api/waits": {
+        if (options.waits) {
+          send(res, 200, options.waits() satisfies WaitsResponse);
+          return;
+        }
+        fail(res, 404, "There is nothing at that address.");
         return;
       }
       default: {

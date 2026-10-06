@@ -49,6 +49,7 @@ Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control
 | `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first  |
 | `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                     |
 | `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                   |
+| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you              |
 | `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of two routes that act |
 | `POST /api/history/clear`          | `{ ok: true, clearedAt }`. The other route that acts                                   |
 
@@ -172,6 +173,65 @@ One point for each poll, oldest first, each `{ at, needsYou, working, idle, tota
 A poll adds no point when no source answered, or when a source that answered before did not. Two points further apart than a few polls had time between them that was not measured: the computer asleep, a source that stopped answering, or Agent Lookout not running. So had two points either side of a restart. The dashboard draws that time hatched.
 
 After a restart, the first poll that reads a source compares each session with the last event the history kept of it. A session whose status changed while Agent Lookout was stopped gets a `status-changed` event, one that ended an `ended` event, and one back after it ended an `appeared` event, all at that poll. A session the history kept no event of is taken as it is found.
+
+### `GET /api/waits`
+
+How long sessions waited on you today, from local midnight, and over the last seven days, which are today and the six days before it, from midnight. It is worked out from the whole of the history kept, eight days of it, and not only the six hours `/api/history` serves, and counts only the time Agent Lookout measured: while it was running and every source it reads answered. Days are this computer's own, by its clock and time zone.
+
+```json
+{
+  "at": 1791298800000,
+  "today": {
+    "from": 1791244800000,
+    "to": 1791298800000,
+    "waitedMs": 2100000,
+    "openMs": 298000,
+    "waits": 3,
+    "measuredMs": 8998000,
+    "days": [
+      {
+        "day": "2026-10-06",
+        "from": 1791244800000,
+        "to": 1791298800000,
+        "waitedMs": 2100000,
+        "openMs": 298000,
+        "waits": 3,
+        "measuredMs": 8998000
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "claude-code:00000000-0000-4000-8000-000000000001",
+        "name": "demo-project",
+        "waitedMs": 1200000,
+        "waits": 1,
+        "open": false
+      }
+    ],
+    "sessionCount": 3
+  },
+  "sevenDays": { "from": 1790726400000, "to": 1791298800000, "days": [], "sessions": [] },
+  "since": { "at": 1791018000000, "by": "started" },
+  "where": "disk"
+}
+```
+
+`today` and `sevenDays` have the same fields. `sevenDays` above is cut short: it has its own totals, seven `days`, oldest first, and its own `sessions`.
+
+| Field          | Holds                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `at`           | When it was worked out, by the server's clock. Both periods end here                                                                                        |
+| `waitedMs`     | How long sessions waited on you. Each session's waits are added up, so two waiting at once for a minute are two minutes. Only time that was measured counts |
+| `openMs`       | The part of `waitedMs` that is a wait still open: a session that needs you now                                                                              |
+| `waits`        | How many waits had time in the period. A wait that runs on across midnight, or across time that was not measured, is one wait                               |
+| `measuredMs`   | How much of the period Agent Lookout measured. The rest it was not running, the computer was asleep, a source did not answer, or it came before `since`     |
+| `days`         | Each local day in the period, oldest first, with the same four figures: `day` as `2026-10-06`, `from` its midnight and `to` the next, or `at` for today     |
+| `sessions`     | The ten sessions that waited longest, longest first: `sessionId`, `name` as it was last seen, `waitedMs`, `waits`, and `open`, true while it needs you      |
+| `sessionCount` | How many sessions waited in the period in all                                                                                                               |
+| `since`        | Where the history held begins, as in `/api/history`. Nothing before it is counted                                                                           |
+| `where`        | `disk`, or `memory` with `AGENT_LOOKOUT_HISTORY=off`, when the history begins as this run of Agent Lookout started, so only the time since then counts      |
+
+A wait begins with a move into `needs-you` and ends with the session's next move out of it, or its end. A wait already under way when Agent Lookout found the session, as when it started while the session waited, is counted from when that run of Agent Lookout started. A wait the history holds no end for, of a session that does not need you now, ended while Agent Lookout was stopped, so it is counted up to the start of this run and no further. Only Claude Code sessions and sessions from a status file can be seen waiting: a Codex session never needs you, so it is never in this answer.
 
 ### `GET /api/email` and `GET /api/webhook`
 

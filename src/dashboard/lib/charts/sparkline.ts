@@ -10,6 +10,8 @@
  * the next sample says otherwise.
  */
 
+import { POLL_GAP_MS } from "@core/waits/measured";
+
 /** A span narrower than this, in drawing units, is not worth drawing. */
 const MIN_SPAN = 0.75;
 
@@ -64,8 +66,8 @@ export interface SparkGeometry {
   runs: StepRun[];
 }
 
-/** Three missed polls, with a little slack. */
-export const DEFAULT_GAP_MS = 8_000;
+/** Three missed polls, with a little slack: the same breaks the collector counts waits across. */
+export const DEFAULT_GAP_MS = POLL_GAP_MS;
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;

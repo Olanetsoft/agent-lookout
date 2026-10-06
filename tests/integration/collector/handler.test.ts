@@ -12,6 +12,7 @@ import {
   NOTIFICATIONS_HEADER,
   type EventsResponse,
   type HistoryResponse,
+  type WaitsResponse,
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
@@ -243,6 +244,50 @@ describe("routes", () => {
       [20 * 60_000, 0, 0],
     ]);
     expect(wide.startedAt).toBe(T0);
+  });
+
+  test("/api/waits totals how long sessions waited, here since Agent Lookout started, as history is kept in memory only", async () => {
+    const server = await serve();
+    const working = makeSession({ status: "working" });
+    const waiting = makeSession({ status: "needs-you", waitingReason: "permission" });
+    await server.poll(0, [working]);
+    for (let at = 2_000; at <= 60_000; at += 2_000) await server.poll(at, [waiting]);
+    await server.poll(62_000, [working]);
+    for (let at = 64_000; at <= 70_000; at += 2_000) await server.poll(at, [working]);
+
+    const response = await request(server.port, "/api/waits");
+    expect(response.status).toBe(200);
+    const waits = response.json<WaitsResponse>();
+    expect(waits).toMatchObject({
+      at: T0 + 70_000,
+      since: { at: T0, by: "started" },
+      where: "memory",
+    });
+    for (const period of [waits.today, waits.sevenDays]) {
+      expect(period).toMatchObject({ waitedMs: 60_000, openMs: 0, waits: 1, sessionCount: 1 });
+      expect(period.sessions).toEqual([
+        { sessionId: waiting.id, name: "demo-project", waitedMs: 60_000, waits: 1, open: false },
+      ]);
+    }
+    expect(waits.sevenDays.days).toHaveLength(7);
+
+    // It only reads.
+    const posted = await request(server.port, "/api/waits", { method: "POST" });
+    expect([posted.status, posted.headers.allow]).toEqual([405, "GET"]);
+  });
+
+  test("a handler built without the waits has no such route", async () => {
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+    });
+    const port = await listen(createServer(handler));
+    expect((await request(port, "/api/waits")).status).toBe(404);
   });
 
   test("/api/history clamps a window longer than the buffer", async () => {
