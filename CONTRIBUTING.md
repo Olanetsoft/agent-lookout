@@ -87,35 +87,54 @@ node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false ag
 
 ## Publishing
 
-The maintainer publishes. The README, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is written before it is published, not after.
+The maintainer publishes. A version tag starts `.github/workflows/release-npm.yml`, which publishes the package to npm from GitHub Actions once he approves it, with provenance: the package's page on npmjs.com shows the commit and the workflow run each version was built from. No npm token exists for it, in the repository or anywhere else. The tag is `v` and the version, such as `v0.2.3`, and the version only ever changes in its last number.
 
-1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date.
-2. For the first version on npm, add the `npx agent-lookout` way to the README's Install, and in `docs/GUIDE.md`, under [Start it with one command](docs/GUIDE.md#start-it-with-one-command), say that Agent Lookout is on npm in place of "Once Agent Lookout is on npm" and "Until then".
-3. Check that `npm run check` passes, then publish from the working tree with those changes in it, before they are committed:
+The README, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
+
+1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Commit, push, and wait for CI to pass for that commit.
+2. Tag the commit and push the tag:
 
    ```sh
-   npm pack --dry-run
-   npm login
-   npm publish
+   git tag v0.2.3
+   git push origin v0.2.3
    ```
 
-4. Commit the changes once `npm publish` has succeeded. If it failed, nothing was published.
+3. The workflow runs for the tag, and its first three jobs have read access to the repository only. It stops unless the tag is `v` and the version in `package.json`, and stops with a notice, publishing nothing, when that version is on npm already. It runs `npm ci`, the layout check, the typecheck, the linter and the unit and integration tests (the component tests run in CI for the same commit before the tag is pushed). A job of its own packs the tarball, once, checks it as the CI job `package` does, and hands it on.
+4. The last job, `publish`, runs in the environment `npm-publish`, so it waits until the maintainer approves it: open the run from the Actions tab, choose Review deployments, tick `npm-publish` and choose Approve and deploy. It checks out nothing and installs nothing. It checks that the tarball is the one packed and checked, publishes it with `npm publish --provenance`, and checks that npm has that tarball, with provenance. It is the only job that can ask GitHub for an OIDC token, and npm accepts that token in place of one of its own because the package's trusted publisher names this repository, this workflow and this environment.
 
-`npm publish` runs `prepack`, which builds the dashboard and the bundle afresh, then uploads the tarball, made from the files on disk. npm asks for a one-time password when the account has two-factor authentication on. `publishConfig` in `package.json` makes the package public.
+The same tag starts the Mac app's release, below. To run the npm release again for a tag already pushed, as after a failure, start npm release by hand from the Actions tab: choose the tag under Use workflow from, and enter it as the tag. A run for a branch stops, because the provenance names the ref and the commit a run is for.
+
+### Setting up trusted publishing
+
+Two steps, done once, that only the maintainer can do, in this order. GitHub makes an environment that a workflow names when there is none, with no protection rules, so the environment and its reviewer come first. The `publish` job also refuses to run in an environment with no required reviewer.
+
+1. In the repository's Settings, under Environments, choose New environment, name it `npm-publish` and choose Configure environment. If `npm-publish` is listed already, because the workflow ran before this step, open it instead of choosing New environment. Tick Required reviewers, add yourself and choose Save protection rules. Leave Prevent self-review off: you push the tag, and with it on you could not approve the run.
+2. On npmjs.com, in the package's Settings, under Trusted Publisher, choose GitHub Actions and fill in Organization or user `Olanetsoft`, Repository `agent-lookout`, Workflow filename `release-npm.yml` and Environment name `npm-publish`. Under Allowed actions, allow `npm publish`; `npm stage publish` is always allowed. npm checks none of these fields when you save them, and each is case-sensitive. A new trusted publisher expires unless a version is published with it within 2 days, and once expired it can be neither used nor edited, so push the tag and approve the run within 2 days of adding it. If it expires, delete it on npmjs.com and add it again.
+
+Two more settings on the environment's page are optional. Under Deployment branches and tags, choose Selected branches and tags and add a rule of type Tag for `v*`: then only a run for a tag can enter `npm-publish`, which GitHub checks as well as the workflow. Allow administrators to bypass configured protection rules is on by default, and lets an administrator, which you are, deploy without the review; untick it if every run should wait for one.
+
+npm also checks that `repository.url` in `package.json` names this repository.
+
+### By hand, when the workflow cannot
+
+From a clean checkout of the tag, with a version that is not on npm yet:
+
+```sh
+git checkout v0.2.3
+npm ci
+npm pack
+npm login
+npm publish agent-lookout-0.2.3.tgz
+```
+
+Check the tarball before you publish it, as [The npm package](#the-npm-package) describes. npm asks for a one-time password when the account has two-factor authentication on, and `publishConfig` in `package.json` makes the package public. A version published this way has no provenance, which only a run in GitHub Actions can make. A run of the workflow for its tag afterwards publishes nothing.
 
 ### The Mac app
 
-The release workflow, `.github/workflows/release-mac.yml`, attaches the Mac app to the release. The version only ever changes in its last number, and the tag is `v` and the version, such as `v0.2.1`.
+The release workflow, `.github/workflows/release-mac.yml`, attaches the Mac app to the release. The tag pushed for the npm release starts it too.
 
-1. Once the version is published and its changes are committed, tag that commit and push the tag:
-
-   ```sh
-   git tag v0.2.1
-   git push origin v0.2.1
-   ```
-
-2. The workflow runs on a Mac runner for the tag. It stops unless the tag is `v` and the version in `package.json`. It runs `npm ci`, the layout check, the typecheck, the linter and the unit and integration tests (the component tests run in CI on Linux for the same commit before the tag is pushed), and builds the app with `npm run dist:mac`, signed ad hoc, with read access to the repository only. A second job, the only one with `contents: write`, takes the two disk images, the two zips and `latest-mac.yml` from the first and attaches them to the tag's release with `gh release upload --clobber`, making the release as a draft first if there is none. It runs nothing else, so no dependency's install script, test or build step is ever in reach of a token that can change a release. The workflow uses only its own `GITHUB_TOKEN` and publishes nothing to npm.
-3. Write the release's notes on GitHub and publish it, if it is a draft. The apps already installed find it within a day, or at once with Check for Updates…: they read `latest-mac.yml` from the latest published release, and never see a draft or a prerelease.
+1. The workflow runs on a Mac runner for the tag. It stops unless the tag is `v` and the version in `package.json`. It runs `npm ci`, the layout check, the typecheck, the linter and the unit and integration tests (the component tests run in CI on Linux for the same commit before the tag is pushed), and builds the app with `npm run dist:mac`, signed ad hoc, with read access to the repository only. A second job, the only one with `contents: write`, takes the two disk images, the two zips and `latest-mac.yml` from the first and attaches them to the tag's release with `gh release upload --clobber`, making the release as a draft first if there is none. It runs nothing else, so no dependency's install script, test or build step is ever in reach of a token that can change a release. The workflow uses only its own `GITHUB_TOKEN` and publishes nothing to npm.
+2. Write the release's notes on GitHub and publish it, if it is a draft. The apps already installed find it within a day, or at once with Check for Updates…: they read `latest-mac.yml` from the latest published release, and never see a draft or a prerelease.
 
 To run it again for a tag already pushed, as after a failure, start it by hand from the Actions tab with that tag. It replaces the files of the same name. `latest-mac.yml` gives each file's size and SHA-512, and an app checks what it downloads against it, so never attach a file by hand that it does not name.
 

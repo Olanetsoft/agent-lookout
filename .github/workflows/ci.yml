@@ -136,6 +136,12 @@ jobs:
             echo "The package holds a source map."
             exit 1
           fi
+          for file in LICENSE dist/THIRD-PARTY-LICENSES.md; do
+            if [ "$(tar -xzOf "$RUNNER_TEMP"/agent-lookout-*.tgz "package/$file" | wc -c)" -eq 0 ]; then
+              echo "package/$file is missing or empty."
+              exit 1
+            fi
+          done
       - name: Install it into a folder of its own
         run: |
           mkdir "$RUNNER_TEMP/try"

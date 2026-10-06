@@ -1,0 +1,341 @@
+name: npm release
+
+# Publishes the npm package for a version tag, with provenance, so anyone can
+# check on npmjs.com which commit of this repository and which run built it.
+#
+# The maintainer pushes the tag, v and the version in package.json, such as
+# v0.2.3. This runs for it, and can be run again by hand from that tag. It
+# stops, publishing nothing, when the version is on npm already.
+#
+# No npm token exists for it. The publish job runs in the environment
+# npm-publish, so GitHub waits for the maintainer to approve it, and only that
+# job can ask GitHub for an OIDC token. npm trusts that token, in place of a
+# password or a token of its own, because the package's trusted publisher on
+# npmjs.com names this repository, this file and that environment.
+#
+# Four jobs, so nothing that installs or runs a dependency is ever in reach of
+# that token. The first checks the tag and asks npm whether the version is
+# there. The second runs the checks. The third packs the tarball once, checks
+# it as the CI job package does, and hands it on as an artifact. The fourth,
+# which checks out nothing and installs nothing, publishes that tarball.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to publish, such as v0.2.3. Choose the same tag under Use workflow from
+        required: true
+        type: string
+
+# One run for a tag at a time. A second waits for the first, rather than racing it to npm.
+concurrency:
+  group: release-npm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+# Nothing, unless a job says otherwise.
+permissions: {}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Read from here in every step, never written into a script.
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.npm.outputs.published }}
+    steps:
+      - name: The tag is v and a version
+        run: |
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The tag $TAG is not v followed by a version such as 0.2.3."
+            exit 1
+          fi
+
+      # The provenance names the ref and the commit this run is for, so they
+      # must be the tag's. Every job checks out this run's commit.
+      - name: The run is for the tag
+        run: |
+          if [ "$GITHUB_REF" != "refs/tags/$TAG" ]; then
+            echo "This run is for $GITHUB_REF. Start it from the tag: under Use workflow from, choose $TAG."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No cache: what builds a release is installed afresh.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: The tag is the version in package.json
+        id: version
+        run: |
+          name=$(node -p 'require("./package.json").name')
+          version=$(node -p 'require("./package.json").version')
+          if [ "$TAG" != "v$version" ]; then
+            echo "The tag is $TAG, and package.json says $version. Set the version, commit, and tag that commit v$version."
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # npm answers E404 for a version it does not have. Any other failure
+      # stops the run, since it says nothing either way.
+      - name: Whether the version is on npm
+        id: npm
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "$NAME@$VERSION" version > /dev/null 2> "$RUNNER_TEMP/view-error.txt"; then
+            echo "::notice title=Nothing to publish::$NAME $VERSION is on npm already, so this run publishes nothing."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif grep -q E404 "$RUNNER_TEMP/view-error.txt"; then
+            echo "$NAME $VERSION is not on npm yet."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/view-error.txt"
+            echo "Could not ask npm whether it has $NAME $VERSION."
+            exit 1
+          fi
+
+  # The checks that say something about the package. The component tests are
+  # left to CI, which runs every one for the same commit before a tag is pushed.
+  checks:
+    needs: prepare
+    if: needs.prepare.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run check:layout
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:integration
+
+  # Packs the tarball, the only time this run does, and checks it as the CI job
+  # package does: what it holds, then installed into a folder of its own with
+  # nothing from this checkout and started there with npx. Its SHA-512 is taken
+  # before anything in it runs, and the publish job checks the tarball it is
+  # handed against it.
+  package:
+    needs: prepare
+    if: needs.prepare.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NAME: ${{ needs.prepare.outputs.name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    outputs:
+      integrity: ${{ steps.pack.outputs.integrity }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+
+      # `npm pack` runs prepack, which builds the dashboard and bundles the command into dist/cli/.
+      - name: Pack it
+        id: pack
+        run: |
+          TARBALL="$RUNNER_TEMP/npm/$NAME-$VERSION.tgz"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          mkdir "$RUNNER_TEMP/npm"
+          npm pack --pack-destination "$RUNNER_TEMP/npm"
+          test -s "$TARBALL" || { echo "npm pack did not write $TARBALL."; exit 1; }
+          integrity="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | base64 -w 0)"
+          echo "$integrity"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+
+      - name: The tarball holds only what the package needs
+        run: |
+          tar -tzf "$TARBALL" | sort | tee "$RUNNER_TEMP/files.txt"
+          if grep -Ev '^package/(bin/agent-lookout\.mjs|dist/.+|docs/(API|GUIDE)\.md|(CHANGELOG|DISCLAIMER|PRIVACY|README|SECURITY)\.md|LICENSE|package\.json)$' "$RUNNER_TEMP/files.txt"; then
+            echo "The lines above should not be in the package."
+            exit 1
+          fi
+          if grep -E '\.map$' "$RUNNER_TEMP/files.txt"; then
+            echo "The package holds a source map."
+            exit 1
+          fi
+          for file in LICENSE dist/THIRD-PARTY-LICENSES.md; do
+            if [ "$(tar -xzOf "$TARBALL" "package/$file" | wc -c)" -eq 0 ]; then
+              echo "package/$file is missing or empty."
+              exit 1
+            fi
+          done
+
+      - name: Install it into a folder of its own
+        run: |
+          mkdir "$RUNNER_TEMP/try"
+          cd "$RUNNER_TEMP/try"
+          # A package.json of its own, so npm installs here and not into a folder above.
+          echo '{ "private": true }' > package.json
+          npm install --no-audit --no-fund "$TARBALL"
+          test ! -e node_modules/agent-lookout/src
+      - run: npx --yes=false agent-lookout --help
+        working-directory: ${{ runner.temp }}/try
+      - name: Version is the package's
+        working-directory: ${{ runner.temp }}/try
+        run: |
+          said=$(npx --yes=false agent-lookout --version)
+          echo "$said"
+          test "$said" = "$VERSION" && test "$(npx --yes=false agent-lookout -v)" = "$VERSION"
+      - run: node "$GITHUB_WORKSPACE/scripts/start-check.mjs" --command npx --yes=false agent-lookout
+        working-directory: ${{ runner.temp }}/try
+      - name: Status says how to start it
+        working-directory: ${{ runner.temp }}/try
+        run: |
+          set +e
+          said=$(npx --yes=false agent-lookout status 2>&1)
+          code=$?
+          echo "$said"
+          test "$code" -eq 2 && grep -q "Start it with npx agent-lookout, agent-lookout," <<< "$said"
+
+      # Compressed already. Kept as long as GitHub waits for an approval.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: ${{ env.TARBALL }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  # The only job that can ask for an OIDC token, and the only one in the
+  # environment npm-publish, which waits for the maintainer to approve it. It
+  # checks out nothing and runs no script from the package: it checks the
+  # tarball it is handed and publishes it.
+  publish:
+    needs: [prepare, checks, package]
+    if: needs.prepare.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/${{ needs.prepare.outputs.name }}/v/${{ needs.prepare.outputs.version }}
+    permissions:
+      # For the OIDC token npm takes in place of a token of its own, and for the provenance.
+      id-token: write
+      # For reading the environment's protection rules.
+      actions: read
+    env:
+      NAME: ${{ needs.prepare.outputs.name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      INTEGRITY: ${{ needs.package.outputs.integrity }}
+    steps:
+      # GitHub makes an environment named in a workflow when there is none,
+      # with no protection rules, and would run this job without asking anyone.
+      - name: The environment waits for a reviewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! reviewers=$(gh api "repos/$GITHUB_REPOSITORY/environments/npm-publish" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers | length] | add // 0'); then
+            echo "Could not read the protection rules of the environment npm-publish, so nothing is published."
+            exit 1
+          fi
+          if [ "$reviewers" -eq 0 ]; then
+            echo "The environment npm-publish has no required reviewer, so nothing is published. Add one in the repository's settings, as CONTRIBUTING.md says under Publishing, then run this again."
+            exit 1
+          fi
+
+      # Trusted publishing needs npm 11.5.1 or newer and Node 22.14.0 or newer.
+      # Node 22 comes with npm 10, and Node 24 with npm 11.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: npm can publish with an OIDC token
+        run: |
+          npm --version
+          if ! node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$(npm --version)"; then
+            echo "Trusted publishing needs npm 11.5.1 or newer."
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/npm
+
+      - name: The tarball is the one packed and checked
+        run: |
+          TARBALL="$RUNNER_TEMP/npm/$NAME-$VERSION.tgz"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          said="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | base64 -w 0)"
+          if [ "$said" != "$INTEGRITY" ]; then
+            echo "The tarball is $said, and the one packed and checked was $INTEGRITY."
+            exit 1
+          fi
+
+      # Again, in case the version was published while this run waited.
+      - name: The version is not on npm yet
+        id: npm
+        run: |
+          if npm view "$NAME@$VERSION" version > /dev/null 2> "$RUNNER_TEMP/view-error.txt"; then
+            echo "::notice title=Nothing to publish::$NAME $VERSION was published while this run waited, so it publishes nothing."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif grep -q E404 "$RUNNER_TEMP/view-error.txt"; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/view-error.txt"
+            echo "Could not ask npm whether it has $NAME $VERSION."
+            exit 1
+          fi
+
+      # npm trades the run's OIDC token for a short-lived token that can
+      # publish this package alone, and has Sigstore sign the provenance for
+      # this run. npm runs no script for a tarball, and --ignore-scripts makes
+      # sure. --provenance makes the publish fail when npm cannot make one,
+      # rather than publish without it.
+      - name: Publish
+        if: steps.npm.outputs.published == 'false'
+        run: npm publish "$TARBALL" --provenance --access public --ignore-scripts
+
+      # The registry can take a moment to show a new version.
+      - name: npm has this tarball, with provenance
+        if: steps.npm.outputs.published == 'false'
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            said=$(npm view "$NAME@$VERSION" dist.integrity --prefer-online 2> /dev/null || true)
+            [ -n "$said" ] && break
+            sleep 10
+          done
+          if [ "$said" != "$INTEGRITY" ]; then
+            echo "npm gives $NAME $VERSION as ${said:-nothing}, and the tarball published was $INTEGRITY."
+            exit 1
+          fi
+          provenance=$(npm view "$NAME@$VERSION" dist.attestations.provenance.predicateType --prefer-online)
+          if [ -z "$provenance" ]; then
+            echo "npm has $NAME $VERSION with no provenance."
+            exit 1
+          fi
+          echo "$NAME $VERSION is on npm, with provenance ($provenance)."
+          echo "Published [$NAME $VERSION](https://www.npmjs.com/package/$NAME/v/$VERSION), with provenance." >> "$GITHUB_STEP_SUMMARY"
