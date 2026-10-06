@@ -71,9 +71,17 @@ jobs:
           fi
 
       - run: npm ci
-      # The component tests run in real Chromium.
-      - run: npx playwright install chromium
-      - run: npm run check
+      # The checks that say something about this Mac build. The component tests
+      # are left to CI, which runs every one on Linux for the same commit before
+      # a tag is pushed: on GitHub's Mac runners Chromium reports reduced motion
+      # and measures fonts a fraction of a pixel differently, so the tests of
+      # motion and pixel sizes there would fail a release that is sound.
+      - run: npm run check:layout
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      # Includes the tests that unpack real zips with ditto, which only run on a Mac.
+      - run: npm run test:integration
 
       # Signed ad hoc, as electron-builder.ts says, and published nowhere:
       # --publish never, and its update provider is one it never uploads to.
