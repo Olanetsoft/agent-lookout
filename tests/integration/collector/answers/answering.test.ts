@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -95,8 +95,14 @@ async function serve(
       },
     });
   const events = async () => (await request(port, "/api/events")).json<EventsResponse>().events;
-  const rewrite = (status: string) =>
-    writeFile(path.join(claudeHome, "sessions", file), entryFor(standIn, status));
+  // Written whole and then renamed into place, as a poll on the collector's
+  // own beat can read the folder at any moment: a file it caught half written
+  // would be skipped, and the session missing from that poll.
+  const rewrite = async (status: string) => {
+    const target = path.join(claudeHome, "sessions", file);
+    await writeFile(`${target}.tmp`, entryFor(standIn, status));
+    await rename(`${target}.tmp`, target);
+  };
   return { socketPath, snapshot, session, answer, events, rewrite, port, collector, notifier };
 }
 
@@ -250,8 +256,15 @@ describe("the time rules, for a wait answered from the page", () => {
     expect((await server.answer(requestId, decision)).status).toBe(200);
     expect((await answered).code).toBe(0);
     await server.rewrite("busy");
-    await server.collector.poller.pollOnce();
-    expect((await server.session())?.status).toBe("working");
+    // A poll already under way read the folder before the rewrite, and
+    // pollOnce hands that poll back, so wait for one that read it after.
+    await vi.waitFor(
+      async () => {
+        await server.collector.poller.pollOnce();
+        expect((await server.session())?.status).toBe("working");
+      },
+      { timeout: 5_000, interval: 50 },
+    );
   }
 
   const REMIND_AFTER_A_MINUTE: TimeRules = {
