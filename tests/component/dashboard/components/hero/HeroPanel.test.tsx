@@ -6,6 +6,7 @@ import type { HistoryResponse } from "@core/api";
 import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/sessions/session";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -118,8 +119,8 @@ function wordColours(root: Element): { text: string; colour: string }[] {
 }
 
 /** Presses Tab until `target` has focus, a few times at most. */
-async function tabTo(target: Element) {
-  for (let presses = 0; presses < 4 && document.activeElement !== target; presses += 1) {
+async function tabTo(target: Element, most = 4) {
+  for (let presses = 0; presses < most && document.activeElement !== target; presses += 1) {
     await userEvent.tab();
   }
   expect(document.activeElement).toBe(target);
@@ -206,19 +207,157 @@ test("the vendor's own wording is one hover or one Tab away, and read out with t
   await userEvent.keyboard("{Escape}");
 });
 
-test("the waiting session's name, when it fits, is plain text: no tooltip and no stop on the way through the page", async () => {
-  const screen = await renderHero({ sessions: [{ ...WAITING, waitingDetail: undefined }] });
-  const name = part(hero(screen.container), "name");
-
-  // It fits with room to spare.
-  expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  // Cut text is a Tab stop with a tooltip; text that fits is neither. At the
-  // name size the line is tighter than the letters, and that alone must not
-  // read as cut.
-  expect(name.dataset.cut).toBe("false");
-  expect(name.hasAttribute("tabindex")).toBe(false);
+/** A second session waiting, for a question, with no Jump. */
+const LATER = session(9, {
+  name: "docs-site",
+  status: "needs-you",
+  waitingReason: "question",
+  statusSince: NOW - MINUTE,
 });
+
+/** Where a run of words is drawn, apart from any padding round it. */
+function wordsOf(element: Element): DOMRect {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  return range.getBoundingClientRect();
+}
+
+test("each waiting session's name is a link to its details, named for it, with no tooltip when it fits", async () => {
+  const screen = await renderHero({ sessions: [{ ...WAITING, waitingDetail: undefined }, LATER] });
+  const lead = screen.getByRole("link", { name: "demo-project, details" });
+  const later = screen.getByRole("link", { name: "docs-site, details" });
+
+  for (const [link, waiting] of [
+    [lead, WAITING],
+    [later, LATER],
+  ] as const) {
+    const name = link.element() as HTMLAnchorElement;
+    expect(name.dataset.part).toBe("name");
+    expect(name.closest('[data-slot="hero-session"]')?.getAttribute("data-session")).toBe(
+      waiting.id,
+    );
+    await expect.element(link).toHaveAttribute("href", sessionHref(waiting.id));
+    await expect.element(link).toHaveAttribute("aria-haspopup", "dialog");
+    // A link is always a stop on the way through the page.
+    expect(name.tabIndex).toBe(0);
+    // It fits with room to spare. Cut text has a tooltip; text that fits has
+    // none. At the name size the line is tighter than the letters, and that
+    // alone must not read as cut.
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(name.dataset.cut).toBe("false");
+  }
+});
+
+test("a click on a waiting session's name opens its details at their address, and a click anywhere else in the hero opens nothing", async () => {
+  const start = location.href;
+  onTestFinished(() => history.replaceState(null, "", start));
+  const screen = await renderHero({ sessions: [WAITING, LATER, BUSY] });
+  const rows = [
+    ...hero(screen.container).querySelectorAll<HTMLElement>('[data-slot="hero-session"]'),
+  ];
+  expect(rows).toHaveLength(2);
+
+  // The hero is not a row: its reason, its place, its wait and its blank space open nothing.
+  for (const row of rows) {
+    for (const name of ["reason", "place", "wait"]) await userEvent.click(part(row, name));
+    const blank = { x: Math.round(row.getBoundingClientRect().width * 0.6), y: 4 };
+    expect(
+      document
+        .elementFromPoint(
+          row.getBoundingClientRect().left + blank.x,
+          row.getBoundingClientRect().top + blank.y,
+        )
+        ?.closest("a"),
+    ).toBeNull();
+    await userEvent.click(row, { position: blank });
+  }
+  expect(location.hash).toBe("");
+
+  await screen.getByRole("link", { name: "docs-site, details" }).click();
+  expect(location.hash).toBe(sessionHref(LATER.id));
+  await screen.getByRole("link", { name: "demo-project, details" }).click();
+  expect(location.hash).toBe(sessionHref(WAITING.id));
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme, wide and narrow, each waiting name looks as it did, lights under the pointer as a quiet shape, and has the one focus ring",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    for (const [width, leadSize] of [
+      [1440, 34],
+      [375, 28],
+    ] as const) {
+      await page.viewport(width, 900);
+      const screen = await render(
+        <div style={{ maxWidth: 820, padding: 16 }}>
+          <HeroPanel
+            sessions={[WAITING, LATER, BUSY]}
+            sources={[CLAUDE]}
+            history={watched()}
+            now={NOW}
+          />
+        </div>,
+      );
+      const rows = [
+        ...hero(screen.container).querySelectorAll<HTMLElement>('[data-slot="hero-session"]'),
+      ];
+      for (const [row, size] of [
+        [rows[0]!, leadSize],
+        [rows[1]!, 16],
+      ] as const) {
+        const name = part(row, "name");
+        const what = `${width}: ${name.textContent}`;
+        const style = getComputedStyle(name);
+
+        // The name's type, size and colour, with nothing under it and no underline.
+        expect(style.fontSize, what).toBe(`${size}px`);
+        expect(style.fontWeight, what).toBe("600");
+        expect(style.color, what).toBe(rgbOf("var(--ink)"));
+        expect(style.textDecorationLine, what).toBe("none");
+        expect(style.backgroundColor, what).toBe("rgba(0, 0, 0, 0)");
+        expect(style.outlineStyle, what).toBe("none");
+        // Its words start where the reason's do, and its line is no taller than its words'.
+        const words = wordsOf(name);
+        expect(words.left, what).toBeCloseTo(wordsOf(part(row, "reason-text")).left, 0);
+        expect(name.parentElement!.getBoundingClientRect().height, what).toBeCloseTo(
+          Number.parseFloat(style.lineHeight),
+          0,
+        );
+
+        // Under the pointer it lights as a quiet rounded shape round the words, which stay put.
+        await userEvent.hover(name);
+        await vi.waitFor(() =>
+          expect(getComputedStyle(name).backgroundColor, what).toBe(rgbOf("var(--fill-hover)")),
+        );
+        expect(getComputedStyle(name).transitionDuration, what).toBe("0.12s");
+        expect(getComputedStyle(name).borderRadius, what).toBe("10px");
+        const shape = name.getBoundingClientRect();
+        expect(shape.left, what).toBeLessThan(words.left);
+        expect(shape.right, what).toBeGreaterThan(words.right);
+        expect(wordsOf(name).left, what).toBe(words.left);
+        expect(warmPaint(name), what).toEqual([]);
+        await pointAway();
+
+        // Reached by Tab, the one ring every control has, round that shape.
+        startAtTop();
+        await tabTo(name, 12);
+        const ring = getComputedStyle(name);
+        expect(name.matches(":focus-visible"), what).toBe(true);
+        expect(ring.outlineStyle, what).toBe("solid");
+        expect(ring.outlineWidth, what).toBe("2px");
+        expect(ring.outlineOffset, what).toBe("2px");
+        expect(ring.outlineColor, what).toBe(rgbOf("var(--focus)"));
+        expect(ring.color, what).toBe(rgbOf("var(--ink)"));
+      }
+      // The amber Jump is as it was.
+      const jump = part(rows[0]!, "jump");
+      expect(getComputedStyle(jump).backgroundColor).toBe(rgbOf("var(--status-needs-you)"));
+      expect(getComputedStyle(jump).height).toBe("38px");
+      screen.unmount();
+    }
+  },
+);
 
 test("wording that only repeats the reason is left out, and the reason is then no stop on the way", async () => {
   const screen = await renderHero({
@@ -477,7 +616,8 @@ test("a waiting session from a status file names its own agent, and has no Jump"
   expect(part(panel, "reason").textContent).toContain("Asked you a question");
   expect(part(part(panel, "place"), "agent").textContent).toBe("Night Shift");
   expect(panel.querySelector('[data-part="jump"]')).toBeNull();
-  expect(panel.querySelector("a")).toBeNull();
+  // Its one link is its name's, to its details.
+  expect(panel.querySelector('a:not([data-part="name"])')).toBeNull();
 });
 
 test("where a session runs leaves out an app that is not known, in the longest wait and in a later one", async () => {
@@ -979,7 +1119,8 @@ test.each(["dark", "light"] as const)(
     const style = getComputedStyle(jump.element());
     expect(style.backgroundColor).toBe(rgbOf("var(--status-needs-you)"));
     expect(style.height).toBe("38px");
-    expect(hero(screen.container).querySelector("a")).toBeNull();
+    // The hero's one link is the name's, to its details.
+    expect(hero(screen.container).querySelector('a:not([data-part="name"])')).toBeNull();
 
     // It sits where the link sits for a session in VS Code.
     const place = jump.element().getBoundingClientRect();
@@ -1062,7 +1203,7 @@ test("where the name's line cannot hold both, what a press came to goes under th
   expect(note.getBoundingClientRect().top).toBeGreaterThanOrEqual(
     name.getBoundingClientRect().bottom,
   );
-  expect(note.getBoundingClientRect().left).toBe(name.getBoundingClientRect().left);
+  expect(note.getBoundingClientRect().left).toBe(wordsOf(name).left);
   // The name kept every letter and all its room.
   expect(name.getBoundingClientRect().width).toBe(nameWidth);
   expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);

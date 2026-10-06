@@ -99,11 +99,7 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * the one thing in it that opens, as a button would be, but with an address of
  * its own, which a reload or a new tab lands on. Its ring is drawn round the
  * row's rounded shape, where the pointer lights it, because the whole row is
- * what opens.
- *
- * The search can also put focus on the row itself, to show the person the
- * session they chose. Its ring is then drawn the same way, since a ring round
- * the row itself would reach past the card's edge.
+ * what opens, and a ring round the row itself would reach past the card's edge.
  */
 export function SessionRow({
   session,
@@ -189,7 +185,7 @@ export function SessionRow({
       data-status={session.status}
       data-stale={stale || undefined}
       onClick={(event) => openFromClick(event, session.id)}
-      className='group relative cursor-pointer text-body text-ink-secondary focus-visible:outline-none'
+      className='group relative cursor-pointer text-body text-ink-secondary'
     >
       <td
         className={cn(
@@ -198,8 +194,7 @@ export function SessionRow({
           narrow && "py-2",
           // The row's one rounded shape under the pointer, 10px inside the card.
           "before:pointer-events-none before:absolute before:inset-x-2.5 before:inset-y-px before:-z-10 before:rounded-inner before:transition-colors before:duration-120 group-hover:before:bg-fill-hover",
-          // The focus ring, when the search puts focus on the row or Tab reaches its name.
-          "group-focus-visible:before:outline-2 group-focus-visible:before:outline-offset-2 group-focus-visible:before:outline-focus",
+          // The focus ring, when Tab reaches its name.
           "group-has-[a[data-part=name]:focus-visible]:before:outline-2 group-has-[a[data-part=name]:focus-visible]:before:outline-offset-2 group-has-[a[data-part=name]:focus-visible]:before:outline-focus",
         )}
       >

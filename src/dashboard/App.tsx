@@ -105,8 +105,8 @@ function Ground() {
  *
  * On every view, "/", Cmd+K or Ctrl+K, and the header's button open the search,
  * and "?" the sheet of shortcuts. While another dialog is open those keys are
- * left to it. Choosing a session in the search takes the person to its row on
- * the Overview, and presses its Jump when it has one.
+ * left to it. Choosing a session in the search presses its Jump, on its row
+ * on the Overview, or opens its details when it has none.
  */
 export default function App({ store: providedStore }: AppProps) {
   const [store] = useState(() => providedStore ?? createCollectorStore({ beat: workerBeat }));
@@ -139,7 +139,7 @@ export default function App({ store: providedStore }: AppProps) {
     window.scrollTo({ top: 0 });
   }, [view]);
 
-  // After the effect above, so a session's row takes focus from the new view.
+  // After the effect above, so a session's Jump takes focus from the new view.
   const showSession = useShowSession(main, view);
 
   useShortcuts((shortcut) => {
@@ -230,7 +230,7 @@ export default function App({ store: providedStore }: AppProps) {
         onOpenChange={setSearch}
         state={state}
         now={now}
-        onChoose={(session) => showSession(session.id)}
+        onChoose={showSession}
         onShortcuts={() => setShortcuts(true)}
       />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />

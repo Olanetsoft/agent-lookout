@@ -26,12 +26,12 @@ interface DetailsModalProps {
    */
   focusTitle?: boolean;
   /**
-   * Where focus goes once it has closed, in place of what had focus when it
-   * opened. For a dialog that an address can open, where nothing opened it.
-   * When it gives nothing, focus goes back to what had it, if that is still in
-   * the page.
+   * Where focus goes once it has closed, given what had focus when it opened.
+   * For a dialog that an address can open, where nothing opened it. When it
+   * gives nothing, focus goes back to what had it, if that is still in the
+   * page.
    */
-  returnFocus?: () => HTMLElement | null;
+  returnFocus?: (opener: HTMLElement | null) => HTMLElement | null;
   children: ReactNode;
 }
 
@@ -95,7 +95,7 @@ export function DetailsModal({
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               // What opened it may have left the page while it was open.
-              const target = returnFocus?.() ?? opener.current;
+              const target = returnFocus?.(opener.current) ?? opener.current;
               if (target?.isConnected) target.focus();
               opener.current = null;
             }}

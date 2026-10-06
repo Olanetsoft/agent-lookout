@@ -157,7 +157,7 @@ export function shortcutGroups(mac: boolean): readonly ShortcutGroup[] {
             { shown: "↓", said: "Down arrow" },
           ],
         },
-        { does: "Jump to the session, or show it", keys: [{ shown: "Enter" }] },
+        { does: "Jump to the session, or open its details", keys: [{ shown: "Enter" }] },
       ],
     },
     {

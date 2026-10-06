@@ -20,11 +20,11 @@ The header over each view says how many sessions are being watched and, in a wid
 
 ### Overview
 
-The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board), and any session in it can be opened to see its [details](#a-sessions-details).
+The Overview has five parts. The Needs you panel and the Last hour chart share the top row, the Sessions list and the Events log share the next, and the Timeline runs under both. In a narrower window they are one column in that order. The Sessions list can also be shown as a [board](#board), and any session, in it or in the Needs you panel, can be opened to see its [details](#a-sessions-details).
 
 #### Needs you
 
-The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. An app that is not known is left out. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it.
+The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. An app that is not known is left out. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it. Click a session's name, or move to it with Tab and press Enter, to open its [details](#a-sessions-details).
 
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
@@ -104,9 +104,9 @@ The details show everything Agent Lookout knows about the session:
 
 A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you.
 
-Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's row or card. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
+Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's name. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
 
-A session that needs you is in the Needs you panel rather than the list, so open its details from its card on the [board](#board).
+A session that needs you is in the Needs you panel rather than the list. There, its name opens its details; a click anywhere else on the session opens nothing. The [search](#finding-a-session) opens them too, for any session with no Jump button.
 
 #### Quiet for
 
@@ -474,8 +474,8 @@ With nothing typed, it lists every session. Whatever is typed, the sessions that
 
 Up and Down move through the list. Down on the last goes back to the first, and Up on the first goes to the last. The line under the list says what Enter will do with the session that is lit:
 
-- A session with a [Jump](#jump) button: Enter presses it. The search closes, the Overview opens if it was not showing, focus goes to the button, and the session's row says what happened, as it does when you press the button yourself. The first press of a Jump to a tab of Terminal or iTerm2 says on the row that macOS will ask once.
-- Any other session: Enter closes the search, opens the Overview if it was not showing, scrolls to the session's row and puts focus on it, so the next Tab goes on from there.
+- A session with a [Jump](#jump) button: Enter presses it. The search closes, the Overview opens if it was not showing, focus goes to the button, and the session's row says what happened, as it does when you press the button yourself. The first press of a Jump to a tab of Terminal or iTerm2 says on the row that macOS will ask once. On the [board](#board), a session past the five cards its column shows has no card, so Enter opens its details instead, with its Jump at the top.
+- Any other session: Enter closes the search and opens the session's [details](#a-sessions-details) over the Overview, a session in the Needs you panel included. Closing them leaves you on the Overview, with focus on the session's name.
 
 Clicking a session does the same as Enter. `Esc` closes the search and puts focus back where it was. With nothing typed, `?` closes the search and lists the shortcuts.
 

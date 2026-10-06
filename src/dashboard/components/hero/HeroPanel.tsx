@@ -28,6 +28,7 @@ import {
 } from "@dashboard/lib/sessions/sessions";
 import { agentLabel, showsAgents } from "@dashboard/lib/sources/sources";
 import { surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";
+import { openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 import {
   unmeasuredNote,
@@ -217,16 +218,35 @@ function Ended({ session }: { session: Session }) {
   return session.alive === false ? <Badge tone='outline'>Process ended</Badge> : null;
 }
 
-/**
- * A waiting session is no stop on the way through the page, but the search can
- * put focus on one that has no Jump, to show the person the session they
- * chose. Its ring then stands a little off it, on rounded corners.
- */
-const FOCUSED = "focus-visible:rounded-inner focus-visible:outline-offset-4";
-
 /** How long a session has waited, as of `asOf`, or null when its source did not say. */
 function waitedFor(session: Session, asOf: number): number | null {
   return session.statusSince === null ? null : Math.max(0, asOf - session.statusSince);
+}
+
+/**
+ * A waiting session's name, as a link to its details, named "checkout-flow,
+ * details", as a row's name is. The hero is no row, so its name is the one
+ * thing in it that opens them, and a click anywhere else opens nothing. Under
+ * the pointer it lights as a quiet rounded shape, as the title does, and its
+ * words keep their place, size and colour. Its ring is the one every control
+ * has, round that shape.
+ */
+function Name({ session, className }: { session: Session; className: string }) {
+  return (
+    <Truncated
+      data-part='name'
+      href={sessionHref(session.id)}
+      onClick={(event) => openFromLink(event, session.id)}
+      aria-label={`${session.name}, details`}
+      aria-haspopup='dialog'
+      className={cn(
+        "-mx-1.5 -my-0.5 rounded-row px-1.5 py-0.5 transition-colors duration-120 hover:bg-fill-hover",
+        className,
+      )}
+    >
+      {session.name}
+    </Truncated>
+  );
 }
 
 /**
@@ -242,18 +262,13 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
     <div
       data-slot='hero-session'
       data-session={session.id}
-      className={cn(
-        "mt-3.5 flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4",
-        FOCUSED,
-      )}
+      className='mt-3.5 flex items-end justify-between gap-6 max-mid:flex-col max-mid:items-stretch max-mid:gap-4'
     >
       <div className='min-w-0 flex-1'>
         {/* What Jump came to goes under the name when the line cannot hold both. */}
         <div className='flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
           <div className='flex max-w-full min-w-0 items-center gap-3'>
-            <Truncated data-part='name' className='text-name font-semibold'>
-              {session.name}
-            </Truncated>
+            <Name session={session} className='text-name font-semibold' />
             <Ended session={session} />
           </div>
           <JumpNote session={session} jump={jump} />
@@ -309,17 +324,12 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
     <li
       data-slot='hero-session'
       data-session={session.id}
-      className={cn(
-        "flex items-center gap-5 border-t border-hairline py-3 max-mid:flex-wrap max-mid:gap-x-4 max-mid:gap-y-2",
-        FOCUSED,
-      )}
+      className='flex items-center gap-5 border-t border-hairline py-3 max-mid:flex-wrap max-mid:gap-x-4 max-mid:gap-y-2'
     >
       <div className='min-w-0 flex-1 max-mid:basis-full'>
         <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
           <div className='flex max-w-full min-w-0 items-center gap-2'>
-            <Truncated data-part='name' className='text-lead font-semibold text-ink'>
-              {session.name}
-            </Truncated>
+            <Name session={session} className='text-lead font-semibold text-ink' />
             <Ended session={session} />
           </div>
           <JumpNote session={session} jump={jump} />
@@ -479,6 +489,9 @@ function Uncounted({ id, counts }: { id: string; counts: CountState }) {
  *   one waiting      its name large, why and where, a timer and the Jump
  *   several waiting  the longest in full, then each of the others, each with
  *                    its reason, timer and Jump
+ *
+ * Each waiting session's name is a link to its details. The Sessions list
+ * leaves waiting sessions to the hero, so this is where they open from.
  *
  * Under the top sit the bars of how long sessions waited, when any did, and
  * the hero ends with the counts. Once answers stop, every timer stops at the

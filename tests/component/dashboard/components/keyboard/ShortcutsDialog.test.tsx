@@ -73,7 +73,7 @@ test("on a Mac the sheet lists every shortcut in groups, as rows of facts, with 
     ["Show these shortcuts", "?"],
     ["Close a dialog", "Esc"],
     ["Move through the sessions", "↑ ↓"],
-    ["Jump to the session, or show it", "Enter"],
+    ["Jump to the session, or open its details", "Enter"],
     ["Move along it", "← →"],
     ["Go to the first or the last", "Home End"],
     ["Ten steps in a history chart", "Page Up Page Down"],

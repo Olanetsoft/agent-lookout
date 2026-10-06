@@ -147,7 +147,7 @@ test("the sheet lists the search's keys and every key the page already had, each
     expect(keysFor("Show these shortcuts")).toEqual(["?"]);
     expect(keysFor("Close a dialog")).toEqual(["Esc"]);
     expect(keysFor("Move through the sessions")).toEqual(["↑", "↓"]);
-    expect(keysFor("Jump to the session, or show it")).toEqual(["Enter"]);
+    expect(keysFor("Jump to the session, or open its details")).toEqual(["Enter"]);
     // Last hour, a history chart and the timeline had these before the search.
     expect(keysFor("Move along it")).toEqual(["←", "→"]);
     expect(keysFor("Go to the first or the last")).toEqual(["Home", "End"]);

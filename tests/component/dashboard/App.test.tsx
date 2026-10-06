@@ -1014,7 +1014,9 @@ test.each([1280, 1000, 760, 375])(
       const cut = name.scrollWidth > name.clientWidth;
       if (width === 375) expect(cut, what).toBe(true);
       await expect.poll(() => name.dataset.cut, { message: what }).toBe(String(cut));
-      expect(name.getAttribute("tabindex"), what).toBe(cut ? "0" : null);
+      // A name in the hero is a link to its details, so it is always a stop of Tab.
+      if (name.matches("a")) expect(name.tabIndex, what).toBe(0);
+      else expect(name.getAttribute("tabindex"), what).toBe(cut ? "0" : null);
     }
     for (const bar of bars()) {
       const value = bar.querySelector('[data-part="value"]') as HTMLElement;
@@ -2552,88 +2554,79 @@ describe("finding a session from the keyboard", () => {
     await expect.element(history).not.toBeInTheDocument();
   });
 
-  test("Enter on a session with no Jump goes to the Overview, brings its row into view and puts focus on it, with the ring round its rounded shape", async () => {
+  /** A session's name: the link to its details, in its row of the table or in the hero. */
+  const nameIn = (id: string) => row(id).querySelector<HTMLElement>('a[data-part="name"]')!;
+
+  test("Enter on a session with no Jump opens its details over the Overview, and closing them goes to the Overview with focus on its name", async () => {
     const jumps = jumpCollector(() => answer({ ok: true }));
     await renderApp("settings");
-    await page.viewport(1280, 500);
 
     await userEvent.keyboard("/");
     await expect.element(search()).toBeVisible();
     await userEvent.keyboard("billing");
+    expect(document.querySelector('[data-part="enter"]')?.textContent).toBe(
+      "Enter opens its details",
+    );
     await userEvent.keyboard("{Enter}");
     await expect.element(search()).not.toBeInTheDocument();
 
-    await vi.waitFor(() => expect(main().dataset.view).toBe("overview"));
-    await vi.waitFor(() => expect(document.activeElement).toBe(row(idOf(12))));
-    const focused = row(idOf(12));
-    expect(focused.tagName).toBe("TR");
-    const box = focused.getBoundingClientRect();
-    expect(box.top).toBeGreaterThanOrEqual(header().getBoundingClientRect().bottom);
-    expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
-    // The ring is drawn round the row's shape, 10px inside the card, not round the row.
-    expect(focused.matches(":focus-visible")).toBe(true);
-    expect(getComputedStyle(focused).outlineStyle).toBe("none");
-    const shape = getComputedStyle(focused.querySelector("td")!, "::before");
-    expect(shape.outlineStyle).toBe("solid");
-    expect(shape.outlineWidth).toBe("2px");
-    // Its colour comes up with the shape's own 120ms change of colour.
-    await vi.waitFor(() => expect(shape.outlineColor).toBe(rgbOf("var(--focus)")));
-    expect(shape.borderRadius).toBe("14px");
+    const details = page.getByRole("dialog", { name: "billing-webhooks" });
+    await expect.element(details).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(12)));
+    expect(main().dataset.view).toBe("overview");
     expect(jumps).toEqual([]);
 
-    // It is no stop on the way through the page once focus moves on.
-    await userEvent.tab();
-    expect(focused.hasAttribute("tabindex")).toBe(false);
+    // Closing them lands on the Overview, not on the view the search was opened from.
+    await userEvent.keyboard("{Escape}");
+    await expect.element(details).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(location.hash).toBe("#overview"));
+    expect(main().dataset.view).toBe("overview");
+    const name = nameIn(idOf(12));
+    expect(row(idOf(12)).dataset.slot).toBe("session-row");
+    await vi.waitFor(() => expect(document.activeElement).toBe(name));
+    expect(name.matches(":focus-visible")).toBe(true);
   });
 
-  test("a click on a session with no Jump shows the ring on its row, as Enter does", async () => {
+  test("a click on a session with no Jump opens its details, as Enter does", async () => {
     await renderApp();
     await page.getByRole("button", { name: "Find a session" }).click();
     await expect.element(search()).toBeVisible();
     await page.getByRole("option", { name: /^billing-webhooks/ }).click();
     await expect.element(search()).not.toBeInTheDocument();
 
-    const focused = row(idOf(12));
-    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
-    expect(focused.matches(":focus-visible")).toBe(true);
-    expect(getComputedStyle(focused.querySelector("td")!, "::before").outlineStyle).toBe("solid");
+    const details = page.getByRole("dialog", { name: "billing-webhooks" });
+    await expect.element(details).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(12)));
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect.element(details).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(nameIn(idOf(12))));
   });
 
-  test("a dialog opened from the row the search put focus on gives focus back to the row", async () => {
-    await renderApp();
-    await userEvent.keyboard("/");
-    await expect.element(search()).toBeVisible();
-    await userEvent.keyboard("billing{Enter}");
-    await expect.element(search()).not.toBeInTheDocument();
-    const focused = row(idOf(12));
-    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+  test("a waiting session with no Jump opens its details from the search, and closing them puts focus on its name in the Needs you panel", async () => {
+    const state = keyboardState();
+    state.snapshot!.sessions = state.snapshot!.sessions.map((listed) =>
+      listed.id === idOf(11) ? { ...listed, jump: undefined } : listed,
+    );
+    atView(null);
+    await render(<App store={fixedStore(state)} />);
+    await vi.waitFor(() => expect(row(idOf(11))).not.toBeNull());
 
     await userEvent.keyboard("/");
     await expect.element(search()).toBeVisible();
-    await userEvent.keyboard("{Escape}");
-    await expect.element(search()).not.toBeInTheDocument();
-    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
+    await userEvent.keyboard("checkout");
+    expect(document.querySelector('[data-part="enter"]')?.textContent).toBe(
+      "Enter opens its details",
+    );
+    await userEvent.keyboard("{Enter}");
+    const details = page.getByRole("dialog", { name: "checkout-flow" });
+    await expect.element(details).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(11)));
 
-    await userEvent.keyboard("?");
-    await expect.element(sheet()).toBeVisible();
     await userEvent.keyboard("{Escape}");
-    await expect.element(sheet()).not.toBeInTheDocument();
-    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
-
-    // The sheet opened from the search gives focus back there too.
-    await userEvent.keyboard("/");
-    await expect.element(search()).toBeVisible();
-    await userEvent.keyboard("?");
-    await expect.element(sheet()).toBeVisible();
-    await userEvent.keyboard("{Escape}");
-    await expect.element(sheet()).not.toBeInTheDocument();
-    await vi.waitFor(() => expect(document.activeElement).toBe(focused));
-
-    // Tab goes on from the row, and the row is no stop of it after that.
-    await userEvent.tab();
-    const next = document.activeElement!;
-    expect(focused.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(focused.hasAttribute("tabindex")).toBe(false);
+    await expect.element(details).not.toBeInTheDocument();
+    // The list leaves a waiting session to the hero, so its name there takes focus.
+    expect(row(idOf(11)).dataset.slot).toBe("hero-session");
+    await vi.waitFor(() => expect(document.activeElement).toBe(nameIn(idOf(11))));
   });
 
   test("Enter on a session with a Jump presses the Jump on its own row: the collector is asked once, and the row says what came of it", async () => {
@@ -2659,6 +2652,74 @@ describe("finding a session from the keyboard", () => {
     expect(lead.contains(document.activeElement)).toBe(true);
     // The search said nothing of it: it had gone.
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("on the board, Enter on a session with a Jump presses the Jump on its card", async () => {
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+    const jumps = jumpCollector(() =>
+      answer({ ok: true, kind: "terminal", app: "Terminal", place: "Terminal" }),
+    );
+    await renderApp();
+    const card = document.querySelector<HTMLElement>(
+      `[data-slot="board-card"][data-session="${idOf(13)}"]`,
+    )!;
+    expect(card).not.toBeNull();
+
+    await userEvent.keyboard("/");
+    await userEvent.keyboard("search-indexing{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(jumps).toEqual([{ sessionId: idOf(13) }]));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Jump to search-indexing in Terminal",
+    );
+    expect(card.contains(document.activeElement)).toBe(true);
+    expect(document.querySelector('[data-slot="details-modal"]')).toBeNull();
+  });
+
+  test("on the board, Enter on a session with a Jump past the cards its column shows opens its details, which carry the Jump", async () => {
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+    const jumps = jumpCollector(() => answer({ ok: true, kind: "tmux", place: "work:6.1" }));
+    const now = Date.now();
+    const working = snapshot();
+    working.sessions = [
+      "api-gateway",
+      "auth-service",
+      "image-resizer",
+      "mail-queue",
+      "metrics-export",
+      "report-builder",
+    ].map((name, index) =>
+      session(31 + index, {
+        name,
+        status: "working",
+        // The column puts the most recent change first, so the last is the sixth.
+        statusSince: now - (index + 1) * MINUTE,
+        jump: { kind: "tmux", place: `work:${index + 1}.1` },
+      }),
+    );
+    atView(null);
+    await render(<App store={fixedStore(liveState({ snapshot: working, events: [] }))} />);
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="board-card"]')).toHaveLength(5),
+    );
+    expect(document.querySelector(`[data-session="${idOf(36)}"]`)).toBeNull();
+
+    await userEvent.keyboard("/");
+    await expect.element(search()).toBeVisible();
+    await userEvent.keyboard("report");
+    expect(document.querySelector('[data-part="enter"]')?.textContent).toBe(
+      "Enter jumps to it in tmux, work:6.1",
+    );
+    await userEvent.keyboard("{Enter}");
+    await expect.element(search()).not.toBeInTheDocument();
+
+    const details = page.getByRole("dialog", { name: "report-builder" });
+    await expect.element(details).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(36)));
+    expect(jumps).toEqual([]);
+    await expect
+      .element(details.getByRole("button", { name: "Jump to report-builder in tmux, work:6.1" }))
+      .toBeVisible();
   });
 
   test("Enter on a session in a tab of Terminal says on its row, as its button does, that macOS will ask once", async () => {
@@ -2826,17 +2887,22 @@ describe("a session's details", () => {
   test.each([
     [
       "starts waiting, which moves it into the hero,",
+      "its name there",
       (listed: Session) => ({
         ...listed,
         status: "needs-you" as const,
         waitingReason: "question" as const,
         statusSince: Date.now(),
       }),
+      () =>
+        document.querySelector(
+          `[data-slot="hero-session"][data-session="${idOf(22)}"] a[data-part="name"]`,
+        ),
     ],
-    ["leaves the list", null],
+    ["leaves the list", "the view, as its row has gone", null, main],
   ])(
-    "a session that %s while they are open gives focus to the view when they close, as its row has gone",
-    async (_, change) => {
+    "a session that %s while they are open gives focus to %s when they close",
+    async (_, _where, change, focusTo) => {
       const store = fixedStore(detailsState());
       const screen = await render(<App store={store} />);
       await vi.waitFor(() => expect(rowOf(22)).not.toBeNull());
@@ -2858,13 +2924,124 @@ describe("a session's details", () => {
 
       await userEvent.keyboard("{Escape}");
       await expect.element(details("billing-webhooks")).not.toBeInTheDocument();
-      await vi.waitFor(() => expect(document.activeElement).toBe(main()));
+      const target = focusTo();
+      expect(target).not.toBeNull();
+      await vi.waitFor(() => expect(document.activeElement).toBe(target));
     },
   );
 
+  /** The details state with a second session waiting, with no Jump, under the first in the hero. */
+  function twoWaiting(): CollectorState {
+    const state = detailsState();
+    state.snapshot!.sessions.push(
+      session(24, {
+        name: "docs-site",
+        status: "needs-you",
+        waitingReason: "question",
+        statusSince: testBegan - 2 * MINUTE,
+      }),
+    );
+    return state;
+  }
+
+  /** A waiting session's name in the hero. */
+  const heroName = (n: number) =>
+    document.querySelector<HTMLElement>(
+      `[data-slot="hero-session"][data-session="${idOf(n)}"] a[data-part="name"]`,
+    )!;
+
+  test("each waiting session's name in the Needs you panel opens them, by a click and by Enter, and they give focus back to it", async () => {
+    const screen = await render(<App store={fixedStore(twoWaiting())} />);
+    const lead = screen.getByRole("link", { name: "checkout-flow, details" });
+    const later = screen.getByRole("link", { name: "docs-site, details" });
+    await expect.element(later).toBeVisible();
+    // In the list's view, a waiting session has no row: its name in the hero is the way to them.
+    expect(lead.element()).toBe(heroName(21));
+    expect(later.element()).toBe(heroName(24));
+    expect(rowOf(21)).toBeNull();
+    for (const [link, n] of [
+      [lead, 21],
+      [later, 24],
+    ] as const) {
+      await expect.element(link).toHaveAttribute("href", sessionHref(idOf(n)));
+      await expect.element(link).toHaveAttribute("aria-haspopup", "dialog");
+    }
+
+    // A click on the lead's name, and Close.
+    await lead.click();
+    await expect.element(details("checkout-flow")).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(21)));
+    expect(main().dataset.view).toBe("overview");
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect.element(details("checkout-flow")).not.toBeInTheDocument();
+    await vi.waitFor(atOverview);
+    await vi.waitFor(() => expect(document.activeElement).toBe(lead.element()));
+
+    // Tab to the later one's name, Enter, and Escape.
+    startAtTop();
+    await tabTo(later.element());
+    await userEvent.keyboard("{Enter}");
+    await expect.element(details("docs-site")).toBeVisible();
+    expect(location.hash).toBe(sessionHref(idOf(24)));
+    await userEvent.keyboard("{Escape}");
+    await expect.element(details("docs-site")).not.toBeInTheDocument();
+    await vi.waitFor(atOverview);
+    await vi.waitFor(() => expect(document.activeElement).toBe(later.element()));
+    expect(later.element().matches(":focus-visible")).toBe(true);
+
+    // A click on the later one's name, and the browser's Back.
+    await later.click();
+    await expect.element(details("docs-site")).toBeVisible();
+    history_.back();
+    await expect.element(details("docs-site")).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(later.element()));
+  });
+
+  test("the Needs you panel is no row: a click anywhere in it but a name opens nothing", async () => {
+    await render(<App store={fixedStore(twoWaiting())} />);
+    await vi.waitFor(() => expect(heroName(24)).not.toBeNull());
+
+    for (const n of [21, 24]) {
+      const waiting = heroName(n).closest<HTMLElement>('[data-slot="hero-session"]')!;
+      for (const part of ["reason", "place", "wait"]) {
+        await userEvent.click(waiting.querySelector<HTMLElement>(`[data-part="${part}"]`)!);
+      }
+      // A blank spot, clear of the name and the Jump.
+      await userEvent.click(waiting, {
+        position: { x: Math.round(waiting.getBoundingClientRect().width * 0.6), y: 4 },
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(document.querySelector('[data-slot="details-modal"]')).toBeNull();
+    expect(location.hash).toBe("");
+  });
+
+  test("on the board, a waiting session gives focus back to its name in the hero when opened from there, and to its card when opened from the card", async () => {
+    localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
+    await renderApp();
+    const card = nameOf(21);
+    const inHero = heroName(21);
+    expect(card).not.toBe(inHero);
+
+    startAtTop();
+    await tabTo(inHero);
+    await userEvent.keyboard("{Enter}");
+    await expect.element(details("checkout-flow")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(details("checkout-flow")).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(inHero));
+
+    await tabTo(card);
+    await userEvent.keyboard("{Enter}");
+    await expect.element(details("checkout-flow")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(details("checkout-flow")).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toBe(card));
+  });
+
   test("a board card opens them by a click and by Enter, and they give focus back to the card", async () => {
     localStorage.setItem(SESSIONS_LAYOUT_STORAGE_KEY, "board");
-    const screen = await renderApp();
+    await renderApp();
     const card = rowOf(21);
     expect(card.dataset.slot).toBe("board-card");
 
@@ -2879,9 +3056,8 @@ describe("a session's details", () => {
     await expect.element(panel).not.toBeInTheDocument();
     await vi.waitFor(() => expect(document.activeElement).toBe(nameOf(21)));
 
-    await expect
-      .element(screen.getByRole("link", { name: "checkout-flow, details" }))
-      .toBeVisible();
+    // The card's name, not the same session's name in the hero.
+    await expect.element(page.elementLocator(nameOf(21))).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await expect.element(details("checkout-flow")).toBeVisible();
     expect(location.hash).toBe(`#overview/session/${idOf(21)}`);

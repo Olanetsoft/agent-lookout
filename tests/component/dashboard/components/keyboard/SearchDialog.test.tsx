@@ -486,11 +486,11 @@ test("the lit session stays lit when an answer moves the sessions about", async 
   expect(litName()).toBe("email-templates");
 });
 
-test("under the list it says what Enter will do with the lit session: jump to it, and where, or show it on the Overview", async () => {
+test("under the list it says what Enter will do with the lit session: jump to it, and where, or open its details", async () => {
   await openSearch();
   const enter = () => part(dialog().element(), "enter").textContent;
 
-  expect(enter()).toBe("Enter shows it on the Overview");
+  expect(enter()).toBe("Enter opens its details");
   await userEvent.keyboard("{ArrowDown}");
   expect(enter()).toBe("Enter jumps to it in tmux, work:2.1");
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");

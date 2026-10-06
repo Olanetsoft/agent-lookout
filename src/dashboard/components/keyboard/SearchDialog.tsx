@@ -18,13 +18,13 @@ interface SearchDialogProps {
   state: CollectorState;
   /** The present. */
   now: number;
-  /** Takes the person to the chosen session, once the dialog has gone. */
+  /** Presses the chosen session's Jump, or opens its details, once the dialog has gone. */
   onChoose: (session: Session) => void;
   /** Opens the sheet of shortcuts, once the dialog has gone. */
   onShortcuts: () => void;
 }
 
-/** What follows the dialog's closing: a session to go to, the sheet of shortcuts, or nothing. */
+/** What follows the dialog's closing: the chosen session, the sheet of shortcuts, or nothing. */
 type After = { session: Session } | "shortcuts" | null;
 
 /** How long a session has had its status, in the table's short form and in words. */
@@ -295,7 +295,7 @@ function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
           {litSession && (
             <>
               <kbd className='font-mono'>Enter</kbd>{" "}
-              {litWay ? `jumps to it in ${litWay.where}` : "shows it on the Overview"}
+              {litWay ? `jumps to it in ${litWay.where}` : "opens its details"}
             </>
           )}
         </p>
@@ -325,8 +325,8 @@ function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
  *
  * Choosing a session closes it first, and what the choice does follows once it
  * has gone, from the page: a Jump is pressed on the session's own row, and a
- * session with none is shown there. So what a Jump came to is said by the row,
- * as when its button is pressed, and the dialog never says it. "?" with
+ * session with none has its details opened. So what a Jump came to is said by
+ * the row, as when its button is pressed, and the dialog never says it. "?" with
  * nothing typed, or the button that says so, closes it and opens the sheet of
  * shortcuts in its place.
  *

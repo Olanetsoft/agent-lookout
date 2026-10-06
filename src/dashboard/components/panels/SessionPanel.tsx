@@ -29,12 +29,22 @@ import { cn } from "@dashboard/lib/utils";
 
 const NO_SESSIONS: readonly Session[] = [];
 
-/** The row or the card a session's details were opened from, by its name's link. */
-function rowOf(sessionId: string): HTMLElement | null {
+/**
+ * Where focus goes when a session's details close: the link to them that had
+ * focus when they opened, or else the session's name in its row or its card,
+ * or in the hero. On the board a waiting session has both a card and a place
+ * in the hero, and a click on the card leaves nothing focused to say which it
+ * was, so the card comes first.
+ */
+function nameOf(sessionId: string, opener: HTMLElement | null): HTMLElement | null {
   const id = CSS.escape(sessionId);
-  return document.querySelector<HTMLElement>(
-    `:is([data-slot="session-row"], [data-slot="board-card"])[data-session="${id}"] a[data-part="name"]`,
-  );
+  const names = [
+    ...document.querySelectorAll<HTMLElement>(
+      `:is([data-slot="session-row"], [data-slot="board-card"], [data-slot="hero-session"])[data-session="${id}"] a[data-part="name"]`,
+    ),
+  ];
+  if (opener !== null && names.includes(opener)) return opener;
+  return names.find((name) => !name.closest('[data-slot="hero-session"]')) ?? names[0] ?? null;
 }
 
 /**
@@ -393,9 +403,10 @@ function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogPr
       title={title}
       size={size}
       focusTitle
-      // Once the row has gone, as into the hero when the session starts
-      // waiting, focus goes to the view, as it does from the search.
-      returnFocus={() => rowOf(sessionId) ?? document.querySelector<HTMLElement>("main")}
+      // Once the session has left the list, focus goes to the view.
+      returnFocus={(opener) =>
+        nameOf(sessionId, opener) ?? document.querySelector<HTMLElement>("main")
+      }
       actions={
         session &&
         !gone && (
