@@ -42,6 +42,11 @@ function runHook(env: Record<string, string>): Promise<Run> {
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
     child.once("exit", (code) => resolve({ code, stdout, stderr, ms: Date.now() - started }));
+    // With no socket the script leaves before it reads its input, as it should,
+    // so writing that input can find the pipe already closed.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") throw error;
+    });
     child.stdin.end(INPUT);
   });
 }
