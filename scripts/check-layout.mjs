@@ -27,6 +27,8 @@ const SKIPPED_FOLDERS = new Set([
   "node_modules",
   ".git",
   "dist",
+  "dist-electron",
+  "release",
   "coverage",
   ".claude",
   ".reference",

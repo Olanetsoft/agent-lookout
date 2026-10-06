@@ -6,6 +6,7 @@ import {
 } from "@core/api";
 import type { TerminalApp } from "@core/sessions/session";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
+import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 
 /** What a press of Jump came to: the place was selected, or why it was not. */
 export type JumpOutcome = "selected" | JumpFailure;
@@ -56,10 +57,12 @@ export function jumpOutcomeWords(outcome: JumpOutcome, app: TerminalApp | null =
  * The line said the first time a terminal tab's Jump is pressed on this
  * browser, while macOS asks the person whether the collector may drive the app.
  * macOS's question names the program Agent Lookout was started from, not
- * Agent Lookout, so the line does too.
+ * Agent Lookout, so the line does too. In the Mac app the collector runs inside
+ * Agent Lookout itself, and the question names it.
  */
-export function automationAskLine(app: TerminalApp): string {
-  return `macOS will ask once whether the app you started Agent Lookout from may control ${app}. Allow it to let Jump switch tabs.`;
+export function automationAskLine(app: TerminalApp, inApp: boolean = inAppWindow()): string {
+  const asking = inApp ? "Agent Lookout" : "the app you started Agent Lookout from";
+  return `macOS will ask once whether ${asking} may control ${app}. Allow it to let Jump switch tabs.`;
 }
 
 /** The line said when macOS did not allow it, with where to change that. */

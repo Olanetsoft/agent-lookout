@@ -1,5 +1,5 @@
 {
-  // The Vite config, checked as Node code.
+  // The Vite config and the Mac app's packing config, checked as Node code.
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2023",
@@ -19,5 +19,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "electron-builder.ts"]
 }

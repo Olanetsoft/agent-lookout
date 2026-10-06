@@ -461,6 +461,8 @@ Choose Allow, and the tab comes forward. macOS remembers the answer and does not
 
 To change the answer later, open System Settings, choose Privacy & Security, then Automation. Under the program you start Agent Lookout from, turn Terminal or iTerm2 on to let Jump switch tabs, or off to stop it. If you start Agent Lookout from another program, macOS asks again, for that program.
 
+In the [desktop app](#desktop-app) the collector runs inside Agent Lookout itself, so the question names Agent Lookout, the row says so, and the permission is Agent Lookout's alone.
+
 #### What the row says
 
 | It says                                  | What happened                                                                                                                     |
@@ -805,7 +807,7 @@ Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on 
 
 It cannot stop, resume or answer a session, and nor can an agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
-A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, cannot open the session, and are not cleared when the session moves on.
+A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
 A Codex session never shows as needing you. Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working. Once it has written nothing for 5 minutes, its row says how long it has been [quiet](#quiet-for), which is the sign to look. A Claude Code session never says how long it has been quiet. A Codex session also appears only once its first prompt is sent, because Codex creates its file then. Past sessions the Codex desktop app imports from another agent appear only once you use them in Codex. A session from the Codex desktop app is named after its folder, because the app does not keep the titles it shows in the names file Agent Lookout reads.
 
@@ -894,6 +896,47 @@ Every other setting under [Settings you can change](#settings-you-can-change) wo
 Agent Lookout is on npm, so `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, about 30 MB with what it needs, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
 
 In a clone, run `npm run build` and `npm link` once in the `agent-lookout` folder, then `agent-lookout` from any folder.
+
+## Desktop app
+
+Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. No release of the app has been published yet. To build it from a clone, on a Mac:
+
+```sh
+npm install
+npm run dist:mac
+```
+
+It takes a minute or two, and the first time it downloads Electron for each kind of Mac. It puts a disk image and a zip for each in `release/`: `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon and `Agent-Lookout-<version>-mac-x64.dmg` for Intel. Open the disk image for your Mac and drag Agent Lookout to Applications.
+
+The app is not yet signed with an Apple Developer ID, so the first time a downloaded copy is opened, macOS does not open it. Its message is titled “Agent Lookout” Not Opened and says that Apple could not verify “Agent Lookout” is free of malware. To open it anyway:
+
+1. Press Done. Do not press Move to Bin, or Move to Trash, which deletes the app.
+2. Open System Settings › Privacy & Security.
+3. Under Security, next to the line that says Agent Lookout was blocked, press Open Anyway, and confirm with your password or Touch ID. The button is there for about an hour after macOS stopped the app. If it has gone, open the app again, press Done, and go back to Privacy & Security.
+
+macOS remembers the choice. A copy you built yourself on this Mac opens without this step.
+
+It behaves as a Mac app does:
+
+- One copy runs at a time. Opening it again brings its window forward.
+- Closing the window leaves it running, still watching your sessions and showing notifications. Click its icon in the Dock to open the window again. Cmd+Q quits it.
+- With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window.
+- Its icon in the Dock shows how many sessions need you, with the window open or closed, and no number when none do.
+- Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
+- Right-click selected text to copy it, or in the search field to cut, copy and paste.
+- It opens where you left it, at the size you left it.
+
+What the app cannot show you it writes in its log, `~/Library/Logs/Agent Lookout/main.log`: an error, and the lines `npm start` would print, such as the one that says an email or webhook setting is wrong. If the app cannot start at all, it says so in a message and quits. The log stays on this computer.
+
+It reads the same [settings](#settings-you-can-change) as `npm start`, from its environment, except the port and address, which it has no use for. An app opened from the Finder or the Dock gets none of your shell's variables, so to give it one, quit it and open it from a terminal:
+
+```sh
+open -a "Agent Lookout" --env AGENT_LOOKOUT_NOTIFICATIONS=on
+```
+
+`agent-lookout status`, `agent-lookout mcp` and the [tmux status line](#in-a-tmux-status-line) read Agent Lookout over its local address, which the app does not have. For them, run `agent-lookout` or `npm start` as well.
+
+To work on the app, `npm run dev:desktop` builds it and opens it from `dist-electron/`, with reload and the developer tools in its View menu.
 
 ## When something goes wrong
 

@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- A Mac app, built from the repository with `npm run dist:mac` for Apple silicon and for Intel. It shows the dashboard in its own window, runs Agent Lookout inside itself with no port opened, keeps running in the Dock when the window is closed, shows on its Dock icon how many sessions need you, and shows notifications under its own name. It is not signed yet, so macOS asks once before it first opens: [Desktop app](docs/GUIDE.md#desktop-app) has the steps.
+
 ## 0.2.0 - 2026-10-06
 
 The first version on npm. It shows Claude Code and Codex sessions, and those of any agent that writes a status file. The one thing it changes on the machine is which tmux pane, or which tab of Terminal or iTerm2, is in front, when you press Jump.

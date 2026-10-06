@@ -41,7 +41,9 @@ function markName(needsYou: number | null): string {
  * size. Its contents stay in view on a long page.
  *
  * In a narrow window it narrows to its icons, and each view keeps its name for
- * assistive technology, so navigation never goes.
+ * assistive technology, so navigation never goes. In the Mac app's window it
+ * keeps its full width, because the window's three buttons sit on a cell of its
+ * own at its top, above the mark, level with the header.
  *
  * The lamp in the mark is lit while a session needs the person, so that can be
  * read from every view.
@@ -53,15 +55,24 @@ export function Rail({ current, needsYou }: RailProps) {
     <nav
       data-slot='rail'
       aria-label='Views'
-      className='glass-chrome z-20 w-rail shrink-0 max-mid:w-14'
+      className='glass-chrome z-20 w-rail shrink-0 max-mid:w-14 in-app:w-rail'
     >
       <div className='sticky top-window flex flex-col items-center'>
+        {/*
+          In the Mac app's window, its three buttons sit here, and a drag here
+          moves the window. In full screen macOS hides them, and the cell goes.
+        */}
+        <div
+          data-slot='rail-buttons'
+          aria-hidden
+          className='hidden h-header w-full in-app-windowed:block'
+        />
         <a
           href={VIEWS[0]?.href}
           data-slot='rail-mark'
           data-lit={lit}
           aria-label={markName(needsYou)}
-          className='grid h-header w-full place-items-center rounded-t-chrome text-ink focus-visible:-outline-offset-2'
+          className='grid h-header w-full place-items-center rounded-t-chrome text-ink focus-visible:-outline-offset-2 in-app-windowed:rounded-inner'
         >
           <LookoutMark lit={lit} />
         </a>

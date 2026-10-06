@@ -143,3 +143,12 @@ export function claudeCodeOpenLink(
   if (surface !== "vscode" || !sessionId) return undefined;
   return `vscode://anthropic.claude-code/open?session=${encodeURIComponent(sessionId)}`;
 }
+
+/**
+ * The exact shape of the link `claudeCodeOpenLink` builds: the session id as
+ * `encodeURIComponent` leaves it, and nothing after it. Session data comes from
+ * other tools, so a link is opened only when it has this shape: by the
+ * dashboard's Jump, and by the Mac app, which hands it to the system.
+ */
+export const CLAUDE_CODE_OPEN_LINK =
+  /^vscode:\/\/anthropic\.claude-code\/open\?session=[A-Za-z0-9\-_.!~*'()%]{1,200}$/;

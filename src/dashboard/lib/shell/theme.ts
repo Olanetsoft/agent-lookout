@@ -45,9 +45,28 @@ let state: ThemeState | null = null;
 const listeners = new Set<() => void>();
 let stopWatchingSystem: (() => void) | null = null;
 
+/**
+ * Says the colour of the window's own ground, `--ground-top`, in the theme in
+ * force, through `<meta name="theme-color">`. A browser may tint its own frame
+ * with it, and the Mac app's window takes it as its background, so a resize or
+ * the next launch never shows a colour the page does not have.
+ */
+function sayThemeColor(): void {
+  const colour = getComputedStyle(document.documentElement).getPropertyValue("--ground-top").trim();
+  if (colour === "") return;
+  let meta = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.name = "theme-color";
+    document.head.append(meta);
+  }
+  if (meta.content !== colour) meta.content = colour;
+}
+
 function apply(next: ThemeState): void {
   state = next;
   document.documentElement.setAttribute("data-theme", next.resolved);
+  sayThemeColor();
   for (const listener of listeners) listener();
 }
 
@@ -78,6 +97,7 @@ export function subscribeToTheme(listener: () => void): () => void {
   if (document.documentElement.getAttribute("data-theme") !== resolved) {
     document.documentElement.setAttribute("data-theme", resolved);
   }
+  sayThemeColor();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0 && stopWatchingSystem) {

@@ -29,6 +29,7 @@
       "@core/*": ["./src/core/*"],
       "@collector/*": ["./src/collector/*"],
       "@dashboard/*": ["./src/dashboard/*"],
+      "@desktop/*": ["./src/desktop/*"],
       "@tests/*": ["./tests/*"]
     }
   },

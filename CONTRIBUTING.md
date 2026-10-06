@@ -111,7 +111,7 @@ In the dashboard, primitives are in `src/dashboard/components/ui/` and features 
 
 Modules are grouped by what they are about, not left in one long folder: `src/dashboard/lib/` has `api/`, `sessions/`, `sources/`, `charts/`, `notifications/` and `shell/`, and the hooks, the primitives and `src/core/` are grouped the same way. Put a new module in the folder for its area, and its test at the mirrored path under `tests/`. `npm run check` fails when a folder holds more than eight code files side by side.
 
-The dashboard and the tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard` and `@tests`. Only tests can use `@tests`. The collector, the command in `src/cli/` and `src/core/` import by relative path with the `.ts` extension, because `npm start` and the command run them without a bundler.
+The dashboard and the tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard`, `@desktop` and `@tests`. Only tests can use `@tests`. The collector, the command in `src/cli/` and `src/core/` import by relative path with the `.ts` extension, because `npm start` and the command run them without a bundler, and the Mac app's main process in `src/desktop/` does the same.
 
 ## Names
 

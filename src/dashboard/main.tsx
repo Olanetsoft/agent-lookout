@@ -4,6 +4,10 @@ import { createRoot } from "react-dom/client";
 import "./styles/index.css";
 import App from "@dashboard/App";
 import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
+import { markAppWindow } from "@dashboard/lib/shell/appWindow";
+
+// In the Mac app's window, the rail makes room for the window's buttons.
+markAppWindow();
 
 const container = document.getElementById("root");
 if (!container) {

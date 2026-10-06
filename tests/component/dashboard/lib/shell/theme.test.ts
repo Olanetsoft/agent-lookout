@@ -15,7 +15,11 @@ afterEach(() => {
   localStorage.clear();
   resetThemeForTests();
   document.documentElement.removeAttribute("data-theme");
+  document.head.querySelector('meta[name="theme-color"]')?.remove();
 });
+
+const themeColour = () =>
+  document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content;
 
 const systemTheme = () =>
   window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
@@ -69,5 +73,20 @@ test("the first subscriber puts the theme on html when no inline script has", ()
   const stop = subscribeToTheme(() => {});
 
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  stop();
+});
+
+test("the page says the colour of its ground in the theme in force, for the app's window to take", () => {
+  const stop = subscribeToTheme(() => {});
+  // Night is the default, and its ground is the colour the app's window opens in.
+  expect(themeColour()).toBe("#090908");
+
+  setThemePreference("light");
+  expect(themeColour()).toBe("#d4d0ca");
+  // Told once: the one tag is kept up to date.
+  expect(document.head.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
+
+  setThemePreference("dark");
+  expect(themeColour()).toBe("#090908");
   stop();
 });

@@ -1,3 +1,4 @@
+import { CLAUDE_CODE_OPEN_LINK } from "@core/mapping/claudeCodeMapping";
 import {
   SOURCE_STATE_LABEL,
   surfaceLabel,
@@ -85,7 +86,7 @@ export function eventPhrase(
  */
 const JUMP_LINK: Partial<Record<SourceId, RegExp>> = {
   // The session id is as `encodeURIComponent` leaves it, and nothing may follow it.
-  "claude-code": /^vscode:\/\/anthropic\.claude-code\/open\?session=[A-Za-z0-9\-_.!~*'()%]{1,200}$/,
+  "claude-code": CLAUDE_CODE_OPEN_LINK,
 };
 
 /** The session's Jump address when it is one this source is known to build, or null. */

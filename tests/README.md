@@ -84,7 +84,7 @@ A module can have a file in more than one group, but only one in each. `src/coll
 
 The `unit/` and `integration/` projects run `*.test.ts`. The `component/` project runs `*.test.ts` and `*.test.tsx`, because it tests plain modules that need a page as well as components.
 
-Tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard` and `@tests`, so a test file can move without its imports changing.
+Tests import through the aliases `@cli`, `@core`, `@collector`, `@dashboard`, `@desktop` and `@tests`, so a test file can move without its imports changing.
 
 ## What the layout check refuses
 

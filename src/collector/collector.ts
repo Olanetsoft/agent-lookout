@@ -1,3 +1,4 @@
+import type { SessionsSnapshot } from "../core/sessions/session.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
@@ -104,6 +105,12 @@ export interface CollectorOptions {
    * setting is wrong. Defaults to the console's errors.
    */
   warn?: (line: string) => void;
+  /**
+   * Told each poll's sessions, after the collector's own notifications, email
+   * and webhook have been. The Mac app puts the count that needs you on its
+   * Dock icon. A listener that throws changes nothing for the others.
+   */
+  onSnapshot?: (snapshot: SessionsSnapshot) => void;
   intervalMs?: number;
   now?: () => number;
 }
@@ -222,6 +229,7 @@ export function createCollector(options: CollectorOptions): Collector {
       email?.handle(snapshot);
       webhook?.handle(snapshot);
       notifications.handle(snapshot);
+      options.onSnapshot?.(snapshot);
     },
   });
   const handler = createApiHandler({

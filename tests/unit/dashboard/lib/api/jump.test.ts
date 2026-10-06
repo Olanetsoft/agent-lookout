@@ -129,6 +129,10 @@ test("the two lines about macOS name the app, and where to allow it, calmly", ()
     "macOS will ask once whether the app you started Agent Lookout from may control Terminal. Allow it to let Jump switch tabs.",
   );
   expect(automationAskLine("iTerm2")).toContain("control iTerm2.");
+  // In the Mac app the collector runs inside Agent Lookout, and macOS names it.
+  expect(automationAskLine("Terminal", true)).toBe(
+    "macOS will ask once whether Agent Lookout may control Terminal. Allow it to let Jump switch tabs.",
+  );
   expect(AUTOMATION_REFUSED_LINE).toBe(
     "To let Jump switch tabs, allow it in System Settings, Privacy & Security, Automation.",
   );

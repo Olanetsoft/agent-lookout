@@ -941,6 +941,112 @@ test.each([1180, 1000, 760, 620, 375])(
   },
 );
 
+test.each([1180, 1000, 760, 620, 375])(
+  "at %i pixels wide in the Mac app's window, the window's buttons sit on the rail's top cell, the chrome moves the window, and nothing runs off the side",
+  async (width) => {
+    document.documentElement.dataset.host = "app";
+    onTestFinished(() => {
+      delete document.documentElement.dataset.host;
+    });
+    await page.viewport(width, 900);
+    const screen = await render(<App store={fixedStore(liveState())} />);
+    await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+
+    const region = (element: Element) =>
+      getComputedStyle(element).getPropertyValue("-webkit-app-region");
+    const cell = rail().querySelector('[data-slot="rail-buttons"]') as HTMLElement;
+    const mark = rail().querySelector('[data-slot="rail-mark"]') as HTMLElement;
+
+    for (const view of ["overview", "sources", "settings"] as const) {
+      location.hash = `#${view}`;
+      await vi.waitFor(() => expect(main().dataset.view).toBe(view));
+      expect(document.documentElement.scrollWidth, view).toBeLessThanOrEqual(window.innerWidth);
+
+      // The rail keeps its full width, which the three buttons need, and its top
+      // cell is theirs: level with the header, with the mark under it.
+      expect(rail().getBoundingClientRect().width, view).toBe(76);
+      const box = cell.getBoundingClientRect();
+      const bar = header().getBoundingClientRect();
+      expect([box.left, box.top, box.width, box.height], view).toEqual([12, 12, 76, 56]);
+      expect(box.top, view).toBe(bar.top);
+      expect(box.bottom, view).toBe(bar.bottom);
+      expect(mark.getBoundingClientRect().top, view).toBeGreaterThanOrEqual(box.bottom);
+      expect(cell.getAttribute("aria-hidden"), view).toBe("true");
+
+      // The header, the cell and the strip above the header move the window,
+      // and every control in the header and the rail still takes its clicks.
+      expect(region(header()), view).toBe("drag");
+      expect(region(cell), view).toBe("drag");
+      expect(region(groundAbove()), view).toBe("drag");
+      const controls = [
+        ...header().querySelectorAll("a, button"),
+        ...rail().querySelectorAll("a, button"),
+      ];
+      expect(controls.length, view).toBeGreaterThan(4);
+      for (const control of controls) expect(region(control), view).toBe("no-drag");
+      expect(region(main()), view).not.toBe("drag");
+    }
+  },
+);
+
+test("in the Mac app's window, a dialog open over the header takes its own clicks", async () => {
+  document.documentElement.dataset.host = "app";
+  onTestFinished(() => {
+    delete document.documentElement.dataset.host;
+  });
+  const screen = await render(<App store={fixedStore(liveState())} />);
+  await screen.getByRole("button", { name: "Find a session" }).click();
+  const dialog = screen.getByRole("dialog").element();
+
+  // Everything the dialog is drawn in sits on <body>, outside the app's root,
+  // over the header, which would otherwise take a click there as a drag.
+  let layer: Element = dialog;
+  while (layer.parentElement !== document.body) layer = layer.parentElement as Element;
+  expect(layer.id).not.toBe("root");
+  expect(getComputedStyle(layer).getPropertyValue("-webkit-app-region")).toBe("no-drag");
+  const scrim = document.querySelector('[data-slot="scrim"]') as HTMLElement;
+  expect(getComputedStyle(scrim).getPropertyValue("-webkit-app-region")).toBe("no-drag");
+});
+
+test("in the Mac app's window in full screen, where macOS hides its buttons, the rail has no cell for them", async () => {
+  document.documentElement.dataset.host = "app";
+  document.documentElement.dataset.fullscreen = "";
+  onTestFinished(() => {
+    delete document.documentElement.dataset.host;
+    delete document.documentElement.dataset.fullscreen;
+  });
+  await page.viewport(1180, 900);
+  const screen = await render(<App store={fixedStore(liveState())} />);
+  await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+
+  const cell = rail().querySelector('[data-slot="rail-buttons"]') as HTMLElement;
+  expect(getComputedStyle(cell).display).toBe("none");
+  // The rail keeps its width, and the mark is at its head, level with the header.
+  expect(rail().getBoundingClientRect().width).toBe(76);
+  expect(
+    (rail().querySelector('[data-slot="rail-mark"]') as HTMLElement).getBoundingClientRect().top,
+  ).toBe(header().getBoundingClientRect().top);
+
+  // Out of full screen, the cell is back.
+  delete document.documentElement.dataset.fullscreen;
+  expect(getComputedStyle(cell).display).toBe("block");
+});
+
+test("in a browser tab, the rail has no cell for window buttons and nothing moves a window", async () => {
+  const screen = await render(<App store={fixedStore(liveState())} />);
+  await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+
+  const cell = rail().querySelector('[data-slot="rail-buttons"]') as HTMLElement;
+  expect(getComputedStyle(cell).display).toBe("none");
+  // The mark sits at the rail's head, level with the header.
+  expect(
+    (rail().querySelector('[data-slot="rail-mark"]') as HTMLElement).getBoundingClientRect().top,
+  ).toBe(header().getBoundingClientRect().top);
+  for (const element of [header(), groundAbove(), cell]) {
+    expect(getComputedStyle(element).getPropertyValue("-webkit-app-region")).not.toBe("drag");
+  }
+});
+
 /** Two waiting sessions named longer than any card has room for at the width of a phone. */
 const LONG_NAMES = [
   "a-waiting-session-whose-name-runs-far-past-the-width-of-a-phone-screen",

@@ -1240,3 +1240,43 @@ describe("webhook notifications", () => {
     expect(hook.connections).toBe(0);
   });
 });
+
+describe("what a host is told", () => {
+  test("a host that listens is told each poll's sessions", async () => {
+    const source = standInSource([waiting("mobile-onboarding")]);
+    const told: string[][] = [];
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [source.adapter],
+      env: {},
+      notifier: fakeSystemNotifier(),
+      now: () => source.state.now,
+      onSnapshot: (snapshot) => told.push(snapshot.sessions.map((session) => session.status)),
+    });
+
+    await collector.poller.pollOnce();
+    source.state.now += 2_000;
+    source.state.sessions = [working("mobile-onboarding")];
+    await collector.poller.pollOnce();
+
+    expect(told).toEqual([["needs-you"], ["working"]]);
+  });
+
+  test("a listener that throws leaves the poll's answer standing", async () => {
+    const source = standInSource([waiting("mobile-onboarding")]);
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [source.adapter],
+      env: {},
+      notifier: fakeSystemNotifier(),
+      now: () => source.state.now,
+      onSnapshot: () => {
+        throw new Error("the listener's own fault");
+      },
+    });
+
+    const snapshot = await collector.poller.pollOnce();
+    expect(snapshot.sessions.map((session) => session.status)).toEqual(["needs-you"]);
+    expect(collector.poller.getSnapshot()).toBe(snapshot);
+  });
+});

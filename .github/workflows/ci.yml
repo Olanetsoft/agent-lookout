@@ -87,6 +87,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Bundles the Mac app's main process, which stops if it would need a
+      # package at run time. Packing the app itself needs a Mac, so it is not
+      # done here, and nothing here downloads Electron: since Electron 44 the
+      # binary comes only when something runs it, and no job does.
+      - run: node scripts/build-desktop.mjs
 
   # Starts the built app on Linux with `npm start`, as a person would, on
   # folders of its own, and checks that it reads Claude Code, Codex and status

@@ -165,6 +165,7 @@ export default defineConfig({
       "@core": fromRoot("./src/core"),
       "@collector": fromRoot("./src/collector"),
       "@dashboard": fromRoot("./src/dashboard"),
+      "@desktop": fromRoot("./src/desktop"),
     },
   },
   server: {

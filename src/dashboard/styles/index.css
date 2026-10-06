@@ -55,6 +55,19 @@
 /* `data-theme` on <html> is "light" or "dark". index.html sets it before first paint. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/*
+ * `data-host="app"` on <html> means the page is in the Mac app's window, which
+ * has no title bar. `src/dashboard/lib/shell/appWindow.ts` sets it before first
+ * paint. The window's buttons sit on the rail's top cell, so the rail keeps its
+ * full width at every size there.
+ *
+ * In full screen macOS hides the buttons, and the window adds `data-fullscreen`
+ * to <html> for as long as it lasts. `in-app-windowed` is the app's window
+ * while it is not in full screen, which is when the buttons' cell is drawn.
+ */
+@custom-variant in-app (&:where([data-host="app"] *));
+@custom-variant in-app-windowed (&:where([data-host="app"]:not([data-fullscreen]) *));
+
 /* What does not change with the theme: how the light is laid out, and how far glass blurs. */
 :root {
   /*
@@ -1026,6 +1039,33 @@
       scrollbar-width: thin;
       scrollbar-color: var(--rule-strong) transparent;
     }
+  }
+
+  /*
+   * In the Mac app's window, which has no title bar, the window is moved by
+   * dragging the header, the rail's top cell, where its buttons sit, or the
+   * strip of ground above the header. Every control in the header and the rail
+   * still takes its clicks, and so does whatever floats over the page, a dialog
+   * or a tooltip, which is put on <body> outside the app's root.
+   */
+  [data-host="app"]
+    :is([data-slot="header"], [data-slot="rail-buttons"], [data-slot="ground-above"]) {
+    -webkit-app-region: drag;
+  }
+  [data-host="app"]
+    :is([data-slot="header"], [data-slot="rail"])
+    :is(a, button, input, select, textarea, summary, [role="button"], [tabindex]),
+  [data-host="app"] body > :not(#root) {
+    -webkit-app-region: no-drag;
+  }
+
+  /*
+   * The page's own scrollbar runs the window's full height, as there is no
+   * title bar above it. Where macOS draws scrollbars that always show, it is
+   * drawn at the system's small size, so it takes less of the window's edge.
+   */
+  [data-host="app"] {
+    scrollbar-width: thin;
   }
 }
 
