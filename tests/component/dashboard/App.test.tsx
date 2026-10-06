@@ -889,7 +889,19 @@ test("at 760 pixels and below the status line keeps a short form under the wordm
     expect(getComputedStyle(toggle).backgroundColor).toBe(getComputedStyle(search).backgroundColor);
 
     // Nothing in the header runs past the window or into its 16px side.
-    expect(document.documentElement.scrollWidth, `${width}`).toBeLessThanOrEqual(width);
+    // Named in the message: whatever reaches past the window, so a failure on another
+    // system's fonts says where to look.
+    const past = [...document.querySelectorAll<HTMLElement>("body *")]
+      .filter((element) => !element.closest(".ground"))
+      .filter((element) => element.getBoundingClientRect().right > width)
+      .map(
+        (element) =>
+          `${element.tagName.toLowerCase()}[${element.dataset.slot ?? element.dataset.part ?? ""}] ${element.getBoundingClientRect().right.toFixed(1)}`,
+      );
+    expect(
+      document.documentElement.scrollWidth,
+      `${width}: ${past.join(", ")}`,
+    ).toBeLessThanOrEqual(width);
     for (const element of header().querySelectorAll("*")) {
       expect(element.getBoundingClientRect().right, `${width}`).toBeLessThanOrEqual(width - 16);
     }

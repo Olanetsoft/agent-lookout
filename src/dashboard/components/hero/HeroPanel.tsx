@@ -280,7 +280,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
         <Place session={session} agent={agent} className='mt-1.5 block wrap-anywhere' />
       </div>
 
-      <div className='flex shrink-0 items-end gap-6 max-mid:justify-between'>
+      <div className='flex shrink-0 items-end gap-6 max-mid:flex-wrap max-mid:justify-between max-mid:gap-y-3'>
         <div data-part='wait' className='text-right max-mid:text-left'>
           <p className='text-wait font-medium whitespace-nowrap text-label-needs-you'>
             {waited !== null ? (
