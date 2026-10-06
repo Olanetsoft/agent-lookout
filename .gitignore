@@ -3,8 +3,8 @@ node_modules
 
 # Build output
 dist
-dist-electron
-release
+/dist-electron
+/release
 .output
 coverage
 
