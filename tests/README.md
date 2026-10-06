@@ -79,6 +79,10 @@ No other test reads the real `~/.claude` folder or runs the real `claude` comman
 
 `integration/collector/tmux/selectPane.test.ts` runs the real `tmux`, and is skipped where tmux is not installed. Each test starts a tmux server of its own on a private socket, runs `sleep` in its panes, finds the pane a process is in and checks with tmux itself that selecting it changed the selected window, the selected pane and what an attached client shows. The server is killed when the test finishes, pass or fail. Nothing in it lists, attaches to or changes your own tmux server.
 
+### The examples in the guide
+
+`integration/collector/adapters/status-files/index.test.ts` takes the Python and the Node.js examples from "Your own agents" in `docs/GUIDE.md`, as published, and runs them with `python3` and with the Node that runs the tests, each in a folder of its own, with `HOME` and `AGENT_LOOKOUT_STATUS_DIR` pointed at temporary folders. Each wait in them is replaced by a stop that lasts until the test lets it go on, so a run takes well under a second, and the real status-file source reads what they write. The Python example is skipped where `python3` is not installed.
+
 ## Names and paths
 
 A test file is named for the module it covers and sits at that module's path, with `tests/<group>/` in place of `src/`. It ends in `.test.tsx` when the module is a `.tsx` file, and in `.test.ts` otherwise. There are no exceptions: every test file names a module that exists.

@@ -4,6 +4,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -11,8 +12,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import readline from "node:readline";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 
 import {
   createStatusFileAdapter,
@@ -299,3 +302,253 @@ describe("the status-file source, on a real folder", () => {
     expect((await poll()).health.state).toBe("not-set-up");
   });
 });
+
+const GUIDE = fileURLToPath(new URL("../../../../../docs/GUIDE.md", import.meta.url));
+
+/** What each of an example's waits prints in place of waiting, once its file is written. */
+const PAUSED = "<paused>";
+
+/** The one code block in a language under "Your own agents" in docs/GUIDE.md, as published. */
+async function guideExample(language: string): Promise<string> {
+  const text = await readFile(GUIDE, "utf8");
+  const start = text.indexOf("\n## Your own agents\n");
+  expect(start, 'docs/GUIDE.md has no "## Your own agents"').toBeGreaterThan(-1);
+  const rest = text.slice(start + 1);
+  const end = rest.indexOf("\n## ");
+  const section = end === -1 ? rest : rest.slice(0, end);
+  const blocks = [...section.matchAll(/^```(\w*)\n([\s\S]*?)^```$/gm)].filter(
+    (block) => block[1] === language,
+  );
+  expect(blocks, `"Your own agents" has one ${language} example`).toHaveLength(1);
+  return blocks[0]?.[2] ?? "";
+}
+
+/** Whether a program runs here. */
+function runs(program: string): boolean {
+  try {
+    execFileSync(program, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How an example in the guide is run: saved under the name the guide gives it,
+ * with each of its waits replaced by a stop that prints `PAUSED` and lasts
+ * until the test sends a line. Nothing else in it is changed.
+ */
+interface Runner {
+  name: string;
+  language: string;
+  file: string;
+  available: boolean;
+  command(folder: string): Promise<[string, string[]]>;
+}
+
+const RUNNERS: Runner[] = [
+  {
+    name: "Python",
+    language: "python",
+    file: "my_agent.py",
+    available: runs("python3"),
+    async command() {
+      const driver = [
+        "import runpy, sys, time",
+        "def pause(seconds):",
+        `    print("${PAUSED}", flush=True)`,
+        "    sys.stdin.readline()",
+        "time.sleep = pause",
+        'runpy.run_path("my_agent.py", run_name="__main__")',
+      ].join("\n");
+      return ["python3", ["-c", driver]];
+    },
+  },
+  {
+    name: "Node",
+    language: "js",
+    file: "my-agent.mjs",
+    available: true,
+    async command(folder) {
+      const driver = path.join(folder, "pauses.mjs");
+      await writeFile(
+        driver,
+        [
+          'import readline from "node:readline";',
+          "const lines = readline.createInterface({ input: process.stdin })[Symbol.asyncIterator]();",
+          "globalThis.setTimeout = (resume) => {",
+          `  console.log("${PAUSED}");`,
+          "  lines.next().then(() => resume());",
+          "};",
+        ].join("\n"),
+      );
+      return [process.execPath, ["--import", pathToFileURL(driver).href, "my-agent.mjs"]];
+    },
+  },
+];
+
+/** One run of an example, in a folder of its own, which is stopped when the test ends. */
+async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessEnv) {
+  const work = path.join(parent, "work");
+  await mkdir(work);
+  await writeFile(path.join(work, runner.file), await guideExample(runner.language));
+  const [command, args] = await runner.command(work);
+  const child = spawn(command, args, { cwd: work, env, stdio: ["pipe", "pipe", "pipe"] });
+  let errors = "";
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => (errors += chunk));
+  child.on("error", (error) => (errors += String(error)));
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  onTestFinished(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await exited;
+    }
+  });
+  const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  return {
+    pid: child.pid,
+    cwd: await realpath(work),
+    /** Resolves once the example has written its file and come to its next wait. */
+    async paused() {
+      for (;;) {
+        const line = await lines.next();
+        if (line.done) throw new Error(`The example ended before its next wait.\n${errors}`);
+        if (line.value === PAUSED) return;
+      }
+    },
+    /** Lets it go on from the wait it is at. */
+    goOn() {
+      child.stdin.write("\n");
+    },
+    /** Lets it go on from its last wait to its end. */
+    end() {
+      child.stdin.end("\n");
+      return exited;
+    },
+    kill(signal: NodeJS.Signals) {
+      child.kill(signal);
+      return exited;
+    },
+  };
+}
+
+for (const runner of RUNNERS) {
+  describe.skipIf(!runner.available)(
+    `the ${runner.name} example in docs/GUIDE.md, run against the status-file source`,
+    () => {
+      /** The adapter on a folder that does not exist yet, and the example's environment. */
+      async function setUp() {
+        const watched = await watch({ make: false });
+        const home = path.join(watched.parent, "home");
+        const env = { ...process.env, HOME: home, [STATUS_DIR_ENV]: watched.folder };
+        return { ...watched, env };
+      }
+
+      test("its session appears as it starts, waits on a question, works again, and goes as it ends", async () => {
+        const { folder, parent, poll, env } = await setUp();
+        expect((await poll()).health.state).toBe("not-set-up");
+        const example = await startExample(runner, parent, env);
+
+        await example.paused();
+        const working = await poll();
+        expect(working.sessions).toMatchObject([
+          {
+            id: "status-files:my-agent.json",
+            agent: "my-agent",
+            name: "docs-site",
+            cwd: example.cwd,
+            project: "work",
+            surface: "terminal",
+            status: "working",
+            pid: example.pid,
+            alive: true,
+          },
+        ]);
+        expect(working.health.watching?.slice(2)).toEqual([
+          { label: "Files read", value: "1" },
+          { label: "Files skipped", value: "0" },
+        ]);
+        // The file was renamed into place: nothing else is left in the folder.
+        expect(await readdir(folder)).toEqual(["my-agent.json"]);
+        const written = JSON.parse(await readFile(path.join(folder, "my-agent.json"), "utf8"));
+        expect(working.sessions[0]?.statusSince).toBe(written.since);
+
+        example.goOn();
+        await example.paused();
+        const waiting = await poll();
+        expect(waiting.sessions).toMatchObject([
+          { name: "docs-site", status: "needs-you", waitingReason: "question" },
+        ]);
+        const waitedFrom = waiting.sessions[0]?.statusSince ?? Infinity;
+        expect(waitedFrom).toBeGreaterThanOrEqual(written.since);
+
+        example.goOn();
+        await example.paused();
+        const again = await poll();
+        expect(again.sessions).toMatchObject([{ name: "docs-site", status: "working" }]);
+        expect(again.sessions[0]?.statusSince).toBeGreaterThanOrEqual(waitedFrom);
+
+        expect(await example.end()).toEqual({ code: 0, signal: null });
+        expect(await readdir(folder)).toEqual([]);
+        expect((await poll()).sessions).toEqual([]);
+      }, 20_000);
+
+      const STOPS: [string, NodeJS.Signals][] = [
+        ["Ctrl-C", "SIGINT"],
+        ["kill", "SIGTERM"],
+        ["a closed terminal", "SIGHUP"],
+      ];
+      for (const [stop, signal] of STOPS) {
+        test(`stopped by ${stop}, it deletes its file`, async () => {
+          const { folder, parent, poll, env } = await setUp();
+          const example = await startExample(runner, parent, env);
+          await example.paused();
+          example.goOn();
+          await example.paused();
+          expect((await poll()).sessions).toMatchObject([{ status: "needs-you" }]);
+
+          await example.kill(signal);
+          expect(await readdir(folder)).toEqual([]);
+          expect((await poll()).sessions).toEqual([]);
+        }, 20_000);
+      }
+
+      test("killed outright, it leaves its file, and its session goes because of its pid", async () => {
+        const { folder, parent, poll, env } = await setUp();
+        const example = await startExample(runner, parent, env);
+        await example.paused();
+        expect((await poll()).sessions).toMatchObject([{ status: "working", alive: true }]);
+
+        expect(await example.kill("SIGKILL")).toEqual({ code: null, signal: "SIGKILL" });
+        expect(await readdir(folder)).toEqual(["my-agent.json"]);
+        const after = await poll();
+        expect(after.sessions).toEqual([]);
+        expect(after.health.detail).toContain(
+          "1 file names a process that has ended, so its session is not shown.",
+        );
+      }, 20_000);
+
+      test("with no setting, it makes ~/.agent-lookout/sessions and writes there", async () => {
+        const { parent, env } = await setUp();
+        const home = path.join(parent, "home");
+        const folder = path.join(home, ".agent-lookout", "sessions");
+        const adapter = createStatusFileAdapter({ env: {}, homeDir: home });
+        const { [STATUS_DIR_ENV]: _setting, ...withoutSetting } = env;
+        const example = await startExample(runner, parent, withoutSetting);
+
+        await example.paused();
+        expect(await readdir(folder)).toEqual(["my-agent.json"]);
+        expect((await adapter.poll()).sessions).toMatchObject([{ status: "working" }]);
+
+        example.goOn();
+        await example.paused();
+        example.goOn();
+        await example.paused();
+        await example.end();
+        expect(await readdir(folder)).toEqual([]);
+      }, 20_000);
+    },
+  );
+}

@@ -921,6 +921,109 @@ echo "Deleted: the session has gone"
 
 The session appears in Sessions as `docs-site`, in Terminal, moves to Needs you as Asked you a question, and leaves the list when the file is deleted. Once there is more than one agent on the screen, each row names its own, here `my-agent`. If you set `AGENT_LOOKOUT_STATUS_DIR`, put that folder in the first line instead.
 
+An agent written in Python or JavaScript can do the same from its own code. In each example below, `report` writes the file with the agent's own process ID in `pid`. The agent calls it as its work starts, when it waits for you and when it works again, and the file is deleted when the program ends, even when Ctrl-C, `kill` or closing its terminal stops it. Both write to `AGENT_LOOKOUT_STATUS_DIR` when it is set, and to `~/.agent-lookout/sessions` otherwise, and make the folder when it is not there.
+
+In Python 3.8 or later, save this as `my_agent.py` and run `python3 my_agent.py`:
+
+```python
+import atexit
+import json
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+
+default = Path.home() / ".agent-lookout" / "sessions"
+folder = Path(os.environ.get("AGENT_LOOKOUT_STATUS_DIR") or default)
+status_file = folder / "my-agent.json"
+last = {"status": None, "since": None}
+
+
+def report(status, reason=None):
+    # since is when this status began, so it changes only with the status.
+    if status != last["status"]:
+        last.update(status=status, since=round(time.time() * 1000))
+    fields = {
+        "agent": "my-agent",
+        "name": "docs-site",
+        "cwd": os.getcwd(),
+        "status": status,
+        "reason": reason,
+        "since": last["since"],
+        "app": "terminal",
+        "pid": os.getpid(),
+    }
+    folder.mkdir(parents=True, exist_ok=True)
+    # Written whole under a name that starts with a dot, which is never read, then renamed.
+    temp = folder / ".my-agent.json"
+    temp.write_text(json.dumps(fields))
+    os.replace(temp, status_file)
+
+
+atexit.register(lambda: status_file.unlink(missing_ok=True))
+# On kill or a closed terminal, end the program as on Ctrl-C, so the file is deleted then too.
+for signum in (signal.SIGTERM, signal.SIGHUP):
+    signal.signal(signum, lambda number, frame: sys.exit(128 + number))
+
+report("working")  # As the work starts.
+time.sleep(8)
+report("waiting", "question")  # When it needs you.
+time.sleep(8)
+report("working")  # When it works again.
+time.sleep(8)
+```
+
+In Node.js 18 or later, save this as `my-agent.mjs` and run `node my-agent.mjs`:
+
+```js
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const folder =
+  process.env.AGENT_LOOKOUT_STATUS_DIR || path.join(os.homedir(), ".agent-lookout", "sessions");
+const statusFile = path.join(folder, "my-agent.json");
+const last = { status: null, since: null };
+
+function report(status, reason) {
+  // since is when this status began, so it changes only with the status.
+  if (status !== last.status) Object.assign(last, { status, since: Date.now() });
+  const fields = {
+    agent: "my-agent",
+    name: "docs-site",
+    cwd: process.cwd(),
+    status,
+    reason,
+    since: last.since,
+    app: "terminal",
+    pid: process.pid,
+  };
+  fs.mkdirSync(folder, { recursive: true });
+  // Written whole under a name that starts with a dot, which is never read, then renamed.
+  const temp = path.join(folder, ".my-agent.json");
+  fs.writeFileSync(temp, JSON.stringify(fields));
+  fs.renameSync(temp, statusFile);
+}
+
+process.on("exit", () => fs.rmSync(statusFile, { force: true }));
+// On Ctrl-C, kill or a closed terminal, end the program the usual way, so the file is deleted.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => process.exit(128 + os.constants.signals[signal]));
+}
+
+const wait = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+
+report("working"); // As the work starts.
+await wait(8);
+report("waiting", "question"); // When it needs you.
+await wait(8);
+report("working"); // When it works again.
+await wait(8);
+```
+
+Each shows `docs-site` working, then in Needs you as Asked you a question, then working again, for 8 seconds each, and the session leaves the list as the program ends. A program killed outright, as with `kill -9`, cannot delete its file, and `pid` covers that: Agent Lookout sees the process has gone and drops the session within about 2 seconds. While your agent works, have it call `report` again now and then with the same status, so the session is not shown as quiet.
+
 | Field    | Needed | What it holds                                                                                                                                                                                                                                                                                                         |
 | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent`  | Yes    | The agent's name, shown wherever the agent is named, such as `my-agent`. Up to 40 characters are kept.                                                                                                                                                                                                                |
