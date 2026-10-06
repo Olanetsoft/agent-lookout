@@ -239,16 +239,18 @@ Each of these has an `error` sentence beside its `reason`.
 
 ## In the Mac app only
 
-The Mac app serves the dashboard and this API from its own address, `agent-lookout://app/`, with no port, and answers four more routes there, for its updates. `npm start`, `npx agent-lookout` and `npm run dev` do not have them: there, each answers 404.
+The Mac app serves the dashboard and this API from its own address, `agent-lookout://app/`, with no port, and answers six more routes there, for its updates and its menu bar item. `npm start`, `npx agent-lookout` and `npm run dev` do not have them: there, each answers 404.
 
-| Route                          | Body                               | Does                                                                                                                              |
-| ------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/app/update`          |                                    | Where updates stand: the version, the switch, the last check, what was found and how far a download has got                       |
-| `POST /api/app/update/check`   | `{}`                               | Checks GitHub now, and answers once it has                                                                                        |
-| `POST /api/app/update/install` | `{}`                               | Installs the version that is ready, then quits and opens it. 409 when none is ready, or it cannot be installed where the app runs |
-| `POST /api/app/update/setting` | `{ "automatic": true }` or `false` | Turns the daily check on or off                                                                                                   |
+| Route                            | Body                               | Does                                                                                                                              |
+| -------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/app/update`            |                                    | Where updates stand: the version, the switch, the last check, what was found and how far a download has got                       |
+| `POST /api/app/update/check`     | `{}`                               | Checks GitHub now, and answers once it has                                                                                        |
+| `POST /api/app/update/install`   | `{}`                               | Installs the version that is ready, then quits and opens it. 409 when none is ready, or it cannot be installed where the app runs |
+| `POST /api/app/update/setting`   | `{ "automatic": true }` or `false` | Turns the daily check on or off                                                                                                   |
+| `GET /api/app/menu-bar`          |                                    | Whether the menu bar item is shown: `{ "show": true }` or `false`                                                                 |
+| `POST /api/app/menu-bar/setting` | `{ "show": true }` or `false`      | Shows the menu bar item or takes it away                                                                                          |
 
-Each POST passes the checks `POST /api/jump` does, with its own `X-Agent-Lookout-Action`: `check-for-updates`, `install-update` or `update-setting`, and a body of 256 bytes or less that is exactly what the table says. Each answers with the status `GET /api/app/update` gives, `AppUpdateStatus` in `src/core/appUpdate.ts`. Nothing in a request reaches a command or a path.
+Each POST passes the checks `POST /api/jump` does, with its own `X-Agent-Lookout-Action` and a body that is exactly what the table says. For updates, the action is `check-for-updates`, `install-update` or `update-setting`, the body is 256 bytes or less, and each answers with the status `GET /api/app/update` gives, `AppUpdateStatus` in `src/core/appUpdate.ts`. For the menu bar item, the action is `menu-bar-setting`, the body is 64 bytes or less, and it answers with what `GET /api/app/menu-bar` gives, `MenuBarStatus` in `src/core/appMenuBar.ts`. That says `false` while the item could not be put in the menu bar, even with the switch on. Nothing in a request reaches a command or a path.
 
 ## The notifications header
 

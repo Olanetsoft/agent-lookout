@@ -142,15 +142,17 @@ test("the facts about this copy say its version and that Agent Lookout sends its
   expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+/);
 });
 
-test("in a browser there is no Updates card, and nothing asks about updates", async () => {
+test("in a browser there is no Menu bar card and no Updates card, and nothing asks the app", async () => {
   const screen = await render(<SettingsView />);
   await expect.element(screen.getByRole("region", { name: "This copy" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Menu bar" }).elements()).toHaveLength(0);
   expect(screen.getByRole("region", { name: "Updates" }).elements()).toHaveLength(0);
   expect(asked.some((path) => path.startsWith("/api/app/"))).toBe(false);
 });
 
-test("in the Mac app, Updates follows History, among the settings the page changes", async () => {
+test("in the Mac app, Menu bar and Updates follow History, among the settings the page changes", async () => {
   const screen = await render(<SettingsView inApp />);
+  await expect.element(screen.getByRole("region", { name: "Menu bar" })).toBeVisible();
   await expect.element(screen.getByRole("region", { name: "Updates" })).toBeVisible();
   const titles = [...screen.container.querySelectorAll('[data-slot="section-card"] h2')].map(
     (title) => title.textContent,
@@ -159,6 +161,7 @@ test("in the Mac app, Updates follows History, among the settings the page chang
     "Theme",
     "Notifications",
     "History",
+    "Menu bar",
     "Updates",
     "Email",
     "Webhook",
@@ -167,8 +170,11 @@ test("in the Mac app, Updates follows History, among the settings the page chang
   // In the left column, with Theme, Notifications and History.
   const notifications = screen.getByRole("region", { name: "Notifications" }).element();
   const updates = screen.getByRole("region", { name: "Updates" }).element();
+  const menuBar = screen.getByRole("region", { name: "Menu bar" }).element();
   expect(updates.parentElement).toBe(notifications.parentElement);
+  expect(menuBar.parentElement).toBe(notifications.parentElement);
   expect(asked).toContain("/api/app/update");
+  expect(asked).toContain("/api/app/menu-bar");
 });
 
 test.each(["dark", "light"] as const)(

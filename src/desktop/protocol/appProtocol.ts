@@ -17,8 +17,9 @@ export interface AppProtocolOptions {
   /** The collector's handler for `/api/*`. */
   api: ApiHandler;
   /**
-   * The app's own handler for `/api/app/*`: its updates. Left out, those
-   * addresses go to the collector, which has nothing there.
+   * The app's own handler for `/api/app/*`: its updates and its menu bar
+   * item (`protocol/appRoutes.ts`). Left out, those addresses go to the
+   * collector, which has nothing there.
    */
   app?: NodeHandler;
   /** The built dashboard: the folder that holds `index.html`. */

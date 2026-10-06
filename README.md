@@ -48,6 +48,8 @@ Download the disk image for your Mac from the [latest release](https://github.co
 
 It is not signed with an Apple Developer ID yet, so the first time you open it, macOS says “Agent Lookout” Not Opened. Press Done, then open System Settings › Privacy & Security and press Open Anyway. [Desktop app](docs/GUIDE.md#desktop-app) has the steps.
 
+Its icon in the menu bar shows how many sessions need you, with the window open or closed, and a click lists them: choose one to open it.
+
 Kept in Applications, it updates itself: about once a day it asks GitHub whether a newer version is out, and installs it when you press Install and Restart. Settings turns the daily check off. The app opens no port, so `agent-lookout status` and `agent-lookout mcp` cannot reach it. For those, start it with npx as well, and turn notifications on in only one of the two, or you get each one twice.
 
 ### With npx

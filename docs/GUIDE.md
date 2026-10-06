@@ -214,7 +214,7 @@ Why, for each No and Partly:
 
 ### Settings
 
-Settings has six cards, and in the Mac app a seventh, [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
+Settings has six cards, and in the Mac app two more, [Menu bar](#menu-bar) and [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Both are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up.
 
 #### Notifications
 
@@ -977,11 +977,22 @@ It behaves as a Mac app does:
 - Closing the window leaves it running, still watching your sessions and showing notifications. Click its icon in the Dock to open the window again. Cmd+Q quits it.
 - With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window.
 - Its icon in the Dock shows how many sessions need you, with the window open or closed, and no number when none do.
+- Its icon in the menu bar shows the same count, and lists those sessions when you click it. Choose one to open its details. [Menu bar](#menu-bar) says more.
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
 - It opens where you left it, at the size you left it.
 - It keeps its [history](#history) in the same folder as `npx agent-lookout`, so the Events log and the charts carry over between the two.
 - Check for Updates…, in the Agent Lookout menu under About, checks for a newer version at once. [Updates](#updates) says how.
+
+### Menu bar
+
+The app puts the Agent Lookout mark in the menu bar, in the menu bar's own colour, light or dark. While one or more sessions need you, the small circle above its horizon, the lamp, is filled and the number of them is beside it, with the window open or closed. While none do, it is the mark alone, with the lamp hollow.
+
+Click it to list the sessions that need you, the longest wait first, each with how long it has waited, as in `checkout-flow · 4m 12s`. Two sessions with the same name have what tells them apart in brackets, their agent, project, branch or app, as in `checkout-flow (Codex) · 4m 12s`. Under each name are the reason and what the session is asking, when that is known, cut to one line: rest the pointer on a session to read all of it. macOS shows the line under a name from macOS 14.4 on; before that, resting the pointer is the way to read it. Up to 10 sessions are listed, and a line under them counts the rest. Choose a session to open its [details](#a-sessions-details) in the window, which opens if it was closed. With nothing waiting, the menu says Nothing needs you, and before Agent Lookout has read any agent, Looking for agents…. It ends with Open Agent Lookout, Check for Updates…, Settings… and Quit Agent Lookout.
+
+The times are those of the moment the pointer comes over the icon, or at most a minute old when you open the menu from the keyboard, and while it is open it stays as it is. A session that starts or stops waiting meanwhile shows the next time you open it, and the count beside the icon follows at once.
+
+To take the icon out of the menu bar, open Settings and, under Menu bar, set Show in menu bar to Off. Set it to On to put it back. The app remembers the choice, and the count on the Dock icon stays either way. If macOS does not let the app put its icon there, the switch reads Off and the app's log, `~/Library/Logs/Agent Lookout/main.log`, says why.
 
 ### Updates
 

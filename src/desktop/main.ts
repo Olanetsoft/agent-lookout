@@ -12,8 +12,9 @@
 // It is a Mac app in the usual way: one copy runs at a time, and opening it
 // again brings its window forward; closing the window leaves it running, so
 // the collector keeps watching, shows its own notifications and keeps the
-// count of sessions that need you on the Dock icon; clicking its Dock icon
-// opens the window again; Cmd+Q quits, and the collector stops.
+// count of sessions that need you on the Dock icon and in the menu bar, whose
+// menu lists them and opens one's details; clicking its Dock icon opens the
+// window again; Cmd+Q quits, and the collector stops.
 //
 // It asks the internet one thing: whether GitHub has a newer version of it, at
 // start and then about once a day while the switch in Settings is on, or when
@@ -34,29 +35,37 @@ import {
   app,
   dialog,
   Menu,
+  nativeImage,
   Notification,
   protocol,
   session,
   shell,
-  type BrowserWindow,
+  Tray,
+  type NativeImage,
 } from "electron";
 
 import { APP_SCHEME, APP_START_URL } from "../core/appAddress.ts";
 import { UPDATES_HASH, type InstallRefusal } from "../core/appUpdate.ts";
 import { createCollector, type Collector } from "../collector/collector.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
+import { createMenuBar, type MenuBar } from "./menu-bar/menuBar.ts";
+import { menuBarActions } from "./menu-bar/menuBarActions.ts";
+import { createMenuBarRoute } from "./menu-bar/menuBarRoute.ts";
+import { menuBarSettingsFile } from "./menu-bar/menuBarSettings.ts";
 import { applySessionRules } from "./navigation/sessionRules.ts";
 import { createDesktopNotifier } from "./notifications/desktopNotifier.ts";
 import { createDockBadge } from "./notifications/dockBadge.ts";
 import { createAppLog, describeError, LOG_FILE } from "./process/appLog.ts";
 import { refusedSwitch } from "./process/launchSwitches.ts";
 import { createAppProtocolHandler } from "./protocol/appProtocol.ts";
+import { createAppRoutes } from "./protocol/appRoutes.ts";
 import { bundleOf } from "./updates/install/installLocation.ts";
 import { foundNotice, updateDialog } from "./updates/updateDialog.ts";
 import { createUpdateRoute } from "./updates/updateRoute.ts";
 import { settingsFile } from "./updates/updateSettings.ts";
 import { createUpdater, type Updater } from "./updates/updater.ts";
 import { createMainWindow } from "./window/mainWindow.ts";
+import { createWindowShower } from "./window/windowShower.ts";
 
 /** The dashboard's Settings view, which the app menu's Settings… opens. */
 const SETTINGS_URL = `${APP_START_URL}#settings`;
@@ -86,9 +95,9 @@ function whereTheLogIs(): string {
   }
 }
 
-let window: BrowserWindow | null = null;
 let collector: Collector | null = null;
 let updater: Updater | null = null;
+let menuBar: MenuBar | null = null;
 
 /** Notifications the app has shown of its own, held so a click on one is still heard. */
 const shownNotices: Notification[] = [];
@@ -96,32 +105,37 @@ const shownNotices: Notification[] = [];
 /** Whether Check for Updates…, with the window closed, waits for an answer or shows one. */
 let answering = false;
 
+/** The app's one window, made again when it was closed. */
+const windows = createWindowShower({
+  ready: () => app.isReady(),
+  create: (address) =>
+    createMainWindow({
+      userDataDir: app.getPath("userData"),
+      devTools: !app.isPackaged,
+      startUrl: address,
+    }),
+});
+
 /**
  * Brings the window forward, making it again if it was closed. With an
  * address of the app's own, the window shows that page.
  */
 function showWindow(address?: string): void {
-  if (!app.isReady()) return;
-  if (window === null || window.isDestroyed()) {
-    window = createMainWindow({
-      userDataDir: app.getPath("userData"),
-      devTools: !app.isPackaged,
-      startUrl: address,
-    });
-    window.on("closed", () => {
-      window = null;
-    });
-    return;
-  }
-  if (address !== undefined) {
-    // Only the address's fragment differs, so the page changes view without loading again.
-    window.loadURL(address).catch(() => {
-      // The page stays where it was.
-    });
-  }
-  if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
+  windows.show(address);
+}
+
+/**
+ * The lamp for the menu bar, from the template images `scripts/build-desktop.mjs`
+ * copies beside the main process: each at 1x and, from its `@2x` file, at 2x.
+ * macOS paints a template image in the menu bar's own colour.
+ */
+function menuBarIcon(name: "quiet" | "lit"): NativeImage {
+  const icon = nativeImage.createFromPath(
+    path.join(app.getAppPath(), "menu-bar", `${name}Template.png`),
+  );
+  if (icon.isEmpty()) log(`The menu bar's ${name} icon could not be read.`);
+  icon.setTemplateImage(true);
+  return icon;
 }
 
 function openOutside(url: string): void {
@@ -154,7 +168,7 @@ function noticeFound(version: string, refusal: InstallRefusal | null): void {
 function checkForUpdates(): void {
   const updates = updater;
   if (updates === null) return;
-  if (window !== null && !window.isDestroyed()) {
+  if (windows.current() !== null) {
     showWindow(UPDATES_URL);
     void updates.check();
     return;
@@ -216,6 +230,7 @@ function start(): void {
     collector?.stop();
     collector = null;
     updater?.stop();
+    menuBar?.stop();
   });
 
   app
@@ -244,12 +259,37 @@ function start(): void {
       // server has, the app has. Its own notifications are the app's, and its
       // warnings go to the app's log.
       const badge = createDockBadge((text) => app.dock?.setBadge(text));
+      // The count in the menu bar, and the sessions in its menu, each one
+      // opening its details. Show in menu bar, in Settings, takes it away.
+      const bar = createMenuBar({
+        icons: { quiet: menuBarIcon("quiet"), lit: menuBarIcon("lit") },
+        makeTray: (image) => new Tray(image),
+        buildMenu: (template) => Menu.buildFromTemplate(template),
+        actions: menuBarActions({
+          showWindow,
+          activate: () => app.focus({ steal: true }),
+          checkForUpdates,
+          openSettings: () => showWindow(SETTINGS_URL),
+          quit: () => app.quit(),
+        }),
+        settings: menuBarSettingsFile(app.getPath("userData")),
+        warn: log,
+      });
+      menuBar = bar;
       collector = createCollector({
         version: app.getVersion(),
         env: process.env,
         notifier: createDesktopNotifier({ onClick: () => showWindow(), warn: log }),
         warn: log,
-        onSnapshot: badge,
+        // Each is told on its own, so one that fails leaves the other right.
+        onSnapshot: (snapshot) => {
+          try {
+            badge(snapshot);
+          } catch {
+            // Tried again on the next poll.
+          }
+          bar.update(snapshot);
+        },
       });
       // The one thing the app asks the internet: whether GitHub has a newer
       // version of it, about once a day while the switch in Settings is on.
@@ -269,12 +309,16 @@ function start(): void {
         APP_SCHEME,
         createAppProtocolHandler({
           api: collector.handler,
-          app: createUpdateRoute(updater),
+          app: createAppRoutes({
+            update: createUpdateRoute(updater),
+            menuBar: createMenuBarRoute(bar),
+          }),
           distDir: path.join(app.getAppPath(), "dist"),
         }),
       );
       collector.start();
       updater.start();
+      bar.start();
       // An update that could not be installed opens on the card that says why.
       const { update } = updater.status();
       showWindow(update.phase === "failed" && update.step === "install" ? UPDATES_URL : undefined);

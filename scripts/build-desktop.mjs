@@ -2,6 +2,7 @@
 //
 //   dist-electron/main.cjs      the main process and the collector, bundled with esbuild
 //   dist-electron/dist/         the built dashboard, copied from `dist/`
+//   dist-electron/menu-bar/     the icon in the menu bar, copied from `build/menu-bar/`
 //   dist-electron/package.json  the app's name, version and entry point
 //
 // `npm run build:desktop` runs `npm run build` first and then this script.
@@ -26,6 +27,8 @@ import { build } from "esbuild";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outdir = path.join(root, "dist-electron");
 const dashboard = path.join(root, "dist");
+/** The menu bar's template images, which `scripts/render-menu-bar-icon.mjs` draws. */
+const menuBarIcons = path.join(root, "build", "menu-bar");
 
 /** The Node version inside the Electron the app is built with. */
 const ELECTRON_NODE = "node24";
@@ -66,6 +69,14 @@ async function main() {
     return 1;
   }
 
+  if (!existsSync(path.join(menuBarIcons, "quietTemplate.png"))) {
+    console.error(
+      "The menu bar's icons are missing from build/menu-bar/. Run `node scripts/render-menu-bar-icon.mjs`.",
+    );
+    return 1;
+  }
+  await cp(menuBarIcons, path.join(outdir, "menu-bar"), { recursive: true });
+
   const cli = path.join(dashboard, "cli");
   await cp(dashboard, path.join(outdir, "dist"), {
     recursive: true,
@@ -89,7 +100,7 @@ async function main() {
 
   const bytes = result.metafile.outputs[path.relative(root, path.join(outdir, "main.cjs"))]?.bytes;
   console.log(
-    `Built the Mac app into dist-electron/: main.cjs (${bytes} bytes), dist/ and package.json.`,
+    `Built the Mac app into dist-electron/: main.cjs (${bytes} bytes), dist/, menu-bar/ and package.json.`,
   );
   return 0;
 }

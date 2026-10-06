@@ -8,6 +8,7 @@ import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
+import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
@@ -222,7 +223,7 @@ interface SettingsViewProps {
   now?: number;
   /** Told once the history has been cleared, so the page reads it again at once. */
   onHistoryCleared?: () => void;
-  /** Whether the page is in the Mac app's window, which alone shows the Updates card. */
+  /** Whether the page is in the Mac app's window, which alone shows the Menu bar and Updates cards. */
   inApp?: boolean;
 }
 
@@ -230,12 +231,14 @@ interface SettingsViewProps {
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
  * whether to be notified and of what, where the history is kept and the button
- * that clears it, in the Mac app its updates, whether email and a webhook have
- * been set up, and a few facts about this copy of the app.
+ * that clears it, in the Mac app whether it shows in the menu bar and its
+ * updates, whether email and a webhook have been set up, and a few facts about
+ * this copy of the app.
  *
  * The page knows it is in the app's window by its address. In a browser there
- * is no Updates card: `npx agent-lookout` and the repository never check for
- * anything. Tests say which it is with `inApp`.
+ * is no Menu bar card and no Updates card: a browser tab has no menu bar item,
+ * and `npx agent-lookout` and the repository never check for anything. Tests
+ * say which it is with `inApp`.
  */
 export function SettingsView({
   history = null,
@@ -283,6 +286,8 @@ export function SettingsView({
         <NotificationsCard />
 
         <HistoryCard history={history} now={now ?? ticking} onCleared={onHistoryCleared} />
+
+        {inApp && <MenuBarCard />}
 
         {inApp && <UpdatesCard />}
       </div>

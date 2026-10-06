@@ -1,11 +1,12 @@
+import { sessionHash, sessionIdFromHash } from "@core/sessions/sessionHash";
+
 /**
  * The address of one session's details, which open over the Overview:
  * `#overview/session/claude-code:1234`. It is a fragment like the views', so a
  * link, the browser's back button and a reload all land on it, and the page
- * under it is the Overview.
+ * under it is the Overview. The Mac app's menu bar opens the same address, by
+ * the rule in `@core/sessions/sessionHash`.
  */
-
-const PREFIX = "#overview/session/";
 
 /** What the page writes on the history entry it adds when it opens a session's details. */
 const OPENED_HERE = "agent-lookout-details";
@@ -16,20 +17,12 @@ const OPENED_HERE = "agent-lookout-details";
  * is left as it is, so the address stays readable.
  */
 export function sessionHref(sessionId: string): string {
-  return `${PREFIX}${encodeURIComponent(sessionId).replace(/%3A/gi, ":")}`;
+  return sessionHash(sessionId);
 }
 
 /** The session a URL fragment names, or null when it names none. */
 export function sessionFromHash(hash: string): string | null {
-  if (!hash.startsWith(PREFIX)) return null;
-  const written = hash.slice(PREFIX.length);
-  if (written === "") return null;
-  try {
-    return decodeURIComponent(written);
-  } catch {
-    // A fragment typed by hand can be badly escaped. It is read as written.
-    return written;
-  }
+  return sessionIdFromHash(hash);
 }
 
 /**
