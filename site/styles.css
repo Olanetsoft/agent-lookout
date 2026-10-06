@@ -1631,9 +1631,15 @@ h2 {
   color: var(--ink-secondary);
   text-wrap: pretty;
 }
+/* A flag or a command stays on one line, so --port never breaks after its hyphens. */
 .steps p code {
   font-size: 13px;
   color: var(--ink);
+  white-space: nowrap;
+}
+/* A line the app prints is too long for a phone, so it wraps at its spaces. */
+.steps p code.printed {
+  white-space: normal;
 }
 
 /*

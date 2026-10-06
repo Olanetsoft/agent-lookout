@@ -138,9 +138,7 @@
             >
             <a class="link" href="#install">Install steps</a>
           </div>
-          <p class="fine">
-            Free and open source. There is no download yet: it runs from the repository.
-          </p>
+          <p class="fine">Free and open source. Start it with <code>npx agent-lookout</code>.</p>
         </div>
       </section>
 
@@ -417,9 +415,9 @@
           <h3>It shows which one needs you</h3>
           <p>
             A Claude Code session that stops for permission or asks you a question moves to the top
-            of the page, with its reason and a timer. The browser tab counts the sessions that are
-            waiting, as in <code>(1) Agent Lookout</code>, and a notification can tell you when one
-            starts waiting.
+            of the page, with its reason, what it is asking and a timer. The browser tab counts the
+            sessions that are waiting, as in <code>(1) Agent Lookout</code>, and a notification can
+            tell you when one starts waiting.
           </p>
 
           <div class="lamp-pair">
@@ -502,8 +500,8 @@
         <div class="intro intro-sticky">
           <h2 id="install-title">How to get it</h2>
           <p>
-            There is no download yet. Agent Lookout runs from its repository with Node.js, and opens
-            as a page in your browser.
+            Agent Lookout is on npm and runs with Node.js. Start it in one of these three ways, then
+            open it as a page in your browser. There is no Mac app yet. One is planned.
           </p>
           <div class="actions">
             <a class="btn btn-solid" href="https://github.com/Olanetsoft/agent-lookout"
@@ -517,34 +515,53 @@
             <li>
               <span class="n" aria-hidden="true">1</span>
               <div>
-                <h3>Check what you have</h3>
+                <h3>Start it with one command</h3>
                 <p>
                   You need Node.js 20.19 or newer (on Node 22, 22.12 or newer), and Claude Code,
-                  Codex or both. If you use only the Codex desktop app and <code>codex</code> is not
-                  found, carry on.
+                  Codex or both.
                 </p>
-                <pre><code><span>node --version
-</span><span>claude --version
-</span><span>codex --version</span></code></pre>
+                <pre><code><span>npx agent-lookout</span></code></pre>
+                <p>
+                  The first time, npm asks <code>Ok to proceed? (y)</code>: press Enter. Then it
+                  prints
+                  <code class="printed">Agent Lookout is running at http://127.0.0.1:4777</code>.
+                  Open that address, and your sessions appear within a few seconds. It listens on
+                  this machine only and runs until you press Ctrl+C. <code>--port</code> picks
+                  another port, and <code>--open</code> opens the page in your browser.
+                </p>
               </div>
             </li>
             <li>
               <span class="n" aria-hidden="true">2</span>
               <div>
-                <h3>Clone it and install what it needs</h3>
-                <pre><code><span>git clone https://github.com/<wbr />Olanetsoft/<wbr />agent-lookout.git
-</span><span>cd agent-lookout
-</span><span>npm install</span></code></pre>
+                <h3>Let your coding agent start it</h3>
+                <p>
+                  Paste the prompt in the README’s
+                  <a
+                    class="link"
+                    href="https://github.com/Olanetsoft/agent-lookout#install-with-your-agent"
+                    >Install with your agent</a
+                  >
+                  into Claude Code, Codex or another coding agent. It checks your Node.js, starts
+                  Agent Lookout with npx and checks that it answers. When the agent’s session ends,
+                  Agent Lookout can stop with it. If the page then says it has stopped updating, run
+                  <code>npx agent-lookout</code> yourself.
+                </p>
               </div>
             </li>
             <li>
               <span class="n" aria-hidden="true">3</span>
               <div>
-                <h3>Start it</h3>
-                <pre><code><span>npm run dev</span></code></pre>
+                <h3>Run it from the repository</h3>
+                <p>Run it this way to read or change its code. It needs the same Node.js.</p>
+                <pre><code><span>git clone https://github.com/<wbr />Olanetsoft/<wbr />agent-lookout.git
+</span><span>cd agent-lookout
+</span><span>npm install
+</span><span>npm run build
+</span><span>npm start</span></code></pre>
                 <p>
-                  It prints an address, normally <code>http://localhost:5173</code>. Open it, and
-                  your sessions appear within a few seconds.
+                  <code>npm start</code> prints the same address,
+                  <code>http://127.0.0.1:4777</code>.
                 </p>
               </div>
             </li>
@@ -587,7 +604,10 @@
             </div>
             <div>
               <dt>Claude Code</dt>
-              <dd>Shows which sessions are waiting for you, why, and for how long.</dd>
+              <dd>
+                Shows which sessions are waiting for you, why and for how long, and what each one is
+                asking, such as <code>Run: npm test</code>.
+              </dd>
             </div>
             <div>
               <dt>Codex</dt>
@@ -601,10 +621,10 @@
               <dt>Notifications</dt>
               <dd>
                 Off until you turn them on in Settings. Then your browser shows one when a Claude
-                Code session starts waiting, with the session’s name and the reason, and it is
-                cleared when the session moves on. On a Mac, once the dashboard tab is closed, Agent
-                Lookout shows the notification itself for as long as it keeps running, and that one
-                stays until you clear it. Nothing is sent off your computer.
+                Code session starts waiting, with the session’s name, the reason and what it is
+                asking, and it is cleared when the session moves on. On a Mac, once the dashboard
+                tab is closed, Agent Lookout shows the notification itself for as long as it keeps
+                running, and that one stays until you clear it. Nothing is sent off your computer.
               </dd>
             </div>
             <div>
