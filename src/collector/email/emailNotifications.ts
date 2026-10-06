@@ -1,7 +1,7 @@
 import type { EmailStatusResponse } from "../../core/api.ts";
 import type { SessionsSnapshot } from "../../core/sessions/session.ts";
 import { createOutboundChannel } from "../outbound/outboundChannel.ts";
-import { overEmail, waitEmail } from "./emailMessage.ts";
+import { overEmail, reminderEmail, summaryEmail, waitEmail } from "./emailMessage.ts";
 import { maskAddress, type EmailSettings } from "./emailSettings.ts";
 import type { EmailSender } from "./smtpSender.ts";
 
@@ -13,8 +13,9 @@ import type { EmailSender } from "./smtpSender.ts";
  * What is emailed and when follows the rules in `outboundChannel.ts`, which
  * the webhook follows too: nothing for what was already true when the
  * collector started, a wait once it has lasted the delay, a session that
- * finished, failed or ended at once, and at most 20 an hour. This file says
- * only what an email is and how it goes.
+ * finished, failed or ended at once, at most 20 an hour, and the time rules:
+ * a reminder of a long wait, and nothing during quiet hours but one summary
+ * when they end. This file says only what an email is and how it goes.
  *
  * The browser notifications' switch in Settings does not cover this. Email is
  * turned off by starting the collector without its settings.
@@ -56,6 +57,8 @@ export function createEmailNotifications(options: EmailNotificationsOptions): Em
     asking: settings.asking,
     waitMessage: waitEmail,
     overMessage: overEmail,
+    reminderMessage: reminderEmail,
+    summaryMessage: summaryEmail,
     send: (content) => sender.send(content),
     failure: "the email could not be sent",
     now: options.now,

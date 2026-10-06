@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { overEmail, waitEmail } from "@collector/email/emailMessage";
-import type { WaitFacts } from "@collector/outbound/outboundChannel";
+import { overEmail, reminderEmail, summaryEmail, waitEmail } from "@collector/email/emailMessage";
+import type { SummaryFacts, WaitFacts } from "@collector/outbound/outboundChannel";
 import { clockAt, durationInWords } from "@core/duration";
 import type { Session } from "@core/sessions/session";
 import { MAX_LINE_LENGTH, MAX_WAITING_TEXT_LENGTH, waitingText } from "@core/text";
@@ -326,4 +326,120 @@ test("a length of time and a time on the clock are written as the dashboard writ
     `It has waited ${durationInWords(90_000_000)}, since ${clockAt(begun, BEGUN)}.`,
   );
   expect(email.text).toContain("It has waited 1 day 1 hour, since ");
+});
+
+describe("reminderEmail", () => {
+  test("says how long the session has waited in the subject, and the rest as a wait's email does", () => {
+    const email = reminderEmail({
+      ...facts({}, { now: BEGUN + 10 * 60_000 + 4_000, asking: "Run: npm test" }),
+      thresholdMs: 10 * 60_000,
+    });
+    expect(email).toEqual({
+      subject: "checkout-flow has waited 10 minutes for permission",
+      text: [
+        "checkout-flow has waited 10 minutes for permission.",
+        "",
+        "It has waited since 14:01. Agent Lookout reminds you once a wait lasts 10 minutes, as Time rules in Settings says.",
+        "",
+        "Asking: Run: npm test",
+        "Folder: checkout-flow",
+        "App: VS Code",
+        "Agent: Claude Code",
+        "",
+        "Sent by Agent Lookout on your computer. To stop these emails, start it again without AGENT_LOOKOUT_EMAIL_TO.",
+        "",
+      ].join("\n"),
+    });
+  });
+});
+
+describe("summaryEmail", () => {
+  /** 22:00 to 08:00 the next morning, on this computer's clock. */
+  const FROM = new Date(2026, 9, 5, 22, 0).getTime();
+  const TO = new Date(2026, 9, 6, 8, 0).getTime();
+  const session = (name: string) => makeSession({ name, project: "storefront" });
+
+  function summary(items: SummaryFacts["items"]): SummaryFacts {
+    return { from: FROM, to: TO, items, now: TO };
+  }
+
+  test("names the first few in the subject, and each on a line of its own with when", () => {
+    const email = summaryEmail(
+      summary([
+        {
+          event: "needs-you",
+          session: session("checkout-flow"),
+          at: FROM + 70 * 60_000,
+          waitedMs: 25 * 60_000,
+          times: 1,
+          agent: "Claude Code",
+        },
+        {
+          event: "needs-you",
+          session: session("docs-site"),
+          at: FROM + 80 * 60_000,
+          waitedMs: 65 * 60_000,
+          times: 2,
+          then: { event: "ended", at: FROM + 300 * 60_000 },
+          agent: "Claude Code",
+        },
+        {
+          event: "finished",
+          session: session("billing-webhooks"),
+          at: FROM + 192 * 60_000,
+          agent: "Claude Code",
+        },
+      ]),
+    );
+    expect(email.subject).toBe(
+      "While quiet: checkout-flow waited 25 minutes, docs-site waited 1 hour 5 minutes over 2 waits then ended and billing-webhooks finished",
+    );
+    expect(email.text).toBe(
+      [
+        `During quiet hours, from ${clockAt(FROM, TO)} to 08:00:`,
+        "",
+        `checkout-flow waited 25 minutes, from ${clockAt(FROM + 70 * 60_000, TO)}.`,
+        `docs-site waited 1 hour 5 minutes over 2 waits, from ${clockAt(FROM + 80 * 60_000, TO)}, then ended at 03:00.`,
+        "billing-webhooks finished at 01:12.",
+        "",
+        "Quiet hours are set under Time rules in Settings. A session still waiting when they ended has an email of its own.",
+        "",
+        "Sent by Agent Lookout on your computer. To stop these emails, start it again without AGENT_LOOKOUT_EMAIL_TO.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("lists fifty one by one, and counts the rest", () => {
+    const items = Array.from({ length: 53 }, (_, index) => ({
+      event: "ended" as const,
+      session: session(`session-${index + 1}`),
+      at: FROM + index * 60_000,
+      agent: null,
+    }));
+    const email = summaryEmail(summary(items));
+    expect(email.subject).toBe(
+      "While quiet: session-1 ended, session-2 ended, session-3 ended and 50 more",
+    );
+    expect(email.text).toContain("session-50 ended at");
+    expect(email.text).not.toContain("session-51 ended");
+    expect(email.text).toContain("And 3 more.");
+  });
+
+  test("a name that tries to add a line or a header is one line", () => {
+    const email = summaryEmail(
+      summary([
+        {
+          event: "failed",
+          session: session("api\r\nBcc: someone@example.com"),
+          at: FROM,
+          agent: null,
+        },
+      ]),
+    );
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.text.split("\n")).toContain(
+      `api Bcc: someone@example.com failed at ${clockAt(FROM, TO)}.`,
+    );
+  });
 });

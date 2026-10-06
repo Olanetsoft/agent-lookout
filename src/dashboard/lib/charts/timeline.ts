@@ -90,6 +90,11 @@ export interface TimelineInput {
   windowMs?: number;
   /** Two polls further apart than this were not measuring in between. */
   gapMs?: number;
+  /**
+   * How long a session is idle before it is stale, as the snapshot's time
+   * rules say: where a stale session's idle line turns to dots. Defaults to a day.
+   */
+  staleAfterMs?: number;
 }
 
 /**
@@ -370,7 +375,10 @@ export function buildTimeline(input: TimelineInput): Timeline {
     );
     let segments = segmentsFor(pieces, measured, runs, window);
     if (session?.stale && session.status === "idle" && session.statusSince !== null) {
-      segments = splitStale(segments, session.statusSince + STALE_THRESHOLD_MS);
+      segments = splitStale(
+        segments,
+        session.statusSince + (input.staleAfterMs ?? STALE_THRESHOLD_MS),
+      );
     }
     const last = segments[segments.length - 1];
     // Whatever a listed session's row ends on at the present has not ended.

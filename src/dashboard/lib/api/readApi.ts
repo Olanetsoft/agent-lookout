@@ -1,5 +1,6 @@
 import {
   GH_STATES,
+  type SettingsResponse,
   HISTORY_BEGINNINGS,
   isWebhookHost,
   type CheckResult,
@@ -55,6 +56,7 @@ import {
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { MAX_NAME_LENGTH } from "@core/text";
+import { readTimeRules } from "@core/time-rules/timeRules";
 
 /**
  * Reads what the API sent into the shapes the page draws.
@@ -439,6 +441,10 @@ export function readSnapshot(data: unknown): SessionsSnapshot | null {
     sources: readList(data.sources, (value) => readSource(value, generatedAt)),
     sessions: readList(data.sessions, readSession),
     ...(answering && { answering }),
+    // A rule that cannot be read is off, as the collector reads its own file.
+    ...(data.timeRules !== undefined && { timeRules: readTimeRules(data.timeRules).rules }),
+    // The collector's own word on quiet hours, by its clock, which the page goes by.
+    ...(typeof data.quiet === "boolean" && { quiet: data.quiet }),
   };
 }
 
@@ -771,5 +777,20 @@ export function readWebhookStatus(data: unknown): WebhookStatusResponse | null {
     problem: on ? null : shortText(data.problem),
     last: on ? readSendResult(data.last, "the post could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,
+  };
+}
+
+/**
+ * The answer of `GET /api/settings`, or null when it is not one. A rule that
+ * cannot be read is off, as the collector reads its own file.
+ */
+export function readSettings(data: unknown): SettingsResponse | null {
+  if (!isRecord(data) || !isRecord(data.timeRules)) return null;
+  const file = text(data.file);
+  if (file === null) return null;
+  return {
+    timeRules: readTimeRules(data.timeRules).rules,
+    file,
+    problem: text(data.problem),
   };
 }

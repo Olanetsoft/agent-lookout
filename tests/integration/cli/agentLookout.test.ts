@@ -13,7 +13,7 @@ import type { SessionsSnapshot } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { closedPort, listen, request } from "@tests/support/node/http";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 
 // The command as people run it: `bin/agent-lookout.mjs`, as a process of its
@@ -80,6 +80,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
     version: "0.0.0-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_CLAUDE_FEED: "off",
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
@@ -611,6 +612,7 @@ describe("agent-lookout start, as a process", () => {
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
         AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

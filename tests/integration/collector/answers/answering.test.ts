@@ -4,17 +4,18 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, onTestFinished, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { ALLOW_OUTPUT, DENY_OUTPUT } from "@collector/answers/heldAsks";
 import { createCollector } from "@collector/collector";
 import type { EventsResponse } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request } from "@tests/support/node/http";
 import { startStandIn, type StandIn } from "@tests/support/node/standIns";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // Answering from end to end: the collector as every host builds it, with its
 // real Claude Code adapter reading a registry folder of the test's own, its
@@ -44,15 +45,25 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
   });
 }
 
-async function serve(env: Record<string, string> = {}) {
+/**
+ * The collector over a registry folder of the test's own, with one session in
+ * it, waiting unless `status` says otherwise. `now` is the collector's clock,
+ * which a test of the time rules moves ahead.
+ */
+async function serve(
+  env: Record<string, string> = {},
+  { status = "waiting", now }: { status?: string; now?: () => number } = {},
+) {
   const standIn = await startStandIn();
   const file = `${standIn.pid}.json`;
-  const claudeHome = await makeClaudeHome({ [file]: entryFor(standIn, "waiting") });
+  const claudeHome = await makeClaudeHome({ [file]: entryFor(standIn, status) });
   const socketPath = path.join(await tempDir(), "al", "answer.sock");
+  const notifier = fakeSystemNotifier();
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
@@ -61,7 +72,8 @@ async function serve(env: Record<string, string> = {}) {
       AGENT_LOOKOUT_ANSWER_SOCKET: socketPath,
       ...env,
     },
-    notifier: fakeSystemNotifier(),
+    notifier,
+    now,
   });
   collector.start();
   await collector.answering.start();
@@ -85,7 +97,7 @@ async function serve(env: Record<string, string> = {}) {
   const events = async () => (await request(port, "/api/events")).json<EventsResponse>().events;
   const rewrite = (status: string) =>
     writeFile(path.join(claudeHome, "sessions", file), entryFor(standIn, status));
-  return { socketPath, snapshot, session, answer, events, rewrite, port };
+  return { socketPath, snapshot, session, answer, events, rewrite, port, collector, notifier };
 }
 
 /** The plugin's hook, run as Claude Code runs it, with the request on stdin. */
@@ -195,4 +207,126 @@ test("with AGENT_LOOKOUT_ANSWER off there is no socket and no route, and the hoo
   expect((await server.snapshot()).answering).toMatchObject({ state: "off" });
   const response = await server.answer("0".repeat(32), "allow");
   expect(response.status).toBe(405);
+});
+
+describe("the time rules, for a wait answered from the page", () => {
+  const MINUTE = 60_000;
+
+  /** A settings file of the test's own, holding these rules. */
+  async function settingsWith(rules: TimeRules): Promise<string> {
+    const file = path.join(await tempDir(), "settings.json");
+    await writeFile(file, JSON.stringify({ timeRules: rules }));
+    return file;
+  }
+
+  /** The collector's clock, which the test moves ahead. */
+  function clock() {
+    let ahead = 0;
+    return {
+      now: () => Date.now() + ahead,
+      forward(ms: number) {
+        ahead += ms;
+      },
+    };
+  }
+
+  /** "14:05": a moment on this computer's clock, as quiet hours are set. */
+  function clockAt(at: number): string {
+    const date = new Date(at);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  /** Answers the request the hook sent, as the page does, and lets Claude Code go on, as it does then. */
+  async function answerAndGoOn(
+    server: Awaited<ReturnType<typeof serve>>,
+    decision: "allow" | "deny",
+  ) {
+    const answered = hook(server.socketPath);
+    await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+      timeout: 5_000,
+    });
+    const requestId = (await server.session())?.ask?.requestId ?? "";
+    expect((await server.answer(requestId, decision)).status).toBe(200);
+    expect((await answered).code).toBe(0);
+    await server.rewrite("busy");
+    await server.collector.poller.pollOnce();
+    expect((await server.session())?.status).toBe("working");
+  }
+
+  const REMIND_AFTER_A_MINUTE: TimeRules = {
+    ...DEFAULT_TIME_RULES,
+    longWait: { on: true, minutes: 1 },
+  };
+
+  test("a wait no one answers is reminded of once it has waited the minute", async () => {
+    const time = clock();
+    const server = await serve(
+      {
+        AGENT_LOOKOUT_NOTIFICATIONS: "on",
+        AGENT_LOOKOUT_SETTINGS_FILE: await settingsWith(REMIND_AFTER_A_MINUTE),
+      },
+      { now: time.now },
+    );
+    time.forward(2 * MINUTE);
+    await server.collector.poller.pollOnce();
+    expect(server.notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Has waited 2 minutes for permission" },
+    ]);
+  });
+
+  test.each(["allow", "deny"] as const)(
+    "a wait answered with %s is never reminded of",
+    async (decision) => {
+      const time = clock();
+      const server = await serve(
+        {
+          AGENT_LOOKOUT_NOTIFICATIONS: "on",
+          AGENT_LOOKOUT_SETTINGS_FILE: await settingsWith(REMIND_AFTER_A_MINUTE),
+        },
+        { now: time.now },
+      );
+      await answerAndGoOn(server, decision);
+      time.forward(2 * MINUTE);
+      await server.collector.poller.pollOnce();
+      time.forward(10 * MINUTE);
+      await server.collector.poller.pollOnce();
+      expect(server.notifier.shown).toEqual([]);
+    },
+  );
+
+  test("a wait held through quiet hours and answered with Allow is summed up as answered, and not told of when they end", async () => {
+    const time = clock();
+    const start = Date.now();
+    const quiet: TimeRules = {
+      ...DEFAULT_TIME_RULES,
+      quietHours: {
+        ...DEFAULT_TIME_RULES.quietHours,
+        on: true,
+        from: clockAt(start - 60 * MINUTE),
+        to: clockAt(start + 60 * MINUTE),
+      },
+    };
+    const server = await serve(
+      {
+        AGENT_LOOKOUT_NOTIFICATIONS: "on",
+        AGENT_LOOKOUT_SETTINGS_FILE: await settingsWith(quiet),
+      },
+      { status: "busy", now: time.now },
+    );
+    // The wait begins in the quiet hours, so it is held.
+    await server.rewrite("waiting");
+    await server.collector.poller.pollOnce();
+    expect((await server.snapshot()).quiet).toBe(true);
+    await answerAndGoOn(server, "allow");
+    expect(server.notifier.shown).toEqual([]);
+
+    // Three hours on, the quiet hours are over.
+    time.forward(3 * 60 * MINUTE);
+    await server.collector.poller.pollOnce();
+    expect((await server.snapshot()).quiet).toBe(false);
+    expect(server.notifier.shown).toEqual([
+      { title: "While quiet", body: "checkout-flow waited under a minute" },
+    ]);
+  });
 });

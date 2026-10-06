@@ -9,7 +9,12 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 import type { EmailStatusResponse, WebhookStatusResponse } from "@core/api";
 import type { SessionsSnapshot } from "@core/sessions/session";
 import { request } from "@tests/support/node/http";
-import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
+import {
+  makeClaudeHome,
+  NO_SETTINGS_FILE,
+  tempDir,
+  writeStub,
+} from "@tests/support/node/tempFiles";
 
 // These tests run the real entry point, `src/collector/hosts/serve.ts`, the way
 // `npm start` does: as a process of its own, started by tsx. Each one is refused
@@ -57,6 +62,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],

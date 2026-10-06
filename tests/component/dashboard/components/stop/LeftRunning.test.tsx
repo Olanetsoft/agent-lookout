@@ -430,3 +430,14 @@ test("only a session in the desktop app has no End all…", async () => {
   expect(rows()).toHaveLength(1);
   expect(document.querySelector('[data-part="end-all"]')).toBeNull();
 });
+
+test("with the idle rule on, the band says how long the rule says", async () => {
+  await page.viewport(1280, 900);
+  await render(
+    <div style={{ width: CARD_WIDTH[1280] }} className='glass-card'>
+      <LeftRunning sessions={SESSIONS} now={NOW} end={heldEnd().end} staleAfterMs={72 * HOUR} />
+    </div>,
+  );
+  await expect.element(page.getByRole("heading", { name: "Left running 3" })).toBeVisible();
+  expect(group()?.querySelector('[data-part="note"]')?.textContent).toBe("idle 3 days or more");
+});

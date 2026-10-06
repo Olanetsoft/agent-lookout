@@ -1,6 +1,6 @@
 import type { NotificationsSaid } from "../../core/api.ts";
-import type { SessionsSnapshot } from "../../core/sessions/session.ts";
-import { changeNotice } from "../../core/notices/waiting.ts";
+import { withoutWaitingText, type SessionsSnapshot } from "../../core/sessions/session.ts";
+import { changeNotice, type Notice } from "../../core/notices/waiting.ts";
 import {
   DEFAULT_NOTICE_EVENTS,
   EMPTY_CHANGE_MEMORY,
@@ -9,6 +9,12 @@ import {
   type NoticeEvent,
   type SessionChange,
 } from "../../core/notices/sessionChanges.ts";
+import { createQuietHold, type QuietSummary } from "../../core/time-rules/quietHold.ts";
+import { quietOf } from "../../core/time-rules/quietHours.ts";
+import { createReminderWatch, type DueReminder } from "../../core/time-rules/reminders.ts";
+import { rulesOf } from "../../core/time-rules/timeRules.ts";
+import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWords.ts";
+import { waitBegan } from "../outbound/outboundTiming.ts";
 import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
 import type { SystemNotifier } from "./systemNotifier.ts";
 
@@ -36,6 +42,15 @@ import type { SystemNotifier } from "./systemNotifier.ts";
  *
  * A notification shown here cannot be taken down again, so a wait that ends is
  * only forgotten.
+ *
+ * The time rules each snapshot carries are followed as the page follows them,
+ * by the same rules in the core and at the same poll, so a page that is open
+ * makes the same reminder and the same summary, and the hand-over decides
+ * which of the two shows it. With the long wait reminder on, a wait seen
+ * before it had lasted the rule's minutes is reminded of once it has. During
+ * quiet hours nothing is shown: what would have been is held, and when they
+ * end a wait still open is shown as usual and the rest in one summary, "While
+ * quiet".
  */
 export interface ServerNotifications {
   /**
@@ -79,10 +94,21 @@ export interface ServerNotificationsOptions {
   now?: () => number;
 }
 
-/** A change whose notification is being held back, and when it was first seen. */
-interface HeldChange {
-  change: SessionChange;
-  since: number;
+/**
+ * A notification being held back for a page, and when it was first due: a
+ * change, a reminder of a long wait, or the summary of quiet hours.
+ */
+type Held =
+  | { kind: "change"; change: SessionChange; since: number }
+  | { kind: "reminder"; reminder: DueReminder; since: number }
+  | { kind: "summary"; summary: QuietSummary; since: number };
+
+/** The key the one summary of quiet hours is held by. */
+const SUMMARY_KEY = "summary";
+
+/** The key a session's reminder is held by. */
+function reminderKey(sessionId: string): string {
+  return `reminder ${sessionId}`;
 }
 
 /** One held notification for each event of each session. */
@@ -101,14 +127,28 @@ export function createServerNotifications(
   /** The events the last page chose, or what the environment said before any page did. */
   let chosen: ReadonlySet<NoticeEvent> = new Set(options.onAtStart ? DEFAULT_NOTICE_EVENTS : []);
   /** The notifications not yet shown or dropped. */
-  const held = new Map<string, HeldChange>();
+  const held = new Map<string, Held>();
+  /** The waits that could be reminded of, and those already reminded. */
+  const reminders = createReminderWatch();
+  /** What quiet hours hold back. */
+  const quiet = createQuietHold();
 
-  function show(change: SessionChange): void {
+  function show(notice: Notice): void {
     try {
-      notifier.show(changeNotice(change));
+      notifier.show(notice);
     } catch {
       // A notifier should not throw. One that does must not stop the poll.
     }
+  }
+
+  /** What a page has chosen to be shown of an event, as the collector knows it. */
+  const wants = (event: NoticeEvent) => pages.on && chosen.has(event);
+
+  /** Holds a change back through quiet hours. */
+  function holdQuietly(change: SessionChange, at: number): void {
+    const { event, session } = change;
+    if (event === "needs-you") quiet.holdWait(session, waitBegan(session.statusSince, at));
+    else quiet.holdOver(event, withoutWaitingText(session), at);
   }
 
   return {
@@ -128,16 +168,58 @@ export function createServerNotifications(
 
     handle(snapshot) {
       const at = now();
+      const rules = rulesOf(snapshot);
+      // As the snapshot says, which the page that reads it goes by too.
+      const quietNow = quietOf(snapshot);
+      const thresholdMs = rules.longWait.minutes * 60_000;
       // Changes are followed while notifications are off as well. Turning them
       // on then says nothing about what had already happened.
       const result = sessionChanges(memory, snapshot);
       memory = result.memory;
 
-      // A wait that ended while it was held is never shown.
-      for (const id of result.stopped) held.delete(heldKey("needs-you", id));
+      // A wait that ended while it was held is never shown, nor is its reminder.
+      for (const id of result.stopped) {
+        held.delete(heldKey("needs-you", id));
+        held.delete(reminderKey(id));
+        quiet.waitEnded(id, at);
+      }
+      reminders.observe(snapshot, result.stopped, at);
+
+      if (quiet.holding() && !quietNow) {
+        // The quiet hours are over: one summary, and each wait still open as usual.
+        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+        // Only of the events still chosen, as the page sums up only those.
+        const items = end.summary?.items.filter((item) => wants(item.event)) ?? [];
+        if (end.summary && items.length > 0) {
+          held.set(SUMMARY_KEY, {
+            kind: "summary",
+            summary: { ...end.summary, items },
+            since: at,
+          });
+        }
+        for (const { session } of end.open) {
+          if (!wants("needs-you")) continue;
+          held.set(heldKey("needs-you", session.id), {
+            kind: "change",
+            change: { event: "needs-you", session },
+            since: at,
+          });
+          if (rules.longWait.on) reminders.toldLate(session.id, at, thresholdMs);
+        }
+      }
+      if (quietNow) quiet.begin(at);
+
       for (const change of result.changes) {
-        if (pages.on && chosen.has(change.event)) {
-          held.set(heldKey(change.event, change.session.id), { change, since: at });
+        if (!wants(change.event)) continue;
+        if (quietNow) holdQuietly(change, at);
+        else
+          held.set(heldKey(change.event, change.session.id), { kind: "change", change, since: at });
+      }
+
+      if (!quietNow && rules.longWait.on && wants("needs-you")) {
+        for (const reminder of reminders.due(snapshot, at, thresholdMs)) {
+          reminders.reminded(reminder.session.id, thresholdMs);
+          held.set(reminderKey(reminder.session.id), { kind: "reminder", reminder, since: at });
         }
       }
 
@@ -145,19 +227,39 @@ export function createServerNotifications(
       // can be said when its transcript was read a poll after the wait was seen.
       const listed = new Map(snapshot.sessions.map((session) => [session.id, session]));
       for (const entry of held.values()) {
-        const current = listed.get(entry.change.session.id);
-        if (entry.change.event === "needs-you" && current?.status === "needs-you") {
+        if (entry.kind === "summary") continue;
+        const session = entry.kind === "change" ? entry.change.session : entry.reminder.session;
+        const current = listed.get(session.id);
+        if (current?.status !== "needs-you") continue;
+        if (entry.kind === "reminder") entry.reminder = { ...entry.reminder, session: current };
+        else if (entry.change.event === "needs-you")
           entry.change = { ...entry.change, session: current };
-        }
       }
 
-      // Every event is handed over to a page the same way, so a page that is
+      // Everything is handed over to a page the same way, so a page that is
       // open and the collector never both announce one.
-      for (const [key, { change, since }] of held) {
-        const outcome = chosen.has(change.event) ? heldWaitOutcome(since, pages, at) : "drop";
+      for (const [key, entry] of held) {
+        const event = entry.kind === "change" ? entry.change.event : "needs-you";
+        const outcome =
+          entry.kind === "summary" || chosen.has(event)
+            ? heldWaitOutcome(entry.since, pages, at)
+            : "drop";
         if (outcome === "hold") continue;
         held.delete(key);
-        if (outcome === "show") show(change);
+        if (outcome !== "show") continue;
+        // Quiet hours that began while it was held hold it on. A reminder is
+        // held as its wait, which is told of as usual when they end.
+        if (quietNow) {
+          if (entry.kind === "change") holdQuietly(entry.change, at);
+          else if (entry.kind === "reminder") {
+            quiet.holdWait(entry.reminder.session, entry.reminder.begunAt);
+          }
+          continue;
+        }
+        if (entry.kind === "change") show(changeNotice(entry.change));
+        else if (entry.kind === "reminder") {
+          show(reminderNotice(entry.reminder.session, at - entry.reminder.begunAt));
+        } else show(summaryNotice(entry.summary.items));
       }
     },
   };

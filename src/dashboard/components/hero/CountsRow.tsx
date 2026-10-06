@@ -1,18 +1,10 @@
 import type { ReactNode } from "react";
 
-import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
+import { STALE_THRESHOLD_MS, staleAfterInWords } from "@core/sessions/staleness";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { formatDuration } from "@dashboard/lib/format";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import type { CountState, Longest, SessionsSummary } from "@dashboard/lib/sessions/sessions";
-
-/** "a day", or "36 hours" if the threshold is ever not a whole number of days. */
-const STALE_AFTER =
-  STALE_THRESHOLD_MS % 86_400_000 === 0
-    ? STALE_THRESHOLD_MS === 86_400_000
-      ? "a day"
-      : `${STALE_THRESHOLD_MS / 86_400_000} days`
-    : `${Math.round(STALE_THRESHOLD_MS / 3_600_000)} hours`;
 
 /** Shown in place of a number that was not counted. */
 export const NOT_KNOWN = "–";
@@ -25,7 +17,6 @@ export const NOT_KNOWN = "–";
 const NOTE = {
   working: "busy with a task",
   idle: "ready for a prompt",
-  stale: `idle ${STALE_AFTER} or more`,
   sessions: "all sessions found",
   noneWorking: "none working",
   noneIdle: "none idle",
@@ -152,6 +143,11 @@ interface CountsRowProps {
   asOf: number;
   /** Opens the history behind Working or Idle, once there is a count to have a history of. */
   onOpenHistory?: (metric: HistoryMetric) => void;
+  /**
+   * How long a session is idle before it is stale, as the snapshot's time
+   * rules say: "idle a day or more", or "idle 2 days or more". Defaults to a day.
+   */
+  staleAfterMs?: number;
 }
 
 /**
@@ -166,7 +162,12 @@ interface CountsRowProps {
  * its place. When no source could be read, or one is still being looked for, it
  * shows a dash and says "Not known": nothing was found, which is not zero.
  */
-export function CountsRow({ counts, asOf, onOpenHistory }: CountsRowProps) {
+export function CountsRow({
+  counts,
+  asOf,
+  onOpenHistory,
+  staleAfterMs = STALE_THRESHOLD_MS,
+}: CountsRowProps) {
   const { summary, counted, searching } = counts;
   const value = (count: number | undefined) =>
     summary === null ? null : counted ? (count ?? 0) : NOT_KNOWN;
@@ -209,7 +210,7 @@ export function CountsRow({ counts, asOf, onOpenHistory }: CountsRowProps) {
         label='Stale'
         mark={<StatusMark kind='stale' />}
         value={value(summary?.stale)}
-        note={NOTE.stale}
+        note={`idle ${staleAfterInWords(staleAfterMs)} or more`}
       />
       <Count
         kind='sessions'

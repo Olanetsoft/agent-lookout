@@ -47,6 +47,7 @@ import {
 import { APP_SCHEME, APP_START_URL } from "../core/appAddress.ts";
 import { UPDATES_HASH, type InstallRefusal } from "../core/appUpdate.ts";
 import { createCollector, type Collector } from "../collector/collector.ts";
+import { isQuietAt } from "../core/time-rules/quietHours.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
 import { createMenuBar, type MenuBar } from "./menu-bar/menuBar.ts";
 import { menuBarActions } from "./menu-bar/menuBarActions.ts";
@@ -61,6 +62,7 @@ import { createAppProtocolHandler } from "./protocol/appProtocol.ts";
 import { createAppRoutes } from "./protocol/appRoutes.ts";
 import { bundleOf } from "./updates/install/installLocation.ts";
 import { foundNotice, updateDialog } from "./updates/updateDialog.ts";
+import { createQuietNotice } from "./updates/quietNotice.ts";
 import { createUpdateRoute } from "./updates/updateRoute.ts";
 import { settingsFile } from "./updates/updateSettings.ts";
 import { createUpdater, type Updater } from "./updates/updater.ts";
@@ -157,6 +159,13 @@ function noticeFound(version: string, refusal: InstallRefusal | null): void {
     // Not shown. Settings says it all the same.
   }
 }
+
+/** The notice of a version found, held through quiet hours as every notification is. */
+const foundNotices = createQuietNotice<{ version: string; refusal: InstallRefusal | null }>({
+  isQuiet: () =>
+    collector !== null && isQuietAt(collector.settings.timeRules().quietHours, Date.now()),
+  show: ({ version, refusal }) => noticeFound(version, refusal),
+});
 
 /**
  * Check for Updates… in the app menu. With the window open, it shows the
@@ -288,6 +297,8 @@ function start(): void {
           } catch {
             // Tried again on the next poll.
           }
+          // It never throws: the notice is shown inside a try of its own.
+          foundNotices.quietNow(snapshot.quiet === true);
           bar.update(snapshot);
         },
       });
@@ -301,7 +312,7 @@ function start(): void {
         bundle: bundleOf(app.getPath("exe")),
         settings: settingsFile(app.getPath("userData")),
         tempDir: app.getPath("temp"),
-        onFound: noticeFound,
+        onFound: (version, refusal) => foundNotices.found({ version, refusal }),
         quit: () => app.quit(),
         warn: log,
       });

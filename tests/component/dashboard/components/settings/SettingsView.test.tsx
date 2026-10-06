@@ -6,8 +6,10 @@ import type {
   EmailStatusResponse,
   HistoryResponse,
   PullRequestsStatusResponse,
+  SettingsResponse,
   WebhookStatusResponse,
 } from "@core/api";
+import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -61,6 +63,12 @@ const PULL_REQUESTS_OFF: PullRequestsStatusResponse = {
   last: null,
 };
 let pullRequests: PullRequestsStatusResponse | null;
+/** What the app says of the time rules, as `/api/settings` would: all off. */
+const SETTINGS: SettingsResponse = {
+  timeRules: DEFAULT_TIME_RULES,
+  file: "~/.agent-lookout/settings.json",
+  problem: null,
+};
 /** The paths the view asked the app for. */
 let asked: string[];
 
@@ -74,7 +82,13 @@ beforeEach(() => {
   setApiHost(async (path) => {
     asked.push(path);
     const answer =
-      path === "/api/webhook" ? webhook : path === "/api/pull-requests" ? pullRequests : email;
+      path === "/api/webhook"
+        ? webhook
+        : path === "/api/pull-requests"
+          ? pullRequests
+          : path === "/api/settings"
+            ? SETTINGS
+            : email;
     if (answer === null) throw new TypeError("Failed to fetch");
     return new Response(JSON.stringify(answer), {
       headers: { "Content-Type": "application/json" },
@@ -175,6 +189,7 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
   expect(titles).toEqual([
     "Theme",
     "Notifications",
+    "Time rules",
     "History",
     "Menu bar",
     "Updates",
@@ -200,15 +215,16 @@ test.each(["dark", "light"] as const)(
     document.documentElement.setAttribute("data-theme", theme);
     const screen = await render(<SettingsView />);
 
+    await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(9);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
       expect(getComputedStyle(card).backdropFilter).toBe("none");
     }
     // The choice of theme is the recessed well with its thumb.
-    const well = screen.getByRole("radiogroup").element();
+    const well = screen.getByRole("radiogroup", { name: "Theme" }).element();
     expect(getComputedStyle(well).backgroundColor).toBe(rgbOf("var(--well)"));
     expect(well.querySelector('[data-part="thumb"]')).not.toBeNull();
     expect(warmPaint(screen.container)).toEqual([]);
@@ -744,7 +760,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications and the history share the wide column, with email, the webhook, pull requests, permission prompts and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications, the time rules and the history share the wide column, with email, the webhook, pull requests, permission prompts and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -752,9 +768,11 @@ test("the theme, notifications and the history share the wide column, with email
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
-  const [theme, notes, kept, mail, hook, pulls, prompts, copy] = [
+  await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
+  const [theme, notes, rules, kept, mail, hook, pulls, prompts, copy] = [
     box("Theme"),
     box("Notifications"),
+    box("Time rules"),
     box("History"),
     box("Email"),
     box("Webhook"),
@@ -766,9 +784,12 @@ test("the theme, notifications and the history share the wide column, with email
   expect(notes.left).toBe(theme.left);
   expect(notes.width).toBe(theme.width);
   expect(notes.top - theme.bottom).toBe(16);
+  expect(rules.left).toBe(theme.left);
+  expect(rules.width).toBe(theme.width);
+  expect(rules.top - notes.bottom).toBe(16);
   expect(kept.left).toBe(theme.left);
   expect(kept.width).toBe(theme.width);
-  expect(kept.top - notes.bottom).toBe(16);
+  expect(kept.top - rules.bottom).toBe(16);
   expect(mail.top).toBe(theme.top);
   expect(mail.left - theme.right).toBe(16);
   expect(hook.left).toBe(mail.left);
@@ -802,7 +823,7 @@ const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
 };
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, Pull requests, Permission prompts, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, Time rules, History, Email, Webhook, Pull requests, Permission prompts, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -817,11 +838,13 @@ test.each([1000, 375])(
       />,
     );
     await expect.element(notifications(screen).getByRole("status")).toBeVisible();
+    await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
 
     const cards = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="section-card"]')];
     expect(cards.map((card) => card.querySelector("h2")?.textContent)).toEqual([
       "Theme",
       "Notifications",
+      "Time rules",
       "History",
       "Email",
       "Webhook",
@@ -932,7 +955,12 @@ test("with nothing set, the Email card says email is off and which two settings 
   ]);
   // Nothing on the page turns it on or off.
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
-  expect([...asked].sort()).toEqual(["/api/email", "/api/pull-requests", "/api/webhook"]);
+  expect([...asked].sort()).toEqual([
+    "/api/email",
+    "/api/pull-requests",
+    "/api/settings",
+    "/api/webhook",
+  ]);
   expect(emailState(screen).getAttribute("aria-live")).toBe("polite");
 });
 

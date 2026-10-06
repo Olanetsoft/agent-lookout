@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
-import { createWaitNotifier } from "@dashboard/lib/notifications/waitNotifier";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
+import { createWaitNotifier, SUMMARY_TAG } from "@dashboard/lib/notifications/waitNotifier";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeNotificationHost } from "@tests/support/notifications";
 
@@ -885,5 +886,280 @@ describe("finished, failed and ended", () => {
     notifier.handle(snapshot([], "error"));
     notifier.handle(snapshot([], "unavailable"));
     expect(host.shown).toEqual([]);
+  });
+});
+
+describe("the time rules", () => {
+  /** Monday 5 October 2026 at 21:50, on the local clock, so the hours below fall where they say. */
+  const EVENING = new Date(2026, 9, 5, 21, 50).getTime();
+  const MINUTE = 60_000;
+
+  const QUIET: TimeRules = {
+    ...DEFAULT_TIME_RULES,
+    quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, from: "22:00", to: "08:00" },
+  };
+  const REMINDING: TimeRules = {
+    ...DEFAULT_TIME_RULES,
+    longWait: { on: true, minutes: 10 },
+  };
+
+  /** A snapshot made at `at` by these rules. */
+  function made(at: number, rules: TimeRules, sessions: Session[]): SessionsSnapshot {
+    return {
+      generatedAt: at,
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+      sessions,
+      timeRules: rules,
+    };
+  }
+
+  function choosing(...events: NoticeEvent[]) {
+    const host = fakeNotificationHost({ permission: "granted" });
+    const chosen = new Set<NoticeEvent>(events);
+    const notifier = createWaitNotifier({ host, isOn: (event) => chosen.has(event) });
+    return { host, chosen, notifier };
+  }
+
+  const shown = (host: ReturnType<typeof fakeNotificationHost>) =>
+    host.shown.map(({ title, body, tag }) => [title, body, tag]);
+
+  test("during quiet hours nothing is shown, and when they end one summary goes, and a wait still open is shown as usual", () => {
+    const { host, notifier } = choosing("needs-you", "finished");
+    const at = (minutes: number) => EVENING + minutes * MINUTE;
+    notifier.handle(
+      made(at(0), QUIET, [
+        session(1, { name: "checkout-flow", status: "working" }),
+        session(2, { name: "billing-webhooks", status: "working" }),
+        session(3, { name: "docs-site", status: "working" }),
+      ]),
+    );
+
+    // 22:05: two waits begin, and one session finishes.
+    notifier.handle(
+      made(at(15), QUIET, [
+        waiting(1, { name: "checkout-flow", statusSince: at(15) }),
+        session(2, { name: "billing-webhooks", status: "finished" }),
+        waiting(3, { name: "docs-site", statusSince: at(15) }),
+      ]),
+    );
+    // 22:40: checkout-flow is answered.
+    notifier.handle(
+      made(at(50), QUIET, [
+        session(1, { name: "checkout-flow", status: "working" }),
+        session(2, { name: "billing-webhooks", status: "finished" }),
+        waiting(3, { name: "docs-site", statusSince: at(15), waitingText: "Run: npm test" }),
+      ]),
+    );
+    expect(host.shown).toEqual([]);
+
+    // 08:00 the next morning: quiet hours are over.
+    const morning = new Date(2026, 9, 6, 8, 0).getTime();
+    notifier.handle(
+      made(morning, QUIET, [
+        session(1, { name: "checkout-flow", status: "working" }),
+        session(2, { name: "billing-webhooks", status: "finished" }),
+        waiting(3, { name: "docs-site", statusSince: at(15), waitingText: "Run: npm test" }),
+      ]),
+    );
+    expect(shown(host)).toEqual([
+      ["While quiet", "checkout-flow waited 35 minutes and billing-webhooks finished", SUMMARY_TAG],
+      ["docs-site", "Waiting for permission: Run: npm test", `agent-lookout:${id(3)}`],
+    ]);
+    // The wait's own is taken down when it ends, and the summary is the person's to clear.
+    notifier.handle(
+      made(morning + MINUTE, QUIET, [session(3, { name: "docs-site", status: "working" })]),
+    );
+    expect(host.open().map((one) => one.tag)).toEqual([SUMMARY_TAG]);
+  });
+
+  test("quiet hours go by what the collector said in the snapshot, by its clock, not by this browser's", () => {
+    // A browser in another time zone: noon here is the collector's night, and the other way round.
+    const { host, notifier } = choosing("needs-you");
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const quietAt = (at: number, quiet: boolean, sessions: Session[]) => ({
+      ...made(at, QUIET, sessions),
+      quiet,
+    });
+    notifier.handle(quietAt(noon, true, [session(1, { name: "api", status: "working" })]));
+    notifier.handle(
+      quietAt(noon + MINUTE, true, [waiting(1, { name: "api", statusSince: noon + MINUTE })]),
+    );
+    expect(host.shown).toEqual([]);
+    notifier.handle(
+      quietAt(noon + 2 * MINUTE, false, [waiting(1, { name: "api", statusSince: noon + MINUTE })]),
+    );
+    expect(shown(host)).toEqual([["api", "Waiting for permission", `agent-lookout:${id(1)}`]]);
+
+    const night = new Date(2026, 9, 5, 23, 0).getTime();
+    notifier.handle(quietAt(night, false, [session(2, { name: "docs", status: "working" })]));
+    notifier.handle(
+      quietAt(night + MINUTE, false, [waiting(2, { name: "docs", statusSince: night + MINUTE })]),
+    );
+    expect(host.shown.map(({ title }) => title)).toEqual(["api", "docs"]);
+  });
+
+  test("a wait held in quiet hours whose session reads as another status for a poll is shown once when they end, and in no summary", () => {
+    const { host, notifier } = choosing("needs-you");
+    const night = new Date(2026, 9, 5, 23, 0).getTime();
+    const waits = waiting(1, { name: "api", statusSince: night + MINUTE });
+    notifier.handle(made(night, QUIET, [session(1, { name: "api", status: "working" })]));
+    notifier.handle(made(night + MINUTE, QUIET, [waits]));
+    notifier.handle(
+      made(night + 2 * MINUTE, QUIET, [session(1, { name: "api", status: "working" })]),
+    );
+    notifier.handle(made(night + 3 * MINUTE, QUIET, [waits]));
+    notifier.handle(made(new Date(2026, 9, 6, 8, 0).getTime(), QUIET, [waits]));
+    expect(shown(host)).toEqual([["api", "Waiting for permission", `agent-lookout:${id(1)}`]]);
+  });
+
+  test("leaving answered waits out, the summary names the rest, and with nothing else there is none", () => {
+    const rules: TimeRules = {
+      ...QUIET,
+      quietHours: { ...QUIET.quietHours, leaveOutAnswered: true },
+    };
+    const { host, notifier } = choosing("needs-you");
+    notifier.handle(made(EVENING, rules, [session(1, { status: "working" })]));
+    notifier.handle(
+      made(EVENING + 20 * MINUTE, rules, [waiting(1, { statusSince: EVENING + 20 * MINUTE })]),
+    );
+    notifier.handle(made(EVENING + 30 * MINUTE, rules, [session(1, { status: "working" })]));
+    notifier.handle(
+      made(new Date(2026, 9, 6, 8, 1).getTime(), rules, [session(1, { status: "working" })]),
+    );
+    expect(host.shown).toEqual([]);
+  });
+
+  test("turning quiet hours off while they hold ends them at once", () => {
+    const { host, notifier } = choosing("needs-you");
+    const night = new Date(2026, 9, 5, 23, 0).getTime();
+    notifier.handle(made(night, QUIET, [session(1, { status: "working" })]));
+    notifier.handle(
+      made(night + MINUTE, QUIET, [waiting(1, { name: "api", statusSince: night + MINUTE })]),
+    );
+    expect(host.shown).toEqual([]);
+    notifier.handle(
+      made(night + 2 * MINUTE, DEFAULT_TIME_RULES, [
+        waiting(1, { name: "api", statusSince: night + MINUTE }),
+      ]),
+    );
+    expect(shown(host)).toEqual([["api", "Waiting for permission", `agent-lookout:${id(1)}`]]);
+  });
+
+  test("only the events chosen are held, and summed up", () => {
+    const { host, notifier } = choosing("needs-you");
+    notifier.handle(made(EVENING, QUIET, [session(1, { status: "working" })]));
+    notifier.handle(made(EVENING + 20 * MINUTE, QUIET, [session(1, { status: "finished" })]));
+    notifier.handle(
+      made(new Date(2026, 9, 6, 9, 0).getTime(), QUIET, [session(1, { status: "finished" })]),
+    );
+    expect(host.shown).toEqual([]);
+  });
+
+  test("a notification another page took down is not shown again during quiet hours", () => {
+    const { host, notifier } = choosing("needs-you");
+    const day = new Date(2026, 9, 5, 21, 0).getTime();
+    notifier.handle(made(day, QUIET, [session(1, { status: "working" })]));
+    notifier.handle(made(day + MINUTE, QUIET, [waiting(1, { statusSince: day + MINUTE })]));
+    expect(host.shown).toHaveLength(1);
+    notifier.closeAll();
+    notifier.handle(
+      made(EVENING + 20 * MINUTE, QUIET, [waiting(1, { statusSince: day + MINUTE })]),
+    );
+    notifier.showAgain([id(1)]);
+    expect(host.shown).toHaveLength(1);
+  });
+
+  test("a wait lasting the long wait reminder's minutes is reminded of once, in the place of its notification, and the reminder goes when the wait ends", () => {
+    const { host, notifier } = choosing("needs-you");
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    notifier.handle(made(noon, REMINDING, [session(1, { status: "working" })]));
+    notifier.handle(
+      made(noon + MINUTE, REMINDING, [
+        waiting(1, { name: "checkout-flow", statusSince: noon + MINUTE }),
+      ]),
+    );
+    notifier.handle(
+      made(noon + 10 * MINUTE, REMINDING, [
+        waiting(1, { name: "checkout-flow", statusSince: noon + MINUTE }),
+      ]),
+    );
+    notifier.handle(
+      made(noon + 11 * MINUTE, REMINDING, [
+        waiting(1, { name: "checkout-flow", statusSince: noon + MINUTE }),
+      ]),
+    );
+    notifier.handle(
+      made(noon + 12 * MINUTE, REMINDING, [
+        waiting(1, { name: "checkout-flow", statusSince: noon + MINUTE }),
+      ]),
+    );
+    expect(shown(host)).toEqual([
+      ["checkout-flow", "Waiting for permission", `agent-lookout:${id(1)}`],
+      ["checkout-flow", "Has waited 10 minutes for permission", `agent-lookout:${id(1)}`],
+    ]);
+    expect(host.open()).toHaveLength(1);
+
+    notifier.handle(
+      made(noon + 13 * MINUTE, REMINDING, [
+        session(1, { name: "checkout-flow", status: "working" }),
+      ]),
+    );
+    expect(host.open()).toEqual([]);
+  });
+
+  test("with the reminder off, or Needs you switched off, there is none", () => {
+    const off = choosing("needs-you");
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    off.notifier.handle(made(noon, DEFAULT_TIME_RULES, [waiting(1, { statusSince: noon })]));
+    off.notifier.handle(
+      made(noon + 30 * MINUTE, DEFAULT_TIME_RULES, [waiting(1, { statusSince: noon })]),
+    );
+    expect(off.host.shown).toEqual([]);
+
+    const finishesOnly = choosing("finished");
+    finishesOnly.notifier.handle(made(noon, REMINDING, [waiting(1, { statusSince: noon })]));
+    finishesOnly.notifier.handle(
+      made(noon + 30 * MINUTE, REMINDING, [waiting(1, { statusSince: noon })]),
+    );
+    expect(finishesOnly.host.shown).toEqual([]);
+  });
+
+  test("a wait that comes to its reminder in quiet hours is told of once when they end, saying how long it has waited, and not reminded of straight after", () => {
+    const rules: TimeRules = { ...QUIET, longWait: { on: true, minutes: 10 } };
+    const { host, notifier } = choosing("needs-you");
+    notifier.handle(made(EVENING, rules, [session(1, { status: "working" })]));
+    // Seen at 21:55, before quiet hours: shown as usual.
+    notifier.handle(
+      made(EVENING + 5 * MINUTE, rules, [
+        waiting(1, { name: "api", statusSince: EVENING + 5 * MINUTE }),
+      ]),
+    );
+    // It lasts its ten minutes at 22:05, in quiet hours: nothing.
+    notifier.handle(
+      made(EVENING + 15 * MINUTE, rules, [
+        waiting(1, { name: "api", statusSince: EVENING + 5 * MINUTE }),
+      ]),
+    );
+    // A second wait begins in quiet hours.
+    notifier.handle(
+      made(EVENING + 20 * MINUTE, rules, [
+        waiting(1, { name: "api", statusSince: EVENING + 5 * MINUTE }),
+        waiting(2, { name: "web", statusSince: EVENING + 20 * MINUTE }),
+      ]),
+    );
+    expect(host.shown.map((one) => one.body)).toEqual(["Waiting for permission"]);
+
+    const morning = new Date(2026, 9, 6, 8, 0).getTime();
+    const both = [
+      waiting(1, { name: "api", statusSince: EVENING + 5 * MINUTE }),
+      waiting(2, { name: "web", statusSince: EVENING + 20 * MINUTE }),
+    ];
+    notifier.handle(made(morning, rules, both));
+    notifier.handle(made(morning + MINUTE, rules, both));
+    // The wait seen before quiet hours has its reminder now. The one held is shown as usual, once.
+    expect(shown(host).slice(1)).toEqual([
+      ["web", "Waiting for permission", `agent-lookout:${id(2)}`],
+      ["api", "Has waited 10 hours 5 minutes for permission", `agent-lookout:${id(1)}`],
+    ]);
   });
 });

@@ -16,11 +16,12 @@ import {
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
 import { makeSession } from "@tests/fixtures/session";
 import { listen, request } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 const T0 = 1_700_000_000_000;
 
@@ -44,7 +45,7 @@ async function serve(initial: Session[] = []) {
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env: { AGENT_LOOKOUT_HISTORY: "off" },
+    env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
     notifier,
     now: () => state.now,
   });
@@ -107,13 +108,17 @@ describe("routes", () => {
       generatedAt: T0 + 2_000,
       sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 + 2_000 }],
       sessions: [waiting, idle],
+      // The rules it was made by, which are all off until the person sets them,
+      // and so it was not made in quiet hours.
+      timeRules: DEFAULT_TIME_RULES,
+      quiet: false,
     });
   });
 
   test("/api/sessions gives the Claude Code source its facts: the folder, the command and how often each is used", async () => {
     const home = await makeClaudeHome(registryFiles);
     const collector = createCollector({
-      env: { AGENT_LOOKOUT_HISTORY: "off" },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
       version: "9.9.9-test",
       adapters: [
         createClaudeCodeAdapter({
@@ -148,7 +153,7 @@ describe("routes", () => {
 
   test("/api/sessions passes on a source's advice", async () => {
     const collector = createCollector({
-      env: { AGENT_LOOKOUT_HISTORY: "off" },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
       version: "9.9.9-test",
       adapters: [
         createClaudeCodeAdapter({

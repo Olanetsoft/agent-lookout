@@ -16,7 +16,7 @@ import { CAPABILITIES, type SessionsSnapshot } from "@core/sessions/session";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { closedPort, listen, request } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // `agent-lookout mcp` as an agent's app runs it: `bin/agent-lookout.mjs` as a
 // process of its own, started and spoken to by the protocol's own client over
@@ -62,6 +62,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
     version: "0.0.0-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_CLAUDE_FEED: "off",
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),

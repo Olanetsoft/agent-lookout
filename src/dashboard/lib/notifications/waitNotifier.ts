@@ -1,5 +1,10 @@
-import type { Session, SessionsSnapshot, SourceId } from "@core/sessions/session";
-import { changeNotice } from "@core/notices/waiting";
+import {
+  withoutWaitingText,
+  type Session,
+  type SessionsSnapshot,
+  type SourceId,
+} from "@core/sessions/session";
+import { changeNotice, type Notice } from "@core/notices/waiting";
 import {
   EMPTY_CHANGE_MEMORY,
   sessionChanges,
@@ -7,6 +12,11 @@ import {
   type NoticeEvent,
   type SessionChange,
 } from "@core/notices/sessionChanges";
+import { createQuietHold } from "@core/time-rules/quietHold";
+import { quietOf } from "@core/time-rules/quietHours";
+import { createReminderWatch } from "@core/time-rules/reminders";
+import { rulesOf } from "@core/time-rules/timeRules";
+import { reminderNotice, summaryNotice } from "@core/time-rules/timeRulesWords";
 import type {
   NotificationHost,
   ShownNotification,
@@ -32,6 +42,16 @@ import type {
  * a new beginning. What it finds waiting was waiting before it began, so
  * nothing in its first answers is announced, exactly as when the page itself
  * has just opened.
+ *
+ * The time rules each snapshot carries apply on top of the switches, at the
+ * snapshot's own moment, by the rules the collector follows for its own
+ * notifications, and quiet hours by what the collector said of them in the
+ * snapshot, by its own clock. With the long wait reminder on, a wait this page saw before it
+ * had lasted the rule's minutes is reminded of once it has, in the place of
+ * its notification. During quiet hours nothing is shown: what would have been
+ * is held, and when they end a wait still open is shown as usual and the rest
+ * in one notification, "While quiet", which stays until the person clears it.
+ * A page opened during quiet hours sums up what it has seen since.
  */
 
 export interface WaitNotifierOptions {
@@ -65,6 +85,9 @@ export interface WaitNotifier {
    */
   showAgain(sessionIds: readonly string[]): void;
 }
+
+/** The tag of the one notification that sums up quiet hours. */
+export const SUMMARY_TAG = "agent-lookout:while-quiet";
 
 /** A notification of a wait on show, and the source its session came from. */
 interface OpenNotification {
@@ -102,6 +125,12 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
    * takes it down.
    */
   const over = new Map<string, ShownNotification>();
+  /** The waits that could be reminded of, and those already reminded. */
+  const reminders = createReminderWatch();
+  /** What quiet hours hold back. */
+  const quiet = createQuietHold();
+  /** Whether the last snapshot fell in quiet hours. */
+  let quietLast = false;
 
   function close(id: string): void {
     const shown = open.get(id);
@@ -110,7 +139,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     closeSafely(shown.notification);
   }
 
-  function show(change: SessionChange): void {
+  function show(change: SessionChange, notice: Notice = changeNotice(change)): void {
     const { session } = change;
     // A session has one notification at a time. The one on show is taken down
     // first, because a browser that puts a notification in the place of
@@ -127,7 +156,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       // The name, and the reason in the words the Needs you panel uses with
       // what the session is asking when that is known, or what happened. The
       // collector's own notification says the same.
-      shown = host.show({ ...changeNotice(change), tag: tagFor(session) });
+      shown = host.show({ ...notice, tag: tagFor(session) });
     } catch {
       // A host should not throw. One that does must not stop the next notification.
       shown = null;
@@ -150,6 +179,26 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     });
   }
 
+  /** The one notification that sums up quiet hours, left for the person to clear. */
+  function showSummary(notice: Notice): void {
+    try {
+      host.show({ ...notice, tag: SUMMARY_TAG });
+    } catch {
+      // As above: the next notification still goes.
+    }
+  }
+
+  /** Holds a change back through quiet hours. */
+  function holdQuietly(change: SessionChange, at: number): void {
+    const { event, session } = change;
+    if (event === "needs-you") {
+      const since = session.statusSince;
+      quiet.holdWait(session, since !== null && since <= at ? since : at);
+    } else {
+      quiet.holdOver(event, withoutWaitingText(session), at);
+    }
+  }
+
   return {
     handle(snapshot, collectorStartedAt = null) {
       if (!snapshot) return;
@@ -157,23 +206,65 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       if (collectorStartedAt !== null) {
         // Another collector. Forgetting what the last one said makes each
         // source's next answer its first, which announces nothing.
-        if (collector !== null && collector !== collectorStartedAt) memory = EMPTY_CHANGE_MEMORY;
+        if (collector !== null && collector !== collectorStartedAt) {
+          memory = EMPTY_CHANGE_MEMORY;
+          reminders.clear();
+        }
         collector = collectorStartedAt;
       }
+
+      const at = snapshot.generatedAt;
+      const rules = rulesOf(snapshot);
+      // By the collector's clock, as it said in the snapshot, not this browser's.
+      const quietNow = quietOf(snapshot);
+      quietLast = quietNow;
+      const thresholdMs = rules.longWait.minutes * 60_000;
 
       // Changes are followed while notifications are off as well. Turning them
       // on then says nothing about what had already happened.
       const result = sessionChanges(memory, snapshot);
       memory = result.memory;
-      for (const id of result.stopped) close(id);
+      for (const id of result.stopped) {
+        close(id);
+        quiet.waitEnded(id, at);
+      }
+      reminders.observe(snapshot, result.stopped, at);
       // A notification left from before a new collector began is not among
       // those. It goes once its source has answered without its session waiting.
       for (const [id, { source }] of open) {
         const waiting = memory.waits.get(source);
         if (waiting && !waiting.has(id)) close(id);
       }
+
+      if (quiet.holding() && !quietNow) {
+        // The quiet hours are over: one summary, and each wait still open as usual.
+        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+        const items = end.summary?.items.filter((item) => isOn(item.event)) ?? [];
+        if (items.length > 0) showSummary(summaryNotice(items));
+        if (isOn("needs-you")) {
+          for (const { session } of end.open) {
+            show({ event: "needs-you", session });
+            if (rules.longWait.on) reminders.toldLate(session.id, at, thresholdMs);
+          }
+        }
+      }
+      if (quietNow) quiet.begin(at);
+
       for (const change of result.changes) {
-        if (isOn(change.event)) show(change);
+        if (!isOn(change.event)) continue;
+        if (quietNow) holdQuietly(change, at);
+        else show(change);
+      }
+
+      if (!quietNow && rules.longWait.on && isOn("needs-you")) {
+        for (const due of reminders.due(snapshot, at, thresholdMs)) {
+          reminders.reminded(due.session.id, thresholdMs);
+          // In the place of the wait's own notification, and taken down when the wait ends.
+          show(
+            { event: "needs-you", session: due.session },
+            reminderNotice(due.session, due.waitedMs),
+          );
+        }
       }
     },
 
@@ -186,7 +277,8 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     },
 
     showAgain(sessionIds) {
-      if (!latest) return;
+      // In quiet hours nothing is shown. A wait still open when they end is.
+      if (!latest || quietLast) return;
       const wanted = new Set(sessionIds);
       for (const session of latest.sessions) {
         if (!wanted.has(session.id) || session.status !== "needs-you") continue;

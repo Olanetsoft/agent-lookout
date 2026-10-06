@@ -16,7 +16,12 @@ import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
-import { CODEX_FIXTURE_HOME, makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import {
+  CODEX_FIXTURE_HOME,
+  makeClaudeHome,
+  NO_SETTINGS_FILE,
+  tempDir,
+} from "@tests/support/node/tempFiles";
 import {
   fakeOsascript,
   fakeProcesses,
@@ -93,6 +98,7 @@ async function serve(env: Record<string, string> = {}, processes: ProcessRow[] =
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
@@ -194,6 +200,7 @@ describe("what the dashboard is told", () => {
       version: "9.9.9-test",
       env: {
         AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: await tempDir(),

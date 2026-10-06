@@ -378,3 +378,18 @@ test("a count that was not counted has no history to open", async () => {
   const loading = await renderCounts(null, OK, onOpenHistory);
   expect(loading.container.querySelector("button")).toBeNull();
 });
+
+test("with the idle rule on, Stale's note says how long the rule says", async () => {
+  const screen = await render(
+    <div style={{ width: 760, padding: 20 }}>
+      <CountsRow counts={countState(SESSIONS, OK)} asOf={NOW} staleAfterMs={2 * DAY} />
+    </div>,
+  );
+  expect(noteOf(screen.container, "Stale")).toBe("idle 2 days or more");
+  await screen.rerender(
+    <div style={{ width: 760, padding: 20 }}>
+      <CountsRow counts={countState(SESSIONS, OK)} asOf={NOW} staleAfterMs={6 * 60 * MINUTE} />
+    </div>,
+  );
+  expect(noteOf(screen.container, "Stale")).toBe("idle 6 hours or more");
+});

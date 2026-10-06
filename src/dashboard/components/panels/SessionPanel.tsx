@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
+import { staleAfterMs } from "@core/time-rules/timeRules";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
@@ -233,6 +234,7 @@ function Details({
 }) {
   const sources = state.snapshot?.sources ?? [];
   const sessions = state.snapshot?.sessions ?? NO_SESSIONS;
+  const staleAfter = staleAfterMs(state.snapshot?.timeRules);
   const app = surfaceLabel(session.surface);
   const full = state.events.length >= MAX_EVENTS;
 
@@ -256,9 +258,10 @@ function Details({
             now,
             asOf,
             eventsFull: full,
+            staleAfterMs: staleAfter,
           })
         : null,
-    [sessions, state.events, state.history, now, asOf, full],
+    [sessions, state.events, state.history, now, asOf, full, staleAfter],
   );
   const row = timeline?.rows.find((candidate) => candidate.id === session.id);
 

@@ -71,6 +71,8 @@ interface HeroPanelProps {
   onOpenHistory?: (metric: HistoryMetric) => void;
   /** Told once a permission prompt was answered from here, so the page reads the sessions again. */
   onAnswered?: () => void;
+  /** How long a session is idle before it is stale, as the snapshot's time rules say. */
+  staleAfterMs?: number;
   className?: string;
 }
 
@@ -661,6 +663,7 @@ export function HeroPanel({
   asOf = now,
   onOpenHistory,
   onAnswered,
+  staleAfterMs,
   className,
 }: HeroPanelProps) {
   const titleId = useId();
@@ -765,7 +768,12 @@ export function HeroPanel({
       {/* With no session waiting in the period there are no bars to draw, and
           the quiet top already says since when, so the bars are left out. */}
       {light && (waits === null || waits.sessions.length > 0) && <WaitedOnYou waits={waits} />}
-      <CountsRow counts={counts} asOf={asOf} onOpenHistory={openHistory} />
+      <CountsRow
+        counts={counts}
+        asOf={asOf}
+        onOpenHistory={openHistory}
+        staleAfterMs={staleAfterMs}
+      />
     </section>
   );
 }

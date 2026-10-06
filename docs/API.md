@@ -1,6 +1,6 @@
 # API
 
-Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but four only reads.
+Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but six only reads.
 
 The answers hold your session names and folder paths. Check one before you share it.
 
@@ -31,31 +31,33 @@ curl -s http://127.0.0.1:4777/api/sessions
 
 Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Every answer that is not a 200 has the body `{ "error": "<one sentence>" }`.
 
-| Status | When                                                                                                   |
-| ------ | ------------------------------------------------------------------------------------------------------ |
-| 400    | The address, `since` or `windowMs` could not be read                                                   |
-| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                     |
-| 404    | There is no route at that path                                                                         |
-| 405    | Any method but `GET`, with `Allow: GET`. The five routes that act take only `POST`, with `Allow: POST` |
-| 500    | Something went wrong that the server did not expect                                                    |
+| Status | When                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------- |
+| 400    | The address, `since` or `windowMs` could not be read                                                  |
+| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                    |
+| 404    | There is no route at that path                                                                        |
+| 405    | Any method but `GET`, with `Allow: GET`. The six routes that act take only `POST`, with `Allow: POST` |
+| 500    | Something went wrong that the server did not expect                                                   |
 
 ## Routes
 
-| Route                              | Answers                                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `GET /api/health`                  | `{ ok: true, version }`                                                                 |
-| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions, answering }`                    |
-| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                 |
-| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first   |
-| `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                      |
-| `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                    |
-| `GET /api/pull-requests`           | `{ on, problem, gh, last }`: whether each branch's pull request is shown                |
-| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you               |
-| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of five routes that act |
-| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. A route that acts                                            |
-| `POST /api/sessions/stop`          | `{ ok: true }` once the session's process has ended. A route that acts                  |
-| `POST /api/sessions/clean-up`      | `{ results }`, what became of each session left running. A route that acts              |
-| `POST /api/permission/answer`      | `{ ok: true, decision }` once a permission prompt was answered. A route that acts       |
+| Route                              | Answers                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET /api/health`                  | `{ ok: true, version }`                                                                |
+| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions, answering, timeRules, quiet }` |
+| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                |
+| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first  |
+| `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                     |
+| `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                   |
+| `GET /api/pull-requests`           | `{ on, problem, gh, last }`: whether each branch's pull request is shown               |
+| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you              |
+| `GET /api/settings`                | `{ timeRules, file, problem }`: the time rules, and the file they are kept in          |
+| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of six routes that act |
+| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. A route that acts                                           |
+| `POST /api/sessions/stop`          | `{ ok: true }` once the session's process has ended. A route that acts                 |
+| `POST /api/sessions/clean-up`      | `{ results }`, what became of each session left running. A route that acts             |
+| `POST /api/permission/answer`      | `{ ok: true, decision }` once a permission prompt was answered. A route that acts      |
+| `POST /api/settings/time-rules`    | `{ ok: true, timeRules }` once the time rules are saved. A route that acts             |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -99,9 +101,23 @@ The snapshot the collector made at its last poll, two seconds apart at most:
       "links": {},
       "stale": false
     }
-  ]
+  ],
+  "timeRules": {
+    "longWait": { "on": true, "minutes": 10 },
+    "idle": { "on": false, "hours": 48 },
+    "quietHours": {
+      "on": true,
+      "from": "22:00",
+      "to": "08:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "leaveOutAnswered": false
+    }
+  },
+  "quiet": false
 }
 ```
+
+`timeRules` are the [time rules](GUIDE.md#time-rules) in force when the snapshot was made, as `GET /api/settings` gives them. Every session's `stale` follows the idle rule, worked out again at each poll whatever its source said, and the dashboard's notifications follow the reminder by them, at the snapshot's `generatedAt`. `quiet` says whether the snapshot was made in quiet hours, by the clock and time zone of the computer Agent Lookout runs on, and the dashboard holds its notifications by it rather than by its own clock. A session on another machine is stale by this computer's idle rule, and its waits are reminded of and held back here by this computer's rules: the `timeRules` and `quiet` in that machine's own snapshot are not read.
 
 Sessions come in this order: those that need you first, longest wait first, then working, idle, finished, failed and unknown, each with the most recent change first.
 
@@ -130,7 +146,7 @@ Sessions come in this order: those that need you first, longest wait first, then
 | `jump`            | `{ kind: "tmux", place }` or `{ kind: "terminal", app, place }` when `POST /api/jump` can take you to it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `stop`            | `{ how: "signal" }` or `{ how: "background" }` when `POST /api/sessions/stop` can stop it: a Claude Code session in a terminal or VS Code, or a background job. It holds nothing else                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `ask`             | For `needs-you` Claude Code sessions with the Agent Lookout plugin only, while Agent Lookout holds the session's permission request: `{ requestId, tool, command, description, inputs, allow, denyOnly, subagent, until }`. `command` is the whole command for `Bash`, every line, and `inputs` is `[{ name, value }]`, each input as text, for any other tool or the rest of a command's. `allow` says whether `POST /api/permission/answer` takes `allow`, which it does only when the whole of what is allowed is here: never for `Edit`, `Write`, `MultiEdit` or `NotebookEdit`, and not for `ExitPlanMode` or `AskUserQuestion`, past 4,000 characters or 40 lines, with a character that cannot be shown as it is, with more than two blank lines in a row, or for a command holding right-to-left letters, with `denyOnly` saying why: `edit`, `too-long`, `hidden-characters`, `not-yes-or-no`, `right-to-left` or `blank-lines`. `until` is when the request is let go. Kept in memory only while it is held: no event, history point, email, webhook post or answer of `agent-lookout mcp` holds it |
-| `stale`           | `true` once it has been idle for 24 hours                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `stale`           | `true` once it has been idle for 24 hours, or for as long as the idle rule in `timeRules` says while it is on. For a session on another machine too, by this computer's rule, whatever that machine said                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 | Source field   | Holds                                                                                                                                                                            |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -310,9 +326,61 @@ Whether Agent Lookout shows each session's [pull request](GUIDE.md#pull-requests
 
 It never holds a token: `gh` signs in with its own login, which Agent Lookout never reads.
 
+### `GET /api/settings`
+
+The settings Agent Lookout keeps itself, in a file on this computer, so they hold with no dashboard open: the [time rules](GUIDE.md#time-rules). It only reads.
+
+```json
+{
+  "timeRules": {
+    "longWait": { "on": true, "minutes": 10 },
+    "idle": { "on": true, "hours": 48 },
+    "quietHours": {
+      "on": true,
+      "from": "22:00",
+      "to": "08:00",
+      "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "leaveOutAnswered": false
+    }
+  },
+  "file": "~/.agent-lookout/settings.json",
+  "problem": null
+}
+```
+
+| Field                         | Holds                                                                                                                                                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeRules.longWait`          | The long wait reminder: `on`, and `minutes`, a whole number from 1 to 1,440, how long a wait lasts before it is reminded of. 10 unless set                                                                                                |
+| `timeRules.idle`              | The idle rule: `on`, and `hours`, a whole number from 1 to 720, how long a session is idle before it is stale. 48 unless set. While it is off a session is stale after 24 hours                                                           |
+| `timeRules.quietHours`        | Quiet hours: `on`, `from` and `to` on the 24-hour clock as `HH:MM`, two different times, which run past midnight when `to` is the earlier, and `days`, the days they begin on, any of `mon` to `sun`. 22:00 to 08:00 every day unless set |
+| `quietHours.leaveOutAnswered` | Whether the summary sent when quiet hours end leaves out the waits that were answered while they held                                                                                                                                     |
+| `file`                        | The file they are kept in, `~/.agent-lookout/settings.json` or the one `AGENT_LOOKOUT_SETTINGS_FILE` names, with your home folder written `~`                                                                                             |
+| `problem`                     | While the file could not be read when Agent Lookout started, or the last change could not be saved: one sentence that says why and names the file. `null` otherwise                                                                       |
+
+Every rule is off until you turn it on. A rule the file holds in a form that cannot be read is off, and `problem` names it.
+
+### `POST /api/settings/time-rules`
+
+A route that acts. It puts the time rules in force and saves them in the settings file, as the Time rules card in Settings does. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/settings/timeRulesRoute.ts`, and answers only a request that:
+
+- is a `POST`. Any other method gets 405, with `Allow: POST`.
+- has an `Origin` that names this computer, or gets 403.
+- is marked `same-origin` in `Sec-Fetch-Site`, when that header is sent, or gets 403.
+- carries `X-Agent-Lookout-Action: time-rules`, or gets 403.
+- has `Content-Type: application/json`, or gets 415.
+- has a body of 2,048 bytes or less, or gets 413, that is exactly the three rules, `longWait`, `idle` and `quietHours`, each whole, with exactly the fields `GET /api/settings` gives and every value in range, or gets 400.
+
+The rules are in force once they are saved, and not before: the file is written whole, with mode 600, in a folder made with mode 700, and never through a link. Nothing in the request names a file.
+
+| Status | Body                                                                                            |
+| ------ | ----------------------------------------------------------------------------------------------- |
+| 200    | `{ "ok": true, "timeRules": { ... } }`: the rules now in force                                  |
+| 400    | `reason: "invalid"`, with an `error` sentence that says what the body must be                   |
+| 500    | `reason: "not-saved"`: the file could not be written, as when it is a link, and nothing changed |
+
 ### `POST /api/jump`
 
-One of the five routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
+One of the six routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer. A request with no `Origin` gets 403 here, though a read may go without one.
@@ -397,7 +465,7 @@ A route that acts. It ends the sessions left running that you chose, as End does
 }
 ```
 
-with 1 to 20 sessions, none named twice, each with the `statusSince` the page showed for it. Anything else gets 400. For each session in turn the server makes every check of `POST /api/sessions/stop`, and then reads in the session's registry file, and in its own latest list of sessions, that it is still idle, since that same `statusSince`, and that this was 24 hours or more ago. A session that has done anything since is left running. Then it stops each one that passed, as the stop route does, and waits up to 10 seconds for them all.
+with 1 to 20 sessions, none named twice, each with the `statusSince` the page showed for it. Anything else gets 400. For each session in turn the server makes every check of `POST /api/sessions/stop`, and then reads in the session's registry file, and in its own latest list of sessions, that it is still idle, since that same `statusSince`, and that this was 24 hours or more ago, or as long ago as the idle rule says while it is on. A session that has done anything since is left running. Then it stops each one that passed, as the stop route does, and waits up to 10 seconds for them all.
 
 ```json
 {

@@ -44,6 +44,8 @@ interface SessionsCardProps {
   now: number;
   /** Told once sessions left running have been ended, so the page reads the sessions again. */
   onEnded?: () => void;
+  /** How long a session is idle before it is stale, as the snapshot's time rules say. */
+  staleAfterMs?: number;
   className?: string;
 }
 
@@ -390,7 +392,14 @@ function useColumns(
  * changes, and End all… ends them after a confirmation that lists each one.
  * They stay in the list under Idle as well.
  */
-export function SessionsCard({ sessions, sources, now, onEnded, className }: SessionsCardProps) {
+export function SessionsCard({
+  sessions,
+  sources,
+  now,
+  onEnded,
+  staleAfterMs,
+  className,
+}: SessionsCardProps) {
   const table = useRef<HTMLTableElement>(null);
   // Where focus goes when the last of the sessions left running is hidden.
   const title = useRef<HTMLHeadingElement>(null);
@@ -574,6 +583,7 @@ export function SessionsCard({ sessions, sources, now, onEnded, className }: Ses
         now={now}
         onEnded={onEnded}
         onGone={() => title.current?.focus()}
+        staleAfterMs={staleAfterMs}
       />
       {body}
     </SectionCard>

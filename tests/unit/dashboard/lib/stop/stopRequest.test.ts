@@ -4,6 +4,7 @@ import { CLEAN_UP_OUTCOMES, NOTIFICATIONS_HEADER } from "@core/api";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   CLEAN_UP_OUTCOME_WORDS,
+  cleanUpOutcomeWords,
   cleanUpTimeoutMs,
   requestCleanUp,
   requestStop,
@@ -152,4 +153,10 @@ test("every outcome has its own words, in a sentence, and every clean-up outcome
   for (const outcome of CLEAN_UP_OUTCOMES) {
     expect(CLEAN_UP_OUTCOME_WORDS[outcome]).toMatch(/^[A-Z][a-z ]+$/);
   }
+});
+
+test("what became of a session in a clean-up says the idle rule's threshold, and a day while it is off", () => {
+  expect(cleanUpOutcomeWords("not-stale")).toBe("Idle less than a day");
+  expect(cleanUpOutcomeWords("not-stale", 3 * 60 * 60 * 1000)).toBe("Idle less than 3 hours");
+  expect(cleanUpOutcomeWords("ended", 3 * 60 * 60 * 1000)).toBe("Ended");
 });

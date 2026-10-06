@@ -598,3 +598,16 @@ test("a row says what a listed session is doing now, and nothing for one that en
     ["old-project", null, false],
   ]);
 });
+
+test("with the idle rule's threshold, a stale session turns to dots where that threshold is past", () => {
+  // Idle since 2 hours and 20 minutes ago, with the idle rule at 2 hours: stale 20 minutes ago.
+  const since = NOW - 140 * MINUTE;
+  const segments = segmentsOf({
+    sessions: [session(1, { status: "idle", statusSince: since, stale: true })],
+    staleAfterMs: 120 * MINUTE,
+  });
+  expect(segments).toEqual([
+    { from: START, to: ago(20), kind: "idle", startKnown: false },
+    { from: ago(20), to: NOW, kind: "stale", startKnown: true, ongoing: true },
+  ]);
+});

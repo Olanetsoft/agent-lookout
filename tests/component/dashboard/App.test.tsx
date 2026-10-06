@@ -1779,8 +1779,14 @@ test("pressing the button in Settings tells the app at once, in one request that
   const host = notificationsFor(true);
   const told: [string, string | null, boolean][] = [];
   setApiHost(async (path, init) => {
-    // The Email, Webhook and Pull requests cards read whether they are set up. That read is not the news here.
-    if (path === "/api/email" || path === "/api/webhook" || path === "/api/pull-requests") {
+    // The Email, Webhook and Pull requests cards read whether they are set up, and the
+    // Time rules card what they are. Those reads are not the news here.
+    if (
+      path === "/api/email" ||
+      path === "/api/webhook" ||
+      path === "/api/pull-requests" ||
+      path === "/api/settings"
+    ) {
       return new Response("{}");
     }
     told.push([
@@ -1823,7 +1829,12 @@ test("finished switched on in Settings tells the app at once, and a session that
   const host = notificationsFor(true);
   const told: [string, string | null][] = [];
   setApiHost(async (path, init) => {
-    if (path === "/api/email" || path === "/api/webhook" || path === "/api/pull-requests") {
+    if (
+      path === "/api/email" ||
+      path === "/api/webhook" ||
+      path === "/api/pull-requests" ||
+      path === "/api/settings"
+    ) {
       return new Response("{}");
     }
     told.push([path, new Headers(init?.headers).get(NOTIFICATIONS_HEADER)]);

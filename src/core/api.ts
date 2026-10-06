@@ -8,6 +8,7 @@ import {
   writeNoticeEvents,
   type NoticeEvent,
 } from "./notices/sessionChanges.ts";
+import type { TimeRules } from "./time-rules/timeRules.ts";
 
 /** `GET /api/health` */
 export interface HealthResponse {
@@ -394,9 +395,57 @@ export interface AnswerRefusal extends ErrorResponse {
   reason: AnswerFailure;
 }
 
+/** `GET /api/settings`: the settings the collector keeps itself, which the page can change. */
+export const SETTINGS_PATH = "/api/settings";
+
+/** `POST /api/settings/time-rules`: changes the time rules. */
+export const TIME_RULES_PATH = "/api/settings/time-rules";
+
+/** What `ACTION_HEADER` says on a request that changes the time rules. */
+export const TIME_RULES_ACTION = "time-rules";
+
+/**
+ * `GET /api/settings`: the settings the collector keeps in its own file, so
+ * they hold with no dashboard open: the time rules. It only reads.
+ */
+export interface SettingsResponse {
+  timeRules: TimeRules;
+  /** The file they are kept in, with the home folder written `~`. */
+  file: string;
+  /**
+   * While the file could not be read when the collector started, or the last
+   * change could not be saved: one sentence that says so and names the file.
+   * Null otherwise.
+   */
+  problem: string | null;
+}
+
+/**
+ * The body of `POST /api/settings/time-rules` is the three rules, whole, as
+ * `TimeRules` has them, and nothing else. It answers with the rules now in
+ * force, once they are saved.
+ */
+export interface TimeRulesResponse {
+  ok: true;
+  timeRules: TimeRules;
+}
+
+/**
+ * Why the time rules were not changed:
+ *
+ * invalid    400: the body is not the three rules, each whole and right
+ * not-saved  500: the file could not be written, so nothing changed
+ */
+export type TimeRulesFailure = "invalid" | "not-saved";
+
+/** The body of an answer of `POST /api/settings/time-rules` that says why nothing changed. */
+export interface TimeRulesRefusal extends ErrorResponse {
+  reason: TimeRulesFailure;
+}
+
 /**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`, `clear-history`, `stop`, `clean-up` or `answer`. A browser sends
+ * naming what: `jump`, `clear-history`, `stop`, `clean-up`, `answer` or `time-rules`. A browser sends
  * no header of this kind to another origin without asking first, and the
  * collector never says yes, so a page at another address cannot send it.
  */

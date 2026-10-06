@@ -12,6 +12,9 @@ import {
   type SourceState,
 } from "../core/sessions/session.ts";
 import { sortSessions } from "../core/sessions/sorting.ts";
+import { isStale } from "../core/sessions/staleness.ts";
+import { isQuietAt } from "../core/time-rules/quietHours.ts";
+import { staleAfterMs, type TimeRules } from "../core/time-rules/timeRules.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
 import type { EventStore } from "./eventStore.ts";
 import type { HistoryStore } from "./historyStore.ts";
@@ -47,6 +50,26 @@ export interface PollerOptions {
    * Events are worked out from the sessions as their sources gave them.
    */
   annotate?: (sessions: readonly Session[]) => Promise<Session[]>;
+  /**
+   * The time rules in force, asked at each poll. The snapshot carries them,
+   * and whether it was made in quiet hours, and its sessions are stale by the
+   * idle rule's threshold while it is on. Left out, the snapshot carries
+   * neither, and the built-in day stands.
+   */
+  timeRules?: () => TimeRules;
+}
+
+/**
+ * The sessions with `stale` worked out again, at the poll's moment, by the
+ * threshold in force, whatever a source said: a session from another machine
+ * comes with that machine's own answer. A session whose answer is the same is
+ * the same object.
+ */
+function staleBy(sessions: readonly Session[], at: number, thresholdMs: number): Session[] {
+  return sessions.map((session) => {
+    const stale = isStale(session, at, thresholdMs);
+    return stale === session.stale ? session : { ...session, stale };
+  });
 }
 
 export interface Poller {
@@ -316,6 +339,7 @@ export function createPoller(options: PollerOptions): Poller {
       baselines.set(basis, result.sessions.map(withoutWaitingText));
     });
 
+    const rules = options.timeRules?.();
     const snapshot: SessionsSnapshot = {
       generatedAt: at,
       // The way each was read goes with it, so what follows the snapshots
@@ -326,7 +350,8 @@ export function createPoller(options: PollerOptions): Poller {
         ...(result.basis !== undefined && { basis: result.basis }),
         ...declared(adapters[index] as Adapter),
       })),
-      sessions: sortSessions(found),
+      sessions: sortSessions(staleBy(found, at, staleAfterMs(rules))),
+      ...(rules && { timeRules: rules, quiet: isQuietAt(rules.quietHours, at) }),
     };
 
     latest = snapshot;

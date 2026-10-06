@@ -1,3 +1,4 @@
+import { staleAfterMs } from "@core/time-rules/timeRules";
 import { StaleNotice, Unreachable } from "@dashboard/components/dashboard/ConnectionNotices";
 import { EventsCard } from "@dashboard/components/events/EventsCard";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
@@ -85,6 +86,8 @@ export function DashboardView({
   const asOf = phase === "stalled" && state.lastOkAt !== null ? state.lastOkAt : now;
   const sessions = snapshot?.sessions ?? null;
   const sources = snapshot?.sources ?? [];
+  // How long a session is idle before it is stale, by the rules the snapshot was made by.
+  const staleAfter = staleAfterMs(snapshot?.timeRules);
   const light = heroLight(countState(sessions, sources));
 
   return (
@@ -118,6 +121,7 @@ export function DashboardView({
           asOf={asOf}
           onOpenHistory={onOpenHistory}
           onAnswered={onAnswered}
+          staleAfterMs={staleAfter}
           className={cn("z-1", PLACE.hero)}
         />
 
@@ -138,6 +142,7 @@ export function DashboardView({
               sources={snapshot.sources}
               now={asOf}
               onEnded={onEnded}
+              staleAfterMs={staleAfter}
               className={cn("z-1", PLACE.sessions)}
             />
             <EventsCard
@@ -168,6 +173,7 @@ export function DashboardView({
           history={state.history}
           now={now}
           asOf={asOf}
+          staleAfterMs={staleAfter}
           className={cn("z-1", PLACE.timeline)}
         />
 

@@ -9,7 +9,7 @@ import {
 } from "../../core/api.ts";
 import { mapClaudeCodeStatus } from "../../core/mapping/claudeCodeMapping.ts";
 import type { Session } from "../../core/sessions/session.ts";
-import { isStale } from "../../core/sessions/staleness.ts";
+import { isStale, STALE_THRESHOLD_MS } from "../../core/sessions/staleness.ts";
 import type { RegistryEntry } from "../adapters/claude-code/registry.ts";
 import { actionRefusalFor, readRequestBody, refusal, type ApiAnswer } from "../handler.ts";
 import { lookAgain, stopFailed, type StopRouteOptions } from "./stopRoute.ts";
@@ -65,7 +65,13 @@ export function cleanUpEntriesIn(body: string): CleanUpEntry[] | null {
   return entries;
 }
 
-export type CleanUpRouteOptions = StopRouteOptions;
+export interface CleanUpRouteOptions extends StopRouteOptions {
+  /**
+   * How long a session is idle before it is stale, asked at each clean-up:
+   * the idle rule's threshold while it is on. Left out, the built-in day.
+   */
+  staleAfterMs?: () => number;
+}
 
 /** A session that passed every check and was sent its stop. */
 interface Sent {
@@ -78,8 +84,8 @@ interface Sent {
 
 /**
  * Why a session is left running, or null when it is still what the page
- * showed: idle, since the very moment the page sent, and for a day or more by
- * the clock now. A session that has done anything since has a new status
+ * showed: idle, since the very moment the page sent, and stale by the clock
+ * now: for a day or more, or as long as the idle rule says while it is on. A session that has done anything since has a new status
  * time, so it is never ended, even if it has gone idle again.
  *
  * Both the registry file, read again, and the collector's own latest list
@@ -92,12 +98,13 @@ export function changedSince(
   registry: RegistryEntry,
   listed: Pick<Session, "status" | "statusSince" | "stale">,
   stopper: Pick<Stopper, "now">,
+  staleAfterMs: number = STALE_THRESHOLD_MS,
 ): CleanUpOutcome | null {
   if (mapClaudeCodeStatus(registry, "registry").status !== "idle") return "became-active";
   if (registry.statusUpdatedAt !== entry.statusSince) return "became-active";
   if (listed.status !== "idle" || listed.statusSince !== entry.statusSince) return "became-active";
   if (listed.stale !== true) return "not-stale";
-  if (!isStale({ status: "idle", statusSince: entry.statusSince }, stopper.now())) {
+  if (!isStale({ status: "idle", statusSince: entry.statusSince }, stopper.now(), staleAfterMs)) {
     return "not-stale";
   }
   return null;
@@ -106,13 +113,14 @@ export function changedSince(
 /**
  * Answers `POST /api/sessions/clean-up`: ends the sessions left running that
  * the person chose, once they have confirmed it. Each is a Claude Code session
- * that has been idle for a day or more with its process still running.
+ * that has been idle for a day or more, or as long as the idle rule says, with
+ * its process still running.
  *
  * The request names each session and the moment its idle began, as the page
  * showed it. For each one in turn, every check of the stop route is made again
  * (`stopSession.ts`), and then the registry file read for it must still say it
  * is idle, since that same moment, and the clock must still make that a day or
- * more ago. A session that has done anything since is left running, whatever
+ * more ago, or as long ago as the idle rule says. A session that has done anything since is left running, whatever
  * it is doing now. Each one that passes is sent SIGTERM, or for a background
  * job `claude stop`, and the collector waits up to 10 seconds for them all to
  * end. Nothing a request holds reaches a signal or a command: it can only
@@ -149,7 +157,13 @@ export function createCleanUpRoute(options: CleanUpRouteOptions) {
         outcomes[index] = confirmed.reason;
         continue;
       }
-      const changed = changedSince(entry, confirmed.entry, session, stopper);
+      const changed = changedSince(
+        entry,
+        confirmed.entry,
+        session,
+        stopper,
+        options.staleAfterMs?.() ?? STALE_THRESHOLD_MS,
+      );
       if (changed !== null) {
         outcomes[index] = changed;
         continue;

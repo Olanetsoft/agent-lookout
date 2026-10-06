@@ -11,7 +11,7 @@ import type { Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 const T0 = 1_791_204_000_000;
 
@@ -30,7 +30,12 @@ async function lookout(dir: string, env: Record<string, string> = {}) {
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_TMUX: "off", ...env },
+    env: {
+      AGENT_LOOKOUT_HISTORY_DIR: dir,
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+      AGENT_LOOKOUT_TMUX: "off",
+      ...env,
+    },
     notifier: fakeSystemNotifier(),
     now: () => state.now,
     intervalMs: 1_000_000_000,

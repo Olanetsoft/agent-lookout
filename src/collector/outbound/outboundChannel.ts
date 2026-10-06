@@ -12,6 +12,14 @@ import {
   type SessionsSnapshot,
 } from "../../core/sessions/session.ts";
 import { waitingText } from "../../core/text.ts";
+import {
+  createQuietHold,
+  type QuietSummary,
+  type SummaryItem,
+} from "../../core/time-rules/quietHold.ts";
+import { quietOf } from "../../core/time-rules/quietHours.ts";
+import { createReminderWatch } from "../../core/time-rules/reminders.ts";
+import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
 
 /**
@@ -37,6 +45,15 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * a wait not yet sent is held by its id and the time it began alone, and every
  * session handed to a message, or held for one, is handed over without it.
  *
+ * The time rules each snapshot carries are followed here too. With the long
+ * wait reminder on, a wait that has been sent, or was open when the collector
+ * started, is reminded of once it has lasted the rule's minutes, by
+ * `reminders.ts` in the core: once for each wait, and never before its own
+ * email or post has gone. During quiet hours nothing is sent: a wait that
+ * comes due and a session that finishes, fails or ends are held, by
+ * `quietHold.ts`, and when they end, a wait still open is sent as usual and
+ * the rest goes in one summary. Each counts against the hourly limit as one.
+ *
  * Nothing here can stop a poll. `handle` never throws, and each is sent after
  * the poll has moved on, one at a time.
  */
@@ -59,6 +76,19 @@ export interface WaitFacts {
   /** When the email or post is written. */
   now: number;
 }
+
+/** A wait that has lasted the long wait reminder's threshold and is still open. */
+export interface ReminderFacts extends WaitFacts {
+  /** The threshold it has lasted, in milliseconds. */
+  thresholdMs: number;
+}
+
+/** One item of a summary, with its session's agent. */
+export type SummaryFacts = Omit<QuietSummary, "items"> & {
+  items: (SummaryItem & { agent: string | null })[];
+  /** When the email or post is written. */
+  now: number;
+};
 
 /** A session that finished, failed or ended. */
 export interface OverFacts {
@@ -83,6 +113,10 @@ export interface OutboundChannelOptions<Content> {
   waitMessage(facts: WaitFacts): Content;
   /** What is sent for a session that finished, failed or ended. */
   overMessage(facts: OverFacts): Content;
+  /** What is sent to remind of a long wait. */
+  reminderMessage(facts: ReminderFacts): Content;
+  /** What is sent when quiet hours end, of what they held. */
+  summaryMessage(facts: SummaryFacts): Content;
   /** Sends one. It should never reject; one that does, or throws, has failed. */
   send(content: Content): Promise<SendOutcome>;
   /** The reason given when `send` throws or rejects. */
@@ -104,13 +138,17 @@ export interface OutboundChannel {
 export function createOutboundChannel<Content>(
   options: OutboundChannelOptions<Content>,
 ): OutboundChannel {
-  const { afterMs, asking, waitMessage, overMessage, failure } = options;
+  const { afterMs, asking, waitMessage, overMessage, reminderMessage, summaryMessage, failure } =
+    options;
   const now = options.now ?? Date.now;
 
   const wanted = new Set(options.events);
   let memory: ChangeMemory = EMPTY_CHANGE_MEMORY;
-  /** The sessions that finished, failed or ended and are not yet sent, oldest first. */
-  const over: Omit<OverFacts, "now">[] = [];
+  /**
+   * What is due and not yet sent, oldest first: the sessions that finished,
+   * failed or ended, and a summary of quiet hours. Each is written when it goes.
+   */
+  const ready: ((now: number) => Content)[] = [];
   /** The waits not yet sent, by session id, with when each began. */
   const open = new Map<string, number>();
   /**
@@ -124,6 +162,10 @@ export function createOutboundChannel<Content>(
   const done = new Map<string, number>();
   /** When each of the last hour was tried. */
   let sentAt: number[] = [];
+  /** The waits that could be reminded of, and those already reminded. */
+  const reminders = createReminderWatch();
+  /** What quiet hours hold back. */
+  const hold = createQuietHold();
   let last: SendResult | null = null;
   /** They go one after another, never side by side. */
   let queue: Promise<void> = Promise.resolve();
@@ -148,19 +190,48 @@ export function createOutboundChannel<Content>(
     handle(snapshot) {
       try {
         const at = now();
+        const rules = rulesOf(snapshot);
+        // As the collector said when it made the snapshot, which every channel goes by.
+        const quiet = quietOf(snapshot);
         const result = sessionChanges(memory, snapshot);
         memory = result.memory;
 
-        for (const id of result.stopped) open.delete(id);
+        for (const id of result.stopped) {
+          open.delete(id);
+          hold.waitEnded(id, at);
+        }
+        reminders.observe(snapshot, result.stopped, at);
+
+        if (hold.holding() && !quiet) {
+          // The quiet hours are over. What they held goes first, as one.
+          const end = hold.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+          const { summary } = end;
+          if (summary) {
+            const items = summary.items.map((item) => ({
+              ...item,
+              agent: agentName(item.session, snapshot.sources),
+            }));
+            ready.push((sentNow) => summaryMessage({ ...summary, items, now: sentNow }));
+          }
+          // A wait still open is sent as any other wait is, below.
+          for (const { session, begunAt } of end.open) open.set(session.id, begunAt);
+        }
+        if (quiet) hold.begin(at);
+
         for (const { event, session } of result.changes) {
           if (!wanted.has(event)) continue;
           if (event !== "needs-you") {
-            over.push({
+            if (quiet) {
+              hold.holdOver(event, session, at);
+              continue;
+            }
+            const facts: Omit<OverFacts, "now"> = {
               event,
               session: withoutWaitingText(session),
               agent: agentName(session, snapshot.sources),
               seenAt: at,
-            });
+            };
+            ready.push((sentNow) => overMessage({ ...facts, now: sentNow }));
             continue;
           }
           const since = session.statusSince;
@@ -172,19 +243,30 @@ export function createOutboundChannel<Content>(
 
         sentAt = sendsInLastHour(sentAt, at);
         // Due as soon as they are seen. The hourly limit can hold them, and
-        // then they go in turn as it lets each one go, before any wait.
-        while (over.length > 0 && limitLiftsAt(sentAt, at) === null) {
-          const facts = over.shift() as Omit<OverFacts, "now">;
+        // then they go in turn as it lets each one go, before any wait. One
+        // the limit held when quiet hours began waits for them to end.
+        while (!quiet && ready.length > 0 && limitLiftsAt(sentAt, at) === null) {
+          const write = ready.shift() as (sentNow: number) => Content;
           sentAt.push(at);
-          send(overMessage({ ...facts, now: at }));
+          send(write(at));
         }
+        const thresholdMs = rules.longWait.minutes * 60_000;
         for (const [id, begunAt] of open) {
           // Still open as far as this snapshot shows. A session whose source did
           // not answer this time is not in it, and is held until it is.
           const session = snapshot.sessions.find(
             (candidate) => candidate.id === id && candidate.status === "needs-you",
           );
-          if (!session || sendTiming(begunAt, afterMs, sentAt, at) !== "send") continue;
+          if (!session) continue;
+          const timing = sendTiming(begunAt, afterMs, sentAt, at);
+          if (timing === "wait") continue;
+          if (quiet) {
+            // Due, in quiet hours: held, and sent when they end if it is still open.
+            open.delete(id);
+            hold.holdWait(session, begunAt);
+            continue;
+          }
+          if (timing === "limited") continue;
 
           open.delete(id);
           sentAt.push(at);
@@ -198,6 +280,27 @@ export function createOutboundChannel<Content>(
               now: at,
             }),
           );
+          // What it says has the time it has waited, so a reminder would say nothing new.
+          if (rules.longWait.on) reminders.toldLate(id, at, thresholdMs);
+        }
+
+        if (!quiet && rules.longWait.on && wanted.has("needs-you")) {
+          // Only a wait already sent, or open when the collector started, is reminded of.
+          for (const due of reminders.due(snapshot, at, thresholdMs, (id) => !open.has(id))) {
+            if (limitLiftsAt(sentAt, at) !== null) break;
+            sentAt.push(at);
+            reminders.reminded(due.session.id, thresholdMs);
+            send(
+              reminderMessage({
+                session: withoutWaitingText(due.session),
+                agent: agentName(due.session, snapshot.sources),
+                asking: asking ? (waitingText(due.session.waitingText) ?? null) : null,
+                begunAt: due.begunAt,
+                now: at,
+                thresholdMs,
+              }),
+            );
+          }
         }
 
         // A wait seen now and not open was sent, or was open at the start.

@@ -2,7 +2,21 @@ import { clockAt, durationInWords } from "../../core/duration.ts";
 import { surfaceLabel, type Session } from "../../core/sessions/session.ts";
 import { overPhrase, sessionTitle, waitingPhrase } from "../../core/notices/waiting.ts";
 import { oneLine, waitingText } from "../../core/text.ts";
-import type { OverFacts, WaitFacts } from "../outbound/outboundChannel.ts";
+import type { SummaryItem } from "../../core/time-rules/quietHold.ts";
+import {
+  reminderSentence,
+  summaryItemPhrase,
+  summaryLine,
+  summaryWaitedPhrase,
+  waitedInWords,
+  WHILE_QUIET,
+} from "../../core/time-rules/timeRulesWords.ts";
+import type {
+  OverFacts,
+  ReminderFacts,
+  SummaryFacts,
+  WaitFacts,
+} from "../outbound/outboundChannel.ts";
 import { EMAIL_TO_ENV } from "./emailSettings.ts";
 
 /**
@@ -15,11 +29,19 @@ import { EMAIL_TO_ENV } from "./emailSettings.ts";
  * address or a file's full path. It is never in the subject. Nothing else goes
  * in it: no folder path, no prompt, none of the agent's own words, no link of
  * Agent Lookout's own and no markup.
+ *
+ * The time rules add two more. A reminder of a long wait is the email of a
+ * wait, with a subject that says how long it has waited. A summary of quiet
+ * hours names each session that waited, finished, failed or ended while they
+ * held, with how long and when, and nothing else of them.
  */
 export interface EmailContent {
   subject: string;
   text: string;
 }
+
+/** The line every email ends with. */
+const SENT_BY = `Sent by Agent Lookout on your computer. To stop these emails, start it again without ${EMAIL_TO_ENV}.`;
 
 /**
  * The email: the sentence of what happened, a line on when, then the facts
@@ -45,10 +67,7 @@ function emailOf(
   if (app) lines.push(`App: ${app}`);
   const agent = agentName ? oneLine(agentName) : "";
   if (agent) lines.push(`Agent: ${agent}`);
-  lines.push(
-    "",
-    `Sent by Agent Lookout on your computer. To stop these emails, start it again without ${EMAIL_TO_ENV}.`,
-  );
+  lines.push("", SENT_BY);
   return { subject: happened, text: `${lines.join("\n")}\n` };
 }
 
@@ -62,6 +81,63 @@ export function waitEmail(facts: WaitFacts): EmailContent {
     facts.agent,
     facts.asking,
   );
+}
+
+/**
+ * The email that reminds of a long wait: "checkout-flow has waited 10 minutes
+ * for permission". It says the rest as the email of a wait does.
+ */
+export function reminderEmail(facts: ReminderFacts): EmailContent {
+  const { session, begunAt, now } = facts;
+  return emailOf(
+    reminderSentence(session, now - begunAt),
+    `It has waited since ${clockAt(begunAt, now)}. Agent Lookout reminds you once a wait lasts ${waitedInWords(facts.thresholdMs)}, as Time rules in Settings says.`,
+    session,
+    facts.agent,
+    facts.asking,
+  );
+}
+
+/** The most items a summary's body lists one by one. The rest are counted. */
+const MAX_SUMMARY_LINES = 50;
+
+/**
+ * One item as a line of the body: "checkout-flow waited 25 minutes, from
+ * 23:10.", "billing-webhooks finished at 23:40.", and for a session that did
+ * both, "checkout-flow waited 25 minutes, from 23:10, then ended at 23:40."
+ */
+function summaryItemLine(item: SummaryItem, now: number): string {
+  if (item.event !== "needs-you") return `${summaryItemPhrase(item)} at ${clockAt(item.at, now)}.`;
+  const waited = `${oneLine(sessionTitle(item.session))} ${summaryWaitedPhrase(item)}, from ${clockAt(item.at, now)}`;
+  return item.then
+    ? `${waited}, then ${overPhrase(item.then.event)} at ${clockAt(item.then.at, now)}.`
+    : `${waited}.`;
+}
+
+/**
+ * The email that sums up quiet hours once they end, with a subject that names
+ * the first few: "While quiet: checkout-flow waited 25 minutes and
+ * billing-webhooks finished". Its body gives each session its own line, with
+ * how long it waited and from when, or when it finished, failed or ended.
+ */
+export function summaryEmail(facts: SummaryFacts): EmailContent {
+  const { items, now } = facts;
+  const lines = [
+    `During quiet hours, from ${clockAt(facts.from, now)} to ${clockAt(facts.to, now)}:`,
+    "",
+    ...items.slice(0, MAX_SUMMARY_LINES).map((item) => summaryItemLine(item, now)),
+  ];
+  if (items.length > MAX_SUMMARY_LINES) lines.push(`And ${items.length - MAX_SUMMARY_LINES} more.`);
+  lines.push(
+    "",
+    "Quiet hours are set under Time rules in Settings. A session still waiting when they ended has an email of its own.",
+    "",
+    SENT_BY,
+  );
+  return {
+    subject: oneLine(`${WHILE_QUIET}: ${summaryLine(items, 3)}`, 160),
+    text: `${lines.join("\n")}\n`,
+  };
 }
 
 /**

@@ -39,6 +39,8 @@ interface TimelineCardProps {
    * the last answer once they stop, so no row claims minutes that were never seen.
    */
   asOf?: number;
+  /** How long a session is idle before it is stale, as the snapshot's time rules say. */
+  staleAfterMs?: number;
   className?: string;
 }
 
@@ -318,6 +320,7 @@ export function TimelineCard({
   history,
   now,
   asOf = now,
+  staleAfterMs,
   className,
 }: TimelineCardProps) {
   const timeline = useMemo(
@@ -330,9 +333,10 @@ export function TimelineCard({
             now,
             asOf,
             eventsFull: events.length >= MAX_EVENTS,
+            staleAfterMs,
           })
         : null,
-    [sessions, events, history, now, asOf],
+    [sessions, events, history, now, asOf, staleAfterMs],
   );
 
   let body;

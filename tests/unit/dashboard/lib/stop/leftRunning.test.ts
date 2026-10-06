@@ -91,3 +91,12 @@ describe("what a clean-up came to", () => {
     expect(cleanUpSummary(outcomes)).toBe(said);
   });
 });
+
+test("one idle less than the idle rule says is said to be, in its words", () => {
+  expect(cleanUpSummary(["not-stale"], 2 * 24 * 60 * 60 * 1000)).toBe(
+    "Ended none. Left 1 running because it has been idle less than 2 days.",
+  );
+  expect(cleanUpSummary(["not-stale", "not-stale"], 5 * 60 * 60 * 1000)).toBe(
+    "Ended none. Left 2 running because they have been idle less than 5 hours.",
+  );
+});

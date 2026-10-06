@@ -28,10 +28,15 @@ function Ticked({ onChange }: { onChange?: (checked: boolean) => void }) {
 }
 
 test.each(["dark", "light"] as const)(
-  "in the %s theme it is a 16px square of quiet fill inside the control rim, ticked in the ink, and never warm",
+  "in the %s theme it is a 16px square, ticked the selected fill inside the control rim with a tick in the ink, unticked the recessed well inside the strong rule, and never warm",
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
-    const screen = await render(<Ticked />);
+    const screen = await render(
+      <div>
+        <Ticked />
+        <Checkbox checked={false} onCheckedChange={() => {}} aria-label='End docs-site' />
+      </div>,
+    );
     const box = screen.getByRole("checkbox", { name: "End demo-project" }).element();
     const look = getComputedStyle(box);
 
@@ -42,6 +47,13 @@ test.each(["dark", "light"] as const)(
     expect(look.color).toBe(rgbOf("var(--ink)"));
     expect(box.getAttribute("aria-checked")).toBe("true");
     expect(box.querySelector("svg")).not.toBeNull();
+
+    // Unticked, it is the well a field is, so it does not fade into the glass.
+    const empty = getComputedStyle(
+      screen.getByRole("checkbox", { name: "End docs-site" }).element(),
+    );
+    expect(empty.backgroundColor).toBe(rgbOf("var(--well)"));
+    expect(empty.boxShadow).toContain(ring("--rule-strong"));
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
@@ -58,10 +70,10 @@ test("a click or Space ticks and unticks it, and says so", async () => {
   await userEvent.click(box);
   await pointAway();
   expect(box.element().getAttribute("aria-checked")).toBe("false");
-  // Once its fill has come back down, which takes a moment.
+  // Once it has gone back into its well, which takes a moment.
   await expect
     .poll(() => getComputedStyle(box.element()).backgroundColor)
-    .toBe(rgbOf("var(--fill-quiet)"));
+    .toBe(rgbOf("var(--well)"));
   expect(box.element().querySelector("svg")).toBeNull();
 
   startAtTop();

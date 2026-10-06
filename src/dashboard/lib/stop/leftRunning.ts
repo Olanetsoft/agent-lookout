@@ -1,11 +1,12 @@
 import { MAX_CLEAN_UP_SESSIONS, type CleanUpEntry, type CleanUpOutcome } from "@core/api";
 import type { Session } from "@core/sessions/session";
+import { STALE_THRESHOLD_MS, staleAfterInWords } from "@core/sessions/staleness";
 import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { RESUME, type StopRun } from "@dashboard/lib/stop/stopWords";
 
 /**
- * The sessions left running: Claude Code sessions idle for a day or more whose
- * process still runs, as when a VS Code tab was closed and its process stayed.
+ * The sessions left running: Claude Code sessions idle for a day or more, or as
+ * long as the idle rule says, whose process still runs, as when a VS Code tab was closed and its process stayed.
  * Each is one Agent Lookout can end, or one in the desktop app, which is
  * listed with the line that says to stop it there.
  */
@@ -51,8 +52,13 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 /**
  * What a clean-up came to, in a sentence or two: "Ended 2. Left 1 running
  * because it became active." Each kind of outcome is said once, with its count.
+ * One idle for less than the idle rule says is said to be, with a day while it
+ * is off.
  */
-export function cleanUpSummary(outcomes: readonly CleanUpOutcome[]): string {
+export function cleanUpSummary(
+  outcomes: readonly CleanUpOutcome[],
+  staleAfterMs: number = STALE_THRESHOLD_MS,
+): string {
   const count = (outcome: CleanUpOutcome) => outcomes.filter((one) => one === outcome).length;
   const ended = count("ended");
   const parts = [`Ended ${ended === 0 ? "none" : ended}.`];
@@ -64,7 +70,7 @@ export function cleanUpSummary(outcomes: readonly CleanUpOutcome[]): string {
   const young = count("not-stale");
   if (young > 0) {
     parts.push(
-      `Left ${young} running because ${plural(young, "it has", "they have")} been idle less than a day.`,
+      `Left ${young} running because ${plural(young, "it has", "they have")} been idle less than ${staleAfterInWords(staleAfterMs)}.`,
     );
   }
   const unconfirmed = count("cannot-confirm");

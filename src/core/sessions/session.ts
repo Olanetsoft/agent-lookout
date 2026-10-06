@@ -1,6 +1,8 @@
 // The session model. Adapters produce these types and the dashboard consumes them.
 // Adding a field is fine. Renaming or removing one is not.
 
+import type { TimeRules } from "../time-rules/timeRules.ts";
+
 /**
  * Another machine's Agent Lookout, read over SSH: `remote:` and the name
  * `AGENT_LOOKOUT_REMOTES` gives the machine, such as `remote:devbox`.
@@ -560,6 +562,21 @@ export interface SessionsSnapshot {
   sessions: Session[];
   /** Whether permission prompts can be answered from the dashboard. Left out by a collector that cannot. */
   answering?: AnsweringStatus;
+  /**
+   * The time rules in force when the snapshot was made: how long an idle
+   * session waits to be stale, which its sessions' `stale` follows, and the
+   * reminders and quiet hours the page's notifications follow, so the page
+   * and the collector decide by the same rules at the same poll. Left out by
+   * a collector from before there were any, which is every rule off.
+   */
+  timeRules?: TimeRules;
+  /**
+   * Whether the snapshot was made in quiet hours, by the collector's own clock
+   * and time zone. The page holds its notifications by this, not by its own
+   * clock, so a page in another time zone holds them and sums them up when
+   * the collector does. Left out with `timeRules`.
+   */
+  quiet?: boolean;
 }
 
 /**

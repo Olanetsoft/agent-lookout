@@ -1,7 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import type { WaitFacts } from "@collector/outbound/outboundChannel";
-import { overPost, slackSafe, waitPost } from "@collector/webhook/webhookMessage";
+import type { SummaryFacts, WaitFacts } from "@collector/outbound/outboundChannel";
+import {
+  MAX_SUMMARY_ITEMS,
+  overPost,
+  reminderPost,
+  slackSafe,
+  summaryPost,
+  waitPost,
+} from "@collector/webhook/webhookMessage";
 import { MAX_LINE_LENGTH, waitingText } from "@core/text";
 import type { Session } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
@@ -314,5 +321,117 @@ describe("slackSafe", () => {
     expect(slackSafe("a < b > c & d @e")).toBe("a &lt; b &gt; c &amp; d @\u200be");
     expect(slackSafe("&lt;")).toBe("&amp;lt;");
     expect(slackSafe("plain words")).toBe("plain words");
+  });
+});
+
+describe("reminderPost", () => {
+  test("is the post of a wait, with a line that says how long it has waited and reminder: true", () => {
+    const post = reminderPost({
+      ...facts({}, { now: BEGUN + 10 * 60_000 + 4_000, asking: "Run: npm test" }),
+      thresholdMs: 10 * 60_000,
+    });
+    expect(post).toEqual({
+      // How long is said once, in the words: waitedSeconds has it to the second.
+      text: "checkout-flow has waited 10 minutes for permission: Run: npm test (storefront, VS Code, Claude Code)",
+      event: "needs-you",
+      reason: "permission",
+      asking: "Run: npm test",
+      session: {
+        name: "checkout-flow",
+        agent: "Claude Code",
+        folder: "storefront",
+        app: "VS Code",
+      },
+      at: "2026-10-05T14:01:05.000Z",
+      waitedSeconds: 604,
+      reminder: true,
+    });
+  });
+
+  test("a name meant to ping a channel is made safe", () => {
+    const post = reminderPost({ ...facts({ name: "<!channel> @here" }), thresholdMs: 60_000 });
+    expect(post.text).toMatch(/^&lt;!channel&gt; @\u200bhere has waited/);
+  });
+});
+
+describe("summaryPost", () => {
+  const FROM = Date.UTC(2026, 9, 5, 22, 0);
+  const TO = Date.UTC(2026, 9, 6, 8, 0);
+  const session = (name: string) =>
+    makeSession({ name, project: "storefront", surface: "terminal" });
+
+  function summary(items: SummaryFacts["items"]): SummaryFacts {
+    return { from: FROM, to: TO, items, now: TO };
+  }
+
+  test("says it in one line, and each item in fields of its own", () => {
+    const post = summaryPost(
+      summary([
+        {
+          event: "needs-you",
+          session: session("checkout-flow"),
+          at: FROM + 70 * 60_000,
+          waitedMs: 31 * 60_000,
+          times: 2,
+          then: { event: "ended", at: FROM + 300 * 60_000 },
+          agent: "Claude Code",
+        },
+        {
+          event: "finished",
+          session: session("billing-webhooks"),
+          at: FROM + 192 * 60_000,
+          agent: null,
+        },
+      ]),
+    );
+    expect(post).toEqual({
+      text: "While quiet: checkout-flow waited 31 minutes over 2 waits then ended and billing-webhooks finished",
+      event: "quiet-summary",
+      from: "2026-10-05T22:00:00.000Z",
+      to: "2026-10-06T08:00:00.000Z",
+      items: [
+        {
+          event: "needs-you",
+          session: {
+            name: "checkout-flow",
+            agent: "Claude Code",
+            folder: "storefront",
+            app: "Terminal",
+          },
+          at: "2026-10-05T23:10:00.000Z",
+          waitedSeconds: 1_860,
+          times: 2,
+          then: { event: "ended", at: "2026-10-06T03:00:00.000Z" },
+        },
+        {
+          event: "finished",
+          session: { name: "billing-webhooks", agent: null, folder: "storefront", app: "Terminal" },
+          at: "2026-10-06T01:12:00.000Z",
+        },
+      ],
+    });
+  });
+
+  test("holds at most a hundred items, and says how many more there were", () => {
+    const items = Array.from({ length: MAX_SUMMARY_ITEMS + 5 }, (_, index) => ({
+      event: "ended" as const,
+      session: session(`session-${index + 1}`),
+      at: FROM + index * 1_000,
+      agent: null,
+    }));
+    const post = summaryPost(summary(items));
+    expect(post.items).toHaveLength(MAX_SUMMARY_ITEMS);
+    expect(post.more).toBe(5);
+    expect(post.text).toBe(
+      `While quiet: session-1 ended, session-2 ended, session-3 ended, session-4 ended and ${MAX_SUMMARY_ITEMS + 1} more`,
+    );
+  });
+
+  test("a name meant to ping a channel is made safe in the line", () => {
+    const post = summaryPost(
+      summary([{ event: "ended", session: session("<!channel>"), at: FROM, agent: null }]),
+    );
+    expect(post.text).toBe("While quiet: &lt;!channel&gt; ended");
+    expect(post).not.toHaveProperty("more");
   });
 });

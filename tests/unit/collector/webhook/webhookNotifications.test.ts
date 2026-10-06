@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { SendOutcome } from "@collector/outbound/outboundChannel";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
-import type { WebhookPost } from "@collector/webhook/webhookMessage";
+import type { WebhookEventPost, WebhookPost } from "@collector/webhook/webhookMessage";
 import {
   createWebhookNotifications,
   webhookOffStatus,
@@ -159,7 +159,7 @@ describe("createWebhookNotifications", () => {
     await on.poll(2 * SECOND, [askingWait(1, "checkout-flow")]);
     await on.poll(62 * SECOND, [askingWait(1, "checkout-flow")]);
     await on.poll(64 * SECOND, []);
-    expect(on.sender.posted.map((post) => [post.text, post.asking])).toEqual([
+    expect(on.sender.posted.map((post) => [post.text, (post as WebhookEventPost).asking])).toEqual([
       [
         "checkout-flow is waiting for permission: Run: npm test (1m 00s, checkout-flow, VS Code, Claude Code)",
         "Run: npm test",

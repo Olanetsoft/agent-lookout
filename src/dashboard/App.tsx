@@ -189,6 +189,8 @@ export default function App({ store: providedStore }: AppProps) {
                   history={state.history}
                   now={now}
                   onHistoryCleared={store.refresh}
+                  onTimeRulesChanged={store.refresh}
+                  snapshot={state.snapshot}
                   answering={state.snapshot?.answering ?? null}
                 />
               ) : (

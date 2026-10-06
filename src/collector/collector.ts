@@ -1,5 +1,6 @@
 import type { HistoryRestart } from "../core/api.ts";
 import type { SessionsSnapshot } from "../core/sessions/session.ts";
+import { staleAfterMs } from "../core/time-rules/timeRules.ts";
 import { createCleanUpRoute } from "./actions/cleanUpRoute.ts";
 import { createStopRoute } from "./actions/stopRoute.ts";
 import { createActionLimiter, createStopper, type StopperOptions } from "./actions/stopSession.ts";
@@ -53,6 +54,13 @@ import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
 import { createRemotes, type Remotes, type RemotesOptions } from "./remotes/remotes.ts";
 import { remotesProblemLine } from "./remotes/remoteSettings.ts";
 import type { ReadProcessStarts } from "./processes/processStart.ts";
+import {
+  createCollectorSettings,
+  type CollectorSettings,
+  type SettingsStore,
+} from "./settings/collectorSettings.ts";
+import { readSettingsSetup } from "./settings/settingsFile.ts";
+import { createTimeRulesRoute } from "./settings/timeRulesRoute.ts";
 import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
 import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
 import { createTabFinder } from "./terminal/tabFinder.ts";
@@ -76,10 +84,16 @@ export interface CollectorOptions {
    * Where the default adapters read their settings, such as
    * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
    * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
-   * history settings, the email settings and the webhook settings are read.
-   * Defaults to `process.env`.
+   * history settings, the email settings, the webhook settings and
+   * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * What reads and writes the settings file, `~/.agent-lookout/settings.json`
+   * or the one `AGENT_LOOKOUT_SETTINGS_FILE` names. Defaults to the real file
+   * system. Tests pass a file of their own in the environment, or this.
+   */
+  settingsStore?: SettingsStore;
   /**
    * What the history is read from and written to, in the folder
    * `AGENT_LOOKOUT_HISTORY_DIR` names, or `~/.agent-lookout/history`. Defaults
@@ -206,6 +220,8 @@ export interface Collector {
   answering: Pick<Answering, "start" | "stop">;
   /** The other machines read over SSH, none unless `AGENT_LOOKOUT_REMOTES` names them. */
   remotes: Remotes;
+  /** The settings the collector keeps itself: the time rules. */
+  settings: CollectorSettings;
 }
 
 /**
@@ -219,8 +235,9 @@ export interface Collector {
  * `AGENT_LOOKOUT_ANSWER` is off, what reads each session's git branch, with
  * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
  * the other machines `AGENT_LOOKOUT_REMOTES` names, each read through an ssh
- * tunnel of its own, and the request handler. Every host builds it the same
- * way: the dev server, the standalone server, and later a desktop app.
+ * tunnel of its own, the time rules kept in its settings file, and the
+ * request handler. Every host builds it the same way: the dev server, the
+ * standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
   const now = options.now ?? Date.now;
@@ -230,6 +247,13 @@ export function createCollector(options: CollectorOptions): Collector {
   // The stores in memory are what the page reads. With history kept on disk,
   // what they take is also written, and what was written is read back into
   // them before the first poll.
+  // Read once, here, as the collector starts. A change made in the dashboard
+  // is put in force at once and written back.
+  const settings = createCollectorSettings({
+    setup: readSettingsSetup(env),
+    store: options.settingsStore,
+  });
+  if (settings.problemAtStart !== null) warn(settings.problemAtStart);
   const memoryEvents = createEventStore();
   const memoryHistory = createHistoryStore();
   const historySetup = readHistorySetup(env);
@@ -368,6 +392,8 @@ export function createCollector(options: CollectorOptions): Collector {
     now,
     // Every source's sessions alike are given the branch of their folder, and
     // with pull requests on, the branch's pull request, as last learnt.
+    // Every snapshot carries the time rules in force, and is stale by them.
+    timeRules: () => settings.timeRules(),
     annotate: async (sessions) => {
       const onBranches = await branches.annotate(sessions);
       return pullRequests ? pullRequests.annotate(onBranches) : onBranches;
@@ -405,6 +431,7 @@ export function createCollector(options: CollectorOptions): Collector {
     targets: stopTargets,
     stopper,
     limiter: createActionLimiter(now),
+    staleAfterMs: () => staleAfterMs(settings.timeRules()),
   };
   const handler = createApiHandler({
     version: options.version,
@@ -420,6 +447,8 @@ export function createCollector(options: CollectorOptions): Collector {
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
     stop: stopRoutes && createStopRoute(stopRoutes),
     cleanUp: stopRoutes && createCleanUpRoute(stopRoutes),
+    settings: () => settings.status(),
+    timeRules: createTimeRulesRoute({ settings }),
     clearHistory: createClearHistoryRoute({
       keeper,
       forget: () => {
@@ -534,5 +563,6 @@ export function createCollector(options: CollectorOptions): Collector {
       },
     },
     remotes,
+    settings,
   };
 }

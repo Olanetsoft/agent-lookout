@@ -9,6 +9,7 @@ import {
 } from "@collector/notifications/serverNotifications";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 
@@ -457,6 +458,185 @@ describe("finished, failed and ended", () => {
     choose(1_000, ["ended"]);
     poll(60_000, [], "error");
     poll(62_000, [], "unavailable");
+    expect(notifier.shown).toEqual([]);
+  });
+});
+
+describe("the time rules", () => {
+  /** Monday 5 October 2026 at 21:58, on the local clock. */
+  const EVENING = new Date(2026, 9, 5, 21, 58).getTime();
+  /** The next morning at 08:00, when quiet hours end. */
+  const MORNING = new Date(2026, 9, 6, 8, 0).getTime();
+  const MINUTE = 60_000;
+
+  const QUIET: TimeRules = {
+    ...DEFAULT_TIME_RULES,
+    longWait: { on: true, minutes: 10 },
+    quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, from: "22:00", to: "08:00" },
+  };
+
+  /** The collector's notifications, with the rules in every snapshot and a clock the test sets. */
+  function ruled(rules: TimeRules, onAtStart = true) {
+    const notifier = fakeSystemNotifier();
+    const clock = { now: EVENING };
+    const notifications = createServerNotifications({ notifier, onAtStart, now: () => clock.now });
+    return {
+      notifier,
+      poll(at: number, sessions: Session[]) {
+        clock.now = at;
+        notifications.handle({
+          generatedAt: at,
+          sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+          sessions,
+          timeRules: rules,
+        });
+      },
+      page(at: number, said: NoticeEvent[], fetchedSessions = true) {
+        clock.now = at;
+        notifications.pageSaid(said, fetchedSessions);
+      },
+    };
+  }
+
+  const since = (n: number, at: number, name: string, text?: string) =>
+    waiting(n, name, { statusSince: at, ...(text !== undefined && { waitingText: text }) });
+
+  test("with no page open, nothing is shown in quiet hours, and when they end, the summary and each wait still open are", () => {
+    const { notifier, poll } = ruled(QUIET);
+    poll(EVENING, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    poll(EVENING + 10 * MINUTE, [
+      since(1, EVENING + 10 * MINUTE, "checkout-flow"),
+      working(2, "docs-site"),
+    ]);
+    poll(EVENING + 20 * MINUTE, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 20 * MINUTE, "docs-site"),
+    ]);
+    poll(EVENING + 60 * MINUTE, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 20 * MINUTE, "docs-site"),
+    ]);
+    expect(notifier.shown).toEqual([]);
+
+    poll(MORNING, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 20 * MINUTE, "docs-site", "Run: npm test"),
+    ]);
+    poll(MORNING + 2_000, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 20 * MINUTE, "docs-site", "Run: npm test"),
+    ]);
+    expect(notifier.shown).toEqual([
+      { title: "While quiet", body: "checkout-flow waited 10 minutes" },
+      { title: "docs-site", body: "Waiting for permission: Run: npm test" },
+    ]);
+  });
+
+  test("a page that is open shows the summary and the waits itself, and the collector drops its own", () => {
+    const { notifier, poll, page } = ruled(QUIET, false);
+    page(EVENING, ["needs-you"]);
+    poll(EVENING, [working(1, "checkout-flow")]);
+    page(EVENING + MINUTE, ["needs-you"]);
+    poll(EVENING + 3 * MINUTE, [since(1, EVENING + 3 * MINUTE, "checkout-flow")]);
+    page(EVENING + 4 * MINUTE, ["needs-you"]);
+    poll(EVENING + 5 * MINUTE, [working(1, "checkout-flow")]);
+    page(MORNING - 1_000, ["needs-you"]);
+    poll(MORNING, [working(1, "checkout-flow")]);
+    page(MORNING + 1_000, ["needs-you"]);
+    poll(MORNING + 2_000, [working(1, "checkout-flow")]);
+    poll(MORNING + 10_000, [working(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("a wait that lasts the long wait reminder's minutes is reminded of once, unless it ends while the reminder is held", () => {
+    const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 10 } };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const { notifier, poll } = ruled(rules);
+    poll(noon, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    poll(noon + 2_000, [
+      since(1, noon + 2_000, "checkout-flow"),
+      since(2, noon + 2_000, "docs-site"),
+    ]);
+    poll(noon + 4_000, [
+      since(1, noon + 2_000, "checkout-flow"),
+      since(2, noon + 2_000, "docs-site"),
+    ]);
+    poll(noon + 10 * MINUTE + 2_000, [
+      since(1, noon + 2_000, "checkout-flow"),
+      since(2, noon + 2_000, "docs-site"),
+    ]);
+    poll(noon + 10 * MINUTE + 4_000, [
+      since(1, noon + 2_000, "checkout-flow"),
+      since(2, noon + 2_000, "docs-site"),
+    ]);
+    poll(noon + 30 * MINUTE, [
+      since(1, noon + 2_000, "checkout-flow"),
+      since(2, noon + 2_000, "docs-site"),
+    ]);
+    expect(notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission" },
+      { title: "docs-site", body: "Waiting for permission" },
+      { title: "checkout-flow", body: "Has waited 10 minutes for permission" },
+      { title: "docs-site", body: "Has waited 10 minutes for permission" },
+    ]);
+  });
+
+  test("a reminder held for a page that has gone quiet is dropped when the wait ends first", () => {
+    const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 10 } };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const { notifier, poll, page } = ruled(rules, false);
+    page(noon, ["needs-you"]);
+    poll(noon, [since(1, noon - MINUTE, "checkout-flow")]);
+    page(noon + 9 * MINUTE, ["needs-you"], false);
+    poll(noon + 9 * MINUTE + 2_000, [since(1, noon - MINUTE, "checkout-flow")]);
+    page(noon + 9 * MINUTE + 3_000, ["needs-you"], false);
+    poll(noon + 9 * MINUTE + 4_000, [working(1, "checkout-flow")]);
+    poll(noon + 20 * MINUTE, [working(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("a reminder held for a page when quiet hours begin is held through them, and its wait is shown when they end", () => {
+    const { notifier, poll, page } = ruled(QUIET);
+    const begun = EVENING - 10 * MINUTE + 1_000;
+    poll(EVENING - 11 * MINUTE, [working(1, "checkout-flow")]);
+    // With no page open, the wait is shown at once.
+    poll(begun, [since(1, begun, "checkout-flow")]);
+    // Ten minutes on, a page that has not fetched the sessions is still asking, so the reminder is held for it.
+    page(EVENING, ["needs-you"], false);
+    poll(EVENING + 1_000, [since(1, begun, "checkout-flow")]);
+    expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Waiting for permission" }]);
+    // The page never comes, and quiet hours have begun when the reminder would go.
+    poll(new Date(2026, 9, 5, 22, 0).getTime(), [since(1, begun, "checkout-flow")]);
+    poll(new Date(2026, 9, 6, 3, 0).getTime(), [since(1, begun, "checkout-flow")]);
+    expect(notifier.shown).toHaveLength(1);
+
+    poll(MORNING, [since(1, begun, "checkout-flow")]);
+    poll(MORNING + 2_000, [since(1, begun, "checkout-flow")]);
+    expect(notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission" },
+      { title: "checkout-flow", body: "Waiting for permission" },
+    ]);
+  });
+
+  test("a wait held in quiet hours whose session reads as another status for a poll is shown once when they end, and in no summary", () => {
+    const { notifier, poll } = ruled(QUIET);
+    const begun = EVENING + 10 * MINUTE;
+    poll(EVENING, [working(1, "checkout-flow")]);
+    poll(begun, [since(1, begun, "checkout-flow")]);
+    poll(begun + 2_000, [working(1, "checkout-flow")]);
+    poll(begun + 4_000, [since(1, begun, "checkout-flow")]);
+    poll(MORNING, [since(1, begun, "checkout-flow")]);
+    poll(MORNING + 2_000, [since(1, begun, "checkout-flow")]);
+    expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Waiting for permission" }]);
+  });
+
+  test("with notifications off, nothing is held and there is no summary", () => {
+    const { notifier, poll } = ruled(QUIET, false);
+    poll(EVENING, [working(1, "checkout-flow")]);
+    poll(EVENING + 10 * MINUTE, [since(1, EVENING + 10 * MINUTE, "checkout-flow")]);
+    poll(EVENING + 20 * MINUTE, [working(1, "checkout-flow")]);
+    poll(MORNING, [working(1, "checkout-flow")]);
+    poll(MORNING + 10_000, [working(1, "checkout-flow")]);
     expect(notifier.shown).toEqual([]);
   });
 });

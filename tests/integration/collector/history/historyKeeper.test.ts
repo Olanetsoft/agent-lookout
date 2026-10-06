@@ -11,7 +11,7 @@ import { ids, pids, registryFile, registryFiles } from "@tests/fixtures/claudeCo
 import { waitingToRun } from "@tests/fixtures/claudeTranscript";
 import { adapterFor, fails } from "@tests/support/adapters/claudeCodeAdapter";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 const LIMITS = { events: 1_000, points: 10_800 };
 
@@ -231,6 +231,7 @@ describe("with a real collector", () => {
       adapters: [adapterFor(home, { run: fails("Not run in a test.") })],
       env: {
         AGENT_LOOKOUT_HISTORY_DIR: dir,
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
       },

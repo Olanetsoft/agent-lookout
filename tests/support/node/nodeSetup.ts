@@ -6,9 +6,17 @@
 // It also never asks gh for pull requests, whatever the shell running the tests
 // has set: a test of pull requests passes an environment of its own, with a
 // stand-in gh, so no test reaches the real gh or GitHub.
+//
+// And it reads its time rules from a settings file that is not there, so they
+// are all off and the settings of the person running the tests change nothing.
+// A test that builds its own environment names `NO_SETTINGS_FILE` there too,
+// or a file of its own.
+
+import { NO_SETTINGS_FILE } from "@tests/support/node/tempFiles";
 
 process.env.AGENT_LOOKOUT_HISTORY = "off";
 process.env.AGENT_LOOKOUT_PULL_REQUESTS = "off";
+process.env.AGENT_LOOKOUT_SETTINGS_FILE = NO_SETTINGS_FILE;
 
 // Nor does one open the socket in `~/.agent-lookout` that answers permission
 // prompts. A test of answering names a socket of its own.

@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { staleAfterInWords } from "@core/sessions/staleness";
+import { staleAfterMs } from "@core/time-rules/timeRules";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
 import { HistoryChart } from "@dashboard/components/ui/charts/HistoryChart";
@@ -30,8 +32,8 @@ interface MetricCopy {
   chart: string;
   /** A count in words, for the reading under the pointer. */
   describe: (count: number) => string;
-  /** What the number counts, in plain words. */
-  explainer: string;
+  /** What the number counts, in plain words, with how long a session is idle before it is stale. */
+  explainer: string | ((staleAfter: string) => string);
 }
 
 const METRICS: Record<HistoryMetric, MetricCopy> = {
@@ -59,8 +61,8 @@ const METRICS: Record<HistoryMetric, MetricCopy> = {
     tone: "idle",
     chart: "Idle sessions",
     describe: (count) => `${count} idle`,
-    explainer:
-      "A session is idle when it has finished what it was asked and is ready for a new prompt. One left idle a day or more is stale, and is counted under Stale instead. The line is how many were idle at each moment.",
+    explainer: (staleAfter) =>
+      `A session is idle when it has finished what it was asked and is ready for a new prompt. One left idle ${staleAfter} or more is stale, and is counted under Stale instead. The line is how many were idle at each moment.`,
   },
 };
 
@@ -164,7 +166,11 @@ function HistoryBody({
         className='mt-5 rounded-inner bg-fill-quiet px-4 py-3 inset-ring inset-ring-hairline'
       >
         <p className='text-row font-semibold text-ink'>What this counts</p>
-        <p className='mt-0.5 text-body text-ink-secondary'>{copy.explainer}</p>
+        <p className='mt-0.5 text-body text-ink-secondary'>
+          {typeof copy.explainer === "string"
+            ? copy.explainer
+            : copy.explainer(staleAfterInWords(staleAfterMs(state.snapshot?.timeRules)))}
+        </p>
         <p className='mt-1.5 text-body text-ink-secondary'>
           Hatched time was not measured: Agent Lookout was not running, or could not read its
           source, or the history was cleared then. It is never drawn as zero.{" "}

@@ -6,11 +6,13 @@ import {
   readHistory,
   readPullRequestsStatus,
   readSession,
+  readSettings,
   readSnapshot,
   readSource,
   readWaits,
   readWebhookStatus,
 } from "@dashboard/lib/api/readApi";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { makeSession } from "@tests/fixtures/session";
 
 const T = 1_700_000_000_000;
@@ -1063,3 +1065,53 @@ describe("a permission request held for the dashboard", () => {
     ).not.toHaveProperty("answering");
   });
 });
+
+test("a snapshot keeps the time rules it was made by, a rule that cannot be read being off, and one without them has none", () => {
+  const rules: TimeRules = { ...DEFAULT_TIME_RULES, idle: { on: true, hours: 6 } };
+  const made = (timeRules?: unknown) =>
+    readSnapshot({
+      generatedAt: T,
+      sources: [],
+      sessions: [],
+      ...(timeRules !== undefined && { timeRules }),
+    });
+  expect(made(rules)?.timeRules).toEqual(rules);
+  expect(made({ ...rules, longWait: { on: "yes" } })?.timeRules).toEqual(rules);
+  expect(made()).not.toHaveProperty("timeRules");
+});
+
+test("a snapshot keeps the collector's word on quiet hours when it is true or false, and nothing else", () => {
+  const made = (quiet: unknown) =>
+    readSnapshot({
+      generatedAt: T,
+      sources: [],
+      sessions: [],
+      timeRules: DEFAULT_TIME_RULES,
+      quiet,
+    });
+  expect(made(true)?.quiet).toBe(true);
+  expect(made(false)?.quiet).toBe(false);
+  expect(made("yes")).not.toHaveProperty("quiet");
+  expect(made(undefined)).not.toHaveProperty("quiet");
+});
+
+test("the settings are read with their rules, the file and any problem", () => {
+  const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 3 } };
+  expect(
+    readSettings({ timeRules: rules, file: "~/.agent-lookout/settings.json", problem: null }),
+  ).toEqual({ timeRules: rules, file: "~/.agent-lookout/settings.json", problem: null });
+  expect(
+    readSettings({ timeRules: {}, file: "~/.agent-lookout/settings.json", problem: "Not read." }),
+  ).toEqual({
+    timeRules: DEFAULT_TIME_RULES,
+    file: "~/.agent-lookout/settings.json",
+    problem: "Not read.",
+  });
+});
+
+test.each([null, {}, { timeRules: DEFAULT_TIME_RULES }, { file: "~/x", timeRules: "on" }])(
+  "%j is not the settings",
+  (data) => {
+    expect(readSettings(data)).toBeNull();
+  },
+);

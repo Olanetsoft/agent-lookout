@@ -2,6 +2,7 @@ import type { HistoryResponse } from "@core/api";
 import type { AnsweringStatus } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { NOTICE_EVENT_LABEL } from "@core/notices/waiting";
+import type { SessionsSnapshot } from "@core/sessions/session";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
@@ -11,6 +12,7 @@ import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedCon
 import { AnswerCard } from "@dashboard/components/settings/AnswerCard";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
+import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
@@ -245,6 +247,10 @@ interface SettingsViewProps {
   now?: number;
   /** Told once the history has been cleared, so the page reads it again at once. */
   onHistoryCleared?: () => void;
+  /** Told once the time rules have changed, so the page reads the sessions again at once. */
+  onTimeRulesChanged?: () => void;
+  /** The page's latest snapshot, whose rules and quiet hours the Time rules card follows. Null before the first. */
+  snapshot?: Pick<SessionsSnapshot, "generatedAt" | "timeRules" | "quiet"> | null;
   /** Whether the page is in the Mac app's window, which alone shows the Menu bar and Updates cards. */
   inApp?: boolean;
   /** Whether permission prompts can be answered from here, as the sessions' answer says. Null before it. */
@@ -254,7 +260,7 @@ interface SettingsViewProps {
 /**
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
- * whether to be notified and of what, where the history is kept and the button
+ * whether to be notified and of what, the time rules, where the history is kept and the button
  * that clears it, in the Mac app whether it shows in the menu bar and its
  * updates, whether email and a webhook have been set up, whether pull requests
  * are shown and gh can be asked for them, a few facts about this copy of the
@@ -269,6 +275,8 @@ export function SettingsView({
   history = null,
   now,
   onHistoryCleared,
+  onTimeRulesChanged,
+  snapshot = null,
   inApp = inAppWindow(),
   answering = null,
 }: SettingsViewProps = {}) {
@@ -313,6 +321,8 @@ export function SettingsView({
         </SectionCard>
 
         <NotificationsCard />
+
+        <TimeRulesCard onChanged={onTimeRulesChanged} snapshot={snapshot} />
 
         <HistoryCard history={history} now={now ?? ticking} onCleared={onHistoryCleared} />
 

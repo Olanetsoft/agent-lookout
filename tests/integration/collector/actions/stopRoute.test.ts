@@ -13,7 +13,12 @@ import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
 import { startStandIn, startStandInChain, type StandIn } from "@tests/support/node/standIns";
-import { makeClaudeHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
+import {
+  makeClaudeHome,
+  NO_SETTINGS_FILE,
+  tempDir,
+  writeStub,
+} from "@tests/support/node/tempFiles";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -52,6 +57,7 @@ async function serve(
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),

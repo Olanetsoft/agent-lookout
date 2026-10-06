@@ -19,7 +19,7 @@ import { readWaits } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request } from "@tests/support/node/http";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // The days are this computer's own. The tests are in a zone whose clocks do
 // not change in the week they use, whatever the zone of the computer that runs them.
@@ -135,7 +135,7 @@ async function startIn(
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env: { AGENT_LOOKOUT_HISTORY_DIR: dir, ...env },
+    env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
     notifier: fakeSystemNotifier(),
     now: () => clock.now,
     intervalMs: 1_000_000_000,
@@ -236,6 +236,7 @@ describe("GET /api/waits over a history folder on disk", () => {
     await writeHistory(dir, threeDays());
     const { port, pollFor } = await startIn(dir, [stillWaiting()], {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
     });
     // demo-project-3 was waiting as Agent Lookout started, and still waits ten minutes on.
     await pollFor(10 * MINUTE);

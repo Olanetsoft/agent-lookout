@@ -12,6 +12,7 @@ import type {
   SourceId,
   SourceState,
 } from "@core/sessions/session";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -1137,5 +1138,123 @@ describe("what a waiting session is asking", () => {
       expect(JSON.stringify(event)).not.toContain("npm run deploy");
     }
     expect(JSON.stringify(history.list(Infinity, T0 + 4_000))).not.toContain("npm run deploy");
+  });
+});
+
+describe("the time rules", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  test("each snapshot carries the rules in force at its poll, asked again each time", async () => {
+    const { adapter } = scriptedAdapter(result([]));
+    let rules: TimeRules = DEFAULT_TIME_RULES;
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+      timeRules: () => rules,
+    });
+    expect((await poller.pollOnce()).timeRules).toBe(DEFAULT_TIME_RULES);
+    rules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 5 } };
+    expect((await poller.pollOnce()).timeRules).toBe(rules);
+  });
+
+  test("without them, the snapshot carries none, and is as it always was", async () => {
+    const { adapter } = scriptedAdapter(result([]));
+    const { poller } = setUp(adapter);
+    const shot = await poller.pollOnce();
+    expect(shot).not.toHaveProperty("timeRules");
+    expect(shot).not.toHaveProperty("quiet");
+  });
+
+  test("with the idle rule on, a session idle that long is stale, in the snapshot and in the history's counts", async () => {
+    const idleFor = (hours: number, n: number) =>
+      makeSession({
+        id: `claude-code:idle-${n}`,
+        status: "idle",
+        statusSince: T0 - hours * HOUR,
+        stale: hours >= 24,
+      });
+    const sessions = [idleFor(3, 1), idleFor(30, 2), idleFor(1, 3)];
+    const { adapter } = scriptedAdapter(result(sessions));
+    const history = createHistoryStore();
+    let rules: TimeRules = { ...DEFAULT_TIME_RULES, idle: { on: true, hours: 2 } };
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history,
+      timeRules: () => rules,
+    });
+
+    const staleness = (shot: Awaited<ReturnType<typeof poller.pollOnce>>) =>
+      Object.fromEntries(shot.sessions.map((session) => [session.id, session.stale]));
+    expect(staleness(await poller.pollOnce())).toEqual({
+      "claude-code:idle-1": true,
+      "claude-code:idle-2": true,
+      "claude-code:idle-3": false,
+    });
+    // A stale session is not counted as idle.
+    expect(history.list(HOUR, T0).at(-1)).toMatchObject({ idle: 1, total: 3 });
+
+    // A longer threshold than the day the adapters go by.
+    rules = { ...DEFAULT_TIME_RULES, idle: { on: true, hours: 48 } };
+    expect(staleness(await poller.pollOnce())).toEqual({
+      "claude-code:idle-1": false,
+      "claude-code:idle-2": false,
+      "claude-code:idle-3": false,
+    });
+
+    // Off, the built-in day: the adapters' own answer, so each session is as it came.
+    rules = DEFAULT_TIME_RULES;
+    const shot = await poller.pollOnce();
+    expect(staleness(shot)).toEqual({
+      "claude-code:idle-1": false,
+      "claude-code:idle-2": true,
+      "claude-code:idle-3": false,
+    });
+    expect(shot.sessions.find((one) => one.id === "claude-code:idle-1")).toBe(sessions[0]);
+  });
+
+  test("with the rule off, stale is still worked out at the poll by the built-in day, whatever a source said", async () => {
+    // As from another machine, whose own idle rule said otherwise.
+    const said = [
+      makeSession({ id: "claude-code:a", status: "idle", statusSince: T0 - 3 * HOUR, stale: true }),
+      makeSession({
+        id: "claude-code:b",
+        status: "idle",
+        statusSince: T0 - 30 * HOUR,
+        stale: false,
+      }),
+    ];
+    const { adapter } = scriptedAdapter(result(said));
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+      timeRules: () => DEFAULT_TIME_RULES,
+    });
+    const shot = await poller.pollOnce();
+    expect(Object.fromEntries(shot.sessions.map((one) => [one.id, one.stale]))).toEqual({
+      "claude-code:a": false,
+      "claude-code:b": true,
+    });
+  });
+
+  test("each snapshot says whether it was made in quiet hours, by the collector's own clock", async () => {
+    const { adapter } = scriptedAdapter(result([]));
+    const night = new Date(2026, 9, 5, 23, 0).getTime();
+    vi.setSystemTime(night);
+    let rules: TimeRules = {
+      ...DEFAULT_TIME_RULES,
+      quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, from: "22:00", to: "08:00" },
+    };
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+      timeRules: () => rules,
+    });
+    expect((await poller.pollOnce()).quiet).toBe(true);
+    rules = DEFAULT_TIME_RULES;
+    expect((await poller.pollOnce()).quiet).toBe(false);
   });
 });

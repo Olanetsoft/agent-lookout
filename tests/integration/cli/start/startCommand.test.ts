@@ -5,7 +5,7 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { startCommand } from "@cli/start/startCommand";
 import { request } from "@tests/support/node/http";
-import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // `agent-lookout start` inside this process, against a temporary folder that
 // stands in for `dist/`, with the browser's opener replaced, so no browser is
@@ -24,6 +24,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}): Promise<Node
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",
     AGENT_LOOKOUT_HISTORY: "off",
+    AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
     ...overrides,
   };
 }

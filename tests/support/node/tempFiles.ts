@@ -18,6 +18,19 @@ export const CODEX_FIXTURE_HOME = fileURLToPath(
   new URL("../../fixtures/codex-home", import.meta.url),
 );
 
+/**
+ * A settings file that is not there, in a folder that is not there, for a
+ * collector a test builds or an app it starts: the time rules are all off, and
+ * nothing reads the settings of the person running the tests. Only a change of
+ * a time rule would write it, and a test that makes one names a file of its
+ * own, in a `tempDir`.
+ */
+export const NO_SETTINGS_FILE = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-settings",
+  "settings.json",
+);
+
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { isStale, STALE_THRESHOLD_MS } from "@core/sessions/staleness";
+import { isStale, STALE_THRESHOLD_MS, staleAfterInWords } from "@core/sessions/staleness";
 
 const now = 1_700_000_000_000;
 const hour = 60 * 60 * 1000;
@@ -33,4 +33,15 @@ test("a status time in the future is not stale", () => {
 test("the threshold can be overridden", () => {
   expect(isStale({ status: "idle", statusSince: now - 5_000 }, now, 5_000)).toBe(true);
   expect(isStale({ status: "idle", statusSince: now - 4_999 }, now, 5_000)).toBe(false);
+});
+
+test.each([
+  [24 * hour, "a day"],
+  [48 * hour, "2 days"],
+  [30 * 24 * hour, "30 days"],
+  [hour, "an hour"],
+  [36 * hour, "36 hours"],
+  [5 * hour, "5 hours"],
+])("a threshold of %i ms is said as %s", (ms, words) => {
+  expect(staleAfterInWords(ms)).toBe(words);
 });

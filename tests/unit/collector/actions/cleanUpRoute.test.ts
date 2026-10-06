@@ -88,7 +88,12 @@ type Fresh = Partial<RegistryEntry> | { refused: Exclude<Confirmed, { ok: true }
 function routeOver(
   sessions: Session[],
   fresh: Record<number, Fresh> = {},
-  options: { acted?: Record<number, Acted>; running?: number[]; background?: number[] } = {},
+  options: {
+    acted?: Record<number, Acted>;
+    running?: number[];
+    background?: number[];
+    staleAfterMs?: number;
+  } = {},
 ) {
   const snapshot = (): SessionsSnapshot => ({ generatedAt: 1, sources: [], sessions });
   const poller = { getSnapshot: vi.fn(snapshot), pollOnce: vi.fn(async () => snapshot()) };
@@ -130,6 +135,9 @@ function routeOver(
     targets,
     stopper,
     limiter: createActionLimiter(() => NOW),
+    ...(options.staleAfterMs !== undefined && {
+      staleAfterMs: () => options.staleAfterMs as number,
+    }),
   });
   const outcomes = async (body: unknown) => {
     const answer = await route(request(body));
@@ -271,6 +279,31 @@ describe("POST /api/sessions/clean-up", () => {
       { sessionId: idOf(1), outcome: "not-stale" },
     ]);
     expect(stopper.act).not.toHaveBeenCalled();
+  });
+
+  test("with the idle rule on, a session idle as long as it says is ended, and one idle less is left running", async () => {
+    const twoHours = NOW - 2 * HOUR;
+    const sessions = [leftRunning(1, { statusSince: twoHours })];
+    const body = { sessions: [{ sessionId: idOf(1), statusSince: twoHours }] };
+
+    const after1Hour = routeOver(
+      sessions,
+      { 1: { statusUpdatedAt: twoHours } },
+      { staleAfterMs: HOUR },
+    );
+    expect((await after1Hour.route(request(body))).body).toEqual({
+      results: [{ sessionId: idOf(1), outcome: "ended" }],
+    });
+
+    const after3Hours = routeOver(
+      sessions,
+      { 1: { statusUpdatedAt: twoHours } },
+      { staleAfterMs: 3 * HOUR },
+    );
+    expect((await after3Hours.route(request(body))).body).toEqual({
+      results: [{ sessionId: idOf(1), outcome: "not-stale" }],
+    });
+    expect(after3Hours.stopper.act).not.toHaveBeenCalled();
   });
 
   test("a mixed batch says what became of each, in the order asked, and ends only those that pass", async () => {

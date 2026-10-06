@@ -8,6 +8,7 @@ import {
   readRemoteSnapshot,
 } from "@collector/remotes/remoteSessions";
 import { repositoryId } from "@collector/git/repository";
+import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   NOW,
   snapshotThere,
@@ -119,6 +120,23 @@ describe("readRemoteSnapshot", () => {
       "Codex",
       "Status files",
     ]);
+  });
+
+  test("the other machine's time rules and its word on quiet hours are not taken, and its stale is only what it said", () => {
+    const answer = {
+      ...snapshotThere([workingThere({ status: "idle", statusSince: NOW - 60_000, stale: true })]),
+      timeRules: {
+        ...DEFAULT_TIME_RULES,
+        idle: { on: true, hours: 1 },
+        quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true },
+      },
+      quiet: true,
+    };
+    const taken = read(answer);
+    expect(taken).not.toHaveProperty("timeRules");
+    expect(taken).not.toHaveProperty("quiet");
+    // What that machine said, which the poller here works out again by this computer's rule.
+    expect(taken.sessions[0]?.stale).toBe(true);
   });
 
   test("what a waiting session asks is kept only while it waits", () => {

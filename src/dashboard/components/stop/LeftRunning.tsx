@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "re
 
 import { MAX_CLEAN_UP_SESSIONS, type CleanUpEntry, type CleanUpOutcome } from "@core/api";
 import type { Session } from "@core/sessions/session";
+import { STALE_THRESHOLD_MS, staleAfterInWords } from "@core/sessions/staleness";
 import { Count } from "@dashboard/components/sessions/SessionsBoard";
 import { Runs } from "@dashboard/components/stop/StopSession";
 import { Button } from "@dashboard/components/ui/controls/Button";
@@ -23,7 +24,7 @@ import {
   type LeftRunningSession,
 } from "@dashboard/lib/stop/leftRunning";
 import {
-  CLEAN_UP_OUTCOME_WORDS,
+  cleanUpOutcomeWords,
   cleanUpTimeoutMs,
   requestCleanUp,
   type CleanUpAnswer,
@@ -80,6 +81,11 @@ interface LeftRunningProps {
   onGone?: () => void;
   /** What ends them. Defaults to asking the app. */
   end?: (entries: readonly CleanUpEntry[], timeoutMs: number) => Promise<CleanUpAnswer>;
+  /**
+   * How long a session is idle before it is stale, as the snapshot's time
+   * rules say: what the band and a clean-up's words say. Defaults to a day.
+   */
+  staleAfterMs?: number;
 }
 
 /**
@@ -93,7 +99,9 @@ function Row({
   checkbox,
   outcome,
   action,
+  staleAfterMs = STALE_THRESHOLD_MS,
 }: {
+  staleAfterMs?: number;
   one: LeftRunningSession;
   checkbox?: { checked: boolean; onChange: (checked: boolean) => void; disabled: boolean };
   outcome?: CleanUpOutcome | null;
@@ -140,7 +148,7 @@ function Row({
                 data-outcome={outcome}
                 tone={outcome === "ended" ? "neutral" : "outline"}
               >
-                {CLEAN_UP_OUTCOME_WORDS[outcome]}
+                {cleanUpOutcomeWords(outcome, staleAfterMs)}
               </Badge>
             )}
           </div>
@@ -168,7 +176,7 @@ function Row({
 
 /**
  * The sessions left running, in the Sessions card: Claude Code sessions idle
- * for a day or more whose process still runs, as one does after its VS Code
+ * for a day or more, or as long as the idle rule says, whose process still runs, as one does after its VS Code
  * tab is closed. Drawn only while there is one, and at first as one band, the
  * count and "idle a day or more", with a quiet Review…, so it never outweighs
  * the list it sits over. Review… opens it: the longest idle first, each with
@@ -198,7 +206,9 @@ export function LeftRunning({
   onEnded,
   onGone,
   end = requestCleanUp,
+  staleAfterMs = STALE_THRESHOLD_MS,
 }: LeftRunningProps) {
+  const note = `idle ${staleAfterInWords(staleAfterMs)} or more`;
   const [hidden, setHidden] = useState<Set<string>>(readHidden);
   const [step, setStep] = useState<Step>({ kind: "list" });
   const [open, setOpen] = useState(false);
@@ -268,7 +278,7 @@ export function LeftRunning({
   if (step.kind === "done") {
     const stillRunning = step.rows.filter(({ outcome }) => outcome !== "ended").length;
     return (
-      <Frame ref={frame} count={stillRunning} open>
+      <Frame ref={frame} count={stillRunning} note={note} open>
         <p
           ref={summary}
           tabIndex={-1}
@@ -280,7 +290,7 @@ export function LeftRunning({
         </p>
         <ul className='mt-1.5'>
           {step.rows.map(({ one, outcome }) => (
-            <Row key={one.session.id} one={one} outcome={outcome} />
+            <Row key={one.session.id} one={one} outcome={outcome} staleAfterMs={staleAfterMs} />
           ))}
         </ul>
         <div className='mt-2'>
@@ -330,13 +340,13 @@ export function LeftRunning({
               ? (answer.results.get(one.session.id) ?? null)
               : null,
           })),
-          summary: cleanUpSummary(outcomes),
+          summary: cleanUpSummary(outcomes, staleAfterMs),
         });
         if (outcomes.includes("ended")) onEnded?.();
       });
     };
     return (
-      <Frame ref={frame} count={shown.length} open>
+      <Frame ref={frame} count={shown.length} note={note} open>
         <section data-part='end-confirm' aria-label={END_QUESTION}>
           <p
             data-part='question'
@@ -412,6 +422,7 @@ export function LeftRunning({
     <Frame
       ref={frame}
       count={found.length}
+      note={note}
       open={open}
       action={
         <>
@@ -459,18 +470,21 @@ export function LeftRunning({
 
 /**
  * The group's own surface inside the Sessions card, with its head: "Left
- * running 3" and "idle a day or more", and its buttons at the right. Folded,
- * it is that one line.
+ * running 3" and "idle a day or more", or as long as the idle rule says, and
+ * its buttons at the right. Folded, it is that one line.
  */
 function Frame({
   ref,
   count,
+  note,
   open,
   action,
   children,
 }: {
   ref: Ref<HTMLElement>;
   count: number;
+  /** "idle a day or more". */
+  note: string;
   open: boolean;
   action?: ReactNode;
   children?: ReactNode;
@@ -496,7 +510,7 @@ function Frame({
             <Count>{count}</Count>
           </h3>
           <span data-part='note' className='text-caption text-ink-secondary'>
-            idle a day or more
+            {note}
           </span>
         </div>
         {action && <div className='flex items-center gap-3'>{action}</div>}

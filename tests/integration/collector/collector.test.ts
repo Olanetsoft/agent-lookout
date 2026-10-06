@@ -26,6 +26,7 @@ import {
   type WebhookStatusResponse,
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import {
@@ -51,6 +52,7 @@ import {
   CODEX_FIXTURE_HOME,
   makeClaudeHome,
   makeCodexHome,
+  NO_SETTINGS_FILE,
   tempDir,
 } from "@tests/support/node/tempFiles";
 import { startWebhookServer } from "@tests/support/channels/webhook";
@@ -70,6 +72,7 @@ async function serve(settings: Record<string, string>) {
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
@@ -233,6 +236,7 @@ describe("createCollector", () => {
       version: "9.9.9-test",
       env: {
         AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
@@ -298,6 +302,7 @@ describe("createCollector", () => {
       version: "9.9.9-test",
       env: {
         AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: codexHome,
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
@@ -388,7 +393,7 @@ async function watch(source = standInSource(), env: Record<string, string> = {})
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
-    env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
+    env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
     notifier,
     now: () => state.now,
   });
@@ -499,6 +504,7 @@ describe("the collector's own notifications", () => {
         adapters: [],
         env: {
           AGENT_LOOKOUT_HISTORY: "off",
+          AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
           ...(options.on === false ? {} : { AGENT_LOOKOUT_NOTIFICATIONS: "on" }),
         },
         platform: options.platform,
@@ -647,7 +653,7 @@ describe("email notifications", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [adapter],
-      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
       notifier: fakeSystemNotifier(),
       now: () => state.now,
       warn: (line) => warnings.push(line),
@@ -1014,7 +1020,7 @@ describe("webhook notifications", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [adapter],
-      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
       notifier: fakeSystemNotifier(),
       now: () => state.now,
       warn: (line) => warnings.push(line),
@@ -1411,7 +1417,7 @@ describe("what a host is told", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: { AGENT_LOOKOUT_HISTORY: "off" },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       onSnapshot: (snapshot) => told.push(snapshot.sessions.map((session) => session.status)),
@@ -1430,7 +1436,7 @@ describe("what a host is told", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: { AGENT_LOOKOUT_HISTORY: "off" },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       onSnapshot: () => {
@@ -1454,7 +1460,11 @@ describe("history kept on disk", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: { AGENT_LOOKOUT_HISTORY_DIR: dir, ...env },
+      env: {
+        AGENT_LOOKOUT_HISTORY_DIR: dir,
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+        ...env,
+      },
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       intervalMs: 1_000_000_000,
@@ -1748,7 +1758,7 @@ describe("pull requests", () => {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
-      env: { AGENT_LOOKOUT_HISTORY: "off", ...env },
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
       notifier: fakeSystemNotifier(),
       gh: gh.ask,
       now: () => source.state.now,
@@ -1852,6 +1862,7 @@ describe("another machine over SSH", () => {
       env: {
         ...ssh.env,
         AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: path.join(await tempDir(), "no-codex-here"),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
@@ -1933,6 +1944,42 @@ describe("another machine over SSH", () => {
     ]);
     // The other machine sent what the waiting session is asking, so it is shown.
     expect(snapshot.sessions[0]?.waitingText).toBe("Run: npm test");
+  });
+
+  test("its sessions are stale by this computer's idle rule, whatever that machine said, and its time rules and quiet hours are not taken", async () => {
+    const hour = 60 * 60_000;
+    const now = Date.now();
+    // That machine's rules: stale after an hour, and quiet all day, which it says it is.
+    const lookout = await startStandInLookout({
+      ...snapshotThere([
+        workingThere({ id: "status-files:a.json", status: "idle", statusSince: now - 3 * hour }),
+        workingThere({
+          id: "status-files:b.json",
+          status: "idle",
+          statusSince: now - 30 * 60_000,
+          stale: true,
+        }),
+      ]),
+      timeRules: {
+        ...DEFAULT_TIME_RULES,
+        idle: { on: true, hours: 1 },
+        quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, from: "00:00", to: "23:59" },
+      },
+      quiet: true,
+    });
+    // This computer's: stale after two hours, and no quiet hours.
+    const rules: TimeRules = { ...DEFAULT_TIME_RULES, idle: { on: true, hours: 2 } };
+    const file = path.join(await tempDir(), "settings.json");
+    await writeFile(file, JSON.stringify({ timeRules: rules }));
+    const { until } = await withMachine(lookout.port, { AGENT_LOOKOUT_SETTINGS_FILE: file });
+    const snapshot = await until("ok");
+
+    expect(snapshot.sessions.map((session) => [session.id, session.stale])).toEqual([
+      ["remote:devbox:status-files:b.json", false],
+      ["remote:devbox:status-files:a.json", true],
+    ]);
+    expect(snapshot.timeRules).toEqual(rules);
+    expect(snapshot.quiet).toBe(false);
   });
 
   test("a wait that begins there is an event here, and a notification that names the machine", async () => {

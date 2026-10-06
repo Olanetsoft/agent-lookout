@@ -11,6 +11,7 @@ import {
   type StopRequest,
 } from "@core/api";
 import type { StopWay } from "@core/sessions/session";
+import { STALE_THRESHOLD_MS, staleAfterInWords } from "@core/sessions/staleness";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 
 /** What a press of Stop session came to: stopped, or why not, or no answer at all. */
@@ -139,7 +140,10 @@ export function stopOutcomeWords(outcome: StopOutcome, how: StopWay): string {
   }
 }
 
-/** The words for what became of one session in a clean-up, beside its name. */
+/**
+ * The words for what became of one session in a clean-up, beside its name,
+ * with a day as how long a session is idle before it is stale.
+ */
 export const CLEAN_UP_OUTCOME_WORDS: Record<CleanUpOutcome, string> = {
   ended: "Ended",
   "became-active": "Became active",
@@ -151,3 +155,13 @@ export const CLEAN_UP_OUTCOME_WORDS: Record<CleanUpOutcome, string> = {
   "still-running": "Still running",
   failed: "Did not stop",
 };
+
+/** The same, with how long a session is idle before it is stale as the idle rule says. */
+export function cleanUpOutcomeWords(
+  outcome: CleanUpOutcome,
+  staleAfterMs: number = STALE_THRESHOLD_MS,
+): string {
+  return outcome === "not-stale"
+    ? `Idle less than ${staleAfterInWords(staleAfterMs)}`
+    : CLEAN_UP_OUTCOME_WORDS[outcome];
+}
