@@ -1,0 +1,4 @@
+# Text files keep the line endings they were committed with, LF, on every
+# system. Git on Windows would otherwise check them out with CRLF, and the
+# fixtures, the format check and the scripts read them byte for byte.
+* text=auto eol=lf

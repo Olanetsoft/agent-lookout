@@ -77,6 +77,23 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm test
 
+  # The unit, integration and component tests on Windows. A test of something
+  # Windows does not have, such as a POSIX sh script, a Unix socket, ps, tmux,
+  # osascript or a POSIX signal, is skipped there and says why.
+  test-windows:
+    name: test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Component tests run in real Chromium.
+      - run: npx playwright install chromium
+      - run: npm test
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -98,6 +115,21 @@ jobs:
   # files and lists their sessions with the right statuses, then stops it.
   start:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run start:check
+
+  # The same on Windows: the built app started with `npm start`, on folders of
+  # its own, then ended with every process under it.
+  start-windows:
+    name: start (Windows)
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
