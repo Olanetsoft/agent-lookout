@@ -107,3 +107,28 @@ test("a notification of any event names the session and says what happened", () 
       .title,
   ).toBe("docs-site");
 });
+
+test("a notification of a wait says what the session is asking after the reason, when that is known", () => {
+  const session = makeSession({
+    name: "checkout-flow",
+    cwd: "/Users/example/code/checkout-flow",
+    project: "checkout-flow",
+    status: "needs-you",
+    waitingReason: "permission",
+    waitingDetail: "permission prompt",
+    waitingText: "Run: npm test",
+  });
+  expect(waitNotice(session)).toEqual({
+    title: "checkout-flow",
+    body: "Waiting for permission: Run: npm test",
+  });
+  expect(changeNotice({ event: "needs-you", session })).toEqual(waitNotice(session));
+  expect(
+    waitNotice({ ...session, waitingReason: "question", waitingText: "Which port? (+1 more)" })
+      .body,
+  ).toBe("Asked you a question: Which port? (+1 more)");
+  // Nothing to say, and the reason stands alone.
+  expect(waitNotice({ ...session, waitingText: "  " }).body).toBe("Waiting for permission");
+  // A session that is over says only what happened.
+  expect(changeNotice({ event: "ended", session }).body).toBe("Ended");
+});

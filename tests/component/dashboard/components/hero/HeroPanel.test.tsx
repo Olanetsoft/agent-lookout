@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -1292,4 +1292,96 @@ test("what a press came to does not pass to another session that takes the lead"
 
   expect(part(hero(screen.container), "name").textContent).toBe("infra-terraform");
   expect(hero(screen.container).querySelector('[data-part="jump-note"]')).toBeNull();
+});
+
+describe("what a waiting session is asking", () => {
+  const ASKING = { ...WAITING, waitingText: "Run: npm test" };
+  const ASKED = {
+    ...LATER,
+    waitingText: "Which database should we use? (+1 more)",
+  };
+
+  test("is a quiet line of its own under the reason, in the longest wait and in a later one, never warm", async () => {
+    const screen = await renderHero({ sessions: [ASKING, ASKED, BUSY] });
+    const panel = hero(screen.container);
+    const lead = panel.querySelector(`[data-session="${ASKING.id}"]`) as HTMLElement;
+    const later = panel.querySelector(`[data-session="${ASKED.id}"]`) as HTMLElement;
+
+    for (const [root, text] of [
+      [lead, "Run: npm test"],
+      [later, "Which database should we use? (+1 more)"],
+    ] as const) {
+      const asking = part(root, "asking");
+      expect(asking.textContent).toBe(text);
+      // The body size in the hero's quieter ink: the hero never uses the muted ink.
+      const style = getComputedStyle(asking);
+      expect(style.fontSize).toBe("13px");
+      expect(style.fontWeight).toBe("400");
+      expect(style.color).toBe(rgbOf("var(--ink-secondary)"));
+      expect(style.color).not.toBe(rgbOf("var(--ink-muted)"));
+      expect(warmPaint(asking)).toEqual([]);
+      // Under the reason, on a line of its own.
+      expect(asking.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        part(root, "reason").getBoundingClientRect().bottom - 0.5,
+      );
+      // It fits, so it is no stop on the way through the page.
+      await vi.waitFor(() => expect(asking.dataset.cut).toBe("false"));
+      expect(asking.tabIndex).toBe(-1);
+    }
+    // In the longest wait it comes before where the session runs.
+    expect(part(lead, "asking").getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      part(lead, "place").getBoundingClientRect().top + 0.5,
+    );
+  });
+
+  test("a session that says nothing more has no such line", async () => {
+    const screen = await renderHero({ sessions: [WAITING, LATER] });
+    expect(hero(screen.container).querySelector('[data-part="asking"]')).toBeNull();
+  });
+
+  test.each([375, 320])(
+    "at %i pixels a long command is cut at two lines, stays inside the hero, and is whole one hover or one Tab away",
+    async (width) => {
+      await page.viewport(width, 800);
+      const command = `Run: ./scripts/${"deploy-to-the-staging-environment-".repeat(5)}now --force`;
+      const path = `Edit: src/${"very/deeply/nested/folders/".repeat(6)}app.ts`;
+      const screen = await render(
+        <div style={{ width: width - 92 }}>
+          <HeroPanel
+            sessions={[
+              { ...WAITING, waitingText: command },
+              { ...LATER, waitingText: path },
+            ]}
+            sources={[CLAUDE]}
+            now={NOW}
+          />
+        </div>,
+      );
+      const panel = hero(screen.container);
+      const lines = [...panel.querySelectorAll<HTMLElement>('[data-part="asking"]')];
+      expect(lines.map((line) => line.textContent)).toEqual([command, path]);
+
+      for (const line of lines) {
+        // Two lines at most, broken anywhere, and cut with an ellipsis.
+        const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight);
+        expect(line.getBoundingClientRect().height).toBeLessThanOrEqual(2 * lineHeight + 1);
+        expect(getComputedStyle(line).webkitLineClamp).toBe("2");
+        expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth);
+        expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+          panel.getBoundingClientRect().right + 0.5,
+        );
+        await vi.waitFor(() => expect(line.dataset.cut).toBe("true"));
+      }
+      expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+        document.documentElement.clientWidth,
+      );
+
+      // While it is cut, Tab reaches it and the tooltip gives all of it.
+      startAtTop();
+      await tabTo(lines[0]!, 6);
+      await expect.element(page.getByRole("tooltip")).toHaveTextContent(command);
+      await userEvent.keyboard("{Escape}");
+    },
+  );
 });

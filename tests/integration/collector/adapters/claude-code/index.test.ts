@@ -1646,6 +1646,7 @@ describe("what the adapter says about itself", () => {
         "Registry read",
         "Command",
         "Command run",
+        "Transcript read",
       ]);
     }
   });

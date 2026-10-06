@@ -239,6 +239,16 @@ describe("sessions_needing_you", () => {
     );
   });
 
+  test("never holds what a waiting session is asking, which stays on this machine", () => {
+    const asking = snapshot();
+    asking.sessions = asking.sessions.map((session) =>
+      session.status === "needs-you" ? { ...session, waitingText: "Run: npm run deploy" } : session,
+    );
+    const said = JSON.stringify([sessionsNeedingYou(asking, NOW), listSessions(asking, NOW)]);
+    expect(said).not.toContain("npm run deploy");
+    expect(said).not.toContain("waitingText");
+  });
+
   test("with nothing waiting, says so, and says when that is not known", () => {
     const none = snapshot();
     none.sessions = none.sessions.filter((session) => session.status !== "needs-you");

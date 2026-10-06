@@ -76,6 +76,33 @@ describe("which waits are announced", () => {
     expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Asked you a question" }]);
   });
 
+  test("what the session is asking follows the reason, as the page's notification says it", () => {
+    const { notifier, poll } = setUp(true);
+    poll(0, [working(1, "checkout-flow")]);
+    poll(2_000, [waiting(1, "checkout-flow", { waitingText: "Edit: src/app.ts" })]);
+    expect(notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission: Edit: src/app.ts" },
+    ]);
+  });
+
+  test("a wait held for a page is shown with what the session is asking by the time it is shown", () => {
+    const { notifier, poll, page } = setUp(false);
+    poll(0, [working(1, "docs-site")]);
+    page(1_900, "on");
+
+    // The transcript said nothing yet when the wait was seen, and has by the next poll.
+    poll(2_000, [waiting(1, "docs-site")]);
+    page(3_000, "on", false);
+    poll(4_000, [waiting(1, "docs-site", { waitingText: "Run: npm test" })]);
+    page(5_000, "on", false);
+    poll(2_000 + HANDOVER_GRACE_MS + 1_000, [
+      waiting(1, "docs-site", { waitingText: "Run: npm test" }),
+    ]);
+    expect(notifier.shown).toEqual([
+      { title: "docs-site", body: "Waiting for permission: Run: npm test" },
+    ]);
+  });
+
   test("a session already waiting when the collector started is never announced", () => {
     const { notifier, poll } = setUp(true);
     poll(0, [waiting(1, "api-rate-limits")]);

@@ -955,3 +955,39 @@ describe("an adapter that breaks its promise", () => {
     expect(second.sessions).toHaveLength(1);
   });
 });
+
+describe("what a waiting session is asking", () => {
+  test("is in the snapshot while the wait goes on, and in no event recorded for it", async () => {
+    const id = "claude-code:00000000-0000-4000-8000-000000000002";
+    const working = makeSession({ id, status: "working" });
+    const asking = makeSession({
+      id,
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingText: "Run: npm run deploy",
+      statusSince: T0 + 2_000,
+    });
+    const answered = makeSession({ id, status: "working", statusSince: T0 + 4_000 });
+    const { adapter } = scriptedAdapter(result([working]), result([asking]), result([answered]));
+    const { poller, events, history } = setUp(adapter);
+
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    const waiting = await poller.pollOnce();
+    expect(waiting.sessions[0]?.waitingText).toBe("Run: npm run deploy");
+    vi.setSystemTime(T0 + 4_000);
+    const after = await poller.pollOnce();
+    expect(after.sessions[0]).not.toHaveProperty("waitingText");
+
+    const recorded = events.list();
+    expect(recorded.map((event) => [event.kind, event.from, event.to])).toEqual([
+      ["status-changed", "needs-you", "working"],
+      ["status-changed", "working", "needs-you"],
+    ]);
+    for (const event of recorded) {
+      expect(Object.keys(event)).not.toContain("waitingText");
+      expect(JSON.stringify(event)).not.toContain("npm run deploy");
+    }
+    expect(JSON.stringify(history.list(Infinity, T0 + 4_000))).not.toContain("npm run deploy");
+  });
+});

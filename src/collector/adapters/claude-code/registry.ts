@@ -38,7 +38,9 @@ import { validPid } from "../../processes/pids.ts";
  * - So the file is not rewritten as the session works: a session busy on one
  *   task for an hour keeps a file an hour old. Its modified time says nothing
  *   about when the session last did anything, and Claude Code sessions are
- *   given no `lastWriteAt`. The transcripts, which would say, are never read.
+ *   given no `lastWriteAt`. The transcripts would say, but a transcript is read
+ *   only while its session waits, and then only its end, for what the session
+ *   is asking (`transcript/`). Its time is not used.
  */
 
 /** The fields we use from one registry file. All but `pid` are optional. */

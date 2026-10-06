@@ -18,6 +18,7 @@ test("a well-formed session is read as it was sent", () => {
     status: "needs-you",
     waitingReason: "permission",
     waitingDetail: "permission prompt",
+    waitingText: "Run: npm test",
     surface: "vscode",
     pid: 4242,
     alive: true,
@@ -230,6 +231,18 @@ test("a waiting reason is kept only on a session that needs the person, and only
   expect(
     readSession({ ...makeSession(), status: "idle", waitingReason: "question" }),
   ).not.toHaveProperty("waitingReason");
+});
+
+test("what a waiting session is asking is kept as text, and only on a session that needs the person", () => {
+  const waiting = { ...makeSession(), status: "needs-you", waitingReason: "question" };
+
+  expect(readSession({ ...waiting, waitingText: "Which port?" })?.waitingText).toBe("Which port?");
+  for (const value of [5, "", "   ", null, ["Which port?"], { text: "Which port?" }]) {
+    expect(readSession({ ...waiting, waitingText: value })).not.toHaveProperty("waitingText");
+  }
+  expect(
+    readSession({ ...makeSession(), status: "working", waitingText: "Run: npm test" }),
+  ).not.toHaveProperty("waitingText");
 });
 
 test.each([

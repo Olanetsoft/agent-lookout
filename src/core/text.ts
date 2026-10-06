@@ -30,6 +30,15 @@ export const MAX_NAME_LENGTH = 200;
 /** The longest a name may run on one line, in an email, a post, a notification or a tmux place. */
 export const MAX_LINE_LENGTH = 80;
 
+/** The longest text kept of what a waiting session is asking, in characters. */
+export const MAX_WAITING_TEXT_LENGTH = 200;
+
+/**
+ * The longest the text of a notification may run: the reason, and what the
+ * session is asking after it, which a notification has room for on two lines.
+ */
+export const MAX_NOTICE_TEXT_LENGTH = 240;
+
 /** The text with the unwanted characters made spaces, trimmed. Empty is none. */
 export function clean(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -48,6 +57,17 @@ export function cut(value: unknown, max: number): string | undefined {
 /** Any text made fit to be a session's name: cleaned, and cut to 200 characters. Empty is none. */
 export function sessionName(value: string): string | undefined {
   return cut(value, MAX_NAME_LENGTH);
+}
+
+/**
+ * Any text made fit to say what a waiting session is asking: made to stand on
+ * one line, which the page may still wrap onto two, and cut to 200 characters
+ * with an ellipsis. Empty is none.
+ */
+export function waitingText(value: unknown): string | undefined {
+  const text = clean(value);
+  if (text === undefined) return undefined;
+  return oneLine(text, MAX_WAITING_TEXT_LENGTH) || undefined;
 }
 
 /**

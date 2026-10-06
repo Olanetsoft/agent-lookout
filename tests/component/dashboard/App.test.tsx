@@ -947,16 +947,23 @@ const LONG_NAMES = [
   "another-waiting-session-whose-name-is-also-far-too-long-for-any-card",
 ] as const;
 
+/** What each of them is asking: a command and a path, each one long word. */
+const LONG_ASKS = [
+  `Run: ./scripts/${"deploy-to-the-staging-environment-".repeat(5)}now`,
+  `Edit: src/${"very/deeply/nested/folders/".repeat(6)}app.ts`,
+] as const;
+
 /** The busy Overview with both waiting, as the collector would report them. */
 function longNamedState(): CollectorState {
   const now = Date.now();
   const busy = snapshot();
   busy.sessions = [
-    { ...busy.sessions[0]!, name: LONG_NAMES[0] },
+    { ...busy.sessions[0]!, name: LONG_NAMES[0], waitingText: LONG_ASKS[0] },
     session(3, {
       name: LONG_NAMES[1],
       status: "needs-you",
       waitingReason: "question",
+      waitingText: LONG_ASKS[1],
       statusSince: now - 2 * MINUTE,
       links: {
         open: "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000003",
@@ -992,7 +999,7 @@ function longNamedState(): CollectorState {
   });
 }
 
-test.each([1280, 1000, 760, 375])(
+test.each([1280, 1000, 760, 375, 320])(
   "at %i pixels waiting sessions with very long names are cut in the hero and its bars, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
@@ -1004,6 +1011,15 @@ test.each([1280, 1000, 760, 375])(
     expect(hero().dataset.state).toBe("several");
     const names = [...hero().querySelectorAll<HTMLElement>('[data-part="name"]')];
     expect(names.map((name) => name.textContent)).toEqual([...LONG_NAMES]);
+    // What each is asking is drawn too, at two lines at most.
+    const asks = [...hero().querySelectorAll<HTMLElement>('[data-part="asking"]')];
+    expect(asks.map((ask) => ask.textContent)).toEqual([...LONG_ASKS]);
+    for (const ask of asks) {
+      const lineHeight = Number.parseFloat(getComputedStyle(ask).lineHeight);
+      expect(ask.getBoundingClientRect().height, `${width}`).toBeLessThanOrEqual(
+        2 * lineHeight + 1,
+      );
+    }
     const bars = () => [
       ...hero().querySelectorAll<HTMLElement>('[data-slot="waited-on-you"] [data-part="waited"]'),
     ];

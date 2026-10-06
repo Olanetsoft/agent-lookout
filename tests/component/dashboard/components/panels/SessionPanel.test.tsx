@@ -437,3 +437,76 @@ test.each([
     expect(getComputedStyle(reason).color).toBe(rgbOf("var(--ink-secondary)"));
   },
 );
+
+/** The Claude Code session, asking to run a command. */
+function asking(text = "Run: npm run deploy -- --env staging"): CollectorState {
+  return state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CLAUDE_ID ? { ...session, waitingText: text } : session,
+      ),
+    },
+  });
+}
+
+test("what a waiting session is asking is the first line under its status, before the agent's own words, and nothing in it is warm", async () => {
+  await renderPanel(CLAUDE_ID, asking());
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+
+  const line = root.querySelector('[data-part="asking"]') as HTMLElement;
+  expect(line.textContent).toBe("Run: npm run deploy -- --env staging");
+  expect(line.closest('[data-part="note"]')).not.toBeNull();
+  expect(facts(root).Status).toBe(
+    "Needs you for 4 minutes4m 00sWaiting for permission, since 14:28:30 | Run: npm run deploy -- --env stagingBash(npm run deploy)",
+  );
+  const style = getComputedStyle(line);
+  expect(style.fontSize).toBe("12px");
+  expect(style.color).toBe(rgbOf("var(--ink-secondary)"));
+  expect(style.webkitLineClamp).toBe("2");
+  expect(warmBeyondTheSignals(root)).toEqual([]);
+});
+
+test("on a phone a long request is cut at two lines in the details, and whole one hover away", async () => {
+  await page.viewport(375, 800);
+  // As long as the collector lets it be.
+  const long = `Run: ${"npm run build && npm run test -- --coverage && ".repeat(3)}echo done`;
+  expect(long.length).toBeLessThanOrEqual(200);
+  await renderPanel(CLAUDE_ID, asking(long));
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const line = panel.element().querySelector('[data-part="asking"]') as HTMLElement;
+  const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight);
+  expect(line.getBoundingClientRect().height).toBeLessThanOrEqual(2 * lineHeight + 1);
+  await vi.waitFor(() => expect(line.dataset.cut).toBe("true"));
+  await userEvent.hover(line);
+  await expect.element(page.getByRole("tooltip")).toHaveTextContent(long);
+  await pointAway();
+});
+
+test("a session that leaves the list while it waits no longer says what it was asking", async () => {
+  const screen = await renderPanel(CLAUDE_ID, asking());
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  expect(panel.element().querySelector('[data-part="asking"]')).not.toBeNull();
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+    lastOkAt: NOW + MINUTE,
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + 2 * MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list. Here is what was last known of it."))
+    .toBeVisible();
+  expect(panel.element().querySelector('[data-part="asking"]')).toBeNull();
+  expect(panel.element().textContent).not.toContain("npm run deploy -- --env staging");
+});

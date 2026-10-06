@@ -138,6 +138,7 @@ describe("routes", () => {
       { label: "Registry read", value: "every 2 seconds" },
       { label: "Command", value: "claude agents --json --all" },
       { label: "Command run", value: "every 30 seconds" },
+      { label: "Transcript read", value: "last message of a waiting session" },
     ]);
     expect(sources[0]?.detail).not.toMatch(/surface/i);
     expect("advice" in (sources[0] ?? {})).toBe(false);

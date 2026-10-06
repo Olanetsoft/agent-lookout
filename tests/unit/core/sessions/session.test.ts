@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   surfaceLabel,
+  withoutWaitingText,
   type HistoryPoint,
   type SessionEvent,
   type SessionsSnapshot,
@@ -47,6 +48,7 @@ const snapshot: SessionsSnapshot = {
       status: "needs-you",
       waitingReason: "permission",
       waitingDetail: "permission prompt",
+      waitingText: "Run: npm test",
       startedAt: 1_700_000_000_000,
       statusSince: 1_700_000_030_000,
       pid: 4242,
@@ -99,4 +101,13 @@ test("each app the model knows has a name, and an app that is not known has none
   expect(surfaceLabel("cloud")).toBe("Cloud");
   expect(surfaceLabel("browser")).toBe("Browser");
   expect(surfaceLabel("unknown")).toBeNull();
+});
+
+test("a session kept past its wait is kept without what it was asking, and one with nothing to forget is the same session", () => {
+  const asking = snapshot.sessions[0]!;
+  const kept = withoutWaitingText(asking);
+  expect(kept).not.toHaveProperty("waitingText");
+  expect(kept).toEqual({ ...asking, waitingText: undefined });
+  expect(asking.waitingText).toBe("Run: npm test");
+  expect(withoutWaitingText(kept)).toBe(kept);
 });

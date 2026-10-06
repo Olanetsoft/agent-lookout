@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 
-import type { Session } from "@core/sessions/session";
+import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
@@ -10,6 +10,7 @@ import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
+import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/data/useJump";
 import { MAX_EVENTS, type CollectorState } from "@dashboard/lib/api/collectorStore";
 import { buildTimeline } from "@dashboard/lib/charts/timeline";
@@ -50,8 +51,10 @@ function nameOf(sessionId: string, opener: HTMLElement | null): HTMLElement | nu
 /**
  * Its status, in the words and the mark the list uses, with how long it has
  * had it, and under them why it waits, since when, and how long a working
- * session's agent has written nothing, as its row says it. The agent's own
- * wording of a wait, when it says more, goes under the pair.
+ * session's agent has written nothing, as its row says it. Under the pair go
+ * what a waiting session is asking, cut at two lines, and the agent's own
+ * wording of a wait, when it says more. A session that has left the list is
+ * waiting no more, so what it was asking is not said.
  */
 function StatusFact({
   session,
@@ -77,6 +80,7 @@ function StatusFact({
   const quiet = quietFor(session, asOf);
   const waiting = session.status === "needs-you";
   const detail = waiting ? waitingDetail(session) : null;
+  const asking = (waiting && !gone && session.waitingText?.trim()) || null;
   const when =
     since !== null
       ? `${ended ? "at" : stale ? "idle since" : "since"} ${formatSince(since, now)}`
@@ -86,7 +90,21 @@ function StatusFact({
   );
 
   return (
-    <FactRow label='Status' note={detail ?? undefined}>
+    <FactRow
+      label='Status'
+      note={
+        asking ? (
+          <>
+            <Truncated data-part='asking' lines={2} className='wrap-anywhere'>
+              {asking}
+            </Truncated>
+            {detail && <span className='block'>{detail}</span>}
+          </>
+        ) : (
+          (detail ?? undefined)
+        )
+      }
+    >
       <span className='inline-flex items-center gap-2'>
         <StatusMark kind={mark} />
         <span data-part='status'>{stale ? "Stale" : STATUS_LABEL[session.status]}</span>
@@ -350,6 +368,9 @@ function SessionDialog({ sessionId, open, onClose, state, now }: SessionDialogPr
   const [kept, setKept] = useState<{ session: Session; at: number } | null>(null);
   if (listed !== null && listed !== kept?.session) {
     setKept({ session: listed, at: state.lastOkAt ?? now });
+  } else if (listed === null && kept?.session.waitingText !== undefined) {
+    // Once it has left the list its wait is over, and what it was asking is not kept.
+    setKept({ ...kept, session: withoutWaitingText(kept.session) });
   }
   const session = listed ?? kept?.session ?? null;
   const gone = listed === null && kept !== null;

@@ -1162,3 +1162,31 @@ describe("a list of events as it is written", () => {
     },
   );
 });
+
+describe("sessionChanges: what a waiting session is asking", () => {
+  const asking = (id: string) => waiting(id, { waitingText: "Run: npm test" });
+
+  test("goes with the wait that started, as the session is now", () => {
+    const memory = sessionChanges(EMPTY_CHANGE_MEMORY, snapshot([working(A)])).memory;
+    const now = asking(A);
+    expect(sessionChanges(memory, snapshot([now])).changes).toEqual([
+      { event: "needs-you", session: now },
+    ]);
+  });
+
+  test("is not remembered, in any way of reading, and a session that ends while waiting is told of without it", () => {
+    const readAs = (basis: string, sessions: Session[]) =>
+      snapshot(sessions, [{ ...source("claude-code"), basis }]);
+    let memory = sessionChanges(EMPTY_CHANGE_MEMORY, readAs("registry+feed", [working(B)])).memory;
+    memory = sessionChanges(memory, readAs("registry+feed", [asking(B)])).memory;
+    // Read another way for a while: the first way's last answer is kept.
+    memory = sessionChanges(memory, readAs("registry", [asking(B)])).memory;
+    expect(
+      JSON.stringify([...memory.seen.get("claude-code")!.values()].map((m) => [...m])),
+    ).not.toContain("npm test");
+
+    const ended = sessionChanges(memory, readAs("registry", [])).changes;
+    expect(ended).toEqual([{ event: "ended", session: expect.objectContaining({ id: B }) }]);
+    expect(ended[0]?.session).not.toHaveProperty("waitingText");
+  });
+});

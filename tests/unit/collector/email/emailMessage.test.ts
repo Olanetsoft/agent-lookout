@@ -67,6 +67,7 @@ describe("waitEmail", () => {
         cwd: "/Users/example/private/api-rate-limits",
         project: "api-rate-limits",
         waitingDetail: "Allow Bash(rm -rf build)?",
+        waitingText: "Run: rm -rf build",
         links: { open: "vscode://anthropic.claude-code/open?session=x" },
       }),
     );
@@ -74,6 +75,9 @@ describe("waitEmail", () => {
     expect(all).not.toContain("/Users/example");
     expect(all).not.toContain("private");
     expect(all).not.toContain("Bash");
+    // Nor what the session is asking, which is read from its transcript and never leaves the machine.
+    expect(all).not.toContain("rm -rf");
+    expect(all).not.toContain("Run:");
     expect(all).not.toContain("vscode://");
     expect(all).not.toMatch(/https?:|<[a-z]/i);
   });

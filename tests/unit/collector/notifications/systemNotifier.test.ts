@@ -51,6 +51,20 @@ describe("the arguments osascript is given", () => {
     expect(args.at(-2)).not.toMatch(/[\r\n\t]/);
   });
 
+  test("the text has room for the reason and what the session is asking, and a longer one is cut", () => {
+    const asking = `Run: ${"npm test && ".repeat(16)}`.trim();
+    const body = `Waiting for permission: ${asking}`;
+    expect(Array.from(body).length).toBeGreaterThan(80);
+    expect(Array.from(body).length).toBeLessThanOrEqual(240);
+    expect(osascriptArgs({ title: "checkout-flow", body }).at(-1)).toBe(body);
+
+    const longer = osascriptArgs({ title: "checkout-flow", body: "x".repeat(400) }).at(-1)!;
+    expect(Array.from(longer)).toHaveLength(240);
+    expect(longer.endsWith("…")).toBe(true);
+    // The title is still cut where every name is.
+    expect(Array.from(osascriptArgs({ title: "y".repeat(400), body }).at(-2)!)).toHaveLength(80);
+  });
+
   test("a NUL, which no argument can hold, a line break and a mark that reorders text become spaces", () => {
     const args = osascriptArgs({
       title: "infra\0-terraform\u202egnp.exe",

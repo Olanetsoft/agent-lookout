@@ -143,6 +143,15 @@ export interface Session {
   waitingReason?: WaitingReason;
   /** The vendor's own wording, shown as a secondary detail. */
   waitingDetail?: string;
+  /**
+   * What the session is asking, in a line or two: "Run: npm test", "Edit:
+   * src/app.ts", or the question it put to the person. Present only when status
+   * is "needs-you" and source is "claude-code", and only when the last message
+   * of the session's transcript says. Plain text, cleaned and cut to 200
+   * characters by the collector. It lives as long as the wait does: nothing
+   * that is stored or remembered past the wait keeps it.
+   */
+  waitingText?: string;
   /** Epoch milliseconds. */
   startedAt: number | null;
   /**
@@ -308,6 +317,17 @@ export interface HistoryPoint {
   working: number;
   idle: number;
   total: number;
+}
+
+/**
+ * The session without what it is asking, for anything that is kept from one
+ * poll to the next: the text belongs to the wait it was read for, and is not
+ * remembered past it. The same session is handed back when it has none.
+ */
+export function withoutWaitingText<T extends Pick<Session, "waitingText">>(session: T): T {
+  if (session.waitingText === undefined) return session;
+  const { waitingText: _forgotten, ...rest } = session;
+  return rest as T;
 }
 
 /**

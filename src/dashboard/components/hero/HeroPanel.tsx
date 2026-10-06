@@ -131,6 +131,27 @@ function Reason({ session, className }: { session: Session; className?: string }
 }
 
 /**
+ * What the session is asking, when its agent says: "Run: npm test", "Edit:
+ * src/app.ts", or the question it put. A line of its own under the reason, in
+ * the hero's quieter ink and never warm, cut at two lines, and whole one hover
+ * or one Tab away while it is cut. A command or a path can be one long word, so
+ * it may break anywhere.
+ */
+function Asking({ session, className }: { session: Session; className?: string }) {
+  const asking = session.waitingText?.trim();
+  if (!asking) return null;
+  return (
+    <Truncated
+      data-part='asking'
+      lines={2}
+      className={cn("min-w-0 text-body wrap-anywhere text-ink-secondary", className)}
+    >
+      {asking}
+    </Truncated>
+  );
+}
+
+/**
  * Where it runs: the folder, whose whole path is one hover or one Tab away, the
  * branch or commit it has checked out when it is in a git repository, the app,
  * and the tool when more than one is found: "storefront on checkout-flow in
@@ -250,10 +271,10 @@ function Name({ session, className }: { session: Session; className: string }) {
 }
 
 /**
- * The longest wait, in full: its name large, why it waits and where it runs on
- * the left; the wait at the hero's largest size, when it began, and the Jump on
- * the right. Its Jump is the lamp's fill, the one solid button on the screen,
- * because the session needs the person now.
+ * The longest wait, in full: its name large, why it waits, what it is asking
+ * and where it runs on the left; the wait at the hero's largest size, when it
+ * began, and the Jump on the right. Its Jump is the lamp's fill, the one solid
+ * button on the screen, because the session needs the person now.
  */
 function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
@@ -276,6 +297,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
         <p data-part='reason' className='mt-2 flex min-w-0 text-lead font-medium'>
           <Reason session={session} className='truncate' />
         </p>
+        <Asking session={session} className='mt-1' />
         {/* A folder or an agent named by a status file can be one long word, so it may break anywhere. */}
         <Place session={session} agent={agent} className='mt-1.5 block wrap-anywhere' />
       </div>
@@ -316,7 +338,7 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
   );
 }
 
-/** A wait after the longest, as one compact row with the same parts. */
+/** A wait after the longest, as one compact row with the same parts: what it is asking goes under its reason. */
 function Other({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
   const waited = waitedFor(session, asOf);
   const jump = useJump(session);
@@ -342,6 +364,7 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
           {/* It wraps as the lead's does. Cut as one line, it would hide a long branch whole. */}
           <Place session={session} agent={agent} className='block min-w-0 wrap-anywhere' />
         </p>
+        <Asking session={session} className='mt-1' />
       </div>
       <p
         data-part='wait'
@@ -500,7 +523,8 @@ function Uncounted({ id, counts }: { id: string; counts: CountState }) {
  *   loading          the title with the lamp out and a spinner; no light, no zero
  *   not counted      a dash and why: still looking, or no source could be read
  *   quiet            "Nothing needs you", and the last wait that is over
- *   one waiting      its name large, why and where, a timer and the Jump
+ *   one waiting      its name large, why, what it asks and where, a timer
+ *                    and the Jump
  *   several waiting  the longest in full, then each of the others, each with
  *                    its reason, timer and Jump
  *

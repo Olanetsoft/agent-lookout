@@ -1,5 +1,5 @@
 import type { Notice } from "../../core/notices/waiting.ts";
-import { oneLine } from "../../core/text.ts";
+import { MAX_NOTICE_TEXT_LENGTH, oneLine } from "../../core/text.ts";
 import { OSASCRIPT, runOsascript, type RunOsascript } from "../processes/osascript.ts";
 
 export { OSASCRIPT };
@@ -46,14 +46,15 @@ const SCRIPT = [
  * The title and the text are made to stand on one line, as every name Agent
  * Lookout shows or sends is: a line break, any other control character, a NUL,
  * which no argument can hold, and the marks that reorder text become spaces,
- * and a long name is cut.
+ * and a long name is cut. The text has room for the reason and what a waiting
+ * session is asking after it.
  */
 export function osascriptArgs(notice: Notice): string[] {
   return [
     ...SCRIPT.flatMap((line) => ["-e", line]),
     "--",
     oneLine(notice.title),
-    oneLine(notice.body),
+    oneLine(notice.body, MAX_NOTICE_TEXT_LENGTH),
   ];
 }
 

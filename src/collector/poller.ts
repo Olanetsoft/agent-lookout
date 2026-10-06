@@ -1,12 +1,13 @@
 import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/sessions/diff.ts";
 import { historyPointFor } from "../core/history.ts";
-import type {
-  Session,
-  SessionEvent,
-  SessionsSnapshot,
-  SourceHealth,
-  SourceId,
-  SourceState,
+import {
+  withoutWaitingText,
+  type Session,
+  type SessionEvent,
+  type SessionsSnapshot,
+  type SourceHealth,
+  type SourceId,
+  type SourceState,
 } from "../core/sessions/session.ts";
 import { sortSessions } from "../core/sessions/sorting.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
@@ -101,7 +102,8 @@ interface SourceMemory {
    * same way, not against the poll just before it. So a source that fails for
    * one poll does not "end" every session and bring them all back, and a
    * source that falls back to another way of reading for a while is, on its
-   * return, compared with what it last saw itself.
+   * return, compared with what it last saw itself. They are kept without what
+   * a waiting session was asking.
    */
   baselines: Map<string, Session[]>;
   /** What the event log has said about this source's sessions so far. */
@@ -254,7 +256,10 @@ export function createPoller(options: PollerOptions): Poller {
           if (!reported.has(session.id)) reported.set(session.id, session.status);
         }
       }
-      baselines.set(basis, result.sessions);
+      // What a waiting session is asking belongs to its wait. A baseline can
+      // outlive the wait, while the source is read another way, so it is kept
+      // without it.
+      baselines.set(basis, result.sessions.map(withoutWaitingText));
     });
 
     const snapshot: SessionsSnapshot = {

@@ -124,8 +124,9 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
     }
     let shown: ShownNotification | null;
     try {
-      // The name, and the reason in the words the Needs you panel uses, or
-      // what happened. The collector's own notification says the same.
+      // The name, and the reason in the words the Needs you panel uses with
+      // what the session is asking when that is known, or what happened. The
+      // collector's own notification says the same.
       shown = host.show({ ...changeNotice(change), tag: tagFor(session) });
     } catch {
       // A host should not throw. One that does must not stop the next notification.

@@ -2,6 +2,8 @@
 
 Agent Lookout runs on your machine and reads a small amount of metadata about your Claude Code and Codex sessions, and about the sessions of any agent that writes a status file for Agent Lookout to read, and which git branch each session's folder has checked out. By default Agent Lookout itself sends nothing anywhere. Email notifications are off unless you set them up. Once you do, it sends a short email when a session has waited, and, if you choose, when one finishes, fails or ends, through the mail server you name, to the address you name, and nothing else. [Email](#email) says what one holds. Webhook posts are off unless you set an address for them. Once you do, it sends the same notices as short JSON posts to that one address, such as a Slack channel's incoming webhook, and nowhere else. [Webhook](#webhook) says what one holds. It does run Claude Code's own listing command, which may contact Anthropic the way Claude Code normally does. Its MCP server, `agent-lookout mcp`, runs only once you add it to an agent's app, and answers that app and nothing else. That app may pass what it learns to its model: [The MCP server](#the-mcp-server) says what an answer holds.
 
+For a Claude Code session that is waiting for you, Agent Lookout reads the last message of its transcript, to show what the session is asking, such as the command it wants to run or the question it put to you. It reads nothing of a transcript while the session is not waiting, keeps nothing of it once the wait ends, and never sends it off the machine: no email, webhook post or answer of `agent-lookout mcp` holds it. [Claude Code's transcripts](#claude-codes-transcripts) says exactly what is read, and `AGENT_LOOKOUT_WAITING_TEXT=off` turns it off.
+
 For Codex, Agent Lookout opens Codex's session files, which hold the whole conversation. It reads them to find when each turn started and ended, and keeps only that and the few fields listed below. It keeps no prompt, reply, command or output.
 
 ## What it reads and runs
@@ -9,6 +11,25 @@ For Codex, Agent Lookout opens Codex's session files, which hold the whole conve
 ### Claude Code's session registry
 
 Every 2 seconds Agent Lookout lists the folder `~/.claude/sessions/` and reads each file in it whose name ends in `.json`. Claude Code keeps one small file there for each running session, named `<pid>.json`. Agent Lookout reads only ordinary files of 256 KB or less, and on macOS and Linux it does not follow a link. From each file it keeps these fields and drops the rest: `pid`, `sessionId`, `cwd`, `startedAt`, `kind`, `entrypoint`, `name`, `status`, `waitingFor`, `state`, `statusUpdatedAt` and `procStart`. `entrypoint` says whether the session runs in a terminal, in VS Code or in the desktop app, `statusUpdatedAt` says when its status last changed, and `procStart` says when its process started. It makes no use of when these files were last written.
+
+### Claude Code's transcripts
+
+Claude Code keeps each session's conversation in a transcript, `~/.claude/projects/<folder>/<session ID>.jsonl`, where the folder is named after the session's folder. Agent Lookout reads one only while its session is waiting for you, as the registry or the `claude` command says, and reads nothing of any transcript otherwise.
+
+For a waiting session it looks for the file in the folder named after the session's folder, and, when it is not there, in each folder in `~/.claude/projects/`, by name, which lists those folders. It uses the session ID only once it has checked that it is an ID, and opens only an ordinary file: on macOS and Linux it does not follow the transcript file when it is a link, and it never reads a named pipe or a device. The folders above the file are followed when they are links: a folder in `~/.claude/projects/` that is a link, or `projects` itself. It reads at most the last 256 KB of the file, by position, and reads it again only when the file's size or modified time has changed. While a wait goes on it does not look for a file again, except every 10 seconds when none was found.
+
+From those bytes it takes the last tool the session asked to use that has no answer yet, leaving out the lines of the session's subagents, and keeps one line of plain text of at most 200 characters about it, cleaned of control characters:
+
+- for a question the session put to you, the first question, and how many more there are
+- for a command, `Run:` and the command's first line
+- for a file it would edit, write or read, `Edit:`, `Write:` or `Read:` and the file's path, relative to the session's folder when it is inside it
+- for a web page or a search, `Fetch:` and the address, or `Search:` and the words
+- for a plan, "Approve the plan"
+- for any other tool, `Use:` and the tool's name, except a tool that starts a subagent, for which there is no line
+
+Everything else in those bytes, which can include your prompts, the agent's replies, the code it wrote and the output of tools, is dropped as soon as the line is made. When nothing in the end of the file fits, there is no line, and nothing is guessed.
+
+That line is shown in the Needs you panel and in the session's details, is put in the notification of that wait that the dashboard page or the server shows on this machine, and is in the session list the API serves on this computer. It is kept in memory beside the place of the file and its size and modified time, only while the session waits, and is forgotten on the first poll after the wait ends. It is not written to disk, not kept in the event log or the history, and not put in an email, a webhook post or an answer of `agent-lookout mcp`. Set `AGENT_LOOKOUT_WAITING_TEXT=off` and no transcript is opened at all.
 
 ### `claude agents --json --all`
 
@@ -118,7 +139,7 @@ It reads nothing else in a repository: no other branch or reference, no `packed-
 
 ### `osascript`
 
-With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a session starts waiting for you, or, if you chose those too, finishes, fails or ends. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason, or what happened. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
+With notifications on, and no dashboard page open to show one, Agent Lookout shows a notification itself when a session starts waiting for you, or, if you chose those too, finishes, fails or ends. On macOS it does that by running `/usr/bin/osascript`, the program macOS provides for running AppleScript. It gives it a script that never changes, which shows a notification, and two arguments for that script: the session's name and the reason, with what the session is asking when that is known, or what happened. The name is handed over as text to be shown. It is never made part of the script, so nothing in a name can run as AppleScript or be read as an option.
 
 `osascript` is started directly, by that full path, never through a shell, with stdin closed and a 5 second timeout. It is not run on any other system, and never while notifications are off. [Terminal and iTerm2](#terminal-and-iterm2) says when it is also run for Jump. While it runs, for a fraction of a second, the name is one of that program's arguments, which other programs on this machine can read from the list of running processes. [Notifications](#notifications) says when notifications are on and what one holds.
 
@@ -128,12 +149,12 @@ Only when you start it with `agent-lookout --open`, Agent Lookout runs `/usr/bin
 
 ### Settings
 
-It reads nineteen settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_TERMINAL_JUMP`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`, and the three webhook settings, `AGENT_LOOKOUT_WEBHOOK_URL`, `AGENT_LOOKOUT_WEBHOOK_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_AFTER`. The `agent-lookout` command reads one more, `AGENT_LOOKOUT_URL`, the address of the Agent Lookout to ask, and `agent-lookout status` reads tmux's own `TMUX`, only to tell whether tmux is running it. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept, and [Webhook](#webhook) how the webhook's are. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
+It reads twenty settings from the environment: `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CLAUDE_BIN`, `AGENT_LOOKOUT_CLAUDE_FEED`, `AGENT_LOOKOUT_WAITING_TEXT`, `AGENT_LOOKOUT_CODEX_HOME`, `AGENT_LOOKOUT_STATUS_DIR`, `AGENT_LOOKOUT_NOTIFICATIONS`, `AGENT_LOOKOUT_TMUX`, `AGENT_LOOKOUT_TERMINAL_JUMP`, `AGENT_LOOKOUT_PORT`, `AGENT_LOOKOUT_HOST`, Codex's own `CODEX_HOME`, the five email settings, `AGENT_LOOKOUT_EMAIL_TO`, `AGENT_LOOKOUT_SMTP_URL`, `AGENT_LOOKOUT_EMAIL_FROM`, `AGENT_LOOKOUT_EMAIL_AFTER` and `AGENT_LOOKOUT_EMAIL_EVENTS`, and the three webhook settings, `AGENT_LOOKOUT_WEBHOOK_URL`, `AGENT_LOOKOUT_WEBHOOK_EVENTS` and `AGENT_LOOKOUT_WEBHOOK_AFTER`. The `agent-lookout` command reads one more, `AGENT_LOOKOUT_URL`, the address of the Agent Lookout to ask, and `agent-lookout status` reads tmux's own `TMUX`, only to tell whether tmux is running it. `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` in everything above. [Email](#email) says how the email settings are kept, and [Webhook](#webhook) how the webhook's are. The [guide](docs/GUIDE.md#settings-you-can-change) says what each setting does.
 
 ## What it never reads
 
 - The `.key` files that sit beside the registry files in `~/.claude/sessions/`.
-- Claude Code's transcripts, in `~/.claude/projects/` or anywhere else. For Claude Code, Agent Lookout never sees your prompts, the agent's replies, your code or the output of tools.
+- Claude Code's transcripts, in `~/.claude/projects/` or anywhere else, beyond the end of a waiting session's own, as [Claude Code's transcripts](#claude-codes-transcripts) describes. Of what it reads there, it keeps one line about the tool the session is asking to use, and none of your prompts, the agent's replies, your code or the output of tools.
 - Claude Code's settings, credentials, history and memory files.
 - Codex's `auth.json`, `config.toml`, `history.jsonl`, its SQLite files (`*.sqlite`), its `log/` folder, `archived_sessions/` and compressed session files (`*.jsonl.zst`), and the Codex desktop app's `external_agent_session_imports.json` and `.codex-global-state.json`.
 - In a git repository, anything but the `.git` file, `HEAD` and a worktree's `commondir` described under [Git repositories](#git-repositories).
@@ -172,10 +193,10 @@ A notification is made in one of two ways. While a dashboard page is open, the p
 With notifications on, when one of the events switched on happens, the dashboard page makes a notification through the browser's Notifications API, and the browser hands it to the operating system to show. It holds:
 
 - the session's name, as its title
-- what happened, as its text: for a session that starts waiting, the reason, "Waiting for permission", "Asked you a question" or "Waiting for you", and otherwise "Finished", "Failed" or "Ended"
+- what happened, as its text: for a session that starts waiting, the reason, "Waiting for permission", "Asked you a question" or "Waiting for you", followed, for a Claude Code session, by what it is asking when its transcript says, as in "Waiting for permission: Run: npm test", and otherwise "Finished", "Failed" or "Ended"
 - a tag that is not shown, which the browser uses to keep one notification for each session: `agent-lookout:claude-code:` followed by the session's ID, or by its job ID or process ID when it has no session ID, for Codex `agent-lookout:codex:` followed by the session's ID, and for a status file `agent-lookout:status-files:` followed by the file's name
 
-It holds no folder path and none of Claude Code's own wording for the wait. No push service, no service worker and no network request is involved. The page that is open in your browser makes the notification, and can do so only while it is open.
+It holds none of Claude Code's own wording for the wait, and not the session's folder. What a session is asking can hold a command, which can name any path, a web address, or a file: relative to the session's folder when the file is inside it, and the file's full path when it is outside it, which can name your home folder. No push service, no service worker and no network request is involved. The page that is open in your browser makes the notification, and can do so only while it is open.
 
 The page closes the notification of a wait when its session stops waiting, when you turn notifications or that event off, and when the page is closed or reloaded. It cannot close one if the browser crashes or is forced to quit first. It never closes one that says Finished, Failed or Ended: that stays until you clear it, or until a later notification for the same session takes its place. While Agent Lookout is stopped, or cannot read Claude Code's sessions, the page cannot tell that a session has moved on, so a notification already showing stays. A notification stays in the system's notification list, Notification Centre on macOS, until the page closes it or you clear it. What the browser and the operating system keep of a notification, in memory or on disk, is theirs, and Agent Lookout cannot read it back.
 
@@ -188,9 +209,9 @@ The browser gives its permission to the address, such as `localhost:5173`, not t
 The local server shows notifications on this machine too. When one of the events switched on happens and no dashboard page is open to show it, the server runs `osascript`, as [described above](#osascript), and macOS shows the notification. It holds:
 
 - the session's name, as its title
-- what happened, as its text, in the same wordings
+- what happened, as its text, in the same wordings, with what a waiting session is asking
 
-It holds no folder path, none of Claude Code's own wording and no tag. No network request is involved. On any system but macOS the server shows nothing.
+It holds none of Claude Code's own wording and no tag. As in the page's, what a session is asking can hold a command, a web address, or a file's full path when the file is outside the session's folder. No network request is involved. On any system but macOS the server shows nothing.
 
 The server shows them only while notifications are on, and only for the events switched on, and it learns both from the dashboard. Each request a dashboard page makes says, in the `X-Agent-Lookout-Notifications` header, which events are on when that page's choice is on and the browser allows notifications, and `off` otherwise. The server keeps the last thing a page said, in memory, for as long as it runs, and never writes it to disk. Before any page has said anything it is off, unless `AGENT_LOOKOUT_NOTIFICATIONS=on` was set when Agent Lookout started, which turns it on for a session starting to wait. A page that says `off` after that turns it off all the same. The header is listened to only on a request that passes the checks described under [Network](#network), so a page at another address cannot set it.
 
@@ -217,7 +238,7 @@ An email is plain text. Its subject is the session's name followed by the reason
 - the agent, such as Claude Code or Codex, or the agent a status file names
 - one line saying Agent Lookout sent it and how to stop these emails
 
-It holds no folder path, no prompt, none of Claude Code's own wording for the wait, no link, no image and nothing that reports back when it is opened. Its headers are the ones the mail library writes for every email: From, with the name Agent Lookout and the sender's address, To, Subject, Date, Message-ID, and three that say it is plain text in UTF-8. A session's name and its folder's name are cut to 80 characters, and anything in them that would end a line becomes a space, so nothing in a name can add a header or a recipient.
+It holds no folder path, no prompt, none of Claude Code's own wording for the wait, nothing of what a waiting session is asking, no link, no image and nothing that reports back when it is opened. What a session is asking is read from its transcript and can name a command or a file, so in this version it stays on this machine. Its headers are the ones the mail library writes for every email: From, with the name Agent Lookout and the sender's address, To, Subject, Date, Message-ID, and three that say it is plain text in UTF-8. A session's name and its folder's name are cut to 80 characters, and anything in them that would end a line becomes a space, so nothing in a name can add a header or a recipient.
 
 ### Where it goes, and how
 
@@ -272,7 +293,7 @@ It holds:
 - `at`: when it happened, as a time in UTC: when the wait began, or when Agent Lookout saw the session finish, fail or end.
 - `waitedSeconds`, for a wait only: how long it had waited when it was posted.
 
-It holds no folder path, no prompt, none of Claude Code's own wording for the wait, no session ID or process ID, and nothing about this computer. Its headers are `Content-Type: application/json`, `Content-Length`, `User-Agent: Agent Lookout/` followed by the version, `Host` and `Connection: close`. It carries no cookie and no other header.
+It holds no folder path, no prompt, none of Claude Code's own wording for the wait, nothing of what a waiting session is asking, no session ID or process ID, and nothing about this computer. What a session is asking stays on this machine, as it does for email. Its headers are `Content-Type: application/json`, `Content-Length`, `User-Agent: Agent Lookout/` followed by the version, `Host` and `Connection: close`. It carries no cookie and no other header.
 
 A session's name, its folder's name and its agent's are each cut to 80 characters, and anything in them that would end a line becomes a space. In `text`, `<`, `>` and `&` are written as `&lt;`, `&gt;` and `&amp;`, which Slack shows as the characters themselves, and each `@` is followed by a space of no width, so nothing in a name can mention someone, ping a channel or make a link that shows other words than its address. The JSON is written whole by Node's own writer, so nothing in a name can add a field. Slack does show a web address written out in a name as a link to that address.
 
@@ -306,7 +327,7 @@ For each tool the agent calls, it asks Agent Lookout's own server for the list o
 
 It answers the app that started it, over stdout, and nothing and nobody else. An answer is one of three:
 
-- For each session: its ID, its name, its agent, its status, why it waits, the name of its folder and never the rest of the path, its branch or commit, its app, when its status began, and how long its agent has written nothing.
+- For each session: its ID, its name, its agent, its status, why it waits, the name of its folder and never the rest of the path, its branch or commit, its app, when its status began, and how long its agent has written nothing. Never what a waiting session is asking, which is read from its transcript.
 - For each session that needs you: the same, with how long it has waited, and one sentence naming each of them and any agent that could not be read.
 - For each source: its state, the sentence that says how it is read or what went wrong, which can name the folders Agent Lookout reads, such as `~/.claude/sessions`, and what its agent can report.
 
@@ -322,9 +343,9 @@ Nothing. Each answer is worked out from one reading of the list and is gone once
 
 ## Storage
 
-Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. So are the tmux panes and terminal tabs it last found, the branches and repositories it last read, and what the dashboard pages last said about notifications.
+Agent Lookout stores no session data on disk, and its own code writes no files. The latest session list, the last 1,000 events and the last six hours of history are held in memory and are gone when Agent Lookout stops. What a waiting session is asking is in the latest session list only while it waits, and in no event or point of history. So are the tmux panes and terminal tabs it last found, the branches and repositories it last read, and what the dashboard pages last said about notifications.
 
-With notifications on, each notification holds a session's name, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says. With a webhook set up, each post holds the same, and the service it went to keeps it, as [Webhook](#webhook) says.
+With notifications on, each notification holds a session's name, and for a wait what the session is asking, and the operating system keeps it in its notification list, as does the browser for one it made. [Notifications](#notifications) says what it holds and how long it stays. With email set up, each email holds a session's name and its folder's name, and the mail server and the mailbox keep it, as [Email](#email) says. With a webhook set up, each post holds the same, and the service it went to keeps it, as [Webhook](#webhook) says.
 
 The tools that run it write files of their own. None of these holds session data.
 
@@ -338,9 +359,9 @@ The dashboard saves six values in your browser's local storage. Your theme choic
 
 ## What is on screen
 
-Session names, folder paths, repository names and branch names can show what you are working on. Check a screenshot before you share it.
+Session names, folder paths, repository names, branch names and what a waiting session is asking, such as a command or a file, can show what you are working on. Check a screenshot before you share it.
 
-With notifications on, a session's name also appears in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made for a wait stays there until the session stops waiting or you clear it, and one that says Finished, Failed or Ended stays until you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it. A webhook post shows them to everyone who can read the channel it goes to, and in the notifications their apps show for it.
+With notifications on, a session's name, and what a waiting session is asking, also appear in a system notification, outside the dashboard: over other apps, in Notification Centre and, depending on your system's settings, on the lock screen and while you mirror, share or record the screen. One the dashboard page made for a wait stays there until the session stops waiting or you clear it, and one that says Finished, Failed or Ended stays until you clear it. One the server showed stays until you clear it. To keep names off those, open Notifications in System Settings on macOS and change what your browser's notifications may show, which does not cover the ones the server shows, or leave notifications off. An email shows the same name, and the folder's, wherever that mailbox is read, including the notifications a phone shows for it. A webhook post shows them to everyone who can read the channel it goes to, and in the notifications their apps show for it.
 
 ## Changes
 

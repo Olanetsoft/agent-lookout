@@ -141,6 +141,16 @@ export function createServerNotifications(
         }
       }
 
+      // A wait being held is shown as the session is now, so what it is asking
+      // can be said when its transcript was read a poll after the wait was seen.
+      const listed = new Map(snapshot.sessions.map((session) => [session.id, session]));
+      for (const entry of held.values()) {
+        const current = listed.get(entry.change.session.id);
+        if (entry.change.event === "needs-you" && current?.status === "needs-you") {
+          entry.change = { ...entry.change, session: current };
+        }
+      }
+
       // Every event is handed over to a page the same way, so a page that is
       // open and the collector never both announce one.
       for (const [key, { change, since }] of held) {

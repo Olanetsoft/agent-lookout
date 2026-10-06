@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import { clean, cut, MAX_NAME_LENGTH, oneLine, sessionName } from "@core/text";
+import {
+  clean,
+  cut,
+  MAX_NAME_LENGTH,
+  MAX_WAITING_TEXT_LENGTH,
+  oneLine,
+  sessionName,
+  waitingText,
+} from "@core/text";
 
 /** Marks that make text run the other way, by code point: the ends of each run of them. */
 const REORDERING = ["061C", "200E", "200F", "202A", "202E", "2066", "2069"].map(
@@ -47,5 +55,26 @@ describe("a session's name", () => {
     expect(clean(42)).toBeUndefined();
     expect(cut(null, 10)).toBeUndefined();
     expect(cut("mobile-onboarding", 6)).toBe("mobile");
+  });
+});
+
+describe("what a waiting session is asking", () => {
+  test("is made one line, cleaned of control characters and of marks that reorder it", () => {
+    expect(waitingText("Run: npm test\n  && npm run lint")).toBe("Run: npm test && npm run lint");
+    expect(waitingText("Edit: \u202esrc/app.ts\u0007")).toBe("Edit: src/app.ts");
+  });
+
+  test("is cut to 200 characters with an ellipsis, never inside a letter", () => {
+    expect(MAX_WAITING_TEXT_LENGTH).toBe(200);
+    const cutText = waitingText(`Which ${"🦉".repeat(300)}?`) as string;
+    expect(Array.from(cutText)).toHaveLength(200);
+    expect(cutText.endsWith("🦉…")).toBe(true);
+  });
+
+  test("is none when there is nothing to say, or it is not text", () => {
+    expect(waitingText("")).toBeUndefined();
+    expect(waitingText(" \n\t ")).toBeUndefined();
+    expect(waitingText(null)).toBeUndefined();
+    expect(waitingText(42)).toBeUndefined();
   });
 });

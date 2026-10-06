@@ -114,6 +114,25 @@ test("the vendor's own wording is not put in the notification", () => {
   expect(JSON.stringify(host.shown)).not.toContain("approve the demo command");
 });
 
+test("what the session is asking follows the reason in the notification", () => {
+  const { host, notifier } = setUp();
+  notifier.handle(snapshot([]));
+
+  notifier.handle(
+    snapshot([
+      waiting(1, { name: "demo-project", waitingText: "Run: npm test" }),
+      waiting(2, { waitingReason: "question", waitingText: "Which database should we use?" }),
+      waiting(3),
+    ]),
+  );
+
+  expect(host.shown.map((shown) => [shown.title, shown.body])).toEqual([
+    ["demo-project", "Waiting for permission: Run: npm test"],
+    ["demo-project-2", "Asked you a question: Which database should we use?"],
+    ["demo-project-3", "Waiting for permission"],
+  ]);
+});
+
 test("a session already waiting in the first snapshot is not announced", () => {
   const { host, notifier } = setUp();
 

@@ -107,6 +107,8 @@ export function readSession(value: unknown): Session | null {
     if (reason) session.waitingReason = reason;
     const detail = text(value.waitingDetail);
     if (detail) session.waitingDetail = detail;
+    const asking = text(value.waitingText);
+    if (asking) session.waitingText = asking;
   }
   const agent = text(value.agent);
   if (agent) session.agent = agent;

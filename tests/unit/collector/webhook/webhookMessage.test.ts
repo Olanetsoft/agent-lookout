@@ -85,8 +85,21 @@ describe("waitPost", () => {
   });
 
   test("holds no path, none of the agent's own words and nothing else from the session", () => {
-    const said = JSON.stringify(waitPost(facts({ pid: 4242, links: { open: "vscode://x" } })));
-    for (const absent of ["/Users/example", "permission prompt", "4242", "vscode://", "cwd"]) {
+    const said = JSON.stringify(
+      waitPost(
+        facts({ pid: 4242, links: { open: "vscode://x" }, waitingText: "Run: rm -rf build" }),
+      ),
+    );
+    // What the session is asking is read from its transcript, and never leaves the machine.
+    for (const absent of [
+      "/Users/example",
+      "permission prompt",
+      "4242",
+      "vscode://",
+      "cwd",
+      "rm -rf",
+      "Run:",
+    ]) {
       expect(said).not.toContain(absent);
     }
   });

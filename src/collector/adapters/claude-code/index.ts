@@ -13,6 +13,7 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
+import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
@@ -44,6 +45,7 @@ import {
   uniqueById,
   type SessionContext,
 } from "./toSession.ts";
+import { createWaitingTextReader, waitingTextOff } from "./transcript/waitingTexts.ts";
 
 /** The variable that replaces `~/.claude`. */
 export const CLAUDE_HOME_ENV = "AGENT_LOOKOUT_CLAUDE_HOME";
@@ -118,6 +120,12 @@ export interface ClaudeCodeAdapterOptions {
   isAlive?: (pid: number) => boolean;
   isExecutable?: (candidate: string) => Promise<boolean>;
   registryIo?: RegistryIo;
+  /**
+   * Reads the end of a waiting session's transcript, to say what it is asking.
+   * Defaults to the file system. Not used at all when
+   * `AGENT_LOOKOUT_WAITING_TEXT` is `off`.
+   */
+  transcriptIo?: ReadOnlyIo;
   /** Reads when processes started. Defaults to asking `ps`. */
   readProcessStarts?: ReadProcessStarts;
   /**
@@ -227,6 +235,13 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * in no pane whose process runs in a tab of Terminal or iTerm2 is given a
  * `jump` that names the app, when the adapter is handed something to find
  * tabs with, which asks `ps` once about each new process.
+ *
+ * A session that needs the person is given what it is asking, `waitingText`,
+ * from the last message of its transcript, `<claude home>/projects/<folder>/
+ * <sessionId>.jsonl`: only for a session that is waiting, only the end of the
+ * file, and only again when the file has changed. Nothing of it is kept once
+ * the wait ends. `AGENT_LOOKOUT_WAITING_TEXT=off` stops any transcript being
+ * opened. `transcript/` has the rest.
  */
 export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Adapter {
   const env = options.env ?? process.env;
@@ -244,6 +259,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const homeOverride = env[CLAUDE_HOME_ENV]?.trim() || undefined;
   const binaryNamed = Boolean(env[CLAUDE_BIN_ENV]?.trim());
   const feedOff = env[CLAUDE_FEED_ENV]?.trim().toLowerCase() === "off";
+  const transcriptsOff = waitingTextOff(env);
   const feedWithheld = homeOverride !== undefined && !binaryNamed;
   const neverRun = feedOff || feedWithheld;
 
@@ -251,6 +267,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const sessionsDir = path.join(claudeHome, "sessions");
   const homeName = tildify(claudeHome, homeDir);
   const registryName = tildify(sessionsDir, homeDir);
+
+  // What a waiting session is asking, from the last message of its
+  // transcript. With the setting off, no transcript is ever opened.
+  const waitingTexts = transcriptsOff
+    ? null
+    : createWaitingTextReader({ claudeHome, io: options.transcriptIo, now });
 
   /** The moment the last run of the command was due. Null until the first run. */
   let lastDue: number | null = null;
@@ -274,6 +296,10 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       { label: "Registry read", value: registryRead },
       { label: "Command", value: `claude ${args.join(" ")}` },
       { label: "Command run", value: commandRun },
+      {
+        label: "Transcript read",
+        value: transcriptsOff ? "Off" : "last message of a waiting session",
+      },
     ];
   }
 
@@ -369,6 +395,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       badVariable: false,
       plain: feedReader.readsPlainly(binary.path),
     };
+  }
+
+  /** The sessions of a poll, each waiting one with what it is asking when its transcript says. */
+  async function withWaitingText(result: AdapterResult): Promise<AdapterResult> {
+    if (waitingTexts === null) return result;
+    return { ...result, sessions: await waitingTexts.annotate(result.sessions) };
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -583,10 +615,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       : `Looking for sessions in ${registryName} and with claude ${FEED_ARGS.join(" ")}.`,
     async poll() {
       try {
-        return await poll();
+        return await withWaitingText(await poll());
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no wait is remembered either.
+        await waitingTexts?.annotate([]);
         return {
           health: {
             id: SOURCE_ID,

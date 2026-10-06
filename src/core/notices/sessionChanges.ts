@@ -1,4 +1,9 @@
-import type { Session, SessionsSnapshot, SourceId } from "../sessions/session.ts";
+import {
+  withoutWaitingText,
+  type Session,
+  type SessionsSnapshot,
+  type SourceId,
+} from "../sessions/session.ts";
 
 /**
  * What is remembered from one snapshot to the next: for each source that has
@@ -173,7 +178,8 @@ export interface ChangeMemory {
   /**
    * For each source that has answered, and each way it has been read (its
    * `basis`), every session at the last answer read that way, by id. A source,
-   * or a way of reading, that has never answered so is absent.
+   * or a way of reading, that has never answered so is absent. Each is kept
+   * without what it was asking, which belongs to its wait alone.
    */
   seen: ReadonlyMap<SourceId, ReadonlyMap<string, ReadonlyMap<string, Session>>>;
   /**
@@ -282,7 +288,8 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
     const answer = answers.get(session.source);
     // No answer means the source did not answer. An id already in it was counted.
     if (!answer || answer.sessions.has(session.id)) continue;
-    answer.sessions.set(session.id, session);
+    // What a waiting session is asking belongs to its wait, and is not remembered.
+    answer.sessions.set(session.id, withoutWaitingText(session));
 
     if (startedWaiting.has(session)) {
       found.push({ event: "needs-you", session });

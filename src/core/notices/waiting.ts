@@ -45,13 +45,22 @@ export interface Notice {
 
 /**
  * The notification for a session that started waiting: its name as the title,
- * and the reason as the text. It holds no folder path and none of the vendor's
- * own wording.
+ * and the reason as the text, followed by what the session is asking when that
+ * is known: "Waiting for permission: Run: npm test". It holds none of the
+ * vendor's own wording, and not the session's folder, but what the session is
+ * asking can hold a command, a web address, or a file's full path when the
+ * file is outside the session's folder.
+ *
+ * It is shown on this machine alone, by the page or by the collector. An email
+ * and a webhook post, which leave the machine, are written elsewhere and never
+ * hold what the session is asking.
  */
 export function waitNotice(
-  session: Pick<Session, "id" | "name" | "project" | "waitingReason">,
+  session: Pick<Session, "id" | "name" | "project" | "waitingReason" | "waitingText">,
 ): Notice {
-  return { title: sessionTitle(session), body: waitingLabel(session) };
+  const reason = waitingLabel(session);
+  const asking = session.waitingText?.trim();
+  return { title: sessionTitle(session), body: asking ? `${reason}: ${asking}` : reason };
 }
 
 /** Each event as Settings lists it, and as a notification of any but a wait says it. */
@@ -76,12 +85,12 @@ export function overPhrase(event: Exclude<NoticeEvent, "needs-you">): string {
 
 /**
  * The notification for one change: the session's name as the title, and what
- * happened as the text. A wait gives its reason, as `waitNotice` does, and the
- * others say Finished, Failed or Ended.
+ * happened as the text. A wait gives its reason and what it is asking, as
+ * `waitNotice` does, and the others say Finished, Failed or Ended.
  */
 export function changeNotice(change: {
   event: NoticeEvent;
-  session: Pick<Session, "id" | "name" | "project" | "waitingReason">;
+  session: Pick<Session, "id" | "name" | "project" | "waitingReason" | "waitingText">;
 }): Notice {
   if (change.event === "needs-you") return waitNotice(change.session);
   return { title: sessionTitle(change.session), body: NOTICE_EVENT_LABEL[change.event] };
