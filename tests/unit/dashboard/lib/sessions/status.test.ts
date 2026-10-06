@@ -19,6 +19,12 @@ test("the vendor's wording is kept only when it adds something", () => {
 test("an event reads as what happened to the session", () => {
   expect(eventPhrase({ kind: "appeared", to: "working" })).toBe("appeared");
   expect(eventPhrase({ kind: "ended" })).toBe("ended");
+  expect(eventPhrase({ kind: "answered", decision: "allow" })).toBe(
+    "had a request allowed from Agent Lookout",
+  );
+  expect(eventPhrase({ kind: "answered", decision: "deny" })).toBe(
+    "had a request denied from Agent Lookout",
+  );
   expect(eventPhrase({ kind: "status-changed", to: "needs-you" })).toBe("started waiting");
   expect(eventPhrase({ kind: "status-changed", to: "working" })).toBe("started working");
   expect(eventPhrase({ kind: "status-changed", to: "idle" })).toBe("went idle");

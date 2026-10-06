@@ -606,8 +606,8 @@
           <h2 id="today-title">What it does today</h2>
           <p>
             It watches your sessions, takes you to a Claude Code session in VS Code, tmux, Terminal
-            or iTerm2, notifies you if you ask it to, and stops a Claude Code session when you press
-            Stop and confirm.
+            or iTerm2, notifies you if you ask it to, stops a Claude Code session when you press
+            Stop and confirm, and answers a permission prompt when you press Allow or Deny.
           </p>
         </div>
 
@@ -665,7 +665,18 @@
                 and ends the sessions left running for a day or more, after a confirmation that
                 lists each one. The conversation is kept, and <code>claude --resume</code> opens it
                 again. Agent Lookout never stops a session on its own, and not one in Claude Code’s
-                desktop app. There are no approve or pause buttons.
+                desktop app. There is no pause button.
+              </dd>
+            </div>
+            <div>
+              <dt>Allow and Deny</dt>
+              <dd>
+                With the Agent Lookout plugin installed in Claude Code, a session waiting for
+                permission shows Allow and Deny on the dashboard. The whole command is shown first,
+                every line, and an edit, a plan, a question, or a request that cannot be shown whole
+                can only be denied there. The prompt in the session still works, and whichever you
+                answer first wins. Agent Lookout never answers on its own, rewrites no command and
+                saves no rule.
               </dd>
             </div>
             <div>

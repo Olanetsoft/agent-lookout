@@ -4,6 +4,7 @@ import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
+import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import { PullRequestFact } from "@dashboard/components/panels/PullRequestFact";
 import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
@@ -84,7 +85,8 @@ function StatusFact({
   const quiet = quietFor(session, asOf);
   const waiting = session.status === "needs-you";
   const detail = waiting ? waitingDetail(session) : null;
-  const asking = (waiting && !gone && session.waitingText?.trim()) || null;
+  // A held request is shown whole at the top of the details, in place of the line.
+  const asking = (waiting && !gone && !session.ask && session.waitingText?.trim()) || null;
   const when =
     since !== null
       ? `${ended ? "at" : stale ? "idle since" : "since"} ${formatSince(since, now)}`
@@ -375,16 +377,29 @@ interface SessionDialogProps {
   now: number;
   /** Told once the session has been stopped, so the page reads the sessions again at once. */
   onStopped?: () => void;
+  /** Told once a permission prompt has been answered here, so the page reads the sessions again. */
+  onAnswered?: () => void;
 }
 
 /** One session's dialog, from the moment its address is opened until it has faded out. */
-function SessionDialog({ sessionId, open, onClose, state, now, onStopped }: SessionDialogProps) {
+function SessionDialog({
+  sessionId,
+  open,
+  onClose,
+  state,
+  now,
+  onStopped,
+  onAnswered,
+}: SessionDialogProps) {
   const listed = state.snapshot?.sessions.find((session) => session.id === sessionId) ?? null;
   // What was last known of it, and when, kept for when it leaves the list while open.
   const [kept, setKept] = useState<{ session: Session; at: number } | null>(null);
   if (listed !== null && listed !== kept?.session) {
     setKept({ session: listed, at: state.lastOkAt ?? now });
-  } else if (listed === null && kept?.session.waitingText !== undefined) {
+  } else if (
+    listed === null &&
+    (kept?.session.waitingText !== undefined || kept?.session.ask !== undefined)
+  ) {
     // Once it has left the list its wait is over, and what it was asking is not kept.
     setKept({ ...kept, session: withoutWaitingText(kept.session) });
   }
@@ -421,6 +436,7 @@ function SessionDialog({ sessionId, open, onClose, state, now, onStopped }: Sess
           </div>
         )}
         {stopSaying && <StopNote session={session} stop={stop} className='mt-3' />}
+        {!gone && <AnswerAsk session={session} onAnswered={onAnswered} className='mt-3' />}
         <Details session={session} gone={gone} state={state} now={now} asOf={asOf} />
       </>
     );
@@ -484,6 +500,8 @@ interface SessionPanelProps {
   now: number;
   /** Told once a session has been stopped from its details, so the page reads the sessions again. */
   onStopped?: () => void;
+  /** Told once a permission prompt has been answered from its details. */
+  onAnswered?: () => void;
 }
 
 /**
@@ -511,7 +529,14 @@ interface SessionPanelProps {
  * under one calm line that says so, and has no Jump and no Stop. An address that names no
  * session says so and offers the Overview.
  */
-export function SessionPanel({ sessionId, onClose, state, now, onStopped }: SessionPanelProps) {
+export function SessionPanel({
+  sessionId,
+  onClose,
+  state,
+  now,
+  onStopped,
+  onAnswered,
+}: SessionPanelProps) {
   // Kept while the dialog fades out, so what it shows stays put.
   const [shownId, setShownId] = useState(sessionId);
   if (sessionId !== null && sessionId !== shownId) setShownId(sessionId);
@@ -525,6 +550,7 @@ export function SessionPanel({ sessionId, onClose, state, now, onStopped }: Sess
       state={state}
       now={now}
       onStopped={onStopped}
+      onAnswered={onAnswered}
     />
   );
 }

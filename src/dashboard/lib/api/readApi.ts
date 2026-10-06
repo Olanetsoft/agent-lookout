@@ -19,8 +19,10 @@ import {
 } from "@core/api";
 import { checksStateOf, isPullRequestNumber, isPullRequestUrl } from "@core/sessions/pullRequest";
 import {
+  ANSWER_DECISIONS,
   CAPABILITIES,
   CHECKS_STATES,
+  DENY_ONLY_REASONS,
   EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
@@ -31,7 +33,10 @@ import {
   SURFACES,
   TERMINAL_APPS,
   WAITING_REASONS,
+  type AnsweringStatus,
+  type AskInput,
   type CapabilityCell,
+  type PermissionAsk,
   type GitHead,
   type GitRepository,
   type HistoryPoint,
@@ -128,6 +133,8 @@ export function readSession(value: unknown): Session | null {
     if (detail) session.waitingDetail = detail;
     const asking = text(value.waitingText);
     if (asking) session.waitingText = asking;
+    const ask = readAsk(value.ask);
+    if (ask) session.ask = ask;
   }
   const agent = text(value.agent);
   if (agent) session.agent = agent;
@@ -148,6 +155,77 @@ export function readSession(value: unknown): Session | null {
   const git = readGit(value.git);
   if (git) session.git = git;
   return session;
+}
+
+/** Agent Lookout's own id for a held request. */
+const REQUEST_ID = /^[0-9a-f]{32}$/;
+
+/** The longest text taken of what a held request asks. The collector cuts it well short of this. */
+const MAX_ASK_TEXT = 8_000;
+
+/** Text that is there, of a length the collector sends, or null. Spaces and line breaks are kept. */
+function askText(value: unknown): string | null {
+  return typeof value === "string" && value !== "" && value.length <= MAX_ASK_TEXT ? value : null;
+}
+
+/**
+ * A permission request the collector holds, or null when anything in it is
+ * not what the collector sends. Half a request would show less than Allow
+ * allows, so one that cannot be read whole is not shown at all, and with it
+ * no Allow and no Deny.
+ */
+export function readAsk(value: unknown): PermissionAsk | null {
+  if (!isRecord(value)) return null;
+  const { requestId } = value;
+  const tool = text(value.tool);
+  const until = number(value.until);
+  if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) return null;
+  if (!tool || tool.length > 200 || until === null || typeof value.allow !== "boolean") {
+    return null;
+  }
+  const ask: PermissionAsk = { requestId, tool, allow: value.allow, until };
+  if (value.command !== undefined) {
+    const command = askText(value.command);
+    if (command === null) return null;
+    ask.command = command;
+  }
+  if (value.description !== undefined) {
+    const description = askText(value.description);
+    if (description === null) return null;
+    ask.description = description;
+  }
+  if (value.inputs !== undefined) {
+    if (!Array.isArray(value.inputs) || value.inputs.length > 30) return null;
+    const inputs: AskInput[] = [];
+    for (const item of value.inputs) {
+      if (!isRecord(item) || typeof item.value !== "string" || item.value.length > MAX_ASK_TEXT) {
+        return null;
+      }
+      const name = askText(item.name);
+      if (name === null) return null;
+      inputs.push({ name, value: item.value });
+    }
+    ask.inputs = inputs;
+  }
+  if (!ask.allow) {
+    const reason = oneOf(DENY_ONLY_REASONS, value.denyOnly);
+    if (reason) ask.denyOnly = reason;
+  }
+  if (value.subagent === true) ask.subagent = true;
+  return ask;
+}
+
+/** Whether the dashboard can answer permission prompts, or null when the answer does not say. */
+export function readAnswering(value: unknown): AnsweringStatus | null {
+  if (!isRecord(value)) return null;
+  const state = oneOf(["on", "off", "unavailable"] as const, value.state);
+  const plugin = oneOf(["seen", "missed", "unknown"] as const, value.plugin);
+  const holdMs = number(value.holdMs);
+  if (!state || !plugin || holdMs === null) return null;
+  const answering: AnsweringStatus = { state, plugin, holdMs };
+  const problem = text(value.problem);
+  if (problem) answering.problem = problem;
+  return answering;
 }
 
 /** The longest branch shown: the collector cuts one as it cuts a session's name. */
@@ -328,10 +406,12 @@ export function readSnapshot(data: unknown): SessionsSnapshot | null {
   const generatedAt = number(data.generatedAt);
   if (generatedAt === null) return null;
 
+  const answering = readAnswering(data.answering);
   return {
     generatedAt,
     sources: readList(data.sources, (value) => readSource(value, generatedAt)),
     sessions: readList(data.sessions, readSession),
+    ...(answering && { answering }),
   };
 }
 
@@ -362,6 +442,8 @@ export function readEvent(value: unknown): SessionEvent | null {
   if (to) event.to = to;
   const by = oneOf(EVENT_ACTORS, value.by);
   if (by) event.by = by;
+  const decision = oneOf(ANSWER_DECISIONS, value.decision);
+  if (decision) event.decision = decision;
   return event;
 }
 

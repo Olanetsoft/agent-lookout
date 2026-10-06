@@ -181,6 +181,7 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
     "Email",
     "Webhook",
     "Pull requests",
+    "Permission prompts",
     "This copy",
   ]);
   // In the left column, with Theme, Notifications and History.
@@ -200,7 +201,7 @@ test.each(["dark", "light"] as const)(
     const screen = await render(<SettingsView />);
 
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(7);
+    expect(cards).toHaveLength(8);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -743,7 +744,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications and the history share the wide column, with email, the webhook, pull requests and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications and the history share the wide column, with email, the webhook, pull requests, permission prompts and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -751,13 +752,14 @@ test("the theme, notifications and the history share the wide column, with email
   const box = (name: string) =>
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
-  const [theme, notes, kept, mail, hook, pulls, copy] = [
+  const [theme, notes, kept, mail, hook, pulls, prompts, copy] = [
     box("Theme"),
     box("Notifications"),
     box("History"),
     box("Email"),
     box("Webhook"),
     box("Pull requests"),
+    box("Permission prompts"),
     box("This copy"),
   ];
 
@@ -775,9 +777,12 @@ test("the theme, notifications and the history share the wide column, with email
   expect(pulls.left).toBe(mail.left);
   expect(pulls.width).toBe(mail.width);
   expect(pulls.top - hook.bottom).toBe(16);
+  expect(prompts.left).toBe(mail.left);
+  expect(prompts.width).toBe(mail.width);
+  expect(prompts.top - pulls.bottom).toBe(16);
   expect(copy.left).toBe(mail.left);
   expect(copy.width).toBe(mail.width);
-  expect(copy.top - pulls.bottom).toBe(16);
+  expect(copy.top - prompts.bottom).toBe(16);
 });
 
 /** The history as `/api/history` gives it while another copy writes the files. */
@@ -797,14 +802,20 @@ const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
 };
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, Pull requests, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, History, Email, Webhook, Pull requests, Permission prompts, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
     // The fullest the cards get: notifications blocked, with its note, and
     // the history kept on disk by another copy, with its facts and its note.
     host.state = "denied";
-    const screen = await render(<SettingsView history={KEPT_ELSEWHERE} now={Date.now()} />);
+    const screen = await render(
+      <SettingsView
+        history={KEPT_ELSEWHERE}
+        now={Date.now()}
+        answering={{ state: "on", plugin: "missed", holdMs: 300_000 }}
+      />,
+    );
     await expect.element(notifications(screen).getByRole("status")).toBeVisible();
 
     const cards = [...screen.container.querySelectorAll<HTMLElement>('[data-slot="section-card"]')];
@@ -815,6 +826,7 @@ test.each([1000, 375])(
       "Email",
       "Webhook",
       "Pull requests",
+      "Permission prompts",
       "This copy",
     ]);
     const boxes = cards.map((card) => card.getBoundingClientRect());

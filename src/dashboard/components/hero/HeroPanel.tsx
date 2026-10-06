@@ -4,6 +4,7 @@ import type { Session, SessionEvent, SourceHealth } from "@core/sessions/session
 import { waitingLabel } from "@core/notices/waiting";
 import { CountsRow, NOT_KNOWN } from "@dashboard/components/hero/CountsRow";
 import { WaitedOnYou } from "@dashboard/components/hero/WaitedOnYou";
+import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { Branch } from "@dashboard/components/sessions/Branch";
 import { Badge } from "@dashboard/components/ui/status/Badge";
@@ -55,6 +56,8 @@ interface HeroPanelProps {
   asOf?: number;
   /** Opens the history behind Needs you, Working or Idle. */
   onOpenHistory?: (metric: HistoryMetric) => void;
+  /** Told once a permission prompt was answered from here, so the page reads the sessions again. */
+  onAnswered?: () => void;
   className?: string;
 }
 
@@ -91,7 +94,8 @@ function Title({ id, count, onOpen }: { id: string; count: number; onOpen?: () =
     <h2
       id={id}
       data-part='title'
-      className='flex items-center gap-2.5 text-row leading-tight font-semibold text-ink'
+      tabIndex={-1}
+      className='flex items-center gap-2.5 text-row leading-tight font-semibold text-ink outline-none'
     >
       <StatusMark kind='needs-you' breathing className='size-4.5' />
       {onOpen ? <OpensHistory onOpen={onOpen}>Needs you</OpensHistory> : <span>Needs you</span>}
@@ -139,7 +143,8 @@ function Reason({ session, className }: { session: Session; className?: string }
  */
 function Asking({ session, className }: { session: Session; className?: string }) {
   const asking = session.waitingText?.trim();
-  if (!asking) return null;
+  // A held request shows the whole of what it asks, in place of the line.
+  if (!asking || session.ask) return null;
   return (
     <Truncated
       data-part='asking'
@@ -276,7 +281,20 @@ function Name({ session, className }: { session: Session; className: string }) {
  * began, and the Jump on the right. Its Jump is the lamp's fill, the one solid
  * button on the screen, because the session needs the person now.
  */
-function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
+function Lead({
+  session,
+  asOf,
+  agent,
+  onAnswered,
+  titleId,
+}: {
+  session: Session;
+  asOf: number;
+  agent?: string;
+  onAnswered?: () => void;
+  /** The hero's title, which takes focus when this row leaves with focus in its answer. */
+  titleId?: string;
+}) {
   const waited = waitedFor(session, asOf);
   const jump = useJump(session);
   return (
@@ -300,6 +318,12 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
         <Asking session={session} className='mt-1' />
         {/* A folder or an agent named by a status file can be one long word, so it may break anywhere. */}
         <Place session={session} agent={agent} className='mt-1.5 block wrap-anywhere' />
+        <AnswerAsk
+          session={session}
+          onAnswered={onAnswered}
+          focusOnLeave={titleId}
+          className='mt-3'
+        />
       </div>
 
       <div className='flex shrink-0 items-end gap-6 max-mid:flex-wrap max-mid:justify-between max-mid:gap-y-3'>
@@ -339,7 +363,19 @@ function Lead({ session, asOf, agent }: { session: Session; asOf: number; agent?
 }
 
 /** A wait after the longest, as one compact row with the same parts: what it is asking goes under its reason. */
-function Other({ session, asOf, agent }: { session: Session; asOf: number; agent?: string }) {
+function Other({
+  session,
+  asOf,
+  agent,
+  onAnswered,
+  titleId,
+}: {
+  session: Session;
+  asOf: number;
+  agent?: string;
+  onAnswered?: () => void;
+  titleId?: string;
+}) {
   const waited = waitedFor(session, asOf);
   const jump = useJump(session);
   return (
@@ -365,6 +401,12 @@ function Other({ session, asOf, agent }: { session: Session; asOf: number; agent
           <Place session={session} agent={agent} className='block min-w-0 wrap-anywhere' />
         </p>
         <Asking session={session} className='mt-1' />
+        <AnswerAsk
+          session={session}
+          onAnswered={onAnswered}
+          focusOnLeave={titleId}
+          className='mt-2'
+        />
       </div>
       <p
         data-part='wait'
@@ -431,7 +473,8 @@ function Quiet({ id, waits, onOpen }: { id: string; waits: Waits | null; onOpen?
         <h2
           id={id}
           data-part='title'
-          className='mt-1 flex items-center gap-3.5 text-name font-semibold text-ink'
+          tabIndex={-1}
+          className='mt-1 flex items-center gap-3.5 text-name font-semibold text-ink outline-none'
         >
           <StatusMark kind='needs-you' unlit className='size-6.5' />
           {onOpen ? (
@@ -486,7 +529,8 @@ function Uncounted({ id, counts }: { id: string; counts: CountState }) {
       <h2
         id={id}
         data-part='title'
-        className='flex items-center gap-2.5 text-row leading-tight font-semibold text-ink'
+        tabIndex={-1}
+        className='flex items-center gap-2.5 text-row leading-tight font-semibold text-ink outline-none'
       >
         <StatusMark kind='needs-you' unlit className='size-4.5' />
         Needs you
@@ -543,6 +587,7 @@ export function HeroPanel({
   now,
   asOf = now,
   onOpenHistory,
+  onAnswered,
   className,
 }: HeroPanelProps) {
   const titleId = useId();
@@ -590,11 +635,25 @@ export function HeroPanel({
           onOpen={openHistory && (() => openHistory("needsYou"))}
         />
         {/* Keyed, so what a press of one session's Jump came to is never said of another. */}
-        <Lead key={first.id} session={first} asOf={asOf} agent={agentOf(first)} />
+        <Lead
+          key={first.id}
+          session={first}
+          asOf={asOf}
+          agent={agentOf(first)}
+          onAnswered={onAnswered}
+          titleId={titleId}
+        />
         {rest.length > 0 && (
           <ul data-part='others' aria-label='Also waiting, longest first' className='mt-5'>
             {rest.map((session) => (
-              <Other key={session.id} session={session} asOf={asOf} agent={agentOf(session)} />
+              <Other
+                key={session.id}
+                session={session}
+                asOf={asOf}
+                agent={agentOf(session)}
+                onAnswered={onAnswered}
+                titleId={titleId}
+              />
             ))}
           </ul>
         )}

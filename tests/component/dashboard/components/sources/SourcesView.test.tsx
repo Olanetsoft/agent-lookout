@@ -145,6 +145,7 @@ test("what each agent can report sits under the source cards, from what each sou
     jump: { level: "partly", reason: "Only where a place is found." },
     "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
     stop: { level: "partly", reason: "Not in the desktop app." },
+    answer: { level: "partly", reason: "With the plugin installed." },
   } as const;
   const declared = snapshot([{ ...SOURCE, capabilities }]);
   const screen = await render(<SourcesView state={state({ snapshot: declared })} now={NOW} />);

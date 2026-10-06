@@ -12,7 +12,7 @@
 // A Codex session never shows as needing the person, so it never counts here.
 
 import type { SessionWaitTotal, WaitDay, WaitPeriod } from "../api.ts";
-import type { SessionEvent } from "../sessions/session.ts";
+import { isStatusEvent, type SessionEvent } from "../sessions/session.ts";
 import { coveredWithin, joined, POLL_GAP_MS, type Span } from "./measured.ts";
 
 /** The most sessions an answer names for each period, longest first. */
@@ -21,8 +21,14 @@ export const MAX_WAIT_SESSIONS = 10;
 /** How many local days "the last seven days" are: today and the six before it. */
 export const WAIT_DAYS = 7;
 
-/** Whether an event moves a session into needs-you or out of it: the only events a wait is made of. */
-export function isWaitEvent(event: Pick<SessionEvent, "from" | "to">): boolean {
+/**
+ * Whether an event moves a session into needs-you or out of it: the only
+ * events a wait is made of. What Agent Lookout did to a waiting session, a
+ * `stopped` or an `answered` event, is not a move: the move out is the status
+ * event that follows it, so the wait is still one wait.
+ */
+export function isWaitEvent(event: Pick<SessionEvent, "kind" | "from" | "to">): boolean {
+  if (!isStatusEvent(event)) return false;
   return event.to === "needs-you" || event.from === "needs-you";
 }
 

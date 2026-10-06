@@ -9,3 +9,7 @@
 
 process.env.AGENT_LOOKOUT_HISTORY = "off";
 process.env.AGENT_LOOKOUT_PULL_REQUESTS = "off";
+
+// Nor does one open the socket in `~/.agent-lookout` that answers permission
+// prompts. A test of answering names a socket of its own.
+process.env.AGENT_LOOKOUT_ANSWER = "off";

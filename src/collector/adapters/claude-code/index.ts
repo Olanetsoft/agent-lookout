@@ -89,6 +89,9 @@ const LABEL = "Claude Code";
  * - Stop is SIGTERM to the process of a session in a terminal or in VS Code,
  *   and `claude stop` for a background job (`stopOffers.ts`). The desktop app
  *   looks after its own process, so its sessions are not stopped from here.
+ * - Answer is the Agent Lookout plugin's hook, which hands Agent Lookout each
+ *   permission request (`../../answers/`). Without the plugin a session's
+ *   prompts are answered only in the session.
  */
 export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -115,12 +118,23 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     level: "partly",
     reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
   },
+  answer: {
+    level: "partly",
+    reason:
+      "With the Agent Lookout plugin installed. Allow only when all it allows is shown, so edits, plans and questions can only be denied.",
+  },
 };
 
 /** What the adapter declares while `AGENT_LOOKOUT_STOP` is off. */
 const STOP_TURNED_OFF = {
   level: "no",
   reason: `${STOP_ENV} is off, so no session is stopped from Agent Lookout.`,
+} as const;
+
+/** What the adapter declares while `AGENT_LOOKOUT_ANSWER` is off. */
+const ANSWER_TURNED_OFF = {
+  level: "no",
+  reason: "AGENT_LOOKOUT_ANSWER is off, so no permission prompt is answered from Agent Lookout.",
 } as const;
 
 /** What is said of a run that ended in a way `runProgram` promises it never will. */
@@ -286,9 +300,15 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const neverRun = feedOff || feedWithheld;
   // With AGENT_LOOKOUT_STOP off, nothing is offered Stop, whatever the collector passed.
   const stops = stopOff(env) ? undefined : options.stops;
-  const capabilities: SourceCapabilities = stopOff(env)
-    ? { ...CLAUDE_CODE_CAPABILITIES, stop: STOP_TURNED_OFF }
-    : CLAUDE_CODE_CAPABILITIES;
+  const answersOff = env.AGENT_LOOKOUT_ANSWER?.trim().toLowerCase() === "off";
+  const capabilities: SourceCapabilities =
+    stopOff(env) || answersOff
+      ? {
+          ...CLAUDE_CODE_CAPABILITIES,
+          ...(stopOff(env) && { stop: STOP_TURNED_OFF }),
+          ...(answersOff && { answer: ANSWER_TURNED_OFF }),
+        }
+      : CLAUDE_CODE_CAPABILITIES;
 
   const claudeHome = path.resolve(homeOverride ?? path.join(homeDir, ".claude"));
   const sessionsDir = path.join(claudeHome, "sessions");

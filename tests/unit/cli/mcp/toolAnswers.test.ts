@@ -303,6 +303,29 @@ describe("sessions_needing_you", () => {
     expect(said).not.toContain("waitingText");
   });
 
+  test("never holds a permission request held for the dashboard, or whether answering is on", () => {
+    const held = snapshot();
+    held.sessions = held.sessions.map((session) =>
+      session.status === "needs-you"
+        ? {
+            ...session,
+            ask: {
+              requestId: "0123456789abcdef0123456789abcdef",
+              tool: "Bash",
+              command: "npm run deploy",
+              allow: true,
+              until: NOW + 300_000,
+            },
+          }
+        : session,
+    );
+    Object.assign(held, { answering: { state: "on", plugin: "seen", holdMs: 300_000 } });
+    const said = JSON.stringify([sessionsNeedingYou(held, NOW), listSessions(held, NOW)]);
+    expect(said).not.toContain("npm run deploy");
+    expect(said).not.toContain("0123456789abcdef");
+    expect(said).not.toContain("answering");
+  });
+
   test("with nothing waiting, says so, and says when that is not known", () => {
     const none = snapshot();
     none.sessions = none.sessions.filter((session) => session.status !== "needs-you");
@@ -522,6 +545,12 @@ describe("sources", () => {
         label: "Stop",
         level: "no",
         reason: "Codex's files name no process that Agent Lookout could confirm and stop.",
+      },
+      {
+        capability: "answer",
+        label: "Answer",
+        level: "no",
+        reason: "Codex records no approval waits, so there is nothing to answer from here.",
       },
     ]);
   });

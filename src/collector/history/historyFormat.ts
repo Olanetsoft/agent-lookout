@@ -18,6 +18,7 @@
 // such as what a waiting session is asking, can reach a file.
 
 import {
+  ANSWER_DECISIONS,
   EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
@@ -123,7 +124,7 @@ function recordValue(record: HistoryRecord): unknown {
 
 /** An event's own fields and nothing else, in a fixed order. */
 function eventFields(event: SessionEvent): SessionEvent {
-  const { id, at, sessionId, sessionName, kind, from, to, severity, by } = event;
+  const { id, at, sessionId, sessionName, kind, from, to, severity, by, decision } = event;
   return {
     id,
     at,
@@ -134,6 +135,7 @@ function eventFields(event: SessionEvent): SessionEvent {
     ...(to !== undefined && { to }),
     severity,
     ...(by !== undefined && { by }),
+    ...(decision !== undefined && { decision }),
   };
 }
 
@@ -186,6 +188,8 @@ function readEvent(value: unknown): SessionEvent | null {
   if ((value.from !== undefined && !from) || (value.to !== undefined && !to)) return null;
   const by = oneOf(EVENT_ACTORS, value.by);
   if (value.by !== undefined && !by) return null;
+  const decision = oneOf(ANSWER_DECISIONS, value.decision);
+  if (value.decision !== undefined && !decision) return null;
   return {
     id,
     at,
@@ -196,6 +200,7 @@ function readEvent(value: unknown): SessionEvent | null {
     ...(to && { to }),
     severity,
     ...(by && { by }),
+    ...(decision && { decision }),
   };
 }
 

@@ -5,6 +5,8 @@
 //   2. A test is named for a module at its mirrored path, with tests/<group>/ in
 //      place of src/: tests/unit/core/sessions/diff.test.ts covers src/core/sessions/diff.ts. It
 //      ends in .test.tsx when that module is a .tsx file, and .test.ts otherwise.
+//      The Claude Code plugin is the one thing outside src/ with tests:
+//      tests/integration/plugins/… covers plugins/….
 //   3. Those three folders hold tests and nothing else. A helper goes in
 //      tests/support/ and shared data in tests/fixtures/.
 //   4. Nothing under src/ is test material: no fixture, mock, stub, snapshot,
@@ -145,7 +147,10 @@ for (const file of testFiles) {
     continue;
   }
 
-  const mirroredFolder = path.posix.dirname(`src/${rest}`);
+  // The Claude Code plugin lives outside src/, at plugins/, and its tests mirror it there.
+  const mirroredFolder = rest.startsWith("plugins/")
+    ? path.posix.dirname(rest)
+    : path.posix.dirname(`src/${rest}`);
   const testName = path.posix.basename(rest).slice(0, -ending.length);
   const covered = moduleFor(mirroredFolder, testName);
   if (covered === null) {

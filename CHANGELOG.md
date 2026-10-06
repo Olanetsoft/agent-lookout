@@ -2,6 +2,21 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- Answer a Claude Code permission prompt from the dashboard. Install the Agent Lookout plugin in Claude Code with `/plugin marketplace add Olanetsoft/agent-lookout` and `/plugin install agent-lookout@agent-lookout`, and a session waiting for permission shows Allow and Deny in Needs you and in its details. For a shell command it shows the whole command, every line, before Allow, and for any other tool its name and every input. Deny comes first and is always offered. Allow is not offered for an edit or a new file, a plan or a question, or a request too long to show whole, with more than two blank lines in a row, with characters that cannot be shown as they are, or, for a command, with right-to-left letters. Neither button takes a press in the first second a request is shown. Agent Lookout allows or denies that one request: it rewrites no command and saves no permission rule. The prompt in the session still works, and whichever is answered first wins. Without Agent Lookout running, the plugin does nothing and Claude Code asks as usual. The Events log records each answer. [Answer a permission prompt](docs/GUIDE.md#answer-a-permission-prompt) has the details.
+- `AGENT_LOOKOUT_ANSWER=off` takes Allow and Deny away, and `AGENT_LOOKOUT_ANSWER_WAIT` sets how long a request waits for an answer from the dashboard, 300 seconds unless you set it.
+
+### Changed
+
+- Agent Lookout now answers a permission prompt, with the plugin installed, only when you press Allow or Deny, and never on its own. What each agent can report, in Sources, has an Answer column, and Settings has a Permission prompts card that says whether the plugin's requests arrive.
+
+### Fixed
+
+- Waits counted a wait that ended with Stop as two waits, one on each side of the stop. It is one wait again, and so is one answered with Allow or Deny.
+
 ## 0.2.4 - 2026-10-06
 
 Stop a Claude Code session from its details and end the ones left running, see the pull request and checks for a session's branch, and install a much smaller package with npx.

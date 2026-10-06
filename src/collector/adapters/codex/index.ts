@@ -71,6 +71,7 @@ export const OLDER_CODEX_NOTE =
  *   undocumented (`toSession.ts`).
  * - Quiet for is the file's own modified time, moved on by every line.
  * - No Stop: with no process named, there is nothing to confirm and stop.
+ * - No Answer: Codex records no approval waits to answer.
  */
 export const CODEX_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -96,6 +97,10 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
   stop: {
     level: "no",
     reason: "Codex's files name no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Codex records no approval waits, so there is nothing to answer from here.",
   },
 };
 

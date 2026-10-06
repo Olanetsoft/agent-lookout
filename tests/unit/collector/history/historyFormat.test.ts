@@ -161,6 +161,37 @@ describe("encoding", () => {
     expect(parseRecord(odd)).toBeNull();
   });
 
+  test("an answered event keeps the decision alone, and reads back as it was written", () => {
+    const answered: SessionEvent = {
+      id: `claude-code:demo@${T0}:answered`,
+      at: T0,
+      sessionId: "claude-code:demo",
+      sessionName: "demo-project",
+      kind: "answered",
+      from: "needs-you",
+      severity: "advisory",
+      by: "agent-lookout",
+      decision: "deny",
+    };
+    const line = encodeRecord({ kind: "event", event: answered });
+    expect(Object.keys((JSON.parse(line) as { event: object }).event)).toEqual([
+      "id",
+      "at",
+      "sessionId",
+      "sessionName",
+      "kind",
+      "from",
+      "severity",
+      "by",
+      "decision",
+    ]);
+    expect(parseRecord(line.trim())).toEqual({ kind: "event", event: answered });
+    // Nothing else a held request carries reaches the file, and an answer this version does not know spoils it.
+    const withMore = { ...answered, ask: { command: "npm test" } } as SessionEvent;
+    expect(encodeRecord({ kind: "event", event: withMore })).not.toContain("npm test");
+    expect(parseRecord(JSON.stringify({ event: { ...answered, decision: "maybe" } }))).toBeNull();
+  });
+
   test("every record reads back as it was written", () => {
     const appeared: SessionEvent = {
       id: "x",

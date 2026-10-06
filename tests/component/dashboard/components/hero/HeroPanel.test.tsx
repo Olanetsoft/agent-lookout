@@ -1339,6 +1339,74 @@ describe("what a waiting session is asking", () => {
     expect(hero(screen.container).querySelector('[data-part="asking"]')).toBeNull();
   });
 
+  test("a request held for the plugin is shown whole in place of the line, with Allow and Deny, and nothing warm", async () => {
+    const held = {
+      ...ASKING,
+      ask: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        tool: "Bash",
+        command: "npm test\nnpm run build",
+        allow: true,
+        until: NOW + 300_000,
+      },
+    };
+    const screen = await renderHero({ sessions: [held, ASKED, BUSY] });
+    const lead = hero(screen.container).querySelector(`[data-session="${held.id}"]`) as HTMLElement;
+    expect(lead.querySelector('[data-part="asking"]')).toBeNull();
+    const answer = lead.querySelector('[data-slot="answer"]') as HTMLElement;
+    expect(part(answer, "command").textContent).toBe("npm test\nnpm run build");
+    expect([...answer.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Allow",
+    ]);
+    expect(warmPaint(answer)).toEqual([]);
+    for (const element of answer.querySelectorAll("*")) {
+      expect(getComputedStyle(element).color).not.toBe(rgbOf("var(--ink-muted)"));
+    }
+    // A later wait with no request held keeps its line, and has no buttons.
+    const later = hero(screen.container).querySelector(
+      `[data-session="${ASKED.id}"]`,
+    ) as HTMLElement;
+    expect(part(later, "asking").textContent).toBe("Which database should we use? (+1 more)");
+    expect(later.querySelector('[data-slot="answer"]')).toBeNull();
+  });
+
+  test("once an answered session stops waiting and leaves the hero, focus goes to the hero's title", async () => {
+    setApiHost(async () => new Response(JSON.stringify({ ok: true, decision: "allow" })));
+    const held = {
+      ...ASKING,
+      ask: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        tool: "Bash",
+        command: "npm test",
+        allow: true,
+        until: NOW + 300_000,
+      },
+    };
+    const screen = await renderHero({ sessions: [held, ASKED, BUSY] });
+    const allow = screen.getByRole("button", { name: `Allow, for ${held.name}` });
+    await expect
+      .poll(() => allow.element().getAttribute("aria-disabled"), { timeout: 3_000 })
+      .toBeNull();
+    await allow.click();
+    await expect
+      .element(screen.getByRole("status"))
+      .toHaveTextContent("Allowed from Agent Lookout.");
+    await screen.rerender(
+      <div style={{ width: 820, padding: 24 }}>
+        <HeroPanel
+          sessions={[{ ...held, status: "working", ask: undefined }, ASKED, BUSY]}
+          sources={[CLAUDE]}
+          events={[changed(1, WAITING.statusSince as number, "working", "needs-you")]}
+          history={watched()}
+          now={NOW}
+        />
+      </div>,
+    );
+    await expect.poll(() => document.activeElement?.getAttribute("data-part")).toBe("title");
+    expect(hero(screen.container).contains(document.activeElement)).toBe(true);
+  });
+
   test.each([375, 320])(
     "at %i pixels a long command is cut at two lines, stays inside the hero, and is whole one hover or one Tab away",
     async (width) => {

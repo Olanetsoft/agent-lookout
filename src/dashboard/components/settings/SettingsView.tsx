@@ -1,4 +1,5 @@
 import type { HistoryResponse } from "@core/api";
+import type { AnsweringStatus } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { NOTICE_EVENT_LABEL } from "@core/notices/waiting";
 import { Button } from "@dashboard/components/ui/controls/Button";
@@ -7,6 +8,7 @@ import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
+import { AnswerCard } from "@dashboard/components/settings/AnswerCard";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
@@ -245,6 +247,8 @@ interface SettingsViewProps {
   onHistoryCleared?: () => void;
   /** Whether the page is in the Mac app's window, which alone shows the Menu bar and Updates cards. */
   inApp?: boolean;
+  /** Whether permission prompts can be answered from here, as the sessions' answer says. Null before it. */
+  answering?: AnsweringStatus | null;
 }
 
 /**
@@ -253,8 +257,8 @@ interface SettingsViewProps {
  * whether to be notified and of what, where the history is kept and the button
  * that clears it, in the Mac app whether it shows in the menu bar and its
  * updates, whether email and a webhook have been set up, whether pull requests
- * are shown and gh can be asked for them, and a few facts about this copy of
- * the app.
+ * are shown and gh can be asked for them, a few facts about this copy of the
+ * app, and whether permission prompts can be answered from here.
  *
  * The page knows it is in the app's window by its address. In a browser there
  * is no Menu bar card and no Updates card: a browser tab has no menu bar item,
@@ -266,6 +270,7 @@ export function SettingsView({
   now,
   onHistoryCleared,
   inApp = inAppWindow(),
+  answering = null,
 }: SettingsViewProps = {}) {
   const { preference, setPreference } = useTheme();
   // The page's own clock, when the page does not hand one in.
@@ -333,6 +338,7 @@ export function SettingsView({
             pullRequestsWords,
           )}
         />
+        <AnswerCard answering={answering} />
         <SectionCard title='This copy'>
           <FactList className='px-6 pb-3'>
             <FactRow label='Version' mono>

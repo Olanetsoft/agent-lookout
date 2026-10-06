@@ -1,0 +1,12 @@
+{
+  "name": "agent-lookout",
+  "displayName": "Agent Lookout",
+  "description": "Hands each permission request to Agent Lookout on this computer, so you can press Allow or Deny on its dashboard. Without Agent Lookout running, Claude Code asks as usual.",
+  "author": {
+    "name": "Olanetsoft"
+  },
+  "homepage": "https://agent-lookout.vercel.app",
+  "repository": "https://github.com/Olanetsoft/agent-lookout",
+  "license": "MIT",
+  "keywords": ["permissions", "dashboard", "agent-lookout"]
+}

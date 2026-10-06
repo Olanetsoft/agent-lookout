@@ -1,0 +1,14 @@
+{
+  "name": "agent-lookout",
+  "description": "The Agent Lookout plugin for Claude Code, which lets you answer permission prompts from the Agent Lookout dashboard.",
+  "owner": {
+    "name": "Olanetsoft"
+  },
+  "plugins": [
+    {
+      "name": "agent-lookout",
+      "source": "./plugins/agent-lookout",
+      "description": "Hands each permission request to Agent Lookout on this computer, so you can press Allow or Deny on its dashboard. Without Agent Lookout running, Claude Code asks as usual."
+    }
+  ]
+}

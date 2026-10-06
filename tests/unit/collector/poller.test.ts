@@ -109,6 +109,7 @@ describe("the snapshot", () => {
       jump: { level: "no", reason: "This tool names no place to go." },
       "quiet-for": { level: "partly", reason: "Only while it writes its file." },
       stop: { level: "no", reason: "It names no process to stop." },
+      answer: { level: "no", reason: "It records no waits to answer." },
     } as const;
     let calls = 0;
     const declaring: Adapter = {

@@ -42,7 +42,7 @@ const LABEL = "Status files";
  * agent writes it and not otherwise. Quiet for is when the file was last
  * written, which says something only of an agent that writes it as it works.
  * Nothing in a file is used to reach a session, so there is no Jump, and
- * nothing in one is used to stop a session either.
+ * nothing in one is used to stop a session or answer it either.
  */
 export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "partly", reason: "If the agent writes working and idle." },
@@ -58,6 +58,10 @@ export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
   stop: {
     level: "no",
     reason: "Any program can write a status file, so nothing in one is used to stop a session.",
+  },
+  answer: {
+    level: "no",
+    reason: "A status file only says a session waits, and holds nothing to answer it through.",
   },
 };
 

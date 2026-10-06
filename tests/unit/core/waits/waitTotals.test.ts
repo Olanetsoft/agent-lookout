@@ -286,6 +286,24 @@ describe("waitTotals", () => {
     expect(today).toMatchObject({ waitedMs: 15 * MINUTE, waits: 2, sessionCount: 1 });
   });
 
+  test("an answer or a stop from Agent Lookout during a wait is no move: the wait is still one wait", () => {
+    const answered = event(1, at(6, 10, 2), "answered", "needs-you");
+    const stopped = event(2, at(6, 11, 4), "stopped", "needs-you");
+    const events = [
+      into(1, at(6, 10)),
+      answered,
+      out(1, at(6, 10, 3)),
+      into(2, at(6, 11)),
+      stopped,
+      event(2, at(6, 11, 5), "ended", "needs-you"),
+    ];
+    expect(isWaitEvent(answered)).toBe(false);
+    expect(isWaitEvent(stopped)).toBe(false);
+    const { today } = waitTotals(input({ events }));
+    expect(today).toMatchObject({ waitedMs: 8 * MINUTE, waits: 2, sessionCount: 2 });
+    expect(today.sessions.map((session) => session.waits)).toEqual([1, 1]);
+  });
+
   test("a session's name is its newest, and the snapshot's for a session waiting now", () => {
     const renamed = { ...out(1, at(6, 10, 5)), sessionName: "renamed" };
     const { waits, names } = waitsOf(input({ events: [into(1, at(6, 10)), renamed] }));

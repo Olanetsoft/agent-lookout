@@ -328,3 +328,33 @@ test("a session Agent Lookout stopped has the ended mark, and is no wait, open o
     ["status-changed", "answered", false, null],
   ]);
 });
+
+test("a prompt answered from Agent Lookout has the answered mark, ends the wait in the log, and leaves its length to be measured", () => {
+  const id = "claude-code:demo";
+  const at = 1_700_000_000_000;
+  const event = (kind: SessionEvent["kind"], when: number, fields: Partial<SessionEvent> = {}) =>
+    ({
+      id: `${id}@${when}:${kind}`,
+      at: when,
+      sessionId: id,
+      sessionName: "demo-project",
+      kind,
+      severity: "advisory",
+      ...fields,
+    }) as SessionEvent;
+  const entries = logEntries(
+    [
+      event("status-changed", at + 9_000, { from: "needs-you", to: "working" }),
+      event("answered", at + 8_000, { decision: "allow", by: "agent-lookout", from: "needs-you" }),
+      event("status-changed", at, { from: "working", to: "needs-you" }),
+    ],
+    [{ id, status: "working" }],
+  );
+  expect(
+    entries.map((entry) => [entry.event.kind, entry.mark, entry.open, entry.waitedMs]),
+  ).toEqual([
+    ["status-changed", "working", false, 9_000],
+    ["answered", "answered", false, null],
+    ["status-changed", "answered", false, null],
+  ]);
+});

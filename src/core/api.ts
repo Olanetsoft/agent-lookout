@@ -1,7 +1,7 @@
 // The shapes the API returns, shared by the collector that writes them and the
 // dashboard that reads them. `/api/sessions` returns a `SessionsSnapshot`.
 
-import type { HistoryPoint, JumpTarget, SessionEvent } from "./sessions/session.ts";
+import type { AnswerDecision, HistoryPoint, JumpTarget, SessionEvent } from "./sessions/session.ts";
 import {
   DEFAULT_NOTICE_EVENTS,
   readNoticeEvents,
@@ -355,9 +355,48 @@ export interface CleanUpResponse {
   results: { sessionId: string; outcome: CleanUpOutcome }[];
 }
 
+/** What `ACTION_HEADER` says on a request that answers a permission prompt. */
+export const ANSWER_ACTION = "answer";
+
+/**
+ * The body of `POST /api/permission/answer`: the session, the id of the
+ * request the page showed, and the answer, and nothing else. Only the request
+ * Agent Lookout holds for that session under that id can be answered, so a
+ * page showing an older request cannot answer a newer one.
+ */
+export interface AnswerRequest {
+  sessionId: string;
+  requestId: string;
+  decision: AnswerDecision;
+}
+
+/** `POST /api/permission/answer`, when the answer was handed to Claude Code. */
+export interface AnswerResponse {
+  ok: true;
+  decision: AnswerDecision;
+}
+
+/**
+ * Why a permission prompt was not answered, for the dashboard to say in its
+ * own words.
+ *
+ * no-ask         404: Agent Lookout holds no request of that session under that id
+ * not-allowable  409: Allow was asked for a request that offers only Deny
+ * gone           409: the session has moved on: it was answered in the session,
+ *                the hook gave up, or the session ended
+ * too-soon       429: another answer is being given
+ * failed         500: the answer could not be handed over
+ */
+export type AnswerFailure = "no-ask" | "not-allowable" | "gone" | "too-soon" | "failed";
+
+/** The body of an answer of `POST /api/permission/answer` that says why nothing was answered. */
+export interface AnswerRefusal extends ErrorResponse {
+  reason: AnswerFailure;
+}
+
 /**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`, `clear-history`, `stop` or `clean-up`. A browser sends
+ * naming what: `jump`, `clear-history`, `stop`, `clean-up` or `answer`. A browser sends
  * no header of this kind to another origin without asking first, and the
  * collector never says yes, so a page at another address cannot send it.
  */

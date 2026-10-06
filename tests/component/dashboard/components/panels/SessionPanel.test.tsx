@@ -684,6 +684,52 @@ test("a session that leaves the list while it waits no longer says what it was a
   expect(panel.element().textContent).not.toContain("npm run deploy -- --env staging");
 });
 
+test("a request held for the plugin is at the top of the details, whole, with Allow and Deny, in place of the line", async () => {
+  const held = state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map((session) =>
+        session.id === CLAUDE_ID
+          ? {
+              ...session,
+              waitingText: "Run: npm run deploy",
+              ask: {
+                requestId: "0123456789abcdef0123456789abcdef",
+                tool: "Bash",
+                command: "npm run deploy -- --env staging\nnpm run smoke",
+                description: "Deploy to staging",
+                allow: true,
+                until: NOW + 300_000,
+              },
+            }
+          : session,
+      ),
+    },
+  });
+  await renderPanel(CLAUDE_ID, held);
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+  const answer = root.querySelector('[data-slot="answer"]') as HTMLElement;
+  expect(answer.querySelector('[data-part="command"]')?.textContent).toBe(
+    "npm run deploy -- --env staging\nnpm run smoke",
+  );
+  expect([...answer.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+    "Deny",
+    "Allow",
+  ]);
+  // It comes before the facts, and the status's note no longer repeats it in a line.
+  expect(answer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    (root.querySelector('[data-slot="fact-list"], dl') as HTMLElement).getBoundingClientRect().top +
+      0.5,
+  );
+  expect(root.querySelector('[data-part="asking"]')).toBeNull();
+  expect(warmBeyondTheSignals(root)).toEqual([]);
+  // Focus starts on the title, not on Allow.
+  expect(document.activeElement?.textContent).not.toBe("Allow");
+});
+
 /** The listed sessions, with the Claude Code one changed as a test says. */
 function withClaude(overrides: Partial<Session>): CollectorState {
   return state({

@@ -6,7 +6,7 @@
 
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
-import type { Session, SessionEvent } from "@core/sessions/session";
+import { isStatusEvent, type Session, type SessionEvent } from "@core/sessions/session";
 import type { MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
 
@@ -50,13 +50,16 @@ export function logEntries(
   const olderOf = new Map<SessionEvent, SessionEvent>();
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (!event) continue;
+    // What Agent Lookout did to a session is no status, so a wait's length is measured past it.
+    if (!event || !isStatusEvent(event)) continue;
     const previous = before.get(event.sessionId);
     if (previous) olderOf.set(event, previous);
     before.set(event.sessionId, event);
   }
 
   return events.map((event) => {
+    // Anything later than the event that began a wait ends it as far as the
+    // log goes, a stop or an answer from Agent Lookout included.
     const isNewest = !newest.has(event.sessionId);
     newest.add(event.sessionId);
 
@@ -67,6 +70,8 @@ export function logEntries(
 
     // Being stopped is an ending the person asked for, and has the ended mark.
     if (event.kind === "stopped") return { event, mark: "ended", open: false, waitedMs: null };
+    // A prompt answered from here ends that wait, so it has the answered mark.
+    if (event.kind === "answered") return { event, mark: "answered", open: false, waitedMs: null };
 
     const started = olderOf.get(event);
     const waitedMs =

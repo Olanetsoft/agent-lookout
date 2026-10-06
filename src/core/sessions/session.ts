@@ -97,6 +97,91 @@ export interface StopOffer {
   how: StopWay;
 }
 
+/** The two answers Agent Lookout can give a permission prompt, when the person presses Allow or Deny. */
+export const ANSWER_DECISIONS = ["allow", "deny"] as const;
+
+export type AnswerDecision = (typeof ANSWER_DECISIONS)[number];
+
+/**
+ * Why only Deny is offered for a request:
+ *
+ * edit              an edit, a new file or a notebook edit: the change itself is not shown
+ * too-long          what it asks is too long to show whole: over 4,000 characters or 40 lines
+ * hidden-characters it holds characters that cannot be shown as they are
+ * not-yes-or-no     it is answered with more than yes or no, such as a plan or a question
+ * right-to-left     a command holding right-to-left letters, which can redraw it in another order
+ * blank-lines       more than two blank lines in a row, which could push what follows out of sight
+ */
+export const DENY_ONLY_REASONS = [
+  "edit",
+  "too-long",
+  "hidden-characters",
+  "not-yes-or-no",
+  "right-to-left",
+  "blank-lines",
+] as const;
+
+export type DenyOnlyReason = (typeof DENY_ONLY_REASONS)[number];
+
+/** One input of a tool, as text, for a request that is not a shell command. */
+export interface AskInput {
+  name: string;
+  value: string;
+}
+
+/**
+ * A permission request a Claude Code session is waiting on, held by Agent
+ * Lookout while the session waits, so the person can answer it from the
+ * dashboard. It comes from the Agent Lookout plugin's hook, which Claude Code
+ * runs before it asks, and only while that hook is held.
+ *
+ * It shows the whole of what Allow would allow: for Bash the full command,
+ * every line of it, and for any other tool its name and every input. When
+ * that cannot be shown whole, or the tool edits a file, only Deny is offered.
+ * It is plain text, kept in memory for as long as the request is held, and is
+ * never written to disk or copied into an event, the history, an email, a
+ * webhook post or an MCP answer, as `waitingText` is not.
+ */
+export interface PermissionAsk {
+  /** Agent Lookout's own id for the request, so an answer can only reach the request it was shown. */
+  requestId: string;
+  /** The tool's name, as Claude Code gives it: `Bash`, `Write`, `mcp__docs__search`. */
+  tool: string;
+  /** For Bash: the whole command, every line, as Claude Code would run it. */
+  command?: string;
+  /** For Bash: what the command is for, in the agent's words, on one line. */
+  description?: string;
+  /** For any other tool: each of its inputs, in full while Allow is offered. */
+  inputs?: AskInput[];
+  /** Whether Allow is offered. Deny always is. */
+  allow: boolean;
+  /** Why only Deny is offered, when Allow is not. */
+  denyOnly?: DenyOnlyReason;
+  /** Present when a subagent of the session asks, rather than the session itself. */
+  subagent?: true;
+  /** When Agent Lookout lets the request go unanswered, in epoch milliseconds. */
+  until: number;
+}
+
+/**
+ * Whether Agent Lookout can answer permission prompts, for the Settings view:
+ *
+ * - `state`: `on` while it listens for the plugin's requests, `off` with
+ *   `AGENT_LOOKOUT_ANSWER=off`, and `unavailable` when it could not listen.
+ * - `plugin`: `seen` once a request has reached it since the last permission
+ *   prompt it missed, `missed` when a Claude Code session waited for
+ *   permission and no request reached it, which is what a session without the
+ *   plugin does, and `unknown` before either.
+ */
+export interface AnsweringStatus {
+  state: "on" | "off" | "unavailable";
+  plugin: "seen" | "missed" | "unknown";
+  /** While unavailable: one sentence saying why. */
+  problem?: string;
+  /** How long a request is held, in milliseconds, before the session's own prompt is left to decide. */
+  holdMs: number;
+}
+
 /**
  * Where a session's folder stands in git: the branch it has checked out, or,
  * when it has none checked out, the commit it is on, as the first seven
@@ -251,6 +336,12 @@ export interface Session {
   jump?: JumpTarget;
   /** Present when the collector can stop the session, on the person's request: see `StopOffer`. */
   stop?: StopOffer;
+  /**
+   * Present while Agent Lookout holds a permission request of the session's,
+   * which the person can answer from the dashboard: see `PermissionAsk`. Only
+   * for a Claude Code session waiting for permission, with the plugin.
+   */
+  ask?: PermissionAsk;
   /** True when the session has been idle longer than the stale threshold. */
   stale: boolean;
 }
@@ -289,8 +380,9 @@ export interface SourceFact {
 
 /**
  * The things a source can tell about its sessions, and do to them, in the
- * order the Sources view and docs/GUIDE.md list them: the last, Stop, is what
- * Agent Lookout can do to a session when the person presses Stop. The branch
+ * order the Sources view and docs/GUIDE.md list them: the last two, Stop and
+ * Answer, are what Agent Lookout can do to a session when the person presses
+ * Stop, or Allow or Deny on a permission prompt. The branch
  * is not among them: it is read from each session's folder, the same way for
  * every source.
  */
@@ -303,6 +395,7 @@ export const CAPABILITIES = [
   "jump",
   "quiet-for",
   "stop",
+  "answer",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -317,6 +410,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   jump: "Jump",
   "quiet-for": "Quiet for",
   stop: "Stop",
+  answer: "Answer",
 };
 
 /** How much of one thing a source can tell: all of it, none of it, or some. */
@@ -371,6 +465,8 @@ export interface SessionsSnapshot {
   generatedAt: number;
   sources: SourceHealth[];
   sessions: Session[];
+  /** Whether permission prompts can be answered from the dashboard. Left out by a collector that cannot. */
+  answering?: AnsweringStatus;
 }
 
 /**
@@ -382,11 +478,14 @@ export interface SessionsSnapshot {
  * stopped         Agent Lookout stopped it, when the person pressed Stop or
  *                 ended it with the sessions left running. Its leaving the
  *                 list is an `ended` event of its own, at the next poll
+ * answered        Agent Lookout answered a permission prompt of the session's,
+ *                 when the person pressed Allow or Deny. It holds the decision
+ *                 and nothing of what was asked
  *
  * A reader drops an event of a kind it does not know, so a later kind never
  * reads as one of these.
  */
-export const EVENT_KINDS = ["appeared", "status-changed", "ended", "stopped"] as const;
+export const EVENT_KINDS = ["appeared", "status-changed", "ended", "stopped", "answered"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** The kinds that say what a session's status was, which the timeline and the waits are drawn from. */
@@ -416,8 +515,10 @@ export interface SessionEvent {
   from?: SessionStatus;
   to?: SessionStatus;
   severity: EventSeverity;
-  /** For a `stopped` event: who stopped it, which is always Agent Lookout, at the person's request. */
+  /** For a `stopped` or `answered` event: who acted, which is always Agent Lookout, at the person's request. */
   by?: EventActor;
+  /** For an `answered` event: what the person answered. */
+  decision?: AnswerDecision;
 }
 
 export interface HistoryPoint {
@@ -429,13 +530,16 @@ export interface HistoryPoint {
 }
 
 /**
- * The session without what it is asking, for anything that is kept from one
- * poll to the next: the text belongs to the wait it was read for, and is not
- * remembered past it. The same session is handed back when it has none.
+ * The session without what it is asking, `waitingText` and a held permission
+ * request, `ask`, for anything that is kept from one poll to the next or sent
+ * anywhere: both belong to the wait they were read for, and are not
+ * remembered past it. The same session is handed back when it has neither.
  */
-export function withoutWaitingText<T extends Pick<Session, "waitingText">>(session: T): T {
-  if (session.waitingText === undefined) return session;
-  const { waitingText: _forgotten, ...rest } = session;
+export function withoutWaitingText<T extends Pick<Session, "waitingText"> & { ask?: unknown }>(
+  session: T,
+): T {
+  if (session.waitingText === undefined && session.ask === undefined) return session;
+  const { waitingText: _forgotten, ask: _held, ...rest } = session;
   return rest as T;
 }
 

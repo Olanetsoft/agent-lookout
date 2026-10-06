@@ -25,6 +25,7 @@ const FIRST: SourceCapabilities = {
     level: "partly",
     reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
   },
+  answer: { level: "partly", reason: "With the Agent Lookout plugin installed in Claude Code." },
 };
 
 const SECOND: SourceCapabilities = {
@@ -36,6 +37,7 @@ const SECOND: SourceCapabilities = {
   jump: { level: "no", reason: "Its files name no process to find and no link to open." },
   "quiet-for": { level: "yes" },
   stop: { level: "no", reason: "Its files name no process that could be confirmed and stopped." },
+  answer: { level: "no", reason: "It records no approval waits." },
 };
 
 const THIRD: SourceCapabilities = {
@@ -47,6 +49,7 @@ const THIRD: SourceCapabilities = {
   jump: { level: "no", reason: "Nothing in a file is used to reach a session." },
   "quiet-for": { level: "partly", reason: "If the agent writes its file again as it works." },
   stop: { level: "no", reason: "Nothing in a file is used to stop a session." },
+  answer: { level: "no", reason: "Nothing in a file is used to answer a session." },
 };
 
 const source = (
@@ -79,6 +82,7 @@ const HEADS = [
   "Jump",
   "Quiet for",
   "Stop",
+  "Answer",
 ];
 
 /**
@@ -156,9 +160,9 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Status files",
     ]);
     expect(rows.map((row) => cellsOf(row).map((cell) => cell.firstChild?.textContent))).toEqual([
-      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No", "Partly"],
-      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes", "No"],
-      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly", "No"],
+      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No", "Partly", "Partly"],
+      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes", "No", "No"],
+      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly", "No", "No"],
     ]);
     for (const cell of rows.flatMap(cellsOf)) expectWordInk(cell);
 
@@ -191,6 +195,7 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Yes",
       "Partly",
       "No",
+      "Partly",
       "Partly",
     ]);
     for (const cell of agents.flatMap(cellsOf)) expectWordInk(cell);
@@ -241,7 +246,7 @@ test("Tab reaches each no and partly in reading order and opens its reason, and 
   const reachable = [...card().querySelectorAll<HTMLElement>('[data-part="capability"]')].filter(
     (cell) => cell.getAttribute("data-level") !== "yes",
   );
-  expect(reachable).toHaveLength(5 + 6 + 8);
+  expect(reachable).toHaveLength(6 + 7 + 9);
   for (const cell of card().querySelectorAll('[data-level="yes"]')) {
     expect(cell.hasAttribute("tabindex")).toBe(false);
   }
@@ -277,6 +282,7 @@ test("a screen reader hears each cell's word with its reason, and the table's he
     "No: Its files name no process to find and no link to open.",
     "Yes",
     "No: Its files name no process that could be confirmed and stopped.",
+    "No: It records no approval waits.",
   ]);
   expect(said(claude as Element)[5]).toBe(`Partly: ${LONG_REASON}`);
   // The reason is for the ear only: on screen it is in the tooltip.

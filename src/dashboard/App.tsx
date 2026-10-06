@@ -185,7 +185,12 @@ export default function App({ store: providedStore }: AppProps) {
               {view === "sources" ? (
                 <SourcesView state={state} now={now} />
               ) : view === "settings" ? (
-                <SettingsView history={state.history} now={now} onHistoryCleared={store.refresh} />
+                <SettingsView
+                  history={state.history}
+                  now={now}
+                  onHistoryCleared={store.refresh}
+                  answering={state.snapshot?.answering ?? null}
+                />
               ) : (
                 <AnimatePresence mode='wait' initial={false}>
                   <motion.div
@@ -200,6 +205,7 @@ export default function App({ store: providedStore }: AppProps) {
                       now={now}
                       onRetry={store.refresh}
                       onEnded={store.refresh}
+                      onAnswered={store.refresh}
                       onOpenHistory={setHistory}
                       newSince={newSince.since}
                       onNewLineInView={newSince.onLineInView}
@@ -229,6 +235,7 @@ export default function App({ store: providedStore }: AppProps) {
           state={state}
           now={now}
           onStopped={store.refresh}
+          onAnswered={store.refresh}
         />
       </Suspense>
 

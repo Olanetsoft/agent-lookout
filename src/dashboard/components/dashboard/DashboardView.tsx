@@ -20,6 +20,8 @@ interface DashboardViewProps {
   onRetry: () => void;
   /** Told once sessions left running have been ended, so the page reads the sessions again. */
   onEnded?: () => void;
+  /** Told once a permission prompt has been answered from the hero, so the page reads the sessions again. */
+  onAnswered?: () => void;
   /** Opens the history behind Needs you, Working or Idle. */
   onOpenHistory?: (metric: HistoryMetric) => void;
   /** Where the events log draws the line under what arrived while the page was out of sight. */
@@ -66,6 +68,7 @@ export function DashboardView({
   now,
   onRetry,
   onEnded,
+  onAnswered,
   onOpenHistory,
   newSince = null,
   onNewLineInView,
@@ -114,6 +117,7 @@ export function DashboardView({
           now={now}
           asOf={asOf}
           onOpenHistory={onOpenHistory}
+          onAnswered={onAnswered}
           className={cn("z-1", PLACE.hero)}
         />
 

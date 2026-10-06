@@ -34,6 +34,7 @@ const snapshot: SessionsSnapshot = {
         jump: { level: "partly", reason: "Only where a place is found." },
         "quiet-for": { level: "no", reason: "The file read is not rewritten." },
         stop: { level: "partly", reason: "Not in the desktop app." },
+        answer: { level: "partly", reason: "With the plugin installed." },
       },
       checkedAt: 1_700_000_060_000,
     },
@@ -111,4 +112,22 @@ test("a session kept past its wait is kept without what it was asking, and one w
   expect(kept).toEqual({ ...asking, waitingText: undefined });
   expect(asking.waitingText).toBe("Run: npm test");
   expect(withoutWaitingText(kept)).toBe(kept);
+});
+
+test("a held permission request is forgotten with what the session was asking", () => {
+  const asking = snapshot.sessions[0]!;
+  const held = {
+    ...asking,
+    ask: {
+      requestId: "0123456789abcdef0123456789abcdef",
+      tool: "Bash",
+      command: "npm test",
+      allow: true,
+      until: 1_700_000_300_000,
+    },
+  };
+  const kept = withoutWaitingText(held);
+  expect(kept).not.toHaveProperty("ask");
+  expect(kept).not.toHaveProperty("waitingText");
+  expect(JSON.stringify(kept)).not.toContain("npm test");
 });

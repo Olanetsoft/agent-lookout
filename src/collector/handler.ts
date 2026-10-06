@@ -41,11 +41,12 @@ export interface ApiAnswer {
   headers?: Record<string, string>;
 }
 
-/** Where the collector's four routes that do something are. Every other route only reads. */
+/** Where the collector's five routes that do something are. Every other route only reads. */
 export const JUMP_PATH = "/api/jump";
 export const CLEAR_HISTORY_PATH = "/api/history/clear";
 export const STOP_PATH = "/api/sessions/stop";
 export const CLEAN_UP_PATH = "/api/sessions/clean-up";
+export const ANSWER_PATH = "/api/permission/answer";
 
 export interface ApiHandlerOptions {
   version: string;
@@ -99,6 +100,19 @@ export interface ApiHandlerOptions {
    * Left out, there is no such route.
    */
   cleanUp?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `POST /api/permission/answer`, with the same checks of its own as
+   * the jump route and more before it answers: `createAnswerRoute` in
+   * `answers/answerRoute.ts`. Left out, as with `AGENT_LOOKOUT_ANSWER=off`,
+   * there is no such route.
+   */
+  answer?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * What `GET /api/sessions` makes of the poller's snapshot before it is sent:
+   * the collector adds each held permission request here, and nowhere else.
+   * Left out, the snapshot is sent as it is.
+   */
+  serveSnapshot?: (snapshot: SessionsSnapshot) => SessionsSnapshot;
   /**
    * Where the history held begins, where it is kept and the restarts in it,
    * for `/api/history`. Left out, it is kept in memory only and begins when
@@ -200,9 +214,9 @@ export function refusal(
 
 /**
  * Why a request to a route that acts is refused before its body is read, or
- * null when it may proceed. The collector's four such routes,
- * `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop` and
- * `POST /api/sessions/clean-up`, and the Mac app's routes for
+ * null when it may proceed. The collector's five such routes,
+ * `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop`,
+ * `POST /api/sessions/clean-up` and `POST /api/permission/answer`, and the Mac app's routes for
  * its updates, in `src/desktop/updates/updateRoute.ts`, make these checks on
  * top of the ones every request has already passed in `refusalFor`, so each is
  * a request only the dashboard's own page can send:
@@ -336,6 +350,8 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
   if (options.clearHistory) actions.set(CLEAR_HISTORY_PATH, options.clearHistory);
   if (options.stop) actions.set(STOP_PATH, options.stop);
   if (options.cleanUp) actions.set(CLEAN_UP_PATH, options.cleanUp);
+  if (options.answer) actions.set(ANSWER_PATH, options.answer);
+  const serveSnapshot = options.serveSnapshot ?? ((snapshot: SessionsSnapshot) => snapshot);
 
   function route(req: IncomingMessage, res: ServerResponse): void {
     const refusal = refusalFor(req);
@@ -387,7 +403,7 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
         return;
       }
       case "/api/sessions": {
-        send(res, 200, poller.getSnapshot() satisfies SessionsSnapshot);
+        send(res, 200, serveSnapshot(poller.getSnapshot()) satisfies SessionsSnapshot);
         return;
       }
       case "/api/events": {

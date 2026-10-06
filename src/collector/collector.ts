@@ -4,6 +4,7 @@ import { createCleanUpRoute } from "./actions/cleanUpRoute.ts";
 import { createStopRoute } from "./actions/stopRoute.ts";
 import { createActionLimiter, createStopper, type StopperOptions } from "./actions/stopSession.ts";
 import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
+import { createAnswering, type Answering, type AnsweringOptions } from "./answers/answering.ts";
 import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
@@ -154,6 +155,14 @@ export interface CollectorOptions {
    */
   stopping?: Omit<StopperOptions, "env">;
   /**
+   * How permission prompts are answered from the dashboard: where the home
+   * folder is, what reads a session's registry file again and what runs the
+   * held requests' checks. Defaults to the real ones. The socket is opened as
+   * the collector starts, unless `AGENT_LOOKOUT_ANSWER` is off. A collector
+   * handed adapters of its own opens none unless this is passed.
+   */
+  answering?: Pick<AnsweringOptions, "homeDir" | "status" | "every" | "platform">;
+  /**
    * Told each poll's sessions, after the collector's own notifications, email
    * and webhook have been. The Mac app puts the count that needs you on its
    * Dock icon. A listener that throws changes nothing for the others.
@@ -184,6 +193,8 @@ export interface Collector {
   pullRequests: PullRequestFinder | null;
   /** What keeps the history on disk, or null with `AGENT_LOOKOUT_HISTORY=off`. */
   history: HistoryKeeper | null;
+  /** Answering permission prompts: resolves once its socket listens, or has said why not. */
+  answering: Pick<Answering, "start" | "stop">;
 }
 
 /**
@@ -192,7 +203,9 @@ export interface Collector {
  * the email and webhook notifications when they are set up, what finds and
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
  * what stops a Claude Code session when the person asks, unless
- * `AGENT_LOOKOUT_STOP` is off, what reads each session's git branch, with
+ * `AGENT_LOOKOUT_STOP` is off, what holds a Claude Code session's permission
+ * request and answers it when the person presses Allow or Deny, unless
+ * `AGENT_LOOKOUT_ANSWER` is off, what reads each session's git branch, with
  * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
  * and the request handler. Every host builds it the same way: the dev server,
  * the standalone server, and later a desktop app.
@@ -339,12 +352,23 @@ export function createCollector(options: CollectorOptions): Collector {
     // The poller runs for as long as the app does, with a dashboard open or
     // not, so a wait that begins with no page open is still seen here.
     onSnapshot: (snapshot) => {
+      answering?.observe(snapshot);
       email?.handle(snapshot);
       webhook?.handle(snapshot);
       notifications.handle(snapshot);
       options.onSnapshot?.(snapshot);
     },
   });
+  // The permission requests the plugin's hook sends, held while each session
+  // waits. What the page is sent of them is added to the snapshot as it is
+  // served, so nothing that keeps or sends a snapshot ever sees them.
+  // Only the Claude Code adapter the collector builds itself reads the
+  // registry the held requests are checked against, so a collector handed
+  // adapters of its own answers nothing, unless it is told how to.
+  const answers = options.adapters === undefined || options.answering !== undefined;
+  const answering: Answering | null = answers
+    ? createAnswering({ env, poller, events, now, warn, ...options.answering })
+    : null;
   const stopper = createStopper({
     env,
     now,
@@ -362,6 +386,8 @@ export function createCollector(options: CollectorOptions): Collector {
   const handler = createApiHandler({
     version: options.version,
     poller,
+    serveSnapshot: answering ? (snapshot) => answering.serve(snapshot) : undefined,
+    answer: answering?.route,
     events,
     history,
     notifications,
@@ -401,6 +427,8 @@ export function createCollector(options: CollectorOptions): Collector {
   });
 
   let running = false;
+  /** While the answer socket is being opened, or once it has been. */
+  let answerStart: Promise<void> | null = null;
   let restored = keeper === null;
   /** While the history on disk is read back, before the first poll. */
   let restoring: Promise<void> | null = null;
@@ -430,6 +458,7 @@ export function createCollector(options: CollectorOptions): Collector {
     start() {
       if (running) return;
       running = true;
+      answerStart ??= answering?.start() ?? Promise.resolve();
       if (restored || keeper === null) {
         begin();
         return;
@@ -464,6 +493,8 @@ export function createCollector(options: CollectorOptions): Collector {
       running = false;
       poller.stop();
       keeper?.stop();
+      answerStart = null;
+      void answering?.stop();
     },
     handler,
     poller,
@@ -471,5 +502,11 @@ export function createCollector(options: CollectorOptions): Collector {
     webhook,
     pullRequests,
     history: keeper,
+    answering: {
+      start: () => (answerStart ??= answering?.start() ?? Promise.resolve()),
+      stop: async () => {
+        await answering?.stop();
+      },
+    },
   };
 }

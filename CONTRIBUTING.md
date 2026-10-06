@@ -184,7 +184,7 @@ An adapter implements the interface in `src/collector/adapters/adapter.ts`. It h
 
 Fixtures go in `tests/fixtures/`, as `tests/fixtures/claudeCode.ts` and the folder `tests/fixtures/codex-home/` do. Write them by hand with generic values such as `demo-project` and `/Users/example/code/demo`. Never copy a session name or path from a real machine into the repository.
 
-An adapter is read-only. It never writes to the tool's files and never sends input to a session. Stopping a session is not an adapter's work: Agent Lookout stops a Claude Code session only when the person presses Stop and confirms, through the routes in `src/collector/actions/`, which check everything again before they act. The Claude Code adapter only finds what each session would be stopped by, and the page is told no more than that it can be stopped. Another adapter declares `stop` as no unless it can name a process that can be confirmed in the same way.
+An adapter is read-only. It never writes to the tool's files and never sends input to a session. Stopping a session is not an adapter's work: Agent Lookout stops a Claude Code session only when the person presses Stop and confirms, through the routes in `src/collector/actions/`, which check everything again before they act. The Claude Code adapter only finds what each session would be stopped by, and the page is told no more than that it can be stopped. Another adapter declares `stop` as no unless it can name a process that can be confirmed in the same way. Answering a permission prompt is not an adapter's work either: it comes through the Agent Lookout plugin's hook and the routes in `src/collector/answers/`, and another adapter declares `answer` as no.
 
 ## Pull requests
 

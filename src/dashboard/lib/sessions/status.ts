@@ -45,6 +45,10 @@ export const STOPPED_WAITING = "stopped waiting after";
 /** What the log says of a session Agent Lookout stopped, at the person's request. */
 export const STOPPED_HERE = "was stopped from Agent Lookout";
 
+/** What the log says of a permission prompt answered from Agent Lookout, at the person's request. */
+export const ALLOWED_HERE = "had a request allowed from Agent Lookout";
+export const DENIED_HERE = "had a request denied from Agent Lookout";
+
 /**
  * What happened, as the words that follow the session's name in the event log.
  *
@@ -53,12 +57,13 @@ export const STOPPED_HERE = "was stopped from Agent Lookout";
  * was, since a length that was not seen is not guessed.
  */
 export function eventPhrase(
-  event: Pick<SessionEvent, "kind" | "from" | "to">,
+  event: Pick<SessionEvent, "kind" | "from" | "to" | "decision">,
   waitedMs: number | null = null,
 ): string {
   if (event.kind === "appeared") return "appeared";
   if (event.kind === "ended") return "ended";
   if (event.kind === "stopped") return STOPPED_HERE;
+  if (event.kind === "answered") return event.decision === "deny" ? DENIED_HERE : ALLOWED_HERE;
   if (event.from === "needs-you" && event.to !== "needs-you" && waitedMs !== null) {
     return `${STOPPED_WAITING} ${formatDuration(waitedMs)}`;
   }

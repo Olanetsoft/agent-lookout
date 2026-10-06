@@ -1,0 +1,18 @@
+{
+  "description": "Hands each permission request to Agent Lookout, when it is running, so it can be answered from its dashboard.",
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/ask-agent-lookout.sh",
+            "timeout": 600,
+            "statusMessage": "Asking Agent Lookout"
+          }
+        ]
+      }
+    ]
+  }
+}

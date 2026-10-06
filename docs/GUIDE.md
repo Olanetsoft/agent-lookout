@@ -26,6 +26,8 @@ The Overview has six parts. The Needs you panel and the Last hour chart share th
 
 The Needs you panel holds the sessions that are waiting for you. For each one it gives the session's name, the reason, and where it runs: the project folder, the [git branch](#branches) when the folder is in a repository, the app, and the agent once more than one is found, as in `storefront on checkout-flow in VS Code · Claude Code`. An app that is not known is left out. The reason is waiting for permission, asked you a question or, for anything else, waiting for you. Under it, a Claude Code session says what it is asking, read from the last message of its transcript: the command it wants to run, as in `Run: npm test`, the file it wants to edit, write or read, as in `Edit: src/app.ts`, the address or search it wants, "Approve the plan", the tool it wants to use, or the question it put to you. A line too long for two lines is cut, and hover over it or move to it with Tab to read all of it. When Claude Code's own words say more than the reason, hover over the reason or move to it with Tab to read them. The folder's full path is shown the same way. A timer says how long the session has waited, and a Claude Code session that runs in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button. [Jump](#jump) says what it does for each. With more than one waiting, the longest wait comes first and the others are listed under it. Click a session's name, or move to it with Tab and press Enter, to open its [details](#a-sessions-details).
 
+With the Agent Lookout plugin installed in Claude Code, a Claude Code session waiting for permission shows the whole of what it asks in place of that line: every line of the command it wants to run, with its description, or the tool and each of its inputs. Deny and Allow sit under it. [Answer a permission prompt](#answer-a-permission-prompt) says what each does.
+
 Under the sessions, Waited on you has a bar for each session that waited, longest first. A wait that is still open is a filled amber bar that grows each second. A wait that was answered is an outlined bar. The bars reach back no further than the last hour, nor before Agent Lookout started, and the heading says from when. The line under them says how much of that time Agent Lookout did not measure. When no session waited in that time, the bars are left out.
 
 The panel ends with four counts.
@@ -109,7 +111,7 @@ The details show everything Agent Lookout knows about the session:
 - its own events, newest first, as the Events log shows them
 - its row of the Timeline over the last hour
 
-A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you. A session Agent Lookout can stop has a [Stop](#stop-a-session) button beside it.
+A session with a Jump button has it at the top of its details, and it works as it does in the list. It is the amber one while the session needs you. A session Agent Lookout can stop has a [Stop](#stop-a-session) button beside it. A session with a permission prompt Agent Lookout holds shows it at the top of its details, with [Allow and Deny](#answer-a-permission-prompt).
 
 Each session's details have an address of their own, such as `#overview/session/claude-code:` followed by the session's ID, so a bookmark or a reload opens them again, and the browser's Back button closes them. `Esc` or the close button closes them too, and puts focus back on the session's name. If the session leaves the list while its details are open, they say so and keep what was last known of it. An address for a session Agent Lookout is not watching says so, with a button back to the Overview.
 
@@ -216,13 +218,13 @@ When an agent is not on this computer, its card says Not found, and after the fi
 
 #### What each agent can report
 
-Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
+Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session) and [Answer](#answer-a-permission-prompt), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
 
-| Agent        | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for | Stop   |
-| ------------ | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- | ------ |
-| Claude Code  | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        | Partly |
-| Codex        | Yes              | No        | Partly   | No     | Partly | No     | Yes       | No     |
-| Status files | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    | No     |
+| Agent        | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for | Stop   | Answer |
+| ------------ | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- | ------ | ------ |
+| Claude Code  | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        | Partly | Partly |
+| Codex        | Yes              | No        | Partly   | No     | Partly | No     | Yes       | No     | No     |
+| Status files | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    | No     | No     |
 
 Why, for each No and Partly:
 
@@ -231,12 +233,14 @@ Why, for each No and Partly:
 - Claude Code, Jump: In VS Code, in tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in the desktop app or another terminal.
 - Claude Code, Quiet for: The file Agent Lookout reads is not rewritten as a session works.
 - Claude Code, Stop: In a terminal, in VS Code and for background jobs. Not in the desktop app.
+- Claude Code, Answer: With the Agent Lookout plugin installed. Allow only when all it allows is shown, so edits, plans and questions can only be denied.
 - Codex, Needs you: Codex does not record approval waits, so a session waiting for you shows as working.
 - Codex, Finished: From Codex 0.155 on, once no Codex program has the session open.
 - Codex, Failed: Codex does not record errors in its files.
 - Codex, Names: The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.
 - Codex, Jump: Codex's files name no process to find, and Codex documents no link to a session.
 - Codex, Stop: Codex's files name no process that Agent Lookout could confirm and stop.
+- Codex, Answer: Codex records no approval waits, so there is nothing to answer from here.
 - Status files, Working and idle: If the agent writes working and idle.
 - Status files, Needs you: If the agent writes waiting.
 - Status files, Finished: If the agent writes finished.
@@ -245,10 +249,11 @@ Why, for each No and Partly:
 - Status files, Jump: Nothing in a status file is used to reach a session.
 - Status files, Quiet for: If the agent writes its file again as it works.
 - Status files, Stop: Any program can write a status file, so nothing in one is used to stop a session.
+- Status files, Answer: A status file only says a session waits, and holds nothing to answer it through.
 
 ### Settings
 
-Settings has seven cards, and in the Mac app two more, [Menu bar](#menu-bar) and [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Pull requests says whether each session's [pull request](#pull-requests) is shown, and whether `gh` can be asked for them. All three are set up when you start it, not here. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up, and with pull requests on, the names of repositories and branches to GitHub, through `gh`, unless `gh` was not found or is not signed in, when nothing goes to GitHub.
+Settings has eight cards, and in the Mac app two more, [Menu bar](#menu-bar) and [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, and Webhook whether it posts to a webhook, such as a Slack channel's, and for what. Pull requests says whether each session's [pull request](#pull-requests) is shown, and whether `gh` can be asked for them. All three are set up when you start it, not here. Permission prompts says whether Allow and Deny are offered, and whether the [plugin](#install-the-plugin)'s requests reach Agent Lookout. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails and webhook posts you set up, and with pull requests on, the names of repositories and branches to GitHub, through `gh`, unless `gh` was not found or is not signed in, when nothing goes to GitHub.
 
 #### Notifications
 
@@ -599,6 +604,40 @@ End all… lists each one again with a tick, all ticked, up to 20, which is as m
 
 To take Stop and the ending of sessions left running away altogether, start Agent Lookout with `AGENT_LOOKOUT_STOP=off`. [PRIVACY.md](../PRIVACY.md#stopping-a-session) says what Agent Lookout checks and runs to stop a session.
 
+## Answer a permission prompt
+
+With the Agent Lookout plugin installed in Claude Code, a Claude Code session that waits for your permission shows Deny and Allow in the [Needs you](#needs-you) panel and at the top of its [details](#a-sessions-details). Above them is the whole of what it asks: for a shell command, every line of the command, in the mono, with any other input such as `run_in_background` and then the description Claude gave it, and for any other tool, its name and each of its inputs. While Allow is offered, all of it is drawn, however many lines it has. Press Allow to let that one request go ahead, or Deny to refuse it. Deny comes first, so it is in the same place whether Allow is offered or not. Neither button has focus until you move to it, and neither takes a press in the first second a request is shown, so a click meant for what was there before is not taken as an answer. A line then says what came of it, and the Events log says the session had a request allowed or denied from Agent Lookout. When the session asks again, its next request is shown under that line.
+
+The prompt in the session is still there, and still works: whichever you answer first wins. Answered in the session, the request leaves the dashboard within a few seconds. A Deny from the dashboard lets Claude carry on without the tool, and tells it that you denied it from Agent Lookout, while No in the terminal stops the turn.
+
+Allow is offered only when the whole of what it allows is shown. Deny alone is offered, with a line that says why, for an edit, a new file or a notebook edit, since the change itself is not shown, for a plan or a question, which take more than yes or no, for a request longer than 4,000 characters or 40 lines, for one that holds characters that cannot be shown as they are, which are written as their codes, for one with more than two blank lines in a row, which could push what follows out of sight, and for a command holding right-to-left letters, such as Hebrew or Arabic, which can draw it in another order than it runs. Agent Lookout allows or denies that one request and nothing more: it never changes the command and never saves a rule, so "Yes, and don't ask again" is answered in the session. Claude Code's own deny rules still apply after an Allow.
+
+A request waits for an answer for 5 minutes, or `AGENT_LOOKOUT_ANSWER_WAIT` seconds, and then leaves the dashboard, and the prompt in the session decides. It also leaves when the session stops waiting, or ends. With Agent Lookout not running, the plugin does nothing and Claude Code asks as usual.
+
+| What it says                                                                  | Why                                                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Allowed from Agent Lookout.                                                   | Claude Code was told to allow it.                                                            |
+| Denied from Agent Lookout. Claude carries on without it.                      | Claude Code was told to deny it.                                                             |
+| It was answered in the session, or is no longer waiting, so nothing was sent. | You answered in the session first, or it stopped waiting before the answer reached it.       |
+| That request is no longer held, so nothing was sent.                          | It waited longer than Agent Lookout holds a request, or a newer one replaced it.             |
+| Agent Lookout did not answer in time. The session shows whether it went on.   | Agent Lookout gave no answer within 10 seconds. The answer may have reached it all the same. |
+| The answer could not be handed to the session.                                | Something went wrong in Agent Lookout. Nothing more is known of it.                          |
+
+### Install the plugin
+
+The plugin is one hook that Claude Code runs as it is about to ask you for permission. It hands the request to Agent Lookout on this computer, over a socket only you can open, and prints the answer when you press Allow or Deny. It is in this repository, in `plugins/agent-lookout/`. In Claude Code, run:
+
+```text
+/plugin marketplace add Olanetsoft/agent-lookout
+/plugin install agent-lookout@agent-lookout
+```
+
+From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. Claude Code records the plugin in its own settings, and runs its hook wherever Claude Code runs: in a terminal, in VS Code and in the desktop app. Agent Lookout itself writes nothing under `~/.claude`. To take it away, run `/plugin uninstall agent-lookout@agent-lookout`. The hook needs `curl`, which macOS has, and most Linux systems do.
+
+Settings, under Permission prompts, says whether the plugin's requests reach Agent Lookout. When a Claude Code session waits for permission and no request comes, it says the plugin may not be installed.
+
+To take Allow and Deny away altogether, start Agent Lookout with `AGENT_LOOKOUT_ANSWER=off`. [PRIVACY.md](../PRIVACY.md#the-claude-code-plugin-and-permission-prompts) says what the plugin sends, what Agent Lookout keeps and what it checks before it answers.
+
 ## Keyboard
 
 Every view answers to a few keys. Press `?` to see them all.
@@ -921,7 +960,7 @@ Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on 
 
 ## What it does not do yet
 
-It cannot resume or answer a session. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
+It cannot resume a session or send it a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), and only sessions on this computer. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events only: a session starting to wait, finishing, failing or ending. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
@@ -964,6 +1003,9 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_TMUX`           | Set to `off` and Agent Lookout never runs `tmux`. Sessions in tmux are still listed, without a Jump button.                                                                                                                                                                                                                                                                |
 | `AGENT_LOOKOUT_TERMINAL_JUMP`  | Set to `off` and Agent Lookout never looks for, or brings forward, a tab of Terminal or iTerm2. Sessions there are still listed, without a Jump button.                                                                                                                                                                                                                    |
 | `AGENT_LOOKOUT_STOP`           | Set to `off` and Agent Lookout never stops a session: no session has a Stop button, Left running has no End all…, and the server answers no request to stop one.                                                                                                                                                                                                           |
+| `AGENT_LOOKOUT_ANSWER`         | Set to `off` and Agent Lookout never answers a permission prompt: it opens no socket for the plugin, no session shows Allow or Deny, and the server answers no request to answer one.                                                                                                                                                                                      |
+| `AGENT_LOOKOUT_ANSWER_SOCKET`  | The socket the [plugin](#install-the-plugin) sends permission requests to, in place of `~/.agent-lookout/answer.sock`. Set the same in the environment Claude Code starts with, so its hook finds it. With `AGENT_LOOKOUT_CLAUDE_HOME` set, nothing is answered unless this is set too.                                                                                    |
+| `AGENT_LOOKOUT_ANSWER_WAIT`    | How many seconds a permission request waits for Allow or Deny before the prompt in the session is left to decide, from 5 to 540. The default is 300.                                                                                                                                                                                                                       |
 | `AGENT_LOOKOUT_EMAIL_TO`       | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                                                                                                                                                                                                                          |
 | `AGENT_LOOKOUT_SMTP_URL`       | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                                                                                                                                                                                                                   |
 | `AGENT_LOOKOUT_EMAIL_FROM`     | The address emails come from. The default is the address they go to.                                                                                                                                                                                                                                                                                                       |

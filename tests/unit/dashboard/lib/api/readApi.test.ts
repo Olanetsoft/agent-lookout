@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import {
   readEmailStatus,
@@ -460,6 +460,7 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
     jump: { level: "no", reason: "The tool names no place to go." },
     "quiet-for": { level: "yes" },
     stop: { level: "no", reason: "The tool names no process to stop." },
+    answer: { level: "no", reason: "The tool records no waits to answer." },
   };
   const read = (value: unknown) =>
     readSource({ id: "claude-code", state: "ok", capabilities: value }, T);
@@ -921,4 +922,58 @@ test("the answer of /api/pull-requests is read as it was sent, and counts as on 
   });
   expect(readPullRequestsStatus({ on: "yes" })).toBeNull();
   expect(readPullRequestsStatus("on")).toBeNull();
+});
+
+describe("a permission request held for the dashboard", () => {
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test\nnpm run build",
+    description: "Run the tests",
+    allow: true,
+    until: 1_700_000_300_000,
+  };
+  const waiting = { id: "claude-code:a", source: "claude-code", status: "needs-you" };
+
+  test("is read whole, its command kept as it is, every line", () => {
+    expect(readSession({ ...waiting, ask })?.ask).toEqual(ask);
+    const edit = {
+      requestId: ask.requestId,
+      tool: "Write",
+      inputs: [{ name: "file_path", value: "/Users/example/a.ts" }],
+      allow: false,
+      denyOnly: "edit",
+      subagent: true,
+      until: 1,
+    };
+    expect(readSession({ ...waiting, ask: edit })?.ask).toEqual(edit);
+  });
+
+  test("is not read for a session that does not need the person", () => {
+    expect(readSession({ ...waiting, status: "working", ask })).not.toHaveProperty("ask");
+  });
+
+  test.each([
+    ["no request id", { ...ask, requestId: undefined }],
+    ["a request id of another shape", { ...ask, requestId: "1" }],
+    ["no word on Allow", { ...ask, allow: "yes" }],
+    ["a command that is not text", { ...ask, command: 7 }],
+    ["an input that is not text", { ...ask, inputs: [{ name: "a", value: 1 }] }],
+    ["no time it is held until", { ...ask, until: undefined }],
+  ])("with %s, is not read at all, so no Allow is offered on half of it", (_what, value) => {
+    expect(readSession({ ...waiting, ask: value })).not.toHaveProperty("ask");
+  });
+
+  test("whether answering is on is read with the snapshot", () => {
+    const read = readSnapshot({
+      generatedAt: 1,
+      sources: [],
+      sessions: [],
+      answering: { state: "on", plugin: "missed", holdMs: 300_000 },
+    });
+    expect(read?.answering).toEqual({ state: "on", plugin: "missed", holdMs: 300_000 });
+    expect(
+      readSnapshot({ generatedAt: 1, sources: [], sessions: [], answering: { state: "maybe" } }),
+    ).not.toHaveProperty("answering");
+  });
 });
