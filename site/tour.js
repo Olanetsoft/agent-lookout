@@ -1,16 +1,12 @@
 /*
- * The tour: the real dashboard, from /tour in a frame of this page, plays a
- * scene for each stretch of scroll, with a line saying what it shows. Nothing
- * in it acts or leaves this page, and until it is live two pictures stand in.
- * A tap, the keyboard in it or the lamp's switch gives it to the visitor; Back
- * to the tour, a chip, Escape, leaving the tour or a scene's stretch of scroll
- * takes it back.
+ * The tour: the real dashboard, from /tour in a frame, plays a scene for each
+ * stretch of scroll, with a line saying what it shows. Nothing in it acts or
+ * leaves this page. A tap, its keyboard or the lamp's switch gives it to the
+ * visitor; Back, a chip, Escape or a stretch of scroll takes it back.
  *
- * Every bit of scroll moves the meter and the chip's bar. Entering a scene,
- * the thumb and number move; once the dashboard draws it, the frame is
- * punched, swept and ringed, the name is stamped and flies to its chip, and
- * the lamp throws sparks: CSS animations restarted by flipping an attribute
- * between a and b, none of which runs under reduced motion.
+ * Scroll moves the meter; a scene punches and sweeps the frame and stamps its
+ * name: CSS animations restarted by flipping an attribute between a and b,
+ * none of which runs under reduced motion.
  */
 import { scroll } from "/vendor/motion.mjs";
 
@@ -23,7 +19,6 @@ function begin(section) {
   const stage = $(".tour-stage");
   const screen = $(".screen");
   const box = $(".frame");
-  const title = $(".tour-title");
   const name = $(".tour-name");
   const words = $("#tour-line");
   const said = $(".tour-said");
@@ -54,7 +49,6 @@ function begin(section) {
     app: button.hasAttribute("data-app"),
   }));
   const count = scenes.length;
-  /** Jump's word stays 1.5s, a scene waits 320ms to be drawn, and whole sets are 340ms apart. */
   const SWITCHED_MS = 1500;
   const DRAWN_WAIT_MS = 320;
   const GAP_MS = 340;
@@ -90,13 +84,15 @@ function begin(section) {
   let litAtFull = null;
   let inView = false;
   let welcomed = false;
-  /** 0 until the hint shows, 1 while it does, 2 once it has gone. */
-  let hint = 0;
+  /** Once the hint has shown, it never shows again. */
+  let hinted = false;
   let hintTimer = 0;
   let heldUntil = 0;
-  let centredAt = 0;
+  let touch = null;
+  let toldAt = -Infinity;
   let pointed = null;
   let placing = 0;
+  let peek = 0;
 
   /** Starts an effect again: its attribute flips between a and b, and so its animation. */
   const flip = (el, key = "go", kind = "") => {
@@ -115,11 +111,7 @@ function begin(section) {
     if (live) frame?.contentWindow?.postMessage(message, location.origin);
   };
 
-  /**
-   * The dashboard at the app's size, scaled to the screen's layout box, which a
-   * punch never changes. As the Mac app it sits 34px under the menu bar and 92px
-   * over the foot.
-   */
+  /** The dashboard at the app's size, scaled to the screen; as the Mac app, between its bars. */
   const fit = () => {
     const width = phone.matches ? 390 : 1280;
     const w = screen.clientWidth;
@@ -132,7 +124,6 @@ function begin(section) {
     screen.style.setProperty("--tour-scale", String(scale));
     screen.style.setProperty("--dock-scale", String(scale * share));
     screen.style.setProperty("--dock-x", `${((w * (1 - share)) / 2).toFixed(1)}px`);
-    screen.style.setProperty("--dock-y", "34px");
     place();
   };
   new ResizeObserver(fit).observe(screen);
@@ -169,18 +160,29 @@ function begin(section) {
 
   // ── The spotlight: what the dashboard points at or presses
 
-  /** A ring over a dimmed screen, while it is in sight and the tour drives. */
+  /**
+   * A ring over a dimmed screen while the tour drives and the middle of what it
+   * rings is in sight: not under a header, out of its list or still on its way in,
+   * which is looked at again every 100ms.
+   */
   const place = () => {
     placing = 0;
+    clearTimeout(peek);
     let at = mode === "tour" && pointed?.isConnected && pointed.getBoundingClientRect();
     if (at) {
-      const [x, y, w, h] = [at.left, at.top, at.width, at.height].map(
-        (v, i) => v * scale + (i < 2 ? -6 : 12),
+      const { left, top, width, height } = at;
+      at = pointed.contains(
+        pointed.ownerDocument.elementFromPoint(left + width / 2, top + height / 2),
       );
-      at = x + w > 0 && y + h > 0 && x < screen.clientWidth && y < screen.clientHeight;
-      if (at) put(spot, "s", [x, y, w, h]);
+      if (at)
+        put(
+          spot,
+          "s",
+          [left, top, width, height].map((v, i) => v * scale + (i < 2 ? -6 : 12)),
+        );
+      else peek = setTimeout(place, 100);
     }
-    section.classList.toggle("is-spotting", Boolean(at));
+    section.classList.toggle("is-spotting", !!at);
   };
   const replace = () => (placing ||= requestAnimationFrame(place));
 
@@ -190,12 +192,11 @@ function begin(section) {
       const at = doc.querySelector(
         '[data-tour-pressed], [data-tour-point], [data-part="stop"][aria-expanded="true"]',
       );
-      if (at === pointed) return;
-      pointed = at;
-      if (at) {
+      if (at && at !== pointed) {
         spot.dataset.tone = at.dataset.slot === "event-resumed" ? "ink" : "lamp";
         flip(spot);
       }
+      pointed = at;
       place();
     }).observe(doc.documentElement, {
       attributes: true,
@@ -253,14 +254,15 @@ function begin(section) {
     section.style.setProperty("--sweep", 1);
     flip(sweep);
     flip($(".tour-flash"));
-    const s = screen.getBoundingClientRect();
+    const at = stamp.offsetParent.getBoundingClientRect();
     const chip = items[index].getBoundingClientRect();
-    const x = phone.matches
-      ? list.getBoundingClientRect().left + items[index].offsetLeft - goal(index) + chip.width / 2
-      : chip.left + chip.width / 2;
+    const x =
+      phone.matches && now() > heldUntil
+        ? list.getBoundingClientRect().left + items[index].offsetLeft - goal(index) + chip.width / 2
+        : chip.left + chip.width / 2;
     put(stamp, "f", [
-      x - s.left - s.width / 2,
-      chip.top + chip.height / 2 - s.top - s.height * 0.36,
+      x - at.left - stamp.offsetLeft,
+      chip.top + chip.height / 2 - at.top - stamp.offsetTop,
     ]);
     flip(stamp);
     const changed = litAtFull !== null && lampLit !== litAtFull;
@@ -303,18 +305,18 @@ function begin(section) {
 
   /** "Scroll to play", once the stage has settled and the page has been still a while. */
   const waitToHint = () => {
-    if (hint || !live || mode !== "tour" || section.getBoundingClientRect().top > settle() + 1) {
+    if (hinted || !live || mode !== "tour" || section.getBoundingClientRect().top > settle() + 1) {
       return;
     }
     clearTimeout(hintTimer);
     hintTimer = setTimeout(() => {
-      if (hint || index > 0 || part > 0) return;
-      hint = 1;
+      if (hinted || index > 0 || part > 0) return;
+      hinted = true;
       section.classList.add("is-hinting");
     }, 1600);
   };
   const unhint = () => {
-    hint = 2;
+    hinted = true;
     clearTimeout(hintTimer);
     section.classList.remove("is-hinting");
   };
@@ -327,14 +329,15 @@ function begin(section) {
     say("lookout:lamp", { lit: on });
   };
 
-  /** The scene's name and line, rising in from the way the page is going. */
+  /** The scene's name and line rise in from the way the page goes; in a rush they only change. */
   const tell = (text, heading, way) => {
     said.textContent = text;
     name.textContent = heading;
     where.textContent = heading ? `${index + 1} of ${count}: ${heading}. ` : "";
-    if (!way || reduced.matches) return;
+    if (!way || reduced.matches || now() - toldAt < GAP_MS) return;
+    toldAt = now();
     turn(way);
-    flip(title);
+    flip(name);
     flip(words);
   };
 
@@ -348,7 +351,7 @@ function begin(section) {
   };
   new ResizeObserver(thumb).observe(nav);
 
-  /** Marks the chip, which Tab lands on unless the keyboard is among them, and names its neighbours. */
+  /** Marks the chip, Tab's stop unless the keyboard is among them, and names its neighbours. */
   const mark = (at) => {
     const among = list.contains(document.activeElement);
     steps.forEach((button, i) => {
@@ -374,13 +377,19 @@ function begin(section) {
   /** On a phone the scene's chip comes to the strip's middle, unless a hand moved it just now. */
   const centre = (i) => {
     if (phone.matches && now() > heldUntil) {
-      centredAt = now();
       list.scrollTo({ left: goal(i), behavior: reduced.matches ? "instant" : "smooth" });
     }
   };
-  list.addEventListener("scroll", () => now() - centredAt > 700 && (heldUntil = now() + 1500), {
-    passive: true,
-  });
+  // A finger moving the strip sideways holds it there for 1.5s.
+  list.addEventListener("touchstart", (event) => ([touch] = event.touches), { passive: true });
+  list.addEventListener(
+    "touchmove",
+    ({ touches: [t] }) => {
+      const x = Math.abs(t.clientX - touch.clientX);
+      if (x > 10 && x > Math.abs(t.clientY - touch.clientY)) heldUntil = now() + 1500;
+    },
+    { passive: true },
+  );
 
   /** Entering a scene, its chip and number change; on the way to a pressed chip, nothing more. */
   const cross = (way, passing) => {
@@ -402,7 +411,7 @@ function begin(section) {
     }
   };
 
-  /** The computer's word on a Jump: for a moment, or, as a still, for as long as the scene shows. */
+  /** The computer's word on a Jump: for a moment, or, with motion reduced, while the scene shows. */
   const switched = (on) => {
     clearTimeout(switchedTimer);
     section.classList.toggle("is-switched", on);
@@ -498,6 +507,7 @@ function begin(section) {
   const goTo = (i) => {
     if (!scenes[i]) return;
     pickUp();
+    heldUntil = 0;
     travelTo = i;
     travel();
     window.scrollTo({ top: sceneTop(i), behavior: reduced.matches ? "instant" : "smooth" });
@@ -625,9 +635,8 @@ function begin(section) {
     const next = Math.min(last, Math.max(0, to));
     steps.forEach((button, i) => (button.tabIndex = i === next ? 0 : -1));
     steps[next].focus({ preventScroll: true });
-    heldUntil = 0;
-    centre(next);
     goTo(next);
+    centre(next);
   });
   // Once the keyboard leaves the chips, Tab comes back to the scene on show.
   list.addEventListener("focusout", (event) => {

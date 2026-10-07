@@ -1367,7 +1367,7 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   height: 60px;
   padding: 4px 8px 0;
   border-radius: var(--chip-radius);
-  color: var(--ink-muted);
+  color: var(--ink-secondary);
   counter-increment: scene;
   translate: calc(var(--lean, 0) * -4px) 0;
   transition:
@@ -1380,6 +1380,7 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   content: counter(scene, decimal-leading-zero);
   content: counter(scene, decimal-leading-zero) / "";
   grid-area: 1 / 2;
+  color: var(--ink-muted);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1;
@@ -1391,8 +1392,8 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
 .tour-chapters li:has(> [aria-current]) {
   color: var(--ink);
 }
-.tour-chapters li:has(~ li > [aria-current])::before {
-  color: var(--ink-secondary);
+.tour-chapters li:is(:has(> [aria-current]), :has(~ li > [aria-current]))::before {
+  color: inherit;
 }
 
 /* An icon, 16px of line on a 24px tile, in the chip's own colour. */
@@ -1506,7 +1507,7 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   --lean: clamp(0, (var(--p) - 0.8) * 1000, 1);
 }
 .tour-chapters li:has(> [aria-current]) + li .tour-icon {
-  color: color-mix(in srgb, var(--ink) calc(var(--lean) * 100%), var(--ink-muted));
+  color: color-mix(in srgb, var(--ink) calc(var(--lean) * 100%), var(--ink-secondary));
 }
 
 /* The thumb under the chip on show. It slides once it has been put in place. */
@@ -1914,7 +1915,8 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
  * place are worked out by the tour's script from the screen's.
  */
 .tour.is-docked .screen iframe {
-  transform: translate3d(var(--dock-x, 0px), var(--dock-y, 0px), 0) scale(var(--dock-scale, 1));
+  /* 34px under the menu bar, and as tour.js has it, 92px over the foot. */
+  transform: translate3d(var(--dock-x, 0px), 34px, 0) scale(var(--dock-scale, 1));
   box-shadow: var(--window-drop);
   transition:
     opacity 200ms ease,
@@ -2165,12 +2167,13 @@ html:not(.js) .tour-meter {
 }
 
 /*
- * The stamp: the scene's name and icon pop up on the screen, then fly down to
- * the scene's chip, shrinking as they go. tour.js gives the way to the chip.
+ * The stamp: the scene's name and icon pop up low on the screen, under what the
+ * scene is about, then fly down to the scene's chip, shrinking as they go.
+ * tour.js gives the way to the chip from where it rests.
  */
 .tour-stamp {
   position: absolute;
-  top: calc(var(--bezel) + (100% - 2 * var(--bezel)) * 0.36);
+  top: calc(var(--bezel) + (100% - 2 * var(--bezel)) * 0.74);
   left: 50%;
   z-index: 5;
   display: flex;
@@ -2209,10 +2212,10 @@ html:not(.js) .tour-stamp {
 }
 
 /* The name and line rise in from the way the page is going, the line a moment after. */
-.tour-title[data-go="a"] {
+.tour-name[data-go="a"] {
   animation: tour-say-a 380ms var(--expo) both;
 }
-.tour-title[data-go="b"] {
+.tour-name[data-go="b"] {
   animation: tour-say-b 380ms var(--expo) both;
 }
 .tour-line[data-go="a"] {
@@ -2262,7 +2265,8 @@ html:not(.js) .tour-stamp {
     0 0 0 100vmax var(--spot-dim);
   opacity: 0;
   visibility: hidden;
-  transform: translate(var(--sx, 0), var(--sy, 0));
+  /* Placed with translate, not transform, so the entrance's scale is about the ring's own middle. */
+  translate: var(--sx, 0) var(--sy, 0);
   transition:
     opacity 200ms ease,
     visibility 0s 200ms;
@@ -3833,6 +3837,10 @@ body:has(> .lost) {
     width: calc(100% - 16px);
     padding: 10px 12px 11px 10px;
   }
+  /* A phone's screen is tall, and what a scene is about reaches lower in it. */
+  .tour-stamp {
+    top: calc(var(--bezel) + (100% - 2 * var(--bezel)) * 0.88);
+  }
   .frame {
     --punch-in: 0.975;
     --punch-out: 1.008;
@@ -3840,17 +3848,19 @@ body:has(> .lost) {
 
   /*
    * A phone is not a Mac: the dashboard stays as it is, and the app's icon,
-   * with its count, sits under the frame's corner, beside the line.
+   * with its count, sits under the frame's corner, beside the number and name
+   * and as tall as their row, so the line under them keeps its whole width.
    */
   .tour.is-docked .screen iframe {
     transform: scale(var(--tour-scale, 1));
     box-shadow: none;
   }
   .tour-dock {
-    top: calc(100% + 8px);
+    --tile: calc(var(--head-height) + var(--row-gap));
+    top: calc(100% + var(--row-gap) / 2);
     bottom: auto;
     left: auto;
-    right: 2px;
+    right: 6px;
     transform: translate3d(0, 10px, 0);
   }
   .tour.is-docked .tour-dock {
@@ -3865,25 +3875,34 @@ body:has(> .lost) {
     backdrop-filter: none;
   }
   .tour-tile img {
-    width: 48px;
-    height: 48px;
+    width: var(--tile);
+    height: var(--tile);
   }
   .tour-tile::after {
     display: none;
   }
+  .tour-badge {
+    top: -5px;
+    right: -7px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 12px;
+    line-height: 18px;
+  }
   /* And its menu bar item beside the icon, without the bar. */
   .tour-menubar {
-    top: calc(100% + 8px);
+    top: calc(100% + var(--row-gap) / 2);
     left: auto;
-    right: 60px;
-    height: 48px;
+    right: calc(var(--head-height) + var(--row-gap) + 18px);
+    height: calc(var(--head-height) + var(--row-gap));
     padding: 0;
     border-radius: 0;
     background: none;
     transform: translate3d(0, 10px, 0);
   }
-  .tour.is-docked :is(.tour-title, .tour-line) {
-    padding-right: 112px;
+  .tour.is-docked .tour-title {
+    padding-right: calc(var(--head-height) + var(--row-gap) + 8px);
   }
 
   /*
@@ -3924,8 +3943,22 @@ body:has(> .lost) {
   .fine {
     display: none;
   }
+  /*
+   * The tour's rows close up and its words come down a step, so the frame is
+   * tall enough to show the waiting session's Deny and Allow over the meter.
+   */
   .tour {
+    --head-height: 22px;
+    --line-size: 14px;
+    --line-height: calc(var(--line-size) * 1.36 * var(--line-lines));
+    --row-gap: 4px;
     margin-top: 14px;
+  }
+  .tour-name {
+    font-size: 18px;
+  }
+  .tour-line {
+    line-height: 1.36;
   }
 }
 
@@ -4011,6 +4044,16 @@ body:has(> .lost) {
   .tour-stamp .tour-icon {
     width: 20px;
     height: 20px;
+  }
+  /*
+   * On a phone's small screen it would cover what the scene is about, and the
+   * number and name under the frame and the ringed chip say the same, so it is
+   * left out.
+   */
+  @media (width < 761px) {
+    .tour-stamp {
+      display: none;
+    }
   }
 }
 
