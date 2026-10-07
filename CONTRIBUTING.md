@@ -94,13 +94,25 @@ node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false ag
 
 `scripts/package-size.mjs` prints three sizes and fails when one has grown past its limit: the tarball, 0.66 MB with a limit of 1 MB, the files in it, 2.37 MB with a limit of 3 MB, and the installed `node_modules`, the package and nodemailer, 3.96 MB with a limit of 5 MB. Before the MCP SDK was bundled they were 0.63 MB, 1.69 MB and 20.45 MB. The CI job `package` runs it, and so does the release workflow before it publishes. Raise a limit only on purpose, and say why in the pull request. The package holds only `.woff2` fonts, and the same job fails if a `.woff` gets in.
 
+## The pictures in the docs
+
+The README and the guide show pictures of the dashboard from `docs/images/`. They are taken from the landing page's tour, the real dashboard as `npm run build:tour` builds it for a release, so they show what that release does:
+
+```sh
+npm run capture:images
+```
+
+`scripts/capture-docs-images.mjs` serves `site/` on a free port on 127.0.0.1, opens the tour in Playwright's Chromium, puts it in the scenes each picture shows, and writes `dashboard-night.png`, `dashboard-day.png`, `quiet-night.png` and `sources-night.png` over the ones there. It writes them only once all four are taken, and stops with none written if a picture's view is missing what it should show, or the page logs an error or asks for anything outside its own address. The clock is held still, so the same tour, on the same system with the same Playwright, gives the same pictures byte for byte, and a picture that changes is one whose view changed. Add `-- --out <folder>` to write them somewhere else and compare first, or `-- --build` to build the tour first.
+
+Run it again after a release that changes the dashboard, once `npm run build:tour` has built that release's tour, as part of the release or after it. Look at each picture before you commit it, and bring its alt text in the README or the guide, and the line under the README's picture, up to what it shows.
+
 ## Publishing
 
 The maintainer publishes. A version tag starts `.github/workflows/release-npm.yml`, which publishes the package to npm from GitHub Actions once he approves it, with provenance: the package's page on npmjs.com shows the commit and the workflow run each version was built from. No npm token exists for it, in the repository or anywhere else. The tag is `v` and the version, such as `v0.2.3`, and the version only ever changes in its last number.
 
 The README, `docs/INSTALL.md`, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
 
-1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Then run `npm run build:tour`, which builds the landing page's dashboard in `site/tour/` and `site/vendor/` from this version, and bring what `site/index.html` says up to what the version ships. CI checks that a change with a new version has the tour that version builds. Commit, push, and wait for CI to pass for that commit.
+1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Then run `npm run build:tour`, which builds the landing page's dashboard in `site/tour/` and `site/vendor/` from this version, and bring what `site/index.html` says up to what the version ships. CI checks that a change with a new version has the tour that version builds. When the version changes the dashboard, take [the pictures in the docs](#the-pictures-in-the-docs) again too. Commit, push, and wait for CI to pass for that commit.
 2. Tag the commit and push the tag:
 
    ```sh

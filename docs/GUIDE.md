@@ -6,7 +6,7 @@ Node.js 22.12 or newer, or the Mac app, which needs none, and Claude Code, Codex
 
 ## The screen
 
-![The Overview in the Night theme with one session waiting. A rail on the left links to Overview, Sources and Settings. The header says 8 sessions are watched from Claude Code, Codex and status files, and has a magnifier that opens the search. The Needs you panel shows a session that has waited just over 4 minutes for permission, with its folder and branch and a Jump button, two bars of how long sessions waited on you, and counts of working, idle and stale sessions. The Last hour chart is beside it. Below are the Sessions list, grouped by status with each session's branch under its folder and a switch between List and Board, the Events log and the Timeline.](images/dashboard-night.png)
+![The Overview in the Night theme with one session waiting. A rail on the left links to Overview, Sources and Settings. The header says 10 sessions are watched from Claude Code, Codex and status files, and from devbox over SSH, and has a magnifier that opens the search, and the switch between Night and Day. The Needs you panel shows checkout-flow, which has waited 4 minutes 12 seconds for permission, with its folder, branch and app. Under Asks to run are the whole command, npm test, its description and the Deny and Allow buttons, and a Jump button is beside the timer. Below them are two bars of how long sessions waited on you and counts of working, idle and stale sessions. The Last hour chart is beside the panel. Under both are the Sessions list, with a switch between List, Repos and Board, one session left running with a Review button, and the working sessions with each one's branch under its folder, billing-migration marked devbox, and the Events log.](images/dashboard-night.png)
 
 A rail down the left edge moves between three views: Overview, Sources and Settings. The mark at the top of the rail lights up while any session needs you, so you can see it from every view. The browser tab's title gives the number that need you, as in `(2) Agent Lookout`.
 
@@ -39,7 +39,7 @@ Click Working or Idle to open a chart of how many sessions had that status over 
 
 When nothing needs you, the panel says Nothing needs you and shows the last wait that ended in the last hour: how long it lasted, the session, and when it was answered or ended. If none did, it says so. The bars of earlier waits and the counts stay under it.
 
-![The top of the Overview with nothing waiting. The panel says Nothing needs you and gives the last wait, 3 minutes 30 seconds, and when it was answered. Its two bars of earlier waits are outlined, and the Last hour chart beside it has no amber.](images/quiet-night.png)
+![The top of the Overview with nothing waiting. The Needs you panel says Nothing needs you and gives the last wait, 2 minutes by search-indexing, and when it was answered. Its one bar of an earlier wait is outlined, the counts of working, idle and stale sessions are under it, and the Last hour chart beside it has no amber.](images/quiet-night.png)
 
 #### Last hour
 
@@ -198,7 +198,7 @@ Waits counts only the time Agent Lookout was running, from the [history](#histor
 
 ### Sources
 
-![The Sources view in the Night theme. Cards for Claude Code, Codex and status files, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. Under them, What each agent can report gives Yes, No or Partly for each agent and each thing it can show. Beside them, About sources says what a source is.](images/sources-night.png)
+![The whole Sources view in the Night theme. Cards for Claude Code, Codex and status files, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. Under them, the card for devbox, another machine, says Connected and gives the ssh target, the ssh command, the two routes it asks for, the version of Agent Lookout there and what each source there is doing. Last, What each agent can report gives Yes, No or Partly for each agent, Claude Code on devbox among them, and each thing it can show. Beside the cards, About sources says what a source is.](images/sources-night.png)
 
 Sources has a card for Claude Code, one for Codex and one for status files, and under them a table of [what each agent can report](#what-each-agent-can-report). Each card says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 

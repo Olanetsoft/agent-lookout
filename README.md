@@ -12,10 +12,10 @@ By default Agent Lookout sends nothing anywhere. The one exception: the Mac app'
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Olanetsoft/agent-lookout/main/docs/images/dashboard-day.png">
-  <img alt="The Overview. In the Needs you panel, checkout-flow has waited over 4 minutes for permission, with a Jump button, above bars of how long sessions waited and counts of working, idle and stale sessions. The Last hour chart is beside it. Below are the Sessions list, the Events log and the Timeline." src="https://raw.githubusercontent.com/Olanetsoft/agent-lookout/main/docs/images/dashboard-night.png">
+  <img alt="The Overview. In the Needs you panel, checkout-flow, a Claude Code session in Terminal, has waited 4 minutes 12 seconds for permission. Under Asks to run are the whole command, npm test, its description and the Deny and Allow buttons, and a Jump button is beside the timer. Below them are bars of how long sessions waited on you and counts of working, idle and stale sessions. The Last hour chart is beside the panel. Under both are the Sessions list, where billing-migration is marked devbox, the other machine it runs on, and the Events log." src="https://raw.githubusercontent.com/Olanetsoft/agent-lookout/main/docs/images/dashboard-night.png">
 </picture>
 
-_One session has waited over 4 minutes for permission. Jump takes you to it in VS Code._
+_A Claude Code session asks to run `npm test`. With the Claude Code plugin, Allow or Deny answers it from the page, and Jump takes you to it in Terminal._
 
 ## Install
 
