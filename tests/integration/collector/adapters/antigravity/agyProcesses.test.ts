@@ -8,19 +8,24 @@ import { createAgyProcessReader } from "@collector/adapters/antigravity/agyProce
 import { conversationId } from "@tests/fixtures/antigravity";
 import { tempDir } from "@tests/support/node/tempFiles";
 
-// `ps` only reads, so the real one is asked. The agy it finds is a stand-in:
-// this Node, started through a link named `agy`, which only waits.
+// `ps` only reads, so the real one is asked. The agy it finds is a stand-in
+// that only waits, started through a link named `agy`: this Node on macOS,
+// where `ps` names a program by the file it was started from, and `/bin/sh`
+// on Linux, where it names it by the name the program gives itself, which
+// Node 24 sets to its own.
 
 const CONVERSATION = conversationId("a1");
 
-/** Starts this Node under the name `agy`, with these arguments after its own, and stops it when the test ends. */
+/** Starts a program under the name `agy`, with these arguments after its own, and stops it when the test ends. */
 async function startStandInAgy(args: string[]): Promise<number> {
   const dir = await tempDir();
   const agy = path.join(dir, "agy");
-  await symlink(process.execPath, agy);
-  const child = spawn(agy, ["-e", "setTimeout(() => {}, 60_000)", "--", ...args], {
-    stdio: "ignore",
-  });
+  const linux = process.platform === "linux";
+  await symlink(linux ? "/bin/sh" : process.execPath, agy);
+  const own = linux
+    ? ["-c", "while :; do sleep 1; done", "agy"]
+    : ["-e", "setTimeout(() => {}, 60_000)", "--"];
+  const child = spawn(agy, [...own, ...args], { stdio: "ignore" });
   onTestFinished(() => {
     child.kill();
   });
@@ -59,7 +64,7 @@ describe.skipIf(process.platform === "win32")("createAgyProcessReader, asking th
     for (let attempt = 0; attempt < 20 && !named; attempt += 1) {
       const list = await reader.read();
       expect(list.ok).toBe(true);
-      // The stand-in's command line goes on with `-e`, which is no command of agy's.
+      // The stand-in's command line goes on with `-e` or `-c`, neither a command of agy's.
       named = list.ok && list.sessions.some((session) => session.conversation === undefined);
       if (!named) await new Promise((resolve) => setTimeout(resolve, 100));
     }

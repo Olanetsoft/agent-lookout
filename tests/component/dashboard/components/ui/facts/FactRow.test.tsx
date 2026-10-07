@@ -11,6 +11,8 @@ test("a row is its label at the left and its value at the right, on one line", a
       </FactList>
     </div>,
   );
+  // The row is measured once its fonts are in, which on Windows can be after the first layout.
+  await document.fonts.ready;
   const row = screen.container.querySelector('[data-slot="fact-row"]') as HTMLElement;
   const [label, value] = [row.querySelector("dt"), row.querySelector("dd")] as HTMLElement[];
 
@@ -30,6 +32,8 @@ test("a note is a line of its own under the pair, across the whole row, in the c
       </FactList>
     </div>,
   );
+  // The row is measured once its fonts are in, which on Windows can be after the first layout.
+  await document.fonts.ready;
   const row = screen.container.querySelector('[data-slot="fact-row"]') as HTMLElement;
   const [label, value, said] = [...row.children] as HTMLElement[];
 
@@ -60,6 +64,7 @@ test("a literal string that does not fit beside its label takes a line of its ow
       </FactList>
     </div>,
   );
+  await document.fonts.ready;
   const [short, long] = [...screen.container.querySelectorAll('[data-slot="fact-row"]')].map(
     (row) =>
       [row, row.querySelector("dt"), row.querySelector("dd")].map((element) =>
