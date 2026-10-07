@@ -47,6 +47,7 @@ import {
   writeStub,
   writeWindowsStub,
 } from "@tests/support/node/tempFiles";
+import { asWritten } from "@tests/support/paths";
 
 /**
  * An adapter on a machine where no claude binary can be found. Nothing in its
@@ -1322,7 +1323,7 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
         return { ok: true, stdout: feedJson };
       },
     }).poll();
-    expect(ranWith).toBe(BIN);
+    expect(asWritten(ranWith)).toBe(BIN);
     expect(basis).toBe("registry+feed");
   });
 });
@@ -1598,7 +1599,7 @@ describe("when the claude command fails", () => {
     const adapter = withoutBinary(userHome, {
       env: { AGENT_LOOKOUT_CLAUDE_BIN: BIN },
       now: clock.now,
-      isExecutable: async (candidate) => candidate === BIN,
+      isExecutable: async (candidate) => asWritten(candidate) === BIN,
       run: async () => {
         ran += 1;
         return { ok: false, problem: "stopped with exit code 1" };

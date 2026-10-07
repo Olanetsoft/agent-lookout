@@ -175,71 +175,77 @@ async function setUp(release: FakeRelease = {}) {
 }
 
 describe("the updater, against a release of the test's own", () => {
-  test("checks, downloads and verifies a newer version, and installs it only when asked", async () => {
-    const { updater, installed, temp, started, quit, asked, settings } = await setUp();
+  // What is installed is a Mac app's bundle, by a Mac's paths, and the helper that
+  // puts it in place is a POSIX sh script, so installing is checked on macOS and
+  // Linux only.
+  test.skipIf(process.platform === "win32")(
+    "checks, downloads and verifies a newer version, and installs it only when asked",
+    async () => {
+      const { updater, installed, temp, started, quit, asked, settings } = await setUp();
 
-    const checked = await updater.check();
-    expect(checked.lastCheckedAt).not.toBeNull();
-    expect(checked.update).toMatchObject({ phase: "downloading", version: "0.2.1" });
-    await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
-      timeout: 15_000,
-    });
-    expect(updater.status().update).toEqual({
-      phase: "ready",
-      version: "0.2.1",
-      notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
-    });
-    // GitHub's two redirects, for the manifest and then the zip for this Mac, and nothing else.
-    expect(asked).toEqual([
-      "releases /releases/latest/download/latest-mac.yml",
-      "releases /releases/download/v0.2.1/latest-mac.yml",
-      "assets /asset/manifest",
-      `releases /releases/download/v0.2.1/${ZIP_NAME}`,
-      "assets /asset/zip",
-    ]);
+      const checked = await updater.check();
+      expect(checked.lastCheckedAt).not.toBeNull();
+      expect(checked.update).toMatchObject({ phase: "downloading", version: "0.2.1" });
+      await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
+        timeout: 15_000,
+      });
+      expect(updater.status().update).toEqual({
+        phase: "ready",
+        version: "0.2.1",
+        notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
+      });
+      // GitHub's two redirects, for the manifest and then the zip for this Mac, and nothing else.
+      expect(asked).toEqual([
+        "releases /releases/latest/download/latest-mac.yml",
+        "releases /releases/download/v0.2.1/latest-mac.yml",
+        "assets /asset/manifest",
+        `releases /releases/download/v0.2.1/${ZIP_NAME}`,
+        "assets /asset/zip",
+      ]);
 
-    // It is unpacked in the updater's own folder, and the zip is gone.
-    const [staging] = await readdir(temp);
-    expect(staging).toMatch(/^agent-lookout-update-/);
-    const folder = path.join(temp, staging!);
-    expect(await readdir(folder)).toEqual(["app"]);
-    const replacement = path.join(folder, "app", "Agent Lookout.app");
-    expect(await readFile(path.join(replacement, "Contents", "Info.plist"), "utf8")).toContain(
-      "<string>0.2.1</string>",
-    );
+      // It is unpacked in the updater's own folder, and the zip is gone.
+      const [staging] = await readdir(temp);
+      expect(staging).toMatch(/^agent-lookout-update-/);
+      const folder = path.join(temp, staging!);
+      expect(await readdir(folder)).toEqual(["app"]);
+      const replacement = path.join(folder, "app", "Agent Lookout.app");
+      expect(await readFile(path.join(replacement, "Contents", "Info.plist"), "utf8")).toContain(
+        "<string>0.2.1</string>",
+      );
 
-    // Nothing is installed until Install and Restart.
-    expect(started).toEqual([]);
-    expect(quit).not.toHaveBeenCalled();
+      // Nothing is installed until Install and Restart.
+      expect(started).toEqual([]);
+      expect(quit).not.toHaveBeenCalled();
 
-    const answer = await updater.install();
-    expect(answer.ok).toBe(true);
-    expect(answer.status.update).toMatchObject({ phase: "installing", version: "0.2.1" });
-    // Noted, so the copy that opens next knows whether it worked.
-    expect(settings().installingVersion).toBe("0.2.1");
-    expect(started).toEqual([
-      [
-        "/bin/sh",
+      const answer = await updater.install();
+      expect(answer.ok).toBe(true);
+      expect(answer.status.update).toMatchObject({ phase: "installing", version: "0.2.1" });
+      // Noted, so the copy that opens next knows whether it worked.
+      expect(settings().installingVersion).toBe("0.2.1");
+      expect(started).toEqual([
         [
-          "-c",
-          HELPER_SCRIPT,
-          "agent-lookout-update",
-          "4242",
-          installed,
-          replacement,
-          path.join(folder, "previous", "Agent Lookout.app"),
+          "/bin/sh",
+          [
+            "-c",
+            HELPER_SCRIPT,
+            "agent-lookout-update",
+            "4242",
+            installed,
+            replacement,
+            path.join(folder, "previous", "Agent Lookout.app"),
+          ],
         ],
-      ],
-    ]);
-    await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
-    // The app's own bundle is left for the helper, which moves it once the app has quit.
-    expect(await readFile(path.join(installed, "Contents", "Info.plist"), "utf8")).toContain(
-      "<string>0.2.0</string>",
-    );
-    // Stopping, as quitting does, leaves the new version for the helper.
-    updater.stop();
-    expect(existsSync(replacement)).toBe(true);
-  });
+      ]);
+      await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
+      // The app's own bundle is left for the helper, which moves it once the app has quit.
+      expect(await readFile(path.join(installed, "Contents", "Info.plist"), "utf8")).toContain(
+        "<string>0.2.0</string>",
+      );
+      // Stopping, as quitting does, leaves the new version for the helper.
+      updater.stop();
+      expect(existsSync(replacement)).toBe(true);
+    },
+  );
 
   test.each([
     [
@@ -283,34 +289,38 @@ describe("the updater, against a release of the test's own", () => {
     },
   );
 
-  test("an app that has not quit once the helper stops waiting says the install did not work", async () => {
-    const { updater, temp, settings } = await setUp();
-    await updater.check();
-    await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
-      timeout: 15_000,
-    });
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32")(
+    "an app that has not quit once the helper stops waiting says the install did not work",
+    async () => {
+      const { updater, temp, settings } = await setUp();
+      await updater.check();
+      await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
+        timeout: 15_000,
+      });
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      expect((await updater.install()).ok).toBe(true);
-      // The quit asked for does not happen.
-      await vi.advanceTimersByTimeAsync(INSTALL_GIVE_UP_MS - 1);
-      expect(updater.status().update.phase).toBe("installing");
-      await vi.advanceTimersByTimeAsync(1);
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(updater.status().update).toEqual({
-      phase: "failed",
-      step: "install",
-      reason: "Agent Lookout did not quit in time to be replaced",
-      version: "0.2.1",
-      notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
-    });
-    expect(settings().installingVersion).toBeNull();
-    await vi.waitFor(async () => expect(await readdir(temp)).toEqual([]));
-    updater.stop();
-  });
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        expect((await updater.install()).ok).toBe(true);
+        // The quit asked for does not happen.
+        await vi.advanceTimersByTimeAsync(INSTALL_GIVE_UP_MS - 1);
+        expect(updater.status().update.phase).toBe("installing");
+        await vi.advanceTimersByTimeAsync(1);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(updater.status().update).toEqual({
+        phase: "failed",
+        step: "install",
+        reason: "Agent Lookout did not quit in time to be replaced",
+        version: "0.2.1",
+        notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
+      });
+      expect(settings().installingVersion).toBeNull();
+      await vi.waitFor(async () => expect(await readdir(temp)).toEqual([]));
+      updater.stop();
+    },
+  );
 
   test("reads the app's own identifier again when it could not be read before", async () => {
     const { updater, installed } = await setUp();

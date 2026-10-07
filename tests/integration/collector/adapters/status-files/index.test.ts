@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
 import {
   chmod,
   mkdir,
   readdir,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -400,7 +400,11 @@ async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessE
   await mkdir(work);
   await writeFile(path.join(work, runner.file), await guideExample(runner.language));
   const [command, args] = await runner.command(work);
-  const child = spawn(command, args, { cwd: work, env, stdio: ["pipe", "pipe", "pipe"] });
+  // By its real path, which is the one the example finds itself in on macOS,
+  // and on Windows its long name, rather than the short one a temporary folder
+  // can be given.
+  const cwd = await realpath(work);
+  const child = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   let errors = "";
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => (errors += chunk));
   child.on("error", (error) => (errors += String(error)));
@@ -416,8 +420,7 @@ async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessE
   const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   return {
     pid: child.pid,
-    // By its long name, as Windows gives a program its folder.
-    cwd: realpathSync.native(work),
+    cwd,
     /** Resolves once the example has written its file and come to its next wait. */
     async paused() {
       for (;;) {
