@@ -16,6 +16,15 @@
 // none is taken in the first second what it answers was shown. A press that
 // sent nothing opens the menu again (`reopen`), with a line that says why.
 //
+// On macOS, Electron tells the top menu of each submenu's opening and
+// closing as if they were its own, so the menu is taken as open while it has
+// been told of more openings than closings. A submenu's closing may be the
+// last it is told of, the top menu's own going unsaid, so once it has been
+// told of nothing more for a minute after a closing it is taken as closed; a
+// click on an item says so at once, since an item hears its click only once
+// the whole menu has closed. The menu last shown is held on to, so it is
+// never collected while it is on the screen.
+//
 // The switch Show in menu bar, in Settings, takes the item away and puts it
 // back, and is remembered in `menu-bar-state.json` (`menuBarSettings.ts`). It
 // reads off while the item could not be put there.
@@ -95,6 +104,43 @@ const TITLE_OPTIONS: TitleOptions = { fontType: "monospacedDigit" };
 /** How old the times in a menu may grow before a poll makes it again, in milliseconds. */
 export const MENU_TIMES_MAX_AGE_MS = 60_000;
 
+/**
+ * How long after a closing the menu, told of more openings than closings, is
+ * still taken as open, in milliseconds: the top menu's own closing may go
+ * unsaid after a submenu's.
+ */
+export const MENU_UNSAID_CLOSE_MS = 60_000;
+
+/** The actions, each telling `closed` first. */
+function closedFirst(actions: MenuBarActions, closed: () => void): MenuBarActions {
+  return {
+    openSession: (sessionId) => {
+      closed();
+      actions.openSession(sessionId);
+    },
+    answer: (press) => {
+      closed();
+      actions.answer(press);
+    },
+    openApp: () => {
+      closed();
+      actions.openApp();
+    },
+    checkForUpdates: () => {
+      closed();
+      actions.checkForUpdates();
+    },
+    openSettings: () => {
+      closed();
+      actions.openSettings();
+    },
+    quit: () => {
+      closed();
+      actions.quit();
+    },
+  };
+}
+
 export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
   options: MenuBarOptions<Image, Menu>,
 ): MenuBar {
@@ -103,8 +149,13 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
   let show = options.settings.read().show;
   let tray: MenuBarTrayLike<Image, Menu> | null = null;
   let latest: MenuBarSnapshot | null = null;
-  /** Whether the menu is open, and whether something changed while it was. */
-  let open = false;
+  /** The openings the menu was told of, a submenu's among them, less its closings. */
+  let openings = 0;
+  /** When it was last told of a closing, while no opening has come since. */
+  let closedAt: number | null = null;
+  /** The menu last shown, held so it is not collected while it may be on the screen. */
+  const onScreen: Menu[] = [];
+  /** Whether something changed while the menu was open. */
   let behind = false;
   /** Whether the item could not be put in the menu bar the last time it was tried. */
   let missing = false;
@@ -113,15 +164,44 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
   /** What the menu in place shows apart from its times, and when it was made. */
   let built: { key: string; at: number } | null = null;
 
+  /** Whether the menu may be on the screen. */
+  function isOpen(): boolean {
+    if (openings > 0 && closedAt !== null && now() - closedAt >= MENU_UNSAID_CLOSE_MS) {
+      openings = 0;
+      closedAt = null;
+    }
+    return openings > 0;
+  }
+
+  /** The menu has closed: what came while it was open is shown. */
+  function afterClose(): void {
+    if (!behind || isOpen()) return;
+    behind = false;
+    // The item chosen hears its click after the menu closes, so the menu
+    // it belongs to stays in place until then.
+    later(() => {
+      if (!isOpen()) setMenu();
+    });
+  }
+
+  /** The menu's actions, each first saying the whole menu has closed, as its click does. */
+  const heard = closedFirst(options.actions, () => {
+    openings = 0;
+    closedAt = null;
+    afterClose();
+  });
+
   function setMenu(): void {
     if (tray === null) return;
     const at = now();
     /** When this menu, or a submenu of it, was last shown. */
     let shownAt: number | null = null;
-    const menu = options.buildMenu(menuBarTemplate(latest, at, options.actions, () => shownAt));
+    const menu = options.buildMenu(menuBarTemplate(latest, at, heard, () => shownAt));
     built = { key: menuBarKey(latest), at };
     menu.on("menu-will-show", () => {
-      open = true;
+      openings += 1;
+      closedAt = null;
+      onScreen.splice(0, onScreen.length, menu);
       shownAt = now();
     });
     // Electron tells the top menu of a submenu's opening too, but a
@@ -132,14 +212,9 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       });
     }
     menu.on("menu-will-close", () => {
-      open = false;
-      if (!behind) return;
-      behind = false;
-      // The item chosen hears its click after the menu closes, so the menu
-      // it belongs to stays in place until then.
-      later(() => {
-        if (!open) setMenu();
-      });
+      openings = Math.max(0, openings - 1);
+      closedAt = now();
+      afterClose();
     });
     tray.setContextMenu(menu);
   }
@@ -160,7 +235,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       built.key !== menuBarKey(latest) ||
       (menuBarHasTimes(latest) && now() - built.at >= MENU_TIMES_MAX_AGE_MS);
     if (!stale) return;
-    if (open) behind = true;
+    if (isOpen()) behind = true;
     else setMenu();
   }
 
@@ -171,7 +246,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       tray = made;
       made.on("mouse-enter", () => {
         // The pointer on its way to a click: the menu is made again with this moment's times.
-        if (tray === made && !open) setMenu();
+        if (tray === made && !isOpen()) setMenu();
       });
       missing = false;
       shown = { title: "", lit: false, toolTip: "" };
@@ -187,7 +262,9 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
   function takeOut(): void {
     const leaving = tray;
     tray = null;
-    open = false;
+    openings = 0;
+    closedAt = null;
+    onScreen.length = 0;
     behind = false;
     missing = false;
     shown = null;
@@ -216,7 +293,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       return { show: show && !missing };
     },
     reopen() {
-      if (tray === null || open) return;
+      if (tray === null || isOpen()) return;
       const current = tray;
       setMenu();
       try {

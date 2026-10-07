@@ -85,9 +85,23 @@ describe("a notification", () => {
     expect(offer.body).not.toBe(command);
   });
 
-  test("a command at the longest it shows whole still offers Allow", () => {
+  test("a command at the longest it shows whole still offers Allow, and one of 80 characters does not", () => {
     const command = "x".repeat(MAX_NOTICE_COMMAND_CHARS);
     expect(noticeOffer(WAIT, bash(command)).decisions).toEqual(["deny", "allow"]);
+    expect(noticeOffer(WAIT, bash(`npm test -- ${"x".repeat(68)}`)).decisions).toEqual(["deny"]);
+  });
+
+  test("of a reminder says how long it has waited before what it asks", () => {
+    const reminder = { title: "checkout-flow", body: "Has waited 40 minutes for permission" };
+    expect(noticeOffer(reminder, bash("npm test"), 40 * 60_000)).toEqual({
+      title: "checkout-flow",
+      subtitle: "Has waited 40 minutes. Asks to run",
+      body: "npm test",
+      decisions: ["deny", "allow"],
+    });
+    expect(noticeOffer(reminder, bash("npm test\nls"), 40 * 60_000).subtitle).toBe(
+      "Has waited 40 minutes. Asks to run",
+    );
   });
 
   test("offers Allow only while the title, subtitle and text fit in the bytes macOS keeps", () => {
@@ -118,14 +132,27 @@ describe("a notification", () => {
     expect(offer.subtitle).toBe(`Asks to use ${ask.tool}`);
   });
 
-  test("of one the collector offers Deny alone for says why, then what it asks", () => {
+  test("of one the collector offers Deny alone for says why, then what it asks on a line of its own", () => {
     const offer = noticeOffer(WAIT, held("Edit", { file_path: "/Users/example/code/demo/a.ts" }));
     expect(offer.body).toBe(
-      "Allow is not offered for a change to a file. Answer in the session to allow it. file_path: /Users/example/code/demo/a.ts",
+      "Allow is not offered for a change to a file. Answer in the session to allow it.\nfile_path: /Users/example/code/demo/a.ts",
     );
     expect(noticeOffer(WAIT, bash(`echo ${"x".repeat(5_000)}`)).body).toMatch(
-      /^It is too long to show whole, so only Deny is offered\. echo x+…$/,
+      /^It is too long to show whole, so only Deny is offered\.\necho x+…$/,
     );
+  });
+
+  test.each([
+    ["of several lines shows its first, and … for the rest", "npm test\nrm -rf build", "npm test…"],
+    ["starting on a blank line shows its first that is not", "\nrm -rf build", "rm -rf build…"],
+    ["with two spaces in a row ends in …, as it is not shown as written", "echo a  b", "echo a b…"],
+    ["of one line that only runs long is cut", `echo ${"y".repeat(200)}`, /^echo y+…$/],
+  ])("offering Deny alone, the start of a command %s", (_, command, start) => {
+    const [reason, shown, ...more] = noticeOffer(WAIT, bash(command)).body.split("\n");
+    expect(reason).toBe("To allow it, open Agent Lookout, which shows it whole.");
+    if (typeof start === "string") expect(shown).toBe(start);
+    else expect(shown).toMatch(start);
+    expect(more).toEqual([]);
   });
 
   test("never offers Allow for a request the collector does not, whatever it looks like", () => {
@@ -140,6 +167,7 @@ describe("the menu", () => {
     expect(menuOffer(bash("npm test\nnpm run build"))).toEqual({
       heading: "Asks to run",
       lines: ["npm test", "npm run build"],
+      inputs: [],
       allow: true,
       note: null,
     });
@@ -152,18 +180,54 @@ describe("the menu", () => {
     expect(offer.lines.map(fixUpWindowsStyleLabel)).toEqual(["npm test && npm run build &"]);
   });
 
-  test("shows each other input as name: value on a line of its own", () => {
+  test("shows each other input as name: value on a line of its own, apart from the command", () => {
     const offer = menuOffer(bash("npm run build", { run_in_background: true, timeout: 600000 }));
     expect(offer).toMatchObject({
-      lines: ["npm run build", "run_in_background: true", "timeout: 600000"],
+      lines: ["npm run build"],
+      inputs: ["run_in_background: true", "timeout: 600000"],
       allow: true,
     });
     const fetch = menuOffer(held("WebFetch", { url: "https://example.com", prompt: "Summarise" }));
     expect(fetch).toMatchObject({
       heading: "Asks to use WebFetch",
-      lines: ["url: https://example.com", "prompt: Summarise"],
+      lines: [],
+      inputs: ["url: https://example.com", "prompt: Summarise"],
       allow: true,
     });
+  });
+
+  test("a command's line is never shown as an input, nor an input as a line of the command", () => {
+    const withInput = menuOffer(bash("npm test", { dangerouslyDisableSandbox: true }));
+    const twoLines = menuOffer(bash("npm test\ndangerouslyDisableSandbox: true"));
+    expect(withInput).toMatchObject({
+      lines: ["npm test"],
+      inputs: ["dangerouslyDisableSandbox: true"],
+      allow: true,
+    });
+    expect(twoLines).toMatchObject({
+      lines: ["npm test", "dangerouslyDisableSandbox: true"],
+      inputs: [],
+      allow: true,
+    });
+    expect(withInput).not.toEqual(twoLines);
+  });
+
+  test("offers Deny alone for an input whose name holds a colon, which would hide where the name ends", () => {
+    expect(menuOffer(held("mcp__docs__find", { "a: b": "c" })).allow).toBe(false);
+    expect(menuOffer(held("mcp__docs__find", { a: "b: c" })).allow).toBe(true);
+  });
+
+  test("offers Allow only while the heading is shown whole too, and cuts a longer one", () => {
+    const longest = `mcp__${"x".repeat(MAX_MENU_LINE_CHARS - "Asks to use mcp__".length)}`;
+    expect(menuOffer(held(longest, {}))).toMatchObject({
+      allow: true,
+      heading: `Asks to use ${longest}`,
+    });
+    const offer = menuOffer(held(`mcp__${"x".repeat(190)}`, {}));
+    expect(offer.allow).toBe(false);
+    expect(Array.from(offer.heading)).toHaveLength(MAX_MENU_LINE_CHARS);
+    expect(offer.heading.endsWith("…")).toBe(true);
+    expect(offer.note).toBe("To allow it, open Agent Lookout, which shows it whole.");
   });
 
   test.each([
@@ -205,9 +269,30 @@ describe("the menu", () => {
     expect(menuOffer(held("mcp__docs__list", {}))).toEqual({
       heading: "Asks to use mcp__docs__list",
       lines: [],
+      inputs: [],
       allow: true,
       note: null,
     });
+  });
+
+  test("offering Deny alone, counts the lines left out after the last it shows", () => {
+    const command = Array.from({ length: MAX_MENU_LINES - 1 }, (_, i) => `echo ${i}`).join("\n");
+    const offer = menuOffer(bash(`${command}\nls ...`, { timeout: 5, run_in_background: true }));
+    expect(offer.allow).toBe(false);
+    expect(offer.lines).toHaveLength(MAX_MENU_LINES + 1);
+    expect(offer.lines.at(-1)).toBe("And 2 more lines");
+    expect(offer.inputs).toEqual([]);
+    // The command's lines and the inputs count together.
+    expect(menuOffer(bash(command, { timeout: 5 }))).toMatchObject({
+      allow: true,
+      inputs: ["timeout: 5"],
+    });
+    expect(menuOffer(bash(command, { timeout: 5, run_in_background: true }))).toMatchObject({
+      allow: false,
+      inputs: ["timeout: 5", "And 1 more line"],
+    });
+    const fewer = menuOffer(bash("ls ...", { timeout: 5 }));
+    expect(fewer).toMatchObject({ lines: ["ls ..."], inputs: ["timeout: 5"], allow: false });
   });
 
   test("offers Deny alone for an input whose value runs over lines", () => {

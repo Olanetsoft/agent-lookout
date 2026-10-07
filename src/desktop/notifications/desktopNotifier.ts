@@ -9,8 +9,10 @@
 // in it as written, Allow (`answers/answerOffer.ts`). A press goes to the
 // app's answers (`answers/desktopAnswers.ts`), which make every check a press
 // on the dashboard makes. Such a notification is kept by its request, since
-// one that is collected loses its buttons, and taken down once its request
-// has been answered, let go or replaced.
+// one that is collected loses its buttons, and taken down once a button on it
+// is pressed, whatever the press came to, or once its request has been
+// answered, let go or replaced. A reminder's says how long the session has
+// waited before what it asks.
 //
 // It imports only types from Electron, so it is tested in plain Node with a
 // stand-in for Electron's `Notification`. `main.ts` hands it Electron's.
@@ -140,7 +142,10 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
         notification.on("action", (details) => {
           const decision = decisions[details.actionIndex];
           if (decision === undefined) return;
+          // Pressed, its buttons have done their part: what came of it is
+          // said by a notification of its own when nothing was sent.
           forget(id, notification);
+          takeDown(notification);
           void held.answers
             .press({
               sessionId: held.sessionId,
@@ -176,13 +181,13 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
       present(noticeOffer(notice), about?.sessionId);
       return;
     }
-    const { sessionId } = about;
+    const { sessionId, waitedMs } = about;
     void answers
       .heldFor(sessionId)
       .catch(() => undefined)
       .then((session) => {
         const ask = session?.ask;
-        present(noticeOffer(notice, ask), sessionId, ask?.requestId);
+        present(noticeOffer(notice, ask, waitedMs), sessionId, ask?.requestId);
       });
   }
 

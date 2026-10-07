@@ -130,7 +130,6 @@ describe("a notification of a wait", () => {
     notification?.appear();
     tick(2_000);
     notification?.press("Allow");
-    notification?.press("Deny");
     expect(pressed).toEqual([
       {
         sessionId: ID,
@@ -140,8 +139,20 @@ describe("a notification of a wait", () => {
         shownAt: NOW + 400,
         from: "notification",
       },
-      expect.objectContaining({ decision: "deny" }),
     ]);
+  });
+
+  test("a press takes the notification down at once, whatever it comes to, and Deny answers Deny", async () => {
+    const { notifier, pressed, made, shown } = setUp({ held: { ask: ask("npm test") } });
+    notifier.show(WAIT, { sessionId: ID });
+    const notification = await shown();
+    expect(notification?.closed).toBe(false);
+    notification?.press("Deny");
+    expect(notification?.closed).toBe(true);
+    expect(pressed).toEqual([expect.objectContaining({ decision: "deny", requestId: REQUEST_ID })]);
+    // Nothing is left to take down once its request goes.
+    notifier.observe({ sessions: [] });
+    expect(made).toHaveLength(1);
   });
 
   test("a press whose button it does not have answers nothing", async () => {
@@ -170,11 +181,16 @@ describe("a notification of a wait", () => {
     await vi.waitFor(() => expect(made).toHaveLength(1));
     notifier.show(
       { title: "checkout-flow", body: "Has waited 10 minutes for permission" },
-      { sessionId: ID },
+      { sessionId: ID, waitedMs: 10 * 60_000 },
     );
     await vi.waitFor(() => expect(made).toHaveLength(2));
     expect(made[0]?.closed).toBe(true);
     expect(made[1]?.buttons).toEqual(["Deny", "Allow"]);
+    // So it can be told from the first, it says how long the session has waited.
+    expect(made[1]?.options).toMatchObject({
+      subtitle: "Has waited 10 minutes. Asks to run",
+      body: "npm test",
+    });
   });
 
   test("has no buttons when the app gives no answers, or the request cannot be read", async () => {

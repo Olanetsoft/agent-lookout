@@ -10,11 +10,12 @@
 // session waits in the same wait. The Events log then has it as an answer by
 // Agent Lookout. Before that, the app makes two checks only it can: nothing
 // is taken in the first second what was pressed was shown, as on the page,
-// and nothing while this Mac is locked, since macOS lets a notification's
+// and nothing while this Mac is locked, should macOS let a notification's
 // buttons be pressed on the lock screen.
 //
 // What a press came to is never left unsaid. One from a notification that
-// sent nothing is followed by a notification that says why; one from the
+// sent nothing is followed by a notification that says why, and what to do
+// now its buttons are gone: click it, to answer in the window. One from the
 // menu is the line under the menu's headline for a minute, and one that sent
 // nothing opens the menu again, so the line is read at once.
 
@@ -51,15 +52,30 @@ export interface AnswerPress {
   from: "notification" | "menu";
 }
 
-/** What is said of a press, once it is answered or refused. */
-export function pressWords(outcome: DesktopOutcome, decision: AnswerDecision): string {
+/**
+ * What is said of a press, once it is answered or refused. A refusal the
+ * person can put right says how, where the press came from: a notification
+ * that said it is clicked to open the session's details, and the menu, open
+ * again, is pressed again.
+ */
+export function pressWords(
+  outcome: DesktopOutcome,
+  decision: AnswerDecision,
+  from: AnswerPress["from"],
+): string {
   switch (outcome) {
     case "answered":
       return answerOutcomeWords(decision === "allow" ? "allowed" : "denied");
     case "too-soon-shown":
-      return "It was pressed in the first second it was shown, so nothing was sent.";
+      return `It was pressed within a second of being shown, so nothing was sent. ${
+        from === "notification" ? "Click to answer it in Agent Lookout." : "Press again."
+      }`;
     case "locked":
-      return "Nothing is answered while this Mac is locked, so nothing was sent.";
+      return `Nothing is answered while this Mac is locked, so nothing was sent. ${
+        from === "notification"
+          ? "Click to answer it once it is unlocked."
+          : "Press again once it is unlocked."
+      }`;
     case "unavailable":
       return "Agent Lookout is not answering permission prompts now, so nothing was sent.";
     default:
@@ -171,7 +187,7 @@ export function createDesktopAnswers(options: DesktopAnswersOptions): DesktopAns
 
     async press(press) {
       const outcome = await decide(press);
-      const words = pressWords(outcome, press.decision);
+      const words = pressWords(outcome, press.decision, press.from);
       const refused = outcome !== "answered";
       if (press.from === "menu") {
         note = { text: `${oneLine(press.name)}: ${words}`, at: now() };

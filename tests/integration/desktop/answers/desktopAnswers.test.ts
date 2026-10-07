@@ -246,6 +246,8 @@ test("Allow on the notification, once it has been shown a second, reaches the ho
 
   shown.forward(ANSWER_SETTLE_MS);
   notice.press("Allow");
+  // Pressed, it is taken down at once.
+  expect(notice.closed).toBe(true);
   expect(await answered).toEqual({ code: 0, stdout: `${ALLOW_OUTPUT}\n` });
   await vi.waitFor(async () =>
     expect((await shown.events()).find((event) => event.kind === "answered")).toMatchObject({
@@ -270,9 +272,13 @@ test("a press in the first second sends nothing and a notification says so; the 
   await vi.waitFor(() => expect(shown.notifications.made).toHaveLength(2));
   expect(shown.notifications.made[1]?.options).toEqual({
     title: "checkout-flow",
-    body: "It was pressed in the first second it was shown, so nothing was sent.",
+    body: "It was pressed within a second of being shown, so nothing was sent. Click to answer it in Agent Lookout.",
   });
   expect(shown.notifications.made[1]?.buttons).toEqual([]);
+  // The pressed one is taken down, and the one that says why opens the session's details.
+  expect(notice.closed).toBe(true);
+  shown.notifications.made[1]?.click();
+  expect(shown.opened).toEqual([SESSION_ID]);
 
   // The menu lists the session, with what it asks in its submenu.
   const submenu = await shown.submenu();
@@ -304,7 +310,7 @@ test("a press in the menu's first second sends nothing, and the menu opens again
   (await shown.submenu()).click("Allow");
   await vi.waitFor(() => expect(shown.tray().told.at(-1)).toBe("pop up"));
   expect(shown.menu().labels[1]).toBe(
-    "checkout-flow: It was pressed in the first second it was shown, so nothing was sent.",
+    "checkout-flow: It was pressed within a second of being shown, so nothing was sent. Press again.",
   );
   expect((await shown.events()).some((event) => event.kind === "answered")).toBe(false);
 });
@@ -319,7 +325,9 @@ test("a request answered in the session meanwhile is refused, and the menu says 
   shown.forward(ANSWER_SETTLE_MS);
   submenu.click("Allow");
   await vi.waitFor(() => expect(shown.tray().told.at(-1)).toBe("pop up"));
-  expect(shown.menu().labels[1]).toMatch(/^checkout-flow: .*so nothing was sent\.$/);
+  expect(shown.menu().labels[1]).toBe(
+    "checkout-flow: That request is no longer held, so nothing was sent.",
+  );
   expect((await shown.events()).some((event) => event.kind === "answered")).toBe(false);
 });
 
@@ -332,7 +340,7 @@ test("nothing is answered while the Mac is locked, and a notification says why",
   notice.press("Allow");
   await vi.waitFor(() => expect(shown.notifications.made).toHaveLength(2));
   expect(shown.notifications.made[1]?.options.body).toBe(
-    "Nothing is answered while this Mac is locked, so nothing was sent.",
+    "Nothing is answered while this Mac is locked, so nothing was sent. Click to answer it once it is unlocked.",
   );
   // Still held: unlocked, the menu answers it.
   shown.lock(false);
@@ -364,7 +372,10 @@ test("a command too long for a notification offers Deny alone there, and Allow i
   const { answered } = await shown.asks("Bash", { command });
   const notice = await waitNotice(shown.notifications);
   expect(notice.buttons).toEqual(["Deny"]);
-  expect(notice.options.body).toMatch(/^To allow it, open Agent Lookout/);
+  // Its first line, on a line of its own, and … for the rest, so it is never read as one command.
+  expect(notice.options.body).toBe(
+    "To allow it, open Agent Lookout, which shows it whole.\nnpm test…",
+  );
   const submenu = await shown.submenu();
   expect(submenu.labels.slice(2, 5)).toEqual(["Asks to run", "npm test", "npm run build"]);
   shown.forward(ANSWER_SETTLE_MS);

@@ -30,6 +30,8 @@ export interface SystemNotifier {
 export interface NoticeAbout {
   /** The session that waits. */
   sessionId: string;
+  /** For a reminder, how long the session has waited, in milliseconds. */
+  waitedMs?: number;
 }
 
 /** How long `osascript` gets. It normally answers in well under a second. */

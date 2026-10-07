@@ -470,6 +470,57 @@ describe("a session whose permission request is held", () => {
     expect(submenu.slice(2, 5).every((item) => item.enabled === false)).toBe(true);
   });
 
+  test("its other inputs come after a separator, apart from the command's lines", () => {
+    const withInput = submenuOf(
+      menuBarTemplate(
+        snapshot([asking(ask("Bash", { command: "npm test", dangerouslyDisableSandbox: true }))]),
+        NOW,
+        actions(),
+      ),
+    );
+    expect(labels(withInput)).toEqual([
+      "Open Details",
+      "-",
+      "Asks to run",
+      "npm test",
+      "-",
+      "dangerouslyDisableSandbox: true",
+      "-",
+      "Deny",
+      "Allow",
+    ]);
+    const twoLines = submenuOf(
+      menuBarTemplate(
+        snapshot([asking(ask("Bash", { command: "npm test\ndangerouslyDisableSandbox: true" }))]),
+        NOW,
+        actions(),
+      ),
+    );
+    expect(labels(twoLines)).toEqual([
+      "Open Details",
+      "-",
+      "Asks to run",
+      "npm test",
+      "dangerouslyDisableSandbox: true",
+      "-",
+      "Deny",
+      "Allow",
+    ]);
+    // A tool with no command has its inputs under its heading.
+    const fetch = submenuOf(
+      menuBarTemplate(
+        snapshot([asking(ask("WebFetch", { url: "https://example.com" }))]),
+        NOW,
+        actions(),
+      ),
+    );
+    expect(labels(fetch).slice(2, 5)).toEqual([
+      "Asks to use WebFetch",
+      "url: https://example.com",
+      "-",
+    ]);
+  });
+
   test("Deny and Allow name the session, the request and when the menu was shown; Open Details opens it", () => {
     const chosen = actions();
     let shownAt: number | null = null;

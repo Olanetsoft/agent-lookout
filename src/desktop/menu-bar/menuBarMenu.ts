@@ -12,9 +12,9 @@
 // told apart by their agent, project, branch or app, in brackets after it.
 //
 // A session whose permission request Agent Lookout holds opens a submenu
-// instead: Open Details, what it asks, a line each, and Deny, then Allow when
-// the whole of it is shown as written (`menuOffer` in
-// `answers/answerOffer.ts`). Each names the request it was made for, and the
+// instead: Open Details, what it asks, a line each, with its other inputs
+// after a separator of their own, and Deny, then Allow when the whole of it
+// is shown as written (`menuOffer` in `answers/answerOffer.ts`). Each names the request it was made for, and the
 // time the menu was shown goes with a press, so an answer reaches only the
 // request that was on the screen, and none is taken in its first second. What
 // the last press came to is the line under the headline for a minute.
@@ -257,11 +257,17 @@ export function menuBarHasTimes(snapshot: MenuBarSnapshot | null): boolean {
   return menuBarList(snapshot).listed.some((listing) => listing.statusSince !== null);
 }
 
+/** A line of the submenu that is there to be read, and does nothing. */
+function readOnly(label: string): MenuItemConstructorOptions {
+  return { label, enabled: false };
+}
+
 /**
  * The submenu of a session whose permission request is held: Open Details,
- * then what it asks, the heading and a line each, which do nothing, with the
- * reason when only Deny is offered, then Deny and, when the whole of it is
- * shown, Allow. Deny is in the same place whether Allow is there or not.
+ * then what it asks, the heading and a line each, which do nothing, the
+ * command's lines and, after a separator, each other input, with the reason
+ * when only Deny is offered, then Deny and, when the whole of it is shown,
+ * Allow. Deny is in the same place whether Allow is there or not.
  */
 function askItems(
   listing: MenuBarListing,
@@ -281,9 +287,11 @@ function askItems(
   return [
     { label: "Open Details", click: () => actions.openSession(listing.id) },
     { type: "separator" },
-    { label: ask.heading, enabled: false },
-    ...ask.lines.map((line): MenuItemConstructorOptions => ({ label: line, enabled: false })),
-    ...(ask.note === null ? [] : [{ label: ask.note, enabled: false }]),
+    readOnly(ask.heading),
+    ...ask.lines.map(readOnly),
+    ...(ask.lines.length > 0 && ask.inputs.length > 0 ? [{ type: "separator" as const }] : []),
+    ...ask.inputs.map(readOnly),
+    ...(ask.note === null ? [] : [readOnly(ask.note)]),
     { type: "separator" },
     ...decisions.map((decision): MenuItemConstructorOptions => ({
       label: DECISION_LABEL[decision],

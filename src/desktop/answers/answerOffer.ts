@@ -8,26 +8,31 @@
 // page, in a font where two spaces are hard to tell from one, so:
 //
 // - A notification offers Allow only for one Bash command with no other
-//   input, as its whole text: one line of at most 80 characters, with no tab,
+//   input, as its whole text: one line of at most 40 characters, with no tab,
 //   no two spaces in a row, no space at either end and no space but the plain
 //   one, and only while its title, subtitle and text come to 256 bytes or
 //   less, which is all macOS is sure to keep. Apple says nothing of how much
-//   of a banner it draws, so the length is a guess kept short.
-// - The menu offers Allow only when each line of the command, and each other
-//   input as `name: value` on a line of its own, is at most 80 characters,
-//   with no tab, no two spaces in a row, no space at either end and no space
-//   but the plain one, in 20 lines at most, and only when each would be drawn
-//   as written. A menu's labels pass through Chromium on their way to macOS,
-//   which takes a single `&` out, takes `(&x)` out whole, and draws `...` as
-//   `…` (`fixUpWindowsStyleLabel`). An `&` written `&&` is drawn as one, so
-//   each is doubled, and a line that would still not be drawn as written,
-//   with `...` or `(&)` in it, offers Deny only.
+//   of a banner it draws, so the length is kept to about what one line of a
+//   banner holds.
+// - The menu offers Allow only when its heading, each line of the command,
+//   and each other input as `name: value` on a line of its own, is at most 80
+//   characters, with no tab, no two spaces in a row, no space at either end
+//   and no space but the plain one, in 20 lines at most, and only when each
+//   would be drawn as written. The other inputs come after a separator, which
+//   no line of a command can be, and no input's name may hold a `:`, so what
+//   is the command and what is an input, and where a name ends, is never in
+//   doubt. A menu's labels pass through Chromium on their way to macOS, which
+//   takes a single `&` out, takes `(&x)` out whole, and draws `...` as `…`
+//   (`fixUpWindowsStyleLabel`). An `&` written `&&` is drawn as one, so each
+//   is doubled, and a line that would still not be drawn as written, with
+//   `...` or `(&)` in it, offers Deny only.
 //
 // Deny is always offered, with a line saying why Allow is not, and where to
 // see the whole of it. It is pure, so it is tested in plain Node.
 
 import { askHeading } from "../../core/answers/askWords.ts";
 import type { Notice } from "../../core/notices/waiting.ts";
+import { waitedInWords } from "../../core/time-rules/timeRulesWords.ts";
 import {
   EDIT_TOOLS,
   NOT_YES_OR_NO_TOOLS,
@@ -36,8 +41,11 @@ import {
 } from "../../core/sessions/session.ts";
 import { MAX_NOTICE_TEXT_LENGTH, oneLine } from "../../core/text.ts";
 
-/** The longest command a notification offers Allow for, in characters. */
-export const MAX_NOTICE_COMMAND_CHARS = 80;
+/** The longest command a notification offers Allow for, in characters: about one line of a banner. */
+export const MAX_NOTICE_COMMAND_CHARS = 40;
+
+/** The longest start of a request a notification shows, on its own line, when it offers Deny alone. */
+export const MAX_NOTICE_PREVIEW_CHARS = 120;
 
 /** The most a notification's title, subtitle and text may hold, in UTF-8 bytes, for Allow. */
 export const MAX_NOTICE_BYTES = 256;
@@ -162,11 +170,20 @@ export interface NoticeOffer {
   decisions: AnswerDecision[];
 }
 
-/** What the request asks, cut to one line, for a notification that does not offer Allow. */
+/**
+ * The start of what a request asks, for a notification that does not offer
+ * Allow: its first line that is not blank, cut, and ending in "…" whenever
+ * another line comes before or after it, or it is not shown as written, so
+ * two lines are never read as one command.
+ */
 function preview(ask: OfferedAsk): string {
-  if (ask.command !== undefined) return ask.command;
   const first = ask.inputs?.[0];
-  return first === undefined ? ask.tool : `${first.name}: ${first.value}`;
+  const text = ask.command ?? (first === undefined ? ask.tool : `${first.name}: ${first.value}`);
+  const lines = text.split("\n");
+  const line = lines.find((each) => each.trim() !== "") ?? "";
+  const shown = oneLine(line, MAX_NOTICE_PREVIEW_CHARS);
+  const whole = lines.length === 1 && shown === line;
+  return whole || shown.endsWith("…") ? shown : `${shown}…`;
 }
 
 /** Whether a notification shows the whole of a request as its text, with room for its title. */
@@ -187,76 +204,93 @@ function noticeShowsWhole(
 /**
  * The notification for a notice: as it is, with no buttons, when no request
  * is held for it. For a held request, the title is the session's, the
- * subtitle says what it asks, "Asks to run", and the text is the whole
+ * subtitle says what it asks, "Asks to run", after how long it has waited for
+ * a reminder, "Has waited 40 minutes. Asks to run", and the text is the whole
  * command, with Deny and Allow, when it fits as written; otherwise the text
- * says why only Deny is offered and where to see it whole, then the start of
- * what it asks, cut to one line, with Deny alone.
+ * says why only Deny is offered and where to see it whole, then, on a line of
+ * its own, the start of what it asks, with Deny alone.
  */
-export function noticeOffer(notice: Notice, ask?: OfferedAsk): NoticeOffer {
+export function noticeOffer(notice: Notice, ask?: OfferedAsk, waitedMs?: number): NoticeOffer {
   const title = oneLine(notice.title);
   if (ask === undefined) {
     return { title, body: oneLine(notice.body, MAX_NOTICE_TEXT_LENGTH), decisions: [] };
   }
-  const subtitle = oneLine(askHeading(ask));
+  const heading = askHeading(ask);
+  const subtitle = oneLine(
+    waitedMs === undefined ? heading : `Has waited ${waitedInWords(waitedMs)}. ${heading}`,
+  );
   if (noticeShowsWhole(title, subtitle, ask)) {
     return { title, subtitle, body: ask.command, decisions: ["deny", "allow"] };
   }
-  const body = oneLine(`${denyOnlyHere(ask)} ${preview(ask)}`, MAX_NOTICE_TEXT_LENGTH);
-  return { title, subtitle, body, decisions: ["deny"] };
+  return { title, subtitle, body: `${denyOnlyHere(ask)}\n${preview(ask)}`, decisions: ["deny"] };
 }
 
 /** What the menu shows of a held request, each a label as Electron is handed it. */
 export interface MenuOffer {
   /** The line over it: "Asks to run". */
   heading: string;
-  /** What it asks, a line each: whole, while Allow is offered. */
+  /** The command's lines, a line each: whole, while Allow is offered. */
   lines: string[];
+  /** Each other input, as `name: value` on a line of its own, shown apart from the command. */
+  inputs: string[];
   /** Whether Allow is offered. Deny always is. */
   allow: boolean;
   /** Why Allow is not offered here, when it is not. */
   note: string | null;
 }
 
-/** The lines of a request: each of the command's, then each other input as `name: value`. */
-function rowsOf(ask: OfferedAsk): { rows: string[]; inputsOnOneLine: boolean } {
-  const inputs = ask.inputs ?? [];
-  return {
-    rows: [
-      ...(ask.command === undefined ? [] : ask.command.split("\n")),
-      ...inputs.map((input) => `${input.name}: ${input.value}`),
-    ],
-    inputsOnOneLine: inputs.every((input) => !input.value.includes("\n")),
-  };
+/** A line as the menu offers Allow for it: plain, and drawn as written. Null otherwise. */
+function wholeLabel(text: string): string | null {
+  return plainLine(text, MAX_MENU_LINE_CHARS) ? menuLabel(text) : null;
+}
+
+/** Each line's label, when every line has one, or null. */
+function wholeLabels(texts: readonly string[]): string[] | null {
+  const labels: string[] = [];
+  for (const text of texts) {
+    const label = wholeLabel(text);
+    if (label === null) return null;
+    labels.push(label);
+  }
+  return labels;
 }
 
 /**
  * The menu's part for a held request: the heading, then what it asks, a line
- * each, whole and as written while Allow is offered. Offering Deny only, each
- * line is cut to one of 80 characters, 20 at most, with a count of the rest,
- * and a note says why.
+ * each, the command's lines and then each other input, whole and as written
+ * while Allow is offered. Offering Deny only, each line is cut to one of 80
+ * characters, 20 at most, with a count of the rest, and a note says why.
  */
 export function menuOffer(ask: OfferedAsk): MenuOffer {
   const heading = askHeading(ask);
-  const { rows, inputsOnOneLine } = rowsOf(ask);
-  const labels = rows.map((row) => (plainLine(row, MAX_MENU_LINE_CHARS) ? menuLabel(row) : null));
-  const headingLabel = menuLabel(heading);
-  const whole: string[] = labels.filter((label): label is string => label !== null);
+  const inputs = ask.inputs ?? [];
+  const commandRows = ask.command === undefined ? [] : ask.command.split("\n");
+  const inputRows = inputs.map((input) => `${input.name}: ${input.value}`);
   if (
     offersAllow(ask) &&
-    inputsOnOneLine &&
-    rows.length <= MAX_MENU_LINES &&
-    whole.length === rows.length &&
-    headingLabel !== null
+    commandRows.length + inputRows.length <= MAX_MENU_LINES &&
+    inputs.every((input) => !input.name.includes(":"))
   ) {
-    return { heading: headingLabel, lines: whole, allow: true, note: null };
+    const headingLabel = wholeLabel(heading);
+    const lines = wholeLabels(commandRows);
+    const inputLabels = wholeLabels(inputRows);
+    if (headingLabel !== null && lines !== null && inputLabels !== null) {
+      return { heading: headingLabel, lines, inputs: inputLabels, allow: true, note: null };
+    }
   }
-  const shown = rows
-    .slice(0, MAX_MENU_LINES)
-    .map((row) => menuText(oneLine(row, MAX_MENU_LINE_CHARS)));
-  const more = rows.length - shown.length;
+  const cut = (row: string) => menuText(oneLine(row, MAX_MENU_LINE_CHARS));
+  const lines = commandRows.slice(0, MAX_MENU_LINES).map(cut);
+  const shownInputs = inputRows.slice(0, MAX_MENU_LINES - lines.length).map(cut);
+  const more = commandRows.length + inputRows.length - lines.length - shownInputs.length;
+  if (more > 0) {
+    (shownInputs.length > 0 ? shownInputs : lines).push(
+      more === 1 ? "And 1 more line" : `And ${more} more lines`,
+    );
+  }
   return {
-    heading: menuText(heading),
-    lines: more > 0 ? [...shown, more === 1 ? "And 1 more line" : `And ${more} more lines`] : shown,
+    heading: cut(heading),
+    lines,
+    inputs: shownInputs,
     allow: false,
     note: menuText(denyOnlyHere(ask)),
   };

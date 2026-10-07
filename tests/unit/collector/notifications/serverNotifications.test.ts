@@ -767,5 +767,9 @@ test("a wait and its reminder name the session they are about, for a host that o
     "Finished",
     "Has waited 10 minutes for permission",
   ]);
-  expect(notifier.about).toEqual([{ sessionId: id(1) }, undefined, { sessionId: id(1) }]);
+  expect(notifier.about).toEqual([
+    { sessionId: id(1) },
+    undefined,
+    { sessionId: id(1), waitedMs: 10 * 60_000 },
+  ]);
 });

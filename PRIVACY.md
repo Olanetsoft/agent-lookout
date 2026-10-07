@@ -204,7 +204,7 @@ It answers when you press Allow or Deny on the dashboard, or in the Mac app on i
 
 #### In the Mac app
 
-The Mac app's own notification of a wait, which it shows while its window is closed, holds what Agent Lookout shows of a held request: for one shell command on one line, the whole command as its text, under "Asks to run", with Deny and Allow, and for anything else the start of it, cut to one line, with Deny. The menu bar's menu holds the same in a session's submenu, every line of the command and each other input, cut only when Allow is not offered. macOS keeps a notification in Notification Centre, and can show it on the lock screen, until you clear it or the app takes it down, which it does once the request has been answered or let go. Before a press is answered, the app asks macOS whether the screen is locked, with `powerMonitor`, which reads it from macOS and sends nothing anywhere, and answers nothing while it is. [What is on screen](#what-is-on-screen) says how to keep these off the lock screen.
+The Mac app's own notification of a wait, or of a reminder of one, which it shows while its window is closed, holds what Agent Lookout shows of a held request: for one short shell command on one line, the whole command as its text, under "Asks to run", with Deny and Allow, and for anything else the start of it, its first line, cut, with Deny. The menu bar's menu holds the same in a session's submenu, every line of the command and each other input, cut only when Allow is not offered. macOS keeps a notification in Notification Centre, and can show it on the lock screen, until you clear it or the app takes it down, which it does once a button on it is pressed, or once the request has been answered or let go. Before a press is answered, the app asks macOS whether the screen is locked, with `powerMonitor`, which reads it from macOS and sends nothing anywhere, and answers nothing while it is. [What is on screen](#what-is-on-screen) says how to keep these off the lock screen.
 
 #### Permission rules
 
@@ -303,8 +303,8 @@ While a page that has notifications on is open and asking every 2 seconds, the p
 A notification the server shows differs from the browser's:
 
 - Outside the Mac app, macOS shows it as coming from Script Editor, which is how it labels whatever `osascript` shows. In the Mac app, macOS shows it as coming from Agent Lookout. The browser's permission and its notification settings do not apply to it. On macOS 26.5, where this was checked in the system's log, macOS delivered it without first asking whether Script Editor may show notifications.
-- Outside the Mac app, it holds nothing that could open the session or the dashboard, and what a click on it does has not been checked. In the Mac app a click brings the window forward, on the session's details for a wait.
-- Outside the Mac app, the server cannot take it down. It stays in Notification Centre after the session stops waiting, and after Agent Lookout stops, until you clear it. The Mac app takes down one with Deny and Allow once its request has been answered or let go.
+- Outside the Mac app, it holds nothing that could open the session or the dashboard, and what a click on it does has not been checked. In the Mac app a click brings the window forward, on the session's details for a wait or a reminder of one.
+- Outside the Mac app, the server cannot take it down. It stays in Notification Centre after the session stops waiting, and after Agent Lookout stops, until you clear it. The Mac app takes down one with Deny and Allow once a button on it is pressed, or once its request has been answered or let go.
 
 ## Email
 

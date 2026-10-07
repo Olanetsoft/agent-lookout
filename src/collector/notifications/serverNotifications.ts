@@ -281,7 +281,8 @@ export function createServerNotifications(
           );
         } else if (entry.kind === "reminder") {
           const { session, begunAt } = entry.reminder;
-          show(reminderNotice(session, at - begunAt), { sessionId: session.id });
+          const waitedMs = at - begunAt;
+          show(reminderNotice(session, waitedMs), { sessionId: session.id, waitedMs });
         } else show(summaryNotice(entry.summary.items));
       }
     },

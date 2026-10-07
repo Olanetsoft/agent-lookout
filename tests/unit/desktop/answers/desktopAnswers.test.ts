@@ -99,7 +99,7 @@ describe("a press from a notification", () => {
     expect(told).toEqual([]);
   });
 
-  test("in the first second it was shown sends nothing, and a notification says why", async () => {
+  test("in the first second it was shown sends nothing, and a notification says why and to click it", async () => {
     const { answers, answer, told } = setUp();
     expect(await answers.press(press({ shownAt: NOW - 999 }))).toBe("too-soon-shown");
     expect(await answers.press(press({ shownAt: null }))).toBe("too-soon-shown");
@@ -108,7 +108,7 @@ describe("a press from a notification", () => {
       {
         notice: {
           title: "checkout-flow",
-          body: "It was pressed in the first second it was shown, so nothing was sent.",
+          body: "It was pressed within a second of being shown, so nothing was sent. Click to answer it in Agent Lookout.",
         },
         sessionId: ID,
       },
@@ -127,7 +127,7 @@ describe("a press from a notification", () => {
       expect(await answers.press(press())).toBe("locked");
       expect(answer).not.toHaveBeenCalled();
       expect(told[0]?.notice.body).toBe(
-        "Nothing is answered while this Mac is locked, so nothing was sent.",
+        "Nothing is answered while this Mac is locked, so nothing was sent. Click to answer it once it is unlocked.",
       );
     }
   });
@@ -172,6 +172,15 @@ describe("a press from the menu", () => {
     expect(answers.forMenu(snapshot).note).toBeNull();
   });
 
+  test("in the first second the menu was shown, the line says to press again", async () => {
+    const { answers, answer, snapshot } = setUp();
+    expect(await answers.press(press({ from: "menu", shownAt: NOW - 999 }))).toBe("too-soon-shown");
+    expect(answer).not.toHaveBeenCalled();
+    expect(answers.forMenu(snapshot).note).toBe(
+      "checkout-flow: It was pressed within a second of being shown, so nothing was sent. Press again.",
+    );
+  });
+
   test("an answer is said there too, and does not open the menu again", async () => {
     const { answers, menuChanged, snapshot } = setUp();
     await answers.press(press({ from: "menu", decision: "deny" }));
@@ -211,9 +220,14 @@ test("each outcome has words of its own", () => {
     "locked",
     "failed",
   ];
-  const words = outcomes.map((outcome) => pressWords(outcome, "deny"));
-  expect(new Set(words).size).toBe(outcomes.length);
-  expect(pressWords("answered", "allow")).toBe("Allowed from Agent Lookout.");
+  for (const from of ["notification", "menu"] as const) {
+    const words = outcomes.map((outcome) => pressWords(outcome, "deny", from));
+    expect(new Set(words).size).toBe(outcomes.length);
+  }
+  expect(pressWords("answered", "allow", "menu")).toBe("Allowed from Agent Lookout.");
+  expect(pressWords("locked", "allow", "menu")).toBe(
+    "Nothing is answered while this Mac is locked, so nothing was sent. Press again once it is unlocked.",
+  );
 });
 
 test("each poll is shown at once, and again once the held requests were checked, so a request its wait was first seen in is offered at once", async () => {

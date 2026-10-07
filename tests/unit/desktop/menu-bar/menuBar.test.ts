@@ -2,7 +2,11 @@ import { describe, expect, test, vi } from "vitest";
 
 import { shownAsk } from "@collector/answers/shownAsk";
 import type { Session } from "@core/sessions/session";
-import { createMenuBar, MENU_TIMES_MAX_AGE_MS } from "@desktop/menu-bar/menuBar";
+import {
+  createMenuBar,
+  MENU_TIMES_MAX_AGE_MS,
+  MENU_UNSAID_CLOSE_MS,
+} from "@desktop/menu-bar/menuBar";
 import type { MenuBarActions, MenuBarSnapshot } from "@desktop/menu-bar/menuBarMenu";
 import type { MenuBarSettings, MenuBarSettingsStore } from "@desktop/menu-bar/menuBarSettings";
 import { FakeMenu, FakeTray } from "@tests/support/desktop/electronStandIns";
@@ -188,6 +192,15 @@ describe("in the menu bar", () => {
   });
 });
 
+const ASK_ID = "0123456789abcdef0123456789abcdef";
+
+/** A permission request held for a session, made by the collector's own rule for what is shown. */
+function heldAsk(command: string, requestId = ASK_ID): NonNullable<Session["ask"]> {
+  const shown = shownAsk("Bash", { command });
+  if (shown === null) throw new Error("not held");
+  return { requestId, ...shown, until: NOW + 300_000 };
+}
+
 describe("while the menu is open", () => {
   test("it is left as it is, and what came meanwhile is shown once it has closed and the choice is heard", () => {
     const { bar, tray, runLater } = setUp();
@@ -212,6 +225,61 @@ describe("while the menu is open", () => {
       "checkout-flow · 1m 00s",
       "docs · 5s",
     ]);
+  });
+
+  test("a submenu's closing, which Electron tells the top menu of, leaves the top menu in place", () => {
+    const { bar, tray, runLater } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000, { ask: heldAsk("npm test") })));
+    const open = tray()?.menu as FakeMenu;
+    open.open();
+    open.openSubmenu("checkout-flow").leave();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000), waiting("docs", NOW - 5_000)));
+    runLater();
+    tray()?.hover();
+    bar.reopen();
+    expect(tray()?.menu).toBe(open);
+    expect(tray()?.told).not.toContain("pop up");
+
+    // Then the top menu's own closing.
+    open.close();
+    runLater();
+    expect(tray()?.menu).not.toBe(open);
+    expect(tray()?.menu?.labels[0]).toBe("2 sessions need you");
+  });
+
+  test("with the top menu's closing unsaid after a submenu's, it is taken as closed a minute after", () => {
+    const { bar, tray, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000, { ask: heldAsk("npm test") })));
+    const open = tray()?.menu as FakeMenu;
+    open.open();
+    open.openSubmenu("checkout-flow").leave();
+    tick(MENU_UNSAID_CLOSE_MS - 1);
+    bar.update(snapshot(waiting("docs", NOW - 5_000)));
+    expect(tray()?.menu).toBe(open);
+    tick(1);
+    bar.update(snapshot(waiting("docs", NOW - 5_000)));
+    expect(tray()?.menu).not.toBe(open);
+    expect(tray()?.menu?.labels[1]).toMatch(/^docs/);
+  });
+
+  test("a click on an item says the whole menu has closed, though only a submenu's closing was told", () => {
+    const { bar, tray, actions, runLater } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000, { ask: heldAsk("npm test") })));
+    const open = tray()?.menu as FakeMenu;
+    open.open();
+    const submenu = open.openSubmenu("checkout-flow");
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000), waiting("docs", NOW - 5_000)));
+    // One closing is told for the two openings, then the item hears its click.
+    submenu.click("Deny");
+    expect(actions.answer).toHaveBeenCalledOnce();
+    expect(tray()?.menu).toBe(open);
+    runLater();
+    expect(tray()?.menu).not.toBe(open);
+    bar.reopen();
+    expect(tray()?.told.at(-1)).toBe("pop up");
   });
 
   test("a menu closed with nothing new is left in place", () => {
@@ -300,14 +368,10 @@ describe("the switch Show in menu bar", () => {
 });
 
 describe("Deny and Allow in the menu", () => {
-  const REQUEST_ID = "0123456789abcdef0123456789abcdef";
+  const REQUEST_ID = ASK_ID;
 
   function held(command: string, requestId = REQUEST_ID): Session {
-    const shown = shownAsk("Bash", { command });
-    if (shown === null) throw new Error("not held");
-    return waiting("checkout-flow", NOW - 60_000, {
-      ask: { requestId, ...shown, until: NOW + 300_000 },
-    });
+    return waiting("checkout-flow", NOW - 60_000, { ask: heldAsk(command, requestId) });
   }
 
   test("a press takes the moment the menu, or the submenu it is in, was last shown", () => {

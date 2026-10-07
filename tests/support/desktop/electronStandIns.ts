@@ -78,8 +78,8 @@ export function fakeNotifications(
 
 /**
  * A menu as `Menu.buildFromTemplate` makes it, with a menu of its own for
- * each submenu. Opening a submenu tells the top menu it opens too, as
- * Electron does on macOS.
+ * each submenu. Opening a submenu tells the top menu it opens too, and
+ * closing one tells the top menu it closes, as Electron does on macOS.
  */
 export class FakeMenu {
   readonly items: { submenu?: FakeMenu }[];
@@ -113,6 +113,10 @@ export class FakeMenu {
     (this.top ?? this).open();
     submenu.open();
     return submenu;
+  }
+  /** This submenu closes, as the pointer leaves it, while the top menu stays open. */
+  leave(): void {
+    (this.top ?? this).close();
   }
   /**
    * Clicks the item whose label begins with this, as Electron does: the menu

@@ -4,7 +4,11 @@ import type { DenyOnlyReason, PermissionAsk } from "../sessions/session.ts";
 // What is said of a permission request Agent Lookout holds, and of what a
 // press of Allow or Deny came to. The dashboard says it beside its buttons,
 // and the Mac app in its notifications and its menu bar, so the words are
-// kept here and none of them has a copy.
+// kept here. One set has a second, shorter form: where a notification and a
+// menu have less room, the app gives the reasons for Deny alone in a
+// sentence each of its own (`denyOnlyHere` in
+// `src/desktop/answers/answerOffer.ts`), and a change to one is made to
+// both.
 
 /** What a press of Allow or Deny came to: answered, or why not, or no answer at all. */
 export type PressOutcome = "allowed" | "denied" | AnswerFailure | "no-answer";
