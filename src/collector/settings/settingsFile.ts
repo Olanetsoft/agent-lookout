@@ -15,6 +15,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 
+import { openWithoutFollowingNow } from "../files/noFollow.ts";
 import { tildify } from "../files/paths.ts";
 
 /**
@@ -74,9 +75,8 @@ export type SettingsText =
 /** How a write went. */
 export type SettingsWrite = { ok: true } | { ok: false; problem: string };
 
-// `O_NOFOLLOW` makes an open fail when the name is a link, and `O_NONBLOCK`
-// makes it return at once for a named pipe. Neither exists on Windows.
-const NO_FOLLOW = (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+// The file is opened without following a link at its name, and without
+// waiting on a named pipe, on every system: `noFollow.ts`.
 
 function codeOf(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -134,7 +134,7 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
 
   let fd: number;
   try {
-    fd = openSync(file, constants.O_RDONLY | NO_FOLLOW);
+    fd = openWithoutFollowingNow(file, constants.O_RDONLY);
   } catch (error) {
     const code = codeOf(error);
     if (code === "ENOENT") return { kind: "missing" };
@@ -216,9 +216,9 @@ export function writeSettingsText(setup: SettingsSetup, text: string): SettingsW
       folder,
       `.${path.basename(file)}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`,
     );
-    const fd = openSync(
+    const fd = openWithoutFollowingNow(
       temporary,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       SETTINGS_FILE_MODE,
     );
     try {

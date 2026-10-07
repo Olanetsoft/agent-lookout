@@ -135,8 +135,11 @@ describe("POST /api/settings/time-rules", () => {
     expect(response.json()).toEqual({ ok: true, timeRules: SET });
 
     expect(JSON.parse(await readFile(server.settingsFile, "utf8"))).toEqual({ timeRules: SET });
-    expect((await stat(server.settingsFile)).mode & 0o777).toBe(0o600);
-    expect((await stat(path.dirname(server.settingsFile))).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") {
+      expect((await stat(server.settingsFile)).mode & 0o777).toBe(0o600);
+      expect((await stat(path.dirname(server.settingsFile))).mode & 0o777).toBe(0o700);
+    }
     expect((await server.settings()).timeRules).toEqual(SET);
     // The next snapshot is made by them.
     expect((await server.snapshot()).timeRules).toEqual(SET);

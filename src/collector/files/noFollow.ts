@@ -13,7 +13,8 @@ import { lstat, open, type FileHandle } from "node:fs/promises";
  *
  * Windows has neither flag, and Node there follows a link it opens. So there
  * the name is looked at first without following it, and anything but an
- * ordinary file is refused before it is opened. Then the file is opened, and
+ * ordinary file is refused before it is opened, a link with `ELOOP`, as
+ * `O_NOFOLLOW` refuses one. Then the file is opened, and
  * unless the open file is that very file, by its disk and its number on that
  * disk, it is closed unread and unwritten, and the open fails: a link put in
  * place of the file between the look and the open is caught that way. A file
@@ -30,6 +31,12 @@ const NO_FOLLOW = (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
 function notOrdinary(): Error {
   return new Error("Not an ordinary file.");
+}
+
+/** What a refused name gives: ELOOP for a link, as `O_NOFOLLOW` gives, and no code for anything else. */
+function refusal(named: BigIntStats): Error {
+  if (!named.isSymbolicLink()) return notOrdinary();
+  return Object.assign(new Error("A symbolic link, which is not followed."), { code: "ELOOP" });
 }
 
 /** Whether the name holds an ordinary file, and the one that was opened. */
@@ -63,7 +70,7 @@ export async function openWithoutFollowing(
   } catch (error) {
     if (!(isMissing(error) && creates(flags))) throw error;
   }
-  if (before !== null && !before.isFile()) throw notOrdinary();
+  if (before !== null && !before.isFile()) throw refusal(before);
   const handle = await open(file, flags, mode);
   try {
     const opened = await handle.stat({ bigint: true });
@@ -90,7 +97,7 @@ export function openWithoutFollowingNow(
   } catch (error) {
     if (!(isMissing(error) && creates(flags))) throw error;
   }
-  if (before !== null && !before.isFile()) throw notOrdinary();
+  if (before !== null && !before.isFile()) throw refusal(before);
   const fd = openSync(file, flags, mode);
   try {
     const named = before ?? lstatSync(file, { bigint: true });

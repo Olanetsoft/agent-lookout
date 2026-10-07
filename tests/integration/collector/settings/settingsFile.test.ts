@@ -24,13 +24,14 @@ const modeOf = async (target: string) => (await stat(target)).mode & 0o777;
 
 describe("where the settings are kept", () => {
   test("in ~/.agent-lookout/settings.json, unless AGENT_LOOKOUT_SETTINGS_FILE names another", () => {
+    // The file as this system writes it, and shown in the short form.
     expect(readSettingsSetup({}, "/Users/example")).toEqual({
-      file: "/Users/example/.agent-lookout/settings.json",
+      file: path.resolve("/Users/example/.agent-lookout/settings.json"),
       shown: "~/.agent-lookout/settings.json",
     });
     expect(
       readSettingsSetup({ [SETTINGS_FILE_ENV]: " /Users/example/rules.json " }, "/Users/example"),
-    ).toEqual({ file: "/Users/example/rules.json", shown: "~/rules.json" });
+    ).toEqual({ file: path.resolve("/Users/example/rules.json"), shown: "~/rules.json" });
     expect(readSettingsSetup({ [SETTINGS_FILE_ENV]: "  " }, "/Users/example").shown).toBe(
       "~/.agent-lookout/settings.json",
     );
@@ -107,8 +108,11 @@ describe("writeSettingsText", () => {
   test("makes the folder with mode 700 and the file with mode 600, and leaves nothing else beside it", async () => {
     const setup = await setupIn();
     expect(writeSettingsText(setup, '{"timeRules": {}}\n')).toEqual({ ok: true });
-    expect(await modeOf(path.dirname(setup.file))).toBe(0o700);
-    expect(await modeOf(setup.file)).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") {
+      expect(await modeOf(path.dirname(setup.file))).toBe(0o700);
+      expect(await modeOf(setup.file)).toBe(0o600);
+    }
     expect(await readFile(setup.file, "utf8")).toBe('{"timeRules": {}}\n');
     expect(await readdir(path.dirname(setup.file))).toEqual(["settings.json"]);
   });
@@ -119,7 +123,8 @@ describe("writeSettingsText", () => {
     await writeFile(setup.file, "old and longer than what replaces it", { mode: 0o644 });
     expect(writeSettingsText(setup, "new")).toEqual({ ok: true });
     expect(await readFile(setup.file, "utf8")).toBe("new");
-    expect(await modeOf(setup.file)).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") expect(await modeOf(setup.file)).toBe(0o600);
   });
 
   test("nothing is written through a link at the file's name, and the file it points to is left alone", async () => {
