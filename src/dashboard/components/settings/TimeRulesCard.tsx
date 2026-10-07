@@ -20,11 +20,16 @@ import {
   readClock,
   readIdleHours,
   readMinutes,
+  readRepeatMinutes,
+  REMIND_AGAIN,
+  REPEAT_TAKE,
+  repeatShown,
   RULE_NAMES,
   SAME_TIMES,
   WEEKDAY_LABEL,
   WEEKDAY_NAME,
   withDay,
+  withRepeat,
   type IdleUnit,
 } from "@dashboard/lib/time-rules/timeRulesFields";
 
@@ -149,8 +154,17 @@ function Together({ children }: { children: ReactNode }) {
   return <span className='inline-flex flex-wrap items-center gap-x-2 gap-y-2'>{children}</span>;
 }
 
-/** Which field last held something that could not be read, and what it takes. */
-type Take = { rule: keyof TimeRules; words: string } | null;
+/**
+ * A line of fields: one for each rule, and the long wait rule's repeat, which
+ * has a line of its own under the rule's.
+ */
+type Line = keyof TimeRules | "repeat";
+
+/** The rule a line's fields change. */
+const ruleOf = (line: Line): keyof TimeRules => (line === "repeat" ? "longWait" : line);
+
+/** Which line's field last held something that could not be read, and what it takes. */
+type Take = { line: Line; words: string } | null;
 
 interface TimeRulesCardProps {
   /** Told once a change was taken, so the page reads the sessions again at once. */
@@ -163,9 +177,10 @@ interface TimeRulesCardProps {
 }
 
 /**
- * Time rules, in Settings: the long wait reminder, how long a session is idle
- * before it is stale, and quiet hours, each with its own Off and On, and while
- * it is on, what it is set to. Agent Lookout keeps them in its own settings
+ * Time rules, in Settings: the long wait reminder, with its own Off and On for
+ * reminding again while the wait goes on, how long a session is idle before it
+ * is stale, and quiet hours, each with its own Off and On, and while it is on,
+ * what it is set to. Agent Lookout keeps them in its own settings
  * file, so they hold with no dashboard open, and every change is sent to it at
  * once and saved there. The card shows what the app says, so a change it did
  * not take does not look taken, and says why in an info note. Before the app
@@ -195,38 +210,39 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
   }
 
   const { longWait, idle, quietHours } = reading.timeRules;
+  const repeat = repeatShown(longWait);
   // Days only while the hours are whole days, so the field always shows what is in force.
   const idleUnit =
     unit === "days" && idle.hours % 24 !== 0 ? "hours" : (unit ?? idleShown(idle.hours).unit);
   const idleValue = idleUnit === "hours" ? idle.hours : idle.hours / 24;
   const quietNow = quietHours.on && snapshot?.quiet === true;
 
-  /** Any change to a rule puts away what its field last could not take. */
+  /** Any change to a rule puts away what its fields last could not take. */
   const changeRule = (rule: keyof TimeRules, update: (rules: TimeRules) => TimeRules) => {
-    setTake((was) => (was?.rule === rule ? null : was));
+    setTake((was) => (was !== null && ruleOf(was.line) === rule ? null : was));
     change(update);
   };
 
   /** Reads a field: sends what it makes, or says what it takes. */
   const field =
     (
-      rule: keyof TimeRules,
+      line: Line,
       words: string,
       apply: (typed: string, rules: TimeRules) => TimeRules | string | null,
     ) =>
     (typed: string): boolean => {
       const made = apply(typed, reading.timeRules);
       if (made === null || typeof made === "string") {
-        setTake({ rule, words: made ?? words });
+        setTake({ line, words: made ?? words });
         return false;
       }
-      changeRule(rule, (rules) => {
+      changeRule(ruleOf(line), (rules) => {
         const again = apply(typed, rules);
         return again === null || typeof again === "string" ? rules : again;
       });
       return true;
     };
-  const takeFor = (rule: keyof TimeRules) => (take?.rule === rule ? take.words : null);
+  const takeFor = (line: Line) => (take?.line === line ? take.words : null);
 
   const quietTime = (end: "from" | "to") =>
     field("quietHours", CLOCK_TAKES, (typed, rules) => {
@@ -263,6 +279,40 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
               />
               <span>{longWait.minutes === 1 ? "minute" : "minutes"} of waiting</span>
             </SetTo>
+            <div className='flex items-center justify-between gap-6'>
+              <span aria-hidden>{REMIND_AGAIN}</span>
+              <SegmentedControl
+                label={REMIND_AGAIN}
+                value={repeat.on ? "on" : "off"}
+                onValueChange={(value) =>
+                  changeRule("longWait", (rules) => ({
+                    ...rules,
+                    longWait: withRepeat(rules.longWait, { on: value === "on" }),
+                  }))
+                }
+                options={SWITCH}
+                className='shrink-0'
+              />
+            </div>
+            {repeat.on && (
+              <SetTo take={takeFor("repeat")}>
+                <span>Every</span>
+                <Together>
+                  <CommitField
+                    label='Minutes between reminders'
+                    value={String(repeat.minutes)}
+                    onCommit={field("repeat", REPEAT_TAKE, (typed, rules) => {
+                      const minutes = readRepeatMinutes(typed);
+                      return minutes === null
+                        ? null
+                        : { ...rules, longWait: withRepeat(rules.longWait, { minutes }) };
+                    })}
+                    className='w-16'
+                  />
+                  <span>minutes</span>
+                </Together>
+              </SetTo>
+            )}
           </RuleRow>
 
           <RuleRow
@@ -292,11 +342,11 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
                     // Only how it is shown: the hours in force stay as they are.
                     if (next === "days" && idle.hours % 24 !== 0) {
                       setUnit("hours");
-                      setTake({ rule: "idle", words: notWholeDays(idle.hours) });
+                      setTake({ line: "idle", words: notWholeDays(idle.hours) });
                       return;
                     }
                     setUnit(next);
-                    setTake((was) => (was?.rule === "idle" ? null : was));
+                    setTake((was) => (was?.line === "idle" ? null : was));
                   }}
                   options={UNITS}
                   className='shrink-0'
@@ -401,9 +451,11 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
         )}
 
         <p className='mt-3 text-body text-ink-secondary'>
-          A reminder goes once per wait, by each channel that is on for waits: a notification, an
-          email or a webhook post. It says how long the session has waited, as in “checkout-flow has
-          waited 10 minutes for permission”.
+          A reminder goes by each channel that is on for waits: a notification, an email or a
+          webhook post. It says how long the session has waited, as in “checkout-flow has waited 10
+          minutes for permission”. It goes once per wait, and with Remind again on, again every so
+          many minutes while the session still waits. None goes once the wait is answered or the
+          session ends.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
           A session idle longer than the idle rule says is stale, and a Claude Code session among

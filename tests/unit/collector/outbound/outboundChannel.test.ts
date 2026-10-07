@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   createOutboundChannel,
   type OverFacts,
+  type ReminderFacts,
   type SendOutcome,
   type WaitFacts,
 } from "@collector/outbound/outboundChannel";
@@ -468,5 +469,103 @@ describe("the time rules", () => {
     await poll(noon, REMINDING, [waitingSince(1, noon)]);
     await poll(noon + 30 * MINUTE, REMINDING, [waitingSince(1, noon)]);
     expect(sent).toEqual([]);
+  });
+
+  describe("with the reminder's repeat on", () => {
+    const REPEATING: TimeRules = {
+      ...QUIET,
+      longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 30 } },
+    };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+
+    /** A channel that keeps the facts of each reminder it is handed. */
+    function remembering() {
+      const clock = { now: noon };
+      const reminders: ReminderFacts[] = [];
+      const made = createOutboundChannel({
+        events: ["needs-you"],
+        afterMs: MINUTE,
+        asking: false,
+        waitMessage: () => "wait",
+        overMessage: () => "over",
+        reminderMessage: (facts) => {
+          reminders.push(facts);
+          return "reminder";
+        },
+        summaryMessage: () => "summary",
+        send: () => Promise.resolve<SendOutcome>({ sent: true }),
+        failure: "it could not be sent",
+        now: () => clock.now,
+      });
+      return {
+        reminders,
+        async poll(at: number, sessions: Session[]) {
+          clock.now = at;
+          made.handle({ ...snapshot(sessions), generatedAt: at, timeRules: REPEATING });
+          await made.settled();
+        },
+      };
+    }
+
+    test("a wait sent is reminded of again each time the minutes pass, each saying which it is and how often they come", async () => {
+      const { poll, reminders } = remembering();
+      await poll(noon, [working(1)]);
+      for (const minutes of [1, 2, 11, 12, 41, 42, 71]) {
+        await poll(noon + minutes * MINUTE, [waitingSince(1, noon + MINUTE)]);
+      }
+      await poll(noon + 72 * MINUTE, [working(1)]);
+      await poll(noon + 101 * MINUTE, [working(1)]);
+      expect(
+        reminders.map((facts) => [
+          (facts.now - facts.begunAt) / MINUTE,
+          facts.repeat,
+          facts.thresholdMs / MINUTE,
+          facts.everyMs === null ? null : facts.everyMs / MINUTE,
+        ]),
+      ).toEqual([
+        [10, 0, 10, 30],
+        [40, 1, 10, 30],
+        [70, 2, 10, 30],
+      ]);
+    });
+
+    test("a wait open when the collector started, already past the minutes, is reminded of at the next moment, not at once", async () => {
+      const { poll, reminders } = remembering();
+      await poll(noon, [waitingSince(1, noon - 25 * MINUTE)]);
+      await poll(noon + 14 * MINUTE, [waitingSince(1, noon - 25 * MINUTE)]);
+      expect(reminders).toEqual([]);
+      await poll(noon + 15 * MINUTE, [waitingSince(1, noon - 25 * MINUTE)]);
+      expect(reminders.map((facts) => facts.repeat)).toEqual([1]);
+    });
+
+    test("in quiet hours each is held as its wait: answered in them it is one item of the summary, and still open it has one reminder when they end", async () => {
+      const { poll, sent } = ruled(["needs-you"]);
+      const begun = EVENING - 30 * MINUTE;
+      await poll(begun - MINUTE, REPEATING, [working(1), working(2)]);
+      const both = [waitingSince(1, begun), waitingSince(2, begun)];
+      for (const minutes of [0, 1, 10]) await poll(begun + minutes * MINUTE, REPEATING, both);
+      expect(sent).toEqual([
+        "wait session-1 1m",
+        "wait session-2 1m",
+        "reminder session-1 10m of 10m",
+        "reminder session-2 10m of 10m",
+      ]);
+      // In quiet hours from 22:00. The repeats come due at 22:05, 22:35 and 23:05.
+      for (const minutes of [40, 70, 100]) await poll(begun + minutes * MINUTE, REPEATING, both);
+      // session-1 is answered at 23:25.
+      const after = [working(1), waitingSince(2, begun)];
+      await poll(begun + 120 * MINUTE, REPEATING, after);
+      expect(sent).toHaveLength(4);
+
+      await poll(MORNING, REPEATING, after);
+      // 08:05 is a moment, but too soon after the reminder that went at 08:00.
+      await poll(MORNING + 5 * MINUTE, REPEATING, after);
+      await poll(MORNING + 35 * MINUTE, REPEATING, after);
+      expect(sent.slice(4)).toEqual([
+        "summary session-1 waited 120m",
+        "reminder session-2 635m of 10m",
+        "reminder session-2 670m of 10m",
+      ]);
+    });
   });
 });

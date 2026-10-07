@@ -4,9 +4,15 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Remind again while it waits, under Remind me of a long wait in Time rules. Turn it on, and a session that still waits is reminded of again each time the minutes you set pass, 30 unless you change them, from 5 to 1,440: with a reminder after 10 minutes and again every 30, at 10 minutes, 40 minutes, 1 hour 10 minutes and so on. Each goes by the same channels as the first, as a notification, an email and a webhook post, and says how long the session has waited by then, as in "checkout-flow has waited 40 minutes for permission". None comes once the wait is answered or the session ends. Quiet hours hold them like any notice: a wait still open when they end is told of once, and one answered in them is one item of the summary, however many came due. After the computer has slept, one comes, not one for each interval missed. It is off until you turn it on. [Time rules](docs/GUIDE.md#time-rules) has the details.
+- A webhook post for a repeat has `repeat` beside `reminder: true`. It counts the intervals since the first reminder's time, so after a sleep it can skip numbers. `longWait` in `GET /api/settings`, in `POST /api/settings/time-rules` and in each snapshot's `timeRules` can have `repeat`, as `{ "on", "minutes" }`. A settings file without it reads as before, with no repeat.
+
 ### Changed
 
 - About sources, in Sources, now names every way Agent Lookout can send something off this computer: email, the webhook, pull requests through your own `gh`, other machines through your own `ssh`, and the Mac app's daily check for a newer version.
+- A long wait reminder that falls due in quiet hours, for a session told of before they began, now holds its wait as any notice is held: if the wait is answered before they end, it is an item of the summary. Before, it was left out.
 
 ## 0.2.6 - 2026-10-07
 

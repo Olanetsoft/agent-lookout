@@ -28,7 +28,8 @@ import type {
  * Nothing else goes in it: no folder path, no prompt, none of the agent's own words.
  *
  * A reminder of a long wait is the post of a wait with `reminder: true`, and a
- * line that says how long it has waited. When quiet hours end, the post that
+ * line that says how long it has waited. A repeat of it says which it is, in
+ * `repeat`. When quiet hours end, the post that
  * sums them up is a `WebhookSummaryPost`, with `event: "quiet-summary"`.
  */
 export type WebhookPost = WebhookEventPost | WebhookSummaryPost;
@@ -59,6 +60,12 @@ export interface WebhookEventPost {
   waitedSeconds?: number;
   /** Present, and true, on a reminder of a long wait. */
   reminder?: true;
+  /**
+   * On a repeat of a reminder, which it is, by how long the wait has lasted: 1
+   * once the repeat's minutes have passed after the first reminder, 2 after
+   * twice that, and so on. Left out on the first.
+   */
+  repeat?: number;
 }
 
 /** The session as a post names it. */
@@ -173,8 +180,9 @@ export function waitPost(facts: WaitFacts): WebhookEventPost {
 /**
  * The post that reminds of a long wait: the post of a wait, with the line
  * "checkout-flow has waited 10 minutes for permission (/work/checkout-flow,
- * ...)" and `reminder: true`. The line says how long already, so the bracket
- * does not say it again; `waitedSeconds` has it to the second.
+ * ...)" and `reminder: true`, and on a repeat, `repeat`. The line says how
+ * long already, so the bracket does not say it again; `waitedSeconds` has it
+ * to the second.
  */
 export function reminderPost(facts: ReminderFacts): WebhookEventPost {
   const post = waitPost(facts);
@@ -188,6 +196,8 @@ export function reminderPost(facts: ReminderFacts): WebhookEventPost {
       post.session.agent,
     ]),
     reminder: true,
+    // Left out on the first, so its post is the post it always was.
+    ...(facts.repeat > 0 && { repeat: facts.repeat }),
   };
 }
 

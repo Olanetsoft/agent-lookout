@@ -659,4 +659,79 @@ describe("the time rules", () => {
     poll(MORNING + 10_000, [working(1, "checkout-flow")]);
     expect(notifier.shown).toEqual([]);
   });
+
+  describe("with the reminder's repeat on", () => {
+    const REPEATING: TimeRules = {
+      ...QUIET,
+      longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 30 } },
+    };
+
+    test("with no page open, a wait still open is reminded of again each time the minutes pass, saying how long by then, and not once it ends", () => {
+      const noon = new Date(2026, 9, 5, 12, 0).getTime();
+      const { notifier, poll } = ruled(REPEATING);
+      poll(noon, [working(1, "checkout-flow")]);
+      for (const minutes of [1, 11, 12, 41, 42, 71]) {
+        poll(noon + minutes * MINUTE, [since(1, noon + MINUTE, "checkout-flow")]);
+      }
+      poll(noon + 72 * MINUTE, [working(1, "checkout-flow")]);
+      poll(noon + 101 * MINUTE, [working(1, "checkout-flow")]);
+      expect(notifier.shown).toEqual([
+        { title: "checkout-flow", body: "Waiting for permission" },
+        { title: "checkout-flow", body: "Has waited 10 minutes for permission" },
+        { title: "checkout-flow", body: "Has waited 40 minutes for permission" },
+        { title: "checkout-flow", body: "Has waited 1 hour 10 minutes for permission" },
+      ]);
+    });
+
+    test("a page that is open shows each repeat itself, and the collector drops its own", () => {
+      const noon = new Date(2026, 9, 5, 12, 0).getTime();
+      const { notifier, poll, page } = ruled(REPEATING, false);
+      page(noon, ["needs-you"]);
+      poll(noon, [working(1, "checkout-flow")]);
+      for (const minutes of [1, 11, 41, 71]) {
+        page(noon + minutes * MINUTE - 1_000, ["needs-you"]);
+        poll(noon + minutes * MINUTE, [since(1, noon + MINUTE, "checkout-flow")]);
+        page(noon + minutes * MINUTE + 1_000, ["needs-you"]);
+        poll(noon + minutes * MINUTE + 2_000, [since(1, noon + MINUTE, "checkout-flow")]);
+      }
+      expect(notifier.shown).toEqual([]);
+      // Once the page has closed, the collector shows the next itself.
+      poll(noon + 101 * MINUTE, [since(1, noon + MINUTE, "checkout-flow")]);
+      expect(notifier.shown).toEqual([
+        { title: "checkout-flow", body: "Has waited 1 hour 40 minutes for permission" },
+      ]);
+    });
+
+    test("in quiet hours each comes due held, as its wait: answered in them it is one line of the summary, and still open it has one reminder when they end", () => {
+      const { notifier, poll } = ruled(REPEATING);
+      const begun = EVENING - 30 * MINUTE;
+      poll(begun - MINUTE, [working(1, "checkout-flow"), working(2, "docs-site")]);
+      // Both begin at 21:28, before quiet hours, and are shown, and reminded of at 21:38.
+      poll(begun, [since(1, begun, "checkout-flow"), since(2, begun, "docs-site")]);
+      poll(begun + 10 * MINUTE, [since(1, begun, "checkout-flow"), since(2, begun, "docs-site")]);
+      expect(notifier.shown).toHaveLength(4);
+      // Repeats come due at 22:08, 22:38 and 23:08, in quiet hours.
+      for (const minutes of [40, 70, 100]) {
+        poll(begun + minutes * MINUTE, [
+          since(1, begun, "checkout-flow"),
+          since(2, begun, "docs-site"),
+        ]);
+      }
+      // checkout-flow is answered at 23:28.
+      poll(begun + 120 * MINUTE, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      poll(begun + 300 * MINUTE, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      expect(notifier.shown).toHaveLength(4);
+
+      poll(MORNING, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      poll(MORNING + 2_000, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      // 08:08 is a moment, but too soon after the one that went at 08:00.
+      poll(MORNING + 8 * MINUTE, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      poll(MORNING + 38 * MINUTE, [working(1, "checkout-flow"), since(2, begun, "docs-site")]);
+      expect(notifier.shown.slice(4)).toEqual([
+        { title: "While quiet", body: "checkout-flow waited 2 hours" },
+        { title: "docs-site", body: "Has waited 10 hours 32 minutes for permission" },
+        { title: "docs-site", body: "Has waited 11 hours 10 minutes for permission" },
+      ]);
+    });
+  });
 });

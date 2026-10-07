@@ -5,6 +5,7 @@ import {
   clockMinutes,
   DEFAULT_TIME_RULES,
   readTimeRules,
+  REPEAT_MINUTES,
   rulesOf,
   staleAfterMs,
   timeRulesIn,
@@ -187,7 +188,8 @@ describe("timeRulesIn, as a change asks for them", () => {
     const answer = timeRulesIn({ ...SET, longWait: { ...SET.longWait, sound: "chime" } });
     expect(answer).toEqual({
       ok: false,
-      problem: 'longWait must be {"on", "minutes"}, with minutes a whole number from 1 to 1440.',
+      problem:
+        'longWait must be {"on", "minutes"}, with minutes a whole number from 1 to 1440, and may have "repeat", {"on", "minutes"} with minutes a whole number from 5 to 1440.',
     });
   });
 
@@ -200,5 +202,66 @@ describe("timeRulesIn, as a change asks for them", () => {
     const quiet = timeRulesIn({ ...SET, quietHours: { ...SET.quietHours, from: "07:00" } });
     expect(quiet.ok).toBe(false);
     expect(!quiet.ok && quiet.problem).toMatch(/^quietHours must be .*two different times/);
+  });
+});
+
+describe("the long wait reminder's repeat", () => {
+  const REPEATING: TimeRules = {
+    ...SET,
+    longWait: { on: true, minutes: 15, repeat: { on: true, minutes: 30 } },
+  };
+
+  test("is off unless set, every 30 minutes, from 5 minutes to a day, and no default rule has one", () => {
+    expect(REPEAT_MINUTES).toEqual({ min: 5, max: 1_440, default: 30 });
+    expect(DEFAULT_TIME_RULES.longWait).not.toHaveProperty("repeat");
+  });
+
+  test("a file or an answer with it is read with it, and one without it, as from before there was one, has none", () => {
+    expect(readTimeRules(REPEATING)).toEqual({ rules: REPEATING, unread: [] });
+    const off = { ...SET, longWait: { ...SET.longWait, repeat: { on: false, minutes: 45 } } };
+    expect(readTimeRules(off)).toEqual({ rules: off, unread: [] });
+    const read = readTimeRules(SET);
+    expect(read.rules.longWait).toEqual({ on: true, minutes: 15 });
+    expect(read.rules.longWait).not.toHaveProperty("repeat");
+  });
+
+  test("a key in it that is not one of its own is passed over", () => {
+    const later = {
+      ...REPEATING,
+      longWait: { ...REPEATING.longWait, repeat: { on: true, minutes: 30, upTo: 3 } },
+    };
+    expect(readTimeRules(later)).toEqual({ rules: REPEATING, unread: [] });
+  });
+
+  test.each<[string, unknown]>([
+    ["minutes under the least", { on: true, minutes: 4 }],
+    ["minutes past the most", { on: true, minutes: 1_441 }],
+    ["minutes that are not whole", { on: true, minutes: 7.5 }],
+    ["minutes as text", { on: true, minutes: "30" }],
+    ["no minutes", { on: true }],
+    ["no switch", { minutes: 30 }],
+    ["nothing", null],
+    ["a number", 30],
+  ])("one with %s leaves the whole reminder off, unread", (_, repeat) => {
+    const read = readTimeRules({ longWait: { on: true, minutes: 15, repeat } });
+    expect(read.unread).toEqual(["longWait"]);
+    expect(read.rules.longWait).toEqual(DEFAULT_TIME_RULES.longWait);
+  });
+
+  test("a change may have it or leave it out, and is taken either way", () => {
+    expect(timeRulesIn(REPEATING)).toEqual({ ok: true, rules: REPEATING });
+    expect(timeRulesIn(SET)).toEqual({ ok: true, rules: SET });
+  });
+
+  test.each<[string, unknown]>([
+    ["minutes under the least", { on: true, minutes: 4 }],
+    ["minutes past the most", { on: true, minutes: 1_441 }],
+    ["a key of another kind", { on: true, minutes: 30, upTo: 3 }],
+    ["no switch", { minutes: 30 }],
+    ["nothing", null],
+  ])("a change with one with %s is refused whole, saying what it must be", (_, repeat) => {
+    const answer = timeRulesIn({ ...SET, longWait: { on: true, minutes: 15, repeat } });
+    expect(answer.ok).toBe(false);
+    expect(!answer.ok && answer.problem).toMatch(/^longWait must be .*"repeat"/);
   });
 });

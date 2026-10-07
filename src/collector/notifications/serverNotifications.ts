@@ -11,7 +11,11 @@ import {
 } from "../../core/notices/sessionChanges.ts";
 import { createQuietHold, type QuietSummary } from "../../core/time-rules/quietHold.ts";
 import { quietOf } from "../../core/time-rules/quietHours.ts";
-import { createReminderWatch, type DueReminder } from "../../core/time-rules/reminders.ts";
+import {
+  createReminderWatch,
+  reminderSchedule,
+  type DueReminder,
+} from "../../core/time-rules/reminders.ts";
 import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWords.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
@@ -48,10 +52,12 @@ import type { SystemNotifier } from "./systemNotifier.ts";
  * by the same rules in the core and at the same poll, so a page that is open
  * makes the same reminder and the same summary, and the hand-over decides
  * which of the two shows it. With the long wait reminder on, a wait seen
- * before it had lasted the rule's minutes is reminded of once it has. During
- * quiet hours nothing is shown: what would have been is held, and when they
- * end a wait still open is shown as usual and the rest in one summary, "While
- * quiet".
+ * before it had lasted the rule's minutes is reminded of once it has, and with
+ * the repeat on, again each time the repeat's minutes pass while it waits.
+ * During quiet hours nothing is shown: what would have been is held, a
+ * reminder as its wait, and when they end a wait still open is shown as
+ * usual, or reminded of when it was told of before them, and the rest in one
+ * summary, "While quiet".
  *
  * A wait whose permission request Agent Lookout answered is over from the
  * moment of the answer, as the snapshot marks it for the page too: one
@@ -177,7 +183,7 @@ export function createServerNotifications(
       const rules = rulesOf(snapshot);
       // As the snapshot says, which the page that reads it goes by too.
       const quietNow = quietOf(snapshot);
-      const thresholdMs = rules.longWait.minutes * 60_000;
+      const schedule = reminderSchedule(rules.longWait);
       // Changes are followed while notifications are off as well. Turning them
       // on then says nothing about what had already happened.
       const result = sessionChanges(memory, snapshot);
@@ -210,7 +216,7 @@ export function createServerNotifications(
             change: { event: "needs-you", session },
             since: at,
           });
-          if (rules.longWait.on) reminders.toldLate(session.id, at, thresholdMs);
+          if (rules.longWait.on) reminders.told(session.id, at);
         }
       }
       if (quietNow) quiet.begin(at);
@@ -222,9 +228,14 @@ export function createServerNotifications(
           held.set(heldKey(change.event, change.session.id), { kind: "change", change, since: at });
       }
 
-      if (!quietNow && rules.longWait.on && wants("needs-you")) {
-        for (const reminder of reminders.due(snapshot, at, thresholdMs)) {
-          reminders.reminded(reminder.session.id, thresholdMs);
+      if (rules.longWait.on && wants("needs-you")) {
+        for (const reminder of reminders.due(snapshot, at, schedule)) {
+          if (quietNow) {
+            // Held as its wait, as the page holds it, and reminded of when they end if it is still open.
+            quiet.holdReminder(reminder.session, reminder.begunAt);
+            continue;
+          }
+          reminders.told(reminder.session.id, at);
           held.set(reminderKey(reminder.session.id), { kind: "reminder", reminder, since: at });
         }
       }

@@ -18,7 +18,7 @@ import {
   type SummaryItem,
 } from "../../core/time-rules/quietHold.ts";
 import { quietOf } from "../../core/time-rules/quietHours.ts";
-import { createReminderWatch } from "../../core/time-rules/reminders.ts";
+import { createReminderWatch, reminderSchedule } from "../../core/time-rules/reminders.ts";
 import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
@@ -49,11 +49,14 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * The time rules each snapshot carries are followed here too. With the long
  * wait reminder on, a wait that has been sent, or was open when the collector
  * started, is reminded of once it has lasted the rule's minutes, by
- * `reminders.ts` in the core: once for each wait, and never before its own
- * email or post has gone. During quiet hours nothing is sent: a wait that
- * comes due and a session that finishes, fails or ends are held, by
- * `quietHold.ts`, and when they end, a wait still open is sent as usual and
- * the rest goes in one summary. Each counts against the hourly limit as one.
+ * `reminders.ts` in the core: once for each wait, and with the repeat on,
+ * again each time the repeat's minutes pass while it waits, never before its
+ * own email or post has gone. During quiet hours nothing is sent: a wait that
+ * comes due, a reminder, which is held as its wait, and a session that
+ * finishes, fails or ends are held, by `quietHold.ts`, and when they end, a
+ * wait still open is sent as usual, or reminded of when it was sent before
+ * them, and the rest goes in one summary. Each counts against the hourly
+ * limit as one.
  *
  * A wait whose permission request Agent Lookout answered is over from the
  * moment of the answer, as the snapshot marks it, though its source can say
@@ -87,6 +90,13 @@ export interface WaitFacts {
 export interface ReminderFacts extends WaitFacts {
   /** The threshold it has lasted, in milliseconds. */
   thresholdMs: number;
+  /** How long from one reminder to the next while the repeat is on, in milliseconds, or null. */
+  everyMs: number | null;
+  /**
+   * Which reminder of the wait it is, by how long it has waited: 0 for the
+   * first, at the threshold, and from 1 a repeat (`reminderNumber`).
+   */
+  repeat: number;
 }
 
 /** One item of a summary, with its session's agent. */
@@ -256,7 +266,7 @@ export function createOutboundChannel<Content>(
           sentAt.push(at);
           send(write(at));
         }
-        const thresholdMs = rules.longWait.minutes * 60_000;
+        const schedule = reminderSchedule(rules.longWait);
         for (const [id, begunAt] of open) {
           // Still open as far as this snapshot shows. A session whose source did
           // not answer this time is not in it, and is held until it is.
@@ -287,15 +297,20 @@ export function createOutboundChannel<Content>(
             }),
           );
           // What it says has the time it has waited, so a reminder would say nothing new.
-          if (rules.longWait.on) reminders.toldLate(id, at, thresholdMs);
+          if (rules.longWait.on) reminders.told(id, at);
         }
 
-        if (!quiet && rules.longWait.on && wanted.has("needs-you")) {
+        if (rules.longWait.on && wanted.has("needs-you")) {
           // Only a wait already sent, or open when the collector started, is reminded of.
-          for (const due of reminders.due(snapshot, at, thresholdMs, (id) => !open.has(id))) {
+          for (const due of reminders.due(snapshot, at, schedule, (id) => !open.has(id))) {
+            if (quiet) {
+              // Held as its wait, and reminded of when they end if it is still open.
+              hold.holdReminder(due.session, due.begunAt);
+              continue;
+            }
             if (limitLiftsAt(sentAt, at) !== null) break;
             sentAt.push(at);
-            reminders.reminded(due.session.id, thresholdMs);
+            reminders.told(due.session.id, at);
             send(
               reminderMessage({
                 session: withoutWaitingText(due.session),
@@ -303,7 +318,9 @@ export function createOutboundChannel<Content>(
                 asking: asking ? (waitingText(due.session.waitingText) ?? null) : null,
                 begunAt: due.begunAt,
                 now: at,
-                thresholdMs,
+                thresholdMs: schedule.thresholdMs,
+                everyMs: schedule.everyMs,
+                repeat: due.repeat,
               }),
             );
           }

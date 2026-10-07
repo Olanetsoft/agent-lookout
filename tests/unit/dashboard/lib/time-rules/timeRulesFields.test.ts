@@ -7,7 +7,11 @@ import {
   readClock,
   readIdleHours,
   readMinutes,
+  readRepeatMinutes,
+  REPEAT_TAKE,
+  repeatShown,
   withDay,
+  withRepeat,
 } from "@dashboard/lib/time-rules/timeRulesFields";
 
 describe("the minutes of the reminder", () => {
@@ -21,6 +25,43 @@ describe("the minutes of the reminder", () => {
 
   test.each(["0", "1441", "2.5", "-3", "ten", "", "1e3"])("%j cannot be taken", (typed) => {
     expect(readMinutes(typed)).toBeNull();
+  });
+});
+
+describe("the minutes between reminders", () => {
+  test.each([
+    ["30", 30],
+    [" 5 ", 5],
+    ["1440", 1440],
+  ])("%j is %i", (typed, minutes) => {
+    expect(readRepeatMinutes(typed)).toBe(minutes);
+  });
+
+  test.each(["4", "0", "1441", "7.5", "half an hour", ""])("%j cannot be taken", (typed) => {
+    expect(readRepeatMinutes(typed)).toBeNull();
+  });
+
+  test("the line says what the field takes", () => {
+    expect(REPEAT_TAKE).toBe("Type a whole number of minutes from 5 to 1440.");
+  });
+
+  test("a rule with no repeat, as from before there was one, shows it off, every 30 minutes", () => {
+    expect(repeatShown({ on: true, minutes: 10 })).toEqual({ on: false, minutes: 30 });
+    expect(repeatShown({ on: true, minutes: 10, repeat: { on: true, minutes: 45 } })).toEqual({
+      on: true,
+      minutes: 45,
+    });
+  });
+
+  test("switching it keeps its minutes, and setting them keeps the switch", () => {
+    expect(withRepeat({ on: true, minutes: 10 }, { on: true })).toEqual({
+      on: true,
+      minutes: 10,
+      repeat: { on: true, minutes: 30 },
+    });
+    const set = { on: true, minutes: 10, repeat: { on: true, minutes: 45 } };
+    expect(withRepeat(set, { on: false })).toEqual({ ...set, repeat: { on: false, minutes: 45 } });
+    expect(withRepeat(set, { minutes: 60 })).toEqual({ ...set, repeat: { on: true, minutes: 60 } });
   });
 });
 

@@ -6,7 +6,7 @@ import { ACTION_HEADER } from "@core/api";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
-import { LEAVE_OUT } from "@dashboard/lib/time-rules/timeRulesFields";
+import { LEAVE_OUT, REMIND_AGAIN } from "@dashboard/lib/time-rules/timeRulesFields";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 /** The rules as the app holds them, which a change it takes replaces. */
@@ -127,6 +127,111 @@ test("minutes typed are sent once the field is left, and what cannot be taken is
   await userEvent.tab();
   expect(changes).toHaveLength(1);
 });
+
+/** The long wait reminder with its repeat on, every 30 minutes. */
+const REPEATING = { on: true, minutes: 10, repeat: { on: true, minutes: 30 } };
+
+test("the repeat is off until it is turned on, under the reminder's line, and on it sends the rule with it", async () => {
+  held = ALL_ON;
+  await render(<TimeRulesCard />);
+  const again = card().getByRole("radiogroup", { name: REMIND_AGAIN });
+  await expect.element(again.getByRole("radio", { name: "Off" })).toBeChecked();
+  // Under the line of the reminder's minutes, and with no field while it is off.
+  const minutesLine = field("Minutes of waiting before the reminder").element().parentElement;
+  expect(again.element().getBoundingClientRect().top).toBeGreaterThan(
+    minutesLine?.getBoundingClientRect().bottom ?? Infinity,
+  );
+  expect(field("Minutes between reminders").elements()).toHaveLength(0);
+
+  await again.getByRole("radio", { name: "On" }).click();
+  await expect.element(again.getByRole("radio", { name: "On" })).toBeChecked();
+  expect(changes.map((one) => one.body)).toEqual([{ ...ALL_ON, longWait: REPEATING }]);
+  await expect.element(field("Minutes between reminders")).toHaveValue("30");
+  const line = field("Minutes between reminders").element().closest("[data-part='set-to'] > div");
+  expect(line?.textContent).toBe("Everyminutes");
+  // Under the switch, 8px down, as each line of what a rule is set to is.
+  const gap =
+    field("Minutes between reminders").element().getBoundingClientRect().top -
+    again.element().getBoundingClientRect().bottom;
+  expect(gap).toBeGreaterThanOrEqual(8);
+  expect(gap).toBeLessThan(12);
+  expect(card().element().textContent).toContain(
+    "and with Remind again on, again every so many minutes while the session still waits",
+  );
+});
+
+test("the repeat's minutes are sent once the field is left, what cannot be taken is said under its own line, and off it keeps them", async () => {
+  held = { ...ALL_ON, longWait: REPEATING };
+  await render(<TimeRulesCard />);
+  const every = "Minutes between reminders";
+  await expect.element(field(every)).toHaveValue("30");
+
+  await type(every, "45");
+  await vi.waitFor(() =>
+    expect(lastChange()?.longWait).toEqual({ ...REPEATING, repeat: { on: true, minutes: 45 } }),
+  );
+
+  await type(every, "4");
+  const take = card().getByText("Type a whole number of minutes from 5 to 1440.");
+  await expect.element(take).toBeVisible();
+  await expect.element(field(every)).toHaveValue("45");
+  expect(changes).toHaveLength(1);
+  // 4px under the repeat's own line, not under the reminder's.
+  const line = field(every).element().parentElement?.parentElement as HTMLElement;
+  expect(take.element().getBoundingClientRect().top - line.getBoundingClientRect().bottom).toBe(4);
+  expect(
+    card().getByText("Type a whole number of minutes from 1 to 1440.").elements(),
+  ).toHaveLength(0);
+
+  // Switching it off is a change to the reminder: it puts the line away and keeps the minutes.
+  await card()
+    .getByRole("radiogroup", { name: REMIND_AGAIN })
+    .getByRole("radio", { name: "Off" })
+    .click();
+  await vi.waitFor(() =>
+    expect(lastChange()?.longWait).toEqual({ ...REPEATING, repeat: { on: false, minutes: 45 } }),
+  );
+  await expect.element(take).not.toBeInTheDocument();
+  await expect.element(field(every)).not.toBeInTheDocument();
+});
+
+test("the repeat is not drawn while the reminder itself is off", async () => {
+  held = { ...ALL_ON, longWait: { ...REPEATING, on: false } };
+  await render(<TimeRulesCard />);
+  await expect.element(field("Quiet from")).toBeVisible();
+  expect(card().getByRole("radiogroup", { name: REMIND_AGAIN }).elements()).toHaveLength(0);
+  expect(field("Minutes between reminders").elements()).toHaveLength(0);
+});
+
+test.each([375, 1280])(
+  "at %i pixels, the repeat's switch sits at the right of its name, and its minutes stay beside their word",
+  async (width) => {
+    await page.viewport(width, 900);
+    onTestFinished(() => page.viewport(1280, 900));
+    held = { ...ALL_ON, longWait: REPEATING };
+    await render(
+      <div style={{ width: width === 375 ? 283 : 820 }}>
+        <TimeRulesCard />
+      </div>,
+    );
+    await expect.element(field("Minutes between reminders")).toBeVisible();
+    const box = card().element();
+    const right = box.getBoundingClientRect().right - 24;
+    const again = card().getByRole("radiogroup", { name: REMIND_AGAIN }).element();
+    const name = card().getByText(REMIND_AGAIN, { exact: true }).element();
+    expect(again.getBoundingClientRect().right).toBeCloseTo(right, 0);
+    expect(name.getBoundingClientRect().right).toBeLessThan(again.getBoundingClientRect().left);
+    expect(name.getBoundingClientRect().top).toBeLessThan(again.getBoundingClientRect().bottom);
+    // "Every", the field and "minutes" on one line, at either width.
+    const input = field("Minutes between reminders").element().getBoundingClientRect();
+    const words = card().getByText("minutes", { exact: true }).element().getBoundingClientRect();
+    const every = card().getByText("Every", { exact: true }).element().getBoundingClientRect();
+    expect(Math.abs(words.top + words.height / 2 - (input.top + input.height / 2))).toBeLessThan(2);
+    expect(Math.abs(every.top + every.height / 2 - (input.top + input.height / 2))).toBeLessThan(2);
+    expect(input.width).toBe(64);
+    expect(words.right).toBeLessThanOrEqual(right + 0.5);
+  },
+);
 
 test("the idle rule is shown in days while they are whole, and can be set in hours", async () => {
   held = ALL_ON;
@@ -401,7 +506,7 @@ test.each([375, 1280])(
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
-    held = { ...ALL_ON, idle: { on: true, hours: 36 } };
+    held = { ...ALL_ON, longWait: REPEATING, idle: { on: true, hours: 36 } };
     const cardWidth = width === 375 ? 283 : 820;
     await render(
       <div style={{ width: cardWidth }}>
@@ -429,6 +534,7 @@ test.each([375, 1280])(
     // Every Off and On is as wide as the others, however its name wraps beside it.
     const widths = [
       "Remind me of a long wait",
+      REMIND_AGAIN,
       "Mark idle sessions stale",
       "Quiet hours",
       LEAVE_OUT,

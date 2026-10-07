@@ -333,6 +333,8 @@ describe("reminderEmail", () => {
     const email = reminderEmail({
       ...facts({}, { now: BEGUN + 10 * 60_000 + 4_000, asking: "Run: npm test" }),
       thresholdMs: 10 * 60_000,
+      everyMs: null,
+      repeat: 0,
     });
     expect(email).toEqual({
       subject: "checkout-flow has waited 10 minutes for permission",
@@ -350,6 +352,21 @@ describe("reminderEmail", () => {
         "",
       ].join("\n"),
     });
+  });
+
+  test("a repeat has the first's subject, with how long by then, and its line says how often they come", () => {
+    const email = reminderEmail({
+      ...facts({}, { now: BEGUN + 70 * 60_000 + 4_000 }),
+      thresholdMs: 10 * 60_000,
+      everyMs: 30 * 60_000,
+      repeat: 2,
+    });
+    expect(email.subject).toBe("checkout-flow has waited 1 hour 10 minutes for permission");
+    expect(email.text.split("\n").slice(0, 3)).toEqual([
+      "checkout-flow has waited 1 hour 10 minutes for permission.",
+      "",
+      "It has waited since 14:01. Agent Lookout reminds you once a wait lasts 10 minutes, and again every 30 minutes while it goes on, as Time rules in Settings says.",
+    ]);
   });
 });
 

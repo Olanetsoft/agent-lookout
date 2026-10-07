@@ -329,6 +329,8 @@ describe("reminderPost", () => {
     const post = reminderPost({
       ...facts({}, { now: BEGUN + 10 * 60_000 + 4_000, asking: "Run: npm test" }),
       thresholdMs: 10 * 60_000,
+      everyMs: 30 * 60_000,
+      repeat: 0,
     });
     expect(post).toEqual({
       // How long is said once, in the words: waitedSeconds has it to the second.
@@ -349,8 +351,37 @@ describe("reminderPost", () => {
   });
 
   test("a name meant to ping a channel is made safe", () => {
-    const post = reminderPost({ ...facts({ name: "<!channel> @here" }), thresholdMs: 60_000 });
+    const post = reminderPost({
+      ...facts({ name: "<!channel> @here" }),
+      thresholdMs: 60_000,
+      everyMs: null,
+      repeat: 0,
+    });
     expect(post.text).toMatch(/^&lt;!channel&gt; @\u200bhere has waited/);
+  });
+
+  test("a repeat is the same post with how long by then, and says which it is in repeat", () => {
+    const post = reminderPost({
+      ...facts({}, { now: BEGUN + 70 * 60_000 + 4_000 }),
+      thresholdMs: 10 * 60_000,
+      everyMs: 30 * 60_000,
+      repeat: 2,
+    });
+    expect(post).toMatchObject({
+      text: "checkout-flow has waited 1 hour 10 minutes for permission (storefront, VS Code, Claude Code)",
+      event: "needs-you",
+      waitedSeconds: 4_204,
+      reminder: true,
+      repeat: 2,
+    });
+    // The first leaves it out, so its post is the post it always was.
+    const first = reminderPost({
+      ...facts({}, { now: BEGUN + 10 * 60_000 }),
+      thresholdMs: 10 * 60_000,
+      everyMs: 30 * 60_000,
+      repeat: 0,
+    });
+    expect(first).not.toHaveProperty("repeat");
   });
 });
 

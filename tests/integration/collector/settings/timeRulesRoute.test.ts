@@ -223,6 +223,70 @@ describe("POST /api/settings/time-rules", () => {
   });
 });
 
+describe("the long wait reminder's repeat", () => {
+  const REPEATING: TimeRules = {
+    ...SET,
+    longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 45 } },
+  };
+
+  test("is saved with the rule, read back as the collector starts, and carried in each snapshot", async () => {
+    const server = await serve();
+    const response = await server.change(REPEATING);
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({ ok: true, timeRules: REPEATING });
+    expect(JSON.parse(await readFile(server.settingsFile, "utf8"))).toEqual({
+      timeRules: REPEATING,
+    });
+    expect((await server.snapshot()).timeRules).toEqual(REPEATING);
+
+    const again = await serve({ settings: await readFile(server.settingsFile, "utf8") });
+    expect((await again.settings()).timeRules).toEqual(REPEATING);
+  });
+
+  test("a file from before there was one reads as no repeat, and a change without one is taken", async () => {
+    const server = await serve({ settings: JSON.stringify({ timeRules: SET }) });
+    const answer = await server.settings();
+    expect(answer.timeRules.longWait).toEqual({ on: true, minutes: 10 });
+    expect(answer.problem).toBeNull();
+    expect((await server.change(SET)).status).toBe(200);
+  });
+
+  test.each([
+    ["minutes under five", { on: true, minutes: 4 }],
+    ["a key of another kind", { on: true, minutes: 30, upTo: 3 }],
+  ])("one with %s is refused whole, with the sentence that says why", async (_, repeat) => {
+    const server = await serve();
+    const response = await server.change({ ...SET, longWait: { ...SET.longWait, repeat } });
+    expect(response.status).toBe(400);
+    expect(response.json()).toEqual({
+      error:
+        'longWait must be {"on", "minutes"}, with minutes a whole number from 1 to 1440, and may have "repeat", {"on", "minutes"} with minutes a whole number from 5 to 1440.',
+      reason: "invalid",
+    });
+    await expect(stat(server.settingsFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("one in the file that cannot be read leaves the reminder off, and says so", async () => {
+    const warned: string[] = [];
+    const server = await serve({
+      settings: JSON.stringify({
+        timeRules: {
+          ...SET,
+          longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 2 } },
+        },
+      }),
+      warned,
+    });
+    const answer = await server.settings();
+    expect(answer.timeRules.longWait).toEqual(DEFAULT_TIME_RULES.longWait);
+    expect(answer.timeRules.idle).toEqual(SET.idle);
+    expect(answer.problem).toMatch(
+      /holds the long wait reminder in a form Agent Lookout cannot read/,
+    );
+    expect(warned).toEqual([answer.problem]);
+  });
+});
+
 describe("the idle rule", () => {
   test("marks a session stale after the hours it says, in the snapshot and its history, and the built-in day again when it is off", async () => {
     const since = new Date(Date.now() - 2 * HOUR).toISOString();

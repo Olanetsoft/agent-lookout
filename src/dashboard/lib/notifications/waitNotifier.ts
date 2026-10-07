@@ -14,7 +14,7 @@ import {
 } from "@core/notices/sessionChanges";
 import { createQuietHold } from "@core/time-rules/quietHold";
 import { quietOf } from "@core/time-rules/quietHours";
-import { createReminderWatch } from "@core/time-rules/reminders";
+import { createReminderWatch, reminderSchedule } from "@core/time-rules/reminders";
 import { rulesOf } from "@core/time-rules/timeRules";
 import { needsYou } from "@core/waits/answeredWaits";
 import { reminderNotice, summaryNotice } from "@core/time-rules/timeRulesWords";
@@ -49,10 +49,13 @@ import type {
  * notifications, and quiet hours by what the collector said of them in the
  * snapshot, by its own clock. With the long wait reminder on, a wait this page saw before it
  * had lasted the rule's minutes is reminded of once it has, in the place of
- * its notification. During quiet hours nothing is shown: what would have been
- * is held, and when they end a wait still open is shown as usual and the rest
- * in one notification, "While quiet", which stays until the person clears it.
- * A page opened during quiet hours sums up what it has seen since.
+ * its notification, and with the repeat on, again each time the repeat's
+ * minutes pass while it waits, by `reminders.ts` in the core. During quiet
+ * hours nothing is shown: what would have been is held, a reminder as its
+ * wait, and when they end a wait still open is shown as usual, or reminded of
+ * when it was told of before them, and the rest in one notification, "While
+ * quiet", which stays until the person clears it. A page opened during quiet
+ * hours sums up what it has seen since.
  *
  * A wait the collector marks as answered, by Allow, Deny or a permission
  * rule, is over at that snapshot, as it is for the collector's own
@@ -224,7 +227,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       // By the collector's clock, as it said in the snapshot, not this browser's.
       const quietNow = quietOf(snapshot);
       quietLast = quietNow;
-      const thresholdMs = rules.longWait.minutes * 60_000;
+      const schedule = reminderSchedule(rules.longWait);
 
       // Changes are followed while notifications are off as well. Turning them
       // on then says nothing about what had already happened.
@@ -250,7 +253,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
         if (isOn("needs-you")) {
           for (const { session } of end.open) {
             show({ event: "needs-you", session });
-            if (rules.longWait.on) reminders.toldLate(session.id, at, thresholdMs);
+            if (rules.longWait.on) reminders.told(session.id, at);
           }
         }
       }
@@ -262,9 +265,14 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
         else show(change);
       }
 
-      if (!quietNow && rules.longWait.on && isOn("needs-you")) {
-        for (const due of reminders.due(snapshot, at, thresholdMs)) {
-          reminders.reminded(due.session.id, thresholdMs);
+      if (rules.longWait.on && isOn("needs-you")) {
+        for (const due of reminders.due(snapshot, at, schedule)) {
+          if (quietNow) {
+            // Held as its wait, and reminded of when they end if it is still open.
+            quiet.holdReminder(due.session, due.begunAt);
+            continue;
+          }
+          reminders.told(due.session.id, at);
           // In the place of the wait's own notification, and taken down when the wait ends.
           show(
             { event: "needs-you", session: due.session },

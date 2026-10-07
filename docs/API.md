@@ -335,7 +335,7 @@ The settings Agent Lookout keeps itself, in a file on this computer, so they hol
 ```json
 {
   "timeRules": {
-    "longWait": { "on": true, "minutes": 10 },
+    "longWait": { "on": true, "minutes": 10, "repeat": { "on": true, "minutes": 30 } },
     "idle": { "on": true, "hours": 48 },
     "quietHours": {
       "on": true,
@@ -370,6 +370,7 @@ The settings Agent Lookout keeps itself, in a file on this computer, so they hol
 | Field                         | Holds                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `timeRules.longWait`          | The long wait reminder: `on`, and `minutes`, a whole number from 1 to 1,440, how long a wait lasts before it is reminded of. 10 unless set                                                                                                                                                                                        |
+| `longWait.repeat`             | Whether the reminder goes again while the wait goes on: `on`, and `minutes`, a whole number from 5 to 1,440, how long from one reminder to the next. Left out until it is first set, which is the same as off, so a file from before it reads as it did. The Time rules card sets 30 when it is first turned on                   |
 | `timeRules.idle`              | The idle rule: `on`, and `hours`, a whole number from 1 to 720, how long a session is idle before it is stale. 48 unless set. While it is off a session is stale after 24 hours                                                                                                                                                   |
 | `timeRules.quietHours`        | Quiet hours: `on`, `from` and `to` on the 24-hour clock as `HH:MM`, two different times, which run past midnight when `to` is the earlier, and `days`, the days they begin on, any of `mon` to `sun`. 22:00 to 08:00 every day unless set                                                                                         |
 | `quietHours.leaveOutAnswered` | Whether the summary sent when quiet hours end leaves out the waits that were answered while they held                                                                                                                                                                                                                             |
@@ -391,7 +392,7 @@ A route that acts. It puts the time rules in force and saves them in the setting
 - is marked `same-origin` in `Sec-Fetch-Site`, when that header is sent, or gets 403.
 - carries `X-Agent-Lookout-Action: time-rules`, or gets 403.
 - has `Content-Type: application/json`, or gets 415.
-- has a body of 2,048 bytes or less, or gets 413, that is exactly the three rules, `longWait`, `idle` and `quietHours`, each whole, with exactly the fields `GET /api/settings` gives and every value in range, or gets 400.
+- has a body of 2,048 bytes or less, or gets 413, that is exactly the three rules, `longWait`, `idle` and `quietHours`, each whole, with exactly the fields `GET /api/settings` gives and every value in range, or gets 400. `longWait.repeat` may be left out, which is no repeat, and when it is there it is `{ "on", "minutes" }` whole.
 
 The rules are in force once they are saved, and not before: the file is written whole, with mode 600, in a folder made with mode 700, and never through a link. Nothing in the request names a file.
 

@@ -21,6 +21,12 @@ import { needsYou } from "../waits/answeredWaits.ts";
  * told of once, and is not in the summary. A wait Agent Lookout answered is
  * not open, whatever its source still says (`needsYou` in `answeredWaits.ts`).
  *
+ * A long wait's reminder that comes due in quiet hours, for a wait told of
+ * before them, holds that wait too, once however many come due. Answered or
+ * ended before they end, it is in the summary as one item, as any wait held.
+ * Still open, it is left to its reminder, which says how long it has waited
+ * by then, and is not told of again as a wait.
+ *
  * Nothing held keeps what a waiting session was asking. A wait still open at
  * the end is told of from the session as it is then.
  */
@@ -62,7 +68,10 @@ export interface QuietSummary {
 export interface QuietEnd {
   /** The summary to send, or null when there is nothing to say. */
   summary: QuietSummary | null;
-  /** The waits held that are still open, each to be told of as usual: the session as it is now. */
+  /**
+   * The waits held that are still open, each to be told of as usual: the
+   * session as it is now. A wait held for its reminder alone is not among them.
+   */
   open: { session: Session; begunAt: number }[];
 }
 
@@ -73,6 +82,11 @@ export interface QuietHold {
   begin(at: number): void;
   /** Holds back a wait, which began at `begunAt`. */
   holdWait(session: Session, begunAt: number): void;
+  /**
+   * Holds back a reminder of a wait told of before quiet hours, which began at
+   * `begunAt`. A wait held already is held as it was.
+   */
+  holdReminder(session: Session, begunAt: number): void;
   /** Holds back a session that finished, failed or ended, seen at `at`. */
   holdOver(event: OverEvent, session: Session, at: number): void;
   /** A session's wait ended, at `at`. A held wait of it is answered. */
@@ -87,6 +101,8 @@ interface HeldWait {
   session: Session;
   begunAt: number;
   endedAt: number | null;
+  /** Held for its reminder alone: told of before quiet hours, so not told of again as a wait. */
+  reminderOnly: boolean;
 }
 
 export function createQuietHold(): QuietHold {
@@ -117,10 +133,32 @@ export function createQuietHold(): QuietHold {
       const last = lastWaitOf(session.id);
       if (last?.begunAt === begunAt) {
         last.endedAt = null;
+        last.reminderOnly = false;
         return;
       }
       if (last && last.endedAt === null) last.endedAt = begunAt;
-      waits.push({ session: withoutWaitingText(session), begunAt, endedAt: null });
+      waits.push({
+        session: withoutWaitingText(session),
+        begunAt,
+        endedAt: null,
+        reminderOnly: false,
+      });
+    },
+
+    holdReminder(session, begunAt) {
+      // Each reminder that comes due is the same wait, held once.
+      const last = lastWaitOf(session.id);
+      if (last?.begunAt === begunAt) {
+        last.endedAt = null;
+        return;
+      }
+      if (last && last.endedAt === null) last.endedAt = begunAt;
+      waits.push({
+        session: withoutWaitingText(session),
+        begunAt,
+        endedAt: null,
+        reminderOnly: true,
+      });
     },
 
     holdOver(event, session, at) {
@@ -148,6 +186,8 @@ export function createQuietHold(): QuietHold {
       }
       const open: QuietEnd["open"] = [];
       for (const [id, wait] of stillOpen) {
+        // Its reminder tells of it, as one held for a reminder alone.
+        if (wait.reminderOnly) continue;
         open.push({ session: listed.get(id) as Session, begunAt: wait.begunAt });
       }
 

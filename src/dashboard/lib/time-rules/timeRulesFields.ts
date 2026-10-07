@@ -2,7 +2,9 @@ import {
   clockMinutes,
   IDLE_HOURS,
   LONG_WAIT_MINUTES,
+  REPEAT_MINUTES,
   WEEKDAYS,
+  type LongWaitRule,
   type Weekday,
 } from "@core/time-rules/timeRules";
 
@@ -19,6 +21,9 @@ export const RULE_NAMES = {
   idle: "Mark idle sessions stale",
   quietHours: "Quiet hours",
 } as const;
+
+/** The name of the switch that repeats the long wait reminder while the wait goes on. */
+export const REMIND_AGAIN = "Remind again while it waits";
 
 /** The name of the switch that leaves answered waits out of the summary. */
 export const LEAVE_OUT = "Leave answered waits out of the summary";
@@ -38,6 +43,30 @@ export function readMinutes(text: string): number | null {
 
 /** What the minutes field takes. */
 export const MINUTES_TAKE = `Type a whole number of minutes from ${LONG_WAIT_MINUTES.min} to ${LONG_WAIT_MINUTES.max}.`;
+
+/** The minutes between one reminder and the next, typed. */
+export function readRepeatMinutes(text: string): number | null {
+  return readWholeNumber(text, REPEAT_MINUTES);
+}
+
+/** What the repeat's field takes. */
+export const REPEAT_TAKE = `Type a whole number of minutes from ${REPEAT_MINUTES.min} to ${REPEAT_MINUTES.max}.`;
+
+/**
+ * The repeat as the card shows it: off, with the minutes it would take, when
+ * the rule has none, as one from a file from before there was a repeat.
+ */
+export function repeatShown(rule: LongWaitRule): { on: boolean; minutes: number } {
+  return rule.repeat ?? { on: false, minutes: REPEAT_MINUTES.default };
+}
+
+/** The long wait rule with its repeat switched, keeping its minutes. */
+export function withRepeat(
+  rule: LongWaitRule,
+  change: { on?: boolean; minutes?: number },
+): LongWaitRule {
+  return { ...rule, repeat: { ...repeatShown(rule), ...change } };
+}
 
 /** The unit the idle rule is shown in. */
 export type IdleUnit = "hours" | "days";

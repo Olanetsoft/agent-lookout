@@ -322,4 +322,128 @@ describe("every channel follows the time rules", () => {
     expect(server.hook.received).toHaveLength(1);
     expect(server.notifier.shown).toHaveLength(1);
   });
+
+  describe("with the reminder's repeat on", () => {
+    const REPEATING: TimeRules = {
+      ...RULES,
+      longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 30 } },
+    };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const reminders = (posts: WebhookPost[]) =>
+      posts
+        .filter((post) => "reminder" in post)
+        .map((post) => [post.text.split(" (")[0], "repeat" in post ? post.repeat : undefined]);
+
+    test("a long wait is reminded of again each way at each interval, one after a sleep, and none once it is answered", async () => {
+      const server = await lookout();
+      await server.rules(REPEATING);
+      const begun = noon + 2_000;
+      const poll = (minutes: number, sessions = [asking(1, "checkout-flow", begun)]) =>
+        server.poll(begun + minutes * MINUTE, sessions);
+      await server.poll(noon, [busy(1, "checkout-flow")]);
+      for (const minutes of [0, 1, 10, 11, 40, 70]) await poll(minutes);
+      // The computer sleeps from 1 hour 10 minutes to 3 hours 28 minutes.
+      await poll(208);
+      await poll(209);
+      // 3 hours 40 minutes is a moment, but too soon after the one that went at 3 hours 28.
+      await poll(220);
+      // Answered at 3 hours 45 minutes.
+      await poll(225, [busy(1, "checkout-flow")]);
+      await poll(250, [busy(1, "checkout-flow")]);
+
+      expect(server.subjects()).toEqual([
+        "checkout-flow is waiting for permission",
+        "checkout-flow has waited 10 minutes for permission",
+        "checkout-flow has waited 40 minutes for permission",
+        "checkout-flow has waited 1 hour 10 minutes for permission",
+        "checkout-flow has waited 3 hours 28 minutes for permission",
+      ]);
+      expect(textOf(server.mail.received[2]?.data ?? "")).toContain(
+        "Agent Lookout reminds you once a wait lasts 10 minutes, and again every 30 minutes while it goes on",
+      );
+      expect(reminders(server.posts())).toEqual([
+        ["checkout-flow has waited 10 minutes for permission", undefined],
+        ["checkout-flow has waited 40 minutes for permission", 1],
+        ["checkout-flow has waited 1 hour 10 minutes for permission", 2],
+        ["checkout-flow has waited 3 hours 28 minutes for permission", 6],
+      ]);
+      expect(server.notifier.shown.map((shown) => shown.body)).toEqual([
+        "Waiting for permission",
+        "Has waited 10 minutes for permission",
+        "Has waited 40 minutes for permission",
+        "Has waited 1 hour 10 minutes for permission",
+        "Has waited 3 hours 28 minutes for permission",
+      ]);
+    });
+
+    test("in quiet hours they are held: a wait answered in them is one item of each summary, and one still open has one reminder each way when they end", async () => {
+      const server = await lookout();
+      await server.rules(REPEATING);
+      // Both ask at 21:30, before quiet hours, and are sent, and reminded of at 21:40.
+      const begun = EVENING - 20 * MINUTE;
+      const both = [asking(1, "checkout-flow", begun), asking(2, "docs-site", begun)];
+      await server.poll(begun - MINUTE, [busy(1, "checkout-flow"), busy(2, "docs-site")]);
+      for (const minutes of [0, 1, 10]) await server.poll(begun + minutes * MINUTE, both);
+      expect(server.mail.received).toHaveLength(4);
+      // Their repeats come due at 22:10 and 22:40, in quiet hours.
+      for (const minutes of [40, 70]) await server.poll(begun + minutes * MINUTE, both);
+      // checkout-flow is answered at 23:00.
+      const after = [busy(1, "checkout-flow"), asking(2, "docs-site", begun)];
+      await server.poll(begun + 90 * MINUTE, after);
+      await server.poll(begun + 300 * MINUTE, after);
+      expect(server.mail.received).toHaveLength(4);
+      expect(server.hook.received).toHaveLength(4);
+      expect(server.notifier.shown).toHaveLength(4);
+
+      await server.poll(MORNING, after);
+      await server.poll(MORNING + 4_000, after);
+      expect(server.subjects().slice(4)).toEqual([
+        "While quiet: checkout-flow waited 1 hour 30 minutes",
+        "docs-site has waited 10 hours 30 minutes for permission",
+      ]);
+      expect(
+        server
+          .posts()
+          .slice(4)
+          .map((post) => [post.event, post.text.split(" (")[0]]),
+      ).toEqual([
+        ["quiet-summary", "While quiet: checkout-flow waited 1 hour 30 minutes"],
+        ["needs-you", "docs-site has waited 10 hours 30 minutes for permission"],
+      ]);
+      expect(server.notifier.shown.slice(4)).toEqual([
+        { title: "While quiet", body: "checkout-flow waited 1 hour 30 minutes" },
+        { title: "docs-site", body: "Has waited 10 hours 30 minutes for permission" },
+      ]);
+      // The next comes at 08:40, by the wait's own moments.
+      await server.poll(MORNING + 39 * MINUTE, after);
+      expect(server.mail.received).toHaveLength(6);
+      await server.poll(MORNING + 40 * MINUTE, after);
+      expect(server.subjects().slice(6)).toEqual([
+        "docs-site has waited 11 hours 10 minutes for permission",
+      ]);
+    });
+
+    test("started again under a long wait, Agent Lookout sends nothing at once, and one reminder each way at the next moment", async () => {
+      const server = await lookout();
+      await server.rules(REPEATING);
+      const begun = noon - 2 * 60 * MINUTE;
+      await server.poll(noon, [asking(1, "checkout-flow", begun)]);
+      await server.poll(noon + 4_000, [asking(1, "checkout-flow", begun)]);
+      await server.poll(noon + 9 * MINUTE, [asking(1, "checkout-flow", begun)]);
+      expect(server.mail.received).toEqual([]);
+      expect(server.hook.received).toEqual([]);
+      expect(server.notifier.shown).toEqual([]);
+
+      await server.poll(noon + 10 * MINUTE, [asking(1, "checkout-flow", begun)]);
+      expect(server.subjects()).toEqual([
+        "checkout-flow has waited 2 hours 10 minutes for permission",
+      ]);
+      expect(reminders(server.posts())).toEqual([
+        ["checkout-flow has waited 2 hours 10 minutes for permission", 4],
+      ]);
+      expect(server.notifier.shown).toEqual([
+        { title: "checkout-flow", body: "Has waited 2 hours 10 minutes for permission" },
+      ]);
+    });
+  });
 });

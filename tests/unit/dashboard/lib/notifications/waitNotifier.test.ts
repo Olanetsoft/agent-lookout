@@ -1192,4 +1192,132 @@ describe("the time rules", () => {
       ["api", "Has waited 10 hours 5 minutes for permission", `agent-lookout:${id(1)}`],
     ]);
   });
+
+  describe("with the reminder's repeat on", () => {
+    const REPEATING: TimeRules = {
+      ...DEFAULT_TIME_RULES,
+      longWait: { on: true, minutes: 10, repeat: { on: true, minutes: 30 } },
+    };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const api = (overrides: Partial<Session> = {}) =>
+      waiting(1, { name: "api", statusSince: noon + MINUTE, ...overrides });
+
+    test("a wait still open is reminded of again each time the minutes pass, in the place of the last, saying how long it has waited by then", () => {
+      const { host, notifier } = choosing("needs-you");
+      notifier.handle(made(noon, REPEATING, [session(1, { name: "api", status: "working" })]));
+      for (const minutes of [1, 11, 12, 30, 41, 42, 71]) {
+        notifier.handle(made(noon + minutes * MINUTE, REPEATING, [api()]));
+      }
+      expect(shown(host)).toEqual([
+        ["api", "Waiting for permission", `agent-lookout:${id(1)}`],
+        ["api", "Has waited 10 minutes for permission", `agent-lookout:${id(1)}`],
+        ["api", "Has waited 40 minutes for permission", `agent-lookout:${id(1)}`],
+        ["api", "Has waited 1 hour 10 minutes for permission", `agent-lookout:${id(1)}`],
+      ]);
+      // Each is taken down before the next, so each makes its sound.
+      expect(host.open()).toHaveLength(1);
+    });
+
+    test("none comes once the wait is answered, by Agent Lookout or at its source, or ends", () => {
+      const { host, notifier } = choosing("needs-you");
+      const sessions = (two: Session, three: Session) => [api(), two, three];
+      const web = (overrides: Partial<Session> = {}) =>
+        waiting(2, { name: "web", statusSince: noon + MINUTE, ...overrides });
+      const docs = () => waiting(3, { name: "docs", statusSince: noon + MINUTE });
+      notifier.handle(
+        made(noon, REPEATING, [
+          session(1, { status: "working" }),
+          session(2, { status: "working" }),
+          session(3, { status: "working" }),
+        ]),
+      );
+      notifier.handle(made(noon + MINUTE, REPEATING, sessions(web(), docs())));
+      notifier.handle(made(noon + 11 * MINUTE, REPEATING, sessions(web(), docs())));
+      expect(host.shown).toHaveLength(6);
+      // web is answered from Agent Lookout and still reads as waiting; docs ends; api is answered.
+      notifier.handle(
+        made(noon + 41 * MINUTE, REPEATING, [
+          session(1, { name: "api", status: "working" }),
+          web({ answered: true }),
+        ]),
+      );
+      notifier.handle(
+        made(noon + 71 * MINUTE, REPEATING, [
+          session(1, { name: "api", status: "working" }),
+          session(2, { name: "web", status: "working" }),
+        ]),
+      );
+      expect(host.shown).toHaveLength(6);
+      expect(host.open()).toEqual([]);
+    });
+
+    test("after a gap, as when the computer slept, one reminder comes, saying how long by then", () => {
+      const { host, notifier } = choosing("needs-you");
+      notifier.handle(made(noon, REPEATING, [session(1, { name: "api", status: "working" })]));
+      notifier.handle(made(noon + MINUTE, REPEATING, [api()]));
+      notifier.handle(made(noon + 11 * MINUTE, REPEATING, [api()]));
+      notifier.handle(made(noon + 3 * 60 * MINUTE, REPEATING, [api()]));
+      notifier.handle(made(noon + 3 * 60 * MINUTE + 2_000, REPEATING, [api()]));
+      expect(shown(host).map(([, body]) => body)).toEqual([
+        "Waiting for permission",
+        "Has waited 10 minutes for permission",
+        "Has waited 2 hours 59 minutes for permission",
+      ]);
+    });
+
+    test("in quiet hours none is shown; when they end, a wait still open has one reminder, and one answered in them is one line of the summary", () => {
+      const rules: TimeRules = { ...REPEATING, quietHours: QUIET.quietHours };
+      const { host, notifier } = choosing("needs-you");
+      const begun = EVENING + MINUTE;
+      const one = (name: string, n: number) => waiting(n, { name, statusSince: begun });
+      notifier.handle(
+        made(EVENING, rules, [
+          session(1, { name: "api", status: "working" }),
+          session(2, { name: "web", status: "working" }),
+        ]),
+      );
+      // Both begin at 21:51, before quiet hours, and are shown.
+      notifier.handle(made(begun, rules, [one("api", 1), one("web", 2)]));
+      // Their reminders and repeats come due through the night.
+      for (const minutes of [11, 41, 71, 101]) {
+        notifier.handle(made(begun + minutes * MINUTE, rules, [one("api", 1), one("web", 2)]));
+      }
+      // web is answered at 23:51.
+      notifier.handle(
+        made(begun + 120 * MINUTE, rules, [
+          one("api", 1),
+          session(2, { name: "web", status: "working" }),
+        ]),
+      );
+      for (const minutes of [131, 161, 300]) {
+        notifier.handle(
+          made(begun + minutes * MINUTE, rules, [
+            one("api", 1),
+            session(2, { name: "web", status: "working" }),
+          ]),
+        );
+      }
+      expect(host.shown.map((shown) => shown.body)).toEqual([
+        "Waiting for permission",
+        "Waiting for permission",
+      ]);
+
+      const morning = new Date(2026, 9, 6, 8, 0).getTime();
+      const after = [one("api", 1), session(2, { name: "web", status: "working" })];
+      notifier.handle(made(morning, rules, after));
+      notifier.handle(made(morning + MINUTE, rules, after));
+      expect(shown(host).slice(2)).toEqual([
+        ["While quiet", "web waited 2 hours", SUMMARY_TAG],
+        ["api", "Has waited 10 hours 9 minutes for permission", `agent-lookout:${id(1)}`],
+      ]);
+      // Then on by the wait's own moments: 10 hours 10 minutes was one, so the next is at 10 hours 40.
+      notifier.handle(made(morning + 30 * MINUTE, rules, after));
+      notifier.handle(made(morning + 31 * MINUTE, rules, after));
+      expect(
+        shown(host)
+          .slice(4)
+          .map(([, body]) => body),
+      ).toEqual(["Has waited 10 hours 40 minutes for permission"]);
+    });
+  });
 });

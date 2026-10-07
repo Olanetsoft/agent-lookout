@@ -30,8 +30,8 @@ import { EMAIL_TO_ENV } from "./emailSettings.ts";
  * in it: no folder path, no prompt, none of the agent's own words, no link of
  * Agent Lookout's own and no markup.
  *
- * The time rules add two more. A reminder of a long wait is the email of a
- * wait, with a subject that says how long it has waited. A summary of quiet
+ * The time rules add two more. A reminder of a long wait, and each repeat of
+ * it, is the email of a wait, with a subject that says how long it has waited. A summary of quiet
  * hours names each session that waited, finished, failed or ended while they
  * held, with how long and when, and nothing else of them.
  */
@@ -85,13 +85,18 @@ export function waitEmail(facts: WaitFacts): EmailContent {
 
 /**
  * The email that reminds of a long wait: "checkout-flow has waited 10 minutes
- * for permission". It says the rest as the email of a wait does.
+ * for permission", and a repeat the same, with how long it has waited by
+ * then. It says the rest as the email of a wait does.
  */
 export function reminderEmail(facts: ReminderFacts): EmailContent {
   const { session, begunAt, now } = facts;
+  const again =
+    facts.everyMs === null
+      ? ""
+      : `, and again every ${waitedInWords(facts.everyMs)} while it goes on`;
   return emailOf(
     reminderSentence(session, now - begunAt),
-    `It has waited since ${clockAt(begunAt, now)}. Agent Lookout reminds you once a wait lasts ${waitedInWords(facts.thresholdMs)}, as Time rules in Settings says.`,
+    `It has waited since ${clockAt(begunAt, now)}. Agent Lookout reminds you once a wait lasts ${waitedInWords(facts.thresholdMs)}${again}, as Time rules in Settings says.`,
     session,
     facts.agent,
     facts.asking,

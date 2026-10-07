@@ -246,3 +246,67 @@ describe("what quiet hours hold, and what is told when they end", () => {
     expect(JSON.stringify(end)).not.toMatch(/rm -rf|src\/app/);
   });
 });
+
+describe("a reminder that comes due in quiet hours", () => {
+  test("holds its wait once, however many come due: answered before they end, it is one item in the summary", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    // Told of before quiet hours, at T0 - 15 minutes, and reminded of three times in them.
+    const begun = T0 - 15 * MINUTE;
+    for (let reminder = 0; reminder < 3; reminder += 1) {
+      hold.holdReminder(waiting(1, "checkout-flow", begun, "Run: npm test"), begun);
+      expect(hold.holdsWait(id(1))).toBe(true);
+    }
+    hold.waitEnded(id(1), T0 + 70 * MINUTE);
+    const end = hold.end(snapshot([session(1, "checkout-flow")]), T0 + 90 * MINUTE, false);
+    expect(end.open).toEqual([]);
+    expect(end.summary?.items).toEqual([
+      {
+        event: "needs-you",
+        session: waiting(1, "checkout-flow", begun),
+        at: begun,
+        waitedMs: 85 * MINUTE,
+        times: 1,
+      },
+    ]);
+    expect(JSON.stringify(end)).not.toContain("npm test");
+  });
+
+  test("still open when they end, it is left to its reminder: neither told of again as a wait nor in the summary", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    const begun = T0 - 15 * MINUTE;
+    hold.holdReminder(waiting(1, "checkout-flow", begun), begun);
+    hold.holdReminder(waiting(1, "checkout-flow", begun), begun);
+    const end = hold.end(snapshot([waiting(1, "checkout-flow", begun)]), T0 + 60 * MINUTE, false);
+    expect(end).toEqual({ summary: null, open: [] });
+  });
+
+  test("a wait held as a wait stays one, to be told of as usual, and one seen anew as a wait is told of as usual too", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdWait(waiting(1, "checkout-flow", T0 + MINUTE), T0 + MINUTE);
+    hold.holdReminder(waiting(1, "checkout-flow", T0 + MINUTE), T0 + MINUTE);
+    const begun = T0 - 15 * MINUTE;
+    hold.holdReminder(waiting(2, "docs-site", begun), begun);
+    hold.holdWait(waiting(2, "docs-site", begun), begun);
+    const end = hold.end(
+      snapshot([waiting(1, "checkout-flow", T0 + MINUTE), waiting(2, "docs-site", begun)]),
+      T0 + 60 * MINUTE,
+      false,
+    );
+    expect(end.summary).toBeNull();
+    expect(end.open.map((one) => [one.session.id, one.begunAt])).toEqual([
+      [id(1), T0 + MINUTE],
+      [id(2), begun],
+    ]);
+  });
+
+  test("leaving answered waits out leaves it out too", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdReminder(waiting(1, "checkout-flow", T0 - MINUTE), T0 - MINUTE);
+    hold.waitEnded(id(1), T0 + 10 * MINUTE);
+    expect(hold.end(snapshot([]), T0 + 60 * MINUTE, true)).toEqual({ summary: null, open: [] });
+  });
+});
