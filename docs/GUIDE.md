@@ -1318,7 +1318,7 @@ In a clone, `npm run build` and then `npm start` run Agent Lookout from built fi
 
 ## Desktop app
 
-Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. It keeps its rules in the same [settings file](#time-rules) as `npx agent-lookout`, though, and takes up a change to that file at its next poll, so a program running as you can change them by writing the file. It needs no Node.js.
+Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. It keeps its rules in the same [settings file](#time-rules) as `npx agent-lookout`, though, and takes up a change to that file at its next poll, so a program running as you can change them by writing the file. It needs macOS 13 Ventura or later, and no Node.js.
 
 To install it, download it from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest) and drag it to Applications, or build it yourself: [Mac app](INSTALL.md#mac-app) has the steps, and what to do the first time macOS will not open it. Keep it in Applications: the app [updates itself](#updates) only from a folder it can change.
 
