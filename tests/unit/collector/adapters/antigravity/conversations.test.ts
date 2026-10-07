@@ -44,7 +44,7 @@ test("names are conversation ids, in lower case, and nothing else is", () => {
 });
 
 describe("listing conversations", () => {
-  test("finds them by their folders and databases, with the newest write of their three files", async () => {
+  test("finds them by their folders and databases, with when the transcript was written and the newest write of the three files", async () => {
     const { files, finder } = setUp();
     files.write(transcriptPath(AGY_HOME, A), finishedTurn(0, NOW).join(""), {
       mtimeMs: NOW - 3 * MINUTE,
@@ -68,13 +68,15 @@ describe("listing conversations", () => {
           id: A,
           transcript: transcriptPath(AGY_HOME, A),
           transcriptInfo: expect.objectContaining({ kind: "file" }),
-          writtenAt: NOW - MINUTE,
+          writtenAt: NOW - 3 * MINUTE,
+          lastWriteAt: NOW - MINUTE,
         },
         {
           id: B,
           transcript: transcriptPath(AGY_HOME, B),
           transcriptInfo: null,
-          writtenAt: NOW - 2 * MINUTE,
+          writtenAt: null,
+          lastWriteAt: NOW - 2 * MINUTE,
         },
       ],
     });
@@ -96,7 +98,7 @@ describe("listing conversations", () => {
     const listing = await finder.list(NOW, never);
     expect(listing).toMatchObject({
       state: "ok",
-      conversations: [{ id: A, transcriptInfo: null, writtenAt: null }],
+      conversations: [{ id: A, transcriptInfo: null, writtenAt: null, lastWriteAt: null }],
     });
   });
 
@@ -121,6 +123,16 @@ describe("listing conversations", () => {
     clock.advance(OLD_REFRESH_MS);
     await finder.list(clock.now(), never);
     expect(lookedAt(OLD)).toBe(3);
+  });
+
+  test("looks at a conversation on every poll while its database changed in the last day, so its transcript is found once written", async () => {
+    const { clock, files, finder } = setUp();
+    files.write(databasePath(AGY_HOME, B), "", { mtimeMs: NOW - MINUTE });
+    await finder.list(NOW, never);
+    files.write(transcriptPath(AGY_HOME, B), finishedTurn(0, NOW).join(""), { mtimeMs: NOW });
+    clock.advance(2 * SECOND);
+    const listing = await finder.list(clock.now(), never);
+    expect(listing).toMatchObject({ conversations: [{ id: B, writtenAt: NOW, lastWriteAt: NOW }] });
   });
 
   test("finds a day-old conversation written again within 30 seconds", async () => {

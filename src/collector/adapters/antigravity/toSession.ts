@@ -21,7 +21,7 @@ export interface AntigravitySessionInput {
   conversationId: string;
   state: TranscriptState;
   live: AntigravityLiveness;
-  /** The newest modified time of the conversation's files, from the `lstat`s made this poll. */
+  /** The newest modified time of the conversation's transcript, database and database log, from the `lstat`s made this poll. */
   writtenAt: number | null;
   now: number;
 }

@@ -76,6 +76,13 @@ const LABEL = "Antigravity CLI";
 export const NEEDS_YOU_NOTE =
   "The Antigravity CLI's transcripts are not known to record when it waits for your approval, so a session waiting for you shows as working.";
 
+/** Said whenever the Antigravity CLI is watched, until the adapter has been checked against agy itself. */
+export const UNCHECKED_NOTE =
+  "This is built from what agy 1.3.1 documents and has not yet been checked against a running conversation, so a status can be wrong.";
+
+/** What the card always says, after how it reads. */
+const ALWAYS_NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
+
 /** Said when a conversation's last step is one this adapter does not know, or none could be read. */
 export const UNKNOWN_STEP_NOTE =
   "Some conversations end with a step Agent Lookout does not know, perhaps from a newer agy, so they show as unknown.";
@@ -177,14 +184,15 @@ type HomeFrom = "agent-lookout" | "default";
  * - The folder names under `<agy folder>/brain` and `<agy folder>/conversations`,
  *   and the modified times of each conversation's transcript, database and
  *   database log. See `conversations.ts`.
- * - The end of each transcript written in the last 24 hours, for the last step.
+ * - The end of each transcript written in the last 24 hours, or that an agy
+ *   program may have open, for the last step.
  *   See `transcriptFile.ts`.
  * - `ps`, for which agy programs run, to tell an open conversation from one
  *   that has ended. See `agyProcesses.ts`.
  *
  * A conversation is listed while an agy program may have it open, and for 24
- * hours after it was last written. Its status is working, idle, failed or
- * finished, never "needs-you".
+ * hours after its transcript was last written. Its status is working, idle,
+ * failed or finished, never "needs-you".
  *
  * agy not being installed costs nothing: when its folder is missing, the
  * adapter says so and looks again only once a minute, with a single `stat`,
@@ -342,7 +350,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       if (homeFrom === "agent-lookout") {
         return result(
           "ok",
-          `${ANTIGRAVITY_HOME_ENV} is set to ${homeName}, which has no ${BRAIN_DIR} folder, so no Antigravity CLI sessions are listed. ${NEEDS_YOU_NOTE}`,
+          `${ANTIGRAVITY_HOME_ENV} is set to ${homeName}, which has no ${BRAIN_DIR} folder, so no Antigravity CLI sessions are listed. ${ALWAYS_NOTES}`,
           "not found",
           checkedAt,
         );
@@ -356,7 +364,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       homeSeen = true;
       return result(
         "ok",
-        `The Antigravity CLI has not saved any conversations in ${brainName} yet. ${NEEDS_YOU_NOTE}`,
+        `The Antigravity CLI has not saved any conversations in ${brainName} yet. ${ALWAYS_NOTES}`,
         "not found",
         checkedAt,
       );
@@ -365,7 +373,9 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     const { conversations } = listing;
     // Null only when no conversation is to be shown, and so none is listed below.
     const list = await processesFor(conversations, checkedAt);
-    const holding = list?.ok ? holdConversations(list.sessions, conversations) : null;
+    // When `ps` was not asked this poll, a conversation written since it last
+    // was may be open in an agy program started since, which it did not show.
+    const holding = list?.ok ? holdConversations(list.sessions, conversations, processesAt) : null;
     lastHolding = holding;
 
     /** The transcripts read this poll, whose cache is worth keeping. */
@@ -388,7 +398,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
         conversationId: files.id,
         state,
         live: antigravityLiveness(files.id, holding),
-        writtenAt: files.writtenAt,
+        writtenAt: files.lastWriteAt,
         now: checkedAt,
       });
       if (session.status === "unknown") unknownStep = true;
@@ -396,7 +406,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     }
     reader.keepOnly(read);
 
-    let detail = `Sessions are read from the transcripts the Antigravity CLI keeps in ${brainName}. ${NEEDS_YOU_NOTE}`;
+    let detail = `Sessions are read from the transcripts the Antigravity CLI keeps in ${brainName}. ${ALWAYS_NOTES}`;
     let basis = BASIS;
     if (list !== null && !list.ok) {
       detail +=

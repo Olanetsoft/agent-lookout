@@ -8,7 +8,9 @@ import {
   BASIS_WITHOUT_PROCESSES,
   NEEDS_YOU_NOTE,
   PROCESS_CHECK_MS,
+  PROMPT_PROCESS_CHECK_MS,
   RECHECK_MS,
+  UNCHECKED_NOTE,
   UNKNOWN_STEP_NOTE,
   UNMATCHED_NOTE,
 } from "@collector/adapters/antigravity/index";
@@ -66,7 +68,7 @@ describe("with agy's folder there", () => {
       id: "antigravity-cli",
       label: "Antigravity CLI",
       state: "ok",
-      detail: `Sessions are read from the transcripts the Antigravity CLI keeps in ~/.gemini/antigravity-cli/brain. ${NEEDS_YOU_NOTE}`,
+      detail: `Sessions are read from the transcripts the Antigravity CLI keeps in ~/.gemini/antigravity-cli/brain. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`,
       watching: [
         { label: "Conversations folder", value: "~/.gemini/antigravity-cli/brain" },
         { label: "Read", value: "every 2 seconds" },
@@ -200,6 +202,46 @@ describe("with agy's folder there", () => {
     expect(processes.asked()).toBe(3);
   });
 
+  test("a conversation written by an agy program that started since ps last ran is not finished before ps is asked again", async () => {
+    const { adapter, clock, processes, write } = setUp();
+    await adapter.poll();
+    expect(processes.asked()).toBe(1);
+
+    // An agy program starts just after ps found none, and writes a new conversation.
+    const NEW = conversationId("e5");
+    processes.set([{ startedAt: NOW }]);
+    clock.advance(SECOND);
+    write(NEW, finishedTurn(0, clock.now()), clock.now());
+    // The next poll comes a little sooner than ps may be asked again.
+    clock.advance(PROMPT_PROCESS_CHECK_MS - SECOND - 10);
+    const soon = await adapter.poll();
+    expect(processes.asked()).toBe(1);
+    expect(statuses(soon.sessions)).toMatchObject({ [NEW]: "idle" });
+
+    clock.advance(10);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [NEW]: "idle" });
+    expect(processes.asked()).toBe(2);
+
+    // Once ps shows the program has ended, the conversation is finished.
+    processes.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [NEW]: "finished" });
+  });
+
+  test("only the transcript says an agy program may have a conversation open, while its database gives Quiet for", async () => {
+    const { adapter, files, processes } = setUp();
+    // agy writes a conversation's database at other times too, as a program exits.
+    files.write(databasePath(AGY_HOME, IDLE), "SQLite format 3", { mtimeMs: NOW - MINUTE });
+    processes.set([{ startedAt: NOW - 5 * MINUTE }]);
+    const { sessions } = await adapter.poll();
+    expect(statuses(sessions)).toEqual({
+      [WORKING]: "working",
+      [IDLE]: "finished",
+      [FAILED]: "failed",
+    });
+    expect(sessions.find((session) => session.id.endsWith(IDLE))?.lastWriteAt).toBe(NOW - MINUTE);
+  });
+
   test("with no conversation from the last day, runs no ps and lists nothing", async () => {
     const clock = handClock(NOW);
     const files = memoryFiles(clock.now);
@@ -264,7 +306,7 @@ describe("with no agy folder", () => {
     const result = await antigravityAdapterFor(files, standInProcesses()).poll();
     expect(result.health).toMatchObject({
       state: "ok",
-      detail: `The Antigravity CLI has not saved any conversations in ~/.gemini/antigravity-cli/brain yet. ${NEEDS_YOU_NOTE}`,
+      detail: `The Antigravity CLI has not saved any conversations in ~/.gemini/antigravity-cli/brain yet. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`,
     });
     expect(result.sessions).toEqual([]);
   });
@@ -292,7 +334,7 @@ describe(ANTIGRAVITY_HOME_ENV, () => {
     const result = await adapter.poll();
     expect(result.health).toMatchObject({
       state: "ok",
-      detail: `${ANTIGRAVITY_HOME_ENV} is set to ~/agy-empty, which has no brain folder, so no Antigravity CLI sessions are listed. ${NEEDS_YOU_NOTE}`,
+      detail: `${ANTIGRAVITY_HOME_ENV} is set to ~/agy-empty, which has no brain folder, so no Antigravity CLI sessions are listed. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`,
     });
     expect(files.count("stat")).toBe(0);
     expect(processes.asked()).toBe(0);

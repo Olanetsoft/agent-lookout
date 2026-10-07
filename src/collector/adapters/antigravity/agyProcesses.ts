@@ -21,6 +21,11 @@ import { runPs, type PsAnswer } from "../../processes/ps.ts";
  *    program is a session and the conversation's id are kept, for as long as
  *    the program runs.
  *
+ * An agy program started by another that runs a session belongs to that
+ * session, and is left out. One started by an agy that is not a session, such
+ * as the `remote-control` service, is a session of its own when its command
+ * line says so.
+ *
  * It is never run on Windows, which has no `ps`.
  */
 
@@ -176,10 +181,7 @@ export function createAgyProcessReader(
     if (platform === "win32") return { ok: false };
     const table = await run(AGY_TABLE_ARGS, { utc: true });
     if (!table.ok) return { ok: false };
-    const all = parseAgyTable(table.stdout);
-    // A program agy itself started, under another agy, belongs to that one's session.
-    const agyPids = new Set(all.map((row) => row.pid));
-    const rows = all.filter((row) => !agyPids.has(row.ppid));
+    const rows = parseAgyTable(table.stdout);
 
     const keyOf = (row: AgyRow) => `${row.pid} ${row.start}`;
     const current = new Set(rows.map(keyOf));
@@ -200,12 +202,29 @@ export function createAgyProcessReader(
       }
     }
 
-    const sessions: AgySessionProcess[] = [];
+    /** The agy programs still running, by pid. */
+    const running = new Map<number, AgyRow>();
     for (const row of rows) {
-      if (ended.has(row.pid)) continue;
-      // A program whose command line could not be read is taken as a session that names nothing.
-      const line = known.get(keyOf(row)) ?? { session: true };
-      if (!line.session) continue;
+      if (!ended.has(row.pid)) running.set(row.pid, row);
+    }
+    // A program whose command line could not be read is taken as a session that names nothing.
+    const lineOf = (row: AgyRow) => known.get(keyOf(row)) ?? { session: true };
+    /** Whether an agy program that runs a session started this one, directly or through other agy programs. */
+    const underSession = (row: AgyRow) => {
+      const seen = new Set<number>([row.pid]);
+      let parent = running.get(row.ppid);
+      while (parent !== undefined && !seen.has(parent.pid)) {
+        if (lineOf(parent).session) return true;
+        seen.add(parent.pid);
+        parent = running.get(parent.ppid);
+      }
+      return false;
+    };
+
+    const sessions: AgySessionProcess[] = [];
+    for (const row of running.values()) {
+      const line = lineOf(row);
+      if (!line.session || underSession(row)) continue;
       sessions.push(
         line.conversation === undefined
           ? { startedAt: row.startedAt }

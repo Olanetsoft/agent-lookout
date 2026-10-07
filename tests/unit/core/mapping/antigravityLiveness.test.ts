@@ -51,12 +51,28 @@ describe("holdConversations", () => {
     expect(antigravityLiveness(A, holding)).toBe("unknown");
   });
 
-  test("and so could one whose start is not known, unless it names its conversation", () => {
+  test("and so could one whose start is not known, even one that names its conversation", () => {
     expect(holdConversations([{ startedAt: null }], conversations).complete).toBe(false);
-    expect(holdConversations([{ startedAt: null, conversation: A }], conversations)).toEqual({
-      held: new Set([A]),
-      complete: true,
-    });
+    // It may have moved on from that one with /new, and nothing says when it started writing.
+    const holding = holdConversations([{ startedAt: null, conversation: A }], conversations);
+    expect(holding).toEqual({ held: new Set([A]), complete: false });
+    expect(antigravityLiveness(B, holding)).toBe("unknown");
+  });
+
+  test("a program that wrote to one conversation and then resumed an older one holds the older one only once it writes to it", () => {
+    // Started six minutes ago and wrote B. Resuming C writes nothing the files show.
+    const holding = holdConversations([{ startedAt: NOW - 6 * MINUTE }], conversations);
+    expect(antigravityLiveness(C, holding)).toBe(false);
+  });
+
+  test("a conversation written after the process table was read may be open in a program started since", () => {
+    const listedAt = NOW - 6 * MINUTE;
+    // The table showed no agy program. B was written after it was read, A before.
+    const holding = holdConversations([], conversations, listedAt);
+    expect(holding).toEqual({ held: new Set([B]), complete: true });
+    expect(antigravityLiveness(A, holding)).toBe(false);
+    // Written in the same millisecond the table was read is not after it.
+    expect(holdConversations([], conversations, NOW - 5 * MINUTE).held.has(B)).toBe(false);
   });
 
   test("a conversation whose files could not be looked at is held by nothing but its name", () => {

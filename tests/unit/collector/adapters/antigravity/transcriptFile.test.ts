@@ -260,6 +260,25 @@ describe("a transcript", () => {
     );
   });
 
+  test("a file that grew by more than 2 MiB after it was looked at is read afresh, within the limit", async () => {
+    const { files, reader, read } = setUp(finishedTurn(0, START).join(""));
+    await read();
+    files.append(FILE, step({ index: 4, type: "USER_INPUT", at: START + 9 * SECOND }));
+    // What the poll's `lstat` said, a moment before agy wrote a great deal more.
+    const looked = await files.io.lstat(FILE);
+    const tool = step({ index: 5, type: "VIEW_FILE", at: START + 10 * SECOND });
+    files.append(FILE, tool.repeat(Math.ceil((TAIL_LIMIT_BYTES + 1) / tool.length)));
+    files.forget();
+
+    const state = await reader.read(FILE, looked);
+    expect(state.last).toMatchObject({ type: "VIEW_FILE" });
+    expect(files.reads.every((range) => range.length <= TAIL_LIMIT_BYTES)).toBe(true);
+    const tail = files.reads.filter((range) => range.position > 0);
+    expect(tail.reduce((sum, range) => sum + range.length, 0)).toBeLessThanOrEqual(
+      TAIL_LIMIT_BYTES,
+    );
+  });
+
   test("a working run longer than the part read has no known start", async () => {
     const tool = step({ index: 9, type: "VIEW_FILE", at: START + 10 * SECOND });
     const many = tool.repeat(Math.ceil((TAIL_LIMIT_BYTES + 1) / tool.length));

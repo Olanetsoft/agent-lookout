@@ -145,12 +145,15 @@ describe("createAgyProcessReader", () => {
     row(814, 1, NOW - 3 * MINUTE, "agy"),
     // A program the agy in 812 started itself.
     row(900, 812, NOW - 2 * MINUTE, "agy"),
+    // A program the remote-control service in 814 started.
+    row(901, 814, NOW - MINUTE, "agy"),
   ].join("\n");
   const lines = {
     812: `agy --conversation ${A}`,
     813: "agy -p summarise the notes",
     814: "agy remote-control daemon",
     900: "agy --internal",
+    901: "agy --model auto",
   };
 
   test("asks for the table in UTC, then the command lines of the agy programs alone", async () => {
@@ -158,12 +161,48 @@ describe("createAgyProcessReader", () => {
     const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
     expect(await reader.read()).toEqual({
       ok: true,
-      sessions: [{ startedAt: NOW - 5 * MINUTE, conversation: A }, { startedAt: NOW - 4 * MINUTE }],
+      sessions: [
+        { startedAt: NOW - 5 * MINUTE, conversation: A },
+        { startedAt: NOW - 4 * MINUTE },
+        { startedAt: NOW - MINUTE },
+      ],
     });
     expect(ps.runs).toEqual([
       { args: AGY_TABLE_ARGS, utc: true },
-      { args: agyCommandLineArgs([812, 813, 814]), utc: false },
+      { args: agyCommandLineArgs([812, 813, 814, 900, 901]), utc: false },
     ]);
+  });
+
+  test("a program a session started belongs to it, and one an agy that is no session started is a session of its own", async () => {
+    const tree = [
+      row(812, 501, NOW - 5 * MINUTE, "agy"),
+      row(900, 812, NOW - 4 * MINUTE, "agy"),
+      // Started by 900, which 812 started: still 812's.
+      row(902, 900, NOW - 3 * MINUTE, "agy"),
+      row(814, 1, NOW - 60 * MINUTE, "agy"),
+      row(901, 814, NOW - 2 * MINUTE, "agy"),
+    ].join("\n");
+    const ps = standInPs(tree, {
+      812: "agy",
+      900: "agy mcp serve",
+      902: "agy --internal",
+      814: "agy remote-control daemon",
+      901: `agy --conversation ${A}`,
+    });
+    const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
+    expect(await reader.read()).toEqual({
+      ok: true,
+      sessions: [{ startedAt: NOW - 5 * MINUTE }, { startedAt: NOW - 2 * MINUTE, conversation: A }],
+    });
+  });
+
+  test("a program whose parent ended between the two runs is a session of its own", async () => {
+    const ps = standInPs(
+      [row(812, 501, NOW - 5 * MINUTE, "agy"), row(900, 812, NOW - 2 * MINUTE, "agy")].join("\n"),
+      { 900: "agy" },
+    );
+    const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
+    expect(await reader.read()).toEqual({ ok: true, sessions: [{ startedAt: NOW - 2 * MINUTE }] });
   });
 
   test("reads a program's command line once, for as long as it runs", async () => {

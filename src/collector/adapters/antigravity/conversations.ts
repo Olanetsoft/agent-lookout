@@ -11,12 +11,20 @@ import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyI
  *   `.system_generated/logs/transcript.jsonl`.
  * - `<agy folder>/conversations/<conversation id>.db` is the conversation's
  *   SQLite database, with its write-ahead log `<id>.db-wal` beside it. Neither
- *   is ever opened: their modified times alone say when agy last wrote to the
- *   conversation, which it may do there before it does in the transcript.
+ *   is ever opened.
  *
- * A conversation written in the last 24 hours, or one an agy program may have
- * open, is looked at on every poll. Every other one is looked at again every
- * 30 seconds, so a conversation resumed after a day is found.
+ * Whether a conversation was written lately, and so may be open, is told by
+ * its transcript's modified time alone. Only the program running a
+ * conversation adds steps to its transcript, while its database is also
+ * written at other times: agy flushes it as a program exits (changelog
+ * 1.1.26), and has been seen to write it half a minute after the transcript.
+ * The newest of all three times is kept for Quiet for, since agy may write the
+ * database while a step runs, before it writes the step to the transcript.
+ *
+ * A conversation any of whose files changed in the last 24 hours, or one an
+ * agy program may have open, is looked at on every poll. Every other one is
+ * looked at again every 30 seconds, so a conversation resumed after a day is
+ * found.
  */
 
 export const BRAIN_DIR = "brain";
@@ -49,8 +57,10 @@ export interface ConversationFiles {
   transcript: string;
   /** What `lstat` said of the transcript, when it is an ordinary file. Null otherwise. */
   transcriptInfo: FileInfo | null;
-  /** The newest modified time of the transcript, the database and its log, in whole milliseconds. Null when none is there. */
+  /** When the transcript was last written, in whole milliseconds. Null when it is not an ordinary file. */
   writtenAt: number | null;
+  /** The newest modified time of the transcript, the database and its log, in whole milliseconds. Null when none is there. */
+  lastWriteAt: number | null;
 }
 
 export type ConversationListing =
@@ -88,13 +98,14 @@ export function createConversationFinder(options: {
       ),
     );
     const transcriptInfo = infos[0]?.kind === "file" ? infos[0] : null;
-    let writtenAt: number | null = null;
+    const writtenAt = transcriptInfo === null ? null : Math.floor(transcriptInfo.mtimeMs);
+    let lastWriteAt: number | null = null;
     for (const info of infos) {
       if (info?.kind !== "file") continue;
       const at = Math.floor(info.mtimeMs);
-      writtenAt = writtenAt === null ? at : Math.max(writtenAt, at);
+      lastWriteAt = lastWriteAt === null ? at : Math.max(lastWriteAt, at);
     }
-    return { id, transcript, transcriptInfo, writtenAt };
+    return { id, transcript, transcriptInfo, writtenAt, lastWriteAt };
   }
 
   return {
@@ -132,7 +143,7 @@ export function createConversationFinder(options: {
           const before = known.get(id);
           const recent =
             before === undefined ||
-            (before.writtenAt !== null && before.writtenAt >= cutoff) ||
+            (before.lastWriteAt !== null && before.lastWriteAt >= cutoff) ||
             mayBeOpen(id);
           if (recent || refreshOld) known.set(id, await lookAt(id));
         }),
@@ -144,7 +155,7 @@ export function createConversationFinder(options: {
   };
 }
 
-/** Whether a conversation was written within the time a session that has ended stays listed. */
+/** Whether a conversation's transcript was written within the time a session that has ended stays listed. */
 export function writtenRecently(files: ConversationFiles, now: number): boolean {
   return files.writtenAt !== null && isWithinRetention(files.writtenAt, now);
 }

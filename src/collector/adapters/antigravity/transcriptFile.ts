@@ -322,6 +322,8 @@ export function createTranscriptReader(io: ReadOnlyIo): TranscriptReader {
       if (opened.ino !== cached.ino || opened.size < offset || opened.size < cached.size) {
         return null;
       }
+      // It may have grown since the `lstat`: what is read at once stays within the limit.
+      if (opened.size - offset > TAIL_LIMIT_BYTES) return null;
       // A file rewritten as a conversation is compacted can be longer than it
       // was, so its start is compared too, over the bytes hashed last time.
       if ((await headHash(handle, cached.size)) !== cached.headHash) return null;
