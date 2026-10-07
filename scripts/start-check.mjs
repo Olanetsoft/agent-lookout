@@ -1,5 +1,6 @@
 // Starts the built app the way a person starts it, with `npm start`, and checks
-// that it finds a session of each kind. CI runs it on Linux. To run it by hand:
+// that it finds a session of each kind. CI runs it on Linux and on Windows. To
+// run it by hand:
 //
 //   npm run build
 //   npm run start:check
@@ -11,7 +12,8 @@
 //
 // It reads none of this machine's own agents. It makes folders of its own, in
 // the system's temporary folder or, with `-- --dir <folder>`, in that folder: a
-// Claude Code folder whose registry names a `sleep` this script starts, a copy
+// Claude Code folder whose registry names two stand-ins for Claude Code's
+// processes, small Node programs this script starts that only wait, a copy
 // of tests/fixtures/codex-home, a folder with one status file, and a folder
 // for the history the app keeps, so nothing is written to this machine's. It starts
 // the app on a port the system picks, with the claude command, tmux and
@@ -22,6 +24,14 @@
 // MCP SDK bundled into it, so this is what shows that bundle works. Then it
 // stops the app, and every process it started, each by its own process ID,
 // and removes the folders.
+//
+// On Windows `npm start` is run as npm's own script, `npm_execpath`, with this
+// Node, because `npm` there is a `.cmd`, which only a shell runs. Windows has
+// no `ps`, so the processes under the app are listed by PowerShell, and a
+// registry file whose process is not the one it names is not looked for,
+// since Agent Lookout compares no start times there. Windows has no Ctrl+C to
+// send another program either, so the app is ended with every process under
+// it by `taskkill`, and the check is that nothing is left and nothing answers.
 //
 // It prints one line for each check and exits with 0 when all pass, 1 when one
 // fails and 2 when it could not get as far as checking.
@@ -73,8 +83,13 @@ const SOURCES = [
   ["status-files", "Status files"],
 ];
 
+const onWindows = process.platform === "win32";
+
+/** Where Windows keeps its own programs. */
+const system32 = path.join(process.env.SystemRoot || "C:\\Windows", "System32");
+
 /** What this script started, so that everything is stopped whatever happens. */
-const started = { sleeps: [], npm: null, mcp: null, dir: null };
+const started = { standIns: [], npm: null, mcp: null, dir: null };
 let failures = 0;
 
 function pass(line) {
@@ -86,14 +101,18 @@ function fail(line) {
   console.log(`FAIL  ${line}`);
 }
 
+function skip(line) {
+  console.log(`skip  ${line}`);
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Runs a program directly, with no shell, and resolves with what it printed, whatever its exit code. */
-function run(file, args, env) {
+function run(file, args, env, timeout = 5_000) {
   return new Promise((resolve) => {
-    execFile(file, args, { env, encoding: "utf8", timeout: 5_000 }, (_error, stdout) =>
+    execFile(file, args, { env, encoding: "utf8", timeout, windowsHide: true }, (_error, stdout) =>
       resolve(String(stdout ?? "")),
     );
   });
@@ -165,12 +184,30 @@ async function getJson(base, route) {
   return { status, json: JSON.parse(body) };
 }
 
-/** Every process below this one, from one run of `ps`, by walking down from it. */
+/**
+ * Each process's ID and its parent's, a line each: from `ps`, or on Windows,
+ * which has none, from PowerShell, which takes a few seconds to start.
+ */
+function processTable() {
+  if (onWindows) {
+    return run(
+      path.join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.ParentProcessId }",
+      ],
+      process.env,
+      30_000,
+    );
+  }
+  return run("ps", ["-A", "-o", "pid=,ppid="], { PATH: "/usr/bin:/bin", LC_ALL: "C" });
+}
+
+/** Every process below this one, from one reading of the table, by walking down from it. */
 async function descendantsOf(pid) {
-  const printed = await run("ps", ["-A", "-o", "pid=,ppid="], {
-    PATH: "/usr/bin:/bin",
-    LC_ALL: "C",
-  });
+  const printed = await processTable();
   const children = new Map();
   for (const line of printed.split("\n")) {
     const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
@@ -204,13 +241,16 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
 
   // What Claude Code records as `procStart`, asked of `ps` the way it asks.
-  const procStart = (
-    await run("ps", ["-o", "lstart=", "-p", String(waitingPid)], {
-      PATH: "/usr/bin:/bin",
-      LC_ALL: "C",
-      TZ: "UTC",
-    })
-  ).trim();
+  // Windows has no `ps`, and Claude Code there records none.
+  const procStart = onWindows
+    ? undefined
+    : (
+        await run("ps", ["-o", "lstart=", "-p", String(waitingPid)], {
+          PATH: "/usr/bin:/bin",
+          LC_ALL: "C",
+          TZ: "UTC",
+        })
+      ).trim();
 
   const startedAt = Date.now();
   const entry = (pid, fields) =>
@@ -280,10 +320,25 @@ function appEnv(folders) {
   };
 }
 
+/**
+ * How `npm start` is run. On Windows `npm` is a `.cmd`, which only a shell
+ * runs, so npm's own script is run with this Node: the one `npm run` names in
+ * `npm_execpath`, or else the one that comes with this Node.
+ */
+function npmStart() {
+  if (!onWindows) return { file: "npm", args: ["start"] };
+  const named = process.env.npm_execpath;
+  const script =
+    named && /\.c?js$/.test(named)
+      ? named
+      : path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  return { file: process.execPath, args: [script, "start"] };
+}
+
 /** What starts the app: `npm start` in this folder, or the command `--command` gives, where this runs. */
 function startCommandOf(argv) {
   const at = argv.indexOf("--command");
-  if (at === -1) return { file: "npm", args: ["start"], cwd: root, label: "npm start" };
+  if (at === -1) return { ...npmStart(), cwd: root, label: "npm start" };
   const [file, ...args] = argv.slice(at + 1);
   if (!file) return null;
   return { file, args, cwd: process.cwd(), label: [file, ...args].join(" ") };
@@ -297,6 +352,7 @@ async function startApp(env) {
     cwd: start.cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
   started.npm = npm;
   let printed = "";
@@ -351,7 +407,11 @@ function check(snapshot, procStart) {
     fail(`Claude Code session checkout-flow is ${waiting ? waiting.status : "not listed"}`);
   }
 
-  if (byId(`claude-code:${LEFTOVER_ID}`) === undefined) {
+  if (onWindows) {
+    skip(
+      "A registry file whose process started at another time is not looked for: Windows has no ps, so Agent Lookout compares no start times there",
+    );
+  } else if (byId(`claude-code:${LEFTOVER_ID}`) === undefined) {
     pass("A registry file whose process started at another time is left out");
   } else {
     fail(
@@ -421,6 +481,7 @@ async function checkMcp(address, env) {
     cwd: command.cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   });
   started.mcp = mcp;
   let stderr = "";
@@ -498,18 +559,30 @@ async function checkMcp(address, env) {
 }
 
 /**
+ * Ends a process and every process under it, on Windows, with the system's
+ * own `taskkill`. Only a process ID this script started is ever handed to it.
+ */
+function endTree(pid) {
+  return run(path.join(system32, "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], process.env);
+}
+
+/**
  * Stops the app as Ctrl+C in its terminal does, by sending SIGINT to npm
  * and to every process under it at once, each by its own ID, and checks that
- * the app stopped with it.
+ * the app stopped with it. Windows cannot send Ctrl+C to another program's
+ * console, so there npm is ended with every process under it, as closing its
+ * window would.
  */
 async function stopApp(address) {
   const npm = started.npm;
   const below = await descendantsOf(npm.pid);
-  for (const pid of [npm.pid, ...below]) signal(pid, "SIGINT");
+  if (onWindows) await endTree(npm.pid);
+  else for (const pid of [npm.pid, ...below]) signal(pid, "SIGINT");
+  const how = onWindows ? "once it was ended" : "on Ctrl+C";
   const code = await exitOf(npm, STOP_TIMEOUT_MS);
   started.npm = null;
   if (code === null) {
-    fail(`${start.label} did not stop on Ctrl+C`);
+    fail(`${start.label} did not stop ${how}`);
     signal(npm.pid, "SIGKILL");
   }
 
@@ -530,10 +603,16 @@ async function stopApp(address) {
     left = left.filter(isAlive);
   }
   if (code !== null && !answering && left.length === 0) {
-    const ended = typeof code === "number" ? `exit code ${code}` : code;
-    pass(`It stopped on Ctrl+C, and ${start.label} ended with ${ended}`);
+    if (onWindows) {
+      pass(
+        `It was ended with the ${below.length} processes under ${start.label}, and nothing answers at its address`,
+      );
+    } else {
+      const ended = typeof code === "number" ? `exit code ${code}` : code;
+      pass(`It stopped on Ctrl+C, and ${start.label} ended with ${ended}`);
+    }
   } else if (answering || left.length > 0) {
-    fail(`The app went on running after Ctrl+C: process ${left.join(", ") || "unknown"}`);
+    fail(`The app went on running ${how}: process ${left.join(", ") || "unknown"}`);
   }
   for (const pid of left) signal(pid, "SIGKILL");
 }
@@ -550,12 +629,15 @@ async function cleanUp() {
     for (const pid of [started.npm.pid, ...below]) signal(pid, "SIGKILL");
     started.npm = null;
   }
-  for (const sleep of started.sleeps) {
-    signal(sleep.pid, "SIGTERM");
-    await exitOf(sleep, 2_000);
+  for (const standIn of started.standIns) {
+    signal(standIn.pid, "SIGTERM");
+    await exitOf(standIn, 2_000);
   }
-  started.sleeps = [];
-  if (started.dir) await rm(started.dir, { recursive: true, force: true });
+  started.standIns = [];
+  // On Windows a file a process has only just let go of can be busy for a moment.
+  if (started.dir) {
+    await rm(started.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
   started.dir = null;
 }
 
@@ -578,11 +660,15 @@ async function main() {
     return 2;
   }
   started.dir = await mkdtemp(path.join(path.resolve(named), "agent-lookout-start-check-"));
+  // Each stand-in waits for ten minutes, unless it is stopped first.
   for (let i = 0; i < 2; i += 1) {
-    started.sleeps.push(await startProcess("sleep", ["600"], { stdio: "ignore" }));
+    const waits = "setTimeout(() => {}, 600_000)";
+    started.standIns.push(
+      await startProcess(process.execPath, ["-e", waits], { stdio: "ignore", windowsHide: true }),
+    );
   }
-  const [waitingSleep, leftoverSleep] = started.sleeps;
-  const folders = await makeFolders(started.dir, waitingSleep.pid, leftoverSleep.pid);
+  const [waitingStandIn, leftoverStandIn] = started.standIns;
+  const folders = await makeFolders(started.dir, waitingStandIn.pid, leftoverStandIn.pid);
 
   const env = appEnv(folders);
   let app;
