@@ -273,6 +273,9 @@ export default defineConfig({
         // Rendered in real headless Chromium, because these tests assert computed
         // styles and layout that jsdom does not produce.
         extends: true,
+        // Prepared before the first test, so Vite never finds it mid-run and
+        // reloads the page under a running test, which fails it.
+        optimizeDeps: { include: ["react-dom/client"] },
         test: {
           name: "component",
           // A component is tested in a .test.tsx file; a plain module that needs a
