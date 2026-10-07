@@ -353,8 +353,46 @@ describe("allow rules that could change the rules are refused when written", () 
     }
   });
 
-  test("npm test and npm:* may still be allowed", () => {
+  test("npm test may be allowed, npm alone or with an option first may not", () => {
     expect(ruleProblem({ decision: "allow", tool: "Bash", command: "npm test:*" })).toBeNull();
-    expect(ruleProblem({ decision: "allow", tool: "Bash", command: "npm:*" })).toBeNull();
+    for (const command of [
+      "npm:*",
+      "npm",
+      "npm --yes:*",
+      "cargo:*",
+      "docker:*",
+      "yarnpkg:*",
+      "go1.22.0:*",
+    ]) {
+      expect(ruleProblem({ decision: "allow", tool: "Bash", command })).toMatch(
+        /names the subcommand too/,
+      );
+      expect(ruleProblem({ decision: "deny", tool: "Bash", command })).toBeNull();
+    }
+  });
+
+  test("a shortened or other name of a subcommand that runs code is refused too", () => {
+    for (const command of [
+      "npm exe:*",
+      "npm innit:*",
+      "npm creat:*",
+      "bundle e:*",
+      "cargo r:*",
+      "yarnpkg dlx:*",
+      "docker-compose up:*",
+    ]) {
+      expect(ruleProblem({ decision: "allow", tool: "Bash", command })).toMatch(
+        /fetches or runs code/,
+      );
+    }
+  });
+
+  test("an option through which the program runs another is refused", () => {
+    expect(
+      ruleProblem({ decision: "allow", tool: "Bash", command: "go test -exec=./x:*" }),
+    ).toMatch(/runs another program/);
+    expect(
+      ruleProblem({ decision: "allow", tool: "Bash", command: "git -c core.pager=./x log" }),
+    ).toMatch(/runs another program/);
   });
 });

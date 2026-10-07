@@ -78,9 +78,12 @@ export function createRuleAnswers(options: RuleAnswersOptions): RuleAnswers {
   let recent: RuleAnswer[] = [];
 
   return {
-    verdictFor({ shown }) {
+    verdictFor({ sessionId, shown }) {
       const rules = options.rules();
       if (rules.length === 0) return null;
+      // The session's folder, from Claude Code's own file, so paths in the
+      // command are read from where it runs.
+      const folder = poller.getSnapshot().sessions.find((listed) => listed.id === sessionId)?.cwd;
       const verdict = decideByRules(rules, {
         tool: shown.tool,
         ...(shown.command !== undefined && { command: shown.command }),
@@ -89,6 +92,7 @@ export function createRuleAnswers(options: RuleAnswersOptions): RuleAnswers {
         // The one rule for what may be allowed: what the dashboard would offer Allow for.
         allowable: shown.allow,
         ownPaths: options.ownPaths ?? [],
+        ...(folder && { folder }),
       });
       if (verdict === null || verdict.decision === "ask") return null;
       return { decision: verdict.decision, rule: verdict.rule };

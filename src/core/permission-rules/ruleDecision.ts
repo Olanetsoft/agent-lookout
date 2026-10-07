@@ -1,10 +1,13 @@
 import {
+  folderReachesOwnFiles,
   looseCommandWords,
   looselyMatches,
   namesOwnFiles,
+  needsItsSubcommand,
   plainCommandWords,
   ruleCommandOf,
   runsAnotherCommand,
+  runsAProgramByOption,
   runsCodeBySubcommand,
   sendsOrRunsCode,
   wordsMatch,
@@ -47,11 +50,15 @@ import {
  * should a list hold one, and nor does one whose command begins with a
  * program that runs another, sends requests or runs the code it is given,
  * such as `sudo`, `curl` or `python`: the rules refuse such a rule when it is
- * written, and a file that holds one is read as no rule at all. Nor does an
- * allow rule ever answer a command that runs code through a subcommand, such
- * as `npm exec` under `npm:*` (`runsCodeBySubcommand`), or that names Agent
- * Lookout's own folder, settings file or socket (`namesOwnFiles`): either
- * could change the rules.
+ * written, and a file that holds one is read as no rule at all, nor one for
+ * a package manager or a build tool that does not name its subcommand, such
+ * as `npm:*` (`needsItsSubcommand`). Nor does an allow rule ever answer a
+ * command that runs code through a subcommand, such as `npm exec`
+ * (`runsCodeBySubcommand`), or runs a program named in an option, such as
+ * `go test -exec` (`runsAProgramByOption`), a command that names Agent
+ * Lookout's own files or a folder above them (`namesOwnFiles`), or any
+ * command of a session whose folder is one of those (`folderReachesOwnFiles`):
+ * each could change the rules.
  */
 
 /** A request, as much of it as the rules read. */
@@ -65,6 +72,8 @@ export interface RuleRequest {
   allowable: boolean;
   /** Agent Lookout's own settings file and socket, which no allowed command may name. */
   ownPaths?: readonly string[];
+  /** The session's folder, when known: paths in the command are read from there too. */
+  folder?: string;
 }
 
 /** The decision, and the rule that made it. */
@@ -108,9 +117,12 @@ function lets(rule: PermissionRule, request: RuleRequest): boolean {
   const wanted = ruleCommandOf(rule.command);
   const [program = ""] = wanted.words;
   if (runsAnotherCommand(program) || sendsOrRunsCode(program)) return false;
+  if (needsItsSubcommand(wanted.words)) return false;
   const words = plainCommandWords(request.command);
-  if (words === null || runsCodeBySubcommand(words)) return false;
-  if (namesOwnFiles(words, request.ownPaths)) return false;
+  if (words === null || runsCodeBySubcommand(words) || runsAProgramByOption(words)) return false;
+  const own = request.ownPaths ?? [];
+  if (request.folder !== undefined && folderReachesOwnFiles(request.folder, own)) return false;
+  if (namesOwnFiles(words, own, request.folder)) return false;
   return wordsMatch(wanted, words);
 }
 

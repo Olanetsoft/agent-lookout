@@ -66,9 +66,9 @@ describe("deny goes first, then ask, then allow", () => {
   });
 
   test("of the rules of one kind, the first in the list is the one named", () => {
-    const allowNpm = rule({ decision: "allow", tool: "Bash", command: "npm:*" });
-    expect(decideByRules([ALLOW_TESTS, allowNpm], bash("npm test"))?.rule).toBe(ALLOW_TESTS);
-    expect(decideByRules([allowNpm, ALLOW_TESTS], bash("npm test"))?.rule).toBe(allowNpm);
+    const exactly = rule({ decision: "allow", tool: "Bash", command: "npm test" });
+    expect(decideByRules([ALLOW_TESTS, exactly], bash("npm test"))?.rule).toBe(ALLOW_TESTS);
+    expect(decideByRules([exactly, ALLOW_TESTS], bash("npm test"))?.rule).toBe(exactly);
   });
 });
 
@@ -274,14 +274,36 @@ describe("a deny or an ask rule matches more loosely, but still by words", () =>
 
 describe("an allow rule never answers a command that could change the rules", () => {
   const ALLOW_NPM = rule({ decision: "allow", tool: "Bash", command: "npm:*" });
+  const ALLOW_NPM_TEST = rule({ decision: "allow", tool: "Bash", command: "npm test:*" });
   const ALLOW_SED = rule({ decision: "allow", tool: "Bash", command: "sed:*" });
   const ALLOW_CP = rule({ decision: "allow", tool: "Bash", command: "cp:*" });
 
-  test("a subcommand that fetches or runs code, even under a rule for the program", () => {
+  test("a rule for a package manager alone, should a list hold one, allows nothing", () => {
+    expect(decideByRules([ALLOW_NPM], bash("npm test"))).toBeNull();
     expect(decideByRules([ALLOW_NPM], bash("npm exec some-pkg"))).toBeNull();
-    expect(decideByRules([ALLOW_NPM], bash("npm --yes exec some-pkg"))).toBeNull();
-    expect(decideByRules([ALLOW_NPM], bash("npm x some-pkg"))).toBeNull();
-    expect(decideByRules([ALLOW_NPM], bash("npm test"))).toMatchObject({ decision: "allow" });
+  });
+
+  test("a rule that names its subcommand answers that one, and no shortened form or option step reaches another", () => {
+    expect(decideByRules([ALLOW_NPM_TEST], bash("npm test"))).toMatchObject({ decision: "allow" });
+    for (const command of [
+      "npm -- exec some-pkg",
+      "npm exe some-pkg",
+      "npm innit foo",
+      "npm --yes exec some-pkg",
+    ]) {
+      expect(decideByRules([ALLOW_NPM_TEST], bash(command))).toBeNull();
+    }
+    expect(decideByRules([ALLOW_NPM_TEST], bash("npm test --script-shell=./x.sh"))).toBeNull();
+  });
+
+  test("an option through which a program runs another", () => {
+    const allowGoTest = rule({ decision: "allow", tool: "Bash", command: "go test:*" });
+    expect(decideByRules([allowGoTest], bash("go test ./..."))).toMatchObject({
+      decision: "allow",
+    });
+    expect(decideByRules([allowGoTest], bash("go test -exec=./x ./..."))).toBeNull();
+    expect(decideByRules([ALLOW_GIT], bash("git -c core.pager=./x log"))).toBeNull();
+    expect(decideByRules([ALLOW_GIT], bash("git status"))).toMatchObject({ decision: "allow" });
   });
 
   test("a command that names Agent Lookout's folder", () => {
@@ -316,5 +338,58 @@ describe("an allow rule never answers a command that could change the rules", ()
     expect(decideByRules([denyNpm, ALLOW_NPM], bash("npm exec some-pkg"))).toMatchObject({
       decision: "deny",
     });
+  });
+});
+
+describe("an allow rule never reaches Agent Lookout's own files through a folder above them", () => {
+  const ALLOW_RSYNC = rule({ decision: "allow", tool: "Bash", command: "rsync:*" });
+  const ownPaths = [
+    "/Users/example/.agent-lookout/settings.json",
+    "/Users/example/.agent-lookout/answer.sock",
+  ];
+
+  test("a folder above them, written any way", () => {
+    for (const command of [
+      "rsync -a payload/ /Users/example/",
+      "rsync -a payload/ /Users/example//",
+      "rsync -a payload/ /Users/example/code/..",
+      "rsync -a payload/ /",
+    ]) {
+      expect(decideByRules([ALLOW_RSYNC], bash(command, { ownPaths }))).toBeNull();
+    }
+    expect(decideByRules([ALLOW_RSYNC], bash("rsync -a src/ build/", { ownPaths }))).toMatchObject({
+      decision: "allow",
+    });
+  });
+
+  test("a relative path, read from the session's folder", () => {
+    const folder = "/Users/example/code/shop";
+    expect(
+      decideByRules([ALLOW_RSYNC], bash("rsync -a payload/ ../..", { ownPaths, folder })),
+    ).toBeNull();
+    expect(
+      decideByRules([ALLOW_RSYNC], bash("rsync -a src/ build/", { ownPaths, folder })),
+    ).toMatchObject({ decision: "allow" });
+  });
+
+  test("no command of a session whose folder is your home folder or above", () => {
+    expect(
+      decideByRules(
+        [ALLOW_RSYNC],
+        bash("rsync -a src/ build/", { ownPaths, folder: "/Users/example" }),
+      ),
+    ).toBeNull();
+    expect(
+      decideByRules([ALLOW_RSYNC], bash("rsync -a src/ build/", { ownPaths, folder: "/" })),
+    ).toBeNull();
+  });
+
+  test("a path that reaches a file by its number", () => {
+    expect(
+      decideByRules(
+        [ALLOW_RSYNC],
+        bash("rsync x /.vol/16777232/123456/settings.json", { ownPaths }),
+      ),
+    ).toBeNull();
   });
 });

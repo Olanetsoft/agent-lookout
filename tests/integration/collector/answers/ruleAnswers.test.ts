@@ -247,9 +247,9 @@ test.each<[string, RuleWords[], string]>([
     "git --no-pager push",
   ],
   [
-    "a subcommand that fetches and runs code, under an allow rule for its program",
-    [{ decision: "allow", tool: "Bash", command: "npm:*" }],
-    "npm exec some-pkg",
+    "a subcommand that fetches and runs code, beside an allow rule for another subcommand",
+    [{ decision: "allow", tool: "Bash", command: "npm test:*" }],
+    "npm -- exec some-pkg",
   ],
   [
     "a command that names Agent Lookout's folder, under an allow rule for its program",

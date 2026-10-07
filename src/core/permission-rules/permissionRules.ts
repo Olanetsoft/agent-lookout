@@ -2,9 +2,11 @@ import { EDIT_TOOLS, NOT_YES_OR_NO_TOOLS } from "../sessions/session.ts";
 import {
   ASSIGNMENT,
   namesOwnFiles,
+  needsItsSubcommand,
   plainCommandWords,
   PREFIX_MARK,
   runsAnotherCommand,
+  runsAProgramByOption,
   runsCodeBySubcommand,
   sendsOrRunsCode,
 } from "./commandWords.ts";
@@ -175,6 +177,12 @@ function commandProblem(command: string, decision: RuleDecision): string | null 
   }
   if (decision === "allow" && sendsOrRunsCode(program)) {
     return `${program} is, or is named like, a program that can send requests or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you. Answer such commands by hand, or allow a script the project owns, such as ./scripts/test.sh, knowing Claude can edit it.`;
+  }
+  if (decision === "allow" && needsItsSubcommand(words.split(" "))) {
+    return `${program} does something different for each subcommand, and some run any code they are pointed at, so an allow rule for it names the subcommand too, such as ${program} test:*.`;
+  }
+  if (decision === "allow" && runsAProgramByOption(words.split(" "))) {
+    return `${words} names an option through which ${program} runs another program, so an allow rule for it would let Claude Code run anything without asking you.`;
   }
   if (decision === "allow" && runsCodeBySubcommand(words.split(" "))) {
     return `${words} fetches or runs code that Claude Code can choose, so an allow rule for it would let it run anything without asking you. Name the script it should run instead, or answer such commands by hand.`;

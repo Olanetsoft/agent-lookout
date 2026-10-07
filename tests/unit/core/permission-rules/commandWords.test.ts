@@ -4,12 +4,16 @@ import {
   COMMAND_RUNNERS,
   looseCommandWords,
   looselyMatches,
+  folderReachesOwnFiles,
   namesOwnFiles,
+  needsItsSubcommand,
   NETWORK_CLIENTS_AND_INTERPRETERS,
   plainCommandWords,
+  plainPath,
   programOf,
   ruleCommandOf,
   runsAnotherCommand,
+  runsAProgramByOption,
   runsCodeBySubcommand,
   sendsOrRunsCode,
   SUBCOMMANDS_THAT_RUN_CODE,
@@ -504,5 +508,116 @@ describe("a command that names Agent Lookout's own files", () => {
     expect(namesOwnFiles(["rm", "/tmp/al/answer.sock"], own)).toBe(true);
     expect(namesOwnFiles(["cp", "x", "/tmp/rules/other.json"], own)).toBe(false);
     expect(namesOwnFiles(["ls"], ["", ""])).toBe(false);
+  });
+});
+
+describe("a list name with anything after it that is not a letter is that name", () => {
+  test.each([
+    "ts-node-esm",
+    "ts-node-script",
+    "nix-shell-2.3",
+    "aria2c-1.36",
+    "vite-node_x",
+    "go1.22.0",
+  ])("%s is caught", (word) => {
+    expect(runsAnotherCommand(word) || sendsOrRunsCode(word) || needsItsSubcommand([word])).toBe(
+      true,
+    );
+  });
+});
+
+describe("a package manager or build tool names its subcommand", () => {
+  test("alone, or with an option first, it does not", () => {
+    expect(needsItsSubcommand(["npm"])).toBe(true);
+    expect(needsItsSubcommand(["npm", "--yes"])).toBe(true);
+    expect(needsItsSubcommand(["npm", "test"])).toBe(false);
+    expect(needsItsSubcommand(["git"])).toBe(false);
+  });
+
+  test("a -- before the subcommand does not hide it, and one after it ends the search", () => {
+    expect(runsCodeBySubcommand(["npm", "--", "exec", "x"])).toBe(true);
+    expect(runsCodeBySubcommand(["npm", "test", "--", "exec"])).toBe(false);
+  });
+
+  test.each([
+    ["npm exe x"],
+    ["npm ini foo"],
+    ["npm innit foo"],
+    ["npm explo x"],
+    ["bundle e rake"],
+    ["bundler exec rake"],
+    ["cargo r"],
+    ["yarnpkg dlx x"],
+    ["yarn node x.js"],
+    ["docker-compose up"],
+    ["docker build ."],
+    ["dotnet exec app.dll"],
+    ["go tool x"],
+  ])("%s runs code", (command) => {
+    expect(runsCodeBySubcommand(command.split(" "))).toBe(true);
+  });
+});
+
+describe("an option through which a program runs another", () => {
+  test.each([
+    ["go test -exec=./x ."],
+    ["go build --toolexec ./x ."],
+    ["npm test --script-shell=./x.sh"],
+    ["git -c core.pager=./x log"],
+  ])("%s", (command) => {
+    expect(runsAProgramByOption(command.split(" "))).toBe(true);
+  });
+
+  test("ordinary options are not", () => {
+    expect(runsAProgramByOption(["go", "test", "-run", "TestX"])).toBe(false);
+    expect(runsAProgramByOption(["git", "commit", "--cached"])).toBe(false);
+    expect(runsAProgramByOption(["npm", "test", "--watch"])).toBe(false);
+  });
+});
+
+describe("Agent Lookout's own files and the folders above them", () => {
+  const own = [
+    "/Users/example/.agent-lookout/settings.json",
+    "/Users/example/.agent-lookout/answer.sock",
+  ];
+
+  test("a path made plain from its words", () => {
+    expect(plainPath("/Users//Example/./code/../.agent-lookout/")).toBe(
+      "/users/example/.agent-lookout",
+    );
+    expect(plainPath("src/app")).toBe("src/app");
+  });
+
+  test("a folder above them, an option's value and a path by number", () => {
+    expect(namesOwnFiles(["tar", "-xf", "p.tar", "-C", "/Users/example"], own)).toBe(true);
+    expect(namesOwnFiles(["git", "apply", "--directory=/Users/example", "x.diff"], own)).toBe(true);
+    expect(namesOwnFiles(["ls", "/"], own)).toBe(true);
+    expect(namesOwnFiles(["cp", "x", "/.vol/16777232/123/settings.json"], own)).toBe(true);
+    expect(namesOwnFiles(["ls", "/Users/example/code"], own)).toBe(false);
+  });
+
+  test("a settings file a setting put elsewhere, by its own name too", () => {
+    const elsewhere = ["/Users/example/proj/al.json"];
+    expect(namesOwnFiles(["cp", "evil.json", "al.json"], elsewhere)).toBe(true);
+    expect(namesOwnFiles(["cp", "evil.json", "/Users/example/proj//al.json"], elsewhere)).toBe(
+      true,
+    );
+    expect(namesOwnFiles(["cp", "-R", "payload/", "/Users/example/proj"], elsewhere)).toBe(true);
+  });
+
+  test("a relative path read from the session's folder", () => {
+    expect(namesOwnFiles(["cp", "-R", "payload/", "../.."], own, "/Users/example/code/shop")).toBe(
+      true,
+    );
+    expect(namesOwnFiles(["cp", "-R", "payload/", "build"], own, "/Users/example/code/shop")).toBe(
+      false,
+    );
+  });
+
+  test("a session in your home folder or above reaches them, one in a project does not", () => {
+    expect(folderReachesOwnFiles("/Users/example", own)).toBe(true);
+    expect(folderReachesOwnFiles("/Users/example/", own)).toBe(true);
+    expect(folderReachesOwnFiles("/", own)).toBe(true);
+    expect(folderReachesOwnFiles("/Users/example/code/shop", own)).toBe(false);
   });
 });

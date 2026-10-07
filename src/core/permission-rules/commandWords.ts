@@ -191,19 +191,11 @@ export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
   "zx",
 ];
 
-/** A version at the end of a program's name, as in `python3`, `python3.12` or `perl5.34`. */
-const VERSION_AT_END = /\d+(?:\.\d+)*$/;
-
 /** The ending of a program on Windows, `curl.exe` or `cmd.com`, run the same from WSL. */
 const WINDOWS_PROGRAM_END = /\.(?:exe|com)$/;
 
-/**
- * The name a program's own name begins with, before a digit, a dot or a dash:
- * `python` in `python3-intel64` and `python3.13t`, `nc` in `nc.openbsd`,
- * `gawk` in `gawk-5.3.1`. It refuses more than it must, `ssh-keygen` among
- * them, which is the safe side for an allow rule.
- */
-const NAME_BEFORE_ITS_ENDING = /^[a-z]+/;
+/** A letter, which carries a name on: `javac` is not `java`, but `java17` and `java-17` are. */
+const LETTER = /[a-z]/;
 
 /** A word as the program it names: its last part after any `/`, in small letters. */
 export function programOf(word: string): string {
@@ -213,94 +205,235 @@ export function programOf(word: string): string {
     .replace(WINDOWS_PROGRAM_END, "");
 }
 
-/** Whether a word names a program that runs another command (`COMMAND_RUNNERS`). */
-export function runsAnotherCommand(word: string): boolean {
-  return namesOf(programOf(word)).some((name) => COMMAND_RUNNERS.includes(name));
+/**
+ * The name among `names` a program is, or is with anything after it that
+ * does not begin with a letter: a version, as in `python3.12`, `bash5` or
+ * `go1.22.0`, or another ending, as in `nc.openbsd`, `ts-node-esm` or
+ * `nix-shell-2.3`. It finds more than it must, `ssh-keygen` and
+ * `node_exporter` among them, which is the safe side for an allow rule.
+ */
+function nameIn(program: string, names: Iterable<string>): string | undefined {
+  let found: string | undefined;
+  for (const name of names) {
+    if (program === name) return name;
+    // The longest name that fits wins, so `docker-compose` is not `docker`.
+    const fits = program.startsWith(name) && !LETTER.test(program.charAt(name.length));
+    if (fits && name.length > (found?.length ?? 0)) found = name;
+  }
+  return found;
 }
 
-/**
- * The names a program is known by for the two lists: its own, without a
- * version at the end, and the name its own begins with. So `bash5`, `ksh93`
- * and `zsh-5.9` are shells, and `python3-intel64` is `python`.
- */
-function namesOf(program: string): string[] {
-  return [
-    program,
-    program.replace(VERSION_AT_END, ""),
-    NAME_BEFORE_ITS_ENDING.exec(program)?.[0] ?? program,
-  ];
+/** Whether a word names a program that runs another command (`COMMAND_RUNNERS`). */
+export function runsAnotherCommand(word: string): boolean {
+  return nameIn(programOf(word), COMMAND_RUNNERS) !== undefined;
 }
 
 /**
  * Whether a word names a program that sends requests or runs code given in
  * its words (`NETWORK_CLIENTS_AND_INTERPRETERS`), by its name alone, whatever
- * its capitals, its folder and a version after it: `/usr/bin/Python3.12` is
- * `python`.
+ * its capitals, its folder and what comes after the name: `/usr/bin/Python3.12`
+ * is `python`.
  */
 export function sendsOrRunsCode(word: string): boolean {
-  return namesOf(programOf(word)).some((name) => NETWORK_CLIENTS_AND_INTERPRETERS.includes(name));
+  return nameIn(programOf(word), NETWORK_CLIENTS_AND_INTERPRETERS) !== undefined;
 }
 
 /**
- * The subcommands through which a program fetches code, or runs code it is
- * pointed at, as its main purpose: `npm exec`, `pnpm dlx`, `uv tool run`,
- * `go run`, `docker run`. An allow rule for the program alone, `npm:*`, would
- * let Claude Code run any package it names, which can reach Agent Lookout on
- * this computer like any program, so neither the rule nor a match may hold
- * one (`runsCodeBySubcommand`).
+ * The package managers and build tools whose subcommands each do something
+ * different, and the subcommands among them that fetch code, or run code they
+ * are pointed at: `npm exec`, `pnpm dlx`, `cargo run`, `docker run`, with the
+ * aliases the tools accept, such as `bundle e`, `cargo r` and `npm innit`.
+ *
+ * An allow rule for one of these names its subcommand, `npm test:*`, never the
+ * program alone, `npm:*` (`needsItsSubcommand`). Matched word by word, the
+ * rule then answers that subcommand and no other, whatever shortened form or
+ * second name the tool would also accept. A rule may not name one of the
+ * subcommands listed here, and no allowed command holds one before the
+ * arguments begin (`runsCodeBySubcommand`).
  */
 export const SUBCOMMANDS_THAT_RUN_CODE: Readonly<Record<string, readonly string[]>> = {
-  bundle: ["exec"],
-  cargo: ["run"],
-  docker: ["compose", "exec", "run"],
-  dotnet: ["run"],
-  go: ["generate", "run"],
+  bundle: ["e", "ex", "exe", "exec"],
+  bundler: ["e", "ex", "exe", "exec"],
+  cargo: ["r", "run"],
+  docker: ["build", "buildx", "compose", "container", "create", "exec", "run", "start"],
+  "docker-compose": ["create", "exec", "run", "start", "up"],
+  dotnet: ["exec", "run", "tool"],
+  go: ["generate", "run", "tool"],
   nix: ["develop", "run", "shell"],
-  npm: ["create", "exec", "explore", "init", "x"],
+  npm: ["create", "exec", "explore", "init", "innit", "x"],
   pipx: ["run"],
   pnpm: ["create", "dlx", "exec", "x"],
-  podman: ["compose", "exec", "run"],
+  podman: ["build", "compose", "container", "create", "exec", "run", "start"],
   poetry: ["run"],
   uv: ["run", "tool"],
-  yarn: ["create", "dlx", "exec"],
+  yarn: ["create", "dlx", "exec", "node"],
+  yarnpkg: ["create", "dlx", "exec", "node"],
 };
 
+/** The tools that take any start of a subcommand's name that is not shared, as `npm exe` for `npm exec`. */
+const TAKES_A_SHORTENED_SUBCOMMAND: readonly string[] = ["npm"];
+
+/** The tool among `SUBCOMMANDS_THAT_RUN_CODE` a word names, or undefined. */
+function subcommandToolOf(word: string): string | undefined {
+  return nameIn(programOf(word), Object.keys(SUBCOMMANDS_THAT_RUN_CODE));
+}
+
 /**
- * Whether a command's words hold one of the program's subcommands that run
- * code, anywhere among them before a `--`, so options written first, as in
- * `npm --yes exec`, do not step around it. That refuses more than it must,
- * which is the safe side for an allow rule.
+ * Whether an allow rule's words name one of the tools above without its
+ * subcommand: the program alone, or followed by an option.
+ */
+export function needsItsSubcommand(words: readonly string[]): boolean {
+  const [first, second] = words;
+  if (first === undefined || subcommandToolOf(first) === undefined) return false;
+  return second === undefined || second.startsWith("-");
+}
+
+/**
+ * Whether a command's words hold one of its tool's subcommands that fetch or
+ * run code, in any capitals and, for npm, in any shortened form of two
+ * letters or more. Every word is looked at until the arguments begin: a `--`
+ * after the subcommand, though not one before it, as npm reads `npm -- exec`
+ * as `npm exec`. So an option before the subcommand, as in `npm --yes exec`,
+ * does not step around it. That refuses more than it must, which is the safe
+ * side for an allow rule.
  */
 export function runsCodeBySubcommand(words: readonly string[]): boolean {
   const [first, ...rest] = words;
   if (first === undefined) return false;
-  const subcommands = namesOf(programOf(first)).flatMap(
-    (name) => SUBCOMMANDS_THAT_RUN_CODE[name] ?? [],
-  );
-  if (subcommands.length === 0) return false;
+  const tool = subcommandToolOf(first);
+  if (tool === undefined) return false;
+  const listed = SUBCOMMANDS_THAT_RUN_CODE[tool] ?? [];
+  const shortened = TAKES_A_SHORTENED_SUBCOMMAND.includes(tool);
+  let pastOptions = false;
   for (const word of rest) {
-    if (word === "--") return false;
-    if (subcommands.includes(word.toLowerCase())) return true;
+    if (word === "--") {
+      if (pastOptions) return false;
+      continue;
+    }
+    if (!word.startsWith("-")) pastOptions = true;
+    const lower = word.toLowerCase();
+    if (listed.includes(lower)) return true;
+    if (shortened && lower.length >= 2 && listed.some((name) => name.startsWith(lower)))
+      return true;
   }
   return false;
+}
+
+/**
+ * The options through which a program runs another program named in them:
+ * `go test -exec=./x`, `go build -toolexec`, `npm test --script-shell=./x`,
+ * `git -c core.pager=./x log`. Written without their dashes, as an option is
+ * found with one dash or two, and with or without `=` and a value. Compared in
+ * their own capitals: git's `-C`, which names a folder, is not its `-c`.
+ */
+export const OPTIONS_THAT_RUN_A_PROGRAM: Readonly<Record<string, readonly string[]>> = {
+  git: ["c", "config-env", "exec-path", "receive-pack", "upload-pack"],
+  go: ["exec", "toolexec", "vettool"],
+  npm: ["call", "node-options", "script-shell"],
+};
+
+/** Whether a command's words hold an option through which its program runs another. */
+export function runsAProgramByOption(words: readonly string[]): boolean {
+  const [first, ...rest] = words;
+  if (first === undefined) return false;
+  const program = nameIn(programOf(first), Object.keys(OPTIONS_THAT_RUN_A_PROGRAM));
+  if (program === undefined) return false;
+  const options = OPTIONS_THAT_RUN_A_PROGRAM[program] ?? [];
+  return rest.some((word) => {
+    if (!word.startsWith("-")) return false;
+    const [name = ""] = word.replace(/^-+/, "").split("=");
+    return options.includes(name);
+  });
 }
 
 /** Agent Lookout's own folder, as any word that names it holds it. */
 const OWN_FOLDER_NAME = ".agent-lookout";
 
+/** The path macOS reaches any file by, by its disk's and its own numbers, with no name. */
+const BY_NUMBER = "/.vol";
+
 /**
- * Whether any word names Agent Lookout's own files: its folder,
- * `~/.agent-lookout`, wherever it is written from, or one of `ownPaths`, the
- * settings file and the socket where a setting put them elsewhere. A command
- * that names them could change the rules or answer prompts, so an allow rule
- * never answers it. Compared in small letters, as a Mac's disk does.
+ * A path written in a word, made plain from its words alone, with no disk:
+ * in small letters, as a Mac's disk compares names, with `//` and `/./` as
+ * `/`, `..` stepping back a folder, and no `/` at the end. A word that does
+ * not begin with `/` is left as it is.
  */
-export function namesOwnFiles(words: readonly string[], ownPaths: readonly string[] = []): boolean {
-  const own = ownPaths.filter((name) => name !== "").map((name) => name.toLowerCase());
+export function plainPath(word: string): string {
+  const lower = word.toLowerCase();
+  if (!lower.startsWith("/")) return lower;
+  const parts: string[] = [];
+  for (const part of lower.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `/${parts.join("/")}`;
+}
+
+/** Every folder above a path, up to `/`: `/a/b/c` gives `/a/b`, `/a` and `/`. */
+function foldersAbove(file: string): string[] {
+  const folders: string[] = [];
+  let at = file;
+  while (at !== "/" && at !== "") {
+    at = at.slice(0, at.lastIndexOf("/")) || "/";
+    folders.push(at);
+  }
+  return folders;
+}
+
+/**
+ * Whether any word names Agent Lookout's own files, or a folder that holds
+ * them: a word with `.agent-lookout` in it, in any capitals; a path, or the
+ * value of an option such as `--directory=…`, that is the settings file, the
+ * socket, or any folder above them, up to your home folder and `/`, written
+ * with `..`, `//` or `/./` as well; a word that ends in the settings file's
+ * own name where a setting put it outside `.agent-lookout`; and any path
+ * under `/.vol`, which reaches a file by number. With the session's folder
+ * known, each word is also read as a path from there, so `../..` from a
+ * project is your home folder. A command that names them could change the
+ * rules or answer prompts, through the file or by writing into a folder
+ * above it, so an allow rule never answers it.
+ */
+export function namesOwnFiles(
+  words: readonly string[],
+  ownPaths: readonly string[] = [],
+  folder?: string,
+): boolean {
+  const own = ownPaths.filter((name) => name.startsWith("/")).map(plainPath);
+  const above = new Set(own.flatMap(foldersAbove));
+  const ownNames = own
+    .filter((name) => !name.includes(OWN_FOLDER_NAME))
+    .map((name) => name.slice(name.lastIndexOf("/") + 1));
+  const from = folder?.startsWith("/") ? folder : undefined;
   return words.some((word) => {
     const lower = word.toLowerCase();
-    return lower.includes(OWN_FOLDER_NAME) || own.some((name) => lower.includes(name));
+    if (lower.includes(OWN_FOLDER_NAME)) return true;
+    const parts = [lower, ...lower.split("=").slice(1)];
+    const read = parts.flatMap((part) =>
+      from !== undefined && !part.startsWith("/") && !part.startsWith("-")
+        ? [part, `${from}/${part}`]
+        : [part],
+    );
+    return read.some((part) => {
+      const path = plainPath(part);
+      if (path === BY_NUMBER || path.startsWith(`${BY_NUMBER}/`)) return true;
+      if (own.some((name) => path === name || path.startsWith(`${name}/`))) return true;
+      if (above.has(path)) return true;
+      return ownNames.some((name) => path === name || path.endsWith(`/${name}`));
+    });
   });
+}
+
+/**
+ * Whether a session's folder is one of Agent Lookout's own folders or one
+ * above them, such as your home folder: from there a command can reach the
+ * settings file by a path that names nothing of it, `.agent-lookout/…` aside,
+ * so an allow rule answers no command of a session there.
+ */
+export function folderReachesOwnFiles(folder: string, ownPaths: readonly string[] = []): boolean {
+  const own = ownPaths.filter((name) => name.startsWith("/")).map(plainPath);
+  const path = plainPath(folder);
+  return own.some((name) => name === path || name.startsWith(`${path === "/" ? "" : path}/`));
 }
 
 /** A character a word of a plain command may hold: nothing any shell gives a meaning to. */
