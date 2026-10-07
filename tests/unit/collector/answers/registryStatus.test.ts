@@ -34,8 +34,16 @@ test("the session's own registry file is read again, by the pid the collector li
   expect(await status.statusOf(ID)).toEqual({
     status: "waiting",
     wait: "1700|permission prompt",
+    since: 1_700,
   });
   expect(readFile.mock.calls.map(([file]) => asWritten(file))).toEqual([FILE]);
+});
+
+test("a wait whose file gives no status time has no time it began", async () => {
+  const { status } = reader([listed], {
+    [FILE]: entry({ status: "waiting", waitingFor: "permission prompt" }),
+  });
+  expect(await status.statusOf(ID)).toEqual({ status: "waiting", wait: "|permission prompt" });
 });
 
 test("a later wait reads as another wait: its time or its reason differs", async () => {

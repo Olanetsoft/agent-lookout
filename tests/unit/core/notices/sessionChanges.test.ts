@@ -205,6 +205,34 @@ describe("a wait stopping", () => {
   });
 });
 
+describe("a wait Agent Lookout answered", () => {
+  test("is over at the snapshot that marks it, though its session still reads as waiting", () => {
+    const memory = memoryAfter(snapshot([working(A)]), snapshot([waiting(A)]));
+    const result = waitChanges(memory, snapshot([waiting(A, { answered: true })]));
+    expect(result.stopped).toEqual([A]);
+    expect(result.started).toEqual([]);
+    expect(remembered(result.memory)).toEqual({ "claude-code": [] });
+    // And nothing more when its source says it moved on.
+    const after = waitChanges(result.memory, snapshot([working(A)]));
+    expect([after.started, after.stopped]).toEqual([[], []]);
+  });
+
+  test("one first seen already answered never starts, and is no change at all", () => {
+    const memory = memoryAfter(snapshot([working(A)]));
+    expect(waitChanges(memory, snapshot([waiting(A, { answered: true })])).started).toEqual([]);
+    const seen = sessionChanges(EMPTY_CHANGE_MEMORY, snapshot([working(A)])).memory;
+    const result = sessionChanges(seen, snapshot([waiting(A, { answered: true })]));
+    expect([result.changes, result.stopped]).toEqual([[], []]);
+    expect(sessionChanges(result.memory, snapshot([working(A)])).changes).toEqual([]);
+  });
+
+  test("a wait that begins once the answered one is over starts as any wait does", () => {
+    const memory = memoryAfter(snapshot([working(A)]), snapshot([waiting(A, { answered: true })]));
+    const result = waitChanges(memory, snapshot([waiting(A, { statusSince: at })]));
+    expect(result.started.map((session) => session.id)).toEqual([A]);
+  });
+});
+
 describe("a wait going on", () => {
   test("a new reason, detail or name on the same wait reports nothing", () => {
     const memory = memoryAfter(

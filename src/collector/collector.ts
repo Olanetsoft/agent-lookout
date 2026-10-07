@@ -402,6 +402,11 @@ export function createCollector(options: CollectorOptions): Collector {
     // with pull requests on, the branch's pull request, as last learnt.
     // Every snapshot carries the time rules in force, and is stale by them.
     timeRules: () => settings.timeRules(),
+    // And marks each session still in a wait whose permission request was
+    // answered, so every channel, the page's too, takes that wait as over at
+    // the same poll, and the Events log and the waits never count a wait a
+    // rule answered before a poll saw it.
+    answered: (snapshot) => answering?.answeredIn(snapshot) ?? new Set(),
     annotate: async (sessions) => {
       const onBranches = await branches.annotate(sessions);
       return pullRequests ? pullRequests.annotate(onBranches) : onBranches;

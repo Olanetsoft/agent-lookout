@@ -297,6 +297,26 @@ describe("never twice", () => {
     expect(notifier.shown).toEqual([]);
   });
 
+  test("a wait held for a page and then answered from Agent Lookout is dropped at the poll that marks it, before its session reads as moved on", () => {
+    const { notifier, poll, page } = setUp(false);
+    poll(0, [working(1, "infra-terraform")]);
+    page(1_900, "on");
+    poll(2_000, [waiting(1, "infra-terraform")]);
+    page(3_000, "on", false);
+    poll(4_000, [waiting(1, "infra-terraform", { answered: true })]);
+    poll(60_000, [waiting(1, "infra-terraform", { answered: true })]);
+    poll(62_000, [working(1, "infra-terraform")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("a wait already answered when a poll first reads it is never shown", () => {
+    const { notifier, poll } = setUp(true);
+    poll(0, [working(1, "infra-terraform")]);
+    poll(2_000, [waiting(1, "infra-terraform", { answered: true })]);
+    poll(4_000, [working(1, "infra-terraform")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
   test("a session answered and waiting again inside one poll has its first wait forgotten and its second held anew", () => {
     const { notifier, poll, page } = setUp(false);
     const first = waiting(1, "email-templates", { statusSince: T0 + 1_500 });

@@ -1,4 +1,5 @@
 import type { Session, SessionsSnapshot } from "../sessions/session.ts";
+import { needsYou } from "../waits/answeredWaits.ts";
 
 /**
  * When a long wait's reminder is due, by one rule every channel shares: the
@@ -15,7 +16,9 @@ import type { Session, SessionsSnapshot } from "../sessions/session.ts";
  *
  * A wait is one stretch of "needs-you" that began at one time: its status
  * time, or, for a source that gives none, the moment it was first seen. The
- * reminder says how long it has waited, measured from then.
+ * reminder says how long it has waited, measured from then. A wait Agent
+ * Lookout answered is over from the answer, so none comes in the moment
+ * before its source says so (`needsYou` in `answeredWaits.ts`).
  */
 
 /** A reminder that is due. */
@@ -85,7 +88,7 @@ export function createReminderWatch(): ReminderWatch {
       for (const id of stopped) watched.delete(id);
       const sources = readable(snapshot);
       for (const session of snapshot.sessions) {
-        if (session.status !== "needs-you" || !sources.has(session.source)) continue;
+        if (!needsYou(session) || !sources.has(session.source)) continue;
         const since =
           session.statusSince !== null && session.statusSince <= at ? session.statusSince : null;
         const known = watched.get(session.id);
@@ -102,7 +105,7 @@ export function createReminderWatch(): ReminderWatch {
     due(snapshot, at, thresholdMs, eligible = () => true) {
       const found: DueReminder[] = [];
       for (const session of snapshot.sessions) {
-        if (session.status !== "needs-you") continue;
+        if (!needsYou(session)) continue;
         const wait = watched.get(session.id);
         if (!wait || wait.reminded.has(thresholdMs) || !eligible(session.id)) continue;
         const waitedMs = at - wait.begunAt;

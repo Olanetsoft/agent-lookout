@@ -159,3 +159,22 @@ describe("when a long wait's reminder is due", () => {
     expect(watch.due(later, T0 + 15 * MINUTE, TEN_MINUTES)).toEqual([]);
   });
 });
+
+describe("a wait Agent Lookout answered", () => {
+  test("is reminded of never, though it still reads as waiting when the threshold comes", () => {
+    const { poll } = setUp();
+    poll(T0, [working(1)]);
+    poll(T0 + MINUTE, [waiting(1, T0 + MINUTE)]);
+    // Answered a moment before the threshold, and read as waiting past it.
+    expect(poll(T0 + 11 * MINUTE, [waiting(1, T0 + MINUTE, { answered: true })])).toEqual([]);
+    expect(poll(T0 + 11 * MINUTE + 2_000, [working(1)])).toEqual([]);
+  });
+
+  test("a wait that begins after it is reminded of as usual", () => {
+    const { poll } = setUp();
+    poll(T0, [working(1)]);
+    poll(T0 + MINUTE, [waiting(1, T0 + MINUTE, { answered: true })]);
+    poll(T0 + 2 * MINUTE, [waiting(1, T0 + 2 * MINUTE)]);
+    expect(poll(T0 + 12 * MINUTE, [waiting(1, T0 + 2 * MINUTE)])).toEqual([[id(1), TEN_MINUTES]]);
+  });
+});

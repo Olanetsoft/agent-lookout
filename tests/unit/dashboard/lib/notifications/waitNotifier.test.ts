@@ -1107,6 +1107,36 @@ describe("the time rules", () => {
     expect(host.open()).toEqual([]);
   });
 
+  test("a wait the collector marks as answered is taken down at that snapshot and never reminded of, and one a rule answered before any snapshot showed it is never shown", () => {
+    const { host, notifier } = choosing("needs-you");
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const asking = (n: number, overrides: Partial<Session> = {}) =>
+      waiting(n, { name: `session-${n}`, statusSince: noon + MINUTE, ...overrides });
+    notifier.handle(
+      made(noon, REMINDING, [session(1, { status: "working" }), session(2, { status: "working" })]),
+    );
+    notifier.handle(made(noon + MINUTE, REMINDING, [asking(1), asking(2, { answered: true })]));
+    expect(shown(host)).toEqual([
+      ["session-1", "Waiting for permission", `agent-lookout:${id(1)}`],
+    ]);
+
+    // Answered just before its minutes were up, and still read as waiting after them.
+    notifier.handle(
+      made(noon + 11 * MINUTE, REMINDING, [
+        asking(1, { answered: true }),
+        asking(2, { answered: true }),
+      ]),
+    );
+    expect(host.open()).toEqual([]);
+    notifier.handle(
+      made(noon + 11 * MINUTE + 2_000, REMINDING, [
+        session(1, { status: "working" }),
+        session(2, { status: "working" }),
+      ]),
+    );
+    expect(host.shown).toHaveLength(1);
+  });
+
   test("with the reminder off, or Needs you switched off, there is none", () => {
     const off = choosing("needs-you");
     const noon = new Date(2026, 9, 5, 12, 0).getTime();

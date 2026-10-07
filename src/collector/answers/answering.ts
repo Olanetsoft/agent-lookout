@@ -29,6 +29,12 @@ export interface Answering {
   serve(snapshot: SessionsSnapshot): SessionsSnapshot;
   /** Told of each poll's sessions. */
   observe(snapshot: SessionsSnapshot): void;
+  /**
+   * Of one poll's sessions, the ids of those still in a wait whose permission
+   * request was answered, or that a rule is answering, as the poll's snapshot
+   * is made. None while answering is off.
+   */
+  answeredIn(snapshot: Pick<SessionsSnapshot, "sources" | "sessions">): ReadonlySet<string>;
   /** Answers `POST /api/permission/answer`, or undefined while answering is off. */
   route?: (req: IncomingMessage) => Promise<ApiAnswer>;
   /** The requests the permission rules answered since start, newest first. None while answering is off. */
@@ -66,6 +72,7 @@ export function createAnswering(options: AnsweringOptions): Answering {
       stop: async () => {},
       serve: (snapshot) => ({ ...snapshot, answering: off }),
       observe: () => {},
+      answeredIn: () => new Set(),
       ruleAnswers: () => [],
     };
   }
@@ -115,6 +122,7 @@ export function createAnswering(options: AnsweringOptions): Answering {
     observe(snapshot) {
       if (listening) asks.observe(snapshot);
     },
+    answeredIn: (snapshot) => asks.answeredIn(snapshot),
     route: createAnswerRoute({ poller, events, asks, now: options.now }),
     ruleAnswers: () => ruleAnswers.recent(),
   };

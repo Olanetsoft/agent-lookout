@@ -1,5 +1,6 @@
 import type { HistoryKept, HistorySince, WaitsResponse } from "../../core/api.ts";
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "../../core/sessions/session.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { addPoll, type Span } from "../../core/waits/measured.ts";
 import { isWaitEvent, waitTotals } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
@@ -108,8 +109,9 @@ export function createWaitLedger(): WaitLedger {
         events,
         measured: spans,
         runStarts,
+        // Not a session in a wait Agent Lookout answered, whatever its source still says.
         waitingNow: snapshot.sessions
-          .filter((session) => session.status === "needs-you")
+          .filter(needsYou)
           .map((session) => ({ id: session.id, name: session.name })),
         names: new Map(snapshot.sessions.map((session) => [session.id, session.name])),
         since: since.at,

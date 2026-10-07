@@ -145,6 +145,8 @@ export function readSession(value: unknown): Session | null {
     if (asking) session.waitingText = asking;
     const ask = here ? readAsk(value.ask) : null;
     if (ask) session.ask = ask;
+    // A wait Agent Lookout answered, which the notifications take as over, as the collector's do.
+    if (here && value.answered === true) session.answered = true;
   }
   const agent = text(value.agent);
   if (agent) session.agent = agent;

@@ -49,6 +49,25 @@ test("a stale session is not counted as idle, as the tiles do not count it, but 
   });
 });
 
+test("a session in a wait Agent Lookout answered is not counted as needing you, but is in the total", () => {
+  const sessions = [
+    makeSession({ id: "claude-code:1", status: "needs-you", waitingReason: "permission" }),
+    makeSession({
+      id: "claude-code:2",
+      status: "needs-you",
+      waitingReason: "permission",
+      answered: true,
+    }),
+  ];
+  expect(historyPointFor(sessions, at)).toEqual({
+    at,
+    needsYou: 1,
+    working: 0,
+    idle: 0,
+    total: 2,
+  });
+});
+
 test("the history begins where the answer says, or, where it does not say, when watching started", () => {
   expect(historySince({ startedAt: at })).toEqual({ at, by: "started" });
   expect(historySince({ startedAt: at, since: { at: at - 86_400_000, by: "trimmed" } })).toEqual({

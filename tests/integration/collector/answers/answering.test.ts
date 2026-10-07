@@ -6,13 +6,21 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test as anyTest, vi } from "vitest";
 
-import { ALLOW_OUTPUT, DENY_OUTPUT } from "@collector/answers/heldAsks";
-import { createCollector } from "@collector/collector";
-import type { EventsResponse } from "@core/api";
-import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { ALLOW_OUTPUT, DENY_OUTPUT, type StatusReader } from "@collector/answers/heldAsks";
+import { createRegistryStatus } from "@collector/answers/registryStatus";
+import { createCollector, type CollectorOptions } from "@collector/collector";
+import { createSmtpSender } from "@collector/email/smtpSender";
+import type { WebhookPost } from "@collector/webhook/webhookMessage";
+import { createHttpSender } from "@collector/webhook/webhookSender";
+import type { EventsResponse, WaitsResponse } from "@core/api";
+import type { RuleWords } from "@core/permission-rules/permissionRules";
+import { isStatusEvent, type Session, type SessionsSnapshot } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
+import { ANSWER_HOLDS_MS } from "@core/waits/answeredWaits";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
+import { decodedHeader, headerValues, startSmtpServer } from "@tests/support/channels/smtp";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
+import { startWebhookServer } from "@tests/support/channels/webhook";
 import { listen, request } from "@tests/support/node/http";
 import { startStandIn, type StandIn } from "@tests/support/node/standIns";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
@@ -49,6 +57,15 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
   });
 }
 
+/** How the collector is built beyond its settings, for the tests that need more. */
+type Built = Pick<
+  CollectorOptions,
+  "now" | "intervalMs" | "createEmailSender" | "createWebhookSender"
+> & {
+  /** Takes the beat that checks the held requests, which then runs only when the test runs it. */
+  beat?: (run: () => void) => void;
+};
+
 /**
  * The collector over a registry folder of the test's own, with one session in
  * it, waiting unless `status` says otherwise. `now` is the collector's clock,
@@ -56,13 +73,23 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
  */
 async function serve(
   env: Record<string, string> = {},
-  { status = "waiting", now }: { status?: string; now?: () => number } = {},
+  { status = "waiting", beat, ...built }: { status?: string } & Built = {},
 ) {
   const standIn = await startStandIn();
   const file = `${standIn.pid}.json`;
   const claudeHome = await makeClaudeHome({ [file]: entryFor(standIn, status) });
   const socketPath = path.join(await tempDir(), "al", "answer.sock");
   const notifier = fakeSystemNotifier();
+  /** The registry files the held requests' checks have read so far, as the collector reads them. */
+  let reads = 0;
+  let registry: StatusReader | null = null;
+  const counted: StatusReader = {
+    async statusOf(sessionId) {
+      const reading = await (registry as StatusReader).statusOf(sessionId);
+      reads += 1;
+      return reading;
+    },
+  };
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
@@ -77,7 +104,20 @@ async function serve(
       ...env,
     },
     notifier,
-    now,
+    ...built,
+    ...(beat && {
+      answering: {
+        status: counted,
+        every: (run) => {
+          beat(run);
+          return () => {};
+        },
+      },
+    }),
+  });
+  registry = createRegistryStatus({
+    snapshot: () => collector.poller.getSnapshot(),
+    env: { AGENT_LOOKOUT_CLAUDE_HOME: claudeHome },
   });
   collector.start();
   await collector.answering.start();
@@ -107,7 +147,20 @@ async function serve(
     await writeFile(`${target}.tmp`, entryFor(standIn, status));
     await rename(`${target}.tmp`, target);
   };
-  return { socketPath, snapshot, session, answer, events, rewrite, port, collector, notifier };
+  const waits = async () => (await request(port, "/api/waits")).json<WaitsResponse>();
+  return {
+    socketPath,
+    snapshot,
+    session,
+    answer,
+    events,
+    waits,
+    rewrite,
+    port,
+    collector,
+    notifier,
+    reads: () => reads,
+  };
 }
 
 /** The plugin's hook, run as Claude Code runs it, with the request on stdin. */
@@ -224,25 +277,30 @@ test("with AGENT_LOOKOUT_ANSWER off there is no socket and no route, and the hoo
   expect(response.status).toBe(405);
 });
 
-describe("the time rules, for a wait answered from the page", () => {
-  const MINUTE = 60_000;
+const MINUTE = 60_000;
 
+/** The collector's clock, which the test moves ahead. */
+function clock() {
+  let ahead = 0;
+  return {
+    now: () => Date.now() + ahead,
+    forward(ms: number) {
+      ahead += ms;
+    },
+  };
+}
+
+const REMIND_AFTER_A_MINUTE: TimeRules = {
+  ...DEFAULT_TIME_RULES,
+  longWait: { on: true, minutes: 1 },
+};
+
+describe("the time rules, for a wait answered from the page", () => {
   /** A settings file of the test's own, holding these rules. */
   async function settingsWith(rules: TimeRules): Promise<string> {
     const file = path.join(await tempDir(), "settings.json");
     await writeFile(file, JSON.stringify({ timeRules: rules }));
     return file;
-  }
-
-  /** The collector's clock, which the test moves ahead. */
-  function clock() {
-    let ahead = 0;
-    return {
-      now: () => Date.now() + ahead,
-      forward(ms: number) {
-        ahead += ms;
-      },
-    };
   }
 
   /** "14:05": a moment on this computer's clock, as quiet hours are set. */
@@ -275,11 +333,6 @@ describe("the time rules, for a wait answered from the page", () => {
       { timeout: 5_000, interval: 50 },
     );
   }
-
-  const REMIND_AFTER_A_MINUTE: TimeRules = {
-    ...DEFAULT_TIME_RULES,
-    longWait: { on: true, minutes: 1 },
-  };
 
   test("a wait no one answers is reminded of once it has waited the minute", async () => {
     const time = clock();
@@ -350,5 +403,247 @@ describe("the time rules, for a wait answered from the page", () => {
     expect(server.notifier.shown).toEqual([
       { title: "While quiet", body: "checkout-flow waited under a minute" },
     ]);
+  });
+});
+
+describe("a wait whose request was answered is over at once, on every channel", () => {
+  const ALLOW_TESTS: RuleWords = { decision: "allow", tool: "Bash", command: "npm test:*" };
+
+  /**
+   * The collector over the one session, with every channel on and set to go
+   * at once: its own notifications, email to a mail server of the test's own
+   * and posts to a webhook of its own, both on 127.0.0.1, and the long wait
+   * reminder after a minute. Its settings file holds these permission rules.
+   * Its clock is the test's own, it polls only when asked, and it checks the
+   * requests it holds only as one arrives or when the test runs `beat`.
+   */
+  async function everyChannel(status: string, rules: RuleWords[] = []) {
+    const time = clock();
+    const mail = await startSmtpServer();
+    const webhook = await startWebhookServer();
+    const settingsFile = path.join(await tempDir(), "settings.json");
+    await writeFile(
+      settingsFile,
+      JSON.stringify({
+        timeRules: REMIND_AFTER_A_MINUTE,
+        permissionRules: rules.map((rule, index) => ({ id: `rule${index}`, ...rule })),
+      }),
+    );
+    let beat = () => {};
+    const server = await serve(
+      {
+        AGENT_LOOKOUT_NOTIFICATIONS: "on",
+        AGENT_LOOKOUT_SETTINGS_FILE: settingsFile,
+        AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+        AGENT_LOOKOUT_SMTP_URL: mail.url(),
+        AGENT_LOOKOUT_EMAIL_AFTER: "0",
+        AGENT_LOOKOUT_WEBHOOK_URL: webhook.url(),
+        AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+      },
+      {
+        status,
+        now: time.now,
+        intervalMs: 60 * MINUTE,
+        beat: (run) => {
+          beat = run;
+        },
+        createEmailSender: (settings) => createSmtpSender(settings, { timeoutMs: 2_000 }),
+        createWebhookSender: (settings) =>
+          createHttpSender(settings, { version: "9.9.9-test", timeoutMs: 2_000 }),
+      },
+    );
+    const { collector } = server;
+    /** Polls until a poll begun after this call is done, and what it sent has gone. */
+    const pollAgain = async () => {
+      // A poll under way may have read the folder before now, and pollOnce
+      // hands that one back, so a second is asked for once it is done.
+      await collector.poller.pollOnce();
+      await collector.poller.pollOnce();
+      await collector.email?.settled();
+      await collector.webhook?.settled();
+    };
+    return {
+      ...server,
+      time,
+      pollAgain,
+      beat: () => beat(),
+      /** Claude Code rewrites its file once it has the answer, and a poll reads it. */
+      async movesOn() {
+        await server.rewrite("busy");
+        await vi.waitFor(
+          async () => {
+            await pollAgain();
+            expect((await server.session())?.status).toBe("working");
+          },
+          { timeout: 5_000, interval: 50 },
+        );
+      },
+      /** Moves the clock on until the session's wait has lasted `ms`. */
+      async waitedFor(ms: number) {
+        const since = (await server.session())?.statusSince ?? null;
+        expect(since).not.toBeNull();
+        const ahead = (since as number) + ms - time.now();
+        expect(ahead).toBeGreaterThan(0);
+        time.forward(ahead);
+      },
+      subjects: () =>
+        mail.received.map((email) => decodedHeader(headerValues(email.data, "Subject")[0] ?? "")),
+      posts: () => webhook.received.map((post) => JSON.parse(post.body) as WebhookPost),
+    };
+  }
+
+  type EveryChannel = Awaited<ReturnType<typeof everyChannel>>;
+
+  /** That nothing told of a wait anywhere, and nothing counted one, while the answer is in the log. */
+  async function toldOfNowhere(server: EveryChannel) {
+    expect(server.notifier.shown).toEqual([]);
+    expect(server.subjects()).toEqual([]);
+    expect(server.posts()).toEqual([]);
+    const events = await server.events();
+    expect(events.filter((event) => event.kind === "answered")).toHaveLength(1);
+    // No move into or out of needs-you: the session was working all along, as far as the log goes.
+    expect(events.filter(isStatusEvent)).toEqual([]);
+    const { today, sevenDays } = await server.waits();
+    expect([today.waits, sevenDays.waits]).toEqual([0, 0]);
+  }
+
+  test("a prompt a rule answers at once is told of on no channel and counted as no wait, and the answer is in the Events log", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    // Claude Code asks: its file says it waits for permission, and it runs the hook.
+    await server.rewrite("waiting");
+    expect(await hook(server.socketPath, "Bash", { command: "npm test" })).toEqual({
+      code: 0,
+      stdout: `${ALLOW_OUTPUT}\n`,
+    });
+
+    // Until Claude Code rewrites its file, a poll still reads the session as waiting.
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    // Past the hand-over to a page, and still well inside the time an answer stands for.
+    server.time.forward(4_000);
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    await server.movesOn();
+    server.time.forward(10 * MINUTE);
+    await server.pollAgain();
+
+    await toldOfNowhere(server);
+    expect((await server.events()).find((event) => event.kind === "answered")).toMatchObject({
+      decision: "allow",
+      by: "agent-lookout",
+      rule: { tool: "Bash", command: "npm test:*" },
+    });
+  });
+
+  test("a prompt a poll reads as waiting in the moment before a rule answers it is told of on no channel either", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    // The hook runs a moment before Claude Code's file says the session waits.
+    const asked = hook(server.socketPath, "Bash", { command: "npm test" });
+    await vi.waitFor(() => expect(server.reads()).toBeGreaterThan(0), { timeout: 5_000 });
+    await server.rewrite("waiting");
+    await server.pollAgain();
+    // Read as waiting, with the rule still to answer at the next check.
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    server.beat();
+    expect(await asked).toEqual({ code: 0, stdout: `${ALLOW_OUTPUT}\n` });
+
+    await server.pollAgain();
+    server.time.forward(4_000);
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    await server.movesOn();
+    await toldOfNowhere(server);
+  });
+
+  test.each(["allow", "deny"] as const)(
+    "a prompt answered with %s is reminded of on no channel, though the reminder falls due before Claude Code says it moved on",
+    async (decision) => {
+      // Waiting already as Agent Lookout starts, so its reminder is due once it has waited a minute.
+      const server = await everyChannel("waiting");
+      const asked = hook(server.socketPath);
+      await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+        timeout: 5_000,
+      });
+      const requestId = (await server.session())?.ask?.requestId ?? "";
+      // Pressed two seconds before the wait has lasted the reminder's minute.
+      await server.waitedFor(MINUTE - 2_000);
+      await server.pollAgain();
+      expect((await server.answer(requestId, decision)).status).toBe(200);
+      expect((await asked).code).toBe(0);
+
+      // Claude Code has not rewritten its file yet, and the reminder's minute is up.
+      server.time.forward(4_000);
+      await server.pollAgain();
+      expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+      await server.movesOn();
+      server.time.forward(10 * MINUTE);
+      await server.pollAgain();
+
+      expect(server.notifier.shown).toEqual([]);
+      expect(server.subjects()).toEqual([]);
+      expect(server.posts()).toEqual([]);
+    },
+  );
+
+  test("a session that still reads as in the wait it was answered in, ten seconds on, needs you again, and is told of then", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    await server.rewrite("waiting");
+    expect(await hook(server.socketPath, "Bash", { command: "npm test" })).toEqual({
+      code: 0,
+      stdout: `${ALLOW_OUTPUT}\n`,
+    });
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    expect(server.notifier.shown).toEqual([]);
+
+    // The answer was not for what the session shows now, or never reached it.
+    server.time.forward(ANSWER_HOLDS_MS);
+    await server.pollAgain();
+    const session = await server.session();
+    expect(session?.status).toBe("needs-you");
+    expect(session?.answered).toBeUndefined();
+    expect(server.notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission" },
+    ]);
+    expect(server.subjects()).toEqual(["checkout-flow is waiting for permission"]);
+    expect(server.posts().map((post) => post.event)).toEqual(["needs-you"]);
+    expect((await server.events()).some((event) => event.to === "needs-you")).toBe(true);
+    expect((await server.waits()).today.waits).toBe(1);
+  });
+
+  test("a prompt nobody answers is still told of on every channel, counted as a wait, and reminded of", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    await server.rewrite("waiting");
+    // No rule matches, so the request waits for the person.
+    hook(server.socketPath, "Bash", { command: "npm run build" });
+    await vi.waitFor(
+      async () => {
+        await server.pollAgain();
+        expect((await server.session())?.ask).toBeDefined();
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+    const session = await server.session();
+    expect(session?.status).toBe("needs-you");
+    expect(session?.answered).toBeUndefined();
+    expect(server.notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission" },
+    ]);
+    expect(server.subjects()).toEqual(["checkout-flow is waiting for permission"]);
+    expect(server.posts().map((post) => [post.event, "reminder" in post])).toEqual([
+      ["needs-you", false],
+    ]);
+    const events = await server.events();
+    expect(events.some((event) => event.to === "needs-you")).toBe(true);
+    expect((await server.waits()).today.waits).toBe(1);
+
+    server.time.forward(2 * MINUTE);
+    await server.pollAgain();
+    expect(server.notifier.shown[1]).toEqual({
+      title: "checkout-flow",
+      body: "Has waited 2 minutes for permission",
+    });
+    expect(server.subjects()[1]).toBe("checkout-flow has waited 2 minutes for permission");
+    expect(server.posts()[1]).toMatchObject({ event: "needs-you", reminder: true });
   });
 });

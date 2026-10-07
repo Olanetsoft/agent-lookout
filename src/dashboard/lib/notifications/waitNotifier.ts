@@ -16,6 +16,7 @@ import { createQuietHold } from "@core/time-rules/quietHold";
 import { quietOf } from "@core/time-rules/quietHours";
 import { createReminderWatch } from "@core/time-rules/reminders";
 import { rulesOf } from "@core/time-rules/timeRules";
+import { needsYou } from "@core/waits/answeredWaits";
 import { reminderNotice, summaryNotice } from "@core/time-rules/timeRulesWords";
 import type {
   NotificationHost,
@@ -52,6 +53,11 @@ import type {
  * is held, and when they end a wait still open is shown as usual and the rest
  * in one notification, "While quiet", which stays until the person clears it.
  * A page opened during quiet hours sums up what it has seen since.
+ *
+ * A wait the collector marks as answered, by Allow, Deny or a permission
+ * rule, is over at that snapshot, as it is for the collector's own
+ * notifications: its notification is taken down, no reminder comes for it,
+ * and one a rule answered before any snapshot showed it is never shown.
  */
 
 export interface WaitNotifierOptions {
@@ -281,7 +287,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       if (!latest || quietLast) return;
       const wanted = new Set(sessionIds);
       for (const session of latest.sessions) {
-        if (!wanted.has(session.id) || session.status !== "needs-you") continue;
+        if (!wanted.has(session.id) || !needsYou(session)) continue;
         // Waiting at its source's last answer, which is what would keep it on show here.
         if (!memory.waits.get(session.source)?.has(session.id)) continue;
         wanted.delete(session.id);

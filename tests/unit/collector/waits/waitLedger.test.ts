@@ -121,6 +121,27 @@ describe("createWaitLedger", () => {
     expect(answer.today.sessions[0]).toMatchObject({ name: "renamed-since", waitedMs: 3 * MINUTE });
   });
 
+  test("a session in a wait Agent Lookout answered is not waiting now, though it still reads so", () => {
+    const ledger = createWaitLedger();
+    ledger.beginRun();
+    pollEvery2s((added) => ledger.addPoint(added), T0 - 10 * MINUTE, T0);
+    const answered = makeSession({
+      id: ID,
+      status: "needs-you",
+      waitingReason: "permission",
+      answered: true,
+    });
+    const answer = ledger.answer({
+      now: T0,
+      snapshot: { sessions: [answered] },
+      since: SINCE,
+      runStarts: [T0 - 10 * MINUTE],
+      where: "memory",
+    });
+    // No event says it began to wait, and it is not counted from the run's start.
+    expect(answer.today).toMatchObject({ waitedMs: 0, openMs: 0, waits: 0 });
+  });
+
   test("clearing lets everything go", () => {
     const ledger = createWaitLedger();
     ledger.beginRun();

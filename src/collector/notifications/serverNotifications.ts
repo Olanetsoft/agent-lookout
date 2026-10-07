@@ -14,6 +14,7 @@ import { quietOf } from "../../core/time-rules/quietHours.ts";
 import { createReminderWatch, type DueReminder } from "../../core/time-rules/reminders.ts";
 import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWords.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { waitBegan } from "../outbound/outboundTiming.ts";
 import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
 import type { SystemNotifier } from "./systemNotifier.ts";
@@ -51,6 +52,11 @@ import type { SystemNotifier } from "./systemNotifier.ts";
  * quiet hours nothing is shown: what would have been is held, and when they
  * end a wait still open is shown as usual and the rest in one summary, "While
  * quiet".
+ *
+ * A wait whose permission request Agent Lookout answered is over from the
+ * moment of the answer, as the snapshot marks it for the page too: one
+ * being held is dropped, no reminder comes for it, and one a rule answered
+ * before any poll saw it is never shown.
  */
 export interface ServerNotifications {
   /**
@@ -230,7 +236,7 @@ export function createServerNotifications(
         if (entry.kind === "summary") continue;
         const session = entry.kind === "change" ? entry.change.session : entry.reminder.session;
         const current = listed.get(session.id);
-        if (current?.status !== "needs-you") continue;
+        if (current === undefined || !needsYou(current)) continue;
         if (entry.kind === "reminder") entry.reminder = { ...entry.reminder, session: current };
         else if (entry.change.event === "needs-you")
           entry.change = { ...entry.change, session: current };

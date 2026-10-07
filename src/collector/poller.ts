@@ -57,6 +57,15 @@ export interface PollerOptions {
    * neither, and the built-in day stands.
    */
   timeRules?: () => TimeRules;
+  /**
+   * Of each poll's sessions, the ids of those still in a wait whose
+   * permission request Agent Lookout answered, or that a permission rule is
+   * answering, asked once as the poll's snapshot is made. The snapshot marks
+   * them `answered`, and their wait is no news to the event log: see
+   * `answeredWaits.ts` in the core. It answers at once and never throws. If
+   * it does anyway, none is. Left out, none is.
+   */
+  answered?: (snapshot: Pick<SessionsSnapshot, "sources" | "sessions">) => ReadonlySet<string>;
 }
 
 /**
@@ -71,6 +80,43 @@ function staleBy(sessions: readonly Session[], at: number, thresholdMs: number):
     return stale === session.stale ? session : { ...session, stale };
   });
 }
+
+/**
+ * A source's sessions as the event log compares them with the last poll read
+ * the same way. One still in a wait Agent Lookout answered is taken as that
+ * poll had it, so the log hears nothing new of it, or is left out when that
+ * poll did not list it: a wait a rule answered before any poll saw it never
+ * begins in the log, and so is never counted. Once its source says it has
+ * moved on, it is taken as it is found.
+ */
+function forEvents(
+  sessions: Session[],
+  previous: readonly Session[],
+  answered: ReadonlySet<string>,
+): Session[] {
+  if (answered.size === 0) return sessions;
+  const before = new Map(previous.map((session) => [session.id, session]));
+  const taken: Session[] = [];
+  for (const session of sessions) {
+    if (!answered.has(session.id)) {
+      taken.push(session);
+      continue;
+    }
+    const was = before.get(session.id);
+    if (was) taken.push(was);
+  }
+  return taken;
+}
+
+/** The sessions with each still in a wait that was answered marked so. */
+function markAnswered(sessions: Session[], answered: ReadonlySet<string>): Session[] {
+  if (answered.size === 0) return sessions;
+  return sessions.map((session) =>
+    answered.has(session.id) ? { ...session, answered: true as const } : session,
+  );
+}
+
+const NONE_ANSWERED: ReadonlySet<string> = new Set();
 
 export interface Poller {
   /** Polls now and then on every interval. Calling it twice changes nothing. */
@@ -285,10 +331,31 @@ export function createPoller(options: PollerOptions): Poller {
     }
   }
 
+  /** The sessions of this poll still in a wait that was answered. */
+  function answeredIn(snapshot: Pick<SessionsSnapshot, "sources" | "sessions">) {
+    if (!options.answered) return NONE_ANSWERED;
+    try {
+      return options.answered(snapshot);
+    } catch {
+      return NONE_ANSWERED;
+    }
+  }
+
   async function poll(): Promise<SessionsSnapshot> {
     const results = await Promise.all(adapters.map((adapter) => ask(adapter)));
     const found = await annotated(results.flatMap((result) => result.sessions));
     const at = now();
+    // The way each was read goes with it, so what follows the snapshots
+    // compares answers the way the event log does. So does what its agent
+    // can report, whatever the answer was.
+    const sources: SourceHealth[] = results.map((result, index) => ({
+      ...result.health,
+      ...(result.basis !== undefined && { basis: result.basis }),
+      ...declared(adapters[index] as Adapter),
+    }));
+    // Asked now, after every source was read, so an answer given while this
+    // poll read them counts for it.
+    const answered = answeredIn({ sources, sessions: found });
 
     const changes: SessionEvent[] = [];
     results.forEach((result, index) => {
@@ -308,11 +375,13 @@ export function createPoller(options: PollerOptions): Poller {
       const { baselines, reported } = remembered;
       const basis = result.basis ?? "";
       const previous = baselines.get(basis);
+      // A baseline takes every session as it is found, as it always has.
+      const sessions = previous ? forEvents(result.sessions, previous, answered) : result.sessions;
 
       if (previous) {
         // A change seen while another way of reading was in use shows up again
         // here, against this way's older poll. It is reported only once.
-        changes.push(...withoutRepeats(diffSessions(previous, result.sessions, at), reported));
+        changes.push(...withoutRepeats(diffSessions(previous, sessions, at), reported));
       } else {
         // The first good poll read this way is a baseline. The sessions in it
         // were already running; they did not appear at this moment, so it
@@ -326,31 +395,24 @@ export function createPoller(options: PollerOptions): Poller {
           const before = lastSeen.filter(
             (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
           );
-          const after = result.sessions.filter((session) => known.has(session.id));
+          const after = sessions.filter((session) => known.has(session.id));
           changes.push(...diffSessions(before, after, at));
         }
-        for (const session of result.sessions) {
+        for (const session of sessions) {
           if (!reported.has(session.id)) reported.set(session.id, session.status);
         }
       }
       // What a waiting session is asking belongs to its wait. A baseline can
       // outlive the wait, while the source is read another way, so it is kept
       // without it.
-      baselines.set(basis, result.sessions.map(withoutWaitingText));
+      baselines.set(basis, sessions.map(withoutWaitingText));
     });
 
     const rules = options.timeRules?.();
     const snapshot: SessionsSnapshot = {
       generatedAt: at,
-      // The way each was read goes with it, so what follows the snapshots
-      // compares answers the way the event log does. So does what its agent
-      // can report, whatever the answer was.
-      sources: results.map((result, index) => ({
-        ...result.health,
-        ...(result.basis !== undefined && { basis: result.basis }),
-        ...declared(adapters[index] as Adapter),
-      })),
-      sessions: sortSessions(staleBy(found, at, staleAfterMs(rules))),
+      sources,
+      sessions: sortSessions(staleBy(markAnswered(found, answered), at, staleAfterMs(rules))),
       ...(rules && { timeRules: rules, quiet: isQuietAt(rules.quietHours, at) }),
     };
 

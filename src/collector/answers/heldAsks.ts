@@ -7,7 +7,8 @@ import type {
   Session,
   SessionsSnapshot,
 } from "../../core/sessions/session.ts";
-import type { RuleAnswers } from "./ruleAnswers.ts";
+import { answeredNow, inAnsweredWait, type AnsweredWait } from "../../core/waits/answeredWaits.ts";
+import type { AutoAnswer, RuleAnswers } from "./ruleAnswers.ts";
 import { shownAsk, type ShownAsk } from "./shownAsk.ts";
 
 /**
@@ -44,6 +45,18 @@ import { shownAsk, type ShownAsk } from "./shownAsk.ts";
  * path a press of Deny or Allow takes too, so it makes every check a press
  * makes, and the request is never shown. An ask rule, or none, leaves it held
  * for the person.
+ *
+ * Claude Code rewrites its registry file a second or two after it has an
+ * answer, so the polls in that time still read the session as waiting, in
+ * the same wait. Each request answered is remembered, by its session and the
+ * status time of its wait, until a poll finds the session in any other
+ * status or wait, or for `ANSWER_HOLDS_MS` at most, ten seconds, past which a
+ * session still in that wait needs the person again. Every poll is told which
+ * of its sessions are still in a wait that was answered, or that a rule is
+ * answering: one a rule will answer at its next check, or is answering now.
+ * The poll marks them, and nothing announces or counts such a wait
+ * (`answeredWaits.ts` in the core). A newer request of the session is a new
+ * prompt, and the answer is forgotten.
  */
 
 /**
@@ -120,7 +133,13 @@ export type RegistryStatus = "waiting" | "not-waiting" | "unknown";
  * same wait have the same `wait`.
  */
 export type RegistryReading =
-  { status: "waiting"; wait: string } | { status: "not-waiting" | "unknown" };
+  | {
+      status: "waiting";
+      wait: string;
+      /** When the wait began, as the file gives it. Left out when it gives no time. */
+      since?: number;
+    }
+  | { status: "not-waiting" | "unknown" };
 
 export interface StatusReader {
   /** Reads the session's registry file again, by the id the collector lists it under. */
@@ -176,8 +195,12 @@ interface Held {
   confirmed: boolean;
   /** The wait the registry said the session was in when it was confirmed. */
   wait: string | null;
+  /** When that wait began, as the registry said, or null when it did not say. */
+  since: number | null;
   /** Whether an answer is being written. */
   answering: boolean;
+  /** Whether that answer is a rule's. */
+  byRule: boolean;
 }
 
 export interface HeldAsksOptions {
@@ -208,6 +231,13 @@ export interface HeldAsks {
   answer(sessionId: string, requestId: string, decision: AnswerDecision): Promise<AnswerOutcome>;
   /** The snapshot with each session's held request, once confirmed, and whether answering is on. */
   withAsks(snapshot: SessionsSnapshot): SessionsSnapshot;
+  /**
+   * Of one poll's sessions, the ids of those still in a wait whose request
+   * was answered, or that a permission rule is answering. Asked once for each
+   * poll, as its snapshot is made. An answer whose wait that poll finds over,
+   * or given `ANSWER_HOLDS_MS` ago, is forgotten.
+   */
+  answeredIn(snapshot: Pick<SessionsSnapshot, "sources" | "sessions">): Set<string>;
   /** Told that a request arrived on the socket, for whether the plugin is installed. */
   noteRequest(sessionId: string | null): void;
   /** Told of each poll's sessions, to notice a permission prompt no request arrived for. */
@@ -233,6 +263,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
   const newId = options.newId ?? (() => randomBytes(16).toString("hex"));
   const startedAt = now();
   const held = new Map<string, Held>();
+  /** The requests answered whose session may still read as waiting in that wait, by session id. */
+  let answers = new Map<string, AnsweredWait>();
   /** When a request last arrived for each session, for whether the plugin is installed. */
   const lastRequest = new Map<string, number>();
   let seenAt: number | null = null;
@@ -270,6 +302,7 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
       if (!entry.confirmed) {
         entry.confirmed = true;
         entry.wait = reading.wait;
+        entry.since = reading.since ?? null;
         answerByRule(entry);
         return;
       }
@@ -324,6 +357,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     }
     held.delete(sessionId);
     entry.reply.send(decisionOutput(decision));
+    // The wait is over now, though the registry may say otherwise for a moment.
+    answers.set(sessionId, { source: SOURCE, since: entry.since, at: now() });
     if (held.size === 0 && stopTimer !== null) {
       stopTimer();
       stopTimer = null;
@@ -341,17 +376,33 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     const rules = options.rules;
     if (rules === undefined) return;
     const request: HookRequest = { sessionId: entry.sessionId, shown: entry.shown };
-    let verdict;
-    try {
-      verdict = rules.verdictFor(request);
-    } catch {
-      // A rule that cannot be applied answers nothing: the person decides.
-      return;
-    }
+    const verdict = verdictOf(entry);
     if (verdict === null) return;
+    entry.byRule = true;
     void answer(entry.sessionId, entry.requestId, verdict.decision).then((outcome) => {
       if (outcome === "answered") rules.answered(request, verdict);
     });
+  }
+
+  /** The rule that answers a held request, or null when none does or the rules cannot be applied. */
+  function verdictOf(entry: Held): AutoAnswer | null {
+    if (options.rules === undefined) return null;
+    try {
+      return options.rules.verdictFor({ sessionId: entry.sessionId, shown: entry.shown });
+    } catch {
+      // A rule that cannot be applied answers nothing: the person decides.
+      return null;
+    }
+  }
+
+  /**
+   * Whether a rule is answering a held request: one it is answering now, or
+   * one not yet confirmed that it will answer at the check that confirms it.
+   */
+  function answeringByRule(entry: Held): boolean {
+    if (!entry.reply.isOpen()) return false;
+    if (entry.confirmed) return entry.answering && entry.byRule;
+    return verdictOf(entry) !== null;
   }
 
   function status(): AnsweringStatus {
@@ -373,6 +424,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
       const at = now();
       const older = held.get(request.sessionId);
       if (older) drop(older, "newer");
+      // A new prompt: whatever was answered before it is over.
+      answers.delete(request.sessionId);
       const entry: Held = {
         requestId: newId(),
         sessionId: request.sessionId,
@@ -382,7 +435,9 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
         reply,
         confirmed: false,
         wait: null,
+        since: null,
         answering: false,
+        byRule: false,
       };
       if (held.size >= MAX_HELD) {
         drop(entry, "full");
@@ -414,6 +469,19 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
         return { ...session, ask: toAsk(entry) };
       });
       return { ...snapshot, sessions, answering };
+    },
+
+    answeredIn(snapshot) {
+      const { ids, kept } = answeredNow(answers, snapshot, now());
+      answers = kept;
+      for (const entry of held.values()) {
+        if (!answeringByRule(entry)) continue;
+        const session = snapshot.sessions.find((listed) => listed.id === entry.sessionId);
+        // Before it is confirmed, the wait's time is not known yet.
+        const since = entry.confirmed ? entry.since : null;
+        if (session && inAnsweredWait(session, { since })) ids.add(entry.sessionId);
+      }
+      return ids;
     },
 
     noteRequest(sessionId) {

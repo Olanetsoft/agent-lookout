@@ -20,6 +20,7 @@ import {
 import { quietOf } from "../../core/time-rules/quietHours.ts";
 import { createReminderWatch } from "../../core/time-rules/reminders.ts";
 import { rulesOf } from "../../core/time-rules/timeRules.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
 
 /**
@@ -53,6 +54,11 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * comes due and a session that finishes, fails or ends are held, by
  * `quietHold.ts`, and when they end, a wait still open is sent as usual and
  * the rest goes in one summary. Each counts against the hourly limit as one.
+ *
+ * A wait whose permission request Agent Lookout answered is over from the
+ * moment of the answer, as the snapshot marks it, though its source can say
+ * it waits for a second or two more: nothing more is sent for it, and one a
+ * rule answered before any poll saw it is never sent at all.
  *
  * Nothing here can stop a poll. `handle` never throws, and each is sent after
  * the poll has moved on, one at a time.
@@ -255,7 +261,7 @@ export function createOutboundChannel<Content>(
           // Still open as far as this snapshot shows. A session whose source did
           // not answer this time is not in it, and is held until it is.
           const session = snapshot.sessions.find(
-            (candidate) => candidate.id === id && candidate.status === "needs-you",
+            (candidate) => candidate.id === id && needsYou(candidate),
           );
           if (!session) continue;
           const timing = sendTiming(begunAt, afterMs, sentAt, at);
@@ -305,11 +311,7 @@ export function createOutboundChannel<Content>(
 
         // A wait seen now and not open was sent, or was open at the start.
         for (const session of snapshot.sessions) {
-          if (
-            session.status === "needs-you" &&
-            session.statusSince !== null &&
-            !open.has(session.id)
-          ) {
+          if (needsYou(session) && session.statusSince !== null && !open.has(session.id)) {
             done.set(session.id, session.statusSince);
           }
         }

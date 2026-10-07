@@ -86,6 +86,19 @@ describe("what quiet hours hold, and what is told when they end", () => {
     ]);
   });
 
+  test("a held wait Agent Lookout answered is not open when they end, though it still reads as waiting, and is in the summary", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdWait(waiting(1, "checkout-flow", T0), T0);
+    hold.waitEnded(id(1), T0 + 5 * MINUTE);
+    const answered = { ...waiting(1, "checkout-flow", T0), answered: true as const };
+    const end = hold.end(snapshot([answered]), T0 + 5 * MINUTE + 2_000, false);
+    expect(end.open).toEqual([]);
+    expect(end.summary?.items).toMatchObject([
+      { event: "needs-you", at: T0, waitedMs: 5 * MINUTE, times: 1 },
+    ]);
+  });
+
   test("with nothing left to say once the open waits are told of, there is no summary", () => {
     const hold = createQuietHold();
     hold.begin(T0);

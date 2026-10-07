@@ -20,6 +20,7 @@ import { createRuleAnswers, type RuleAnswers } from "@collector/answers/ruleAnsw
 import { shownAsk } from "@collector/answers/shownAsk";
 import type { PermissionRule } from "@core/permission-rules/permissionRules";
 import type { SessionEvent } from "@core/sessions/session";
+import { ANSWER_HOLDS_MS } from "@core/waits/answeredWaits";
 import { makeSession } from "@tests/fixtures/session";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
@@ -56,8 +57,11 @@ function standInReply() {
 function reading(
   status: RegistryStatus,
   wait = "1700000000000|permission prompt",
+  since?: number,
 ): RegistryReading {
-  return status === "waiting" ? { status, wait } : { status };
+  return status === "waiting"
+    ? { status, wait, ...(since !== undefined && { since }) }
+    : { status };
 }
 
 /** Held requests over a clock and a registry the test moves, with no timer, and perhaps rules. */
@@ -66,15 +70,20 @@ function standIns(
   rules?: Pick<RuleAnswers, "verdictFor" | "answered">,
 ) {
   const clock = { now: T0 };
-  /** `wait` stands for the moment the registry says the wait began, and what for. */
-  const registry = { status, wait: "1700000000000|permission prompt", reads: 0 };
+  /** `wait` stands for the moment the registry says the wait began, and what for; `since` for the moment alone. */
+  const registry = {
+    status,
+    wait: "1700000000000|permission prompt",
+    since: undefined as number | undefined,
+    reads: 0,
+  };
   const drops: [DropReason, string][] = [];
   let ids = 0;
   const asks = createHeldAsks({
     status: {
       statusOf: vi.fn(async () => {
         registry.reads += 1;
-        return reading(registry.status, registry.wait);
+        return reading(registry.status, registry.wait, registry.since);
       }),
     },
     holdMs: HOLD_MS,
@@ -599,4 +608,110 @@ describe("the permission rules", () => {
     expect(hook.sent).toEqual([]);
     expect(asks.withAsks(snapshot([waiting()])).sessions[0]?.ask).toBeDefined();
   });
+});
+
+describe("the waits a poll is told were answered", () => {
+  const ALLOW_TESTS: PermissionRule = {
+    id: "aaaaaaaaaaaa",
+    decision: "allow",
+    tool: "Bash",
+    command: "npm test:*",
+  };
+
+  /** A poll that read Claude Code's sessions. */
+  function polled(sessions: Session[]): SessionsSnapshot {
+    return {
+      generatedAt: T0,
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 }],
+      sessions,
+    };
+  }
+
+  /** A request held, confirmed in a wait the registry says began at T0, and answered with Allow. */
+  async function answered() {
+    const parts = standIns();
+    parts.registry.since = T0;
+    const hook = standInReply();
+    parts.asks.receive(bash(), hook.reply);
+    await parts.asks.check();
+    const requestId = parts.asks.withAsks(snapshot([waiting()])).sessions[0]?.ask?.requestId ?? "";
+    expect(await parts.asks.answer(ID, requestId, "allow")).toBe("answered");
+    return parts;
+  }
+
+  test("an answered wait is answered for every poll that still reads it, and forgotten once one reads it moved on", async () => {
+    const { asks } = await answered();
+    expect([...asks.answeredIn(polled([waiting({ statusSince: T0 })]))]).toEqual([ID]);
+    expect([...asks.answeredIn(polled([waiting({ statusSince: T0 })]))]).toEqual([ID]);
+    expect(
+      asks.answeredIn(polled([waiting({ status: "working", statusSince: T0 + 900 })])).size,
+    ).toBe(0);
+    // Forgotten: the same wait read again is not taken as answered.
+    expect(asks.answeredIn(polled([waiting({ statusSince: T0 })])).size).toBe(0);
+  });
+
+  test("an answered wait is forgotten once the answer is ANSWER_HOLDS_MS old, though a poll still reads it", async () => {
+    const { asks, clock } = await answered();
+    clock.now += ANSWER_HOLDS_MS - 1;
+    expect([...asks.answeredIn(polled([waiting({ statusSince: T0 })]))]).toEqual([ID]);
+    clock.now += 1;
+    expect(asks.answeredIn(polled([waiting({ statusSince: T0 })])).size).toBe(0);
+    // Forgotten: a poll a moment later does not find it answered either.
+    clock.now -= 1;
+    expect(asks.answeredIn(polled([waiting({ statusSince: T0 })])).size).toBe(0);
+  });
+
+  test("a later wait of the session is not the one answered", async () => {
+    const { asks } = await answered();
+    expect(asks.answeredIn(polled([waiting({ statusSince: T0 + 1_500 })])).size).toBe(0);
+  });
+
+  test("a poll whose source could not be read forgets nothing", async () => {
+    const { asks } = await answered();
+    expect(asks.answeredIn({ sources: [], sessions: [] }).size).toBe(0);
+    expect([...asks.answeredIn(polled([waiting({ statusSince: T0 })]))]).toEqual([ID]);
+  });
+
+  test("a newer request of the session is a new prompt: the answer before it is forgotten", async () => {
+    const { asks } = await answered();
+    asks.receive(bash("npm run build"), standInReply().reply);
+    expect(asks.answeredIn(polled([waiting({ statusSince: T0 })])).size).toBe(0);
+  });
+
+  test("a request a rule will answer at the check that confirms it is answered already, as far as a poll goes", async () => {
+    const { asks, registry } = withRuleAnswers([ALLOW_TESTS]);
+    asks.receive(bash("npm test"), standInReply().reply);
+    // The check made as it arrived found the session not yet waiting.
+    await asks.check();
+    registry.status = "waiting";
+    expect([...asks.answeredIn(polled([waiting()]))]).toEqual([ID]);
+    // Not while the poll reads the session as anything but waiting for permission.
+    expect(asks.answeredIn(polled([waiting({ waitingReason: "question" })])).size).toBe(0);
+  });
+
+  test("a request that waits for the person is not, nor is any request with no rules", async () => {
+    const ruled = withRuleAnswers([ALLOW_TESTS]);
+    ruled.asks.receive(bash("npm run build"), standInReply().reply);
+    await ruled.asks.check();
+    expect(ruled.asks.answeredIn(polled([waiting()])).size).toBe(0);
+
+    const plain = standIns("not-waiting");
+    plain.asks.receive(bash("npm test"), standInReply().reply);
+    await plain.asks.check();
+    expect(plain.asks.answeredIn(polled([waiting()])).size).toBe(0);
+  });
+
+  /** Held requests over the rules, with the registry not yet saying the session waits. */
+  function withRuleAnswers(rules: PermissionRule[]) {
+    const answers = createRuleAnswers({
+      rules: () => rules,
+      poller: {
+        getSnapshot: () => snapshot([waiting()]),
+        pollOnce: async () => snapshot([waiting()]),
+      },
+      events: { add: () => {} },
+      now: () => T0,
+    });
+    return standIns("not-waiting", answers);
+  }
 });

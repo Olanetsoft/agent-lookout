@@ -7,6 +7,7 @@ import { createPoller, POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@collector/pol
 import type {
   Session,
   SessionEvent,
+  SessionsSnapshot,
   SessionStatus,
   SourceHealth,
   SourceId,
@@ -1256,5 +1257,115 @@ describe("the time rules", () => {
     expect((await poller.pollOnce()).quiet).toBe(true);
     rules = DEFAULT_TIME_RULES;
     expect((await poller.pollOnce()).quiet).toBe(false);
+  });
+});
+
+describe("a wait whose permission request Agent Lookout answered", () => {
+  const id = "claude-code:00000000-0000-4000-8000-000000000003";
+  const working = makeSession({ id, name: "demo-a", status: "working", statusSince: T0 - 60_000 });
+  const asking = makeSession({
+    id,
+    name: "demo-a",
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 + 1_000,
+  });
+  const goesOn = makeSession({ id, name: "demo-a", status: "working", statusSince: T0 + 5_000 });
+
+  /** A poller told which sessions are in a wait that was answered, asked once for each poll. */
+  function withAnswers(adapter: Adapter, answered: () => ReadonlySet<string>) {
+    const events = createEventStore();
+    const history = createHistoryStore();
+    const asked: Pick<SessionsSnapshot, "sources" | "sessions">[] = [];
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history,
+      answered: (snapshot) => {
+        asked.push(snapshot);
+        return answered();
+      },
+    });
+    return { poller, events, history, asked };
+  }
+
+  test("is marked in the snapshot, and one a rule answered before any poll saw it never begins in the event log", async () => {
+    const { adapter } = scriptedAdapter(
+      result([working]),
+      result([asking]),
+      result([asking]),
+      result([goesOn]),
+    );
+    let answered = new Set<string>();
+    const { poller, events, history, asked } = withAnswers(adapter, () => answered);
+    await poller.pollOnce();
+    answered = new Set([id]);
+    vi.setSystemTime(T0 + 2_000);
+    const read = await poller.pollOnce();
+    expect(read.sessions[0]).toMatchObject({ status: "needs-you", answered: true });
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    answered = new Set();
+    vi.setSystemTime(T0 + 6_000);
+    const after = await poller.pollOnce();
+    expect(after.sessions[0]).not.toHaveProperty("answered");
+
+    expect(events.list()).toEqual([]);
+    // Nor is it in the history as needing you.
+    expect(history.list(60_000, Date.now()).map((point) => point.needsYou)).toEqual([0, 0, 0, 0]);
+    // Asked once for each poll, with what that poll read.
+    expect(asked).toHaveLength(4);
+    expect(asked[1]?.sessions.map((session) => session.status)).toEqual(["needs-you"]);
+  });
+
+  test("seen before it was answered, it ends in the log when its source says it moved on", async () => {
+    const { adapter } = scriptedAdapter(
+      result([working]),
+      result([asking]),
+      result([asking]),
+      result([goesOn]),
+    );
+    let answered = new Set<string>();
+    const { poller, events } = withAnswers(adapter, () => answered);
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    answered = new Set([id]);
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    answered = new Set();
+    vi.setSystemTime(T0 + 6_000);
+    await poller.pollOnce();
+    expect(events.list().map((event) => [event.at - T0, event.from, event.to])).toEqual([
+      [6_000, "needs-you", "working"],
+      [2_000, "working", "needs-you"],
+    ]);
+  });
+
+  test("a session that first appears in such a wait appears in the log once it has moved on", async () => {
+    const { adapter } = scriptedAdapter(result([]), result([asking]), result([goesOn]));
+    let answered = new Set<string>();
+    const { poller, events } = withAnswers(adapter, () => answered);
+    await poller.pollOnce();
+    answered = new Set([id]);
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+    answered = new Set();
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    expect(events.list().map((event) => [event.kind, event.to])).toEqual([["appeared", "working"]]);
+  });
+
+  test("an answer that cannot be asked for marks nothing, and the poll goes on", async () => {
+    const { adapter } = scriptedAdapter(result([working]), result([asking]));
+    const { poller, events } = withAnswers(adapter, () => {
+      throw new Error("broken");
+    });
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    const read = await poller.pollOnce();
+    expect(read.sessions[0]).not.toHaveProperty("answered");
+    expect(events.list().map((event) => event.to)).toEqual(["needs-you"]);
   });
 });

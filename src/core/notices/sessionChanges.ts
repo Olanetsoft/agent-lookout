@@ -4,6 +4,7 @@ import {
   type SessionsSnapshot,
   type SourceId,
 } from "../sessions/session.ts";
+import { needsYou } from "../waits/answeredWaits.ts";
 
 /**
  * What is remembered from one snapshot to the next: for each source that has
@@ -69,6 +70,10 @@ function laterOf(a: number | null, b: number | null): number | null {
  *   earlier is not a later one. A source that cannot say when a status began
  *   gives null, which says nothing about the wait, so the last time that was
  *   given is the one kept.
+ * - A session marked `answered` does not need the person, whatever its
+ *   status says: Agent Lookout answered its wait's permission request, and
+ *   its source has not caught up yet. Its wait has stopped, and one no
+ *   snapshot showed before the answer never started (`answeredWaits.ts`).
  *
  * The fourth rule takes a source at its word that `statusSince` moves only when
  * a status begins, which is what the session model asks of it. Claude Code's
@@ -93,7 +98,8 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
   const started: Session[] = [];
   const stopped: string[] = [];
   for (const session of snapshot.sessions) {
-    if (session.status !== "needs-you") continue;
+    // A wait Agent Lookout answered is over, whatever its source still says.
+    if (!needsYou(session)) continue;
     const waiting = waitingNow.get(session.source);
     // No map means the source did not answer. An id already in it was counted.
     if (!waiting || waiting.has(session.id)) continue;

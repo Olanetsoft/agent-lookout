@@ -33,6 +33,15 @@ test("a well-formed session is read as it was sent", () => {
   expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
 });
 
+test("a session in a wait Agent Lookout answered is read as answered, and only on true while it waits", () => {
+  const sent = makeSession({ status: "needs-you", waitingReason: "permission", answered: true });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  for (const answered of ["true", 1, {}, false]) {
+    expect(readSession({ ...sent, answered }), String(answered)).not.toHaveProperty("answered");
+  }
+  expect(readSession({ ...sent, status: "working" })).not.toHaveProperty("answered");
+});
+
 test("a session from a status file keeps its agent's name, as text and only as text", () => {
   const sent = makeSession({
     id: "status-files:night-shift.json",

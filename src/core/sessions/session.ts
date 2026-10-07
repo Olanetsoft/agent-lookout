@@ -422,6 +422,17 @@ export interface Session {
    * the plugin.
    */
   ask?: PermissionAsk;
+  /**
+   * Present, and true, on a Claude Code session that still reads as waiting
+   * for permission, in a wait whose request Agent Lookout has answered, from a
+   * press of Allow or Deny or by a permission rule, or is answering by a rule
+   * at this moment. Claude Code rewrites its registry a second or two after
+   * the answer. The wait is over from the moment of the answer: nothing
+   * announces it, reminds of it or counts it as a wait (`needsYou` in
+   * `src/core/waits/answeredWaits.ts`). Only the collector sets it, at each
+   * poll; a source never does.
+   */
+  answered?: true;
   /** True when the session has been idle longer than the stale threshold. */
   stale: boolean;
 }

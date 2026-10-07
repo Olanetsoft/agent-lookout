@@ -58,6 +58,7 @@ export function createRegistryStatus(options: RegistryStatusOptions): StatusRead
       return {
         status: "waiting",
         wait: `${entry.statusUpdatedAt ?? ""}|${entry.waitingFor ?? ""}`,
+        ...(entry.statusUpdatedAt !== undefined && { since: entry.statusUpdatedAt }),
       };
     },
   };

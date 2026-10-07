@@ -1,5 +1,6 @@
 import type { NoticeEvent } from "../notices/sessionChanges.ts";
 import { withoutWaitingText, type Session, type SessionsSnapshot } from "../sessions/session.ts";
+import { needsYou } from "../waits/answeredWaits.ts";
 
 /**
  * What one channel holds back during quiet hours, and what it says when they
@@ -17,7 +18,8 @@ import { withoutWaitingText, type Session, type SessionsSnapshot } from "../sess
  * A wait is still open when its session waits now with the status time the
  * wait began at, even one that was seen to end: a session that reads as
  * another status for one poll, or that a poll misses, comes back so. It is
- * told of once, and is not in the summary.
+ * told of once, and is not in the summary. A wait Agent Lookout answered is
+ * not open, whatever its source still says (`needsYou` in `answeredWaits.ts`).
  *
  * Nothing held keeps what a waiting session was asking. A wait still open at
  * the end is told of from the session as it is then.
@@ -139,7 +141,7 @@ export function createQuietHold(): QuietHold {
       const stillOpen = new Map<string, HeldWait>();
       for (const wait of waits) {
         const now = listed.get(wait.session.id);
-        if (now?.status !== "needs-you") continue;
+        if (now === undefined || !needsYou(now)) continue;
         if (wait.endedAt === null || now.statusSince === wait.begunAt) {
           stillOpen.set(wait.session.id, wait);
         }

@@ -445,6 +445,23 @@ describe("the time rules", () => {
     expect(sent).toEqual(["reminder session-1 10m of 10m"]);
   });
 
+  test("a wait Agent Lookout answered is over at once: no reminder, and one a rule answered before any poll saw it is never sent", async () => {
+    const { poll, sent } = ruled(["needs-you"], 0);
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    await poll(noon, REMINDING, [working(1), working(2)]);
+    await poll(noon + 2_000, REMINDING, [
+      waitingSince(1, noon + 2_000),
+      waitingSince(2, noon + 1_000, { answered: true }),
+    ]);
+    // Answered just before its minutes were up, and still read as waiting after them.
+    await poll(noon + 2_000 + 10 * MINUTE, REMINDING, [
+      waitingSince(1, noon + 2_000, { answered: true }),
+      waitingSince(2, noon + 1_000, { answered: true }),
+    ]);
+    await poll(noon + 4_000 + 10 * MINUTE, REMINDING, [working(1), working(2)]);
+    expect(sent).toEqual(["wait session-1 0m"]);
+  });
+
   test("with waits not among the events sent, there is no reminder", async () => {
     const { poll, sent } = ruled(["finished"]);
     const noon = new Date(2026, 9, 5, 12, 0).getTime();
