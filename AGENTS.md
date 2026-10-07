@@ -2,6 +2,8 @@
 
 Agent Lookout shows the AI agent sessions on a Mac, Linux or Windows computer in one browser page. `src/collector/` is the Node code that finds sessions and serves them on a loopback address, `src/dashboard/` is the React app, `src/core/` is logic with no DOM and no Node APIs, and `src/cli/` is the `agent-lookout` command. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the map.
 
+This file is for changing the code. To set Agent Lookout up for someone, [For coding agents](README.md#for-coding-agents) in the README has the steps.
+
 ## Commands
 
 - You need Node.js 22.12 or newer. Run `npm install`, then `npx playwright install chromium` once for the component tests. On Linux, add `--with-deps`.

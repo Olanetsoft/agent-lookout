@@ -14,8 +14,10 @@ import {
 } from "@core/sessions/session";
 
 const GUIDE = fileURLToPath(new URL("../../../../docs/GUIDE.md", import.meta.url));
+const README = fileURLToPath(new URL("../../../../README.md", import.meta.url));
 
-const HEADING = "#### What each agent can report";
+const GUIDE_HEADING = "#### What each agent can report";
+const README_HEADING = "## Supported agents and systems";
 
 /** Each adapter's row, by the name the guide gives it, in the order the guide lists them. */
 const DECLARED: [string, SourceCapabilities][] = [
@@ -32,27 +34,43 @@ function cells(line: string): string[] {
     .map((cell) => cell.trim());
 }
 
-/** The guide's section on what each agent can report: its table, and its list of reasons. */
-async function guideSection(): Promise<{ table: string[][]; reasons: string[] }> {
-  const text = await readFile(GUIDE, "utf8");
-  const start = text.indexOf(`\n${HEADING}\n`);
-  expect(start, `docs/GUIDE.md has no "${HEADING}"`).toBeGreaterThan(-1);
-  const rest = text.slice(start + HEADING.length + 2);
+/**
+ * One section of a Markdown file, from its heading to the next heading: each
+ * table in it, as rows of cells without the line under the heads, and its list
+ * of reasons.
+ */
+async function section(
+  file: string,
+  heading: string,
+): Promise<{ tables: string[][][]; reasons: string[] }> {
+  const text = await readFile(file, "utf8");
+  const start = text.indexOf(`\n${heading}\n`);
+  expect(start, `${file} has no "${heading}"`).toBeGreaterThan(-1);
+  const rest = text.slice(start + heading.length + 2);
   const end = rest.search(/\n#{1,4} /);
   const lines = (end === -1 ? rest : rest.slice(0, end)).split("\n");
 
-  const table = lines
-    .filter((line) => line.startsWith("|"))
-    .map(cells)
+  const tables: string[][][] = [];
+  let open = false;
+  for (const line of lines) {
+    if (!line.startsWith("|")) {
+      open = false;
+      continue;
+    }
+    const row = cells(line);
     // The line under the heads is only dashes.
-    .filter((row) => !row.every((cell) => /^:?-+:?$/.test(cell)));
+    if (row.every((cell) => /^:?-+:?$/.test(cell))) continue;
+    if (!open) tables.push([]);
+    open = true;
+    tables[tables.length - 1].push(row);
+  }
   const reasons = lines.filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
-  return { table, reasons };
+  return { tables, reasons };
 }
 
 test("the table in docs/GUIDE.md says what each adapter declares, cell for cell", async () => {
-  const { table } = await guideSection();
-  const [heads, ...rows] = table;
+  const { tables } = await section(GUIDE, GUIDE_HEADING);
+  const [heads, ...rows] = tables[0];
 
   expect(heads).toEqual([
     "Agent",
@@ -67,7 +85,7 @@ test("the table in docs/GUIDE.md says what each adapter declares, cell for cell"
 });
 
 test("the list under it gives each declared reason in the adapter's own words, and no other", async () => {
-  const { reasons } = await guideSection();
+  const { reasons } = await section(GUIDE, GUIDE_HEADING);
 
   const declared = DECLARED.flatMap(([agent, capabilities]) =>
     CAPABILITIES.flatMap((capability) => {
@@ -78,4 +96,26 @@ test("the list under it gives each declared reason in the adapter's own words, a
     }),
   );
   expect(reasons).toEqual(declared);
+});
+
+test("the agent table in README.md says what each adapter declares, in each column it has", async () => {
+  const { tables } = await section(README, README_HEADING);
+  const [heads, ...rows] = tables[0];
+  const [first, ...columns] = heads;
+
+  expect(first).toBe("Agent");
+  // Each column is one capability, by the label the Sources view gives it.
+  const capabilities = columns.map((column) =>
+    CAPABILITIES.find((capability) => CAPABILITY_LABEL[capability] === column),
+  );
+  expect(capabilities, "a column of README.md names no capability").not.toContain(undefined);
+  expect(new Set(capabilities).size).toBe(capabilities.length);
+  expect(rows).toEqual(
+    DECLARED.map(([agent, declared]) => [
+      agent,
+      ...capabilities.map((capability) =>
+        capability === undefined ? "" : CAPABILITY_LEVEL_LABEL[declared[capability].level],
+      ),
+    ]),
+  );
 });
