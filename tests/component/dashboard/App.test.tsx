@@ -769,6 +769,50 @@ test("a fault while drawing a view is said in the main area, with the rail and t
   expect(screen.container.querySelector('[data-slot="page-error"]')).toBeNull();
 });
 
+test.each(["no-preference", "reduce"] as const)(
+  "with %s for motion, the Overview fades out of loading, then the dashboard fades in",
+  async (motion) => {
+    if (motion === "reduce") await preferReducedMotion();
+    const store = fixedStore(liveState({ phase: "connecting", snapshot: null, history: null }));
+    const screen = await render(<App store={store} />);
+    const shown = () => main().firstElementChild as HTMLElement;
+    const opacity = (element: Element) => Number(getComputedStyle(element).opacity);
+    const loading = shown();
+    // The first screen is there at once, without fading in.
+    expect(opacity(loading)).toBe(1);
+
+    // What the Overview shows and how opaque it is, frame by frame.
+    const frames: { element: Element; opacity: number }[] = [];
+    let sampling = true;
+    const sample = () => {
+      if (!sampling) return;
+      const element = shown();
+      if (element) frames.push({ element, opacity: opacity(element) });
+      requestAnimationFrame(sample);
+    };
+    onTestFinished(() => {
+      sampling = false;
+    });
+    requestAnimationFrame(sample);
+    store.set(liveState());
+    await expect
+      .element(screen.getByRole("region", { name: "Sessions" }).getByText("idle-one"))
+      .toBeInTheDocument();
+    const dashboard = shown();
+    await vi.waitFor(() => expect(opacity(dashboard)).toBe(1));
+    sampling = false;
+
+    expect(dashboard).not.toBe(loading);
+    const of = (element: Element) =>
+      frames.filter((frame) => frame.element === element).map((frame) => frame.opacity);
+    // One at a time: loading went before the dashboard came, each by fading.
+    const first = frames.findIndex((frame) => frame.element === dashboard);
+    expect(frames.slice(first).every((frame) => frame.element === dashboard)).toBe(true);
+    expect(Math.min(...of(loading))).toBeLessThan(0.5);
+    expect(Math.min(...of(dashboard))).toBeLessThan(0.5);
+  },
+);
+
 test("when updates stop, the status line says so, with the time of the last answer, and names no healthy source", async () => {
   const store = fixedStore(liveState());
   const screen = await render(<App store={store} />);

@@ -1,5 +1,5 @@
-import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { AnimatePresence, domMin, LazyMotion, m, MotionConfig } from "motion/react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import { Header } from "@dashboard/components/dashboard/Header";
@@ -37,6 +37,23 @@ const HistoryPanel = lazy(() =>
 const SessionPanel = lazy(() =>
   import("@dashboard/components/panels/SessionPanel").then((m) => ({ default: m.SessionPanel })),
 );
+
+/**
+ * Motion as the dashboard uses it. It animates one thing, the Overview fading
+ * in and out as it changes, and that takes only Motion's animations and their
+ * exit, which `domMin` holds. So the app loads those, and leaves out the
+ * gestures, layout animations and dragging the whole of `motion` carries. Under
+ * `strict` a `motion` component throws: use `m`, and load more features here
+ * before asking for more. `reducedMotion='user'` follows the reduced-motion
+ * preference, under which Motion moves nothing and still fades.
+ */
+function Motion({ children }: { children: ReactNode }) {
+  return (
+    <LazyMotion features={domMin} strict>
+      <MotionConfig reducedMotion='user'>{children}</MotionConfig>
+    </LazyMotion>
+  );
+}
 
 /** The counts that open a history dialog. */
 const HISTORY_METRICS: readonly HistoryMetric[] = ["needsYou", "working", "idle"];
@@ -159,7 +176,7 @@ export default function App({ store: providedStore }: AppProps) {
       : "loading";
 
   return (
-    <MotionConfig reducedMotion='user'>
+    <Motion>
       <Ground />
       <div data-slot='frame' className='flex min-h-screen gap-window p-window'>
         <Rail current={view} needsYou={lamp} />
@@ -195,7 +212,7 @@ export default function App({ store: providedStore }: AppProps) {
                 />
               ) : (
                 <AnimatePresence mode='wait' initial={false}>
-                  <motion.div
+                  <m.div
                     key={overview}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -212,7 +229,7 @@ export default function App({ store: providedStore }: AppProps) {
                       newSince={newSince.since}
                       onNewLineInView={newSince.onLineInView}
                     />
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
               )}
             </ErrorBoundary>
@@ -250,6 +267,6 @@ export default function App({ store: providedStore }: AppProps) {
         onShortcuts={() => setShortcuts(true)}
       />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
-    </MotionConfig>
+    </Motion>
   );
 }

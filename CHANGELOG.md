@@ -7,6 +7,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Changed
 
 - The README and [docs/INSTALL.md](docs/INSTALL.md) say which macOS the Mac app needs: macOS 13 Ventura or later, the oldest its Electron runs on. The app names it too, so an older macOS does not open it. On macOS 11 or 12, `npx agent-lookout` still runs.
+- The dashboard's first load is about 15 KB smaller, gzipped, with `npx agent-lookout` and in the Mac app alike: it takes only the part of Motion that fades the Overview in and out, and leaves out its gestures, layout animations and dragging. The fade is as it was.
 
 ## 0.2.7 - 2026-10-07
 

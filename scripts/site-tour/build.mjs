@@ -35,8 +35,7 @@
 // Motion than the one bundled.
 //
 // The tour takes its fonts from the page's own folder, site/assets/fonts/, so
-// the page and its dashboard share one copy of each face. And it loads only the
-// parts of Motion the dashboard uses: src/site-tour/host/lazyMotion.tsx.
+// the page and its dashboard share one copy of each face.
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -72,7 +71,7 @@ logger.warnOnce = (message, options) => fontNote(message) || warnOnce(message, o
 
 /** Budgets, in bytes sent gzipped. */
 const BUDGET = {
-  /** The dashboard, with Allow and Deny, time and permission rules and other machines, is about 243 KB of it. */
+  /** The dashboard, with Allow and Deny, time and permission rules and other machines, is about 241 KB of it. */
   tourJs: 256 * 1024,
   tourCss: 14 * 1024,
   tourHtml: 2 * 1024,
@@ -105,39 +104,6 @@ const fontAliases = [
   },
 ];
 
-const LAZY_MOTION = path.join(root, "src/site-tour/host/lazyMotion.tsx");
-
-/** What the tour leaves out of Motion, as a component's props, once its JSX is JavaScript. */
-const LEFT_OUT_OF_MOTION = /\b(?:layout\w*|drag\w*|whileDrag|onDrag\w*|onPan\w*)\s*:/;
-
-/**
- * The dashboard's imports of Motion, pointed at src/site-tour/host/lazyMotion.tsx,
- * which loads only the features the dashboard uses. A module that imports
- * Motion and asks for layout animations or dragging stops the build, since the
- * tour would leave them out without a word.
- */
-const lazyMotion = {
-  name: "agent-lookout:tour-lazy-motion",
-  enforce: "pre",
-  resolveId(source, importer) {
-    if (source !== "motion/react" || importer?.split("?")[0] === LAZY_MOTION) return null;
-    return LAZY_MOTION;
-  },
-  transform: {
-    order: "post",
-    handler(code, id) {
-      const file = id.split("?")[0];
-      if (file === LAZY_MOTION || !/from ["']motion\/react["']/.test(code)) return null;
-      if (LEFT_OUT_OF_MOTION.test(code)) {
-        this.error(
-          "This module asks Motion for layout animations or dragging, which the tour leaves out. Load them in src/site-tour/host/lazyMotion.tsx.",
-        );
-      }
-      return null;
-    },
-  },
-};
-
 const gz = (bytes) => gzipSync(bytes, { level: 9 }).length;
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
@@ -162,7 +128,6 @@ async function buildTour(out) {
       root,
       base: "/tour/",
       customLogger: logger,
-      plugins: [lazyMotion],
       resolve: { alias: fontAliases },
       build: {
         outDir: work,
