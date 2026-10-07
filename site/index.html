@@ -148,19 +148,10 @@
 
       <section class="tour" id="tour" aria-label="The dashboard">
         <div class="tour-stage">
-          <div class="tour-line">
-            <p id="tour-line" aria-live="polite">
-              <span class="tour-name">One screen</span>
-              <span class="tour-said"
-                >Every Claude Code and Codex session on this computer, and any agent that writes a
-                status file, on one page.</span
-              >
-            </p>
-            <button type="button" class="btn btn-quiet btn-small tour-back" hidden>
-              Back to the tour
-            </button>
-          </div>
-
+          <a class="link tour-skip" href="#facts"
+            >Skip<span class="tour-skip-rest"> the tour</span
+            ><span class="tour-skip-arrow" aria-hidden="true"> ↓</span></a
+          >
           <div class="tour-controls">
             <div class="seg lamp-switch" role="radiogroup" aria-label="Show the dashboard with">
               <input type="radio" name="lamp" id="lamp-out" autocomplete="off" checked />
@@ -170,145 +161,231 @@
               <i class="seg-thumb" aria-hidden="true"></i>
             </div>
           </div>
+          <button type="button" class="btn btn-quiet btn-small tour-back" hidden>
+            Back to the tour
+          </button>
+          <p class="tour-title" aria-hidden="true">
+            <span class="tour-count"
+              ><span class="tour-roll"><span>01</span><span>01</span></span> / 12</span
+            >
+            <span class="tour-name">One screen</span>
+          </p>
+          <p class="tour-line" id="tour-line" aria-live="polite">
+            <span class="vh tour-at">1 of 12: One screen. </span
+            ><span class="tour-said"
+              >Every Claude Code and Codex session on this computer, and any agent that writes a
+              status file, on one page.</span
+            >
+          </p>
 
-          <div class="tour-steps">
-            <a class="link tour-skip" href="#facts">Skip the tour</a>
-            <div class="tour-list">
-              <ol aria-label="What the dashboard shows">
-                <li>
-                  <button
-                    type="button"
-                    aria-current="step"
-                    data-parts="2"
-                    data-line="Every Claude Code and Codex session on this computer, and any agent that writes a status file, on one page."
-                  >
-                    One screen
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-lit=""
-                    data-line="A Claude Code session stops to ask. The lamp lights, and it moves to the top with what it is asking."
-                  >
-                    Needs you
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-lit=""
-                    data-line="With the Agent Lookout plugin in Claude Code, the whole command is shown, with Deny and Allow."
-                  >
-                    Allow or Deny
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-lit=""
-                    data-banner=""
-                    data-line="With notifications on, your browser tells you. The Mac app tells you itself, with its window closed too."
-                  >
-                    Notifi&shy;cation
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="2"
-                    data-lit=""
-                    data-press="jump"
-                    data-line="Jump takes you to a Claude Code session in VS Code, tmux, Terminal or iTerm2, from the top or its row."
-                  >
-                    Jump
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-lit=""
-                    data-line="With pull requests on, a session’s details show its checks. Stop, which asks first, is for Claude Code only."
-                  >
-                    Stop
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="2"
-                    data-lit=""
-                    data-line="Each session shows its git branch. Group them by repository, or lay them out as a board."
-                  >
-                    Board
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-line="A Claude Code background job that has finished has Resume, which copies the command that continues it."
-                  >
-                    Resume
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="3"
-                    data-line="The Events log and the charts are kept across restarts. Waits adds up how long sessions waited on you."
-                  >
-                    History
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="3"
-                    data-line="Sources says what is read for each agent, and from another machine over SSH that runs Agent Lookout."
-                  >
-                    Sources
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="2"
-                    data-line="Time and permission rules, notifications, email, the webhook and pull requests stay off until you set them up."
-                  >
-                    Settings
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    tabindex="-1"
-                    data-parts="1"
-                    data-lit=""
-                    data-app=""
-                    data-line="Or use the Mac app. Its menu bar and its Dock icon count the sessions that need you, and it updates itself."
-                  >
-                    Mac app
-                  </button>
-                </li>
-              </ol>
-              <i class="tour-track" aria-hidden="true"><i class="tour-fill"></i></i>
-            </div>
-          </div>
+          <nav class="tour-chapters" aria-label="Scenes">
+            <button
+              type="button"
+              class="tour-prev"
+              aria-label="Previous scene"
+              aria-disabled="true"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" /></svg>
+            </button>
+            <ol aria-label="What the dashboard shows">
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+                  <path d="M5.5 2.5v11" />
+                </svg>
+                <button
+                  type="button"
+                  aria-current="step"
+                  data-parts="2"
+                  data-line="Every Claude Code and Codex session on this computer, and any agent that writes a status file, on one page."
+                >
+                  One screen
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M1.8 10h12.4" />
+                  <circle class="dot" cx="10.3" cy="7.3" r="1.5" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-lit=""
+                  data-line="A Claude Code session stops to ask. The lamp lights, and it moves to the top with what it is asking."
+                >
+                  Needs you
+                </button>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path d="M1.5 8.3 3.8 10.6 7.6 5.4M10 5.8l4.2 4.2M14.2 5.8 10 10" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-lit=""
+                  data-line="With the Agent Lookout plugin in Claude Code, the whole command is shown, with Deny and Allow."
+                >
+                  Allow or Deny
+                </button>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path d="M3.8 11.2V7.3a4.2 4.2 0 0 1 8.4 0v3.9l1.3 1.3h-11z" />
+                  <path d="M6.4 14.2a1.7 1.7 0 0 0 3.2 0" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-lit=""
+                  data-banner=""
+                  data-line="With notifications on, your browser tells you. The Mac app tells you itself, with its window closed too."
+                >
+                  Notifi&shy;cation
+                </button>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path d="M9.5 1.8h4.7v4.7M14.2 1.8 7.6 8.4" />
+                  <path
+                    d="M12.2 9.6v3a1.6 1.6 0 0 1-1.6 1.6H3.4a1.6 1.6 0 0 1-1.6-1.6V5.4a1.6 1.6 0 0 1 1.6-1.6h3"
+                  />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="2"
+                  data-lit=""
+                  data-press="jump"
+                  data-line="Jump takes you to a Claude Code session in VS Code, tmux, Terminal or iTerm2, from the top or its row."
+                >
+                  Jump
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <rect x="3" y="3" width="10" height="10" rx="2.6" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-lit=""
+                  data-line="With pull requests on, a session’s details show its checks. Stop, which asks first, is for Claude Code only."
+                >
+                  Stop
+                </button>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <rect x="1.5" y="2.5" width="3.6" height="11" rx="1.2" />
+                  <rect x="6.2" y="2.5" width="3.6" height="7.5" rx="1.2" />
+                  <rect x="10.9" y="2.5" width="3.6" height="9.5" rx="1.2" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="2"
+                  data-lit=""
+                  data-line="Each session shows its git branch. Group them by repository, or lay them out as a board."
+                >
+                  Board
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path d="M13.6 8.6a5.7 5.7 0 1 1-1.9-4.9" />
+                  <path d="M12.4 1.4v2.9H9.5" />
+                  <path class="dot" d="M6.7 5.7v4.6L10.4 8z" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-line="A Claude Code background job that has finished has Resume, which copies the command that continues it."
+                >
+                  Resume
+                </button>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M8 4.3V8l2.6 1.6" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="3"
+                  data-line="The Events log and the charts are kept across restarts. Waits adds up how long sessions waited on you."
+                >
+                  History
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <circle cx="3.6" cy="8" r="2" />
+                  <circle cx="12.4" cy="3.6" r="2" />
+                  <circle cx="12.4" cy="12.4" r="2" />
+                  <path d="m5.4 7.1 5.2-2.6M5.4 8.9l5.2 2.6" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="3"
+                  data-line="Sources says what is read for each agent, and from another machine over SSH that runs Agent Lookout."
+                >
+                  Sources
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path d="M1.8 4.6h2M7.6 4.6h6.6M1.8 11.4h6.6M12.2 11.4h2" />
+                  <circle cx="5.7" cy="4.6" r="1.9" />
+                  <circle cx="10.3" cy="11.4" r="1.9" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="2"
+                  data-line="Time and permission rules, notifications, email, the webhook and pull requests stay off until you set them up."
+                >
+                  Settings
+                </button>
+                <span class="tour-dots" aria-hidden="true"><i></i><i></i></span>
+              </li>
+              <li>
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <path
+                    d="M2.8 10.6V4.4a1.4 1.4 0 0 1 1.4-1.4h5.3M13.2 7v3.6M1 10.6h14l-.9 2H1.9z"
+                  />
+                  <circle class="dot" cx="13.2" cy="3.4" r="1.9" />
+                </svg>
+                <button
+                  type="button"
+                  tabindex="-1"
+                  data-parts="1"
+                  data-lit=""
+                  data-app=""
+                  data-line="Or use the Mac app. Its menu bar and its Dock icon count the sessions that need you, and it updates itself."
+                >
+                  Mac app
+                </button>
+              </li>
+            </ol>
+            <button type="button" class="tour-next" aria-label="Next scene: Needs you">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+            </button>
+            <i class="tour-thumb" aria-hidden="true"></i>
+          </nav>
 
           <div class="stage">
             <div class="rig">
@@ -317,6 +394,7 @@
 
               <div class="frame glass-raised">
                 <i class="frame-lamp" aria-hidden="true"></i>
+                <i class="tour-flash" aria-hidden="true"></i>
                 <div class="screen">
                   <picture>
                     <source
@@ -414,6 +492,9 @@
                       alt="The Agent Lookout dashboard with one session waiting. The Needs you panel at the top names checkout-flow, a Claude Code session in Terminal that has waited 4 minutes 12 seconds for permission to run npm test. The whole command is shown, with Deny and Allow under it and a Jump button beside it. Under that are bars of how long sessions waited on you and counts of 5 working, 2 idle and 1 stale session out of 10. The Last hour chart follows."
                     />
                   </picture>
+                  <i class="tour-spot" aria-hidden="true"></i>
+                  <i class="tour-sweep" aria-hidden="true"></i>
+                  <i class="tour-meter" aria-hidden="true"><i></i></i>
                   <div class="tour-switched" aria-hidden="true">
                     <p class="glass-float glass-blur">
                       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -440,8 +521,19 @@
                     <strong class="tour-banner-title">checkout-flow</strong>
                     <span class="tour-banner-body">Waiting for permission: Run: npm test</span>
                   </div>
+                  <p class="tour-hint glass-float glass-blur" aria-hidden="true">
+                    Scroll to play
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" /></svg>
+                  </p>
                 </div>
               </div>
+
+              <p class="tour-stamp" aria-hidden="true">
+                <svg class="tour-icon" viewBox="-4 -4 24 24" aria-hidden="true">
+                  <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+                  <path d="M5.5 2.5v11" /></svg
+                >One screen
+              </p>
 
               <div class="tour-menubar" aria-hidden="true">
                 <span class="tour-menubar-item">
@@ -470,6 +562,11 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="tour-sparks" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+            ><i></i><i></i><b></b>
           </div>
         </div>
       </section>

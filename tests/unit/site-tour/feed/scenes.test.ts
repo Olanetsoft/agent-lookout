@@ -35,6 +35,17 @@ test("the page names the same scenes, with the same lines, parts and cues, as th
   );
 });
 
+test("each chip's button holds its scene's name and nothing else, with the icon outside it", () => {
+  const list = /<ol aria-label="What the dashboard shows">([\s\S]*?)<\/ol>/.exec(page)?.[1] ?? "";
+  const chips = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(([, chip]) => chip);
+  expect(chips).toHaveLength(SCENES.length);
+  chips.forEach((chip, i) => {
+    const inside = /<button[^>]*>([\s\S]*?)<\/button>/.exec(chip)?.[1] ?? "";
+    expect(inside.replace(/&shy;/g, "").trim(), SCENES[i].name).toBe(SCENES[i].name);
+    expect(chip, SCENES[i].name).toMatch(/^\s*<svg class="tour-icon"[^>]*aria-hidden="true"/);
+  });
+});
+
 test("each stretch of the tour is one scene, and a scene of two parts is split in half", () => {
   const n = SCENES.length;
   expect(sceneAt(0)).toEqual({ index: 0, step: 0 });

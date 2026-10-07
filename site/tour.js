@@ -1,30 +1,18 @@
 /*
- * The tour. As the page scrolls through it, the dashboard in the frame plays
- * through what the app does, one scene for each stretch of scroll, with a
- * line saying what it shows. Scrolling back plays it back. The dashboard is the
- * real one, from /tour, in a frame of this page: nothing in it acts, and
- * nothing in it leaves this page.
+ * The tour: the real dashboard, from /tour in a frame of this page, plays a
+ * scene for each stretch of scroll, with a line saying what it shows. Nothing
+ * in it acts or leaves this page, and until it is live two pictures stand in.
+ * A tap, the keyboard in it or the lamp's switch gives it to the visitor; Back
+ * to the tour, a chip, Escape, leaving the tour or a scene's stretch of scroll
+ * takes it back.
  *
- * It arrives after the page has loaded, while the browser is idle. Until it
- * has drawn its first scene, and if it never does, the scenes play with the
- * two pictures, and the lamp lights and goes out with them.
- *
- * A tap on the frame, the keyboard in it, or a press of the lamp's switch
- * gives the dashboard to the visitor, and the tour stops driving it. It takes
- * it back on Back to the tour, on a step, on Escape in the frame, when the
- * tour leaves the screen, or when the page has scrolled a whole scene's
- * stretch with the dashboard still.
- *
- * Once the dashboard is in the frame, what a scene changes on the page, its
- * line, the lamp, a notification, the menu bar and the Dock, moves when the
- * dashboard says the scene is on its way to the screen, so the two move
- * together.
- *
- * Under reduced motion the scenes come one after another as still pictures:
- * every change is made at once, and the line under the steps is set a scene
- * at a time.
+ * Every bit of scroll moves the meter and the chip's bar. Entering a scene,
+ * the thumb and number move; once the dashboard draws it, the frame is
+ * punched, swept and ringed, the name is stamped and flies to its chip, and
+ * the lamp throws sparks: CSS animations restarted by flipping an attribute
+ * between a and b, none of which runs under reduced motion.
  */
-import { animate, scroll } from "/vendor/motion.mjs";
+import { scroll } from "/vendor/motion.mjs";
 
 const root = document.documentElement;
 const section = document.getElementById("tour");
@@ -34,18 +22,27 @@ function begin(section) {
   const $ = (selector) => section.querySelector(selector);
   const stage = $(".tour-stage");
   const screen = $(".screen");
-  const words = $("#tour-line");
+  const box = $(".frame");
+  const title = $(".tour-title");
   const name = $(".tour-name");
+  const words = $("#tour-line");
   const said = $(".tour-said");
+  const where = $(".tour-at");
+  const roll = $(".tour-roll");
   const back = $(".tour-back");
   const cover = $(".tour-cover");
+  const nav = $(".tour-chapters");
+  const list = $(".tour-chapters ol");
+  const stamp = $(".tour-stamp");
+  const sweep = $(".tour-sweep");
+  const sparks = $(".tour-sparks");
+  const spot = $(".tour-spot");
   const bannerTitle = $(".tour-banner-title");
   const bannerBody = $(".tour-banner-body");
   const switchedWords = $(".tour-switched span");
-  const fill = $(".tour-fill");
-  const list = $(".tour-steps ol");
-  const steps = [...section.querySelectorAll(".tour-steps button")];
-  if (!stage || !screen || !words || !said || !list || steps.length === 0) return;
+  const steps = [...section.querySelectorAll(".tour-chapters ol button")];
+  if (!stage || !screen || !words || !said || !list || !stamp || steps.length === 0) return;
+  const items = steps.map((button) => button.parentElement);
 
   const scenes = steps.map((button) => ({
     name: button.textContent.replace(/\u00ad/g, "").trim(),
@@ -56,59 +53,87 @@ function begin(section) {
     jump: button.dataset.press === "jump",
     app: button.hasAttribute("data-app"),
   }));
-  /** How long the computer's word on a Jump stays. */
+  const count = scenes.length;
+  /** Jump's word stays 1.5s, a scene waits 320ms to be drawn, and whole sets are 340ms apart. */
   const SWITCHED_MS = 1500;
-  /** How long a scene's words wait for the dashboard to say it is drawing the scene. */
   const DRAWN_WAIT_MS = 320;
+  const GAP_MS = 340;
   const YOURS =
     "The dashboard is yours to click. Nothing in it acts on a session or sends anything.";
-  // Progress starts when the stage settles under the header, and ends as the tour's foot reaches the window's.
+  // From the stage settling under the header to the tour's foot reaching the window's.
   const OFFSET = ["start 80px", "end end"];
 
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const phone = matchMedia("(width < 761px)");
   const say = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
+  const now = () => performance.now();
 
   let index = -1;
   let part = -1;
   let mode = "tour";
-  /** The lamp the visitor chose with the switch, or null while the scene says. */
+  /** The lamp the visitor chose, or null while the scene says. */
   let lamp = null;
   let lampLit = null;
   let frame = null;
   let live = false;
-  let lineMotion = null;
-  /** Where the page was scrolled to when the dashboard was last given over or last scrolled itself. */
+  let scale = 1;
   let handedAt = 0;
   let frameScrolledAt = -Infinity;
-  /** The scene whose words wait for the dashboard, and how they come in. */
   let waiting = null;
   let switchedTimer = 0;
+  let given = "";
+  let landed = -1;
+  let travelTo = null;
+  let travelTimer = 0;
+  let fullAt = -Infinity;
+  let fullTimer = 0;
+  let litAtFull = null;
+  let inView = false;
+  let welcomed = false;
+  /** 0 until the hint shows, 1 while it does, 2 once it has gone. */
+  let hint = 0;
+  let hintTimer = 0;
+  let heldUntil = 0;
+  let centredAt = 0;
+  let pointed = null;
+  let placing = 0;
 
-  // ── The frame ─────────────────────────────────────────────────────────────
+  /** Starts an effect again: its attribute flips between a and b, and so its animation. */
+  const flip = (el, key = "go", kind = "") => {
+    el.dataset[key] = kind + (el.dataset[key]?.endsWith("a") ? "b" : "a");
+  };
+  const moving = () => !reduced.matches && mode === "tour";
+  const turn = (way) => section.style.setProperty("--way", way < 0 ? -1 : 1);
+  const settle = () => parseFloat(getComputedStyle(stage).top || "80");
+  /** --<prefix>x, y, w and h, in pixels. */
+  const put = (el, prefix, values) =>
+    values.forEach((v, i) => el.style.setProperty(`--${prefix}${"xywh"[i]}`, `${v}px`));
+
+  // ── The frame
 
   const post = (message) => {
     if (live) frame?.contentWindow?.postMessage(message, location.origin);
   };
 
   /**
-   * The dashboard is drawn at the app's own window size and scaled to the
-   * screen. As the Mac app's window it is smaller, with room over it for the
-   * menu bar and under it for the Dock: 34px from the screen's top, and 92px
-   * over its foot.
+   * The dashboard at the app's size, scaled to the screen's layout box, which a
+   * punch never changes. As the Mac app it sits 34px under the menu bar and 92px
+   * over the foot.
    */
   const fit = () => {
     const width = phone.matches ? 390 : 1280;
-    const box = screen.getBoundingClientRect();
-    if (box.width === 0) return;
-    const scale = box.width / width;
-    const share = Math.max(0.5, (box.height - 34 - 92) / box.height);
+    const w = screen.clientWidth;
+    const h = screen.clientHeight;
+    if (w === 0) return;
+    scale = w / width;
+    const share = Math.max(0.5, (h - 34 - 92) / h);
     screen.style.setProperty("--tour-width", `${width}px`);
-    screen.style.setProperty("--tour-height", `${Math.ceil(box.height / scale)}px`);
+    screen.style.setProperty("--tour-height", `${Math.ceil(h / scale)}px`);
     screen.style.setProperty("--tour-scale", String(scale));
     screen.style.setProperty("--dock-scale", String(scale * share));
-    screen.style.setProperty("--dock-x", `${((box.width * (1 - share)) / 2).toFixed(1)}px`);
+    screen.style.setProperty("--dock-x", `${((w * (1 - share)) / 2).toFixed(1)}px`);
     screen.style.setProperty("--dock-y", "34px");
+    place();
   };
   new ResizeObserver(fit).observe(screen);
   phone.addEventListener("change", fit);
@@ -122,7 +147,7 @@ function begin(section) {
     screen.insertBefore(frame, cover);
   };
 
-  /** Once the page has loaded, while the browser is idle and somebody is looking. */
+  /** After the page's load, while the browser is idle and somebody looks. */
   const loadLater = () => {
     const idle = window.requestIdleCallback ?? ((then) => setTimeout(then, 300));
     const whenSeen = () => {
@@ -137,13 +162,164 @@ function begin(section) {
     idle(whenSeen, { timeout: 3000 });
   };
   // With Save-Data on, the dashboard is fetched only once somebody taps the frame.
-  // This script itself is fetched once the page has loaded.
   if (navigator.connection?.saveData !== true) {
     if (document.readyState === "complete") loadLater();
     else window.addEventListener("load", loadLater, { once: true });
   }
 
-  // ── A scene ───────────────────────────────────────────────────────────────
+  // ── The spotlight: what the dashboard points at or presses
+
+  /** A ring over a dimmed screen, while it is in sight and the tour drives. */
+  const place = () => {
+    placing = 0;
+    let at = mode === "tour" && pointed?.isConnected && pointed.getBoundingClientRect();
+    if (at) {
+      const [x, y, w, h] = [at.left, at.top, at.width, at.height].map(
+        (v, i) => v * scale + (i < 2 ? -6 : 12),
+      );
+      at = x + w > 0 && y + h > 0 && x < screen.clientWidth && y < screen.clientHeight;
+      if (at) put(spot, "s", [x, y, w, h]);
+    }
+    section.classList.toggle("is-spotting", Boolean(at));
+  };
+  const replace = () => (placing ||= requestAnimationFrame(place));
+
+  /** What a scene points at or presses, and Stop while it asks. */
+  const watch = (doc) =>
+    new MutationObserver(() => {
+      const at = doc.querySelector(
+        '[data-tour-pressed], [data-tour-point], [data-part="stop"][aria-expanded="true"]',
+      );
+      if (at === pointed) return;
+      pointed = at;
+      if (at) {
+        spot.dataset.tone = at.dataset.slot === "event-resumed" ? "ink" : "lamp";
+        flip(spot);
+      }
+      place();
+    }).observe(doc.documentElement, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["data-tour-point", "data-tour-pressed", "aria-expanded"],
+    });
+
+  // ── Effects
+
+  /** How far the phone's strip scrolls to bring a chip to its middle. */
+  const goal = (i) =>
+    Math.max(
+      0,
+      Math.min(
+        items[i].offsetLeft - (list.clientWidth - items[i].offsetWidth) / 2,
+        list.scrollWidth - list.clientWidth,
+      ),
+    );
+
+  /** Where the lamp is: the dashboard's Needs you panel, or the lamp in the picture. */
+  const lampPoint = (s) => {
+    const hero = live && frame.contentDocument?.querySelector('[data-slot="hero"]');
+    if (hero) {
+      const at = hero.getBoundingClientRect();
+      return [s.left + (at.left + 24) * scale, s.top + (at.top + 28) * scale];
+    }
+    const [x, y] = getComputedStyle(root).getPropertyValue("--lamp-at").split(" ").map(parseFloat);
+    return [s.left + (s.width * x) / 100, s.top + (s.height * y) / 100];
+  };
+
+  /** Sparks from the lamp, or where the notification's icon or the Dock's count will land. */
+  const burst = (kind) => {
+    const s = screen.getBoundingClientRect();
+    let [x, y] = lampPoint(s);
+    if (kind === "banner") {
+      const icon = $(".tour-banner-icon");
+      x = s.left + icon.parentElement.offsetLeft + icon.offsetLeft + icon.offsetWidth / 2;
+      y = s.top + icon.parentElement.offsetTop + icon.offsetTop + icon.offsetHeight / 2;
+    } else if (kind === "badge") {
+      const at = $(".tour-badge").getBoundingClientRect();
+      x = at.left + at.width / 2;
+      y = at.top + at.height / 2 - new DOMMatrix(getComputedStyle($(".tour-dock")).transform).m42;
+    }
+    put(sparks, "s", [x, y]);
+    sparks.dataset.kind = kind;
+    flip(sparks);
+  };
+
+  /** The whole set: punch, sweep, ring, the name stamped and sent to its chip, and sparks. */
+  const full = (way) => {
+    fullAt = now();
+    const scene = scenes[index];
+    turn(way);
+    flip(box, "jolt", "p");
+    section.style.setProperty("--sweep", 1);
+    flip(sweep);
+    flip($(".tour-flash"));
+    const s = screen.getBoundingClientRect();
+    const chip = items[index].getBoundingClientRect();
+    const x = phone.matches
+      ? list.getBoundingClientRect().left + items[index].offsetLeft - goal(index) + chip.width / 2
+      : chip.left + chip.width / 2;
+    put(stamp, "f", [
+      x - s.left - s.width / 2,
+      chip.top + chip.height / 2 - s.top - s.height * 0.36,
+    ]);
+    flip(stamp);
+    const changed = litAtFull !== null && lampLit !== litAtFull;
+    const kind = scene.app
+      ? "badge"
+      : scene.banner
+        ? "banner"
+        : changed && (lampLit ? "lit" : way > 0 && "out");
+    if (kind) burst(kind);
+    litAtFull = lampLit;
+  };
+
+  /** The light set, for a next part or a scene passed in a rush. */
+  const nudge = (way) => {
+    turn(way);
+    flip(box, "jolt", "n");
+    section.style.setProperty("--sweep", 0.6);
+    flip(sweep);
+  };
+
+  /** The whole set comes three times a second at most, and to the scene the scroll rests on. */
+  const effects = (way) => {
+    if (!way || !moving()) return;
+    clearTimeout(fullTimer);
+    if (now() - fullAt >= GAP_MS) return full(way);
+    nudge(way);
+    const due = index;
+    fullTimer = setTimeout(() => {
+      if (due === index && moving() && travelTo === null) full(way);
+    }, GAP_MS);
+  };
+
+  /** The first time the dashboard is live and in sight. */
+  const welcome = () => {
+    if (welcomed || !live || !inView || index < 0) return;
+    welcomed = true;
+    if (moving()) full(1);
+    waitToHint();
+  };
+
+  /** "Scroll to play", once the stage has settled and the page has been still a while. */
+  const waitToHint = () => {
+    if (hint || !live || mode !== "tour" || section.getBoundingClientRect().top > settle() + 1) {
+      return;
+    }
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+      if (hint || index > 0 || part > 0) return;
+      hint = 1;
+      section.classList.add("is-hinting");
+    }, 1600);
+  };
+  const unhint = () => {
+    hint = 2;
+    clearTimeout(hintTimer);
+    section.classList.remove("is-hinting");
+  };
+
+  // ── A scene
 
   const light = (on) => {
     if (on === lampLit) return;
@@ -151,25 +327,28 @@ function begin(section) {
     say("lookout:lamp", { lit: on });
   };
 
-  /** Says the line, sliding in from the way the page is going. */
-  const tell = (text, title, way) => {
+  /** The scene's name and line, rising in from the way the page is going. */
+  const tell = (text, heading, way) => {
     said.textContent = text;
-    if (name) name.textContent = title;
-    lineMotion?.stop();
-    lineMotion = null;
-    if (reduced.matches || way === 0) return;
-    lineMotion = animate(
-      words,
-      { opacity: [0, 1], transform: [`translateY(${way > 0 ? 10 : -10}px)`, "translateY(0px)"] },
-      { duration: 0.24, ease: [0.2, 0.7, 0.2, 1] },
-    );
+    name.textContent = heading;
+    where.textContent = heading ? `${index + 1} of ${count}: ${heading}. ` : "";
+    if (!way || reduced.matches) return;
+    turn(way);
+    flip(title);
+    flip(words);
   };
 
-  /**
-   * Marks the step, keeping it the one the Tab key lands on unless the
-   * keyboard is among them. Under reduced motion the line under the steps is
-   * set to the end of the scene, since it does not follow the scroll there.
-   */
+  /** Puts the thumb under the scene's chip. */
+  const thumb = () => {
+    const li = items[index];
+    if (li) {
+      const { offsetLeft: x, offsetTop: y, offsetWidth: w, offsetHeight: h } = li;
+      put(nav, "", [list.offsetLeft + x, list.offsetTop + y, w, h]);
+    }
+  };
+  new ResizeObserver(thumb).observe(nav);
+
+  /** Marks the chip, which Tab lands on unless the keyboard is among them, and names its neighbours. */
   const mark = (at) => {
     const among = list.contains(document.activeElement);
     steps.forEach((button, i) => {
@@ -177,10 +356,46 @@ function begin(section) {
       else button.removeAttribute("aria-current");
       if (!among) button.tabIndex = i === at ? 0 : -1;
     });
-    if (reduced.matches && fill) fill.style.transform = `scaleX(${(at + 1) / scenes.length})`;
+    thumb();
+    for (const [button, i, word] of [
+      [$(".tour-prev"), at - 1, "Previous"],
+      [$(".tour-next"), at + 1, "Next"],
+    ]) {
+      button.setAttribute("aria-disabled", String(!scenes[i]));
+      button.setAttribute("aria-label", `${word} scene${scenes[i] ? `: ${scenes[i].name}` : ""}`);
+    }
   };
 
-  /** The app's icon, for the notification and the Dock, is fetched once the tour is under way. */
+  const dot = () => {
+    nav.querySelector(".is-on")?.classList.remove("is-on");
+    items[index].querySelectorAll(".tour-dots i")[part]?.classList.add("is-on");
+  };
+
+  /** On a phone the scene's chip comes to the strip's middle, unless a hand moved it just now. */
+  const centre = (i) => {
+    if (phone.matches && now() > heldUntil) {
+      centredAt = now();
+      list.scrollTo({ left: goal(i), behavior: reduced.matches ? "instant" : "smooth" });
+    }
+  };
+  list.addEventListener("scroll", () => now() - centredAt > 700 && (heldUntil = now() + 1500), {
+    passive: true,
+  });
+
+  /** Entering a scene, its chip and number change; on the way to a pressed chip, nothing more. */
+  const cross = (way, passing) => {
+    mark(index);
+    const [was, is] = roll.children;
+    was.textContent = is.textContent;
+    is.textContent = String(index + 1).padStart(2, "0");
+    turn(way);
+    flip(roll);
+    if (!passing) flip(nav, "cross");
+    centre(index);
+    section.style.setProperty("--parts", scenes[index].parts);
+  };
+
+  /** The app's icon is fetched once the tour is under way. */
   const dress = () => {
     for (const img of section.querySelectorAll("img[data-src]")) {
       if (!img.getAttribute("src")) img.src = img.dataset.src;
@@ -194,14 +409,16 @@ function begin(section) {
     if (on && !reduced.matches) switchedTimer = setTimeout(() => switched(false), SWITCHED_MS);
   };
 
-  /** What a scene changes on the page: its words, the lamp, a notification, the menu bar and the Dock. */
+  /** What a scene changes on the page. */
   const present = (way) => {
     const scene = scenes[index];
+    stamp.replaceChildren(items[index].firstElementChild.cloneNode(true), scene.name);
     tell(scene.line, scene.name, way);
     light(scene.lit);
     section.classList.toggle("is-notifying", scene.banner);
     section.classList.toggle("is-docked", scene.app);
     if (!scene.jump) switched(false);
+    effects(way);
   };
 
   /** Once the dashboard says the scene is on its way, or soon if it says nothing. */
@@ -219,66 +436,92 @@ function begin(section) {
     };
   };
 
-  const show = (nextIndex, nextPart, way) => {
-    const entering = nextIndex !== index;
-    index = nextIndex;
-    part = nextPart;
-    mark(index);
+  /** The dashboard is given the scene and part, and a new scene is said. */
+  const land = (way) => {
+    const entering = landed !== index;
+    landed = index;
+    given = `${index}.${part}`;
     if (index >= 1) dress();
     if (mode === "tour" && entering) {
       if (live) presentWhenDrawn(way);
       else present(way);
-    }
+    } else if (way && moving()) nudge(way);
     post({ type: "scene", index, step: part, lamp });
   };
 
-  /** The scene and its part at a share of the tour, from 0 to 1. */
-  const at = (progress) => {
-    const share = Math.min(Math.max(progress, 0), 1) * scenes.length;
-    const i = Math.min(scenes.length - 1, Math.floor(share));
-    const parts = scenes[i].parts;
-    return { i, p: Math.min(parts - 1, Math.floor((share - i) * parts)) };
+  const show = (nextIndex, nextPart, way) => {
+    const entering = nextIndex !== index;
+    index = nextIndex;
+    part = nextPart;
+    const passing = travelTo !== null && (travelTo !== index || part > 0);
+    if (entering) cross(way, passing || !way);
+    dot();
+    if (index || part) unhint();
+    if (passing) return travel();
+    clearTimeout(travelTimer);
+    travelTo = null;
+    land(way);
   };
 
   scroll(
     (progress) => {
-      const { i, p } = at(progress);
-      if (i !== index || p !== part) show(i, p, i > index || (i === index && p > part) ? 1 : -1);
+      const share = Math.min(Math.max(progress, 0), 1) * count;
+      const i = Math.min(count - 1, Math.floor(share));
+      const { parts } = scenes[i];
+      const p = Math.min(parts - 1, Math.floor((share - i) * parts));
+      // The first scene is set still: its effects wait for the dashboard to be live and in sight.
+      if (i !== index || p !== part) {
+        show(i, p, index < 0 ? 0 : i > index || (i === index && p > part) ? 1 : -1);
+      }
+      section.style.setProperty("--p", reduced.matches ? (p + 1) / parts : Math.min(1, share - i));
       if (
         mode === "yours" &&
         Math.abs(window.scrollY - handedAt) >= stretch() &&
-        performance.now() - frameScrolledAt > 400
+        now() - frameScrolledAt > 400
       ) {
         pickUp();
       }
+      waitToHint();
     },
     { target: section, offset: OFFSET },
   );
-  if (!reduced.matches && fill) {
-    scroll(animate(fill, { transform: ["scaleX(0)", "scaleX(1)"] }, { ease: "linear" }), {
-      target: section,
-      offset: OFFSET,
-    });
-  }
 
-  /** How far the page scrolls through one scene, in pixels. */
-  const range = () =>
-    section.offsetHeight - (window.innerHeight - parseFloat(getComputedStyle(stage).top || "80"));
-  const stretch = () => range() / scenes.length;
+  const range = () => section.offsetHeight - (window.innerHeight - settle());
+  const stretch = () => range() / count;
 
-  /** Where the page is scrolled to for a scene to begin. */
   const sceneTop = (i) => {
     const top = section.getBoundingClientRect().top + window.scrollY;
-    const settle = parseFloat(getComputedStyle(stage).top || "80");
-    return Math.round(top - settle + stretch() * i + Math.min(16, stretch() / 8));
+    return Math.round(top - settle() + stretch() * i + Math.min(16, stretch() / 8));
   };
 
+  /** A chip takes the page to its scene; those passed only mark their chips. */
   const goTo = (i) => {
+    if (!scenes[i]) return;
     pickUp();
+    travelTo = i;
+    travel();
     window.scrollTo({ top: sceneTop(i), behavior: reduced.matches ? "instant" : "smooth" });
   };
 
-  // ── Who drives it ─────────────────────────────────────────────────────────
+  /** The way ends 1200ms after the page last moved along it, if nothing ends it first. */
+  const travel = () => {
+    clearTimeout(travelTimer);
+    travelTimer = setTimeout(arrive, 1200);
+  };
+
+  /** There, or wherever a hand stopped it. */
+  const arrive = () => {
+    if (travelTo === null) return;
+    clearTimeout(travelTimer);
+    travelTo = null;
+    if (given !== `${index}.${part}`) land(1);
+  };
+  window.addEventListener("scrollend", arrive);
+  for (const kind of ["wheel", "touchstart", "keydown"]) {
+    window.addEventListener(kind, arrive, { capture: true, passive: true });
+  }
+
+  // ── Who drives it
 
   const takeOver = () => {
     if (mode === "yours" || !live) return;
@@ -291,6 +534,7 @@ function begin(section) {
     section.classList.remove("is-notifying", "is-docked");
     back.hidden = false;
     tell(YOURS, "", 0);
+    place();
     post({ type: "mode", mode });
   };
 
@@ -304,6 +548,7 @@ function begin(section) {
     back.hidden = true;
     post({ type: "mode", mode });
     present(0);
+    place();
     post({ type: "scene", index, step: part, lamp });
   };
 
@@ -312,7 +557,7 @@ function begin(section) {
     steps[index]?.focus();
   });
 
-  // A tap on the frame gives it over and lands where it was made. A drag scrolls the page.
+  // A tap on the frame gives it over, and lands where it was made.
   let down = null;
   cover?.addEventListener("pointerdown", (event) => {
     down = { x: event.clientX, y: event.clientY, at: event.timeStamp };
@@ -326,7 +571,6 @@ function begin(section) {
     if (!tap) return;
     if (!frame) return load();
     if (!live) return;
-    // Where the dashboard is drawn now: the whole screen, or the Mac app's smaller window.
     const box = frame.getBoundingClientRect();
     const scale = box.width / (phone.matches ? 390 : 1280);
     takeOver();
@@ -337,28 +581,33 @@ function begin(section) {
     });
   });
 
-  // The lamp's switch gives the dashboard over, and the lamp is the visitor's.
+  // The lamp's switch gives the dashboard over. Lighting it throws sparks.
   document.addEventListener("lookout:pressed", (event) => {
+    const was = lampLit;
     lampLit = event.detail?.lit === true;
+    if (lampLit && !was && !reduced.matches) burst("lit");
     if (!live) return;
     takeOver();
     lamp = lampLit ? "waiting" : "quiet";
     post({ type: "lamp", lamp });
   });
 
-  // The page and the dashboard are in one theme.
   document.addEventListener("lookout:turned", (event) => {
     post({ type: "theme", theme: event.detail?.theme });
   });
 
   // The tour leaving the screen takes the dashboard back.
   new IntersectionObserver(([entry]) => {
-    if (!entry.isIntersecting) pickUp();
+    inView = entry.isIntersecting;
+    if (!inView) pickUp();
+    welcome();
   }).observe(section);
 
-  // ── The steps ─────────────────────────────────────────────────────────────
+  // ── The chips
 
   steps.forEach((button, i) => button.addEventListener("click", () => goTo(i)));
+  $(".tour-prev").addEventListener("click", () => goTo(index - 1));
+  $(".tour-next").addEventListener("click", () => goTo(index + 1));
   list.addEventListener("keydown", (event) => {
     const from = steps.indexOf(document.activeElement);
     if (from === -1) return;
@@ -375,15 +624,18 @@ function begin(section) {
     event.preventDefault();
     const next = Math.min(last, Math.max(0, to));
     steps.forEach((button, i) => (button.tabIndex = i === next ? 0 : -1));
-    steps[next].focus();
+    steps[next].focus({ preventScroll: true });
+    heldUntil = 0;
+    centre(next);
     goTo(next);
   });
-  // Once the keyboard leaves the steps, the Tab key comes back to the scene on show.
+  // Once the keyboard leaves the chips, Tab comes back to the scene on show.
   list.addEventListener("focusout", (event) => {
     if (!list.contains(event.relatedTarget)) mark(index);
   });
+  requestAnimationFrame(() => requestAnimationFrame(() => (nav.dataset.placed = "")));
 
-  // ── What the dashboard says ───────────────────────────────────────────────
+  // ── What the dashboard says
 
   window.addEventListener("message", (event) => {
     if (!frame || event.origin !== location.origin || event.source !== frame.contentWindow) return;
@@ -399,14 +651,20 @@ function begin(section) {
           bannerBody.textContent = message.notice.body;
         }
         try {
-          frame.contentWindow.addEventListener(
+          const view = frame.contentWindow;
+          view.addEventListener(
             "scroll",
             () => {
-              frameScrolledAt = performance.now();
+              frameScrolledAt = now();
               handedAt = window.scrollY;
             },
             { passive: true },
           );
+          // The ring follows what it rings, as the page or a list in it scrolls or a view rises.
+          for (const kind of ["scroll", "animationend", "transitionend"]) {
+            view.addEventListener(kind, replace, { capture: true, passive: true });
+          }
+          watch(frame.contentDocument);
         } catch {
           // A frame at another address would say nothing of its scroll.
         }
@@ -414,7 +672,12 @@ function begin(section) {
         if (theme === "light" || theme === "dark") post({ type: "theme", theme });
         post({ type: "scene", index: Math.max(0, index), step: Math.max(0, part), lamp });
         // Shown once it has drawn the scene it was just given.
-        requestAnimationFrame(() => requestAnimationFrame(() => section.classList.add("is-live")));
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            section.classList.add("is-live");
+            welcome();
+          }),
+        );
         return;
       }
       case "drawn":

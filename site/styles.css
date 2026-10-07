@@ -8,10 +8,12 @@
  *
  * The lamp rule holds here too. Amber means a session needs you right now, and
  * nothing else. The page opens with nothing waiting and no warm colour. When
- * the lamp lights, the only amber outside the pictures is the lamp's own light
- * behind the top edge of the frame. One more amber thing is on the page by
- * choice: the lit mark in the second fact, beside the same mark with its lamp
- * out. That pair is the page's explanation of what amber means.
+ * the lamp lights, the amber outside the pictures is the tour's, and only
+ * while the lamp is lit: the lamp's own light behind the frame, its sparks,
+ * the scene's icon and meter, and the ring round what the scene points at.
+ * One more amber thing is on the page by choice: the lit mark in the second
+ * fact, beside the same mark with its lamp out. That pair is the page's
+ * explanation of what amber means.
  */
 
 /* Fonts, bundled. Only the weights the page uses. */
@@ -98,6 +100,54 @@
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   /* The lit picture spreading from the lamp: it blooms, sweeps and settles. */
   --ease-wipe: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Springs, for what the tour throws in: one that settles, and one that bounces. */
+  --spring: linear(
+    0,
+    0.109,
+    0.346,
+    0.606,
+    0.827,
+    0.982,
+    1.071,
+    1.106,
+    1.104,
+    1.082,
+    1.054,
+    1.028,
+    1.008,
+    0.995,
+    0.989,
+    0.988,
+    0.99,
+    0.993,
+    0.996,
+    0.998,
+    1
+  );
+  --spring-bouncy: linear(
+    0,
+    0.13,
+    0.412,
+    0.714,
+    0.954,
+    1.102,
+    1.163,
+    1.158,
+    1.118,
+    1.067,
+    1.022,
+    0.991,
+    0.975,
+    0.972,
+    0.977,
+    0.985,
+    0.994,
+    1,
+    1.003,
+    1.005,
+    1
+  );
+  --expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* The page's own measures. One gap between panels, as in the app. */
   --gap: 16px;
@@ -127,6 +177,13 @@
   --on-badge: #ffffff;
 }
 
+@supports not (animation-timing-function: linear(0, 1)) {
+  :root {
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
 /* Night, the default. */
 :root,
 [data-theme="dark"] {
@@ -146,6 +203,9 @@
   --rest-strength: 0.34;
   /* How much of the lamp's strength reaches the page outside the frame. */
   --halo-strength: 0.8;
+  /* The light of the tour's effects when nothing waits, and the shade a spotlight leaves. */
+  --beat-rgb: 243 240 234;
+  --spot-dim: rgba(9, 9, 8, 0.45);
 
   --glass-chrome: rgba(16, 15, 14, 0.6);
   /* The header's own glass. Bright things pass behind it, so at Night it is denser. */
@@ -263,6 +323,8 @@
     --rest: 255 255 255;
     --rest-strength: 0.7;
     --halo-strength: 0.7;
+    --beat-rgb: 24 22 19;
+    --spot-dim: rgba(40, 32, 24, 0.22);
 
     --glass-chrome: rgba(252, 251, 249, 0.52);
     --glass-bar: rgba(252, 251, 249, 0.52);
@@ -355,6 +417,8 @@
   --rest: 255 255 255;
   --rest-strength: 0.7;
   --halo-strength: 0.7;
+  --beat-rgb: 24 22 19;
+  --spot-dim: rgba(40, 32, 24, 0.22);
 
   --glass-chrome: rgba(252, 251, 249, 0.52);
   --glass-bar: rgba(252, 251, 249, 0.52);
@@ -1106,27 +1170,46 @@ html:not(.js) .seg {
  * stays in view under the header while the page scrolls a stretch for each
  * scene, and then the page carries on. The stretches are there from the first
  * paint, so nothing moves when the dashboard arrives. Without script there
- * are no stretches and no steps: the frame shows its lit picture.
+ * are no stretches and no chips: the frame shows its lit picture.
  *
- * The stage is the line, the switch, the frame and the steps, and the frame
- * takes whatever height the others leave: every other part has a height of
- * its own, so a line of another length moves nothing.
+ * The stage is the head (the scene's number and name, its line, the lamp's
+ * switch), the frame and the chips. The frame takes whatever height the
+ * others leave: every other part has a height of its own, so a line of
+ * another length moves nothing.
+ *
+ * The scroll never looks stuck. A meter in the screen and a bar under the
+ * scene's chip fill with every bit of it; entering a scene, the thumb slides
+ * to its chip and the number turns; and once the dashboard draws the scene,
+ * the frame is punched, swept and ringed, the scene's name is stamped on the
+ * screen and flies down to its chip, and the lamp throws sparks as it lights.
+ * Each of those is an animation started again by tour.js flipping an
+ * attribute between a and b. --beat sets how loud they are: every distance
+ * and peak brightness is multiplied by it.
  */
 .tour {
   --stage-top: 80px;
   --stage-height: calc(100svh - var(--stage-top) - 12px);
-  --stretch: 76svh;
+  --stretch: 60svh;
   --scenes: 12;
-  --line-size: 19px;
+  --head-height: 52px;
+  --line-size: 16px;
   --line-lines: 2;
-  --line-height: calc(var(--line-size) * 1.3 * var(--line-lines));
-  --steps-height: 44px;
+  --line-height: calc(var(--line-size) * 1.4 * var(--line-lines));
+  --nav-height: 68px;
   --row-gap: 14px;
   --frame-room: calc(
-    var(--stage-height) - var(--line-height) - var(--steps-height) - 2 * var(--row-gap)
+    var(--stage-height) - max(var(--head-height), var(--line-height)) - var(--nav-height) - 2 *
+      var(--row-gap)
   );
+  --beat: 1;
+  --way: 1;
+  /* How far through the scene the scroll is, 0 to 1, and how many parts the scene has. */
+  --p: 0;
+  --parts: 1;
   position: relative;
   margin-top: clamp(26px, 4.4vh, 44px);
+  overflow-x: clip;
+  overflow-clip-margin: var(--gutter);
 }
 .js .tour {
   height: calc(var(--stage-height) + var(--scenes) * var(--stretch));
@@ -1137,156 +1220,334 @@ html:not(.js) .seg {
   top: var(--stage-top);
   height: var(--stage-height);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 240px minmax(0, 1fr) auto auto auto;
+  grid-template-rows: max(var(--head-height), var(--line-height)) auto var(--nav-height);
   grid-template-areas:
-    "line controls"
-    "stage stage"
-    "steps steps";
+    "title line back controls skip"
+    "stage stage stage stage stage"
+    "nav nav nav nav nav";
   align-content: center;
-  column-gap: 32px;
+  column-gap: 20px;
   row-gap: var(--row-gap);
 }
 
 /*
- * The line: what the scene shows, in a sentence. It sits above the light
- * behind the frame, which would otherwise wash its words out in Day.
+ * The head. It sits above the light behind the frame, which would otherwise
+ * wash its words out in Day. The number and name are said again, hidden, at
+ * the start of the line, which is what a reader hears.
  */
+.tour-title,
+.tour-line,
+.tour-controls,
+.tour-back,
+.tour-skip {
+  position: relative;
+  z-index: 3;
+  align-self: center;
+}
+.tour-title {
+  grid-area: title;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tour-count {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+}
+/* The number turns: the last one leaves the way the page goes, and the next comes in behind it. */
+.tour-roll {
+  display: inline-grid;
+  overflow: hidden;
+}
+.tour-roll > span {
+  grid-area: 1 / 1;
+}
+.tour-roll > :first-child {
+  opacity: 0;
+}
+.tour-name {
+  overflow: hidden;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tour-line {
   grid-area: line;
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: end;
-  gap: 16px;
-  height: var(--line-height);
-}
-.tour-line p {
-  max-width: 64ch;
+  max-width: 62ch;
   font-size: var(--line-size);
-  font-weight: 500;
-  line-height: 1.3;
-  letter-spacing: -0.012em;
+  line-height: 1.4;
+  color: var(--ink-secondary);
   text-wrap: pretty;
 }
-.tour-said {
-  display: inline-block;
-}
-/* The scene's name, said with its line where the steps have no room for names. */
-.tour-name {
-  display: none;
+.tour-controls {
+  grid-area: controls;
+  display: flex;
 }
 .tour-back {
-  flex: none;
-  margin-bottom: 1px;
+  grid-area: back;
 }
 .tour-back[hidden] {
   display: none;
 }
+.tour-skip {
+  grid-area: skip;
+  padding-block: 12px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.tour-skip-arrow {
+  display: none;
+}
+.tour.is-yours .tour-title {
+  visibility: hidden;
+}
 
-/* The lamp's own switch, above the frame's right corner and clear of its light. */
-.tour-controls {
-  grid-area: controls;
-  align-self: end;
-  display: flex;
-  justify-content: end;
+/* No script, no stretches, no chips and no switch: the page shows its one picture, lit. */
+html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-chapters) {
+  display: none;
 }
 
 /*
- * The steps: the twelve scenes by name, under the frame, with a line across
- * their top that fills as the page scrolls through them. They are one stop for
- * the keyboard: the arrow keys move between them, and each takes the page to
- * its scene.
- *
- * A name narrower than its column keeps one line; a longer one takes a second,
- * at a space or, in Notification, at the soft hyphen the page marks. The gap
- * between columns is 16px, so no two names read as one, until twelve columns
- * of 46px, the width of Settings, leave less: then the columns keep their 46px
- * and the gap takes what is left, down to 4px.
+ * The chips: the twelve scenes, numbered, each with its icon, in a recessed
+ * well with a thumb under the one on show. They are one stop for the
+ * keyboard: the arrow keys move between them, and each takes the page to its
+ * scene. Wide, they are one row of twelve; narrower, two rows of six; on a
+ * phone, a strip that keeps the scene's chip in its middle, between Previous
+ * and Next.
  */
-.tour-steps {
-  grid-area: steps;
-  display: flex;
-  align-items: start;
-  gap: 24px;
-  height: var(--steps-height);
-}
-.tour-list {
-  --step-gap: clamp(4px, (100cqi - var(--scenes) * 46px) / (var(--scenes) - 1), 16px);
-  order: -1;
+.tour-chapters {
+  --chip-radius: 14px;
+  grid-area: nav;
   position: relative;
-  flex: 1;
-  container-type: inline-size;
+  z-index: 1;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border-radius: calc(var(--chip-radius) + 4px);
+  background-color: var(--well);
+  box-shadow:
+    inset 0 0 0 1px var(--control-rim),
+    inset 0 1px 2px var(--well-shade);
+  transition: opacity 200ms;
 }
-.tour-steps ol {
+.tour.is-yours .tour-chapters {
+  opacity: 0.55;
+}
+.tour-chapters ol {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(var(--scenes), minmax(0, 1fr));
-  column-gap: var(--step-gap);
+  gap: 4px;
+  counter-reset: scene;
 }
-.tour-steps button {
-  width: 100%;
-  min-height: var(--steps-height);
-  padding: 12px 0 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
+.tour-chapters li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-rows: 24px auto;
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 1px;
+  height: 60px;
+  padding: 4px 8px 0;
+  border-radius: var(--chip-radius);
   color: var(--ink-muted);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.2;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  transition: color 120ms;
+  counter-increment: scene;
+  translate: calc(var(--lean, 0) * -4px) 0;
+  transition:
+    color 160ms,
+    background-color 120ms,
+    translate 200ms var(--ease-out);
 }
-.tour-steps button:hover,
-.tour-steps button[aria-current="step"] {
+/* The scene's number, from the list's own count, which a reader does not hear. */
+.tour-chapters li::before {
+  content: counter(scene, decimal-leading-zero);
+  content: counter(scene, decimal-leading-zero) / "";
+  grid-area: 1 / 2;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tour-chapters li:hover {
+  background-color: var(--fill-hover);
+}
+.tour-chapters li:has(> [aria-current]) {
   color: var(--ink);
 }
-.tour-skip {
-  flex: none;
-  margin-top: 10px;
-  font-size: 13px;
+.tour-chapters li:has(~ li > [aria-current])::before {
   color: var(--ink-secondary);
 }
 
-/*
- * The line that fills, across the top of the names. It is one gap longer than
- * the names, with that gap out of sight past their end, so each twelfth of it
- * ends where a name begins.
- */
-.tour-track {
+/* An icon, 16px of line on a 24px tile, in the chip's own colour. */
+.tour-icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background-color: var(--fill-quiet);
+  box-shadow: inset 0 0 0 1px var(--control-rim);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: color 300ms;
+}
+.tour-icon .dot {
+  fill: currentColor;
+  stroke: none;
+}
+.tour-chapters .tour-icon {
+  grid-area: 1 / 1;
+}
+/* While a session waits, the scene's icon is the lamp's colour. */
+:root:not(.lamp-out) .tour-chapters li:has(> [aria-current]) .tour-icon {
+  color: var(--status-needs-you-edge);
+}
+
+/* The name is the button, and the button covers the whole chip. */
+.tour-chapters ol button {
+  grid-area: 2 / 1 / 3 / 4;
+  align-self: start;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.05;
+  text-align: left;
+  text-wrap: balance;
+  cursor: pointer;
+}
+.tour-chapters li:has(> [aria-current]) button {
+  font-weight: 600;
+}
+.tour-chapters ol button::after {
+  content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--chip-radius);
+}
+.tour-chapters ol button:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: -3px;
+}
+
+/* The bar at the chip's foot fills through the scene. A scene passed keeps a faint full one. */
+.tour-chapters ol button::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 2px;
   height: 2px;
   border-radius: 1px;
-  background-color: var(--rule);
-  overflow: hidden;
-  pointer-events: none;
-}
-.tour-fill {
-  position: absolute;
-  inset: 0 calc(-1 * var(--step-gap)) 0 0;
-  border-radius: inherit;
-  background-color: var(--ink-secondary);
+  background-color: currentColor;
+  opacity: 0;
   transform: scaleX(0);
   transform-origin: 0 50%;
 }
+.tour-chapters li:has(> [aria-current]) button::before {
+  opacity: 1;
+  transform: scaleX(var(--p));
+}
+.tour-chapters li:has(~ li > [aria-current]) button::before {
+  opacity: 0.35;
+  transform: none;
+}
 
-/* No script, no steps and no switch: the page shows its one picture, lit. */
-html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
+/* A scene of more than one part has a dot for each, and the part on show is the long one. */
+.tour-dots {
+  grid-area: 1 / 3;
+  display: flex;
+  gap: 2px;
+}
+.tour-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: currentColor;
+  opacity: 0.35;
+  transition:
+    width 420ms var(--spring),
+    opacity 200ms;
+}
+.tour-dots i:has(~ .is-on) {
+  opacity: 0.7;
+}
+.tour-dots .is-on {
+  width: 16px;
+  opacity: 1;
+}
+
+/* As the scroll nears the end of a scene, the next chip leans towards it. */
+.tour-chapters li:has(> [aria-current]) + li {
+  --lean: clamp(0, (var(--p) - 0.8) * 1000, 1);
+}
+.tour-chapters li:has(> [aria-current]) + li .tour-icon {
+  color: color-mix(in srgb, var(--ink) calc(var(--lean) * 100%), var(--ink-muted));
+}
+
+/* The thumb under the chip on show. It slides once it has been put in place. */
+.tour-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--w, 0);
+  height: var(--h, 0);
+  border-radius: var(--chip-radius);
+  background-color: var(--thumb);
+  box-shadow:
+    inset 0 0 0 1px var(--thumb-edge),
+    inset 0 1px 0 var(--control-top),
+    0 2px 6px -2px var(--thumb-drop);
+  transform: translate(var(--x, 0), var(--y, 0));
+  pointer-events: none;
+}
+.tour-chapters[data-placed] .tour-thumb {
+  transition:
+    transform 420ms cubic-bezier(0.34, 1.3, 0.64, 1),
+    width 420ms cubic-bezier(0.34, 1.3, 0.64, 1),
+    height 420ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+/* Previous and Next are a phone's. */
+.tour-prev,
+.tour-next {
   display: none;
 }
 
 /*
  * The frame is as large as the room the stage leaves it: as wide as the page,
  * or as wide as its height allows, and never a strip wider than 1280 by 560.
+ * It lies over the chips, so the scene's name can fly down to its own.
  */
 .stage {
   grid-area: stage;
   position: relative;
+  z-index: 2;
 }
 .rig {
   position: relative;
@@ -1340,16 +1601,16 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
 }
 
 /*
- * The one moment. When a wait begins the lamp's light rises from 90% of its
- * size and fades in over 1.2s. Going out, it only fades.
+ * When a wait begins the lamp's light springs up from 85% of its size and
+ * fades in over 0.6s. Going out, it only fades.
  */
 .light-lamp {
   --light: var(--lamp);
   --strength: calc(var(--lamp-strength) * var(--halo-strength));
   filter: saturate(var(--saturate-hero));
   transition:
-    opacity 1200ms var(--ease-out),
-    transform 1200ms var(--ease-out);
+    opacity 600ms var(--ease-out),
+    transform 600ms var(--spring);
 }
 .light-rest {
   --light: var(--rest);
@@ -1359,7 +1620,7 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
 }
 .lamp-out .light-lamp {
   opacity: 0;
-  transform: translate3d(0, 7.5cqw, 0) scale(0.9);
+  transform: translate3d(0, 7.5cqw, 0) scale(0.85);
   transition:
     opacity 400ms ease,
     transform 0s 400ms;
@@ -1373,6 +1634,10 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   padding: var(--bezel);
   border-radius: var(--radius-frame);
   --rim-paint: var(--rim-rest), var(--rim-raised);
+  /* How far a punch takes the frame in, and then past where it rests. */
+  --punch-in: 0.968;
+  --punch-out: 1.012;
+  transform-origin: 50% 45%;
 }
 
 /* The frame's top left edge catching the lamp. */
@@ -1507,6 +1772,10 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   z-index: 2;
   cursor: pointer;
   touch-action: pan-y pinch-zoom;
+  transition: background-color 240ms ease;
+}
+.tour.is-notifying .tour-cover {
+  background-color: color-mix(in srgb, var(--ground-top) 35%, transparent);
 }
 .tour.is-yours .tour-cover {
   display: none;
@@ -1515,8 +1784,9 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
 /*
  * A notification, as the system draws one: floating glass at the screen's
  * top right, under the dashboard's own header, with the app's icon, who sent
- * it and when, and the session's name and what it is waiting for. It comes in
- * from the right edge for the Notification scene, and goes after it.
+ * it and when, and the session's name and what it is waiting for. It springs
+ * in from the right edge for the Notification scene, over a dimmed screen,
+ * and goes after it.
  */
 .tour-banner {
   position: absolute;
@@ -1538,11 +1808,11 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   line-height: 1.35;
   opacity: 0;
   visibility: hidden;
-  transform: translate3d(calc(100% + 24px), 0, 0);
+  transform: translate3d(115%, 0, 0) rotate(3deg);
   transition:
     opacity 200ms ease,
-    transform 360ms var(--ease-out),
-    visibility 0s 360ms;
+    transform 620ms var(--spring-bouncy),
+    visibility 0s 620ms;
   pointer-events: none;
 }
 .tour-banner-icon {
@@ -1630,17 +1900,25 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
 }
 .tour.is-switched .tour-switched p {
   transform: none;
+  animation: tour-switch 520ms var(--spring);
+}
+/* The dashboard steps aside for a moment, as the Terminal comes forward. */
+.tour.is-switched .screen iframe {
+  animation: tour-shift 360ms ease-in-out;
 }
 
 /*
- * The Mac app. The dashboard becomes a window on the desktop, a little
- * smaller, and the Dock rises under it with the app's own icon and the
- * system's count on it. The window's size and place are worked out by the
- * tour's script from the screen's.
+ * The Mac app. The dashboard springs into a window on the desktop, a little
+ * smaller, the menu bar drops in over it, and the Dock bounces up under it
+ * with the app's own icon, whose count pops on last. The window's size and
+ * place are worked out by the tour's script from the screen's.
  */
 .tour.is-docked .screen iframe {
   transform: translate3d(var(--dock-x, 0px), var(--dock-y, 0px), 0) scale(var(--dock-scale, 1));
   box-shadow: var(--window-drop);
+  transition:
+    opacity 200ms ease,
+    transform 640ms var(--spring);
 }
 .tour-dock {
   position: absolute;
@@ -1649,7 +1927,7 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   z-index: 3;
   opacity: 0;
   visibility: hidden;
-  transform: translate3d(-50%, 18px, 0);
+  transform: translate3d(-50%, 40px, 0);
   transition:
     opacity 240ms ease,
     transform 380ms var(--ease-out),
@@ -1702,7 +1980,13 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   opacity: 1;
   visibility: visible;
   transform: translate3d(-50%, 0, 0);
-  transition-delay: 0s;
+  transition:
+    opacity 240ms ease 120ms,
+    transform 680ms var(--spring-bouncy) 120ms,
+    visibility 0s;
+}
+.tour.is-docked .tour-badge {
+  animation: tour-badge 480ms var(--spring) 520ms both;
 }
 
 /*
@@ -1726,7 +2010,7 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   color: var(--ink);
   opacity: 0;
   visibility: hidden;
-  transform: translate3d(0, -8px, 0);
+  transform: translate3d(0, -100%, 0);
   transition:
     opacity 240ms ease,
     transform 380ms var(--ease-out),
@@ -1756,7 +2040,731 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   opacity: 1;
   visibility: visible;
   transform: none;
+  transition:
+    opacity 240ms ease 60ms,
+    transform 520ms var(--spring) 60ms,
+    visibility 0s;
+}
+
+/*
+ * What the scroll does, as it happens. Each effect below is still until
+ * tour.js flips its attribute between a and b, which starts its animation
+ * again; at rest each is out of sight, so with motion reduced, when no
+ * animation runs, none is ever seen. Lit scenes take the lamp's colour.
+ */
+
+/*
+ * The meter: a line in the foot of the screen that fills through the scene,
+ * in a segment for each part, on a band of the ground so it never reads as
+ * part of the dashboard under it.
+ */
+.tour-meter {
+  position: absolute;
+  left: calc(var(--radius-screen) - 3px);
+  right: calc(var(--radius-screen) - 3px);
+  bottom: 5px;
+  z-index: 2;
+  height: 9px;
+  border-radius: var(--radius-capsule);
+  background-color: color-mix(in srgb, var(--ground-top) 72%, transparent);
+  pointer-events: none;
+}
+.tour-meter i {
+  position: absolute;
+  inset: 3px;
+  overflow: hidden;
+  background-color: rgb(var(--beat-rgb) / 0.18);
+  -webkit-mask: repeating-linear-gradient(
+    to right,
+    #000 0 calc((100% + 2px) / var(--parts) - 2px),
+    transparent 0 calc((100% + 2px) / var(--parts))
+  );
+  mask: repeating-linear-gradient(
+    to right,
+    #000 0 calc((100% + 2px) / var(--parts) - 2px),
+    transparent 0 calc((100% + 2px) / var(--parts))
+  );
+}
+.tour-meter i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--ink-secondary);
+  transform: scaleX(var(--p));
+  transform-origin: 0 50%;
+}
+:root:not(.lamp-out) .tour-meter i::after {
+  background-color: var(--status-needs-you);
+}
+.tour.is-yours .tour-meter,
+html:not(.js) .tour-meter {
+  display: none;
+}
+
+/* The punch: the frame is knocked in and springs back past where it rests. A next part only nudges it. */
+.frame[data-jolt="pa"] {
+  animation: tour-punch-a 520ms;
+}
+.frame[data-jolt="pb"] {
+  animation: tour-punch-b 520ms;
+}
+.frame[data-jolt="na"] {
+  animation: tour-nudge-a 380ms var(--spring);
+}
+.frame[data-jolt="nb"] {
+  animation: tour-nudge-b 380ms var(--spring);
+}
+
+/* The flash: a ring of light round the frame, and a glow either side of it. */
+.tour-flash {
+  --flash: var(--beat-rgb);
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1.5px rgb(var(--flash)),
+    inset 0 0 48px rgb(var(--flash) / 0.5),
+    0 0 48px rgb(var(--flash) / 0.55);
+  opacity: 0;
+  pointer-events: none;
+}
+:root:not(.lamp-out) .tour-flash {
+  --flash: var(--lamp);
+}
+.tour-flash[data-go="a"] {
+  animation: tour-flash-a 700ms linear;
+}
+.tour-flash[data-go="b"] {
+  animation: tour-flash-b 700ms linear;
+}
+
+/* The sweep: a band of light with a sharp front crosses the screen, from top left going on and back going back. */
+.tour-sweep {
+  --sweep-at: calc(50% + 50% * var(--way));
+  --sweep-to: calc(50% - 50% * var(--way));
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+      120deg,
+      transparent 36%,
+      rgb(var(--beat-rgb) / calc(0.04 * var(--sweep, 1) * var(--beat))) 44%,
+      rgb(var(--beat-rgb) / calc(0.18 * var(--sweep, 1) * var(--beat))) 50%,
+      transparent 50.4%
+    )
+    0 0 / 200% 200% no-repeat;
+  opacity: 0;
+  pointer-events: none;
+}
+.tour-sweep[data-go="a"] {
+  animation: tour-sweep-a 560ms cubic-bezier(0.45, 0, 0.25, 1) 40ms;
+}
+.tour-sweep[data-go="b"] {
+  animation: tour-sweep-b 560ms cubic-bezier(0.45, 0, 0.25, 1) 40ms;
+}
+
+/*
+ * The stamp: the scene's name and icon pop up on the screen, then fly down to
+ * the scene's chip, shrinking as they go. tour.js gives the way to the chip.
+ */
+.tour-stamp {
+  position: absolute;
+  top: calc(var(--bezel) + (100% - 2 * var(--bezel)) * 0.36);
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 18px 8px 8px;
+  border-radius: var(--radius-capsule);
+  background-color: var(--ink);
+  color: var(--on-ink);
+  box-shadow: 0 16px 36px -14px rgb(0 0 0 / 0.65);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  translate: -50% -50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.tour-stamp .tour-icon {
+  background-color: color-mix(in srgb, var(--on-ink) 12%, transparent);
+  box-shadow: none;
+}
+.tour-stamp[data-go="a"] {
+  animation:
+    tour-pop-a 800ms var(--spring-bouncy) 60ms,
+    tour-fly-a 800ms ease-in 60ms;
+}
+.tour-stamp[data-go="b"] {
+  animation:
+    tour-pop-b 800ms var(--spring-bouncy) 60ms,
+    tour-fly-b 800ms ease-in 60ms;
+}
+.tour.is-yours .tour-stamp,
+html:not(.js) .tour-stamp {
+  display: none;
+}
+
+/* The name and line rise in from the way the page is going, the line a moment after. */
+.tour-title[data-go="a"] {
+  animation: tour-say-a 380ms var(--expo) both;
+}
+.tour-title[data-go="b"] {
+  animation: tour-say-b 380ms var(--expo) both;
+}
+.tour-line[data-go="a"] {
+  animation: tour-say-a 380ms var(--expo) 70ms both;
+}
+.tour-line[data-go="b"] {
+  animation: tour-say-b 380ms var(--expo) 70ms both;
+}
+
+/* Entering a scene, its icon springs up on the thumb, and the number turns. */
+.tour-chapters[data-cross="a"] li:has(> [aria-current]) .tour-icon {
+  animation: tour-pip-a 480ms var(--spring-bouncy);
+}
+.tour-chapters[data-cross="b"] li:has(> [aria-current]) .tour-icon {
+  animation: tour-pip-b 480ms var(--spring-bouncy);
+}
+.tour-roll[data-go="a"] > :first-child {
+  animation: tour-leave-a 160ms ease-in;
+}
+.tour-roll[data-go="b"] > :first-child {
+  animation: tour-leave-b 160ms ease-in;
+}
+.tour-roll[data-go="a"] > :last-child {
+  animation: tour-come-a 320ms var(--spring);
+}
+.tour-roll[data-go="b"] > :last-child {
+  animation: tour-come-b 320ms var(--spring);
+}
+
+/*
+ * The spotlight: a ring round what the scene points at or presses, the
+ * waiting session's request, Jump or Stop in the lamp's colour and the row
+ * for watching resumed in ink, with the rest of the screen dimmed. It lands
+ * from larger and glows twice.
+ */
+.tour-spot {
+  --ring: var(--status-needs-you);
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--sw, 0);
+  height: var(--sh, 0);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 2px var(--ring),
+    0 0 0 100vmax var(--spot-dim);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(var(--sx, 0), var(--sy, 0));
+  transition:
+    opacity 200ms ease,
+    visibility 0s 200ms;
+  pointer-events: none;
+}
+.tour-spot[data-tone="ink"] {
+  --ring: var(--ink-secondary);
+}
+.tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 16px 4px var(--ring);
+  opacity: 0;
+}
+.tour.is-spotting .tour-spot {
+  opacity: 1;
+  visibility: visible;
   transition-delay: 0s;
+}
+.tour.is-spotting .tour-spot[data-go="a"] {
+  animation: tour-spot-a 520ms var(--spring);
+}
+.tour.is-spotting .tour-spot[data-go="b"] {
+  animation: tour-spot-b 520ms var(--spring);
+}
+.tour.is-spotting .tour-spot[data-go="a"]::after {
+  animation: tour-glow-a 700ms ease-in-out 520ms 2;
+}
+.tour.is-spotting .tour-spot[data-go="b"]::after {
+  animation: tour-glow-b 700ms ease-in-out 520ms 2;
+}
+
+/* "Scroll to play", for somebody who has not yet scrolled into the tour. */
+.tour-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 8px 16px;
+  border-radius: var(--radius-capsule);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  translate: -50% 0;
+  transition:
+    opacity 240ms ease,
+    visibility 0s 240ms;
+  pointer-events: none;
+}
+.tour-hint svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: tour-bob 1.2s ease-in-out infinite;
+}
+.tour.is-hinting .tour-hint {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.tour.is-yours .tour-hint {
+  display: none;
+}
+
+/*
+ * Sparks, over everything, fixed to the window: fourteen out of the lamp as
+ * it lights, ten amber and four ink, with a ring that widens behind them;
+ * eight out of a notification's icon as it lands; ten out of the Dock's count
+ * as it pops; and as the lamp goes out, the amber ones jump and tumble down.
+ */
+.tour-sparks {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+.tour-sparks > * {
+  position: absolute;
+  top: var(--sy);
+  left: var(--sx);
+  opacity: 0;
+}
+.tour-sparks i {
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background-color: var(--status-needs-you);
+}
+.tour-sparks i:nth-child(4n + 2) {
+  background-color: var(--ink);
+}
+.tour-sparks i:nth-child(3n) {
+  width: 4px;
+  height: 4px;
+  margin: -2px;
+}
+.tour-sparks b {
+  width: 24px;
+  height: 24px;
+  margin: -12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--status-needs-you);
+}
+.tour-sparks i:nth-child(1) {
+  --a: 0deg;
+  --d: 110px;
+}
+.tour-sparks i:nth-child(2) {
+  --a: 26deg;
+  --d: 64px;
+}
+.tour-sparks i:nth-child(3) {
+  --a: 51deg;
+  --d: 92px;
+}
+.tour-sparks i:nth-child(4) {
+  --a: 77deg;
+  --d: 52px;
+}
+.tour-sparks i:nth-child(5) {
+  --a: 103deg;
+  --d: 104px;
+}
+.tour-sparks i:nth-child(6) {
+  --a: 129deg;
+  --d: 74px;
+}
+.tour-sparks i:nth-child(7) {
+  --a: 154deg;
+  --d: 88px;
+}
+.tour-sparks i:nth-child(8) {
+  --a: 180deg;
+  --d: 48px;
+}
+.tour-sparks i:nth-child(9) {
+  --a: 206deg;
+  --d: 100px;
+}
+.tour-sparks i:nth-child(10) {
+  --a: 231deg;
+  --d: 70px;
+}
+.tour-sparks i:nth-child(11) {
+  --a: 257deg;
+  --d: 96px;
+}
+.tour-sparks i:nth-child(12) {
+  --a: 283deg;
+  --d: 58px;
+}
+.tour-sparks i:nth-child(13) {
+  --a: 309deg;
+  --d: 84px;
+}
+.tour-sparks i:nth-child(14) {
+  --a: 334deg;
+  --d: 66px;
+}
+.tour-sparks[data-go="a"] i {
+  animation: tour-spark-a 700ms cubic-bezier(0.15, 0.8, 0.3, 1) var(--delay, 0ms);
+}
+.tour-sparks[data-go="b"] i {
+  animation: tour-spark-b 700ms cubic-bezier(0.15, 0.8, 0.3, 1) var(--delay, 0ms);
+}
+.tour-sparks[data-go="a"] b {
+  animation: tour-ring-a 600ms cubic-bezier(0.15, 0.8, 0.3, 1) var(--delay, 0ms);
+}
+.tour-sparks[data-go="b"] b {
+  animation: tour-ring-b 600ms cubic-bezier(0.15, 0.8, 0.3, 1) var(--delay, 0ms);
+}
+.tour-sparks[data-kind="banner"] {
+  --delay: 300ms;
+}
+.tour-sparks[data-kind="badge"] {
+  --delay: 520ms;
+}
+.tour-sparks[data-kind="banner"] i:nth-child(n + 9),
+.tour-sparks[data-kind="badge"] i:nth-child(n + 11),
+.tour-sparks[data-kind="out"] b {
+  display: none;
+}
+.tour-sparks[data-kind="out"] i {
+  width: 7px;
+  height: 3px;
+  margin: -1.5px -3.5px;
+  border-radius: 1px;
+  background-color: var(--status-needs-you);
+}
+.tour-sparks[data-kind="out"][data-go="a"] i {
+  animation: tour-fall-a 1000ms linear;
+}
+.tour-sparks[data-kind="out"][data-go="b"] i {
+  animation: tour-fall-b 1000ms linear;
+}
+
+/*
+ * The keyframes, each twice, a and b, so a flip starts it again. Every
+ * distance and peak brightness is multiplied by --beat.
+ */
+@keyframes tour-punch-a {
+  0% {
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  20% {
+    scale: calc(1 - (1 - var(--punch-in)) * var(--beat));
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  55% {
+    scale: calc(1 + (var(--punch-out) - 1) * var(--beat));
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+@keyframes tour-punch-b {
+  0% {
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  20% {
+    scale: calc(1 - (1 - var(--punch-in)) * var(--beat));
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  55% {
+    scale: calc(1 + (var(--punch-out) - 1) * var(--beat));
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+@keyframes tour-nudge-a {
+  35% {
+    scale: calc(1 - 0.015 * var(--beat));
+  }
+}
+@keyframes tour-nudge-b {
+  35% {
+    scale: calc(1 - 0.015 * var(--beat));
+  }
+}
+@keyframes tour-flash-a {
+  18% {
+    opacity: min(1, var(--beat));
+  }
+}
+@keyframes tour-flash-b {
+  18% {
+    opacity: min(1, var(--beat));
+  }
+}
+@keyframes tour-sweep-a {
+  from {
+    opacity: 1;
+    background-position: var(--sweep-at) var(--sweep-at);
+  }
+  to {
+    opacity: 1;
+    background-position: var(--sweep-to) var(--sweep-to);
+  }
+}
+@keyframes tour-sweep-b {
+  from {
+    opacity: 1;
+    background-position: var(--sweep-at) var(--sweep-at);
+  }
+  to {
+    opacity: 1;
+    background-position: var(--sweep-to) var(--sweep-to);
+  }
+}
+@keyframes tour-pop-a {
+  0% {
+    scale: 0.6;
+  }
+  30%,
+  100% {
+    scale: 1;
+  }
+}
+@keyframes tour-pop-b {
+  0% {
+    scale: 0.6;
+  }
+  30%,
+  100% {
+    scale: 1;
+  }
+}
+@keyframes tour-fly-a {
+  0% {
+    opacity: 0;
+  }
+  6%,
+  62% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--fx, 0), var(--fy, 0)) scale(0.3);
+  }
+}
+@keyframes tour-fly-b {
+  0% {
+    opacity: 0;
+  }
+  6%,
+  62% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--fx, 0), var(--fy, 0)) scale(0.3);
+  }
+}
+@keyframes tour-say-a {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--way) * 18px * var(--beat));
+  }
+}
+@keyframes tour-say-b {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--way) * 18px * var(--beat));
+  }
+}
+@keyframes tour-pip-a {
+  0% {
+    scale: 0.6;
+    rotate: -14deg;
+    translate: 0 calc(4px * var(--beat));
+  }
+  45% {
+    scale: calc(1 + 0.15 * var(--beat));
+  }
+}
+@keyframes tour-pip-b {
+  0% {
+    scale: 0.6;
+    rotate: -14deg;
+    translate: 0 calc(4px * var(--beat));
+  }
+  45% {
+    scale: calc(1 + 0.15 * var(--beat));
+  }
+}
+@keyframes tour-leave-a {
+  from {
+    opacity: 1;
+  }
+  to {
+    translate: 0 calc(var(--way) * -100%);
+  }
+}
+@keyframes tour-leave-b {
+  from {
+    opacity: 1;
+  }
+  to {
+    translate: 0 calc(var(--way) * -100%);
+  }
+}
+@keyframes tour-come-a {
+  from {
+    translate: 0 calc(var(--way) * 100%);
+  }
+}
+@keyframes tour-come-b {
+  from {
+    translate: 0 calc(var(--way) * 100%);
+  }
+}
+@keyframes tour-spot-a {
+  from {
+    scale: 1.3;
+  }
+}
+@keyframes tour-spot-b {
+  from {
+    scale: 1.3;
+  }
+}
+@keyframes tour-glow-a {
+  50% {
+    opacity: min(0.7, 0.7 * var(--beat));
+  }
+}
+@keyframes tour-glow-b {
+  50% {
+    opacity: min(0.7, 0.7 * var(--beat));
+  }
+}
+@keyframes tour-spark-a {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.2;
+    translate: calc(cos(var(--a)) * var(--d) * var(--beat))
+      calc(sin(var(--a)) * var(--d) * var(--beat));
+  }
+}
+@keyframes tour-spark-b {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.2;
+    translate: calc(cos(var(--a)) * var(--d) * var(--beat))
+      calc(sin(var(--a)) * var(--d) * var(--beat));
+  }
+}
+@keyframes tour-ring-a {
+  from {
+    opacity: min(1, var(--beat));
+  }
+  to {
+    opacity: 0;
+    scale: 6;
+  }
+}
+@keyframes tour-ring-b {
+  from {
+    opacity: min(1, var(--beat));
+  }
+  to {
+    opacity: 0;
+    scale: 6;
+  }
+}
+@keyframes tour-fall-a {
+  0% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  30% {
+    opacity: 1;
+    translate: calc(cos(var(--a)) * var(--d) * 0.35 * var(--beat)) calc(-44px * var(--beat));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  100% {
+    opacity: 0;
+    translate: calc(cos(var(--a)) * var(--d) * 0.7 * var(--beat)) calc(106px * var(--beat));
+    rotate: 720deg;
+  }
+}
+@keyframes tour-fall-b {
+  0% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  30% {
+    opacity: 1;
+    translate: calc(cos(var(--a)) * var(--d) * 0.35 * var(--beat)) calc(-44px * var(--beat));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  100% {
+    opacity: 0;
+    translate: calc(cos(var(--a)) * var(--d) * 0.7 * var(--beat)) calc(106px * var(--beat));
+    rotate: 720deg;
+  }
+}
+@keyframes tour-switch {
+  from {
+    scale: 0.7;
+  }
+}
+@keyframes tour-shift {
+  50% {
+    translate: calc(-14px * var(--beat)) 0;
+  }
+}
+@keyframes tour-badge {
+  0% {
+    scale: 0;
+  }
+  55% {
+    scale: calc(1 + 0.35 * var(--beat));
+  }
+  100% {
+    scale: 1;
+  }
+}
+@keyframes tour-bob {
+  50% {
+    translate: 0 5px;
+  }
 }
 
 /* ------------------------------------------------------------------- facts */
@@ -2313,11 +3321,61 @@ body:has(> .lost) {
 
 /* --------------------------------------------------------------- narrower */
 
-/* Under 1201px the steps' names are a little smaller. */
-@media (width < 1201px) {
-  .tour-steps button {
-    font-size: 12px;
-    line-height: 1.15;
+/* Under 1200px the twelve chips in a row have a little less room inside. */
+@media (width < 1200px) {
+  .tour-chapters li {
+    padding-inline: 6px;
+  }
+}
+
+/*
+ * Under 1128px, where the chips' well is under 1080px, the twelve chips are
+ * two rows of six, each its icon, number and name in a line.
+ */
+@media (width < 1128px) {
+  .tour {
+    --nav-height: 116px;
+  }
+  .tour-chapters {
+    align-items: stretch;
+  }
+  .tour-chapters ol {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .tour-chapters li {
+    grid-template-columns: 24px auto minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    column-gap: 8px;
+    height: 52px;
+    padding: 0 10px;
+  }
+  .tour-chapters ol button {
+    grid-area: 1 / 3;
+    align-self: center;
+  }
+  .tour-chapters .tour-dots {
+    grid-area: 1 / 4;
+  }
+}
+
+/* Under 1000px the chips of two rows of six are too narrow for that line, and the name goes under the icon. */
+@media (width < 1000px) {
+  .tour-chapters li {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    grid-template-rows: 24px auto;
+    column-gap: 4px;
+    row-gap: 2px;
+    padding: 5px 8px 0;
+  }
+  .tour-chapters ol button {
+    grid-area: 2 / 1 / 3 / 4;
+    align-self: start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tour-chapters .tour-dots {
+    grid-area: 1 / 3;
   }
 }
 
@@ -2330,10 +3388,40 @@ body:has(> .lost) {
     display: none;
   }
 
-  /* The line takes three lines beside the switch, a little smaller. */
+  /*
+   * The head is two rows: the number and name beside the switch, and the
+   * line under them. The stage keeps to the top, so no band opens over it.
+   */
   .tour {
-    --line-size: 17px;
-    --line-lines: 3;
+    --head-height: 40px;
+    --line-lines: 2;
+    --row-gap: 10px;
+    --frame-room: calc(
+      var(--stage-height) - var(--head-height) - var(--line-height) - var(--nav-height) - 3 *
+        var(--row-gap)
+    );
+  }
+  .tour-stage {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-rows: var(--head-height) var(--line-height) auto var(--nav-height);
+    grid-template-areas:
+      "title back controls skip"
+      "line line line line"
+      "stage stage stage stage"
+      "nav nav nav nav";
+    align-content: start;
+  }
+  .tour-title {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .tour-name {
+    font-size: 24px;
+  }
+  .tour-line {
+    align-self: start;
+    max-width: none;
   }
 }
 
@@ -2582,79 +3670,172 @@ body:has(> .lost) {
   }
 
   /*
-   * On a phone the switch sits over the frame, and the line and the steps
-   * under it, all as wide as the frame. The steps are too many to name here:
-   * each is a stretch of the line that fills, and the scene's name is said
-   * with its line instead.
+   * On a phone the switch and Skip sit over the frame, and the number and
+   * name, the line and the chips under it, all as wide as the frame. The
+   * chips are a strip between Previous and Next, which keeps the scene's chip
+   * in its middle; a finger can swipe it too.
    */
   .tour {
-    --stretch: 64svh;
-    --line-size: 15px;
-    --line-lines: 4;
-    --line-height: calc(18px + var(--line-size) * 1.42 * var(--line-lines));
+    --stretch: 52svh;
     --controls-height: 44px;
-    --steps-height: 44px;
-    --row-gap: 10px;
+    --head-height: 26px;
+    --line-size: 15px;
+    --line-lines: 3;
+    --line-height: calc(var(--line-size) * 1.42 * var(--line-lines));
+    --nav-height: 44px;
+    --row-gap: 8px;
     --frame-room: calc(
-      var(--stage-height) - var(--controls-height) - var(--line-height) - var(--steps-height) - 3 *
-        var(--row-gap)
+      var(--stage-height) - var(--controls-height) - var(--head-height) - var(--line-height) -
+        var(--nav-height) - 4 * var(--row-gap)
     );
     margin-top: 20px;
   }
   .tour-stage {
-    grid-template-columns: minmax(0, min(100%, 492px));
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows:
+      var(--controls-height) auto var(--head-height) var(--line-height)
+      var(--nav-height);
     grid-template-areas:
-      "controls"
-      "stage"
-      "line"
-      "steps";
-    justify-content: center;
+      "controls skip"
+      "stage stage"
+      "title back"
+      "line line"
+      "nav nav";
+    width: min(100%, 492px);
+    margin-inline: auto;
+    column-gap: 12px;
   }
   .tour-controls {
-    height: var(--controls-height);
-    align-items: end;
-  }
-  .tour-line {
-    flex-direction: column;
-    align-items: start;
-    justify-content: start;
-    gap: 10px;
-  }
-  .tour-line p {
-    line-height: 1.42;
-  }
-  .tour-name {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 18px;
-    color: var(--ink-secondary);
-  }
-  .tour-steps {
-    gap: 16px;
-  }
-  .tour-steps button {
-    min-height: 44px;
-    padding: 0;
-    font-size: 0;
-  }
-  .tour-steps button[aria-current="step"]::after {
-    content: "";
-    display: block;
-    height: 2px;
-    margin-top: -42px;
-    border-radius: 1px;
-    background-color: var(--ink);
+    align-self: end;
   }
   .tour-skip {
-    margin-top: 0;
-    padding-block: 12px;
+    align-self: end;
+    justify-self: end;
   }
+  .tour-skip-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .tour-skip-arrow {
+    display: inline;
+  }
+  .tour-title {
+    gap: 8px;
+  }
+  .tour-name {
+    font-size: 20px;
+  }
+  .tour-line {
+    align-self: start;
+    line-height: 1.42;
+  }
+
+  .tour-chapters {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .tour-prev,
+  .tour-next {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background-color: var(--fill-quiet);
+    box-shadow:
+      inset 0 0 0 1px var(--control-rim),
+      inset 0 1px 0 var(--control-top);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .tour-prev svg,
+  .tour-next svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .tour-prev[aria-disabled="true"],
+  .tour-next[aria-disabled="true"] {
+    color: var(--ink-muted);
+    opacity: 0.5;
+    cursor: default;
+  }
+  .tour-thumb {
+    display: none;
+  }
+  .tour-chapters ol {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+  }
+  .tour-chapters ol::-webkit-scrollbar {
+    display: none;
+  }
+  .tour-chapters li {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 44px;
+    padding: 0 12px 0 10px;
+    scroll-snap-align: center;
+  }
+  .tour-chapters li .tour-icon {
+    order: -1;
+    width: 22px;
+    height: 22px;
+  }
+  .tour-chapters ol button {
+    align-self: center;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  /* The chip on show is drawn as the thumb would be. */
+  .tour-chapters li:has(> [aria-current]) {
+    background-color: var(--thumb);
+    box-shadow:
+      inset 0 0 0 var(--ring-width, 1px) var(--thumb-edge),
+      inset 0 1px 0 var(--control-top);
+  }
+
   .tour-banner {
     top: 8px;
     right: 8px;
     width: calc(100% - 16px);
     padding: 10px 12px 11px 10px;
+  }
+  .frame {
+    --punch-in: 0.975;
+    --punch-out: 1.008;
   }
 
   /*
@@ -2701,7 +3882,7 @@ body:has(> .lost) {
     background: none;
     transform: translate3d(0, 10px, 0);
   }
-  .tour.is-docked .tour-said {
+  .tour.is-docked :is(.tour-title, .tour-line) {
     padding-right: 112px;
   }
 
@@ -2744,7 +3925,6 @@ body:has(> .lost) {
     display: none;
   }
   .tour {
-    --line-lines: 3;
     margin-top: 14px;
   }
 }
@@ -2795,6 +3975,43 @@ body:has(> .lost) {
     transition-delay: 0s !important;
     animation: none !important;
   }
+
+  /*
+   * Nothing in the tour moves, so each change shows in what is marked: the
+   * number and name change, the chip on show is ringed, amber while a session
+   * waits, the meter and the chip's bar fill a part at a time, and a still
+   * label on the screen names the scene.
+   */
+  .tour-chapters li {
+    translate: none;
+  }
+  .tour-thumb,
+  .tour-chapters li:has(> [aria-current]) {
+    --ring-width: 2px;
+  }
+  .tour-thumb {
+    box-shadow:
+      inset 0 0 0 2px var(--thumb-edge),
+      inset 0 1px 0 var(--control-top);
+  }
+  :root:not(.lamp-out) .tour-thumb,
+  :root:not(.lamp-out) .tour-chapters li:has(> [aria-current]) {
+    --thumb-edge: var(--status-needs-you-edge);
+  }
+  .tour-stamp {
+    top: auto;
+    bottom: calc(var(--bezel) + 18px);
+    left: calc(var(--bezel) + 12px);
+    gap: 6px;
+    padding: 4px 12px 4px 4px;
+    font-size: 13px;
+    opacity: 1;
+    translate: none;
+  }
+  .tour-stamp .tour-icon {
+    width: 20px;
+    height: 20px;
+  }
 }
 
 /*
@@ -2824,15 +4041,39 @@ body:has(> .lost) {
     border: 0;
     outline: 1px solid ButtonBorder;
   }
-  /* The step the tour is on, and how far it has come, in the system's own colours. */
-  .tour-steps button[aria-current="step"] {
+  /* The scene the tour is on, and how far it has come, in the system's own colours. */
+  .tour-chapters li:has(> [aria-current]),
+  .tour-chapters li:has(> [aria-current]) .tour-icon,
+  :root:not(.lamp-out) .tour-chapters li:has(> [aria-current]) .tour-icon {
     color: Highlight;
   }
-  .tour-track {
+  .tour-thumb,
+  .tour-chapters li:has(> [aria-current]) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .tour-prev,
+  .tour-next {
+    border: 1px solid ButtonBorder;
+  }
+  .tour-meter i {
     background-color: GrayText;
   }
-  .tour-fill {
+  .tour-meter i::after,
+  :root:not(.lamp-out) .tour-meter i::after,
+  .tour-chapters ol button::before {
     background-color: Highlight;
+  }
+  /* The effects are light and colour, which the system would flatten, so they are left out. */
+  .tour-sparks,
+  .tour-sweep,
+  .tour-flash,
+  .tour-stamp {
+    display: none;
+  }
+  .tour-spot {
+    box-shadow: none;
+    outline: 2px solid Highlight;
   }
   .tour-badge {
     border: 1px solid CanvasText;
