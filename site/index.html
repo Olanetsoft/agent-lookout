@@ -6,7 +6,7 @@
     <title>Agent Lookout: your agent sessions on one page</title>
     <meta
       name="description"
-      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#090908" media="(prefers-color-scheme: dark)" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Agent Lookout" />
     <meta
       property="og:description"
-      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta property="og:url" content="https://agent-lookout.vercel.app/" />
     <meta property="og:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Agent Lookout" />
     <meta
       name="twitter:description"
-      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="twitter:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
     <meta
@@ -131,9 +131,9 @@
 
         <div class="pitch">
           <h1>
-            <span>Agent Lookout</span> puts every Claude Code and Codex session on your computer on
-            one page, and shows which Claude Code sessions are waiting for you and what each one is
-            asking.
+            <span>Agent Lookout</span> puts every Claude Code, Codex and Antigravity CLI session on
+            your computer on one page, and shows which Claude Code sessions are waiting for you and
+            what each one is asking.
           </h1>
           <div class="actions">
             <a class="btn btn-solid" href="https://github.com/Olanetsoft/agent-lookout"
@@ -289,7 +289,7 @@
                     type="button"
                     tabindex="-1"
                     data-parts="2"
-                    data-line="Time and permission rules, notifications, email, the webhook and pull requests stay off until you set them up."
+                    data-line="Time and permission rules, notifications, email, the webhook, phone pushes and pull requests stay off until you set them up."
                   >
                     Settings
                   </button>
@@ -481,11 +481,11 @@
         <article class="fact fact-finds glass-card">
           <h3>It finds the sessions already running</h3>
           <p>
-            It reads the list of sessions Claude Code keeps and the session files Codex saves. A
-            session in a terminal, in VS Code or in a desktop app appears with no setup, and any
-            other agent can show its sessions by writing a small status file. Another machine’s
-            sessions can be read over SSH too, from the Agent Lookout running there. Agent Lookout
-            starts nothing.
+            It reads the list of sessions Claude Code keeps, the session files Codex saves and the
+            transcripts the Antigravity CLI keeps. A session in a terminal, in VS Code or in a
+            desktop app appears with no setup, and any other agent can show its sessions by writing
+            a small status file. Another machine’s sessions can be read over SSH too, from the Agent
+            Lookout running there. Agent Lookout starts nothing.
           </p>
 
           <div class="found">
@@ -571,7 +571,10 @@
             plugin installed in Claude Code, a permission prompt shows its whole command, with Deny
             and Allow. The browser tab counts the sessions that are waiting, as in
             <code>(1) Agent Lookout</code>, and so do the Mac app’s menu bar and Dock icon. Once you
-            turn notifications on, your browser or your Mac tells you when one starts waiting.
+            turn notifications on, your browser or your Mac tells you when one starts waiting, and
+            in the Mac app the notification and the menu bar have Deny, and Allow when the whole
+            command shows. An Antigravity CLI session moves to the top while agy asks you to approve
+            a command.
           </p>
 
           <div class="lamp-pair">
@@ -606,7 +609,7 @@
 
           <p class="limit">
             Codex does not record that it is waiting, so a Codex session shows as working, idle or
-            finished.
+            finished, and so does an Antigravity CLI session that asks you a question.
           </p>
         </article>
 
@@ -616,8 +619,8 @@
             <p>
               The one exception is the Mac app, which asks GitHub about once a day whether a newer
               version is out, sends nothing about your sessions, and stops asking when you turn that
-              off in its Settings. Email and a Slack-compatible webhook are off until you set them
-              up, and then send only what
+              off in its Settings. Email, a Slack-compatible webhook and phone pushes through ntfy
+              or Pushover are off until you set them up, and then send only what
               <a
                 class="link"
                 href="https://github.com/Olanetsoft/agent-lookout/blob/main/PRIVACY.md"
@@ -694,7 +697,9 @@
               <span class="n" aria-hidden="true">2</span>
               <div>
                 <h3>Start it with one command</h3>
-                <p>You need Node.js 22.12 or newer, and Claude Code, Codex or both.</p>
+                <p>
+                  You need Node.js 22.12 or newer, and Claude Code, Codex or the Antigravity CLI.
+                </p>
                 <pre><code><span>npx agent-lookout</span></code></pre>
                 <p>
                   The first time, npm asks <code>Ok to proceed? (y)</code>: press Enter, and it
@@ -793,8 +798,8 @@
             <div>
               <dt>Finds</dt>
               <dd>
-                Claude Code and Codex sessions already running, in a terminal, in VS Code or in a
-                desktop app, and the sessions of any agent that writes a
+                Claude Code, Codex and Antigravity CLI sessions already running, in a terminal, in
+                VS Code or in a desktop app, and the sessions of any agent that writes a
                 <a
                   class="link"
                   href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#your-own-agents"
@@ -824,6 +829,15 @@
                 Shows a session as working, idle or finished. Codex does not record that it is
                 waiting, so Agent Lookout cannot show it. It has been checked with the Codex desktop
                 app, and not yet with the Codex CLI or its IDE extension.
+              </dd>
+            </div>
+            <div>
+              <dt>Antigravity CLI</dt>
+              <dd>
+                Shows a session as working, idle, failed or finished, named by the title agy gives
+                it, and as waiting for you while agy asks you to approve a command. A question it
+                asks you shows as working. Built from agy 1.3.1 and checked against one
+                conversation.
               </dd>
             </div>
             <div>
@@ -862,11 +876,12 @@
               </dd>
             </div>
             <div>
-              <dt>Email and webhook</dt>
+              <dt>Email, webhook and phone</dt>
               <dd>
-                Off until you set them up. Then an email, or a post to a Slack-compatible webhook,
-                when a session has waited a minute, and, if you choose, when one finishes, fails or
-                ends. What the session is asking goes in only if you turn that on too.
+                Off until you set them up. Then an email, a post to a Slack-compatible webhook, or a
+                push to your phone through ntfy or Pushover, when a session has waited a minute,
+                and, if you choose, when one finishes, fails or ends. What the session is asking
+                goes in only if you turn that on too.
               </dd>
             </div>
             <div>
@@ -874,8 +889,8 @@
               <dd>
                 Opens a Claude Code session that runs in VS Code, selects its pane when it runs
                 inside tmux, and brings its tab forward in Terminal or iTerm2 (macOS asks once
-                whether that is allowed). Codex sessions, sessions in Claude Code’s desktop app and
-                sessions in other terminals outside tmux have no Jump button.
+                whether that is allowed). Codex and Antigravity CLI sessions, sessions in Claude
+                Code’s desktop app and sessions in other terminals outside tmux have no Jump button.
               </dd>
             </div>
             <div>
@@ -914,11 +929,12 @@
                   >Agent Lookout plugin</a
                 >
                 installed in Claude Code, a session waiting for permission shows Allow and Deny on
-                the dashboard. The whole command is shown first, every line, and an edit, a plan, a
-                question, or a request that cannot be shown whole can only be denied there. The
-                prompt in the session still works, and whichever you answer first wins. Agent
-                Lookout answers only when you press one or a permission rule you set matches,
-                rewrites no command and saves no rule in Claude Code.
+                the dashboard, and in the Mac app on its notification and in its menu bar. The whole
+                command is shown first, every line, and an edit, a plan, a question, or a request
+                that cannot be shown whole can only be denied there. The prompt in the session still
+                works, and whichever you answer first wins. Agent Lookout answers only when you
+                press one or a permission rule you set matches, rewrites no command and saves no
+                rule in Claude Code.
               </dd>
             </div>
             <div>
