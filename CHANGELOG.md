@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+## 0.2.8 - 2026-10-07
+
+Allow or Deny a Claude Code prompt from the Mac app's notification and menu bar, pushes to your phone through ntfy or Pushover, and Antigravity CLI sessions, which need you while agy asks you to approve a tool.
+
 ### Added
 
 - Allow or Deny a Claude Code permission prompt from the Mac app's own notification and from its menu bar, with the plugin. While Agent Lookout holds a session's request, the notification of its wait, or of a reminder of it, has Deny, and Allow too when the whole request fits in it as written: one shell command with no other input, on one line of at most 40 characters, which is then the notification's whole text. In the menu bar, the session opens a submenu with Open Details, every line of what it asks, any other input after a separator, Deny and, when each line is drawn as written, Allow. Anything else, an edit, a plan or a question among them, offers Deny alone with a line saying why. A press goes through the same checks as a press on the dashboard, is kept in the Events log as an answer from Agent Lookout, and is never taken in the first second the request is shown, or while the Mac is locked; one that sent nothing says why and what to do, in a notification or in the menu. With the window open the page shows its own notifications, which have no buttons, and nothing changes in a browser or with `npx agent-lookout`. [In the Mac app](docs/GUIDE.md#in-the-mac-app) has the details, and [PRIVACY.md](PRIVACY.md#in-the-mac-app) says what a notification and the menu now show, and how to keep them off the lock screen.
