@@ -20,6 +20,7 @@ Set rules that answer Claude Code's permission prompts for you, run Agent Lookou
 
 ### Changed
 
+- About sources, in Sources, now names every way Agent Lookout can send something off this computer: email, the webhook, pull requests through your own `gh`, other machines through your own `ssh`, and the Mac app's daily check for a newer version.
 - After you press Allow or Deny, the session leaves Needs you at once, and with it the lamp, the Needs you count, the tab's title and the Mac app's Dock badge and menu bar. For the second or two before Claude Code says what it does next, it is listed with the working sessions as Answered, `agent-lookout status` and `agent-lookout mcp` count it as working, and `GET /api/sessions` marks it `answered: true`. A computer that reads this one over SSH takes the wait as answered too.
 
 ### Fixed

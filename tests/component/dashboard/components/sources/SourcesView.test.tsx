@@ -169,14 +169,22 @@ test("what each agent can report sits under the source cards, from what each sou
   await expect.element(table).toBeVisible();
 });
 
-test("the view says that Agent Lookout sends nothing unless email or a webhook is set up, and that a listed command is the tool's own", async () => {
+test("the view says that Agent Lookout sends nothing by default, names each way it can, and that a listed command is the tool's own", async () => {
   const screen = await render(<SourcesView state={state()} now={NOW} />);
   const about = screen.getByRole("region", { name: "About sources" });
 
   await expect
     .element(about)
+    .toHaveTextContent("By default Agent Lookout itself sends nothing anywhere.");
+  await expect
+    .element(about)
     .toHaveTextContent(
-      "Unless you set up email or a webhook, Agent Lookout itself sends nothing anywhere.",
+      "Email, a webhook, pull requests through your own gh and other machines through your own ssh are off until you set them up.",
+    );
+  await expect
+    .element(about)
+    .toHaveTextContent(
+      "The Mac app asks GitHub about once a day whether a newer version is out, unless you turn that off in its Settings.",
     );
   await expect.element(about).toHaveTextContent("that tool's own program");
   await expect.element(about).toHaveTextContent("It reads its files and never writes to them.");
