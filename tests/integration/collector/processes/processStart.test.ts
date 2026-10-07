@@ -12,6 +12,7 @@ function unusedPid(): number {
   throw new Error("Every pid below 99998 is in use.");
 }
 
+// Windows has no ps.
 describe.skipIf(process.platform === "win32")("readProcessStartsWithPs, against real ps", () => {
   test("reports this process, skips one that does not exist, and says the same thing twice", async () => {
     const first = await readProcessStartsWithPs([process.pid, unusedPid()]);

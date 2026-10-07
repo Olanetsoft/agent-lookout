@@ -198,6 +198,7 @@ describe("real repositories made of plain files", () => {
     expect(await checkedOut(at("checkout-link"), home)).toEqual({ branch: "checkout-flow" });
   });
 
+  // Windows keeps no named pipes among files.
   test.skipIf(process.platform === "win32")(
     "a HEAD that is a named pipe is passed over without the read waiting on it",
     async () => {
