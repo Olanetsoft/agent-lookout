@@ -51,6 +51,21 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
     });
   });
 
+  test("gives claude none of Agent Lookout's own settings, such as the mail server's password", async () => {
+    const stub = await writeStub(
+      `printf '[{"sessionId":"%s|%s"}]' "\${AGENT_LOOKOUT_SMTP_URL-none}" "\${AGENT_LOOKOUT_NTFY_TOKEN-none}"`,
+    );
+    const secrets = {
+      ...env,
+      AGENT_LOOKOUT_SMTP_URL: "smtps://demo:secret@mail.example.com",
+      AGENT_LOOKOUT_NTFY_TOKEN: "tk_demo",
+    };
+    expect(await createFeedReader(runProgram).read(stub, { env: secrets })).toEqual({
+      ok: true,
+      entries: [{ sessionId: "none|none" }],
+    });
+  });
+
   test("passes the arguments and the environment through, with no shell in between", async () => {
     const stub = await writeStub(
       `printf '[{"sessionId":"%s|%s|%s|%s|%s|%s|%s"}]' "$#" "$1" "$2" "$3" "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" "$DISABLE_AUTOUPDATER" "\${HTTPS_PROXY-unset}"`,

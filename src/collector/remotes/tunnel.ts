@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type AddressInfo } from "node:net";
 
 import { clean, oneLine } from "../../core/text.ts";
+import { childEnvironment } from "../processes/childEnvironment.ts";
 import type { Remote } from "./remoteSettings.ts";
 import { findSsh, sshArguments, type SshSearch } from "./sshProgram.ts";
 
@@ -120,7 +121,11 @@ export function freeLoopbackPort(): Promise<number> {
  * read, and its error output is, for the reason it ends.
  */
 export const spawnSsh: SpawnSsh = (binary, args, env) =>
-  spawn(binary, [...args], { env, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+  spawn(binary, [...args], {
+    env: childEnvironment(env),
+    stdio: ["ignore", "ignore", "pipe"],
+    windowsHide: true,
+  });
 
 /**
  * Every ssh this process has started and not seen end. When the process exits

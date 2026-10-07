@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
+import { childEnvironment } from "../../processes/childEnvironment.ts";
 import { validPid } from "../../processes/pids.ts";
 import { jsonValuesIn } from "./jsonValues.ts";
 
@@ -138,7 +139,7 @@ export const runProgram: RunCommand = (file, args, options) =>
 
     try {
       child = spawn(file, [...args], {
-        env: options.env,
+        env: childEnvironment(options.env),
         shell: false,
         // stdin is the null device, so a program that reads it gets end-of-file.
         // stderr is not wanted and goes the same way.

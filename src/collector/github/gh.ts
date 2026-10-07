@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 
 import type { PullRequest } from "../../core/sessions/session.ts";
 import { isExecutableFile, pathCandidates } from "../files/paths.ts";
+import { childEnvironment } from "../processes/childEnvironment.ts";
 import type { PullRequestTarget } from "../git/pullRequestTarget.ts";
 import { readGhAnswer } from "./ghAnswer.ts";
 
@@ -81,9 +82,6 @@ export function ghArguments(target: PullRequestTarget): string[] {
 /** Settings of gh's own that would make it ask, print colours or debug output, or check for a newer gh. */
 const LEFT_OUT = ["GH_FORCE_TTY", "GH_DEBUG", "DEBUG", "GH_PAGER", "PAGER"];
 
-/** Agent Lookout's own settings, which gh has no use for, the mail server's password among them. */
-const OWN_SETTING = /^AGENT_LOOKOUT_/;
-
 /**
  * The environment gh is given: the collector's, so gh finds its own login,
  * without Agent Lookout's own settings, and with gh's prompts, update checks,
@@ -91,8 +89,8 @@ const OWN_SETTING = /^AGENT_LOOKOUT_/;
  */
 export function ghEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const given: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(env)) {
-    if (!OWN_SETTING.test(name) && !LEFT_OUT.includes(name)) given[name] = value;
+  for (const [name, value] of Object.entries(childEnvironment(env))) {
+    if (!LEFT_OUT.includes(name)) given[name] = value;
   }
   return {
     ...given,

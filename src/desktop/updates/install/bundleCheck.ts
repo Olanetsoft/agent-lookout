@@ -19,6 +19,8 @@ import { execFile } from "node:child_process";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { childEnvironment } from "../../../collector/processes/childEnvironment.ts";
+
 /** The two facts of a bundle the updater checks. */
 export interface BundleFacts {
   identifier: string;
@@ -47,7 +49,12 @@ export const runProgram: RunProgram = (file, args) =>
       execFile(
         file,
         [...args],
-        { timeout: PROGRAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8" },
+        {
+          env: childEnvironment(process.env),
+          timeout: PROGRAM_TIMEOUT_MS,
+          maxBuffer: MAX_OUTPUT_BYTES,
+          encoding: "utf8",
+        },
         (error, stdout) => resolve(error ? { ok: false } : { ok: true, stdout: String(stdout) }),
       ).stdin?.end();
     } catch {

@@ -7,6 +7,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+import { childEnvironment } from "../../collector/processes/childEnvironment.ts";
 import { loopbackAddress } from "../localServer.ts";
 
 /** A program and its arguments, run directly. */
@@ -75,7 +76,12 @@ export function runProgram(
       resolve(opened);
     };
     try {
-      const child = spawn(file, [...args], { stdio: "ignore", detached: true, windowsHide: true });
+      const child = spawn(file, [...args], {
+        env: childEnvironment(process.env),
+        stdio: "ignore",
+        detached: true,
+        windowsHide: true,
+      });
       child.once("error", () => settle(false));
       child.once("exit", (code) => settle(code === 0));
       // Agent Lookout may stop while the opener still runs.

@@ -93,6 +93,7 @@ Session names and folder paths can be sensitive. The main risk is that something
 - A push that holds more than PRIVACY.md lists, that goes to any address but the ntfy server named or `https://api.pushover.net/1/messages.json`, including by following a redirect, or that is sent over plain HTTP to an ntfy server that is not on this machine, or to a server whose certificate was not checked.
 - What a waiting session is asking reaching a push while that channel's ASKING setting is not `on`, a push's title, or the push for anything but a wait and its reminders.
 - A session's name, folder or anything else from a session that changes the structure of a push, adds a field or a header to it, or changes where it goes.
+- Any `AGENT_LOOKOUT_` setting, such as the mail server's password, the webhook's address or a push token, reaching the environment of a program Agent Lookout starts.
 - A test push that holds anything of a session, that goes while the hourly limit is full, or that a website, or a page served from anywhere but this machine, can make the app send.
 - Any write to `~/.claude` or to another tool's files, and any read of the `.key` files in `~/.claude/sessions/`.
 - Any write under the Codex folder (`~/.codex`, or the folder `CODEX_HOME` or `AGENT_LOOKOUT_CODEX_HOME` names), any open of a file in its `thread-writer-locks/`, and any read of a Codex file that PRIVACY.md does not list.

@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 
 import { TERMINAL_JUMP_TIMEOUT_MS } from "../../core/api.ts";
 
+import { childEnvironment } from "./childEnvironment.ts";
+
 /**
  * The one way the collector runs `osascript`: to show a notification itself,
  * and to bring a Terminal or iTerm2 tab forward.
@@ -44,6 +46,7 @@ export function runOsascript(
         OSASCRIPT,
         [...args],
         {
+          env: childEnvironment(process.env),
           timeout: options.timeoutMs ?? TERMINAL_JUMP_TIMEOUT_MS,
           maxBuffer: MAX_OUTPUT_BYTES,
           encoding: "utf8",

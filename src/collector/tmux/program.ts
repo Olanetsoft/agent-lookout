@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 
 import { isExecutableFile, pathCandidates } from "../files/paths.ts";
+import { childEnvironment } from "../processes/childEnvironment.ts";
 
 /** The variable that, set to `off`, stops tmux being run at all. */
 export const TMUX_ENV = "AGENT_LOOKOUT_TMUX";
@@ -67,7 +68,7 @@ export function runTmuxBinary(
         binary,
         [...args],
         {
-          env: options.env,
+          env: childEnvironment(options.env),
           timeout: options.timeoutMs ?? TMUX_TIMEOUT_MS,
           maxBuffer: MAX_OUTPUT_BYTES,
           encoding: "utf8",

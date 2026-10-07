@@ -70,17 +70,28 @@ describe("runTmuxBinary", () => {
 });
 
 describe("createTmuxRunner", () => {
-  posixTest("runs the tmux on PATH, with the collector's environment", async () => {
-    const dir = await stubTmux('echo "$1 from $AGENT_LOOKOUT_TEST_MARK"');
-    // Found on PATH, which comes before the fixed locations.
-    expect(await findTmuxBinary({ PATH: dir })).toBe(path.join(dir, "tmux"));
+  posixTest(
+    "runs the tmux on PATH, with the collector's environment but none of Agent Lookout's own settings",
+    async () => {
+      const dir = await stubTmux(
+        'echo "$1 from $TEST_MARK, ${AGENT_LOOKOUT_SMTP_URL-no password}"',
+      );
+      // Found on PATH, which comes before the fixed locations.
+      expect(await findTmuxBinary({ PATH: dir })).toBe(path.join(dir, "tmux"));
 
-    const run = createTmuxRunner({ env: { PATH: dir, AGENT_LOOKOUT_TEST_MARK: "the collector" } });
-    expect(await run(["list-panes"])).toEqual({
-      ok: true,
-      stdout: "list-panes from the collector\n",
-    });
-  });
+      const run = createTmuxRunner({
+        env: {
+          PATH: dir,
+          TEST_MARK: "the collector",
+          AGENT_LOOKOUT_SMTP_URL: "smtps://demo:secret@mail.example.com",
+        },
+      });
+      expect(await run(["list-panes"])).toEqual({
+        ok: true,
+        stdout: "list-panes from the collector, no password\n",
+      });
+    },
+  );
 
   test("with AGENT_LOOKOUT_TMUX off, a tmux that is there is not started", async () => {
     const mark = path.join(await tempDir(), "ran");

@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Changed
+
+- No program Agent Lookout starts is given its own settings any more. `claude`, `tmux`, `ssh`, `osascript`, the program that opens your browser and the Mac app's check of a downloaded update were handed every `AGENT_LOOKOUT_` setting in their environment, the mail server's password, the webhook's address and the push tokens among them, as only `gh` was not. None of them used them.
+
 ## 0.2.8 - 2026-10-07
 
 Allow or Deny a Claude Code prompt from the Mac app's notification and menu bar, pushes to your phone through ntfy or Pushover, and Antigravity CLI sessions, which need you while agy asks you to approve a tool.
