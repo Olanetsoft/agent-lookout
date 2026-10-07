@@ -46,7 +46,7 @@ It prints `{"ok":true,"version":"…"}`. If the port is in use, add `--port 4778
 
 ### Mac app
 
-Download `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon, or `Agent-Lookout-<version>-mac-x64.dmg` for Intel, from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest), open it and drag Agent Lookout to Applications. It needs no Node.js. It is not signed with an Apple Developer ID yet, so the first time you open it, go to System Settings › Privacy & Security and press Open Anyway.
+Download `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon, or `Agent-Lookout-<version>-mac-x64.dmg` for Intel, from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest), open it and drag Agent Lookout to Applications. It needs macOS 13 Ventura or later, and no Node.js. It is not signed with an Apple Developer ID yet, so the first time you open it, go to System Settings › Privacy & Security and press Open Anyway.
 
 Its icon in the menu bar shows how many sessions need you. It checks for a newer version about once a day and installs it when you press Install and Restart. [Mac app](docs/INSTALL.md#mac-app) has the steps.
 

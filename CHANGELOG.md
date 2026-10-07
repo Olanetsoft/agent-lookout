@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Changed
+
+- The README and [docs/INSTALL.md](docs/INSTALL.md) say which macOS the Mac app needs: macOS 13 Ventura or later, the oldest its Electron runs on. The app names it too, so an older macOS does not open it. On macOS 11 or 12, `npx agent-lookout` still runs.
+
 ## 0.2.7 - 2026-10-07
 
 Remind again every few minutes while a session keeps waiting, and read a README rewritten for people and coding agents.

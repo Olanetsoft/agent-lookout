@@ -50,6 +50,10 @@ const config: Configuration = {
     category: "public.app-category.developer-tools",
     icon: "build/icon.png",
     darkModeSupport: true,
+    // LSMinimumSystemVersion: the oldest macOS that Electron 44 runs on,
+    // Ventura. Raise it when an Electron upgrade drops one, as its breaking
+    // changes say: https://www.electronjs.org/docs/latest/breaking-changes
+    minimumSystemVersion: "13.0",
     // "-" signs ad hoc. Without it, and with no certificate, nothing is signed.
     identity: "-",
     hardenedRuntime: false,
