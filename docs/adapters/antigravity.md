@@ -2,13 +2,13 @@
 
 These notes record what Agent Lookout reads from the Antigravity CLI, `agy`, where each value comes from, and what breaks when agy changes. Start here when the adapter stops working.
 
-Written on 2026-10-07 from agy 1.3.1: its `agy --version` and `agy --help`, the text and protocol buffer descriptors inside its program, the documentation it bundles under `builtin/skills/` in its folder, its changelog ([google-antigravity/antigravity-cli](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md), also inside the program up to 1.3.0), and Google's documentation of [hooks](https://antigravity.google/docs/hooks/) and of the [status line](https://antigravity.google/docs/cli/statusline). No conversation was run on the machine where the adapter was written, so the files below are as agy documents them and its program describes them, and the tests use hand-written files laid out the same way. One conversation was run there afterwards and looked at only by the names, sizes and modified times of its files and by which files its agy program had open (`lsof`), with no file opened; what that showed is marked as seen below. **The adapter has not been checked against a running conversation.** [Not yet checked](#not-yet-checked) lists what that check has to show, and how to make it.
+Written on 2026-10-07 from agy 1.3.1: its `agy --version` and `agy --help`, the text and protocol buffer descriptors inside its program, the documentation it bundles under `builtin/skills/` in its folder, its changelog ([google-antigravity/antigravity-cli](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md), also inside the program up to 1.3.0), and Google's documentation of [hooks](https://antigravity.google/docs/hooks/) and of the [status line](https://antigravity.google/docs/cli/statusline). No conversation was run on the machine where the adapter was written, so the files below are as agy documents them and its program describes them, and the tests use hand-written files laid out the same way. On 2026-10-07 one conversation was run there with agy 1.3.1, asked to run a command, and looked at while it waited for approval: by the names, sizes and modified times of its files, by which files its agy program had open (`lsof`), by the fields of each transcript step other than its content, and by the lines of the program's log that say what it does with conversations and approvals. What that showed is marked as seen below. [Not yet checked](#not-yet-checked) lists what is still to be shown, and how to check it.
 
-The code is in `src/collector/adapters/antigravity/`. The status mapping is in `src/core/mapping/antigravityMapping.ts`, and which conversations are open in `src/core/mapping/antigravityLiveness.ts`.
+The code is in `src/collector/adapters/antigravity/`. The status mapping is in `src/core/mapping/antigravityMapping.ts`, which conversations are open in `src/core/mapping/antigravityLiveness.ts`, and what a program's log says in `src/core/mapping/antigravityLog.ts`.
 
 ## How it reads agy, and why
 
-The adapter needs nothing installed and changes nothing: no hooks, no settings, no agy program run, no network. It lists two folders, looks up when files were changed, reads the end of each recent transcript, and asks `ps` which agy programs run.
+The adapter needs nothing installed and changes nothing: no hooks, no settings, no agy program run, no network. It lists two folders, looks up when files were changed, reads the end of each recent transcript and each conversation's title, asks `ps` which agy programs run, and reads the log of each.
 
 agy documents several things another program could use, and none of them can be used that way:
 
@@ -29,10 +29,13 @@ agy documents several things another program could use, and none of them can be 
 | `conversations/`                                     | Listed                                                                                                                     | Every poll                                                                                                                                            |
 | `brain/<id>/.system_generated/logs/transcript.jsonl` | `lstat`, then opened read-only: the first line within 256 KiB, the first 4 KiB, the last 2 MiB, then only what is appended | `lstat` every poll for a conversation changed in the last day or that may be open, else every 30 seconds; read when its size or modified time changes |
 | `conversations/<id>.db` and `<id>.db-wal`            | `lstat` only, for the modified time, for Quiet for. Never opened                                                           | As the transcript's `lstat`                                                                                                                           |
+| `annotations/<id>.pbtxt`                             | `lstat`, then opened read-only when it is an ordinary file of at most 4 KiB, for its `title`                               | `lstat` every poll for each conversation shown; read when it changes                                                                                  |
+| `log/`                                               | Listed                                                                                                                     | While `ps` shows an agy program, on each poll until every such program's log is found                                                                 |
+| `log/cli-YYYYMMDD_HHMMSS.log`                        | `lstat`, then opened read-only: at most the last 4 MiB, then only what is appended                                         | Every poll, for the log of each agy program `ps` shows; read when its size or modified time changes                                                   |
 
 A transcript is opened with `O_NOFOLLOW` and `O_NONBLOCK` and read only if the open file is an ordinary file, so a link, a pipe or a device named like a transcript is never read and cannot stall a poll.
 
-It never reads `~/.gemini/oauth_creds.json`, `google_accounts.json`, `settings.json`, `config/hooks.json`, `history/` or any `history.jsonl`, nor, in the agy folder, `conversation_summaries.db`, any `.db`, `.db-wal` or `.db-shm` file, `transcript_full.jsonl`, `cli.log`, `log/`, `jetski_state.pbtxt`, `jetbox_summaries_proto.pb`, `installation_id`, `updater/`, `presence/`, `annotations/`, `implicit/`, `crashes/` or anything else in a conversation's folder.
+It never reads `~/.gemini/oauth_creds.json`, `google_accounts.json`, `settings.json`, `config/hooks.json`, `history/` or any `history.jsonl`, nor, in the agy folder, `conversation_summaries.db`, any `.db`, `.db-wal` or `.db-shm` file, `transcript_full.jsonl`, `cli.log`, the log of an agy program that is not running, `jetski_state.pbtxt`, `jetbox_summaries_proto.pb`, `installation_id`, `updater/`, `presence/`, any other file in `annotations/`, `implicit/`, `crashes/` or anything else in a conversation's folder.
 
 ### The agy folder
 
@@ -42,7 +45,7 @@ When the folder is missing, the Antigravity CLI is reported as not found, with n
 
 On a machine where agy 1.3.1 was installed and had run no conversation, the folder held empty `conversations/`, `brain/` and `crashes/` folders, `conversation_summaries.db`, `installation_id`, `last_check.timestamp`, `jetski_state.pbtxt`, `cli.log` (a link to `log/cli-YYYYMMDD_HHMMSS.log`, one log for each process), `updater/`, `cache/`, `bin/` and `builtin/`.
 
-Seen once a conversation had been run there, while its agy program was still running: `brain/<id>/` with `.system_generated/logs/transcript.jsonl`, `transcript_full.jsonl` and `chunks/` folders beside it; `conversations/<id>.db`, with no `-wal` or `-shm` file beside it, and last changed half a minute after the transcript; and new beside them, `presence/<id>.lock`, an empty file, `annotations/<id>.pbtxt`, `implicit/`, `history.jsonl` and `jetbox_summaries_proto.pb`. The program held `presence/<id>.lock` open, and neither the conversation's database nor its transcript.
+Seen once a conversation had been run there, while its agy program was still running: `brain/<id>/` with `.system_generated/logs/transcript.jsonl`, `transcript_full.jsonl` and `chunks/` folders beside it; `conversations/<id>.db`, with no `-wal` or `-shm` file beside it, and last changed half a minute after the transcript; and new beside them, `presence/<id>.lock`, an empty file, `annotations/<id>.pbtxt`, `implicit/`, `history.jsonl` and `jetbox_summaries_proto.pb`. The program held `presence/<id>.lock` open, with a lock of its own, and neither the conversation's database nor its transcript. Its standard output and error went to its log.
 
 ### Transcripts
 
@@ -69,6 +72,22 @@ The adapter parses each line it reads and keeps `type`, `status`, `step_index`, 
 - A last line with no newline is used only if it is already a whole step.
 - Before 1.2.4, a step that ended in `ERROR` could be left out of the file.
 
+### A program's log
+
+Each agy program writes a log of its own to `log/cli-YYYYMMDD_HHMMSS.log`, named for the local time it started; `cli.log` is a link to the newest. Seen: a program `ps` said started at 12:58:33 wrote `cli-20261007_125834.log`. Its lines are in the glog format, `I1007 13:00:19.223691     787 tool_confirmation_manager.go:226] message`: the level, the month and day, the local time, a thread, the source line and the message. Seen in that log, in this order:
+
+- `Creating CLI server backend: product=antigravity workspaceDirs=[<folder>] …`, once, at the start: the folder agy was started in.
+- `Created conversation <id>` and `Streaming conversation <id>`, when it began the conversation. `Streaming` also follows a switch of conversation, by agy's own words.
+- `Surfacing tool confirmation: "RunCommand" at step 2`, when it asked whether to run the command. The transcript then ended at step 1, the reply that asked for the tool, with status `DONE`. No step 2 was written while the prompt was on screen, and nothing was written with status `WAITING`.
+
+agy's program also holds `Responding to tool confirmation: convID=%s, stepIdx=%d, approved=%t`, the line it logs when the person answers. The rest of the log is requests to Google's servers, errors and what the program does, and is passed over.
+
+The adapter reads a log only when it can tie it to one running program: the program `ps` shows started in the 10 seconds before the log's name, and no other program could have written it, nor the program another log. A log is read from its start, at most its last 4 MiB, and then only what is added. Each line is matched against the lines above by its message alone, never the source line, which moves between versions, and is then dropped. What is kept is the folder, the conversations opened, the one open now, and an approval asked for and not yet answered: its conversation, step, tool and time (`antigravityLog.ts`).
+
+### Titles
+
+`annotations/<id>.pbtxt`, seen holding only `title:"List Directory Contents"` for the conversation it names, in protocol buffer text format. The title is read with its escapes undone, as UTF-8, and cleaned and cut as any session's name is. agy wrote it once the conversation had its first reply.
+
 ## Which conversations are listed
 
 A conversation is listed when its transcript is there and is an ordinary file, and its transcript was written in the last 24 hours or an agy program may have it open. Only the transcript's time counts: only the program running a conversation adds steps to it, while agy writes the database at other times too, as when a program exits (changelog 1.1.26), and it was seen written half a minute after the transcript. A conversation none of whose three files changed for a day is looked at again every 30 seconds, so one resumed after a day is found within that.
@@ -92,7 +111,7 @@ The status comes from the last step that says how the conversation stands. These
 | No step yet: an empty file, or only steps passed over                                | Idle                       | Finished        |
 | A type or status it does not know, `UNSPECIFIED`, or none read within the last 2 MiB | Unknown                    | Unknown         |
 
-A session is never shown as needing you. `WAITING`, agy's wait for approval, shows as working: nothing has shown that agy writes it to the transcript while the prompt is on screen.
+A session needs you, for permission, while its program's log says it asked for approval of a tool and was not answered, and the transcript holds no step yet at or after the step that waits. agy writes that step only once the prompt is answered, so a step there means the wait is over, however it ended. The detail is the tool's name as agy logs it, such as `RunCommand`, and the wait began when the log says agy asked. A conversation agy is known to have closed is finished, whatever its log last said, and a program that has ended is not read. `WAITING` in a transcript, which was not seen, still shows as working.
 
 A tool step that ends in `ERROR`, such as a command that fails or a file that is not there, shows as working: the agent reads the error and goes on, so a session is not shown as failed for a moment each time a tool fails. A turn that does end on such a step shows as working until agy is closed.
 
@@ -106,7 +125,7 @@ So the adapter runs `ps -A -o pid=,ppid=,lstart=,comm=` in UTC, at most every 10
 
 Then (`antigravityLiveness.ts`):
 
-- A program that names a conversation may have it open.
+- A program that names a conversation may have it open. One whose log has opened a conversation names that one, the last it opened, in place of what its command line named.
 - A program may have open any conversation whose transcript was written since it started: the one it began, one it moved to with `/new` or `/resume`, or, as far as the files can tell, one another agy program wrote to and has since closed.
 - A conversation whose transcript was written since `ps` was last asked may be open in a program started since, which `ps` has not shown yet, so it is not closed until `ps` is asked again.
 - A conversation no program could have open is closed, and shows as finished, or failed.
@@ -118,7 +137,7 @@ This errs towards open. With one agy program left open all day, every conversati
 
 ## Names, folders and apps
 
-A session is named by its conversation id, which `agy --conversation <id>` takes. The transcript holds no title and no folder outside the conversation's own text. Both are in `conversation_summaries.db`, `title` and `workspace_uris`, which is not read. So a session has no folder, no project and no branch. Its app is the terminal.
+A session is named by the title agy gave the conversation, from its annotation file; else by the name of its folder; else by its conversation id, which `agy --conversation <id>` takes. Its folder is the one its program's log names, which gives its project and its branch. A conversation whose program has ended, or whose log the adapter cannot tie to it, has no folder. Its app is the terminal.
 
 ## Quiet for
 
@@ -126,8 +145,10 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 
 ## Known gaps
 
-- A session waiting for approval, or for an answer to a question it asked, shows as working.
-- A session's name is its conversation id, and it has no folder or branch.
+- A session waiting for an answer to a question it asked shows as working: whether agy logs a question as it logs an approval is not yet checked.
+- A wait shows for up to 10 seconds after its program ends, until `ps` is asked again.
+- A session has no folder once its program has ended, or when two agy programs started in the same 10 seconds, and is named by its conversation id until agy gives it a title.
+- A log longer than 4 MiB is read only near its end, where the folder and the conversation opened may not be, so its session shows no wait.
 - A conversation one agy program wrote to and left, with `/new` or `/resume`, stays open until that program ends.
 - A conversation reopened with `/resume` in an agy program that has already written to another can show as finished until agy writes to it.
 - While an agy program runs that has written nothing since it started, no conversation is shown as finished.
@@ -136,7 +157,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - `ps` is asked only while some conversation was written in the last day, so a conversation agy has kept open, unwritten, for more than a day is listed only while another one is recent.
 - A tool that fails shows as working. Only an error agy reports as its own step, or a failed reply, shows as failed.
 - The Antigravity desktop app, which runs many conversations in one process, and the Antigravity IDE are not read. The hooks documentation puts their transcripts at the same place under their own folders, so the transcript reader would serve them, but the process check would not.
-- No Jump, no Stop and no Answer.
+- No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
 
 ## Not yet checked
 
@@ -145,7 +166,7 @@ Each of these needs a real conversation, and each says what changes if it turns 
 1. Whether `brain/<id>/` and `conversations/<id>.db` appear on 1.3.1, and when: at start, at the first prompt or at the first step. If late, a new agy program holds every conversation open until it writes.
 2. Whether `type` and `status` are written without the prefix and in capitals. The adapter reads either, so only a different field name would break it.
 3. Whether the transcript is written while a step runs, or only when it ends. If only at the end, a long step shows the step before it, and `RUNNING` is never seen.
-4. What an approval wait, an open `ask_question`, Esc and `/exit` each write. If a `WAITING` step, or an `ASK_QUESTION` step that is not `DONE`, is at the end of the transcript while the prompt is on screen, Needs you can be shown from that alone.
+4. What an open `ask_question`, Esc at an approval prompt and `/exit` each write, to the transcript and to the log. Seen for an approval wait: no step is written while the prompt is on screen, and the log says `Surfacing tool confirmation`. Not yet seen: the `Responding to tool confirmation` line and the step written once the prompt is answered.
 5. What `status` in `conversation_summaries` holds, and whether `not_fully_idle` and `killed` change. These could give titles, folders and finished, read-only.
 6. Whether one program keeps one conversation after `/new` or `/resume`. A running agy was seen holding open `presence/<id>.lock` for its conversation, and not the conversation's `.db`. If agy makes that file when a conversation opens, moves it with `/new` and `/resume`, and lets it go at `/exit`, conversations could be matched to programs exactly, which would settle the `/resume` gap, the `remote-control` service and an agy left open all day. Whether a crash leaves it behind decides whether it can be trusted alone.
 7. How often an idle conversation does not end with a `PLANNER_RESPONSE` with no tool call. Issue #69 cites 18 of 103 conversations from older versions that did not.
@@ -160,6 +181,7 @@ ls -laR ~/.gemini/antigravity-cli/conversations ~/.gemini/antigravity-cli/brain 
 ps -axo pid,ppid,lstart,args | grep '[a]gy'
 lsof -p <pid> | grep -E 'conversations|brain|presence'
 tail -n 4 <transcript.jsonl> | jq -c '{step_index,type,status,source,created_at,tc:(.tool_calls|length)}'
+grep -E 'conversation [0-9a-f-]{36}$|tool confirmation|workspaceDirs' ~/.gemini/antigravity-cli/log/<the program's log>
 sqlite3 'file:<agy folder>/conversations/<id>.db?mode=ro' 'select idx,step_type,status from steps order by idx desc limit 5'
 sqlite3 'file:<agy folder>/conversation_summaries.db?mode=ro' 'select conversation_id,status,step_count,not_fully_idle,killed,last_modified_time from conversation_summaries'
 ```
@@ -189,5 +211,7 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 | A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                | `agyProcesses.ts`                        |
 | `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                      | `agyProcesses.ts`                        |
 | `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                   | `index.ts`                               |
+| The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `agyLogs.ts`        |
+| The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `annotations.ts`                         |
 
 To check a new agy version, read its changelog for the transcript, compaction, `/resume` and the process, run `agy --help` for its commands, and make the check above.

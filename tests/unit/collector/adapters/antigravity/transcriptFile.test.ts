@@ -105,6 +105,7 @@ describe("a transcript", () => {
       },
       since: START + 4 * SECOND,
       lastAt: START + 4 * SECOND,
+      lastIndex: 3,
     });
   });
 

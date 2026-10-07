@@ -97,7 +97,7 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Any write to `~/.claude` or to another tool's files, and any read of the `.key` files in `~/.claude/sessions/`.
 - Any write under the Codex folder (`~/.codex`, or the folder `CODEX_HOME` or `AGENT_LOOKOUT_CODEX_HOME` names), any open of a file in its `thread-writer-locks/`, and any read of a Codex file that PRIVACY.md does not list.
 - Text from a Codex session file, such as a prompt, a reply or a command's output, reaching the API or the dashboard.
-- Any write under `~/.gemini` or the folder `AGENT_LOOKOUT_ANTIGRAVITY_HOME` names, any open of an agy database or of a file in that folder that PRIVACY.md does not list, and text from an agy transcript or an agy program's command line, such as a prompt, a reply or a command's output, reaching the API or the dashboard.
+- Any write under `~/.gemini` or the folder `AGENT_LOOKOUT_ANTIGRAVITY_HOME` names, any open of an agy database or of a file in that folder that PRIVACY.md does not list, and text from an agy transcript, an agy program's command line or its log, such as a prompt, a reply, a command's output or an address agy contacts, reaching the API or the dashboard. Only a conversation's title, its folder and the name of a tool agy asks to run may.
 - A session name, path or other session field that runs as script or markup in the dashboard.
 - Anything from a status file that runs as script or markup in the dashboard, or in a notification, or that is used as a link, a Jump, a command or a path to open.
 - A file outside the folder of status files being read through it: by a symbolic link inside it, by a folder inside it, by a file's name or by a path written in a file, such as its `cwd`.

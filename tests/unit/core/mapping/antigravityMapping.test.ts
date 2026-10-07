@@ -168,7 +168,7 @@ describe("mapAntigravityStatus", () => {
     expect(live.map((value) => mapAntigravityStatus({ last, live: value }))).toEqual(expected);
   });
 
-  test("is never needs-you, for any step agy defines in any status", () => {
+  test("is never needs-you from the transcript alone, for any step agy defines in any status", () => {
     for (const type of [...ANTIGRAVITY_STEP_TYPES, "A_TYPE_FROM_LATER"]) {
       for (const status of [...ANTIGRAVITY_STEP_STATUSES, "A_STATUS_FROM_LATER"]) {
         for (const toolCalls of [true, false]) {
@@ -180,4 +180,20 @@ describe("mapAntigravityStatus", () => {
       }
     }
   });
+
+  test.each([
+    [done("PLANNER_RESPONSE", true), ["needs-you", "needs-you", "finished"]],
+    [done("PLANNER_RESPONSE"), ["needs-you", "needs-you", "finished"]],
+    [null, ["needs-you", "needs-you", "finished"]],
+    [done("ERROR_MESSAGE"), ["failed", "failed", "failed"]],
+    [done("A_TYPE_FROM_LATER"), ["unknown", "unknown", "unknown"]],
+    [undefined, ["unknown", "unknown", "unknown"]],
+  ] as const)(
+    "%o, while its program asks for approval: open, not known, closed",
+    (last, expected) => {
+      expect(
+        live.map((value) => mapAntigravityStatus({ last, live: value, asking: true })),
+      ).toEqual(expected);
+    },
+  );
 });

@@ -4,8 +4,14 @@ import path from "node:path";
 import {
   antigravityLiveness,
   holdConversations,
+  type AgySessionProcess,
   type Holding,
 } from "../../../core/mapping/antigravityLiveness.ts";
+import {
+  agyLogTimeAt,
+  waitsForApproval,
+  type AgyLogState,
+} from "../../../core/mapping/antigravityLog.ts";
 import type {
   Session,
   SourceCapabilities,
@@ -18,6 +24,7 @@ import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
+import { createAgyLogReader } from "./agyLogs.ts";
 import {
   AGY_TABLE_ARGS,
   createAgyProcessReader,
@@ -30,6 +37,7 @@ import {
   writtenRecently,
   type ConversationFiles,
 } from "./conversations.ts";
+import { createTitleReader } from "./annotations.ts";
 import { antigravitySession, SOURCE_ID } from "./toSession.ts";
 import { createTranscriptReader, type TranscriptState } from "./transcriptFile.ts";
 
@@ -74,11 +82,11 @@ const LABEL = "Antigravity CLI";
 
 /** Said whenever the Antigravity CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "The Antigravity CLI's transcripts are not known to record when it waits for your approval, so a session waiting for you shows as working.";
+  "A session needs you while agy asks you to approve a tool, which its own log records. A question it asks you is not known to be recorded, so it shows as working.";
 
-/** Said whenever the Antigravity CLI is watched, until the adapter has been checked against agy itself. */
+/** Said whenever the Antigravity CLI is watched, until the adapter has been checked against more of agy. */
 export const UNCHECKED_NOTE =
-  "This is built from what agy 1.3.1 documents and has not yet been checked against a running conversation, so a status can be wrong.";
+  "This was checked against one agy 1.3.1 conversation, and parts of it, such as /resume, are not yet checked, so a status can be wrong.";
 
 /** What the card always says, after how it reads. */
 const ALWAYS_NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
@@ -98,21 +106,23 @@ export const UNMATCHED_NOTE =
  * documents and its program holds.
  *
  * - Working and idle are the transcript's last step (`antigravityMapping.ts`).
- * - Needs you never: nothing read is known to record an approval wait.
+ * - Needs you is an approval its program's log says it waits for
+ *   (`antigravityLog.ts`). A question it asks shows as working.
  * - Finished is a conversation no agy program running could have open
  *   (`antigravityLiveness.ts`), which needs `ps`.
  * - Failed is an error agy records as a step of its own, or a reply that failed.
- * - No name: the title and the folder are in agy's database, which is not read.
- * - No Jump, Stop or Answer: nothing ties a conversation to one program or
- *   terminal, and no approval prompt is recorded.
+ * - The name is the title agy gives a conversation, and the folder the one its
+ *   program's log names.
+ * - No Jump, Stop or Answer: nothing ties a conversation to one terminal, and
+ *   agy takes its answers only in that terminal.
  * - Quiet for is the newest modified time of the conversation's files.
  */
 export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "Its transcripts are not known to record approval waits, so a session waiting for you shows as working.",
+      "While agy asks you to approve a tool, from its own log. A question it asks you shows as working.",
   },
   finished: {
     level: "partly",
@@ -125,9 +135,9 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
       "Only when agy records an error of its own or a failed reply. A tool that fails shows as working.",
   },
   names: {
-    level: "no",
+    level: "partly",
     reason:
-      "Titles and folders are kept in a database of agy's that Agent Lookout does not read, so sessions show their conversation ID.",
+      "The title agy gives a conversation once it has one, and the folder its program's log names. Until then, its conversation ID.",
   },
   jump: {
     level: "no",
@@ -142,8 +152,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason:
-      "Its approval prompts are not recorded where Agent Lookout reads, so there is nothing to answer from here.",
+    reason: "Its approval prompt takes an answer only in the terminal agy runs in.",
   },
 };
 
@@ -172,6 +181,31 @@ export interface AntigravityAdapterOptions {
 
 /** Where the folder was named. */
 type HomeFrom = "agent-lookout" | "default";
+
+/**
+ * The programs as `ps` gave them, each with the conversation its log says it
+ * has open now, which is surer than the one its command line named before
+ * any `/new` or `/resume`.
+ */
+export function withLoggedConversations(
+  programs: readonly AgySessionProcess[],
+  logStates: readonly (AgyLogState | null)[],
+): AgySessionProcess[] {
+  return programs.map((program, index) => {
+    const current = logStates[index]?.current ?? null;
+    return current === null ? program : { ...program, conversation: current };
+  });
+}
+
+/**
+ * The folder a conversation's program works in: from the log of the program
+ * that has it open now, else of one that opened it. Null when no log says.
+ */
+export function folderOf(id: string, logs: readonly AgyLogState[]): string | null {
+  const open = logs.find((log) => log.current === id && log.folder !== null);
+  if (open) return open.folder;
+  return logs.find((log) => log.opened.has(id) && log.folder !== null)?.folder ?? null;
+}
 
 /**
  * Finds Antigravity CLI conversations on this machine from the files agy
@@ -222,6 +256,8 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
 
   const finder = createConversationFinder({ home, io, oldRefreshMs: options.oldRefreshMs });
   const reader = createTranscriptReader(io);
+  const logs = createAgyLogReader({ home, io });
+  const titles = createTitleReader({ home, io });
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -373,10 +409,14 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     const { conversations } = listing;
     // Null only when no conversation is to be shown, and so none is listed below.
     const list = await processesFor(conversations, checkedAt);
+    // Each running program's log, read on every poll, so a wait shows at once.
+    const logStates = list?.ok ? await logs.read(list.sessions) : [];
+    const programs = list?.ok ? withLoggedConversations(list.sessions, logStates) : [];
     // When `ps` was not asked this poll, a conversation written since it last
     // was may be open in an agy program started since, which it did not show.
-    const holding = list?.ok ? holdConversations(list.sessions, conversations, processesAt) : null;
+    const holding = list?.ok ? holdConversations(programs, conversations, processesAt) : null;
     lastHolding = holding;
+    const logged = logStates.filter((state): state is AgyLogState => state !== null);
 
     /** The transcripts read this poll, whose cache is worth keeping. */
     const read = new Set<string>();
@@ -394,10 +434,18 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
         continue;
       }
       read.add(files.transcript);
+      const ask = logged.find((log) => log.ask?.conversation === files.id)?.ask ?? null;
+      const waiting =
+        ask !== null && waitsForApproval(ask, files.id, state.lastIndex)
+          ? { tool: ask.tool, since: agyLogTimeAt(ask.at, checkedAt) }
+          : null;
       const session = antigravitySession({
         conversationId: files.id,
         state,
         live: antigravityLiveness(files.id, holding),
+        waiting,
+        title: await titles.read(files.id),
+        folder: folderOf(files.id, logged),
         writtenAt: files.lastWriteAt,
         now: checkedAt,
       });
@@ -405,6 +453,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       sessions.push(session);
     }
     reader.keepOnly(read);
+    titles.keepOnly(new Set(sessions.map((session) => session.id.slice(SOURCE_ID.length + 1))));
 
     let detail = `Sessions are read from the transcripts the Antigravity CLI keeps in ${brainName}. ${ALWAYS_NOTES}`;
     let basis = BASIS;

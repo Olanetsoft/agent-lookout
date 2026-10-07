@@ -23,7 +23,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  *   conversation began.
  * - From the end, the last step that says how the conversation stands, its
  *   `type`, its `status` and whether it has any `tool_calls`, when the run of
- *   steps that say the same began, and when the last step was made.
+ *   steps that say the same began, when the last step was made, and the
+ *   highest `step_index`.
  *
  * `content`, `thinking`, `media`, `source` and the tool calls themselves are
  * never kept: each line is parsed, those four fields are read and the rest is
@@ -75,6 +76,11 @@ export interface TranscriptState {
   since: number | null;
   /** When the last step of any kind was made. */
   lastAt: number | null;
+  /**
+   * The highest `step_index` of any step read, passed over or not, so a step
+   * written after an approval agy asked for is seen. Null when none had one.
+   */
+  lastIndex: number | null;
 }
 
 /** ISO 8601, as agy writes `created_at`: a date, a time, a fraction of a second and a zone. */
@@ -118,12 +124,20 @@ export function readStepLine(line: string): TranscriptStep | null {
 
 /** The state of a file with no steps read yet. */
 function emptyState(): TranscriptState {
-  return { firstAt: null, last: undefined, since: null, lastAt: null };
+  return { firstAt: null, last: undefined, since: null, lastAt: null, lastIndex: null };
+}
+
+/** Keeps the highest `step_index` seen. */
+function noteIndex(state: TranscriptState, step: TranscriptStep): void {
+  if (step.index !== null && (state.lastIndex === null || step.index > state.lastIndex)) {
+    state.lastIndex = step.index;
+  }
 }
 
 /** Moves the state on by one step, read in the order agy wrote them. */
 function addStep(state: TranscriptState, step: TranscriptStep): void {
   if (step.at !== null) state.lastAt = step.at;
+  noteIndex(state, step);
   if (isAsideStep(step)) return;
   const was = state.last ? openStatusOf(state.last) : null;
   if (was !== openStatusOf(step)) state.since = step.at;
@@ -182,6 +196,7 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   const take = (step: TranscriptStep | null): boolean => {
     if (step === null) return false;
     if (state.lastAt === null && step.at !== null) state.lastAt = step.at;
+    noteIndex(state, step);
     if (isAsideStep(step)) return false;
     if (state.last === undefined || state.last === null) {
       state.last = step;
@@ -264,6 +279,7 @@ function stateOf(cached: Cached): TranscriptState {
     last: cached.last,
     since: cached.since,
     lastAt: cached.lastAt,
+    lastIndex: cached.lastIndex,
   };
 }
 

@@ -137,3 +137,79 @@ export function lstart(ms: number): string {
   const two = (value: number) => String(value).padStart(2, "0");
   return `${days[date.getUTCDay()]} ${months[date.getUTCMonth()]} ${String(date.getUTCDate()).padStart(2, " ")} ${two(date.getUTCHours())}:${two(date.getUTCMinutes())}:${two(date.getUTCSeconds())} ${date.getUTCFullYear()}`;
 }
+
+const two = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * One line of an agy program's own log, in the glog format agy 1.3.1 writes:
+ * the level, the month and day, the local time, a thread, the source line and
+ * the message.
+ */
+export function logLine(
+  ms: number,
+  message: string,
+  source = "server.go:100",
+  level = "I",
+): string {
+  const date = new Date(ms);
+  const micro = String(date.getMilliseconds() * 1000).padStart(6, "0");
+  return `${level}${two(date.getMonth() + 1)}${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}.${micro}     787 ${source}] ${message}\n`;
+}
+
+/** The name agy gives the log of a program that started at this moment, in local time. */
+export function logName(ms: number): string {
+  const date = new Date(ms);
+  return `cli-${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}_${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}.log`;
+}
+
+/** Where a program's log is, under an agy folder. */
+export function logPath(home: string, name: string): string {
+  return `${home}/log/${name}`;
+}
+
+/** Where a conversation's title is, under an agy folder. */
+export function annotationPath(home: string, id: string): string {
+  return `${home}/annotations/${id}.pbtxt`;
+}
+
+/** A folder an agy program works in. */
+export const WORKSPACE = "/Users/example/code/demo-project";
+
+/**
+ * The log of a program that started at `start`, began a conversation, and
+ * asks for approval of a command at `step`, with lines of other kinds around
+ * them carrying words the adapter must never keep.
+ */
+export function askingLog(start: number, id: string, step: number, folder = WORKSPACE): string[] {
+  return [
+    logLine(start + 1 * SECOND, `Starting CLI ${PRIVATE_WORDS}`, "main.go:12"),
+    logLine(
+      start + 1 * SECOND,
+      `Creating CLI server backend: product=antigravity workspaceDirs=[${folder}] appDataDir=${HOME}/.gemini/antigravity-cli`,
+      "server.go:323",
+    ),
+    logLine(start + 2 * SECOND, `Error report: ${PRIVATE_WORDS}`, "errorreport.go:224", "E"),
+    logLine(start + 20 * SECOND, "Starting new conversation (agent=false)"),
+    logLine(start + 20 * SECOND, `Created conversation ${id}`, "server.go:1263"),
+    logLine(start + 20 * SECOND, `Streaming conversation ${id}`, "conversation_manager.go:967"),
+    logLine(
+      start + 20 * SECOND,
+      `Sending user message to conversation ${id} (items=1, media=0)`,
+      "server.go:1840",
+    ),
+    logLine(
+      start + 25 * SECOND,
+      `Surfacing tool confirmation: "RunCommand" at step ${step}`,
+      "tool_confirmation_manager.go:226",
+    ),
+  ];
+}
+
+/** The line agy logs once the person answers the approval asked at `step`. */
+export function answeredLine(ms: number, id: string, step: number, approved = true): string {
+  return logLine(
+    ms,
+    `Responding to tool confirmation: convID=${id}, stepIdx=${step}, approved=${approved}`,
+    "tool_confirmation_manager.go:240",
+  );
+}

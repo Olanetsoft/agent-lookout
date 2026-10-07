@@ -192,7 +192,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(CODEX_CAPABILITIES.jump.level).toBe("no");
   });
 
-  test("Antigravity CLI: no step ever makes a session need you, and only an error of agy's own fails", () => {
+  test("Antigravity CLI: no step alone makes a session need you, only its program's log, and only an error of agy's own fails", () => {
     const steps = ANTIGRAVITY_STEP_TYPES.flatMap((type) =>
       ANTIGRAVITY_STEP_STATUSES.flatMap((status) =>
         [true, false].map((toolCalls) => ({ type, status, toolCalls })),
@@ -208,12 +208,19 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(new Set(failing.map((last) => last.type))).toEqual(
       new Set(["ERROR_MESSAGE", "PLANNER_RESPONSE"]),
     );
-    expect(ANTIGRAVITY_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(
+      mapAntigravityStatus({
+        last: { type: "PLANNER_RESPONSE", status: "DONE", toolCalls: true },
+        live: true,
+        asking: true,
+      }),
+    ).toBe("needs-you");
+    expect(ANTIGRAVITY_CAPABILITIES["needs-you"].level).toBe("partly");
     expect(ANTIGRAVITY_CAPABILITIES.failed.level).toBe("partly");
     expect(ANTIGRAVITY_CAPABILITIES.finished.level).toBe("partly");
   });
 
-  test("Antigravity CLI: a session has the time of its last write, and no name, folder, jump or stop", () => {
+  test("Antigravity CLI: a session has the time of its last write, no jump or stop, and with no title or log, no name or folder", () => {
     const session = antigravitySession({
       conversationId: "00000000-0000-4000-8000-0000000000a1",
       state: {
@@ -227,6 +234,7 @@ describe("each declaration agrees with what its adapter does", () => {
         },
         since: NOW - 60_000,
         lastAt: NOW - 30_000,
+        lastIndex: 2,
       },
       live: true,
       writtenAt: NOW - 10_000,
@@ -240,7 +248,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(session).not.toHaveProperty("pid");
     expect(session.links).toEqual({});
     expect(ANTIGRAVITY_CAPABILITIES["quiet-for"].level).toBe("yes");
-    expect(ANTIGRAVITY_CAPABILITIES.names.level).toBe("no");
+    expect(ANTIGRAVITY_CAPABILITIES.names.level).toBe("partly");
     expect(ANTIGRAVITY_CAPABILITIES.jump.level).toBe("no");
     expect(ANTIGRAVITY_CAPABILITIES.stop.level).toBe("no");
     expect(ANTIGRAVITY_CAPABILITIES.answer.level).toBe("no");

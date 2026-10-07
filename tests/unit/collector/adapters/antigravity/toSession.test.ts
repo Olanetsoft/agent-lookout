@@ -18,6 +18,7 @@ const idle: TranscriptState = {
   },
   since: NOW - 2 * MINUTE,
   lastAt: NOW - MINUTE,
+  lastIndex: 3,
 };
 
 describe("antigravitySession", () => {
@@ -100,6 +101,7 @@ describe("antigravitySession", () => {
       last: idle.last,
       since: Date.UTC(2001, 0, 1),
       lastAt: null,
+      lastIndex: 3,
     };
     const session = antigravitySession({
       conversationId: ID,
@@ -123,5 +125,48 @@ describe("antigravitySession", () => {
     });
     expect(session).toMatchObject({ startedAt: START, statusSince: null });
     expect(session).not.toHaveProperty("lastWriteAt");
+  });
+});
+
+describe("antigravitySession, with what its program's log and its title say", () => {
+  const base = { conversationId: ID, state: idle, live: true, writtenAt: NOW - MINUTE, now: NOW };
+
+  test("needs you for permission while its program waits for approval, since agy began to ask", () => {
+    expect(
+      antigravitySession({ ...base, waiting: { tool: "RunCommand", since: NOW - 20 * SECOND } }),
+    ).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingDetail: "RunCommand",
+      statusSince: NOW - 20 * SECOND,
+    });
+  });
+
+  test("a wait whose start the log did not give began with the last step", () => {
+    expect(
+      antigravitySession({ ...base, waiting: { tool: "RunCommand", since: null } }).statusSince,
+    ).toBe(NOW - MINUTE);
+  });
+
+  test("a closed conversation is finished, whatever its log last said, with nothing of the wait", () => {
+    const session = antigravitySession({
+      ...base,
+      live: false,
+      waiting: { tool: "RunCommand", since: NOW - 20 * SECOND },
+    });
+    expect(session.status).toBe("finished");
+    expect(session).not.toHaveProperty("waitingReason");
+    expect(session).not.toHaveProperty("waitingDetail");
+  });
+
+  test("is named by its title, else its folder's name, else its conversation id", () => {
+    const folder = "/Users/example/code/demo-project";
+    expect(antigravitySession({ ...base, title: "Count the files", folder })).toMatchObject({
+      name: "Count the files",
+      cwd: folder,
+      project: "demo-project",
+    });
+    expect(antigravitySession({ ...base, title: null, folder }).name).toBe("demo-project");
+    expect(antigravitySession({ ...base, title: null, folder: null }).name).toBe(ID);
   });
 });

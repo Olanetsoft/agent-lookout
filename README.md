@@ -110,10 +110,10 @@ Claude Code, Codex and the Antigravity CLI need no setup. Any other agent writes
 | --------------- | --------- | ------ | --------- | ------ | ------ |
 | Claude Code     | Yes       | Partly | No        | Partly | Partly |
 | Codex           | No        | No     | Yes       | No     | No     |
-| Antigravity CLI | No        | No     | Yes       | No     | No     |
+| Antigravity CLI | Partly    | No     | Yes       | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     |
 
-A Codex or Antigravity CLI session waiting for approval shows as working. After 5 minutes its row says how long it has been quiet. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and has not yet been checked against a running conversation. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
+A Codex session waiting for approval shows as working, and so does an Antigravity CLI session waiting for an answer to a question. After 5 minutes its row says how long it has been quiet. An Antigravity CLI session needs you while agy asks you to approve a tool. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and checked against one conversation. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
@@ -206,9 +206,9 @@ No. Stop needs a press and a confirm, and Allow and Deny need a press or a rule 
 </details>
 
 <details>
-<summary>Why does a Codex or Antigravity CLI session never show as needing me?</summary>
+<summary>Why does a Codex session never show as needing me?</summary>
 
-Their files do not record when they wait for your approval, as far as Agent Lookout can read, so watch the Quiet for line instead.
+Its files do not record when it waits for your approval, as far as Agent Lookout can read, so watch the Quiet for line instead. An Antigravity CLI session does show as needing you while agy asks you to approve a tool, which agy's own log records, but not while it waits for an answer to a question.
 
 </details>
 

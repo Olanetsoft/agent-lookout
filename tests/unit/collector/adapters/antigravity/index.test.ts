@@ -16,18 +16,25 @@ import {
 } from "@collector/adapters/antigravity/index";
 import {
   AGY_HOME,
+  annotationPath,
+  answeredLine,
+  askingLog,
   conversationId,
   databasePath,
   DAY,
   failedTurn,
   finishedTurn,
   HOME,
+  logLine,
+  logName,
+  logPath,
   MINUTE,
   NOW,
   SECOND,
   step,
   transcriptPath,
   workingTurn,
+  WORKSPACE,
 } from "@tests/fixtures/antigravity";
 import {
   antigravityAdapterFor,
@@ -375,5 +382,116 @@ test("never throws: anything unexpected is a sentence", async () => {
   expect(result.health).toMatchObject({
     state: "error",
     detail: "Something unexpected went wrong while reading Antigravity CLI sessions.",
+  });
+});
+
+describe("an agy program's own log and a conversation's title", () => {
+  const ASKING = conversationId("e5");
+  const STARTED = NOW - 10 * MINUTE;
+  const LOG = logPath(AGY_HOME, logName(STARTED + SECOND));
+
+  /** A conversation whose program asks to run a command at step 2, which the transcript does not hold yet. */
+  function waiting() {
+    const set = setUp();
+    set.write(ASKING, workingTurn(0, STARTED + 20 * SECOND).slice(0, 2), STARTED + 21 * SECOND);
+    set.files.write(LOG, askingLog(STARTED, ASKING, 2).join(""));
+    set.files.write(annotationPath(AGY_HOME, ASKING), 'title:"Count the files"');
+    set.processes.set([{ startedAt: STARTED }]);
+    return set;
+  }
+
+  const find = (sessions: { id: string }[], id: string) =>
+    sessions.find((session) => session.id.endsWith(id));
+
+  test("a conversation needs you while its program asks to approve a tool, since it began to ask", async () => {
+    const { adapter } = waiting();
+    const result = await adapter.poll();
+    expect(find(result.sessions, ASKING)).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingDetail: "RunCommand",
+      statusSince: STARTED + 25 * SECOND,
+      name: "Count the files",
+      cwd: WORKSPACE,
+      project: "demo-project",
+    });
+    expect(find(result.sessions, ASKING)).not.toHaveProperty("waitingText");
+  });
+
+  test("works again once agy logs the answer", async () => {
+    const { adapter, files } = waiting();
+    await adapter.poll();
+    files.append(LOG, answeredLine(NOW, ASKING, 2));
+    expect(find((await adapter.poll()).sessions, ASKING)).toMatchObject({ status: "working" });
+  });
+
+  test("works again once the transcript holds the step that waited, answered or not", async () => {
+    const { adapter, files } = waiting();
+    await adapter.poll();
+    files.append(
+      transcriptPath(AGY_HOME, ASKING),
+      step({ index: 2, type: "RUN_COMMAND", status: "RUNNING", at: NOW - SECOND }),
+      { mtimeMs: NOW - SECOND },
+    );
+    expect(find((await adapter.poll()).sessions, ASKING)).toMatchObject({ status: "working" });
+  });
+
+  test("is not waiting once its program has ended, whatever its log last said", async () => {
+    const { adapter, processes } = waiting();
+    processes.set([]);
+    expect(find((await adapter.poll()).sessions, ASKING)).toMatchObject({ status: "finished" });
+  });
+
+  test("a log that cannot be tied to one running program is not read", async () => {
+    const { adapter, processes, files } = waiting();
+    processes.set([{ startedAt: STARTED }, { startedAt: STARTED + SECOND }]);
+    const { sessions } = await adapter.poll();
+    expect(find(sessions, ASKING)).toMatchObject({ status: "working", cwd: null });
+    expect(files.opened()).not.toContain(LOG);
+  });
+
+  test("the conversation a program's log has open is held, so a program that resumed an old one does not hold every other", async () => {
+    const { adapter, processes, files } = setUp();
+    // Started after every transcript was last written, so without its log it could hold any.
+    const started = NOW - 5 * SECOND;
+    files.write(
+      logPath(AGY_HOME, logName(started + SECOND)),
+      logLine(started + 2 * SECOND, `Streaming conversation ${IDLE}`),
+    );
+    processes.set([{ startedAt: started }]);
+    const result = await adapter.poll();
+    expect(result.basis).toBe(BASIS);
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+  });
+
+  test("a conversation with no title is named by its folder", async () => {
+    const { adapter, files } = waiting();
+    files.remove(annotationPath(AGY_HOME, ASKING));
+    expect(find((await adapter.poll()).sessions, ASKING)).toMatchObject({ name: "demo-project" });
+  });
+
+  test("opens only transcripts, the titles of conversations listed, and the logs of running programs", async () => {
+    const { adapter, files } = waiting();
+    files.write(
+      logPath(AGY_HOME, logName(NOW - 3 * 60 * MINUTE)),
+      askingLog(NOW, ASKING, 9).join(""),
+    );
+    files.write(`${AGY_HOME}/cli.log`, "a log line\n");
+    files.write(`${AGY_HOME}/history.jsonl`, "{}\n");
+    files.write(`${AGY_HOME}/presence/${ASKING}.lock`, "");
+    await adapter.poll();
+    const opened = files.opened();
+    expect(opened).toContain(LOG);
+    expect(opened).toContain(annotationPath(AGY_HOME, ASKING));
+    for (const file of opened) {
+      expect(file).toMatch(
+        /\/transcript\.jsonl$|\/annotations\/[0-9a-f-]+\.pbtxt$|^.*\/log\/cli-\d{8}_\d{6}\.log$/,
+      );
+    }
+    expect(opened).not.toContain(logPath(AGY_HOME, logName(NOW - 3 * 60 * MINUTE)));
   });
 });

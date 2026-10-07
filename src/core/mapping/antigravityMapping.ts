@@ -2,9 +2,11 @@
 // the collector today and a browser or desktop host later share one mapping.
 //
 // agy writes each conversation as JSON Lines, one step a line, with the step's
-// `type` and `status` (docs/adapters/antigravity.md). Nothing in what Agent
-// Lookout reads is known to record a wait for approval, so an Antigravity
-// session is working, idle, failed or finished here, and never "needs-you".
+// `type` and `status` (docs/adapters/antigravity.md). The transcript does not
+// record a wait for approval: agy writes the step that waits only once it is
+// answered. Its program's own log does, so a session needs you when that log
+// says so (`antigravityLog.ts`), and is otherwise working, idle, failed or
+// finished.
 
 import type { SessionStatus } from "../sessions/session.ts";
 
@@ -213,7 +215,7 @@ const ASIDE_TYPES: ReadonlySet<string> = new Set([
 /** Statuses of a step that is no longer part of the conversation, such as one a rewind cleared. Passed over. */
 const GONE_STATUSES: ReadonlySet<string> = new Set(["CLEARED", "INVALID"]);
 
-/** Statuses that say the step is not over yet. `WAITING` is agy's wait for approval, which shows as working. */
+/** Statuses that say the step is not over yet. `WAITING` is agy's wait for approval, which agy 1.3.1 was not seen to write: Needs you comes from its log. */
 const UNDER_WAY: ReadonlySet<string> = new Set([
   "PENDING",
   "RUNNING",
@@ -289,6 +291,11 @@ export interface AntigravityStatusFields {
    */
   last: AntigravityStep | null | undefined;
   live: AntigravityLiveness;
+  /**
+   * Whether the program that has the conversation open waits for the
+   * person's approval of a tool, from its own log (`antigravityLog.ts`).
+   */
+  asking?: boolean;
 }
 
 /**
@@ -304,13 +311,14 @@ export interface AntigravityStatusFields {
  * | none read       | unknown            | unknown  |
  *
  * A conversation that ended on an error stays failed once agy has closed it.
- * It never returns "needs-you": nothing Agent Lookout reads is known to record
- * that agy waits for approval, so such a conversation shows as working.
+ * One that would be working or idle needs you while its program's log says
+ * it waits for approval, unless agy is known to have closed it.
  */
 export function mapAntigravityStatus(fields: AntigravityStatusFields): SessionStatus {
   const { last, live } = fields;
   if (last === undefined) return "unknown";
   const open: OpenStatus = last === null ? "idle" : openStatusOf(last);
   if (open === "failed" || open === "unknown") return open;
-  return live === false ? "finished" : open;
+  if (live === false) return "finished";
+  return fields.asking === true ? "needs-you" : open;
 }
