@@ -42,14 +42,17 @@ const SessionPanel = lazy(() =>
  * Motion as the dashboard uses it. It animates one thing, the Overview fading
  * in and out as it changes, and that takes only Motion's animations and their
  * exit, which `domMin` holds. So the app loads those, and leaves out the
- * gestures, layout animations and dragging the whole of `motion` carries. Under
- * `strict` a `motion` component throws: use `m`, and load more features here
- * before asking for more. `reducedMotion='user'` follows the reduced-motion
- * preference, under which Motion moves nothing and still fades.
+ * gestures, layout animations and dragging the whole of `motion` carries. Use
+ * `m`: the lint rules in eslint.config.js refuse `motion`, and any prop on `m`
+ * that needs what `domMin` leaves out. To ask for more, load it here and change
+ * those rules. LazyMotion's `strict` would not catch it, since it checks only
+ * where `process` exists, and a browser has none. `reducedMotion='user'`
+ * follows the reduced-motion preference, under which Motion moves nothing and
+ * still fades.
  */
 function Motion({ children }: { children: ReactNode }) {
   return (
-    <LazyMotion features={domMin} strict>
+    <LazyMotion features={domMin}>
       <MotionConfig reducedMotion='user'>{children}</MotionConfig>
     </LazyMotion>
   );

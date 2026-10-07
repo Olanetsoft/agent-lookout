@@ -42,18 +42,48 @@ export default defineConfig(
 
   // Production code never imports from tests/. `scripts/check-layout.mjs` checks
   // the same rule without ESLint.
+  //
+  // And Motion is used only as `m` under the LazyMotion in src/dashboard/App.tsx,
+  // which loads `domMin`: animations and exit, with no gestures, layout
+  // animations or dragging. A `motion` component would bring the rest back, and
+  // a prop on `m` that needs a feature left out would do nothing. Both rules sit
+  // here because a second block for the same files would replace this one.
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
+          paths: [
+            {
+              name: "motion/react",
+              importNames: ["motion", "domAnimation", "domMax"],
+              message: "Use m: src/dashboard/App.tsx loads only domMin.",
+            },
+            {
+              name: "motion/react-client",
+              message: "Use m from motion/react: src/dashboard/App.tsx loads only domMin.",
+            },
+            {
+              name: "framer-motion",
+              message: "Use m from motion/react: src/dashboard/App.tsx loads only domMin.",
+            },
+          ],
           patterns: [
             {
               group: ["@tests", "@tests/*", "**/tests/**"],
               message: "Production code never imports from tests/.",
             },
           ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXOpeningElement[name.object.name='m'] > JSXAttribute[name.name=/^(layout|while|viewport$|drag(?!gable)|on(Hover|Tap|Pan|Layout|Viewport|DirectionLock|Drag(Start|End|TransitionEnd)?$)|onMeasureDragConstraints)/]",
+          message:
+            "src/dashboard/App.tsx loads only domMin, which has no gestures, layout animations or dragging, so this prop would do nothing. Load the feature there and change this rule first.",
         },
       ],
     },
