@@ -70,9 +70,9 @@ import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/r
  * A collector built the way every host builds it, with its default adapters,
  * and settings that name nothing on this machine: an empty Claude Code folder,
  * which on its own keeps the claude command from being run, a Codex folder of
- * the test's choosing, a folder of status files that is not there unless the
- * test says otherwise, and tmux turned off. Served over real HTTP on a free
- * loopback port.
+ * the test's choosing, an empty Antigravity CLI folder, a folder of status
+ * files that is not there unless the test says otherwise, and tmux turned off.
+ * Served over real HTTP on a free loopback port.
  */
 async function serve(settings: Record<string, string>) {
   const collector = createCollector({
@@ -81,6 +81,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_HISTORY: "off",
       AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+      AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -93,12 +94,13 @@ async function serve(settings: Record<string, string>) {
 }
 
 describe("createCollector", () => {
-  test("watches Claude Code and Codex, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex and the Antigravity CLI, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
       ["claude-code", "Claude Code", "ok"],
       ["codex", "Codex", "ok"],
+      ["antigravity-cli", "Antigravity CLI", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -128,6 +130,7 @@ describe("createCollector", () => {
         state: "unavailable",
         detail: `Codex was not found: CODEX_HOME is set to ${missing}, and there is no folder there. Agent Lookout looks again every minute.`,
       },
+      { id: "antigravity-cli", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -152,7 +155,7 @@ describe("createCollector", () => {
       AGENT_LOOKOUT_STATUS_DIR: folder,
     });
 
-    expect(snapshot.sources[2]).toMatchObject({
+    expect(snapshot.sources[3]).toMatchObject({
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -246,6 +249,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+        AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -312,6 +316,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: codexHome,
+        AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2139,6 +2144,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CODEX_HOME: path.join(await tempDir(), "no-codex-here"),
+        AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -2363,6 +2369,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
     expect(snapshot.sources.map((source) => source.id)).toEqual([
       "claude-code",
       "codex",
+      "antigravity-cli",
       "status-files",
       "remote:",
     ]);

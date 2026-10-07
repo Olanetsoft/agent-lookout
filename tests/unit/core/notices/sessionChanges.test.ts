@@ -619,6 +619,8 @@ describe("over a long run of snapshots", () => {
   const ids: Record<SourceId, string[]> = {
     "claude-code": [A, B, C],
     codex: [D, E],
+    // Not in this run, which keeps to the three sources it has always drawn on.
+    "antigravity-cli": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

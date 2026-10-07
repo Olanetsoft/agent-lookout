@@ -20,6 +20,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}): Promise<Node
     AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
     AGENT_LOOKOUT_CLAUDE_FEED: "off",
     AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+    AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
     AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",

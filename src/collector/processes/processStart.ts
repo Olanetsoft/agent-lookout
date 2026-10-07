@@ -76,6 +76,14 @@ function lstartMs(value: string): number | undefined {
 }
 
 /**
+ * When a process started, from what `ps -o lstart=` printed with `TZ=UTC`, in
+ * epoch milliseconds, to the second. Null for anything not in that form.
+ */
+export function processStartTime(value: string): number | null {
+  return lstartMs(collapse(value)) ?? null;
+}
+
+/**
  * Compares the start time a registry file recorded with the one `ps` reports now.
  *
  * Only two values that both look like `ps` output and are more than a minute

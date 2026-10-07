@@ -12,7 +12,7 @@ A pull request that breaks either rule will not be merged.
 
 ## Set up
 
-You need Node.js 22.12 or newer and, to see real sessions, Claude Code or Codex. `.nvmrc` holds 22, the version most CI jobs use.
+You need Node.js 22.12 or newer and, to see real sessions, Claude Code, Codex or the Antigravity CLI. `.nvmrc` holds 22, the version most CI jobs use.
 
 Fork the repository, clone your fork, then:
 
@@ -25,16 +25,16 @@ npm run dev
 
 The Playwright step downloads the Chromium build that the component tests run in. On Linux, add `--with-deps` to install the system libraries it needs.
 
-`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code and Codex sessions on your own machine.
+`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code, Codex and Antigravity CLI sessions on your own machine.
 
 To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
-AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
+AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_ANTIGRAVITY_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
 ```
 
-With all four set, Agent Lookout reads only that folder, does not run the `claude` command, reads neither `~/.codex` nor `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
+With all five set, Agent Lookout reads only that folder, does not run the `claude` command, reads none of `~/.codex`, `~/.gemini/antigravity-cli` and `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
 
 ## Checks
 
@@ -185,7 +185,7 @@ A primitive under `components/ui/` is a component file like any other. The entry
 
 A status file is the quickest way to show another agent, and needs no code in Agent Lookout: the agent writes one small JSON file for each session into `~/.agent-lookout/sessions`, as the [guide](docs/GUIDE.md#your-own-agents) describes. Try that first. Write an adapter for a tool that keeps its own record of its sessions and cannot be made to write one, as Claude Code and Codex do.
 
-An adapter finds one agent tool's sessions and reports them in the shared session model. Each tool gets one adapter, in `src/collector/adapters/<tool>/`. There are two to learn from: Claude Code's in `src/collector/adapters/claude-code/`, which checks local files against a documented command, and Codex's in `src/collector/adapters/codex/`, which reads files alone. Read both before you write another.
+An adapter finds one agent tool's sessions and reports them in the shared session model. Each tool gets one adapter, in `src/collector/adapters/<tool>/`. There are three to learn from: Claude Code's in `src/collector/adapters/claude-code/`, which checks local files against a documented command, Codex's in `src/collector/adapters/codex/`, which reads files alone, and the Antigravity CLI's in `src/collector/adapters/antigravity/`, which reads files and asks `ps` which of the tool's programs run. Read them before you write another.
 
 An adapter implements the interface in `src/collector/adapters/adapter.ts`. It has an `id`, a `label` and a `poll()` that resolves to `{ health, sessions }`. The poller calls `poll()` every 2 seconds. `poll()` never throws. A failure becomes `health.state`, with a plain-language `detail` that says where the adapter looked. A tool that is not installed is `unavailable`, which is not an error. Once that is known, do not look again on every poll: the Codex adapter looks once a minute. `health.watching` lists what the adapter reads and runs, and the Sources view shows it. `capabilities` says what the tool can report at all, and whether its sessions can be stopped from Agent Lookout, yes, no or partly for each thing in `CAPABILITIES` in `src/core/sessions/session.ts`, with a reason for each no and partly. Take each one from what the adapter reads, and add the adapter's row to the table under "What each agent can report" in [the guide](docs/GUIDE.md#what-each-agent-can-report), and to the agent table under "Supported agents and systems" in [the README](README.md#supported-agents-and-systems): tests check that both agree with it. Add its constant to `DECLARED` in `tests/integration/collector/adapters/adapter.test.ts` and `tests/unit/collector/adapters/adapter.test.ts` too.
 

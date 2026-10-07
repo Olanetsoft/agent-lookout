@@ -14,8 +14,9 @@
 // the system's temporary folder or, with `-- --dir <folder>`, in that folder: a
 // Claude Code folder whose registry names two stand-ins for Claude Code's
 // processes, small Node programs this script starts that only wait, a copy
-// of tests/fixtures/codex-home, a folder with one status file, and a folder
-// for the history the app keeps, so nothing is written to this machine's. It starts
+// of tests/fixtures/codex-home, an empty folder for the Antigravity CLI, a
+// folder with one status file, and a folder for the history the app keeps, so
+// nothing is written to this machine's. It starts
 // the app on a port the system picks, with the claude command, tmux and
 // Terminal left alone, and asks only `/api/health`, `/api/sessions`, the
 // dashboard's page and its script. Then it runs the same command's `mcp`, as
@@ -80,6 +81,7 @@ const CODEX_OPEN = [
 const SOURCES = [
   ["claude-code", "Claude Code"],
   ["codex", "Codex"],
+  ["antigravity-cli", "Antigravity CLI"],
   ["status-files", "Status files"],
 ];
 
@@ -232,10 +234,12 @@ async function descendantsOf(pid) {
 async function makeFolders(dir, waitingPid, leftoverPid) {
   const claudeHome = path.join(dir, "claude");
   const codexHome = path.join(dir, "codex");
+  const antigravityHome = path.join(dir, "antigravity");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   const work = path.join(dir, "work");
   await mkdir(path.join(claudeHome, "sessions"), { recursive: true });
+  await mkdir(antigravityHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -290,7 +294,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     }),
   );
 
-  return { claudeHome, codexHome, statusDir, historyDir, procStart };
+  return { claudeHome, codexHome, antigravityHome, statusDir, historyDir, procStart };
 }
 
 /**
@@ -312,6 +316,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_CLAUDE_HOME: folders.claudeHome,
     AGENT_LOOKOUT_CLAUDE_FEED: "off",
     AGENT_LOOKOUT_CODEX_HOME: folders.codexHome,
+    AGENT_LOOKOUT_ANTIGRAVITY_HOME: folders.antigravityHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_TMUX: "off",

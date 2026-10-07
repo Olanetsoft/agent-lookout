@@ -8,6 +8,7 @@ import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
 import { createAnswering, type Answering, type AnsweringOptions } from "./answers/answering.ts";
 import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
+import { createAntigravityAdapter } from "./adapters/antigravity/index.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
@@ -94,12 +95,12 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
-   * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
+   * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`,
+   * `AGENT_LOOKOUT_ANTIGRAVITY_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
    */
@@ -126,9 +127,9 @@ export interface CollectorOptions {
   notifier?: SystemNotifier;
   /**
    * The system the collector runs on, which says whether the system's own
-   * notifications can be shown, and, on Windows, that no session is stopped
-   * and no permission prompt answered. Defaults to this machine's. Tests pass
-   * another.
+   * notifications can be shown, and, on Windows, that no session is stopped,
+   * no permission prompt answered and no `ps` asked which agy programs run.
+   * Defaults to this machine's. Tests pass another.
    */
   platform?: NodeJS.Platform;
   /**
@@ -462,6 +463,7 @@ export function createCollector(options: CollectorOptions): Collector {
       platform,
     }),
     createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createAntigravityAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

@@ -64,6 +64,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
       AGENT_LOOKOUT_CLAUDE_HOME: home,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
+      AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_HISTORY: "off",

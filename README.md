@@ -4,7 +4,7 @@ Shows the AI agent sessions on your computer in one browser page, and which need
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds Claude Code and Codex sessions with no setup, and any agent that writes a status file. It never starts a session, stops one only when you press Stop and confirm, and answers a permission prompt only on Allow, Deny or a rule you added.
+It finds Claude Code, Codex and Antigravity CLI sessions with no setup, and any agent that writes a status file. It never starts a session, stops one only when you press Stop and confirm, and answers a permission prompt only on Allow, Deny or a rule you added.
 
 By default Agent Lookout sends nothing anywhere. The one exception: the Mac app's daily check on GitHub for a newer version, which Settings turns off. Email, a webhook, pushes to your phone through ntfy or Pushover, pull requests through your `gh` and other machines over your `ssh` stay off until you set them up. [Privacy](#privacy)
 
@@ -23,7 +23,7 @@ Start it with npx or the Mac app. Add the Claude Code plugin to either one to an
 
 ### With npx
 
-You need Node.js 22.12 or newer, and Claude Code, Codex or both.
+You need Node.js 22.12 or newer, and Claude Code, Codex or the Antigravity CLI.
 
 ```sh
 npx agent-lookout
@@ -102,17 +102,18 @@ The Overview also charts the last hour and how long sessions waited on you, from
 
 ## Supported agents and systems
 
-Claude Code and Codex need no setup. Any other agent writes one small JSON file per session to `~/.agent-lookout/sessions`. [Your own agents](docs/GUIDE.md#your-own-agents).
+Claude Code, Codex and the Antigravity CLI need no setup. Any other agent writes one small JSON file per session to `~/.agent-lookout/sessions`. [Your own agents](docs/GUIDE.md#your-own-agents).
 
 <!-- Checked against the adapters by tests/integration/collector/adapters/adapter.test.ts -->
 
-| Agent        | Needs you | Jump   | Quiet for | Stop   | Answer |
-| ------------ | --------- | ------ | --------- | ------ | ------ |
-| Claude Code  | Yes       | Partly | No        | Partly | Partly |
-| Codex        | No        | No     | Yes       | No     | No     |
-| Status files | Partly    | No     | Partly    | No     | No     |
+| Agent           | Needs you | Jump   | Quiet for | Stop   | Answer |
+| --------------- | --------- | ------ | --------- | ------ | ------ |
+| Claude Code     | Yes       | Partly | No        | Partly | Partly |
+| Codex           | No        | No     | Yes       | No     | No     |
+| Antigravity CLI | No        | No     | Yes       | No     | No     |
+| Status files    | Partly    | No     | Partly    | No     | No     |
 
-A Codex session waiting for approval shows as working. After 5 minutes its row says how long it has been quiet. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
+A Codex or Antigravity CLI session waiting for approval shows as working. After 5 minutes its row says how long it has been quiet. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and has not yet been checked against a running conversation. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
@@ -189,8 +190,8 @@ It listens on a loopback address only, 127.0.0.1 unless you set another, turns a
 ## What it does not do yet
 
 - It cannot send a session a message, and Resume only copies the command.
-- Cloud sessions, Codex cloud tasks and browser chats do not appear.
-- Claude Code's and Codex's files are undocumented, so an update can hide sessions. [What breaks when Codex changes](docs/adapters/codex.md#what-breaks-when-codex-changes)
+- Cloud sessions, Codex cloud tasks, browser chats and the Antigravity desktop app's conversations do not appear.
+- Claude Code's and Codex's files are undocumented, and the Antigravity CLI's are documented only for its own agents, so an update can hide sessions. [What breaks when Codex changes](docs/adapters/codex.md#what-breaks-when-codex-changes), [and when Antigravity changes](docs/adapters/antigravity.md#what-breaks-when-antigravity-changes)
 - The Mac app is not signed with an Apple Developer ID yet, and there is no Linux or Windows app.
 
 [What it does not do yet](docs/GUIDE.md#what-it-does-not-do-yet) has the details, and the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) what is planned.
@@ -205,9 +206,9 @@ No. Stop needs a press and a confirm, and Allow and Deny need a press or a rule 
 </details>
 
 <details>
-<summary>Why does a Codex session never show as needing me?</summary>
+<summary>Why does a Codex or Antigravity CLI session never show as needing me?</summary>
 
-Codex's files do not record when it waits for your approval, so watch its Quiet for line instead.
+Their files do not record when they wait for your approval, as far as Agent Lookout can read, so watch the Quiet for line instead.
 
 </details>
 

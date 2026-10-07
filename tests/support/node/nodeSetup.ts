@@ -12,7 +12,9 @@
 // A test that builds its own environment names `NO_SETTINGS_FILE` there too,
 // or a file of its own.
 
-import { NO_SETTINGS_FILE } from "@tests/support/node/tempFiles";
+import { mkdirSync } from "node:fs";
+
+import { EMPTY_ANTIGRAVITY_HOME, NO_SETTINGS_FILE } from "@tests/support/node/tempFiles";
 
 process.env.AGENT_LOOKOUT_HISTORY = "off";
 process.env.AGENT_LOOKOUT_PULL_REQUESTS = "off";
@@ -29,3 +31,9 @@ delete process.env.AGENT_LOOKOUT_NTFY_URL;
 delete process.env.AGENT_LOOKOUT_NTFY_TOKEN;
 delete process.env.AGENT_LOOKOUT_PUSHOVER_TOKEN;
 delete process.env.AGENT_LOOKOUT_PUSHOVER_USER;
+
+// Nor does one read the Antigravity CLI's own folder, `~/.gemini/antigravity-cli`,
+// or run `ps` for it: the adapter is pointed at an empty folder. A test of the
+// adapter names a folder of its own.
+mkdirSync(EMPTY_ANTIGRAVITY_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_ANTIGRAVITY_HOME = EMPTY_ANTIGRAVITY_HOME;

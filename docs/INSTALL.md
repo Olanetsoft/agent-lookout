@@ -6,9 +6,10 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 
 - macOS, Linux or Windows. Agent Lookout is developed and used on macOS. On Linux and Windows, CI runs the tests and starts it, and no one has used it on those desktops yet. [On Linux](GUIDE.md#on-linux) and [On Windows](GUIDE.md#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#mac-app) needs no Node.js, and macOS 13 Ventura or later.
-- Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
+- Claude Code, Codex or the Antigravity CLI, `agy`. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
+- For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it has not yet been checked against a running conversation. The Antigravity desktop app's conversations do not appear.
 
 Check what you have:
 
@@ -17,9 +18,10 @@ node --version
 claude --version
 claude agents --help
 codex --version
+agy --version
 ```
 
-`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, so the Codex desktop app needs no CLI.
+`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, and `agy --version` a version number such as `1.3.1`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex` or `agy`, so the Codex desktop app needs no CLI.
 
 ## With npx
 

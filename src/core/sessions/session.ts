@@ -13,8 +13,11 @@ export type RemoteSourceId = `remote:${string}`;
  * Where sessions come from. `status-files` is not one tool: it is a folder in
  * which any agent writes a small file for each of its sessions. Nor is another
  * machine: its sessions belong to the agents on it, which each session names.
+ * `antigravity-cli` is the Antigravity CLI, `agy`, and not the Antigravity
+ * desktop app.
  */
-export type SourceId = "claude-code" | "codex" | "status-files" | RemoteSourceId;
+export type SourceId =
+  "claude-code" | "codex" | "antigravity-cli" | "status-files" | RemoteSourceId;
 
 /** What every remote source's id begins with. */
 export const REMOTE_SOURCE_PREFIX = "remote:";

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  ANTIGRAVITY_CAPABILITIES,
+  createAntigravityAdapter,
+} from "@collector/adapters/antigravity/index";
+import { antigravitySession } from "@collector/adapters/antigravity/toSession";
+import {
   CLAUDE_CODE_CAPABILITIES,
   CLAUDE_CODE_WINDOWS_CAPABILITIES,
   createClaudeCodeAdapter,
@@ -13,6 +18,11 @@ import {
   STATUS_FILE_CAPABILITIES,
 } from "@collector/adapters/status-files/index";
 import { statusFileSession } from "@collector/adapters/status-files/toSession";
+import {
+  ANTIGRAVITY_STEP_STATUSES,
+  ANTIGRAVITY_STEP_TYPES,
+  mapAntigravityStatus,
+} from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
@@ -25,6 +35,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Claude Code", CLAUDE_CODE_CAPABILITIES],
   ["Claude Code on Windows", CLAUDE_CODE_WINDOWS_CAPABILITIES],
   ["Codex", CODEX_CAPABILITIES],
+  ["Antigravity CLI", ANTIGRAVITY_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -74,6 +85,10 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
   expect(createStatusFileAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     STATUS_FILE_CAPABILITIES,
   );
+  expect(
+    createAntigravityAdapter({ env: {}, homeDir: home, io: files.io, platform: "win32" })
+      .capabilities,
+  ).toBe(ANTIGRAVITY_CAPABILITIES);
 });
 
 test("on Windows Claude Code reports all it does elsewhere, but Jump in VS Code alone, and no Stop or Answer", () => {
@@ -175,6 +190,60 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(session.links).toEqual({});
     expect(CODEX_CAPABILITIES["quiet-for"].level).toBe("yes");
     expect(CODEX_CAPABILITIES.jump.level).toBe("no");
+  });
+
+  test("Antigravity CLI: no step ever makes a session need you, and only an error of agy's own fails", () => {
+    const steps = ANTIGRAVITY_STEP_TYPES.flatMap((type) =>
+      ANTIGRAVITY_STEP_STATUSES.flatMap((status) =>
+        [true, false].map((toolCalls) => ({ type, status, toolCalls })),
+      ),
+    );
+    const mapped = statuses(
+      [...steps, null, undefined].flatMap((last) =>
+        ([true, false, "unknown"] as const).map((live) => mapAntigravityStatus({ last, live })),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
+    const failing = steps.filter((last) => mapAntigravityStatus({ last, live: true }) === "failed");
+    expect(new Set(failing.map((last) => last.type))).toEqual(
+      new Set(["ERROR_MESSAGE", "PLANNER_RESPONSE"]),
+    );
+    expect(ANTIGRAVITY_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(ANTIGRAVITY_CAPABILITIES.failed.level).toBe("partly");
+    expect(ANTIGRAVITY_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Antigravity CLI: a session has the time of its last write, and no name, folder, jump or stop", () => {
+    const session = antigravitySession({
+      conversationId: "00000000-0000-4000-8000-0000000000a1",
+      state: {
+        firstAt: NOW - 60_000,
+        last: {
+          index: 2,
+          type: "RUN_COMMAND",
+          status: "RUNNING",
+          toolCalls: false,
+          at: NOW - 30_000,
+        },
+        since: NOW - 60_000,
+        lastAt: NOW - 30_000,
+      },
+      live: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.lastWriteAt).toBe(NOW - 10_000);
+    expect(session.name).toBe("00000000-0000-4000-8000-0000000000a1");
+    expect(session.cwd).toBeNull();
+    expect(session).not.toHaveProperty("jump");
+    expect(session).not.toHaveProperty("stop");
+    expect(session).not.toHaveProperty("pid");
+    expect(session.links).toEqual({});
+    expect(ANTIGRAVITY_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(ANTIGRAVITY_CAPABILITIES.names.level).toBe("no");
+    expect(ANTIGRAVITY_CAPABILITIES.jump.level).toBe("no");
+    expect(ANTIGRAVITY_CAPABILITIES.stop.level).toBe("no");
+    expect(ANTIGRAVITY_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {
