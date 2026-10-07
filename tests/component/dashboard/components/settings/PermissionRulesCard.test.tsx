@@ -251,6 +251,8 @@ test("Escape, or Cancel, stops editing and sends nothing", async () => {
   await shown();
   await card().getByRole("button", { name: "Edit: Ask Every tool" }).click();
   await expect.element(field(/^Tool/)).toHaveValue("*");
+  // Edit puts focus in the form a frame later; Escape is pressed there.
+  await expect.element(field(/^Tool/)).toHaveFocus();
   await userEvent.keyboard("{Escape}");
   await expect.element(card().getByRole("heading", { name: "Add a rule" })).toBeVisible();
   await expect.element(field(/^Tool/)).toHaveValue("");
