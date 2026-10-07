@@ -64,9 +64,11 @@ export const COMMAND_RUNNERS: readonly string[] = [
   "gtimeout",
   "ionice",
   "nice",
+  "nix-shell",
   "nohup",
   "npx",
   "parallel",
+  "pnpx",
   "sandbox-exec",
   "script",
   "setsid",
@@ -112,9 +114,14 @@ export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
   // Programs that send requests, or open a connection, to an address.
   "aria2c",
   "curl",
+  "elinks",
   "ftp",
+  "grpcurl",
   "http",
   "https",
+  "httpx",
+  "links",
+  "lynx",
   "nc",
   "ncat",
   "netcat",
@@ -123,34 +130,65 @@ export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
   "socat",
   "ssh",
   "telnet",
+  "w3m",
+  "websocat",
   "wget",
   "xh",
   "xhs",
   // Interpreters, which run code given in their words or in a file.
   "awk",
+  "bpython",
   "bun",
+  "clj",
+  "clojure",
+  "dart",
   "deno",
+  "elixir",
+  "erl",
+  "escript",
+  "esno",
   "expect",
   "gawk",
+  "ghci",
+  "groovy",
+  "guile",
+  "iex",
+  "ipython",
   "irb",
+  "java",
+  "jshell",
   "jrunscript",
   "julia",
+  "kotlin",
   "lua",
   "luajit",
   "mawk",
   "nawk",
   "node",
   "nodejs",
+  "ocaml",
   "osascript",
   "perl",
   "php",
   "pypy",
   "python",
+  "r",
+  "racket",
+  "raku",
+  "rakudo",
   "rscript",
   "ruby",
+  "runghc",
+  "runhaskell",
+  "sbcl",
+  "scala",
   "swift",
   "tclsh",
+  "ts-node",
+  "tsx",
+  "vite-node",
   "wish",
+  "zx",
 ];
 
 /** A version at the end of a program's name, as in `python3`, `python3.12` or `perl5.34`. */
@@ -177,7 +215,20 @@ export function programOf(word: string): string {
 
 /** Whether a word names a program that runs another command (`COMMAND_RUNNERS`). */
 export function runsAnotherCommand(word: string): boolean {
-  return COMMAND_RUNNERS.includes(programOf(word));
+  return namesOf(programOf(word)).some((name) => COMMAND_RUNNERS.includes(name));
+}
+
+/**
+ * The names a program is known by for the two lists: its own, without a
+ * version at the end, and the name its own begins with. So `bash5`, `ksh93`
+ * and `zsh-5.9` are shells, and `python3-intel64` is `python`.
+ */
+function namesOf(program: string): string[] {
+  return [
+    program,
+    program.replace(VERSION_AT_END, ""),
+    NAME_BEFORE_ITS_ENDING.exec(program)?.[0] ?? program,
+  ];
 }
 
 /**
@@ -187,13 +238,69 @@ export function runsAnotherCommand(word: string): boolean {
  * `python`.
  */
 export function sendsOrRunsCode(word: string): boolean {
-  const program = programOf(word);
-  const names = [
-    program,
-    program.replace(VERSION_AT_END, ""),
-    NAME_BEFORE_ITS_ENDING.exec(program)?.[0] ?? program,
-  ];
-  return names.some((name) => NETWORK_CLIENTS_AND_INTERPRETERS.includes(name));
+  return namesOf(programOf(word)).some((name) => NETWORK_CLIENTS_AND_INTERPRETERS.includes(name));
+}
+
+/**
+ * The subcommands through which a program fetches code, or runs code it is
+ * pointed at, as its main purpose: `npm exec`, `pnpm dlx`, `uv tool run`,
+ * `go run`, `docker run`. An allow rule for the program alone, `npm:*`, would
+ * let Claude Code run any package it names, which can reach Agent Lookout on
+ * this computer like any program, so neither the rule nor a match may hold
+ * one (`runsCodeBySubcommand`).
+ */
+export const SUBCOMMANDS_THAT_RUN_CODE: Readonly<Record<string, readonly string[]>> = {
+  bundle: ["exec"],
+  cargo: ["run"],
+  docker: ["compose", "exec", "run"],
+  dotnet: ["run"],
+  go: ["generate", "run"],
+  nix: ["develop", "run", "shell"],
+  npm: ["create", "exec", "explore", "init", "x"],
+  pipx: ["run"],
+  pnpm: ["create", "dlx", "exec", "x"],
+  podman: ["compose", "exec", "run"],
+  poetry: ["run"],
+  uv: ["run", "tool"],
+  yarn: ["create", "dlx", "exec"],
+};
+
+/**
+ * Whether a command's words hold one of the program's subcommands that run
+ * code, anywhere among them before a `--`, so options written first, as in
+ * `npm --yes exec`, do not step around it. That refuses more than it must,
+ * which is the safe side for an allow rule.
+ */
+export function runsCodeBySubcommand(words: readonly string[]): boolean {
+  const [first, ...rest] = words;
+  if (first === undefined) return false;
+  const subcommands = namesOf(programOf(first)).flatMap(
+    (name) => SUBCOMMANDS_THAT_RUN_CODE[name] ?? [],
+  );
+  if (subcommands.length === 0) return false;
+  for (const word of rest) {
+    if (word === "--") return false;
+    if (subcommands.includes(word.toLowerCase())) return true;
+  }
+  return false;
+}
+
+/** Agent Lookout's own folder, as any word that names it holds it. */
+const OWN_FOLDER_NAME = ".agent-lookout";
+
+/**
+ * Whether any word names Agent Lookout's own files: its folder,
+ * `~/.agent-lookout`, wherever it is written from, or one of `ownPaths`, the
+ * settings file and the socket where a setting put them elsewhere. A command
+ * that names them could change the rules or answer prompts, so an allow rule
+ * never answers it. Compared in small letters, as a Mac's disk does.
+ */
+export function namesOwnFiles(words: readonly string[], ownPaths: readonly string[] = []): boolean {
+  const own = ownPaths.filter((name) => name !== "").map((name) => name.toLowerCase());
+  return words.some((word) => {
+    const lower = word.toLowerCase();
+    return lower.includes(OWN_FOLDER_NAME) || own.some((name) => lower.includes(name));
+  });
 }
 
 /** A character a word of a plain command may hold: nothing any shell gives a meaning to. */

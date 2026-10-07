@@ -210,7 +210,7 @@ describe("POST /api/settings/permission-rules", () => {
       expect(answer.body).toMatchObject({
         reason: "invalid",
         error: expect.stringMatching(
-          /can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you\. Answer such commands by hand, or allow a script the project owns, such as \.\/scripts\/test\.sh, knowing Claude can edit it\./,
+          /is, or is named like, a program that can send requests or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you\. Answer such commands by hand, or allow a script the project owns, such as \.\/scripts\/test\.sh, knowing Claude can edit it\./,
         ),
       });
       expect(settings.changePermissionRules).not.toHaveBeenCalled();

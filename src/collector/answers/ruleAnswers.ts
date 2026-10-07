@@ -40,6 +40,8 @@ export interface AutoAnswer extends RuleVerdict {
 export interface RuleAnswersOptions {
   /** The rules in force, read again for each request. */
   rules: () => readonly PermissionRule[];
+  /** Agent Lookout's own settings file and socket, which no command a rule allows may name. */
+  ownPaths?: readonly string[];
   poller: Pick<Poller, "getSnapshot" | "pollOnce">;
   events: Pick<EventStore, "add">;
   now?: () => number;
@@ -86,6 +88,7 @@ export function createRuleAnswers(options: RuleAnswersOptions): RuleAnswers {
           shown.command === undefined ? [] : (shown.inputs ?? []).map((input) => input.name),
         // The one rule for what may be allowed: what the dashboard would offer Allow for.
         allowable: shown.allow,
+        ownPaths: options.ownPaths ?? [],
       });
       if (verdict === null || verdict.decision === "ask") return null;
       return { decision: verdict.decision, rule: verdict.rule };

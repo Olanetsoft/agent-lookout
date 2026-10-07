@@ -246,6 +246,16 @@ test.each<[string, RuleWords[], string]>([
     [ALLOW_GIT, { decision: "ask", tool: "Bash", command: "git push:*" }],
     "git --no-pager push",
   ],
+  [
+    "a subcommand that fetches and runs code, under an allow rule for its program",
+    [{ decision: "allow", tool: "Bash", command: "npm:*" }],
+    "npm exec some-pkg",
+  ],
+  [
+    "a command that names Agent Lookout's folder, under an allow rule for its program",
+    [{ decision: "allow", tool: "Bash", command: "sed:*" }],
+    "sed -i s/deny/allow/ /Users/example/.agent-lookout/settings.json",
+  ],
 ])(
   "%s leaves the request held for the person, who can still answer it",
   async (_, rules, command) => {
@@ -340,11 +350,28 @@ test("a settings file holding an allow rule for curl puts no rule in force, and 
   expect(refused.status).toBe(400);
   expect(refused.json()).toMatchObject({
     reason: "invalid",
-    error: expect.stringMatching(/^curl can send requests, or run code that does/),
+    error: expect.stringMatching(
+      /^curl is, or is named like, a program that can send requests or run code that does/,
+    ),
   });
   // The file is as it was.
   expect(JSON.parse(await readFile(server.settingsFile, "utf8")).permissionRules).toHaveLength(2);
 
+  const ask = (await server.session())?.ask;
+  expect((await server.answer(ask?.requestId ?? "", "deny")).status).toBe(200);
+  expect(await asked.done).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });
+});
+
+test("an allow rule never answers a command that names the settings file the rules are kept in, wherever a setting put it", async () => {
+  const server = await serve([{ decision: "allow", tool: "Bash", command: "cp:*" }]);
+  const command = `cp notes.txt ${server.settingsFile}`;
+  const asked = hook(server.socketPath, "Bash", { command });
+  await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+    timeout: 5_000,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  expect(asked.running()).toBe(true);
+  expect((await server.settings()).ruleAnswers).toEqual([]);
   const ask = (await server.session())?.ask;
   expect((await server.answer(ask?.requestId ?? "", "deny")).status).toBe(200);
   expect(await asked.done).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });

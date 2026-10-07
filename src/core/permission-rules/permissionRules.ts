@@ -1,9 +1,11 @@
 import { EDIT_TOOLS, NOT_YES_OR_NO_TOOLS } from "../sessions/session.ts";
 import {
   ASSIGNMENT,
+  namesOwnFiles,
   plainCommandWords,
   PREFIX_MARK,
   runsAnotherCommand,
+  runsCodeBySubcommand,
   sendsOrRunsCode,
 } from "./commandWords.ts";
 
@@ -172,7 +174,13 @@ function commandProblem(command: string, decision: RuleDecision): string | null 
     return `${program} runs another command, so an allow rule for it would let Claude Code run anything without asking you. Name the command it would run instead.`;
   }
   if (decision === "allow" && sendsOrRunsCode(program)) {
-    return `${program} can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you. Answer such commands by hand, or allow a script the project owns, such as ./scripts/test.sh, knowing Claude can edit it.`;
+    return `${program} is, or is named like, a program that can send requests or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you. Answer such commands by hand, or allow a script the project owns, such as ./scripts/test.sh, knowing Claude can edit it.`;
+  }
+  if (decision === "allow" && runsCodeBySubcommand(words.split(" "))) {
+    return `${words} fetches or runs code that Claude Code can choose, so an allow rule for it would let it run anything without asking you. Name the script it should run instead, or answer such commands by hand.`;
+  }
+  if (decision === "allow" && namesOwnFiles(words.split(" "))) {
+    return "An allow rule may not name Agent Lookout's own folder, ~/.agent-lookout, which holds its settings and its rules.";
   }
   return null;
 }

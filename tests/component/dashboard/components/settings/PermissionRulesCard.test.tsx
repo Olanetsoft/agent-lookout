@@ -164,7 +164,11 @@ test.each([
   ["WebFetch", "curl", /goes with Bash only/],
   ["bash", "npm test", /writes this tool's name Bash/],
   ["Bash", "sudo npm test", /sudo runs another command/],
-  ["Bash", "curl:*", /curl can send requests, or run code that does/],
+  [
+    "Bash",
+    "curl:*",
+    /curl is, or is named like, a program that can send requests or run code that does/,
+  ],
   ["Bash", "python -m pytest", /allow a script the project owns, such as \.\/scripts\/test\.sh/],
   ["mcp__docs", "", /names one tool of a server/],
 ])(

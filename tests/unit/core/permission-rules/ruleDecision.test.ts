@@ -271,3 +271,50 @@ describe("a deny or an ask rule matches more loosely, but still by words", () =>
     expect(decideByRules([DENY_RM], tool("Read"))).toBeNull();
   });
 });
+
+describe("an allow rule never answers a command that could change the rules", () => {
+  const ALLOW_NPM = rule({ decision: "allow", tool: "Bash", command: "npm:*" });
+  const ALLOW_SED = rule({ decision: "allow", tool: "Bash", command: "sed:*" });
+  const ALLOW_CP = rule({ decision: "allow", tool: "Bash", command: "cp:*" });
+
+  test("a subcommand that fetches or runs code, even under a rule for the program", () => {
+    expect(decideByRules([ALLOW_NPM], bash("npm exec some-pkg"))).toBeNull();
+    expect(decideByRules([ALLOW_NPM], bash("npm --yes exec some-pkg"))).toBeNull();
+    expect(decideByRules([ALLOW_NPM], bash("npm x some-pkg"))).toBeNull();
+    expect(decideByRules([ALLOW_NPM], bash("npm test"))).toMatchObject({ decision: "allow" });
+  });
+
+  test("a command that names Agent Lookout's folder", () => {
+    expect(
+      decideByRules(
+        [ALLOW_SED],
+        bash("sed -i s/deny/allow/ /Users/example/.agent-lookout/settings.json"),
+      ),
+    ).toBeNull();
+    expect(
+      decideByRules([ALLOW_CP], bash("cp /dev/null /Users/example/.agent-lookout/settings.json")),
+    ).toBeNull();
+    expect(decideByRules([ALLOW_SED], bash("sed -n 1p notes.txt"))).toMatchObject({
+      decision: "allow",
+    });
+  });
+
+  test("a command that names the settings file or the socket where a setting put them", () => {
+    const ownPaths = ["/tmp/rules/settings.json", "/tmp/al/answer.sock"];
+    expect(
+      decideByRules([ALLOW_CP], bash("cp x /tmp/rules/settings.json", { ownPaths })),
+    ).toBeNull();
+    expect(
+      decideByRules([ALLOW_CP], bash("cp x /tmp/rules/other.json", { ownPaths })),
+    ).toMatchObject({
+      decision: "allow",
+    });
+  });
+
+  test("a deny rule still takes such a command", () => {
+    const denyNpm = rule({ decision: "deny", tool: "Bash", command: "npm exec:*" });
+    expect(decideByRules([denyNpm, ALLOW_NPM], bash("npm exec some-pkg"))).toMatchObject({
+      decision: "deny",
+    });
+  });
+});

@@ -513,8 +513,10 @@ export function PermissionRulesCard({ answering = null, now: given }: Permission
           An allow rule trusts what it names. Claude can reach Agent Lookout on this computer, so no
           allow rule may begin with a program that sends requests or runs the code it is given, such
           as <Code>curl</Code> or <Code>python</Code>, and a saved list that holds one is not used
-          at all. A rule for a program that runs a file Claude can edit, such as{" "}
-          <Code>npm test</Code>, still lets Claude change these rules and answer its own prompts.
+          at all. No allow rule answers a subcommand that runs code, such as <Code>npm exec</Code>,
+          or a command that names Agent Lookout&apos;s own folder. A rule for a program that runs a
+          file Claude can edit, such as <Code>npm test</Code>, still lets Claude change these rules
+          and answer its own prompts.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
           Claude Code&apos;s own deny and allow rules decide first: Claude Code does not ask Agent

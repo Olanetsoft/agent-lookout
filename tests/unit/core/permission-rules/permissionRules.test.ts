@@ -194,7 +194,7 @@ describe("the rules a person can write", () => {
     (command) => {
       const problem = ruleProblem({ decision: "allow", tool: "Bash", command });
       expect(problem).toMatch(
-        /can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you/,
+        /is, or is named like, a program that can send requests or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you/,
       );
       expect(problem).toMatch(
         /Answer such commands by hand, or allow a script the project owns, such as \.\/scripts\/test\.sh, knowing Claude can edit it\./,
@@ -206,7 +206,7 @@ describe("the rules a person can write", () => {
 
   test("the refusal names the program as it was written", () => {
     expect(ruleProblem({ decision: "allow", tool: "Bash", command: "python3 -m pytest" })).toMatch(
-      /^python3 can send requests/,
+      /^python3 is, or is named like, a program that can send requests/,
     );
   });
 
@@ -327,5 +327,34 @@ describe("a rule in words", () => {
     expect(sameWords(rule(words, "a"), rule(words, "b"))).toBe(true);
     expect(sameWords(words, { ...words, decision: "ask" })).toBe(false);
     expect(sameWords(words, { decision: "deny", tool: "Bash" })).toBe(false);
+  });
+});
+
+describe("allow rules that could change the rules are refused when written", () => {
+  test.each([
+    ["npm exec:*", /fetches or runs code/],
+    ["pnpm dlx:*", /fetches or runs code/],
+    ["uv tool run:*", /fetches or runs code/],
+    ["docker run:*", /fetches or runs code/],
+    [
+      "sed -i s/deny/allow/ /Users/example/.agent-lookout/settings.json",
+      /Agent Lookout's own folder/,
+    ],
+    ["ksh93 -c:*", /runs another command/],
+    ["java:*", /send requests or run code/],
+  ])("allow %s", (command, problem) => {
+    expect(ruleProblem({ decision: "allow", tool: "Bash", command })).toMatch(problem);
+  });
+
+  test("the same commands may be denied or asked about", () => {
+    for (const command of ["npm exec:*", "docker run:*", "java:*"]) {
+      expect(ruleProblem({ decision: "deny", tool: "Bash", command })).toBeNull();
+      expect(ruleProblem({ decision: "ask", tool: "Bash", command })).toBeNull();
+    }
+  });
+
+  test("npm test and npm:* may still be allowed", () => {
+    expect(ruleProblem({ decision: "allow", tool: "Bash", command: "npm test:*" })).toBeNull();
+    expect(ruleProblem({ decision: "allow", tool: "Bash", command: "npm:*" })).toBeNull();
   });
 });

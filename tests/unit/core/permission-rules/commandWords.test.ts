@@ -4,12 +4,15 @@ import {
   COMMAND_RUNNERS,
   looseCommandWords,
   looselyMatches,
+  namesOwnFiles,
   NETWORK_CLIENTS_AND_INTERPRETERS,
   plainCommandWords,
   programOf,
   ruleCommandOf,
   runsAnotherCommand,
+  runsCodeBySubcommand,
   sendsOrRunsCode,
+  SUBCOMMANDS_THAT_RUN_CODE,
   wordsMatch,
 } from "@core/permission-rules/commandWords";
 
@@ -404,5 +407,102 @@ describe("the programs that send requests or run code, by the name their own beg
     "jq",
   ])("%s is not", (word) => {
     expect(sendsOrRunsCode(word)).toBe(false);
+  });
+});
+
+describe("a shell or a runner with a version in its name is still one", () => {
+  test.each(["bash5", "ksh93", "zsh-5.9", "bash-5.2", "pwsh-preview", "pnpx", "nix-shell"])(
+    "%s is one",
+    (word) => {
+      expect(runsAnotherCommand(word)).toBe(true);
+    },
+  );
+});
+
+describe("more interpreters and clients whose main purpose is running code or sending requests", () => {
+  test.each([
+    "java",
+    "jshell",
+    "ts-node",
+    "tsx",
+    "zx",
+    "R",
+    "elixir",
+    "iex",
+    "erl",
+    "ghci",
+    "scala",
+    "kotlin",
+    "ipython",
+    "websocat",
+    "lynx",
+    "w3m",
+    "grpcurl",
+  ])("%s is one", (word) => {
+    expect(sendsOrRunsCode(word)).toBe(true);
+  });
+
+  test("javac, a compiler, is not, and nor is rm, which only begins with r", () => {
+    expect(sendsOrRunsCode("javac")).toBe(false);
+    expect(sendsOrRunsCode("rm")).toBe(false);
+    expect(sendsOrRunsCode("rsync")).toBe(false);
+  });
+});
+
+describe("a subcommand that fetches or runs code", () => {
+  test.each([
+    ["npm exec some-pkg"],
+    ["npm x some-pkg"],
+    ["npm --yes exec some-pkg"],
+    ["npm init some-pkg"],
+    ["npm create some-pkg"],
+    ["pnpm dlx some-pkg"],
+    ["yarn dlx some-pkg"],
+    ["uv tool run some-pkg"],
+    ["uv run main.py"],
+    ["pipx run some-pkg"],
+    ["go run example.com/x@latest"],
+    ["cargo run"],
+    ["docker run some-image"],
+    ["podman exec box sh"],
+    ["NPM.exe EXEC some-pkg"],
+  ])("%s runs code", (command) => {
+    expect(runsCodeBySubcommand(command.split(" "))).toBe(true);
+  });
+
+  test.each([
+    ["npm test"],
+    ["npm run build"],
+    ["go test -run TestX"],
+    ["npm test -- exec"],
+    ["docker ps"],
+    ["git status"],
+  ])("%s does not", (command) => {
+    expect(runsCodeBySubcommand(command.split(" "))).toBe(false);
+  });
+
+  test("the list is written in small letters", () => {
+    for (const [program, subcommands] of Object.entries(SUBCOMMANDS_THAT_RUN_CODE)) {
+      expect(program).toBe(program.toLowerCase());
+      expect(subcommands.every((name) => name === name.toLowerCase())).toBe(true);
+    }
+  });
+});
+
+describe("a command that names Agent Lookout's own files", () => {
+  test("its folder, wherever it is written from, whatever its capitals", () => {
+    expect(
+      namesOwnFiles(["sed", "-i", "s/deny/allow/", "/Users/example/.agent-lookout/settings.json"]),
+    ).toBe(true);
+    expect(namesOwnFiles(["cp", "x", "../../.Agent-Lookout/"])).toBe(true);
+    expect(namesOwnFiles(["ls", "-la"])).toBe(false);
+  });
+
+  test("a settings file or a socket a setting put elsewhere", () => {
+    const own = ["/tmp/rules/settings.json", "/tmp/al/answer.sock"];
+    expect(namesOwnFiles(["cp", "x", "/tmp/rules/settings.json"], own)).toBe(true);
+    expect(namesOwnFiles(["rm", "/tmp/al/answer.sock"], own)).toBe(true);
+    expect(namesOwnFiles(["cp", "x", "/tmp/rules/other.json"], own)).toBe(false);
+    expect(namesOwnFiles(["ls"], ["", ""])).toBe(false);
   });
 });

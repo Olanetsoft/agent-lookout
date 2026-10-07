@@ -1,9 +1,11 @@
 import {
   looseCommandWords,
   looselyMatches,
+  namesOwnFiles,
   plainCommandWords,
   ruleCommandOf,
   runsAnotherCommand,
+  runsCodeBySubcommand,
   sendsOrRunsCode,
   wordsMatch,
 } from "./commandWords.ts";
@@ -45,7 +47,11 @@ import {
  * should a list hold one, and nor does one whose command begins with a
  * program that runs another, sends requests or runs the code it is given,
  * such as `sudo`, `curl` or `python`: the rules refuse such a rule when it is
- * written, and a file that holds one is read as no rule at all.
+ * written, and a file that holds one is read as no rule at all. Nor does an
+ * allow rule ever answer a command that runs code through a subcommand, such
+ * as `npm exec` under `npm:*` (`runsCodeBySubcommand`), or that names Agent
+ * Lookout's own folder, settings file or socket (`namesOwnFiles`): either
+ * could change the rules.
  */
 
 /** A request, as much of it as the rules read. */
@@ -57,6 +63,8 @@ export interface RuleRequest {
   inputNames: readonly string[];
   /** Whether the person could allow it by hand on the dashboard now. */
   allowable: boolean;
+  /** Agent Lookout's own settings file and socket, which no allowed command may name. */
+  ownPaths?: readonly string[];
 }
 
 /** The decision, and the rule that made it. */
@@ -101,7 +109,9 @@ function lets(rule: PermissionRule, request: RuleRequest): boolean {
   const [program = ""] = wanted.words;
   if (runsAnotherCommand(program) || sendsOrRunsCode(program)) return false;
   const words = plainCommandWords(request.command);
-  return words !== null && wordsMatch(wanted, words);
+  if (words === null || runsCodeBySubcommand(words)) return false;
+  if (namesOwnFiles(words, request.ownPaths)) return false;
+  return wordsMatch(wanted, words);
 }
 
 /** The rule that decides the request, deny first, then ask, then allow, or null when none does. */

@@ -254,8 +254,9 @@ export function createCollector(options: CollectorOptions): Collector {
   // Read here, as the collector starts. A change made in the dashboard is
   // made to what the file holds then, put in force at once and written back,
   // and a change another copy of Agent Lookout saved is read at the next poll.
+  const settingsSetup = readSettingsSetup(env);
   const settings = createCollectorSettings({
-    setup: readSettingsSetup(env),
+    setup: settingsSetup,
     store: options.settingsStore,
   });
   if (settings.problemAtStart !== null) warn(settings.problemAtStart);
@@ -444,6 +445,7 @@ export function createCollector(options: CollectorOptions): Collector {
         platform,
         // Read for each request, so a change in Settings holds for the next one.
         rules: () => settings.permissionRules(),
+        settingsFile: settingsSetup.file,
         ...options.answering,
       })
     : null;

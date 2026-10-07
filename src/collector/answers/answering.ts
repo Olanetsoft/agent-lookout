@@ -60,6 +60,8 @@ export interface AnsweringOptions {
   every?: (run: () => void, ms: number) => () => void;
   /** The permission rules in force, read again for each request. Left out, there are none. */
   rules?: () => readonly PermissionRule[];
+  /** The settings file the rules are kept in, which no command a rule allows may name. */
+  settingsFile?: string;
 }
 
 export function createAnswering(options: AnsweringOptions): Answering {
@@ -83,6 +85,9 @@ export function createAnswering(options: AnsweringOptions): Answering {
 
   const ruleAnswers = createRuleAnswers({
     rules: options.rules ?? (() => []),
+    // A command that names the settings file or the socket could change the
+    // rules or answer prompts, so no rule allows it, wherever they are.
+    ownPaths: [options.settingsFile ?? "", setup.socketPath],
     poller,
     events,
     now: options.now,
