@@ -70,74 +70,78 @@ async function showing(server: PrivateTmux): Promise<Record<string, string>> {
   return shown;
 }
 
-describe.skipIf(tmux === null)("the real tmux, on a server of the test's own", () => {
-  test("finds the pane a process runs in, by its ancestors, and selects it", async () => {
-    const server = privateTmux(tmux as string);
-    const { shell, sleeping } = await twoSessions(server);
-    expect(await showing(server)).toEqual({ "checkout-flow": "1.0", "docs-site": "0.0" });
+// Only where tmux is installed, and never on Windows, which has no tmux.
+describe.skipIf(tmux === null || process.platform === "win32")(
+  "the real tmux, on a server of the test's own",
+  () => {
+    test("finds the pane a process runs in, by its ancestors, and selects it", async () => {
+      const server = privateTmux(tmux as string);
+      const { shell, sleeping } = await twoSessions(server);
+      expect(await showing(server)).toEqual({ "checkout-flow": "1.0", "docs-site": "0.0" });
 
-    const finder = createPaneFinder({ run: server.run });
-    await finder.look([sleeping, process.pid]);
-    expect(finder.paneOf(sleeping)).toEqual(shell);
-    // This test's own process is in no pane of that server.
-    expect(finder.paneOf(process.pid)).toBeUndefined();
+      const finder = createPaneFinder({ run: server.run });
+      await finder.look([sleeping, process.pid]);
+      expect(finder.paneOf(sleeping)).toEqual(shell);
+      // This test's own process is in no pane of that server.
+      expect(finder.paneOf(process.pid)).toBeUndefined();
 
-    expect(await selectPane(shell.id, server.run)).toEqual({
-      ok: true,
-      place: "checkout-flow:0.0",
+      expect(await selectPane(shell.id, server.run)).toEqual({
+        ok: true,
+        place: "checkout-flow:0.0",
+      });
+      // Its window is the session's selected window, and it is that window's
+      // selected pane. The other session is as it was.
+      expect(await showing(server)).toEqual({ "checkout-flow": "0.0", "docs-site": "0.0" });
     });
-    // Its window is the session's selected window, and it is that window's
-    // selected pane. The other session is as it was.
-    expect(await showing(server)).toEqual({ "checkout-flow": "0.0", "docs-site": "0.0" });
-  });
 
-  test("switches a client that is showing another session, and leaves one that is not", async () => {
-    const server = privateTmux(tmux as string);
-    const { shell } = await twoSessions(server);
-    await server.attach("docs-site");
-    const clients = () => server.ask("list-clients", "-F", "#{session_name}");
-    expect((await clients()).trim()).toBe("docs-site");
+    test("switches a client that is showing another session, and leaves one that is not", async () => {
+      const server = privateTmux(tmux as string);
+      const { shell } = await twoSessions(server);
+      await server.attach("docs-site");
+      const clients = () => server.ask("list-clients", "-F", "#{session_name}");
+      expect((await clients()).trim()).toBe("docs-site");
 
-    expect((await selectPane(shell.id, server.run)).ok).toBe(true);
-    expect((await clients()).trim()).toBe("checkout-flow");
-    expect((await showing(server))["checkout-flow"]).toBe("0.0");
+      expect((await selectPane(shell.id, server.run)).ok).toBe(true);
+      expect((await clients()).trim()).toBe("checkout-flow");
+      expect((await showing(server))["checkout-flow"]).toBe("0.0");
 
-    // Selected again, with the client already there: nothing moves.
-    expect((await selectPane(shell.id, server.run)).ok).toBe(true);
-    expect((await clients()).trim()).toBe("checkout-flow");
-  });
-
-  test("says the pane has gone once it has closed, and changes nothing", async () => {
-    const server = privateTmux(tmux as string);
-    const { shell } = await twoSessions(server);
-    await server.ask("kill-pane", "-t", shell.id);
-    const before = await showing(server);
-
-    expect(await selectPane(shell.id, server.run)).toEqual({ ok: false, reason: "pane-gone" });
-    expect(await showing(server)).toEqual(before);
-  });
-
-  test("says tmux has stopped once its server has, and starts no server by asking", async () => {
-    const server = privateTmux(tmux as string);
-    const { shell, sleeping } = await twoSessions(server);
-    await server.ask("kill-server");
-
-    expect(await selectPane(shell.id, server.run)).toEqual({ ok: false, reason: "tmux-stopped" });
-    const finder = createPaneFinder({ run: server.run });
-    await finder.look([sleeping]);
-    expect(finder.paneOf(sleeping)).toBeUndefined();
-    expect((await server.run(["list-sessions"])).ok).toBe(false);
-  });
-
-  test("a session name with spaces and letters outside ASCII is read whole", async () => {
-    const server = privateTmux(tmux as string);
-    await server.ask("new-session", "-d", "-s", "búsqueda 索引 v2", "sleep 300");
-    const [pane] = parsePanes(await server.ask(...LIST_PANES_ARGS));
-
-    expect(pane?.place).toBe("búsqueda 索引 v2:0.0");
-    expect(await selectPane(pane?.id ?? "", server.run)).toEqual({
-      ok: true,
-      place: "búsqueda 索引 v2:0.0",
+      // Selected again, with the client already there: nothing moves.
+      expect((await selectPane(shell.id, server.run)).ok).toBe(true);
+      expect((await clients()).trim()).toBe("checkout-flow");
     });
-  });
-});
+
+    test("says the pane has gone once it has closed, and changes nothing", async () => {
+      const server = privateTmux(tmux as string);
+      const { shell } = await twoSessions(server);
+      await server.ask("kill-pane", "-t", shell.id);
+      const before = await showing(server);
+
+      expect(await selectPane(shell.id, server.run)).toEqual({ ok: false, reason: "pane-gone" });
+      expect(await showing(server)).toEqual(before);
+    });
+
+    test("says tmux has stopped once its server has, and starts no server by asking", async () => {
+      const server = privateTmux(tmux as string);
+      const { shell, sleeping } = await twoSessions(server);
+      await server.ask("kill-server");
+
+      expect(await selectPane(shell.id, server.run)).toEqual({ ok: false, reason: "tmux-stopped" });
+      const finder = createPaneFinder({ run: server.run });
+      await finder.look([sleeping]);
+      expect(finder.paneOf(sleeping)).toBeUndefined();
+      expect((await server.run(["list-sessions"])).ok).toBe(false);
+    });
+
+    test("a session name with spaces and letters outside ASCII is read whole", async () => {
+      const server = privateTmux(tmux as string);
+      await server.ask("new-session", "-d", "-s", "búsqueda 索引 v2", "sleep 300");
+      const [pane] = parsePanes(await server.ask(...LIST_PANES_ARGS));
+
+      expect(pane?.place).toBe("búsqueda 索引 v2:0.0");
+      expect(await selectPane(pane?.id ?? "", server.run)).toEqual({
+        ok: true,
+        place: "búsqueda 索引 v2:0.0",
+      });
+    });
+  },
+);

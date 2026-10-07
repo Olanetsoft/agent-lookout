@@ -7,6 +7,9 @@ import { describe, expect, test } from "vitest";
 import { createTmuxRunner, findTmuxBinary, runTmuxBinary } from "@collector/tmux/program";
 import { tempDir } from "@tests/support/node/tempFiles";
 
+// The stand-in tmux is a POSIX sh script, and tmux is never run on Windows.
+const posixTest = test.skipIf(process.platform === "win32");
+
 /** A stand-in program named `tmux`, in a folder of its own. Returns the folder. */
 async function stubTmux(script: string): Promise<string> {
   const dir = path.join(await tempDir(), "bin");
@@ -18,7 +21,7 @@ async function stubTmux(script: string): Promise<string> {
 }
 
 describe("runTmuxBinary", () => {
-  test("hands each argument over as it is, with no shell to read it", async () => {
+  posixTest("hands each argument over as it is, with no shell to read it", async () => {
     const dir = await stubTmux('for arg in "$@"; do printf "[%s]\\n" "$arg"; done');
     const result = await runTmuxBinary(
       path.join(dir, "tmux"),
@@ -32,7 +35,7 @@ describe("runTmuxBinary", () => {
     });
   });
 
-  test("a failure comes back with what the program said, and does not reject", async () => {
+  posixTest("a failure comes back with what the program said, and does not reject", async () => {
     const dir = await stubTmux('echo "can\'t find pane: %7" >&2; exit 1');
     const result = await runTmuxBinary(path.join(dir, "tmux"), ["select-pane", "-t", "%7"], {
       env: {},
@@ -41,14 +44,14 @@ describe("runTmuxBinary", () => {
     expect(result).toEqual({ ok: false, stderr: "can't find pane: %7" });
   });
 
-  test("a program that waits for input is given none", async () => {
+  posixTest("a program that waits for input is given none", async () => {
     const dir = await stubTmux("cat; echo done");
     const result = await runTmuxBinary(path.join(dir, "tmux"), [], { env: {}, timeoutMs: 5_000 });
 
     expect(result).toEqual({ ok: true, stdout: "done\n" });
   });
 
-  test("a program that hangs is given up on when its time is up", async () => {
+  posixTest("a program that hangs is given up on when its time is up", async () => {
     const dir = await stubTmux("exec sleep 30");
     const started = Date.now();
     const result = await runTmuxBinary(path.join(dir, "tmux"), [], { env: {}, timeoutMs: 200 });
@@ -67,7 +70,7 @@ describe("runTmuxBinary", () => {
 });
 
 describe("createTmuxRunner", () => {
-  test("runs the tmux on PATH, with the collector's environment", async () => {
+  posixTest("runs the tmux on PATH, with the collector's environment", async () => {
     const dir = await stubTmux('echo "$1 from $AGENT_LOOKOUT_TEST_MARK"');
     // Found on PATH, which comes before the fixed locations.
     expect(await findTmuxBinary({ PATH: dir })).toBe(path.join(dir, "tmux"));

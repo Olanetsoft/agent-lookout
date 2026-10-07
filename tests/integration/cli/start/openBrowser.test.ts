@@ -7,10 +7,10 @@ import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
 
 import { runProgram } from "@cli/start/openBrowser";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { tempDir, writeWindowsStub } from "@tests/support/node/tempFiles";
 
 // The opener's runner against stand-in openers: small shell scripts in a
-// temporary folder. No browser is ever opened.
+// temporary folder, and on Windows a stand-in program. No browser is ever opened.
 
 /** Writes an executable shell script that stands in for `open` or `xdg-open`, and returns its path. */
 async function standInOpener(script: string): Promise<{ file: string; dir: string }> {
@@ -21,7 +21,9 @@ async function standInOpener(script: string): Promise<{ file: string; dir: strin
   return { file, dir };
 }
 
-describe("runProgram, against stand-in openers", () => {
+// The stand-in openers are POSIX sh scripts, and a process group is a POSIX
+// thing, so Windows has its own checks below.
+describe.skipIf(process.platform === "win32")("runProgram, against stand-in openers", () => {
   test("has worked when the opener ends with 0", async () => {
     const { file } = await standInOpener("exit 0");
     expect(await runProgram(file, ["http://127.0.0.1:4777"])).toBe(true);
@@ -59,3 +61,30 @@ describe("runProgram, against stand-in openers", () => {
     });
   }, 20_000);
 });
+
+describe.runIf(process.platform === "win32")(
+  "runProgram on Windows, against a stand-in opener",
+  () => {
+    /** Runs the stand-in as the opener would be run, with what it needs in the environment it inherits. */
+    async function runAs(body: string): Promise<boolean> {
+      const opener = await writeWindowsStub(body, "rundll32.exe");
+      vi.stubEnv("NODE_OPTIONS", opener.env.NODE_OPTIONS);
+      try {
+        return await runProgram(opener.file, [
+          "url.dll,FileProtocolHandler",
+          "http://127.0.0.1:4777",
+        ]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+
+    test("has worked when the opener ends with 0", async () => {
+      expect(await runAs("process.exit(0);")).toBe(true);
+    }, 20_000);
+
+    test("has failed when the opener ends with another code", async () => {
+      expect(await runAs("process.exit(3);")).toBe(false);
+    }, 20_000);
+  },
+);

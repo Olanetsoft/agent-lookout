@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
-import { open, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 
+import { openWithoutFollowing } from "../../files/noFollow.ts";
 import { validPid } from "../../processes/pids.ts";
 
 /**
@@ -78,9 +79,8 @@ const MAX_ENTRY_BYTES = 256 * 1024;
 /**
  * Reads one registry file, and only if it is an ordinary file of ordinary size.
  *
- * - `O_NOFOLLOW` makes the open fail when the name is a symbolic link.
- * - `O_NONBLOCK` makes the open return at once for a named pipe, which would
- *   otherwise wait for a writer for ever and take the whole poll with it.
+ * - It is opened without following a link at its name, and without waiting
+ *   on a named pipe, which would take the whole poll with it: `noFollow.ts`.
  * - The checks are made on the open file, not on the name, so nothing can be
  *   swapped in between the check and the read.
  * - The size is checked before a byte is read.
@@ -88,9 +88,7 @@ const MAX_ENTRY_BYTES = 256 * 1024;
  * Throws for anything it will not read. The caller skips that entry.
  */
 export async function readRegularFile(file: string): Promise<string> {
-  // The two flags do not exist on Windows, where they are left out.
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  const handle = await open(file, flags);
+  const handle = await openWithoutFollowing(file, constants.O_RDONLY);
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new Error("Not an ordinary file.");

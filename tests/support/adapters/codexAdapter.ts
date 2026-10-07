@@ -7,7 +7,9 @@
 // only the four reading methods of `ReadOnlyIo`. Everything that changes the files
 // is on the other side, for the test alone.
 
-import path from "node:path";
+import nativePath from "node:path";
+// The stand-in keeps paths as the tests write them, `/` between their names.
+import path from "node:path/posix";
 
 import {
   createCodexAdapter,
@@ -16,6 +18,7 @@ import {
 } from "@collector/adapters/codex/index";
 import type { ReadOnlyIo, FileInfo, OpenFile } from "@collector/files/readOnlyIo";
 import { HOME, NOW } from "@tests/fixtures/codex";
+import { asWritten } from "@tests/support/paths";
 
 export type IoMethod = keyof ReadOnlyIo;
 
@@ -94,8 +97,10 @@ export function memoryFiles(clock: () => number = () => NOW) {
     throw errno("ENOENT", target);
   }
 
+  // Each path is taken as the tests write it, whatever system joined it.
   const io: ReadOnlyIo = {
-    async readdir(dir) {
+    async readdir(given) {
+      const dir = asWritten(given);
       check("readdir", dir);
       if (entries.has(dir)) throw errno("ENOTDIR", dir);
       if (!folders.has(dir)) throw errno("ENOENT", dir);
@@ -105,15 +110,18 @@ export function memoryFiles(clock: () => number = () => NOW) {
       }
       return [...names];
     },
-    async stat(target) {
+    async stat(given) {
+      const target = asWritten(given);
       check("stat", target);
       return info(target);
     },
-    async lstat(target) {
+    async lstat(given) {
+      const target = asWritten(given);
       check("lstat", target);
       return info(target);
     },
-    async openRegular(file): Promise<OpenFile> {
+    async openRegular(given): Promise<OpenFile> {
+      const file = asWritten(given);
       check("openRegular", file);
       if (folders.has(file)) throw errno("EISDIR", file);
       const entry = entries.get(file);
@@ -142,7 +150,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
     calls,
     reads,
     /** Writes a new file in place of anything at that path: a new file, so a new identity. */
-    write(target: string, content: string | Uint8Array, options: WriteOptions = {}) {
+    write(given: string, content: string | Uint8Array, options: WriteOptions = {}) {
+      const target = asWritten(given);
       addFolders(target);
       entries.set(target, {
         kind: "file",
@@ -152,7 +161,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
       });
     },
     /** Adds to the end of a file, as Codex adds lines. The file keeps its identity. */
-    append(target: string, content: string | Uint8Array, options: WriteOptions = {}) {
+    append(given: string, content: string | Uint8Array, options: WriteOptions = {}) {
+      const target = asWritten(given);
       const entry = entries.get(target);
       if (!entry) throw new Error(`No file at ${target}.`);
       const added = bytesOf(content);
@@ -163,14 +173,16 @@ export function memoryFiles(clock: () => number = () => NOW) {
       entry.mtimeMs = options.mtimeMs ?? clock();
     },
     /** Replaces a file's content in place: the same file, so the same identity. */
-    rewrite(target: string, content: string | Uint8Array, options: WriteOptions = {}) {
+    rewrite(given: string, content: string | Uint8Array, options: WriteOptions = {}) {
+      const target = asWritten(given);
       const entry = entries.get(target);
       if (!entry) throw new Error(`No file at ${target}.`);
       entry.data = bytesOf(content);
       entry.mtimeMs = options.mtimeMs ?? clock();
     },
     /** Something that is not an ordinary file, such as a link or a pipe, under this name. */
-    special(target: string) {
+    special(given: string) {
+      const target = asWritten(given);
       addFolders(target);
       entries.set(target, {
         kind: "other",
@@ -180,10 +192,11 @@ export function memoryFiles(clock: () => number = () => NOW) {
       });
     },
     mkdir(target: string) {
-      addFolders(path.join(target, "x"));
+      addFolders(path.join(asWritten(target), "x"));
     },
     /** Removes a file, or a folder and everything in it. */
-    remove(target: string) {
+    remove(given: string) {
+      const target = asWritten(given);
       for (const key of [...entries.keys()]) {
         if (key === target || key.startsWith(`${target}/`)) entries.delete(key);
       }
@@ -193,10 +206,10 @@ export function memoryFiles(clock: () => number = () => NOW) {
     },
     /** Every call on this path fails with this code until `heal`. */
     fail(target: string, code = "EACCES") {
-      failing.set(target, code);
+      failing.set(asWritten(target), code);
     },
     heal(target: string) {
-      failing.delete(target);
+      failing.delete(asWritten(target));
     },
     /** Every call on any path fails with this code, or works again with null. */
     failAll(code: string | null) {
@@ -250,13 +263,20 @@ export function codexAdapterFor(files: MemoryFiles, options: CodexAdapterOptions
   });
 }
 
+/**
+ * A path in a folder as the adapter shows it: under the home folder with `/`,
+ * as `~/.codex/sessions`, and anywhere else as this system writes it.
+ */
+const shownIn = (home: string, name: string) =>
+  home.startsWith("~") ? `${home}/${name}` : nativePath.join(home, name);
+
 /** The four facts, in the order the adapter gives them, for a Codex folder written as people see it. */
 export function watching(home: string, read: string) {
   return [
-    { label: "Sessions folder", value: `${home}/sessions` },
+    { label: "Sessions folder", value: shownIn(home, "sessions") },
     { label: "Read", value: read },
-    { label: "Open-sessions folder", value: `${home}/thread-writer-locks` },
-    { label: "Names file", value: `${home}/session_index.jsonl` },
+    { label: "Open-sessions folder", value: shownIn(home, "thread-writer-locks") },
+    { label: "Names file", value: shownIn(home, "session_index.jsonl") },
   ];
 }
 
@@ -268,14 +288,19 @@ export const healthy = (sessions = "~/.codex/sessions") =>
 export const noLockFolder = (locks = "~/.codex/thread-writer-locks") =>
   ` There is no list of open sessions at ${locks}, which Codex keeps from version 0.155 on, so a session that has ended cannot be told from one that is idle, and none is shown as finished.`;
 
-/** Runs `run` with the process in this time zone, and puts the zone back afterwards. */
+/**
+ * Runs `run` with the process in this time zone, and puts the zone back
+ * afterwards. Node on Windows keeps the zone it was last given when `TZ` is
+ * deleted, so the zone in force before is set again first.
+ */
 export async function inTimeZone<T>(zone: string, run: () => T | Promise<T>): Promise<T> {
   const before = process.env.TZ;
+  const zoneBefore = Intl.DateTimeFormat().resolvedOptions().timeZone;
   process.env.TZ = zone;
   try {
     return await run();
   } finally {
+    process.env.TZ = before ?? zoneBefore;
     if (before === undefined) delete process.env.TZ;
-    else process.env.TZ = before;
   }
 }

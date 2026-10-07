@@ -2,7 +2,7 @@
 
 import path from "node:path";
 
-import { isExecutableFile, pathCandidates } from "../files/paths.ts";
+import { isExecutableFile, pathCandidates, pathsOf } from "../files/paths.ts";
 
 /** The variable that names the ssh program outright. */
 export const SSH_BIN_ENV = "AGENT_LOOKOUT_SSH_BIN";
@@ -34,18 +34,22 @@ export type SshSearch =
 
 /**
  * Finds ssh: the program `AGENT_LOOKOUT_SSH_BIN` names when it is set, and then
- * no other, or else the first on `PATH`, then the fixed locations. Someone who
+ * no other, or else the first on `PATH`, then the fixed locations. On Windows
+ * that is an `ssh.exe` on `PATH`, as the OpenSSH that comes with Windows puts
+ * its folder there. Someone who
  * names a program means that program, so a mistake in the variable is reported
  * and another ssh is never run in its place.
  */
 export async function findSsh(
   env: NodeJS.ProcessEnv,
-  isExecutable: (candidate: string) => Promise<boolean> = isExecutableFile,
+  isExecutable?: (candidate: string) => Promise<boolean>,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<SshSearch> {
+  isExecutable ??= (candidate) => isExecutableFile(candidate, platform);
   const named = env[SSH_BIN_ENV]?.trim();
   if (named) {
     // The person chose this path themselves, so a relative one is taken as given.
-    const resolved = path.resolve(named);
+    const resolved = pathsOf(platform).resolve(named);
     if (await isExecutable(resolved)) return { found: true, path: resolved };
     return {
       found: false,
@@ -53,7 +57,7 @@ export async function findSsh(
       named: true,
     };
   }
-  const candidates = [...new Set([...pathCandidates(env, "ssh"), ...SSH_LOCATIONS])];
+  const candidates = [...new Set([...pathCandidates(env, "ssh", platform), ...SSH_LOCATIONS])];
   for (const candidate of candidates) {
     if (await isExecutable(candidate)) return { found: true, path: candidate };
   }

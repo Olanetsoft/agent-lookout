@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import {
@@ -237,10 +239,14 @@ describe("where it looks", () => {
     const adapter = codexAdapterFor(files, { env: { [CODEX_OWN_HOME_ENV]: elsewhere } });
     const { health, sessions } = await adapter.poll();
 
-    expect(health.watching).toEqual(watching(elsewhere, "every 2 seconds"));
-    expect(health.detail).toBe(healthy(`${elsewhere}/sessions`));
+    // Away from the home folder it is shown in full, as this system writes it.
+    const shown = path.resolve(elsewhere);
+    expect(health.watching).toEqual(watching(shown, "every 2 seconds"));
+    expect(health.detail).toBe(healthy(path.join(shown, "sessions")));
     expect(sessions.map((session) => session.id)).toEqual([`codex:${ids.working}`]);
-    expect(adapter.lookingIn).toBe(`Looking for Codex sessions in ${elsewhere}/sessions.`);
+    expect(adapter.lookingIn).toBe(
+      `Looking for Codex sessions in ${path.join(shown, "sessions")}.`,
+    );
     expect(files.count(undefined, (target) => target.startsWith(CODEX_HOME))).toBe(0);
   });
 
@@ -251,8 +257,7 @@ describe("where it looks", () => {
     }).poll();
     expect(result.health).toMatchObject({
       state: "unavailable",
-      detail:
-        "Codex was not found: CODEX_HOME is set to /Volumes/work/codex, and there is no folder there. Agent Lookout looks again every minute.",
+      detail: `Codex was not found: CODEX_HOME is set to ${path.resolve("/Volumes/work/codex")}, and there is no folder there. Agent Lookout looks again every minute.`,
     });
     expect(result.health).not.toHaveProperty("advice");
   });

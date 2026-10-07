@@ -3,13 +3,14 @@ import {
   constants,
   fstatSync,
   lstatSync,
-  openSync,
   readSync,
   unlinkSync,
   writeSync,
   type Stats,
 } from "node:fs";
-import { lstat, lutimes, mkdir, open, readdir, unlink } from "node:fs/promises";
+import { lstat, lutimes, mkdir, readdir, unlink } from "node:fs/promises";
+
+import { openWithoutFollowing, openWithoutFollowingNow } from "../files/noFollow.ts";
 
 /**
  * Everything the history does to the file system, in its own folder and
@@ -64,13 +65,11 @@ export const FILE_MODE = 0o600;
 /** The folder's mode: listed and entered by its owner, and by nobody else. */
 export const FOLDER_MODE = 0o700;
 
-// `O_NOFOLLOW` makes an open fail when the name is a link, and `O_NONBLOCK`
-// makes it return at once for a named pipe, which would otherwise wait for a
-// writer for ever. Neither exists on Windows, where they are left out.
-const NO_FOLLOW = (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-const READ = constants.O_RDONLY | NO_FOLLOW;
-const APPEND = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | NO_FOLLOW;
-const CREATE = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW;
+// Every file is opened without following a link at its name, and without
+// waiting on a named pipe: `noFollow.ts`.
+const READ = constants.O_RDONLY;
+const APPEND = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT;
+const CREATE = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL;
 
 function notOrdinary(): Error {
   return new Error("Not an ordinary file.");
@@ -87,7 +86,7 @@ function isMissing(error: unknown): boolean {
  * swapped in between. A file larger than `maxBytes` is not read at all.
  */
 async function readRegular(file: string, maxBytes: number): Promise<string> {
-  const handle = await open(file, READ);
+  const handle = await openWithoutFollowing(file, READ);
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw notOrdinary();
@@ -106,7 +105,7 @@ async function readRegular(file: string, maxBytes: number): Promise<string> {
 }
 
 function readRegularNow(file: string, maxBytes: number): string {
-  const fd = openSync(file, READ);
+  const fd = openWithoutFollowingNow(file, READ);
   try {
     const info = fstatSync(fd);
     if (!info.isFile()) throw notOrdinary();
@@ -125,7 +124,7 @@ function readRegularNow(file: string, maxBytes: number): string {
 }
 
 function writeNow(file: string, flags: number, text: string): void {
-  const fd = openSync(file, flags, FILE_MODE);
+  const fd = openWithoutFollowingNow(file, flags, FILE_MODE);
   try {
     if (!fstatSync(fd).isFile()) throw notOrdinary();
     writeSync(fd, text);
@@ -135,7 +134,7 @@ function writeNow(file: string, flags: number, text: string): void {
 }
 
 async function writeTo(file: string, flags: number, text: string): Promise<void> {
-  const handle = await open(file, flags, FILE_MODE);
+  const handle = await openWithoutFollowing(file, flags, FILE_MODE);
   try {
     if (!(await handle.stat()).isFile()) throw notOrdinary();
     await handle.writeFile(text, "utf8");

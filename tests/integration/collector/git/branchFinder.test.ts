@@ -147,8 +147,10 @@ describe("real repositories made of plain files", () => {
         name: "billing",
       });
     }
-    // The id is never the path.
-    expect(JSON.stringify(await find(at("platform-api"), home))).not.toContain(home);
+    // The id is never the path, as JSON writes it, with each backslash doubled on Windows.
+    expect(JSON.stringify(await find(at("platform-api"), home))).not.toContain(
+      JSON.stringify(home).slice(1, -1),
+    );
   });
 
   test("nothing is written, and nothing but the .git file, HEAD and a worktree's commondir is opened", async () => {
@@ -164,7 +166,8 @@ describe("real repositories made of plain files", () => {
       await findGitHead(at(folder), { io, homeDir: home });
     }
 
-    expect(opened.map((file) => path.relative(at(), file))).toEqual([
+    // Written with `/`, whatever system joined them.
+    expect(opened.map((file) => path.relative(at(), file).split(path.sep).join("/"))).toEqual([
       "storefront/.git/HEAD",
       "storefront-checkout/.git",
       "storefront/.git/worktrees/checkout-flow/HEAD",

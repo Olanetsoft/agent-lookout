@@ -55,7 +55,7 @@ describe("openRegularFile", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("what openRegularFile will not open", () => {
+describe("what openRegularFile will not open", () => {
   test("a link is not followed, even to an ordinary file beside it", async () => {
     const dir = await tempDir();
     await writeFile(path.join(dir, "real.jsonl"), "content");
@@ -63,15 +63,20 @@ describe.skipIf(process.platform === "win32")("what openRegularFile will not ope
     await expect(openRegularFile(path.join(dir, "link.jsonl"))).rejects.toThrow();
   });
 
-  test("a named pipe is refused at once instead of waiting for a writer", async () => {
-    const dir = await tempDir();
-    const pipe = path.join(dir, "rollout.jsonl");
-    // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
-    execFileSync("mkfifo", [pipe]);
-    const started = Date.now();
-    await expect(openRegularFile(pipe)).rejects.toThrow();
-    expect(Date.now() - started).toBeLessThan(2_000);
-  }, 5_000);
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "a named pipe is refused at once instead of waiting for a writer",
+    async () => {
+      const dir = await tempDir();
+      const pipe = path.join(dir, "rollout.jsonl");
+      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+      execFileSync("mkfifo", [pipe]);
+      const started = Date.now();
+      await expect(openRegularFile(pipe)).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(2_000);
+    },
+    5_000,
+  );
 });
 
 describe("nodeIo", () => {
@@ -79,7 +84,7 @@ describe("nodeIo", () => {
     expect(Object.keys(nodeIo).sort()).toEqual(["lstat", "openRegular", "readdir", "stat"]);
   });
 
-  test.skipIf(process.platform === "win32")("stat follows a link and lstat does not", async () => {
+  test("stat follows a link and lstat does not", async () => {
     const dir = await tempDir();
     await mkdir(path.join(dir, "real"));
     await symlink("real", path.join(dir, "link"));

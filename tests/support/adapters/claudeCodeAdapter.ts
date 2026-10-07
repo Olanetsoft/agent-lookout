@@ -9,6 +9,7 @@ import {
 } from "@collector/adapters/claude-code/index";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { feedJson, HOME } from "@tests/fixtures/claudeCode";
+import { asWritten } from "@tests/support/paths";
 
 /** The fixed clock every adapter here reads. */
 export const now = 1_700_000_100_000;
@@ -58,7 +59,7 @@ export function adapterFor(claudeHome: string, options: ClaudeCodeAdapterOptions
     homeDir: HOME,
     now: () => now,
     isAlive: () => true,
-    isExecutable: async (candidate) => candidate === BIN,
+    isExecutable: async (candidate) => asWritten(candidate) === BIN,
     run: prints(feedJson),
     readProcessStarts: noStartTimes,
     ...(options.registryIo !== undefined && { transcriptIo: noTranscripts }),

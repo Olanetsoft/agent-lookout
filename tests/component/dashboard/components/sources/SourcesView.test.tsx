@@ -494,6 +494,40 @@ const customSession = (name: string) =>
   });
 
 describe("the card for status files", () => {
+  test("a folder away from the home folder on Windows is a literal string, in the mono", async () => {
+    const folder = "D:\\agents\\status";
+    const screen = await render(
+      <SourcesView
+        state={state({
+          snapshot: {
+            generatedAt: NOW,
+            sources: [
+              statusFiles({
+                detail: `Each file ending in .json in ${folder} is one session, written by the agent it belongs to.`,
+                watching: [
+                  { label: "Folder", value: folder },
+                  { label: "Read", value: "every 2 seconds" },
+                ],
+              }),
+            ],
+            sessions: [],
+          },
+        })}
+        now={NOW}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "Status files" });
+    const [folderRow, readRow] = [...card.element().querySelectorAll('[data-slot="fact-row"]')];
+    expect(folderRow?.querySelector("dd")?.textContent).toBe(folder);
+    const font = (row: Element | undefined) =>
+      getComputedStyle(row?.querySelector("dd") as Element).fontFamily;
+    expect(font(folderRow)).toMatch(/^"?Atkinson Hyperlegible Mono/);
+    expect(font(readRow)).toMatch(/^"?Atkinson Hyperlegible Next/);
+    // In the sentence too.
+    const fact = card.element().querySelector('[data-part="detail"] [data-slot="fact"]');
+    expect(fact?.textContent).toBe(folder);
+  });
+
   test("watching, it gives the folder, how often it is read, and the files read and skipped as figures", async () => {
     const sessions = [
       ...snapshot().sessions,

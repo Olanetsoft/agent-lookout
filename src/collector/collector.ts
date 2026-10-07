@@ -111,7 +111,9 @@ export interface CollectorOptions {
   notifier?: SystemNotifier;
   /**
    * The system the collector runs on, which says whether the system's own
-   * notifications can be shown. Defaults to this machine's. Tests pass another.
+   * notifications can be shown, and, on Windows, that no session is stopped
+   * and no permission prompt answered. Defaults to this machine's. Tests pass
+   * another.
    */
   platform?: NodeJS.Platform;
   /**
@@ -298,12 +300,14 @@ export function createCollector(options: CollectorOptions): Collector {
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
+  const platform = options.platform ?? process.platform;
   // What each Claude Code session is stopped by: the adapter finds it, and the
   // routes that stop sessions act on it. With AGENT_LOOKOUT_STOP off there are
-  // neither the targets nor the routes.
-  const stopsOn = !stopOff(env);
+  // neither the targets nor the routes, and nor are there on Windows, which
+  // has neither the start times from `ps` that confirm a session's process
+  // nor the POSIX signals that stop it.
+  const stopsOn = !stopOff(env) && platform !== "win32";
   const stopTargets = stopsOn ? createStopTargets() : undefined;
-  const platform = options.platform ?? process.platform;
   const notifications = createServerNotifications({
     notifier: options.notifier ?? createSystemNotifier({ platform }),
     onAtStart: notificationsOnAtStart(env),
@@ -381,6 +385,7 @@ export function createCollector(options: CollectorOptions): Collector {
       terminals: tabs,
       readProcessStarts: options.readProcessStarts,
       stops: stopTargets,
+      platform,
     }),
     createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
@@ -425,6 +430,7 @@ export function createCollector(options: CollectorOptions): Collector {
         events,
         now,
         warn,
+        platform,
         // Read for each request, so a change in Settings holds for the next one.
         rules: () => settings.permissionRules(),
         ...options.answering,

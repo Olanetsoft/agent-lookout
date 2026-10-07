@@ -16,12 +16,18 @@ import { formatAgo, formatClock, formatFullTime } from "@dashboard/lib/format";
 import { cn } from "@dashboard/lib/utils";
 
 /**
- * Whether a fact's value is a literal string: a folder, a file or a command.
- * Those are set in the mono. A phrase such as "every 2 seconds" or "not run" is
- * words, and words are never set in the mono.
+ * Whether a fact's value is a literal string: a folder, a file or a command,
+ * a Windows folder such as `D:\agents\status` among them. Those are set in the
+ * mono. A phrase such as "every 2 seconds" or "not run" is words, and words are
+ * never set in the mono.
  */
 function isLiteral(value: string): boolean {
-  return value.includes("/") || value.startsWith("~") || / --?\w/.test(value);
+  return (
+    value.includes("/") ||
+    value.startsWith("~") ||
+    /^[A-Za-z]:\\/.test(value) ||
+    / --?\w/.test(value)
+  );
 }
 
 /** Whether a fact's value is a count, such as the files a source read. */

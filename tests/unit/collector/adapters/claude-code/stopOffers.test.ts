@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import { withStopOffers } from "@collector/adapters/claude-code/stopOffers";
@@ -31,7 +33,7 @@ describe("which sessions can be stopped", () => {
       sessionId: ids.busy,
       pid: pids.busy,
       procStart: "Tue Nov 14 22:13:20 2023",
-      registryFile: `${SESSIONS_DIR}/${pids.busy}.json`,
+      registryFile: path.join(SESSIONS_DIR, `${pids.busy}.json`),
     });
     // Nothing a command could be made of goes to the page.
     expect(JSON.stringify(sessions)).not.toContain("Nov 14");

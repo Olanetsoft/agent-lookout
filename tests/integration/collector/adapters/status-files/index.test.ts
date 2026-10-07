@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import {
   chmod,
   mkdir,
   readdir,
   readFile,
-  realpath,
   rm,
   stat,
   symlink,
@@ -80,7 +80,9 @@ async function contentsOf(folder: string): Promise<Record<string, string>> {
 
 /** A process that runs until it is stopped, and is stopped when the test ends. */
 async function runningProcess() {
-  const child = spawn("sleep", ["60"], { stdio: "ignore" });
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
+    stdio: "ignore",
+  });
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
@@ -176,15 +178,19 @@ describe("the status-file source, on a real folder", () => {
     expect(calls.some((call) => call.path === outside)).toBe(false);
   });
 
-  test("a named pipe called .json is skipped without the poll waiting on it", async () => {
-    const { folder, poll } = await watch();
-    execFileSync("mkfifo", [path.join(folder, "pipe.json")]);
-    await writeFile(path.join(folder, "night-shift.json"), statusFile());
-    const result = await poll();
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "a named pipe called .json is skipped without the poll waiting on it",
+    async () => {
+      const { folder, poll } = await watch();
+      execFileSync("mkfifo", [path.join(folder, "pipe.json")]);
+      await writeFile(path.join(folder, "night-shift.json"), statusFile());
+      const result = await poll();
 
-    expect(result.sessions).toHaveLength(1);
-    expect(result.health.watching?.[3]).toEqual({ label: "Files skipped", value: "1" });
-  });
+      expect(result.sessions).toHaveLength(1);
+      expect(result.health.watching?.[3]).toEqual({ label: "Files skipped", value: "1" });
+    },
+  );
 
   test(`more than ${MAX_FILES} files, and files over 16 KB, are skipped and counted`, async () => {
     const { poll, write } = await watch();
@@ -282,7 +288,8 @@ describe("the status-file source, on a real folder", () => {
     expect(await contentsOf(folder)).toEqual(before);
   });
 
-  test("a folder it cannot list is not working", async () => {
+  // Windows has no POSIX file modes, so a folder cannot be made unlistable this way there.
+  test.skipIf(process.platform === "win32")("a folder it cannot list is not working", async () => {
     const { folder, poll } = await watch();
     await chmod(folder, 0o000);
     try {
@@ -409,7 +416,8 @@ async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessE
   const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   return {
     pid: child.pid,
-    cwd: await realpath(work),
+    // By its long name, as Windows gives a program its folder.
+    cwd: realpathSync.native(work),
     /** Resolves once the example has written its file and come to its next wait. */
     async paused() {
       for (;;) {
@@ -442,7 +450,13 @@ for (const runner of RUNNERS) {
       async function setUp() {
         const watched = await watch({ make: false });
         const home = path.join(watched.parent, "home");
-        const env = { ...process.env, HOME: home, [STATUS_DIR_ENV]: watched.folder };
+        // Windows keeps the home folder in USERPROFILE.
+        const env = {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          [STATUS_DIR_ENV]: watched.folder,
+        };
         return { ...watched, env };
       }
 
@@ -501,18 +515,23 @@ for (const runner of RUNNERS) {
         ["a closed terminal", "SIGHUP"],
       ];
       for (const [stop, signal] of STOPS) {
-        test(`stopped by ${stop}, it deletes its file`, async () => {
-          const { folder, parent, poll, env } = await setUp();
-          const example = await startExample(runner, parent, env);
-          await example.paused();
-          example.goOn();
-          await example.paused();
-          expect((await poll()).sessions).toMatchObject([{ status: "needs-you" }]);
+        // Windows has no POSIX signals: a signal sent there ends the program outright.
+        test.skipIf(process.platform === "win32")(
+          `stopped by ${stop}, it deletes its file`,
+          async () => {
+            const { folder, parent, poll, env } = await setUp();
+            const example = await startExample(runner, parent, env);
+            await example.paused();
+            example.goOn();
+            await example.paused();
+            expect((await poll()).sessions).toMatchObject([{ status: "needs-you" }]);
 
-          await example.kill(signal);
-          expect(await readdir(folder)).toEqual([]);
-          expect((await poll()).sessions).toEqual([]);
-        }, 20_000);
+            await example.kill(signal);
+            expect(await readdir(folder)).toEqual([]);
+            expect((await poll()).sessions).toEqual([]);
+          },
+          20_000,
+        );
       }
 
       test("killed outright, it leaves its file, and its session goes because of its pid", async () => {

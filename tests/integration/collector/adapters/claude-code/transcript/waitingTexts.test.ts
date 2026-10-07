@@ -74,7 +74,7 @@ describe("what a waiting Claude Code session is asking", () => {
 
     const { health, sessions } = await adapterFor(home).poll();
     expect(health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds"),
+      watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
     );
     expect(byName(sessions, "demo-api")?.waitingText).toBe("Run: npm test");
     expect(byName(sessions, "demo-docs")?.waitingText).toBe(
@@ -172,7 +172,13 @@ describe("what a waiting Claude Code session is asking", () => {
     expect(sessions.some((session) => "waitingText" in session)).toBe(false);
     expect(touched).toEqual([]);
     expect(health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds", undefined, "Off"),
+      watching(
+        path.join(home, "sessions"),
+        "every 2 seconds",
+        "every 30 seconds",
+        undefined,
+        "Off",
+      ),
     );
 
     // The same folder with the setting left alone is read, through the same files.

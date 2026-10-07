@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import type { AdapterResult } from "@collector/adapters/adapter";
@@ -114,7 +116,11 @@ describe("the source's health", () => {
     const result = await first();
 
     expect(result.health.state).toBe("ok");
-    expect(result.health.watching?.[0]).toEqual({ label: "Folder", value: "/srv/agents/status" });
+    // As this system writes it.
+    expect(result.health.watching?.[0]).toEqual({
+      label: "Folder",
+      value: path.resolve("/srv/agents/status"),
+    });
     expect(files.calls).toEqual([{ method: "readdir", path: "/srv/agents/status" }]);
   });
 

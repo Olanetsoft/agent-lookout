@@ -9,6 +9,10 @@ import {
 } from "@collector/adapters/claude-code/transcript/transcriptFile";
 import { ids } from "@tests/fixtures/claudeCode";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";
+import { asWritten } from "@tests/support/paths";
+
+/** The transcript found, as the tests write paths, whatever system joined it. */
+const written = (found: string | null) => found && asWritten(found);
 
 const PROJECTS = "/Users/example/.claude/projects";
 const CWD = "/Users/example/code/demo-api";
@@ -52,7 +56,7 @@ describe("findTranscript", () => {
     const files = memoryFiles();
     const file = `${PROJECTS}/-Users-example-code-demo-api/${ID}.jsonl`;
     files.write(file, "{}\n");
-    expect(await findTranscript(PROJECTS, ID, CWD, files.io)).toBe(file);
+    expect(written(await findTranscript(PROJECTS, ID, CWD, files.io))).toBe(file);
     expect(files.count("readdir")).toBe(0);
   });
 
@@ -61,8 +65,8 @@ describe("findTranscript", () => {
     files.mkdir(`${PROJECTS}/-Users-example-code-other`);
     const file = `${PROJECTS}/-Users-example-code-moved/${ID}.jsonl`;
     files.write(file, "{}\n");
-    expect(await findTranscript(PROJECTS, ID, CWD, files.io)).toBe(file);
-    expect(await findTranscript(PROJECTS, ID, null, files.io)).toBe(file);
+    expect(written(await findTranscript(PROJECTS, ID, CWD, files.io))).toBe(file);
+    expect(written(await findTranscript(PROJECTS, ID, null, files.io))).toBe(file);
   });
 
   test("a transcript that is a link, or is in no folder, is not found", async () => {

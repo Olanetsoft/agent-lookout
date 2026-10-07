@@ -109,9 +109,12 @@ describe("failureReason", () => {
   });
 
   test("a refused connection says nothing answered there", () => {
-    expect(failureReason(error("ESOCKET", { errno: -61 }))).toBe(
-      "nothing answered at the mail server's address",
-    );
+    // As macOS, Linux and Windows number it.
+    for (const errno of [-61, -111, -4078]) {
+      expect(failureReason(error("ESOCKET", { errno })), String(errno)).toBe(
+        "nothing answered at the mail server's address",
+      );
+    }
     expect(failureReason(error("ESOCKET", { errno: "ECONNREFUSED" }))).toBe(
       "nothing answered at the mail server's address",
     );

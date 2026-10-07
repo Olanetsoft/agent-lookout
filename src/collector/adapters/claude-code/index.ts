@@ -1,5 +1,4 @@
 import os from "node:os";
-import path from "node:path";
 
 import {
   isClaudeCodeSessionKind,
@@ -13,7 +12,7 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { STOP_ENV, stopOff, type StopTargets } from "../../actions/stopTargets.ts";
-import { tildify } from "../../files/paths.ts";
+import { pathsOf, tildify } from "../../files/paths.ts";
 import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
@@ -93,6 +92,8 @@ const LABEL = "Claude Code";
  *   permission request (`../../answers/`), to answer by a press of Allow or
  *   Deny or by a permission rule. Without the plugin a session's prompts are
  *   answered only in the session.
+ *
+ * On Windows three of these are less: `CLAUDE_CODE_WINDOWS_CAPABILITIES`.
  */
 export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -123,6 +124,38 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     level: "partly",
     reason:
       "With the Agent Lookout plugin, by Allow, Deny or a permission rule. Allow only if all is shown: never edits, plans or questions.",
+  },
+};
+
+/**
+ * What a Claude Code session can show on Windows, where Agent Lookout reads the
+ * same files and runs the same command, but cannot do three things it does
+ * elsewhere:
+ *
+ * - Jump reaches a session in VS Code only, by its link. There is no tmux to
+ *   select a pane in, and no Terminal or iTerm2 to bring a tab forward.
+ * - Stop needs a process's start time from `ps`, to be sure the process is
+ *   still the session's, and a POSIX signal to stop it. Windows has neither,
+ *   and Claude Code there records no start time Agent Lookout could compare.
+ * - Answer needs the plugin's hook, a POSIX sh script, and the Unix socket it
+ *   reaches Agent Lookout through.
+ */
+export const CLAUDE_CODE_WINDOWS_CAPABILITIES: SourceCapabilities = {
+  ...CLAUDE_CODE_CAPABILITIES,
+  jump: {
+    level: "partly",
+    reason:
+      "Only in VS Code. On Windows there is no tmux pane or Terminal tab to reach, and the desktop app has no link.",
+  },
+  stop: {
+    level: "no",
+    reason:
+      "Not on Windows, where there is no ps to confirm a session's process by its start time, and no POSIX signal to stop it.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Not on Windows: the plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket.",
   },
 };
 
@@ -177,6 +210,12 @@ export interface ClaudeCodeAdapterOptions {
    * routes that stop sessions read. Left out, no session is offered Stop.
    */
   stops?: Pick<StopTargets, "set" | "onAskFeedSoon">;
+  /**
+   * The system the adapter runs on, which says where `claude` is looked for,
+   * how paths are written, and what Agent Lookout can do to a session there.
+   * Defaults to this machine's. Tests pass another.
+   */
+  platform?: NodeJS.Platform;
   /** How long `claude agents --json` gets. Defaults to 5 seconds. */
   feedTimeoutMs?: number;
   /** How often the command is run. Defaults to 30 seconds. */
@@ -299,11 +338,17 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const transcriptsOff = waitingTextOff(env);
   const feedWithheld = homeOverride !== undefined && !binaryNamed;
   const neverRun = feedOff || feedWithheld;
-  // With AGENT_LOOKOUT_STOP off, nothing is offered Stop, whatever the collector passed.
-  const stops = stopOff(env) ? undefined : options.stops;
+  const platform = options.platform ?? process.platform;
+  const onWindows = platform === "win32";
+  const paths = pathsOf(platform);
+  // With AGENT_LOOKOUT_STOP off, or on Windows, nothing is offered Stop,
+  // whatever the collector passed.
+  const stops = stopOff(env) || onWindows ? undefined : options.stops;
   const answersOff = env.AGENT_LOOKOUT_ANSWER?.trim().toLowerCase() === "off";
-  const capabilities: SourceCapabilities =
-    stopOff(env) || answersOff
+  // On Windows what cannot be done there is said whatever the settings are.
+  const capabilities: SourceCapabilities = onWindows
+    ? CLAUDE_CODE_WINDOWS_CAPABILITIES
+    : stopOff(env) || answersOff
       ? {
           ...CLAUDE_CODE_CAPABILITIES,
           ...(stopOff(env) && { stop: STOP_TURNED_OFF }),
@@ -311,10 +356,10 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         }
       : CLAUDE_CODE_CAPABILITIES;
 
-  const claudeHome = path.resolve(homeOverride ?? path.join(homeDir, ".claude"));
-  const sessionsDir = path.join(claudeHome, "sessions");
-  const homeName = tildify(claudeHome, homeDir);
-  const registryName = tildify(sessionsDir, homeDir);
+  const claudeHome = paths.resolve(homeOverride ?? paths.join(homeDir, ".claude"));
+  const sessionsDir = paths.join(claudeHome, "sessions");
+  const homeName = tildify(claudeHome, homeDir, platform);
+  const registryName = tildify(sessionsDir, homeDir, platform);
 
   // What a waiting session is asking, from the last message of its
   // transcript. With the setting off, no transcript is ever opened.
@@ -433,7 +478,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   }
 
   async function runCommand(askedAt: number): Promise<FeedRead> {
-    const binary = await findClaudeBinary({ env, homeDir, isExecutable: options.isExecutable });
+    const binary = await findClaudeBinary({
+      env,
+      homeDir,
+      isExecutable: options.isExecutable,
+      platform,
+    });
     if (!binary.found) {
       return {
         askedAt,

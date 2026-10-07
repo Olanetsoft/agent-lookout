@@ -7,6 +7,9 @@ import { describe, expect, test } from "vitest";
 import { createGhAsker, GH_FIELDS, runGhBinary } from "@collector/github/gh";
 import { tempDir } from "@tests/support/node/tempFiles";
 
+// The stand-in gh is a POSIX sh script, which Windows cannot run.
+const posixTest = test.skipIf(process.platform === "win32");
+
 // The gh runner against a stand-in gh: a shell script of the test's own, named
 // gh, in a folder of its own. It writes down what it was given and answers as
 // gh does for each branch. The real gh is never run, and nothing reaches
@@ -104,7 +107,7 @@ function askerFor(dir: string, timeoutMs?: number) {
 const target = (head: string) => ({ repository: REPOSITORY, head });
 
 describe("asking a stand-in gh", () => {
-  test("an open pull request with a check failing", async () => {
+  posixTest("an open pull request with a check failing", async () => {
     const { dir, log } = await standInGh();
     const answer = await askerFor(dir)(target("open-failing"));
 
@@ -135,7 +138,7 @@ describe("asking a stand-in gh", () => {
     ]);
   });
 
-  test("a draft, with its checks pending", async () => {
+  posixTest("a draft, with its checks pending", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("draft"))).toMatchObject({
       kind: "found",
@@ -143,7 +146,7 @@ describe("asking a stand-in gh", () => {
     });
   });
 
-  test("a merged pull request, with its checks passing", async () => {
+  posixTest("a merged pull request, with its checks passing", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("merged"))).toMatchObject({
       kind: "found",
@@ -151,17 +154,17 @@ describe("asking a stand-in gh", () => {
     });
   });
 
-  test("a branch with no pull request", async () => {
+  posixTest("a branch with no pull request", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("none"))).toEqual({ kind: "none" });
   });
 
-  test("gh not signed in", async () => {
+  posixTest("gh not signed in", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("signed-out"))).toEqual({ kind: "signed-out" });
   });
 
-  test("gh that does not answer in time is given up on", async () => {
+  posixTest("gh that does not answer in time is given up on", async () => {
     const { dir } = await standInGh();
     const started = Date.now();
     expect(await askerFor(dir, 300)(target("slow"))).toEqual({
@@ -171,7 +174,7 @@ describe("asking a stand-in gh", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
-  test("an answer that is not gh's JSON", async () => {
+  posixTest("an answer that is not gh's JSON", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("junk"))).toEqual({
       kind: "failed",
@@ -179,7 +182,7 @@ describe("asking a stand-in gh", () => {
     });
   });
 
-  test("gh failing for any other reason says so, and repeats nothing gh said", async () => {
+  posixTest("gh failing for any other reason says so, and repeats nothing gh said", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir)(target("offline"))).toEqual({
       kind: "failed",
@@ -187,18 +190,21 @@ describe("asking a stand-in gh", () => {
     });
   });
 
-  test("gh waiting for input is given none", async () => {
+  posixTest("gh waiting for input is given none", async () => {
     const { dir } = await standInGh();
     expect(await askerFor(dir, 5_000)(target("waits"))).toEqual({ kind: "none" });
   });
 
-  test("a branch that looks like an option or a shell command is handed over as it is", async () => {
-    const { dir, log } = await standInGh();
-    await askerFor(dir)(target("$(touch pwned); --web"));
-    const lines = (await readFile(log, "utf8")).split("\n");
-    expect(lines.slice(6, 8)).toEqual(["--", "$(touch pwned); --web"]);
-    expect(existsSync(path.join(dir, "pwned"))).toBe(false);
-  });
+  posixTest(
+    "a branch that looks like an option or a shell command is handed over as it is",
+    async () => {
+      const { dir, log } = await standInGh();
+      await askerFor(dir)(target("$(touch pwned); --web"));
+      const lines = (await readFile(log, "utf8")).split("\n");
+      expect(lines.slice(6, 8)).toEqual(["--", "$(touch pwned); --web"]);
+      expect(existsSync(path.join(dir, "pwned"))).toBe(false);
+    },
+  );
 });
 
 describe("with no gh", () => {

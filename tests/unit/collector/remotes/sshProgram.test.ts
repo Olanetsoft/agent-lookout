@@ -48,7 +48,7 @@ describe("findSsh", () => {
 
   test("takes the first ssh on PATH", async () => {
     const env = { PATH: "/opt/tools/bin:/usr/bin" };
-    expect(await findSsh(env, runnable(["/opt/tools/bin/ssh", "/usr/bin/ssh"]))).toEqual({
+    expect(await findSsh(env, runnable(["/opt/tools/bin/ssh", "/usr/bin/ssh"]), "linux")).toEqual({
       found: true,
       path: "/opt/tools/bin/ssh",
     });
@@ -56,27 +56,40 @@ describe("findSsh", () => {
 
   test("looks in the fixed places when PATH has none, as for an app started from the Dock", async () => {
     expect(SSH_LOCATIONS[0]).toBe("/usr/bin/ssh");
-    expect(await findSsh({ PATH: "/nowhere" }, runnable(["/opt/homebrew/bin/ssh"]))).toEqual({
+    expect(
+      await findSsh({ PATH: "/nowhere" }, runnable(["/opt/homebrew/bin/ssh"]), "linux"),
+    ).toEqual({
       found: true,
       path: "/opt/homebrew/bin/ssh",
     });
   });
 
   test("a relative entry on PATH is never searched", async () => {
-    expect(await findSsh({ PATH: "bin:." }, runnable(["bin/ssh", "ssh"]))).toEqual({
+    expect(await findSsh({ PATH: "bin:." }, runnable(["bin/ssh", "ssh"]), "linux")).toEqual({
       found: false,
       looked:
         "The ssh command was not found on PATH or in /usr/bin, /opt/homebrew/bin, /usr/local/bin",
     });
   });
 
+  test("on Windows, the ssh.exe on Path, such as the one that comes with Windows", async () => {
+    const env = { Path: "C:\\Windows\\System32\\OpenSSH;C:\\Tools" };
+    expect(
+      await findSsh(
+        env,
+        runnable(["C:\\Windows\\System32\\OpenSSH\\ssh.exe", "C:\\Tools\\ssh.exe"]),
+        "win32",
+      ),
+    ).toEqual({ found: true, path: "C:\\Windows\\System32\\OpenSSH\\ssh.exe" });
+  });
+
   test("the program the variable names is the only one looked at", async () => {
     const env = { [SSH_BIN_ENV]: "/opt/stand-in/ssh", PATH: "/usr/bin" };
-    expect(await findSsh(env, runnable(["/opt/stand-in/ssh", "/usr/bin/ssh"]))).toEqual({
+    expect(await findSsh(env, runnable(["/opt/stand-in/ssh", "/usr/bin/ssh"]), "linux")).toEqual({
       found: true,
       path: "/opt/stand-in/ssh",
     });
-    expect(await findSsh(env, runnable(["/usr/bin/ssh"]))).toEqual({
+    expect(await findSsh(env, runnable(["/usr/bin/ssh"]), "linux")).toEqual({
       found: false,
       looked: `${SSH_BIN_ENV} is set to /opt/stand-in/ssh, which is not a program this user can run`,
       named: true,

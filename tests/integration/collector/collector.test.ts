@@ -96,7 +96,7 @@ describe("createCollector", () => {
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
     expect(snapshot.sources[1]?.detail).toMatch(
-      /^Sessions are read from the files Codex saves in \S+\/fixtures\/codex-home\/sessions\. /,
+      /^Sessions are read from the files Codex saves in \S+[\\/]fixtures[\\/]codex-home[\\/]sessions\. /,
     );
     expect(snapshot.sources[1]?.detail).toContain(NEEDS_YOU_NOTE);
     expect(
@@ -1846,7 +1846,9 @@ describe("pull requests", () => {
   });
 });
 
-describe("another machine over SSH", () => {
+// The stand-in ssh is a POSIX sh script, ended by POSIX signals, and the machine's
+// waiting session is answered through a Unix socket, so this is for macOS and Linux.
+describe.skipIf(process.platform === "win32")("another machine over SSH", () => {
   /**
    * The collector as every host builds it, with nothing of this machine to
    * read, and one other machine named: a stand-in Agent Lookout reached

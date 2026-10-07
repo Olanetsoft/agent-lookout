@@ -2,9 +2,10 @@
 // and its lock: what `src/collector/history/historyFiles.ts` does to the real
 // file system, done to a map. It writes down every change it is asked to make.
 
-import path from "node:path";
+import path from "node:path/posix";
 
 import type { HistoryFs } from "@collector/history/historyFiles";
+import { asWritten } from "@tests/support/paths";
 
 /** What is at a path: an ordinary file with its text, or something that is not one. */
 export interface FakeEntry {
@@ -38,25 +39,29 @@ export function fakeHistoryFs(now: () => number = Date.now): FakeHistoryFs {
   const folders = new Set<string>();
   const changes: string[] = [];
 
+  // Each path is taken as the tests write it, whatever system joined it.
   const fs: FakeHistoryFs = {
     entries,
     folders,
     changes,
     broken: false,
-    put(file, text, kind = "file") {
+    put(given, text, kind = "file") {
+      const file = asWritten(given);
       folders.add(path.dirname(file));
       entries.set(file, { kind, text, mtimeMs: now() });
     },
     text(file) {
-      const entry = entries.get(file);
+      const entry = entries.get(asWritten(file));
       return entry?.kind === "file" ? entry.text : undefined;
     },
-    async makeFolder(dir) {
+    async makeFolder(given) {
+      const dir = asWritten(given);
       if (fs.broken) throw failure("EACCES", "Permission denied.");
       folders.add(dir);
       changes.push(`make ${dir}`);
     },
-    async list(dir) {
+    async list(given) {
+      const dir = asWritten(given);
       if (fs.broken || !folders.has(dir)) throw failure("ENOENT", "No such folder.");
       return [...entries.keys()]
         .filter((file) => path.dirname(file) === dir)
@@ -66,7 +71,7 @@ export function fakeHistoryFs(now: () => number = Date.now): FakeHistoryFs {
       return fs.lstatNow(file);
     },
     lstatNow(file) {
-      const entry = entries.get(file);
+      const entry = entries.get(asWritten(file));
       if (!entry) throw failure("ENOENT", "No such file.");
       return {
         kind: entry.kind === "file" ? "file" : "other",
@@ -78,7 +83,7 @@ export function fakeHistoryFs(now: () => number = Date.now): FakeHistoryFs {
       return fs.readRegularNow(file, maxBytes);
     },
     readRegularNow(file, maxBytes) {
-      const entry = entries.get(file);
+      const entry = entries.get(asWritten(file));
       if (!entry) throw failure("ENOENT", "No such file.");
       if (entry.kind === "link") throw failure("ELOOP", "A link.");
       if (entry.kind !== "file") throw new Error("Not an ordinary file.");
@@ -88,7 +93,8 @@ export function fakeHistoryFs(now: () => number = Date.now): FakeHistoryFs {
     async append(file, text) {
       fs.appendNow(file, text);
     },
-    appendNow(file, text) {
+    appendNow(given, text) {
+      const file = asWritten(given);
       if (fs.broken) throw failure("ENOSPC", "No space left.");
       const entry = entries.get(file);
       if (entry?.kind === "link") throw failure("ELOOP", "A link.");
@@ -99,21 +105,23 @@ export function fakeHistoryFs(now: () => number = Date.now): FakeHistoryFs {
     async create(file, text) {
       fs.createNow(file, text);
     },
-    createNow(file, text) {
+    createNow(given, text) {
+      const file = asWritten(given);
       if (fs.broken) throw failure("ENOSPC", "No space left.");
       if (entries.has(file)) throw failure("EEXIST", "Already there.");
       entries.set(file, { kind: "file", text, mtimeMs: now() });
       changes.push(`create ${path.basename(file)}`);
     },
     async touch(file, at) {
-      const entry = entries.get(file);
+      const entry = entries.get(asWritten(file));
       if (!entry) throw failure("ENOENT", "No such file.");
       entry.mtimeMs = at;
     },
     async remove(file) {
       fs.removeNow(file);
     },
-    removeNow(file) {
+    removeNow(given) {
+      const file = asWritten(given);
       if (fs.broken) throw failure("EACCES", "Permission denied.");
       if (entries.delete(file)) changes.push(`remove ${path.basename(file)}`);
     },

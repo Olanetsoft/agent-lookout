@@ -13,7 +13,8 @@
 // program the script runs is named by its full path.
 
 import { spawn as spawnProcess } from "node:child_process";
-import path from "node:path";
+// The paths are a Mac's, so they are checked by the rules of macOS paths.
+import path from "node:path/posix";
 
 export const HELPER_SHELL = "/bin/sh";
 

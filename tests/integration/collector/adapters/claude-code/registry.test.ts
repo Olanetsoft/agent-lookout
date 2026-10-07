@@ -135,7 +135,7 @@ describe("readRegistry", () => {
 const readable = (pid: number, name: string) =>
   JSON.stringify({ pid, sessionId: `session-${pid}`, name, status: "idle" });
 
-describe.skipIf(process.platform === "win32")("what the registry reader will open", () => {
+describe("what the registry reader will open", () => {
   test("a .json name that is a link to a .key file is not followed", async () => {
     const home = await makeClaudeHome({
       [`${pids.busy}.json`]: registryFile(),
@@ -172,17 +172,22 @@ describe.skipIf(process.platform === "win32")("what the registry reader will ope
     expect(await readRegularFile(path.join(sessions, "9.json"))).toBe(readable(9, "demo-project"));
   });
 
-  test("a named pipe called like an entry is skipped at once and the rest are read", async () => {
-    const home = await makeClaudeHome({ [`${pids.busy}.json`]: registryFile() });
-    const sessions = path.join(home, "sessions");
-    // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
-    execFileSync("mkfifo", [path.join(sessions, "1.json")]);
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "a named pipe called like an entry is skipped at once and the rest are read",
+    async () => {
+      const home = await makeClaudeHome({ [`${pids.busy}.json`]: registryFile() });
+      const sessions = path.join(home, "sessions");
+      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+      execFileSync("mkfifo", [path.join(sessions, "1.json")]);
 
-    const started = Date.now();
-    const registry = await readRegistry(sessions);
-    expect(Date.now() - started).toBeLessThan(2_000);
-    expect(registry.readable && [...registry.entries.keys()]).toEqual([pids.busy]);
-  }, 5_000);
+      const started = Date.now();
+      const registry = await readRegistry(sessions);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(registry.readable && [...registry.entries.keys()]).toEqual([pids.busy]);
+    },
+    5_000,
+  );
 
   test("a file far larger than any registry entry is refused before it is read", async () => {
     const home = await makeClaudeHome({

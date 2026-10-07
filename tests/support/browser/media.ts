@@ -1,7 +1,8 @@
 // What the person's computer says it prefers, for component tests: reduced
 // motion and a light or dark colour scheme. The browser is told through the
 // `emulateMedia` command that vite.config.ts gives the component project, and
-// is put back to its own setting when the test finishes.
+// is put back when the test finishes: to no less motion than usual, which
+// `componentSetup.ts` starts every test with, and to its own colour scheme.
 
 import { onTestFinished } from "vitest";
 import { commands } from "vitest/browser";
@@ -17,9 +18,12 @@ declare module "vitest/browser" {
   }
 }
 
-/** Asks for as little motion as possible, until the test finishes. */
+/**
+ * Asks for as little motion as possible, until the test finishes. Then it is
+ * back to no less motion than usual, which every test starts from.
+ */
 export async function preferReducedMotion(): Promise<void> {
-  onTestFinished(() => commands.emulateMedia({ reducedMotion: null }));
+  onTestFinished(() => commands.emulateMedia({ reducedMotion: "no-preference" }));
   await commands.emulateMedia({ reducedMotion: "reduce" });
 }
 

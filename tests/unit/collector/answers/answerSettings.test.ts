@@ -73,6 +73,17 @@ test("AGENT_LOOKOUT_ANSWER_WAIT is whole seconds from 5 to 540, and anything els
   expect(setup.problem).toContain("AGENT_LOOKOUT_ANSWER_WAIT");
 });
 
-test("it is not offered on Windows", () => {
-  expect(readAnswerSetup({}, "C:\\Users\\example", "win32")).toMatchObject({ on: false });
+test("it is not offered on Windows, and says why where the page shows it, not at every start", () => {
+  expect(readAnswerSetup({}, "C:\\Users\\example", "win32")).toEqual({
+    on: false,
+    socketPath: null,
+    holdMs: DEFAULT_HOLD_MS,
+    problem:
+      "Permission prompts are not answered from Agent Lookout on Windows: the plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket.",
+    quiet: true,
+  });
+  // Turned off, it is simply off.
+  expect(
+    readAnswerSetup({ AGENT_LOOKOUT_ANSWER: "off" }, "C:\\Users\\example", "win32"),
+  ).toMatchObject({ on: false, problem: null });
 });

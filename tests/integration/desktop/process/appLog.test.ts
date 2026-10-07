@@ -45,7 +45,10 @@ describe("the app's log", () => {
       "2026-10-06T09:30:00.000Z Email notifications are off: AGENT_LOOKOUT_EMAIL_TO is not an address.\n" +
         "2026-10-06T09:30:00.000Z A second line.\n",
     );
-    expect((await stat(path.join(dir, LOG_FILE))).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") {
+      expect((await stat(path.join(dir, LOG_FILE))).mode & 0o777).toBe(0o600);
+    }
     expect(echoed).toEqual([
       "Email notifications are off: AGENT_LOOKOUT_EMAIL_TO is not an address.",
       "A second line.",

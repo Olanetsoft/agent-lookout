@@ -26,9 +26,11 @@ export const TMUX_LOCATIONS = [
 /** The tmux binary: the first on `PATH`, then the fixed locations. Null when there is none. */
 export async function findTmuxBinary(
   env: NodeJS.ProcessEnv,
-  isExecutable: (candidate: string) => Promise<boolean> = isExecutableFile,
+  isExecutable?: (candidate: string) => Promise<boolean>,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<string | null> {
-  const candidates = [...new Set([...pathCandidates(env, "tmux"), ...TMUX_LOCATIONS])];
+  isExecutable ??= (candidate) => isExecutableFile(candidate, platform);
+  const candidates = [...new Set([...pathCandidates(env, "tmux", platform), ...TMUX_LOCATIONS])];
   for (const candidate of candidates) {
     if (await isExecutable(candidate)) return candidate;
   }
@@ -94,6 +96,8 @@ export interface TmuxRunnerOptions {
   /** Replaced in tests. Resolves true when the path is a file this user can run. */
   isExecutable?: (candidate: string) => Promise<boolean>;
   timeoutMs?: number;
+  /** The system the runner is on. On Windows, which has no tmux, nothing is run. Defaults to this one. */
+  platform?: NodeJS.Platform;
 }
 
 /**
@@ -106,10 +110,11 @@ export interface TmuxRunnerOptions {
 export function createTmuxRunner(options: TmuxRunnerOptions): RunTmux {
   const { env } = options;
   const off = env[TMUX_ENV]?.trim().toLowerCase() === "off";
+  const platform = options.platform ?? process.platform;
 
   return async (args) => {
-    if (off || process.platform === "win32") return NOT_RUN;
-    const binary = await findTmuxBinary(env, options.isExecutable);
+    if (off || platform === "win32") return NOT_RUN;
+    const binary = await findTmuxBinary(env, options.isExecutable, platform);
     if (binary === null) return NOT_RUN;
     return runTmuxBinary(binary, args, { env, timeoutMs: options.timeoutMs });
   };

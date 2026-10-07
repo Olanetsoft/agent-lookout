@@ -136,7 +136,7 @@ describe("the Codex adapter, on a folder laid out as Codex lays it out", () => {
     const adapter = adapterFor(CODEX_FIXTURE_HOME, { io, now: clock.now });
     await adapter.poll();
 
-    const sessionFile = /\/sessions\/\d{4}\/\d{2}\/\d{2}\/rollout-[^/]+\.jsonl$/;
+    const sessionFile = /[\\/]sessions[\\/]\d{4}[\\/]\d{2}[\\/]\d{2}[\\/]rollout-[^\\/]+\.jsonl$/;
     const indexFile = path.join(CODEX_FIXTURE_HOME, "session_index.jsonl");
     const opened = calls.filter((call) => call.method === "openRegular").map((call) => call.path);
     expect(opened.length).toBeGreaterThan(0);
@@ -205,73 +205,72 @@ describe("the Codex adapter, on a folder laid out as Codex lays it out", () => {
     expect(sessions.some((session) => session.id === `codex:${ids.resumed}`)).toBe(false);
   });
 
-  test.skipIf(process.platform === "win32")(
-    "a link, a pipe and an oversized first line are not read, and do not hold up the poll",
-    async () => {
-      const outside = await tempDir();
-      const linked = path.join(outside, "elsewhere.jsonl");
-      await writeFile(
-        linked,
-        rollout(
-          metaLine(NOW - MINUTE, { id: threadId("e1"), cwd: "/Users/example/code/demo-linked" }),
-          turnLine(NOW - MINUTE, "task_started"),
+  test("a link, a pipe and an oversized first line are not read, and do not hold up the poll", async () => {
+    // Windows keeps no named pipes among files, so there is no pipe there.
+    const pipes = process.platform !== "win32";
+    const outside = await tempDir();
+    const linked = path.join(outside, "elsewhere.jsonl");
+    await writeFile(
+      linked,
+      rollout(
+        metaLine(NOW - MINUTE, { id: threadId("e1"), cwd: "/Users/example/code/demo-linked" }),
+        turnLine(NOW - MINUTE, "task_started"),
+      ),
+    );
+    const big = (size: number, thread: string, folder: string) =>
+      rollout(
+        metaLine(NOW - MINUTE, {
+          id: thread,
+          cwd: `/Users/example/code/${folder}`,
+          base_instructions: { text: "x".repeat(size) },
+        }),
+        turnLine(NOW - MINUTE, "task_started"),
+      );
+    const home = await makeCodexHome(
+      {
+        [path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-03", threadId("e3")))]: big(
+          3 * 1024 * 1024,
+          threadId("e3"),
+          "demo-huge",
         ),
-      );
-      const big = (size: number, thread: string, folder: string) =>
-        rollout(
-          metaLine(NOW - MINUTE, {
-            id: thread,
-            cwd: `/Users/example/code/${folder}`,
-            base_instructions: { text: "x".repeat(size) },
-          }),
-          turnLine(NOW - MINUTE, "task_started"),
-        );
-      const home = await makeCodexHome(
-        {
-          [path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-03", threadId("e3")))]: big(
-            3 * 1024 * 1024,
-            threadId("e3"),
-            "demo-huge",
-          ),
-          [path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-04", threadId("e4")))]: big(
-            1024 * 1024,
-            threadId("e4"),
-            "demo-large",
-          ),
-          ...Object.fromEntries(
-            ["e1", "e2", "e3", "e4"].map((suffix) => [
-              `thread-writer-locks/${threadId(suffix)}.lock`,
-              "",
-            ]),
-          ),
-        },
-        { copyFixture: true },
-      );
-      const link = rolloutPath(home, "2026-10-01T11-59-01", threadId("e1"));
-      const pipe = rolloutPath(home, "2026-10-01T11-59-02", threadId("e2"));
-      await symlink(linked, link);
-      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
-      execFileSync("mkfifo", [pipe]);
-      const before = await snapshotOf(home);
+        [path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-04", threadId("e4")))]: big(
+          1024 * 1024,
+          threadId("e4"),
+          "demo-large",
+        ),
+        ...Object.fromEntries(
+          ["e1", "e2", "e3", "e4"].map((suffix) => [
+            `thread-writer-locks/${threadId(suffix)}.lock`,
+            "",
+          ]),
+        ),
+      },
+      { copyFixture: true },
+    );
+    const link = rolloutPath(home, "2026-10-01T11-59-01", threadId("e1"));
+    const pipe = rolloutPath(home, "2026-10-01T11-59-02", threadId("e2"));
+    await symlink(linked, link);
+    // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+    if (pipes) execFileSync("mkfifo", [pipe]);
+    const before = await snapshotOf(home);
 
-      const { io, calls } = recordingIo();
-      const started = Date.now();
-      const { sessions } = await adapterFor(home, { io }).poll();
-      expect(Date.now() - started).toBeLessThan(3_000);
+    const { io, calls } = recordingIo();
+    const started = Date.now();
+    const { sessions } = await adapterFor(home, { io }).poll();
+    expect(Date.now() - started).toBeLessThan(3_000);
 
-      const listed = sessions.map((session) => session.id);
-      expect(listed).toContain(`codex:${threadId("e4")}`);
-      for (const suffix of ["e1", "e2", "e3"]) {
-        expect(listed).not.toContain(`codex:${threadId(suffix)}`);
-      }
-      const opened = calls.filter((call) => call.method === "openRegular").map((call) => call.path);
-      expect(opened).not.toContain(link);
-      expect(opened).not.toContain(pipe);
-      expect(await snapshotOf(home)).toEqual(before);
-    },
-    10_000,
-  );
+    const listed = sessions.map((session) => session.id);
+    expect(listed).toContain(`codex:${threadId("e4")}`);
+    for (const suffix of ["e1", "e2", "e3"]) {
+      expect(listed).not.toContain(`codex:${threadId(suffix)}`);
+    }
+    const opened = calls.filter((call) => call.method === "openRegular").map((call) => call.path);
+    expect(opened).not.toContain(link);
+    expect(opened).not.toContain(pipe);
+    expect(await snapshotOf(home)).toEqual(before);
+  }, 10_000);
 
+  // Windows keeps no named pipes among files.
   test.skipIf(process.platform === "win32")(
     "a names file that is a pipe is not read, and sessions are named after their folder",
     async () => {
@@ -310,21 +309,18 @@ describe("finding Codex's folder", () => {
     });
   });
 
-  test.skipIf(process.platform === "win32")(
-    "a ~/.codex that is a link to another folder is followed, as Codex follows it",
-    async () => {
-      const userHome = await tempDir();
-      const real = await makeCodexHome({}, { copyFixture: true });
-      await symlink(real, path.join(userHome, ".codex"));
-      const { health, sessions } = await createCodexAdapter({
-        env: {},
-        homeDir: userHome,
-        now: () => NOW,
-      }).poll();
-      expect(health).toMatchObject({ state: "ok", detail: healthy() });
-      expect(byId(sessions)).toEqual(expectedSessions);
-    },
-  );
+  test("a ~/.codex that is a link to another folder is followed, as Codex follows it", async () => {
+    const userHome = await tempDir();
+    const real = await makeCodexHome({}, { copyFixture: true });
+    await symlink(real, path.join(userHome, ".codex"));
+    const { health, sessions } = await createCodexAdapter({
+      env: {},
+      homeDir: userHome,
+      now: () => NOW,
+    }).poll();
+    expect(health).toMatchObject({ state: "ok", detail: healthy() });
+    expect(byId(sessions)).toEqual(expectedSessions);
+  });
 
   test("CODEX_HOME is read when AGENT_LOOKOUT_CODEX_HOME is not set", async () => {
     const elsewhere = await makeCodexHome({}, { copyFixture: true });

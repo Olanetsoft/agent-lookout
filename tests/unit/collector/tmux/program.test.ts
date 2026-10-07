@@ -17,15 +17,15 @@ function executables(...present: string[]) {
 describe("findTmuxBinary", () => {
   test("PATH is searched in order, before the fixed locations", async () => {
     const fake = executables("/second/tmux", "/usr/local/bin/tmux");
-    expect(await findTmuxBinary({ PATH: "/first:/second:/third" }, fake.isExecutable)).toBe(
-      "/second/tmux",
-    );
+    expect(
+      await findTmuxBinary({ PATH: "/first:/second:/third" }, fake.isExecutable, "linux"),
+    ).toBe("/second/tmux");
     expect(fake.asked).toEqual(["/first/tmux", "/second/tmux"]);
   });
 
   test("without a useful PATH, as in an app opened from the Finder, the fixed locations are tried", async () => {
     const fake = executables("/opt/homebrew/bin/tmux");
-    expect(await findTmuxBinary({ PATH: "/usr/bin:/bin" }, fake.isExecutable)).toBe(
+    expect(await findTmuxBinary({ PATH: "/usr/bin:/bin" }, fake.isExecutable, "linux")).toBe(
       "/opt/homebrew/bin/tmux",
     );
     expect(await findTmuxBinary({}, executables("/usr/local/bin/tmux").isExecutable)).toBe(
@@ -35,7 +35,7 @@ describe("findTmuxBinary", () => {
 
   test("a PATH entry that is empty or relative is never looked in", async () => {
     const fake = executables("tmux", "bin/tmux", "./tmux");
-    expect(await findTmuxBinary({ PATH: ":.:bin:" }, fake.isExecutable)).toBeNull();
+    expect(await findTmuxBinary({ PATH: ":.:bin:" }, fake.isExecutable, "linux")).toBeNull();
     expect(fake.asked).toEqual([...TMUX_LOCATIONS]);
   });
 
@@ -47,7 +47,11 @@ describe("findTmuxBinary", () => {
 describe("createTmuxRunner", () => {
   test("with no tmux on the machine nothing is started, and that is an answer", async () => {
     const fake = executables();
-    const run = createTmuxRunner({ env: { PATH: "/opt/tools" }, isExecutable: fake.isExecutable });
+    const run = createTmuxRunner({
+      env: { PATH: "/opt/tools" },
+      isExecutable: fake.isExecutable,
+      platform: "linux",
+    });
 
     expect(await run(["list-panes", "-a"])).toEqual({ ok: false, stderr: "" });
     expect(fake.asked).toEqual(["/opt/tools/tmux", ...TMUX_LOCATIONS]);
@@ -60,10 +64,23 @@ describe("createTmuxRunner", () => {
       const run = createTmuxRunner({
         env: { AGENT_LOOKOUT_TMUX: value, PATH: "/opt/homebrew/bin" },
         isExecutable: fake.isExecutable,
+        platform: "darwin",
       });
 
       expect(await run(["list-panes", "-a"])).toEqual({ ok: false, stderr: "" });
       expect(fake.asked).toEqual([]);
     },
   );
+
+  test("on Windows, which has no tmux, tmux is not even looked for", async () => {
+    const fake = executables("C:\\Tools\\tmux.exe");
+    const run = createTmuxRunner({
+      env: { Path: "C:\\Tools" },
+      isExecutable: fake.isExecutable,
+      platform: "win32",
+    });
+
+    expect(await run(["list-panes", "-a"])).toEqual({ ok: false, stderr: "" });
+    expect(fake.asked).toEqual([]);
+  });
 });

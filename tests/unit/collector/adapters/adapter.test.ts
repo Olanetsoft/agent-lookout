@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   CLAUDE_CODE_CAPABILITIES,
+  CLAUDE_CODE_WINDOWS_CAPABILITIES,
   createClaudeCodeAdapter,
 } from "@collector/adapters/claude-code/index";
 import { sessionFromRegistry } from "@collector/adapters/claude-code/toSession";
@@ -22,6 +23,7 @@ const NOW = 1_700_000_100_000;
 
 const DECLARED: [string, SourceCapabilities][] = [
   ["Claude Code", CLAUDE_CODE_CAPABILITIES],
+  ["Claude Code on Windows", CLAUDE_CODE_WINDOWS_CAPABILITIES],
   ["Codex", CODEX_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
@@ -58,15 +60,44 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
   const home = "/Users/example";
   const env = { AGENT_LOOKOUT_CLAUDE_FEED: "off" };
 
-  expect(createClaudeCodeAdapter({ env, homeDir: home }).capabilities).toBe(
-    CLAUDE_CODE_CAPABILITIES,
-  );
+  for (const platform of ["darwin", "linux"] as const) {
+    expect(createClaudeCodeAdapter({ env, homeDir: home, platform }).capabilities).toBe(
+      CLAUDE_CODE_CAPABILITIES,
+    );
+  }
+  expect(
+    createClaudeCodeAdapter({ env, homeDir: "C:\\Users\\example", platform: "win32" }).capabilities,
+  ).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
   expect(createCodexAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     CODEX_CAPABILITIES,
   );
   expect(createStatusFileAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     STATUS_FILE_CAPABILITIES,
   );
+});
+
+test("on Windows Claude Code reports all it does elsewhere, but Jump in VS Code alone, and no Stop or Answer", () => {
+  const differs = Object.keys(CLAUDE_CODE_CAPABILITIES).filter(
+    (capability) =>
+      JSON.stringify(CLAUDE_CODE_CAPABILITIES[capability as keyof SourceCapabilities]) !==
+      JSON.stringify(CLAUDE_CODE_WINDOWS_CAPABILITIES[capability as keyof SourceCapabilities]),
+  );
+  expect(differs.sort()).toEqual(["answer", "jump", "stop"]);
+  expect(CLAUDE_CODE_WINDOWS_CAPABILITIES.jump.level).toBe("partly");
+  expect(CLAUDE_CODE_WINDOWS_CAPABILITIES.stop.level).toBe("no");
+  expect(CLAUDE_CODE_WINDOWS_CAPABILITIES.answer.level).toBe("no");
+
+  // Whatever the settings say, on Windows the reason is Windows.
+  const adapter = createClaudeCodeAdapter({
+    env: {
+      AGENT_LOOKOUT_CLAUDE_FEED: "off",
+      AGENT_LOOKOUT_STOP: "off",
+      AGENT_LOOKOUT_ANSWER: "off",
+    },
+    homeDir: "C:\\Users\\example",
+    platform: "win32",
+  });
+  expect(adapter.capabilities).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
 });
 
 /**

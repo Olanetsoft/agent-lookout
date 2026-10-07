@@ -2,7 +2,7 @@
 // Claude Code and Codex folders and stub programs. Everything is removed when
 // the test that asked for it finishes.
 
-import { chmod, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, link, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,8 @@ export const NO_SETTINGS_FILE = path.join(
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));
   onTestFinished(async () => {
-    await rm(dir, { recursive: true, force: true });
+    // On Windows a file a process has only just let go of can be busy for a moment.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   return dir;
 }
@@ -95,4 +96,41 @@ export async function writeStub(script: string): Promise<string> {
   await writeFile(file, `#!/bin/sh\n${script}\n`);
   await chmod(file, 0o755);
   return file;
+}
+
+/** A stand-in program for Windows, and what its environment must hold for it to act. */
+export interface WindowsStub {
+  file: string;
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * A stand-in program for Windows, where a script cannot be one: this Node,
+ * linked or copied under the name `claude.exe`, with a preload that `env`
+ * names in `NODE_OPTIONS`. The preload runs `body` when the program running
+ * is the stand-in, and does nothing in any other Node. `body` is JavaScript
+ * that has `args`, the arguments the stand-in was given, and `write(text)`,
+ * which prints to stdout. The program ends with 0 after it unless `body`
+ * ends it first. An argument that starts with `-` must not come first, as
+ * Node would take it for one of its own.
+ */
+export async function writeWindowsStub(body: string, name = "claude.exe"): Promise<WindowsStub> {
+  const dir = await tempDir();
+  const file = path.join(dir, name);
+  await link(process.execPath, file).catch(() => copyFile(process.execPath, file));
+  const preload = path.join(dir, "stand-in.cjs");
+  await writeFile(
+    preload,
+    `const path = require("node:path");
+if (path.basename(process.execPath).toLowerCase() === ${JSON.stringify(name.toLowerCase())}) {
+  // Node has already taken the first argument for a script and made it a path.
+  const args = process.argv.length > 1 ? [path.basename(process.argv[1]), ...process.argv.slice(2)] : [];
+  const write = (text) => require("node:fs").writeSync(1, String(text));
+  ${body}
+  process.exit(0);
+}
+`,
+  );
+  // In quotes, with each backslash escaped, as NODE_OPTIONS reads a path.
+  return { file, env: { NODE_OPTIONS: `--require ${JSON.stringify(preload)}` } };
 }

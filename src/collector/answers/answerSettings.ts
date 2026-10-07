@@ -1,7 +1,7 @@
 import os from "node:os";
-import path from "node:path";
 
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
+import { pathsOf } from "../files/paths.ts";
 
 /**
  * The settings for answering permission prompts from the dashboard, read once
@@ -60,6 +60,13 @@ export type AnswerSetup =
       quiet?: true;
     };
 
+/**
+ * Why nothing is answered on Windows: the plugin's hook is a POSIX sh script,
+ * and the socket it sends to is a Unix socket.
+ */
+export const WINDOWS_PROBLEM =
+  "Permission prompts are not answered from Agent Lookout on Windows: the plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket.";
+
 /** Whether `AGENT_LOOKOUT_ANSWER` is `off`. */
 export function answerOff(env: NodeJS.ProcessEnv): boolean {
   return env[ANSWER_ENV]?.trim().toLowerCase() === "off";
@@ -84,12 +91,14 @@ export function readAnswerSetup(
   if (answerOff(env)) {
     return { on: false, socketPath: null, holdMs: holdMs ?? DEFAULT_HOLD_MS, problem: null };
   }
+  // Said in the Sources view and the guide, so not again at every start.
   if (platform === "win32") {
     return {
       on: false,
       socketPath: null,
       holdMs: holdMs ?? DEFAULT_HOLD_MS,
-      problem: "Answering permission prompts is not offered on Windows.",
+      problem: WINDOWS_PROBLEM,
+      quiet: true,
     };
   }
   if (holdMs === null) {
@@ -110,8 +119,10 @@ export function readAnswerSetup(
       quiet: true,
     };
   }
-  const ownDir = path.resolve(homeDir, ".agent-lookout");
-  const socketPath = path.resolve(named || path.join(ownDir, "answer.sock"));
+  // A Unix socket's path, by the rules of the system's paths.
+  const paths = pathsOf(platform);
+  const ownDir = paths.resolve(homeDir, ".agent-lookout");
+  const socketPath = paths.resolve(named || paths.join(ownDir, "answer.sock"));
   if (Buffer.byteLength(socketPath) > MAX_SOCKET_PATH_BYTES) {
     return {
       on: false,
@@ -125,6 +136,6 @@ export function readAnswerSetup(
     socketPath,
     holdMs,
     problem: null,
-    ownFolder: path.dirname(socketPath) === ownDir,
+    ownFolder: paths.dirname(socketPath) === ownDir,
   };
 }

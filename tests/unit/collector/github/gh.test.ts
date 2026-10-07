@@ -72,10 +72,17 @@ describe("finding gh", () => {
   test("the first on PATH, then the usual places, and none when there is none", async () => {
     const on = (found: string[]) => async (candidate: string) => found.includes(candidate);
     expect(
-      await findGhBinary({ PATH: "/Users/example/bin:/usr/local/bin" }, on(["/usr/local/bin/gh"])),
+      await findGhBinary(
+        { PATH: "/Users/example/bin:/usr/local/bin" },
+        on(["/usr/local/bin/gh"]),
+        GH_LOCATIONS,
+        "linux",
+      ),
     ).toBe("/usr/local/bin/gh");
-    expect(await findGhBinary({}, on(["/opt/homebrew/bin/gh"]))).toBe("/opt/homebrew/bin/gh");
-    expect(await findGhBinary({ PATH: "/usr/bin" }, on([]))).toBeNull();
+    expect(await findGhBinary({}, on(["/opt/homebrew/bin/gh"]), GH_LOCATIONS, "darwin")).toBe(
+      "/opt/homebrew/bin/gh",
+    );
+    expect(await findGhBinary({ PATH: "/usr/bin" }, on([]), GH_LOCATIONS, "linux")).toBeNull();
     expect(GH_LOCATIONS).toEqual([
       "/opt/homebrew/bin/gh",
       "/usr/local/bin/gh",
@@ -93,8 +100,27 @@ describe("finding gh", () => {
         return false;
       },
       [],
+      "linux",
     );
     expect(asked).toEqual(["/usr/bin/gh"]);
+  });
+
+  test("on Windows, a gh.exe on Path, and never a script", async () => {
+    const asked: string[] = [];
+    const found = await findGhBinary(
+      { Path: "C:\\Program Files\\GitHub CLI;bin" },
+      async (candidate) => {
+        asked.push(candidate);
+        return candidate.endsWith(".exe");
+      },
+      [],
+      "win32",
+    );
+    expect(found).toBe("C:\\Program Files\\GitHub CLI\\gh.exe");
+    expect(asked).toEqual([
+      "C:\\Program Files\\GitHub CLI\\gh.com",
+      "C:\\Program Files\\GitHub CLI\\gh.exe",
+    ]);
   });
 });
 

@@ -1,5 +1,7 @@
 import { constants, type Stats } from "node:fs";
-import { lstat, open, readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
+
+import { openWithoutFollowing } from "./noFollow.ts";
 
 /** What is at a path, without its contents. */
 export interface FileInfo {
@@ -52,15 +54,12 @@ function infoOf(stats: Stats): FileInfo {
  * `readRegularFile` does, but for reading in ranges and with no size limit of
  * its own: a Codex session file can be large, and each caller bounds what it reads.
  *
- * - `O_NOFOLLOW` makes the open fail when the name is a symbolic link.
- * - `O_NONBLOCK` makes the open return at once for a named pipe, which would
- *   otherwise wait for a writer for ever and take the whole poll with it.
+ * - It is opened without following a link at its name, and without waiting
+ *   on a named pipe, which would take the whole poll with it: `noFollow.ts`.
  * - The check is made on the open file, not on the name.
  */
 export async function openRegularFile(file: string): Promise<OpenFile> {
-  // The two flags do not exist on Windows, where they are left out.
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  const handle = await open(file, flags);
+  const handle = await openWithoutFollowing(file, constants.O_RDONLY);
   let info: FileInfo;
   try {
     info = infoOf(await handle.stat());

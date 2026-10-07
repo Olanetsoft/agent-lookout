@@ -20,7 +20,8 @@ test("the switch is kept in menu-bar-state.json in the app's folder, readable by
   expect(menuBarSettingsFile(dir).read()).toEqual({ show: false });
   const file = path.join(dir, MENU_BAR_SETTINGS_FILE);
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ show: false });
-  expect((await stat(file)).mode & 0o777).toBe(0o600);
+  // Windows has no POSIX file modes.
+  if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
   // Written whole and moved into place, with nothing left beside it.
   expect(await readdir(dir)).toEqual([MENU_BAR_SETTINGS_FILE]);
 

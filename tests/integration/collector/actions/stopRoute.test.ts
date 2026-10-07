@@ -22,6 +22,14 @@ import {
 
 const HOUR = 60 * 60 * 1000;
 
+/**
+ * Stop is for macOS and Linux: its stand-ins are started with a start time from
+ * ps and stopped by POSIX signals, which Windows has neither of. What Windows
+ * does instead, offer no Stop and have no route, is checked at the end, on
+ * every system.
+ */
+const posixOnly = describe.skipIf(process.platform === "win32");
+
 /** The registry file Claude Code would write for a stand-in, working in a terminal. */
 function entryFor(
   standIn: Pick<StandIn, "pid" | "procStart">,
@@ -95,7 +103,7 @@ async function serve(
 const named = (sessions: Session[], name: string) =>
   sessions.find((session) => session.name === name);
 
-describe("what the dashboard is told", () => {
+posixOnly("what the dashboard is told", () => {
   test("a session in a terminal can be stopped, and nothing of its process but its id reaches the page", async () => {
     const standIn = await startStandIn();
     const server = await serve({ [`${standIn.pid}.json`]: entryFor(standIn) });
@@ -123,7 +131,7 @@ describe("what the dashboard is told", () => {
   });
 });
 
-describe("POST /api/sessions/stop", () => {
+posixOnly("POST /api/sessions/stop", () => {
   test("ends the session's process with SIGTERM, and it leaves the list with a stopped event", async () => {
     const standIn = await startStandIn();
     const server = await serve({ [`${standIn.pid}.json`]: entryFor(standIn) });
@@ -312,7 +320,7 @@ describe("POST /api/sessions/stop", () => {
   });
 });
 
-describe("a background job", () => {
+posixOnly("a background job", () => {
   test("is stopped with claude stop and its id, and shows as stopped at once", async () => {
     const job = await startStandIn();
     const dir = await tempDir();
@@ -400,7 +408,7 @@ describe("a background job", () => {
   });
 });
 
-describe("what POST /api/sessions/stop refuses", () => {
+posixOnly("what POST /api/sessions/stop refuses", () => {
   test.each<[string, number, Record<string, string | null>, string?]>([
     ["a GET", 405, {}, "GET"],
     ["an OPTIONS, as a preflight", 405, {}, "OPTIONS"],
@@ -445,5 +453,32 @@ describe("what POST /api/sessions/stop refuses", () => {
       (await server.stop(id, { body: JSON.stringify({ sessionId: id, pid: standIn.pid }) })).status,
     ).toBe(400);
     expect(standIn.running()).toBe(true);
+  });
+});
+
+describe("on Windows", () => {
+  test("no session can be stopped, there is no route, and the source says why", async () => {
+    const server = await serve({}, {}, { platform: "win32" });
+    const response = await server.stop();
+    expect(response.status).toBe(405);
+    expect(response.headers.allow).toBe("GET");
+    const cleanUp = await request(server.port, "/api/sessions/clean-up", {
+      method: "POST",
+      body: JSON.stringify({ sessionIds: [`claude-code:${ids.busy}`] }),
+      headers: {
+        Origin: `http://localhost:${server.port}`,
+        "Content-Type": "application/json",
+        "X-Agent-Lookout-Action": "clean-up",
+      },
+    });
+    expect(cleanUp.status).toBe(405);
+
+    const { sources } = (await request(server.port, "/api/sessions")).json<SessionsSnapshot>();
+    const claude = sources.find((source) => source.id === "claude-code");
+    expect(claude?.capabilities?.stop).toEqual({
+      level: "no",
+      reason:
+        "Not on Windows, where there is no ps to confirm a session's process by its start time, and no POSIX signal to stop it.",
+    });
   });
 });

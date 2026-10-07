@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import { contentSecurityPolicy, resolveInside } from "@collector/hosts/staticFiles";
@@ -38,12 +40,13 @@ describe("what the browser is told to enforce", () => {
 
 describe("path traversal", () => {
   test("resolveInside keeps every path under the root", () => {
-    const root = "/srv/app/dist";
+    // A folder of this system's own, so the paths it gives are written its way.
+    const root = path.resolve("/srv/app/dist");
     expect(resolveInside(root, "/")).toBe(root);
-    expect(resolveInside(root, "/index.html")).toBe("/srv/app/dist/index.html");
-    expect(resolveInside(root, "/assets/a.js")).toBe("/srv/app/dist/assets/a.js");
-    expect(resolveInside(root, "/assets/../index.html")).toBe("/srv/app/dist/index.html");
-    expect(resolveInside(root, "/a%20b.txt")).toBe("/srv/app/dist/a b.txt");
+    expect(resolveInside(root, "/index.html")).toBe(path.join(root, "index.html"));
+    expect(resolveInside(root, "/assets/a.js")).toBe(path.join(root, "assets", "a.js"));
+    expect(resolveInside(root, "/assets/../index.html")).toBe(path.join(root, "index.html"));
+    expect(resolveInside(root, "/a%20b.txt")).toBe(path.join(root, "a b.txt"));
 
     expect(resolveInside(root, "/../package.json")).toBeNull();
     expect(resolveInside(root, "/%2e%2e/package.json")).toBeNull();
@@ -54,6 +57,6 @@ describe("path traversal", () => {
     expect(resolveInside(root, "/file%00.txt")).toBeNull();
     expect(resolveInside(root, "/%")).toBeNull();
     // Decoded once only: this is a file with a percent sign in its name.
-    expect(resolveInside(root, "/..%252fpackage.json")).toBe("/srv/app/dist/..%2fpackage.json");
+    expect(resolveInside(root, "/..%252fpackage.json")).toBe(path.join(root, "..%2fpackage.json"));
   });
 });

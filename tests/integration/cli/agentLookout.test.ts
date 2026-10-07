@@ -596,8 +596,12 @@ describe("on a Node.js older than 22.12", () => {
 });
 
 describe("agent-lookout start, as a process", () => {
-  test("serves the dist/ beside bin/ on the port it is given, prints the address, and stops on Ctrl+C with 0", async () => {
-    // This clone's own code, serving a stand-in for dist/, so no build is needed or read.
+  /**
+   * This clone's own code, serving a stand-in for dist/, so no build is needed
+   * or read, started on a port the system picks. Resolves once it has printed
+   * where it runs.
+   */
+  async function startClone() {
     const clone = await packageFolder(
       { "dist/index.html": "<!doctype html><title>Agent Lookout</title>" },
       ["src", "node_modules"],
@@ -633,13 +637,27 @@ describe("agent-lookout start, as a process", () => {
       },
     );
     const port = Number(/127\.0\.0\.1:(\d+)/.exec(printed)?.[1]);
-    expect(printed).toBe(
+    return { child, exited, port, printed: () => printed };
+  }
+
+  test("serves the dist/ beside bin/ on the port it is given, and prints the address", async () => {
+    const { port, printed } = await startClone();
+    expect(printed()).toBe(
       `Agent Lookout is running at http://127.0.0.1:${port}\nIt listens on this machine only. Press Ctrl+C to stop.\n`,
     );
     expect((await request(port, "/")).body).toContain("<title>Agent Lookout</title>");
     expect((await request(port, "/api/health")).status).toBe(200);
-
-    child.kill("SIGINT");
-    expect(await exited).toBe(0);
   }, 30_000);
+
+  // Windows has no SIGINT to send another program: a signal there ends it outright.
+  test.skipIf(process.platform === "win32")(
+    "stops on Ctrl+C with 0",
+    async () => {
+      const { child, exited, port } = await startClone();
+      expect((await request(port, "/api/health")).status).toBe(200);
+      child.kill("SIGINT");
+      expect(await exited).toBe(0);
+    },
+    30_000,
+  );
 });

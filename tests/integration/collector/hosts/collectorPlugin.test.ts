@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { realpathSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -74,7 +75,10 @@ function trackedPlugin() {
 }
 
 async function projectRoot(): Promise<string> {
-  const root = await tempDir();
+  // By its real, long name. Windows can give the temporary folder by its short
+  // 8.3 name, such as RUNNER~1, and Vite serves a file only from under the root
+  // as it finds the file by its real path.
+  const root = realpathSync.native(await tempDir());
   await writeFile(path.join(root, "index.html"), "<!doctype html><title>Agent Lookout</title>");
   return root;
 }

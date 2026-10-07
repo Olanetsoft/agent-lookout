@@ -3,10 +3,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, onTestFinished, test } from "vitest";
+import { expect, onTestFinished, test as anyTest } from "vitest";
 
 import { ALLOW_OUTPUT, DENY_OUTPUT } from "@collector/answers/heldAsks";
 import { tempDir } from "@tests/support/node/tempFiles";
+
+// The hook is a POSIX sh script that speaks over a Unix socket, so it is run on
+// macOS and Linux only. What Claude Code is told to run is read on every system.
+const test = anyTest.skipIf(process.platform === "win32");
 
 // The plugin's hook, run as Claude Code runs it: the request on stdin, with
 // the socket named by AGENT_LOOKOUT_ANSWER_SOCKET, against a stand-in for
@@ -158,24 +162,27 @@ test("a listener that never answers is given up on in time, with nothing printed
   expect(run.ms).toBeLessThan(5_000);
 });
 
-test("the hook Claude Code is given runs this script, under the time Claude Code gives it", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const hooks = JSON.parse(
-    await readFile(path.join(path.dirname(SCRIPT), "hooks.json"), "utf8"),
-  ) as { hooks: Record<string, { matcher: string; hooks: Record<string, unknown>[] }[]> };
-  expect(Object.keys(hooks.hooks)).toEqual(["PermissionRequest"]);
-  const [hook] = hooks.hooks.PermissionRequest?.[0]?.hooks ?? [];
-  expect(hook).toMatchObject({
-    type: "command",
-    command: '"${CLAUDE_PLUGIN_ROOT}"/hooks/ask-agent-lookout.sh',
-    timeout: 600,
-  });
-  const script = await readFile(SCRIPT, "utf8");
-  // curl gives up before Claude Code would end the hook.
-  expect(script).toContain("AGENT_LOOKOUT_HOOK_MAX_TIME:-580");
-  // The two answers it prints are Agent Lookout's own, letter for letter.
-  expect(script).toContain(`'${ALLOW_OUTPUT}'`);
-  expect(script).toContain(`'${DENY_OUTPUT}'`);
-  // No ~/.curlrc is read.
-  expect(script).toMatch(/"\$curl" -q /);
-});
+anyTest(
+  "the hook Claude Code is given runs this script, under the time Claude Code gives it",
+  async () => {
+    const { readFile } = await import("node:fs/promises");
+    const hooks = JSON.parse(
+      await readFile(path.join(path.dirname(SCRIPT), "hooks.json"), "utf8"),
+    ) as { hooks: Record<string, { matcher: string; hooks: Record<string, unknown>[] }[]> };
+    expect(Object.keys(hooks.hooks)).toEqual(["PermissionRequest"]);
+    const [hook] = hooks.hooks.PermissionRequest?.[0]?.hooks ?? [];
+    expect(hook).toMatchObject({
+      type: "command",
+      command: '"${CLAUDE_PLUGIN_ROOT}"/hooks/ask-agent-lookout.sh',
+      timeout: 600,
+    });
+    const script = await readFile(SCRIPT, "utf8");
+    // curl gives up before Claude Code would end the hook.
+    expect(script).toContain("AGENT_LOOKOUT_HOOK_MAX_TIME:-580");
+    // The two answers it prints are Agent Lookout's own, letter for letter.
+    expect(script).toContain(`'${ALLOW_OUTPUT}'`);
+    expect(script).toContain(`'${DENY_OUTPUT}'`);
+    // No ~/.curlrc is read.
+    expect(script).toMatch(/"\$curl" -q /);
+  },
+);

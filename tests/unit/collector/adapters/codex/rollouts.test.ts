@@ -20,6 +20,11 @@ import {
   threadId,
 } from "@tests/fixtures/codex";
 import { inTimeZone, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
+import { asWritten } from "@tests/support/paths";
+
+/** The files found, with their paths as the tests write them, whatever system joined them. */
+const written = <T extends { path: string }>(refs: T[]) =>
+  refs.map((ref) => ({ ...ref, path: asWritten(ref.path) }));
 
 const SESSIONS = `${CODEX_HOME}/sessions`;
 
@@ -66,24 +71,23 @@ describe("recentDayFolders", () => {
       const justAfterMidnight = new Date(2026, 9, 1, 0, 30).getTime();
       const justBeforeMidnight = new Date(2026, 9, 1, 23, 30).getTime();
       const expected = [`${SESSIONS}/2026/10/01`, `${SESSIONS}/2026/09/30`];
-      expect(recentDayFolders(SESSIONS, justAfterMidnight)).toEqual(expected);
-      expect(recentDayFolders(SESSIONS, justBeforeMidnight)).toEqual(expected);
+      expect(recentDayFolders(SESSIONS, justAfterMidnight).map(asWritten)).toEqual(expected);
+      expect(recentDayFolders(SESSIONS, justBeforeMidnight).map(asWritten)).toEqual(expected);
     });
   });
 
   test.each(zones)("cross the year with two-digit months and days, in %s", async (zone) => {
     await inTimeZone(zone, () => {
-      expect(recentDayFolders(SESSIONS, new Date(2027, 0, 1, 9, 0).getTime())).toEqual([
-        `${SESSIONS}/2027/01/01`,
-        `${SESSIONS}/2026/12/31`,
-      ]);
+      expect(
+        recentDayFolders(SESSIONS, new Date(2027, 0, 1, 9, 0).getTime()).map(asWritten),
+      ).toEqual([`${SESSIONS}/2027/01/01`, `${SESSIONS}/2026/12/31`]);
     });
   });
 
   test("the fixture's clock reaches the fixture's folder in every time zone", async () => {
     for (const zone of ["Pacific/Kiritimati", "Pacific/Pago_Pago", "Asia/Kolkata", "UTC"]) {
       await inTimeZone(zone, () => {
-        expect(recentDayFolders(SESSIONS, NOW)).toContain(`${SESSIONS}/2026/10/01`);
+        expect(recentDayFolders(SESSIONS, NOW).map(asWritten)).toContain(`${SESSIONS}/2026/10/01`);
       });
     }
   });
@@ -92,7 +96,9 @@ describe("recentDayFolders", () => {
     await inTimeZone("America/New_York", () => {
       // 1 November 2026 has 25 hours in New York, so 24 hours before 23:30 is the same date.
       const lateOnTheLongDay = new Date(2026, 10, 1, 23, 30).getTime();
-      expect(recentDayFolders(SESSIONS, lateOnTheLongDay)).toEqual([`${SESSIONS}/2026/11/01`]);
+      expect(recentDayFolders(SESSIONS, lateOnTheLongDay).map(asWritten)).toEqual([
+        `${SESSIONS}/2026/11/01`,
+      ]);
     });
   });
 });
@@ -130,7 +136,7 @@ describe("createRolloutFinder", () => {
     await inTimeZone("UTC", async () => {
       const files = codexFolder();
       const finder = createRolloutFinder({ sessionsDir: SESSIONS, io: files.io });
-      const refs = await finder.recent(NOW);
+      const refs = written(await finder.recent(NOW));
 
       expect(refs).toEqual([
         {
@@ -167,7 +173,9 @@ describe("createRolloutFinder", () => {
   test("locate finds a thread in any day folder, both files of a reverted one, and nothing archived", async () => {
     const files = codexFolder();
     const finder = createRolloutFinder({ sessionsDir: SESSIONS, io: files.io });
-    const refs = await finder.locate([ids.resumed, ids.reverted, ids.old, ids.archived], NOW);
+    const refs = written(
+      await finder.locate([ids.resumed, ids.reverted, ids.old, ids.archived], NOW),
+    );
 
     expect(refs).toEqual([
       { path: rolloutPath(CODEX_HOME, "2026-09-20T08-00-00", ids.resumed), threadId: ids.resumed },

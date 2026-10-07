@@ -3,13 +3,14 @@ import { expect, test, vi } from "vitest";
 import type { Session } from "@core/sessions/session";
 import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { makeSession } from "@tests/fixtures/session";
+import { asWritten } from "@tests/support/paths";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
 const ID = `claude-code:${UUID}`;
 
 function reader(sessions: Session[], files: Record<string, string>) {
   const readFile = vi.fn(async (file: string) => {
-    const content = files[file];
+    const content = files[asWritten(file)];
     if (content === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
     return content;
   });
@@ -34,7 +35,7 @@ test("the session's own registry file is read again, by the pid the collector li
     status: "waiting",
     wait: "1700|permission prompt",
   });
-  expect(readFile).toHaveBeenCalledWith(FILE);
+  expect(readFile.mock.calls.map(([file]) => asWritten(file))).toEqual([FILE]);
 });
 
 test("a later wait reads as another wait: its time or its reason differs", async () => {

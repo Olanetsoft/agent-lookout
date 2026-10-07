@@ -79,7 +79,10 @@ async function serve(files: Record<string, string>) {
   return { port, sessions, cleanUp, rewrite, events };
 }
 
-describe("POST /api/sessions/clean-up", () => {
+// Ending the sessions left running is for macOS and Linux: its stand-ins are
+// started with a start time from ps and ended by POSIX signals, which Windows
+// has neither of. stopRoute.test.ts checks that Windows has no such route.
+describe.skipIf(process.platform === "win32")("POST /api/sessions/clean-up", () => {
   test("ends the sessions left running, and never one that became active after the page listed it", async () => {
     const first = await startStandIn();
     const second = await startStandIn();

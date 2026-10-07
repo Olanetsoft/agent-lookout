@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test as anyTest, vi } from "vitest";
 
 import { ALLOW_OUTPUT, DENY_OUTPUT } from "@collector/answers/heldAsks";
 import { createCollector } from "@collector/collector";
@@ -16,6 +16,10 @@ import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request } from "@tests/support/node/http";
 import { startStandIn, type StandIn } from "@tests/support/node/standIns";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
+
+// Answering is for macOS and Linux: the plugin's hook is a POSIX sh script, and
+// it reaches Agent Lookout through a Unix socket. Windows has neither.
+const test = anyTest.skipIf(process.platform === "win32");
 
 // Answering from end to end: the collector as every host builds it, with its
 // real Claude Code adapter reading a registry folder of the test's own, its

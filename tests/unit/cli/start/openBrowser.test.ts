@@ -31,8 +31,24 @@ describe("the command it runs", () => {
     });
   });
 
-  test("is none on a system with neither", () => {
-    expect(openCommand("win32", "http://127.0.0.1:4777")).toBeNull();
+  test("is Windows' own rundll32 by its full path on Windows, handing the address to the browser", () => {
+    expect(openCommand("win32", "http://127.0.0.1:4777", { SystemRoot: "D:\\Windows" })).toEqual({
+      file: "D:\\Windows\\System32\\rundll32.exe",
+      args: ["url.dll,FileProtocolHandler", "http://127.0.0.1:4777"],
+    });
+    // A Windows folder that is not a whole path is not believed.
+    for (const env of [{}, { SystemRoot: "" }, { SystemRoot: "Windows" }]) {
+      expect(openCommand("win32", "http://127.0.0.1:4777", env)?.file).toBe(
+        "C:\\Windows\\System32\\rundll32.exe",
+      );
+    }
+    expect(openCommand("win32", "http://127.0.0.1:4777/?x=1#y", {})?.args).toEqual([
+      "url.dll,FileProtocolHandler",
+      "http://127.0.0.1:4777",
+    ]);
+  });
+
+  test("is none on a system with none of the three", () => {
     expect(openCommand("freebsd", "http://127.0.0.1:4777")).toBeNull();
   });
 
@@ -47,6 +63,7 @@ describe("the command it runs", () => {
     ]) {
       expect(openCommand("darwin", url)).toBeNull();
       expect(openCommand("linux", url)).toBeNull();
+      expect(openCommand("win32", url)).toBeNull();
     }
   });
 
@@ -75,10 +92,27 @@ describe("opening the browser", () => {
     expect(opener.runs).toEqual([{ file: "xdg-open", args: ["http://127.0.0.1:4777"] }]);
   });
 
+  test("on Windows, runs rundll32 from the Windows folder the environment names", async () => {
+    const opener = standIn(true);
+    expect(
+      await openInBrowser("http://127.0.0.1:4777", {
+        platform: "win32",
+        env: { SystemRoot: "C:\\Windows" },
+        run: opener.run,
+      }),
+    ).toBe(true);
+    expect(opener.runs).toEqual([
+      {
+        file: "C:\\Windows\\System32\\rundll32.exe",
+        args: ["url.dll,FileProtocolHandler", "http://127.0.0.1:4777"],
+      },
+    ]);
+  });
+
   test("runs nothing on a system with no opener, or for an address elsewhere", async () => {
     const opener = standIn(true);
     expect(
-      await openInBrowser("http://127.0.0.1:4777", { platform: "win32", run: opener.run }),
+      await openInBrowser("http://127.0.0.1:4777", { platform: "freebsd", run: opener.run }),
     ).toBe(false);
     expect(
       await openInBrowser("http://example.com:4777", { platform: "darwin", run: opener.run }),

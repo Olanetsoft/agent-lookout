@@ -42,13 +42,18 @@ export const GH_LOCATIONS = [
 /** What gh is asked for: no more than the details show. */
 export const GH_FIELDS = "number,title,state,isDraft,statusCheckRollup";
 
-/** The gh binary: the first on `PATH`, then the fixed locations. Null when there is none. */
+/**
+ * The gh binary: the first on `PATH`, then the fixed locations. Null when
+ * there is none. On Windows that is a `gh.exe` on `PATH`.
+ */
 export async function findGhBinary(
   env: NodeJS.ProcessEnv,
-  isExecutable: (candidate: string) => Promise<boolean> = isExecutableFile,
+  isExecutable?: (candidate: string) => Promise<boolean>,
   locations: readonly string[] = GH_LOCATIONS,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<string | null> {
-  const candidates = [...new Set([...pathCandidates(env, "gh"), ...locations])];
+  isExecutable ??= (candidate) => isExecutableFile(candidate, platform);
+  const candidates = [...new Set([...pathCandidates(env, "gh", platform), ...locations])];
   for (const candidate of candidates) {
     if (await isExecutable(candidate)) return candidate;
   }

@@ -22,15 +22,20 @@ const MINUTE = 60 * SECOND;
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } })
   .process.env;
 
-/** Runs `run` with the clock in this time zone, and puts the zone back afterwards. */
+/**
+ * Runs `run` with the clock in this time zone, and puts the zone back
+ * afterwards. Node on Windows keeps the zone it was last given when `TZ` is
+ * deleted, so the zone in force before is set again first.
+ */
 function inTimeZone(zone: string, run: () => void): void {
   const before = env.TZ;
+  const zoneBefore = Intl.DateTimeFormat().resolvedOptions().timeZone;
   env.TZ = zone;
   try {
     run();
   } finally {
+    env.TZ = before ?? zoneBefore;
     if (before === undefined) delete env.TZ;
-    else env.TZ = before;
   }
 }
 

@@ -16,8 +16,9 @@ describe("isProcessAlive", () => {
   });
 
   test("a process that exists but belongs to someone else still counts as alive", () => {
-    // pid 1 is the system's first process. Signalling it is refused for an
-    // ordinary user, which is different from it not existing.
-    expect(isProcessAlive(1)).toBe(true);
+    // pid 1 is the system's first process, and on Windows pid 4 is the System
+    // process. Signalling it is refused for an ordinary user, which is
+    // different from it not existing.
+    expect(isProcessAlive(process.platform === "win32" ? 4 : 1)).toBe(true);
   });
 });

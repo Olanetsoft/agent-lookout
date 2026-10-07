@@ -49,21 +49,25 @@ function keeperIn(dir: string, now: () => number = () => NOW, more = {}) {
 const modeOf = async (target: string) => (await stat(target)).mode & 0o777;
 
 describe("on disk", () => {
-  test("the folder is made with mode 700 and each file with mode 600", async () => {
-    const dir = path.join(await tempDir(), "kept", "history");
-    const keeper = keeperIn(dir);
-    await keeper.restore(LIMITS);
-    keeper.start();
-    keeper.addPoint(point(NOW));
-    await keeper.flush();
-    keeper.stop();
+  // Windows has no POSIX file modes.
+  test.skipIf(process.platform === "win32")(
+    "the folder is made with mode 700 and each file with mode 600",
+    async () => {
+      const dir = path.join(await tempDir(), "kept", "history");
+      const keeper = keeperIn(dir);
+      await keeper.restore(LIMITS);
+      keeper.start();
+      keeper.addPoint(point(NOW));
+      await keeper.flush();
+      keeper.stop();
 
-    expect(await modeOf(dir)).toBe(0o700);
-    expect(await modeOf(path.dirname(dir))).toBe(0o700);
-    const names = await readdir(dir);
-    expect(names).toEqual([historyFileName(dayOf(NOW))]);
-    expect(await modeOf(path.join(dir, names[0] as string))).toBe(0o600);
-  });
+      expect(await modeOf(dir)).toBe(0o700);
+      expect(await modeOf(path.dirname(dir))).toBe(0o700);
+      const names = await readdir(dir);
+      expect(names).toEqual([historyFileName(dayOf(NOW))]);
+      expect(await modeOf(path.join(dir, names[0] as string))).toBe(0o600);
+    },
+  );
 
   test("what one run wrote, the next reads back: its events, its points and where it began", async () => {
     const dir = await tempDir();
@@ -157,7 +161,10 @@ describe("on disk", () => {
     expect((await readdir(dir)).sort()).toEqual(
       [historyFileName(dayOf(NOW)), "writer.lock"].sort(),
     );
-    expect(await modeOf(path.join(dir, "writer.lock"))).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") {
+      expect(await modeOf(path.join(dir, "writer.lock"))).toBe(0o600);
+    }
     keeper.stop();
     expect(await readdir(dir)).toEqual([historyFileName(dayOf(NOW))]);
   });

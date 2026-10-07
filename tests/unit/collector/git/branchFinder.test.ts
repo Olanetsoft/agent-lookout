@@ -14,6 +14,7 @@ import { MAX_GIT_FILE_BYTES } from "@collector/git/gitHead";
 import { repositoryId } from "@collector/git/repository";
 import { makeSession } from "@tests/fixtures/session";
 import { handClock, memoryFiles } from "@tests/support/adapters/codexAdapter";
+import { asWritten } from "@tests/support/paths";
 
 const HOME = "/Users/example";
 const CODE = `${HOME}/code`;
@@ -46,7 +47,7 @@ function worktreeIn(
 
 /** The repository whose main working folder is `folder`, with its .git folder, as the finder gives it. */
 function inRepository(folder: string) {
-  return { id: repositoryId(`${folder}/.git`), name: path.basename(folder) };
+  return { id: repositoryId(path.resolve(folder, ".git")), name: path.basename(folder) };
 }
 
 afterEach(() => {
@@ -246,7 +247,10 @@ describe("a .git file, as in a worktree or a submodule", () => {
     // folder has no commondir: it is the repository's own.
     expect(await find(files, `${CODE}/platform-api/docs`)).toEqual({
       branch: "docs-site",
-      repository: { id: repositoryId(`${CODE}/platform-api/.git/modules/docs`), name: "docs" },
+      repository: {
+        id: repositoryId(path.resolve(`${CODE}/platform-api/.git/modules/docs`)),
+        name: "docs",
+      },
     });
     expect(files.opened()).toEqual([
       `${CODE}/platform-api/docs/.git`,
@@ -265,7 +269,7 @@ describe("a .git file, as in a worktree or a submodule", () => {
     );
 
     expect((await find(files, `${CODE}/platform-api/worktrees/x`))?.repository).toEqual({
-      id: repositoryId(`${CODE}/platform-api/.git/modules/worktrees/x`),
+      id: repositoryId(path.resolve(`${CODE}/platform-api/.git/modules/worktrees/x`)),
       name: "x",
     });
   });
@@ -279,7 +283,10 @@ describe("a .git file, as in a worktree or a submodule", () => {
     files.write(`${CODE}/docs-review/.git`, `gitdir: ${review}\n`);
 
     const docs = await find(files, `${CODE}/platform-api/docs`);
-    expect(docs?.repository).toEqual({ id: repositoryId(`${modules}/docs`), name: "docs" });
+    expect(docs?.repository).toEqual({
+      id: repositoryId(path.resolve(`${modules}/docs`)),
+      name: "docs",
+    });
     expect((await find(files, `${CODE}/docs-review`))?.repository).toEqual(docs?.repository);
   });
 
@@ -305,7 +312,7 @@ describe("a .git file, as in a worktree or a submodule", () => {
 
     expect(heads.map((head) => head?.branch)).toEqual(["main", "main", "invoice-export"]);
     for (const head of heads) {
-      expect(head?.repository).toEqual({ id: repositoryId(bare), name: "billing" });
+      expect(head?.repository).toEqual({ id: repositoryId(path.resolve(bare)), name: "billing" });
     }
   });
 
@@ -320,7 +327,7 @@ describe("a .git file, as in a worktree or a submodule", () => {
     );
 
     const main = await find(files, `${CODE}/storefront`);
-    expect(main?.repository).toEqual({ id: repositoryId(apart), name: "storefront" });
+    expect(main?.repository).toEqual({ id: repositoryId(path.resolve(apart)), name: "storefront" });
     expect((await find(files, `${CODE}/storefront-checkout`))?.repository).toEqual(
       main?.repository,
     );
@@ -486,7 +493,8 @@ describe("the finder", () => {
     const waiting: (() => void)[] = [];
     const io: GitIo = {
       ...files.io,
-      stat: (target) => {
+      stat: (given) => {
+        const target = asWritten(given);
         if (!hangs(target)) return files.io.stat(target);
         asked.push(target);
         return new Promise((resolve) => {
@@ -546,8 +554,8 @@ describe("the finder", () => {
     ]);
 
     // The main folder and its worktree share the repository's own git folder.
-    expect(finder.gitFolderOf(`${CODE}/storefront`)).toBe(common);
-    expect(finder.gitFolderOf(`${CODE}/storefront-checkout`)).toBe(common);
+    expect(asWritten(finder.gitFolderOf(`${CODE}/storefront`) ?? "")).toBe(common);
+    expect(asWritten(finder.gitFolderOf(`${CODE}/storefront-checkout`) ?? "")).toBe(common);
     expect(finder.gitFolderOf(`${CODE}/mobile-app`)).toBeNull();
     expect(JSON.stringify(annotated)).not.toContain(`${common}/`);
     expect(JSON.stringify(annotated)).not.toContain(`"${common}"`);

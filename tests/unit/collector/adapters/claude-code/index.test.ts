@@ -1,6 +1,9 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import {
+  CLAUDE_CODE_WINDOWS_CAPABILITIES,
   createClaudeCodeAdapter,
   FEED_FALLBACK_INTERVAL_MS,
   FEED_INTERVAL_MS,
@@ -18,6 +21,7 @@ import {
   watching,
   WITHHELD,
 } from "@tests/support/adapters/claudeCodeAdapter";
+import { asWritten } from "@tests/support/paths";
 
 // The adapter with every outside thing handed in: the registry folder is a
 // stand-in that is never on disk, and no command or process is real. The tests
@@ -101,7 +105,7 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
       registryIo,
     }).poll();
 
-    expect(listed).toEqual([
+    expect(listed.map(asWritten)).toEqual([
       "/Users/example/elsewhere/sessions",
       "/Users/example/.claude/sessions",
     ]);
@@ -112,7 +116,7 @@ describe("tmux panes", () => {
   /** The fixtures' registry folder, held in memory. */
   const registryIo: RegistryIo = {
     readdir: async () => Object.keys(registryFiles),
-    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+    readFile: async (file) => registryFiles[path.basename(file)] ?? "",
   };
 
   /** A stand-in for the collector's finder: it knows one pane, and writes down who it was asked about. */
@@ -218,7 +222,7 @@ describe("tmux panes", () => {
 describe("Terminal and iTerm2 tabs", () => {
   const registryIo: RegistryIo = {
     readdir: async () => Object.keys(registryFiles),
-    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+    readFile: async (file) => registryFiles[path.basename(file)] ?? "",
   };
 
   /** A stand-in for the collector's tab finder: it knows some tabs, and writes down who it was asked about. */
@@ -284,16 +288,22 @@ describe("Terminal and iTerm2 tabs", () => {
   });
 });
 
+// Stop is for macOS and Linux, so these name one of them, whatever system runs
+// the tests. On Windows nothing is offered Stop: the last test here.
 describe("Stop", () => {
   /** The fixtures' registry folder, held in memory. */
   const registryIo: RegistryIo = {
     readdir: async () => Object.keys(registryFiles),
-    readFile: async (file) => registryFiles[file.split("/").pop() ?? ""] ?? "",
+    readFile: async (file) => registryFiles[path.basename(file)] ?? "",
   };
 
   test("each session it can stop says how, and what it is stopped by goes to the collector alone", async () => {
     const stops = createStopTargets();
-    const { sessions } = await adapterFor("/Users/example/elsewhere", { registryIo, stops }).poll();
+    const { sessions } = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      stops,
+      platform: "linux",
+    }).poll();
 
     expect(
       Object.fromEntries(sessions.map((session) => [session.name, session.stop?.how ?? null])),
@@ -306,16 +316,19 @@ describe("Stop", () => {
       // A background job with no live process has nothing to stop.
       "nightly-report": null,
     });
-    expect(stops.targetOf(`claude-code:${ids.busy}`)).toMatchObject({
-      how: "signal",
-      pid: pids.busy,
-      registryFile: `/Users/example/elsewhere/sessions/${pids.busy}.json`,
-    });
+    const target = stops.targetOf(`claude-code:${ids.busy}`);
+    expect(target).toMatchObject({ how: "signal", pid: pids.busy });
+    expect(asWritten(target?.registryFile ?? "")).toBe(
+      `/Users/example/elsewhere/sessions/${pids.busy}.json`,
+    );
     expect(stops.targetOf(`claude-code:${ids.permission}`)).toBeUndefined();
   });
 
   test("without anything to hand the targets to, no session is offered Stop", async () => {
-    const { sessions } = await adapterFor("/Users/example/elsewhere", { registryIo }).poll();
+    const { sessions } = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      platform: "linux",
+    }).poll();
     expect(sessions.filter((session) => session.stop !== undefined)).toEqual([]);
   });
 
@@ -324,6 +337,7 @@ describe("Stop", () => {
     const adapter = adapterFor("/Users/example/elsewhere", {
       registryIo,
       stops,
+      platform: "darwin",
       env: {
         AGENT_LOOKOUT_CLAUDE_HOME: "/Users/example/elsewhere",
         AGENT_LOOKOUT_CLAUDE_BIN: "/opt/tools/claude",
@@ -347,6 +361,7 @@ describe("Stop", () => {
     const adapter = adapterFor("/Users/example/elsewhere", {
       registryIo,
       stops,
+      platform: "linux",
       now: () => clock.now,
       run: async () => {
         runs += 1;
@@ -366,6 +381,27 @@ describe("Stop", () => {
     clock.now += 2_000;
     await adapter.poll();
     expect(runs).toBe(2);
+  });
+  test("on Windows no session is offered Stop, whatever it is handed, and the source says why", async () => {
+    const stops = createStopTargets();
+    let asked = false;
+    stops.onAskFeedSoon(() => {
+      asked = true;
+    });
+    const adapter = adapterFor("C:\\Users\\example\\elsewhere", {
+      registryIo,
+      stops,
+      homeDir: "C:\\Users\\example",
+      platform: "win32",
+    });
+    const { sessions } = await adapter.poll();
+
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.filter((session) => session.stop !== undefined)).toEqual([]);
+    expect(stops.targetOf(`claude-code:${ids.busy}`)).toBeUndefined();
+    expect(asked).toBe(false);
+    expect(adapter.capabilities).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
+    expect(adapter.capabilities?.stop.level).toBe("no");
   });
 });
 

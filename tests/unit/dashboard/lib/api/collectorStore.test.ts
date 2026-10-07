@@ -117,9 +117,26 @@ function fakeCollector(): FakeCollector {
   return collector;
 }
 
-/** Lets promises and real zero-delay timers run. Only the interval and the clock are faked. */
+/**
+ * One turn of the event loop. A message to itself comes back at the next
+ * turn, where a zero-delay timer waits for the system's clock to tick: on
+ * Windows only every 15 milliseconds or so, which a test of 150 beats would
+ * spend its whole time on.
+ */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+}
+
+/** Lets promises and whatever waits for the next turn run. Only the interval and the clock are faked. */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let i = 0; i < 5; i += 1) await nextTurn();
 }
 
 async function beat(ms: number = POLL_INTERVAL_MS): Promise<void> {

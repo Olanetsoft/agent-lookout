@@ -40,7 +40,13 @@ import {
   watching,
   WITHHELD,
 } from "@tests/support/adapters/claudeCodeAdapter";
-import { makeClaudeHome, makeUserHome, tempDir, writeStub } from "@tests/support/node/tempFiles";
+import {
+  makeClaudeHome,
+  makeUserHome,
+  tempDir,
+  writeStub,
+  writeWindowsStub,
+} from "@tests/support/node/tempFiles";
 
 /**
  * An adapter on a machine where no claude binary can be found. Nothing in its
@@ -83,8 +89,11 @@ function countedRun(stdout: () => string = () => feedJson) {
 
 const registryPath = (home: string, name: string) => path.join(home, "sessions", name);
 
+/** Where the adapter says it looked, on this system, with no APPDATA set on Windows. */
 const NOT_FOUND =
-  "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/.npm-global/bin or /usr/bin";
+  process.platform === "win32"
+    ? "The claude command, claude.exe, was not found on PATH or in ~/.local/bin or ~/AppData/Roaming/npm"
+    : "The claude command was not found on PATH or in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, ~/.npm-global/bin or /usr/bin";
 
 const HEALTHY =
   "Sessions are read from Claude Code's session registry and checked against its own list of sessions.";
@@ -101,7 +110,7 @@ describe("the Claude Code adapter", () => {
       label: "Claude Code",
       state: "ok",
       detail: HEALTHY,
-      watching: watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds"),
+      watching: watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
       checkedAt: now,
     });
 
@@ -347,10 +356,10 @@ describe("how often the claude command is run", () => {
     expect(first.basis).toBe("feed");
     expect(first.health.state).toBe("ok");
     expect(first.health.detail).toBe(
-      `There is no session registry at ${home}/sessions, so sessions are listed with the claude command every 5 seconds instead. Their apps and status times are unknown.`,
+      `There is no session registry at ${path.join(home, "sessions")}, so sessions are listed with the claude command every 5 seconds instead. Their apps and status times are unknown.`,
     );
     expect(first.health.watching).toEqual(
-      watching(`${home}/sessions`, "not found", "every 5 seconds"),
+      watching(path.join(home, "sessions"), "not found", "every 5 seconds"),
     );
     expect(first.sessions).toHaveLength(5);
     expect(first.sessions.every((session) => session.surface === "unknown")).toBe(true);
@@ -438,7 +447,12 @@ describe("how often the claude command is run", () => {
       `${HEALTHY} This version of Claude Code cannot list background jobs whose process has ended.`,
     );
     expect(health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds", "claude agents --json"),
+      watching(
+        path.join(home, "sessions"),
+        "every 2 seconds",
+        "every 30 seconds",
+        "claude agents --json",
+      ),
     );
   });
 });
@@ -639,10 +653,10 @@ describe("when the registry cannot be relied on", () => {
     expect(first.basis).toBe("feed");
     expect(first.health.state).toBe("ok");
     expect(first.health.detail).toBe(
-      `The claude command lists a running session that the registry at ${home}/sessions does not have, so sessions are listed with the claude command every 5 seconds until the two agree.`,
+      `The claude command lists a running session that the registry at ${path.join(home, "sessions")} does not have, so sessions are listed with the claude command every 5 seconds until the two agree.`,
     );
     expect(first.health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 5 seconds"),
+      watching(path.join(home, "sessions"), "every 2 seconds", "every 5 seconds"),
     );
     // The malformed file costs one session its app and status time and nothing else.
     expect(first.sessions).toHaveLength(5);
@@ -671,7 +685,7 @@ describe("when the registry cannot be relied on", () => {
     expect(agreed.basis).toBe("registry+feed");
     expect(agreed.health.detail).toBe(HEALTHY);
     expect(agreed.health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds"),
+      watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
     );
     expect(agreed.sessions[0]).toMatchObject({ name: "demo-project", surface: "vscode" });
 
@@ -726,7 +740,7 @@ describe("when the registry cannot be relied on", () => {
     expect(basis).toBe("feed");
     expect(health.state).toBe("ok");
     expect(health.detail).toBe(
-      `A session in the registry at ${home}/sessions has a status Agent Lookout does not know, so sessions are listed with the claude command every 5 seconds instead.`,
+      `A session in the registry at ${path.join(home, "sessions")} has a status Agent Lookout does not know, so sessions are listed with the claude command every 5 seconds instead.`,
     );
     expect(health.watching?.[3]).toEqual({ label: "Command run", value: "every 5 seconds" });
     // The feed's word for it is used.
@@ -1249,8 +1263,10 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
     expect(health.detail).toBe(
       `AGENT_LOOKOUT_CLAUDE_HOME is set, so sessions are read from the registry in that folder alone. ${WITHHELD}`,
     );
-    expect(health.watching).toEqual(watching(`${home}/sessions`, "every 2 seconds", "not run"));
-    expect(adapter.lookingIn).toBe(`Looking for sessions in ${home}/sessions.`);
+    expect(health.watching).toEqual(
+      watching(path.join(home, "sessions"), "every 2 seconds", "not run"),
+    );
+    expect(adapter.lookingIn).toBe(`Looking for sessions in ${path.join(home, "sessions")}.`);
   });
 
   test("an empty sessions folder is the empty state", async () => {
@@ -1275,7 +1291,7 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
     expect(health.detail).toBe(
       `AGENT_LOOKOUT_CLAUDE_HOME is set to ${home}, which has no sessions folder, so no sessions are listed. ${WITHHELD}`,
     );
-    expect(health.watching).toEqual(watching(`${home}/sessions`, "not found", "not run"));
+    expect(health.watching).toEqual(watching(path.join(home, "sessions"), "not found", "not run"));
   });
 
   test("with a binary that does not exist and an empty directory, it is still the empty state", async () => {
@@ -1292,7 +1308,9 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
       `AGENT_LOOKOUT_CLAUDE_BIN is set to /nonexistent, which is not a program this user can run, and AGENT_LOOKOUT_CLAUDE_HOME is set to ${home}, which has no sessions folder, so no sessions are listed.`,
     );
     expect(health.advice).toBeUndefined();
-    expect(health.watching).toEqual(watching(`${home}/sessions`, "not found", "not found"));
+    expect(health.watching).toEqual(
+      watching(path.join(home, "sessions"), "not found", "not found"),
+    );
   });
 
   test("with a binary named as well, that binary is run", async () => {
@@ -1531,7 +1549,7 @@ describe("when the claude command fails", () => {
       `The claude agents --json command did not answer within 5 seconds, so sessions are read from the session registry alone. ${NO_ENDED_JOBS}`,
     );
     expect(health.watching).toEqual(
-      watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds"),
+      watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
     );
     expect(sessions).toHaveLength(4);
 
@@ -1663,7 +1681,10 @@ describe("what the adapter says about itself", () => {
     expect(health.detail).not.toContain(home);
     expect(health.detail).not.toContain("--json");
     expect(health.detail).not.toContain("claude agents");
-    expect(health.watching).toContainEqual({ label: "Registry folder", value: `${home}/sessions` });
+    expect(health.watching).toContainEqual({
+      label: "Registry folder",
+      value: path.join(home, "sessions"),
+    });
     expect(health.watching).toContainEqual({
       label: "Command",
       value: "claude agents --json --all",
@@ -1677,7 +1698,7 @@ describe("what the adapter says about itself", () => {
       feedIntervalMs: 90_000,
     }).poll();
     expect(health.watching).toEqual(
-      watching(`${home}/sessions`, "every second", "every 90 seconds"),
+      watching(path.join(home, "sessions"), "every second", "every 90 seconds"),
     );
   });
 });
@@ -1743,7 +1764,7 @@ describe("what the adapter touches", () => {
         label: "Claude Code",
         state: "error",
         detail: "Something unexpected went wrong while reading Claude Code sessions.",
-        watching: watching(`${home}/sessions`, "every 2 seconds", "every 30 seconds"),
+        watching: watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
         checkedAt: now,
       },
       sessions: [],
@@ -1760,120 +1781,128 @@ describe("what the adapter touches", () => {
   });
 });
 
-describe("end to end, with a real program and real processes", () => {
-  test("runs the named binary, reads past its trailing text and checks real pids", async () => {
-    const exited = spawnSync(process.execPath, ["-e", ""]).pid;
-    const feed = JSON.stringify([
-      {
-        pid: process.pid,
-        cwd: "/Users/example/code/demo",
-        kind: "interactive",
-        startedAt: 1_700_000_000_000,
-        sessionId: ids.busy,
-        name: "demo-project",
-        status: "busy",
-      },
-      {
-        pid: exited,
-        cwd: "/Users/example/code/demo-site",
-        kind: "interactive",
-        startedAt: 1_700_000_003_000,
-        sessionId: ids.idle,
-        name: "demo-site",
-        status: "idle",
-      },
-      {
-        cwd: "/Users/example/code/demo-jobs",
-        kind: "background",
-        startedAt: Date.now() - 60_000,
-        sessionId: ids.background,
-        name: "nightly-report",
-        id: "job-0001",
-        state: "failed",
-      },
-    ]);
-    const stub = await writeStub(`cat <<'JSON'\n${feed}\nJSON\necho '[tracker] 2 sessions {ok}'`);
-    // What Claude Code would have recorded for this very process.
-    const procStart = (await readProcessStartsWithPs([process.pid])).get(process.pid);
-    const home = await makeClaudeHome({
-      [`${process.pid}.json`]: registryFile({ pid: process.pid, procStart }),
-      [`${exited}.json`]: registryFile({
-        pid: exited,
-        sessionId: ids.idle,
-        name: "demo-site",
-        entrypoint: "claude-desktop",
-      }),
-      [`${process.pid}.0f3a9c1d5e7b.key`]: "not-for-reading",
+/** The feed of a session in this very process, one whose process has exited, and a failed job. */
+function realFeed(exited: number | undefined): string {
+  return JSON.stringify([
+    {
+      pid: process.pid,
+      cwd: "/Users/example/code/demo",
+      kind: "interactive",
+      startedAt: 1_700_000_000_000,
+      sessionId: ids.busy,
+      name: "demo-project",
+      status: "busy",
+    },
+    {
+      pid: exited,
+      cwd: "/Users/example/code/demo-site",
+      kind: "interactive",
+      startedAt: 1_700_000_003_000,
+      sessionId: ids.idle,
+      name: "demo-site",
+      status: "idle",
+    },
+    {
+      cwd: "/Users/example/code/demo-jobs",
+      kind: "background",
+      startedAt: Date.now() - 60_000,
+      sessionId: ids.background,
+      name: "nightly-report",
+      id: "job-0001",
+      state: "failed",
+    },
+  ]);
+}
+
+// Each stand-in claude here is a POSIX sh script, which Windows cannot run, and
+// the start time of a process comes from ps, which Windows has not. Windows has
+// its own checks after these, with a stand-in claude.exe.
+describe.skipIf(process.platform === "win32")(
+  "end to end, with a real program and real processes",
+  () => {
+    test("runs the named binary, reads past its trailing text and checks real pids", async () => {
+      const exited = spawnSync(process.execPath, ["-e", ""]).pid;
+      const feed = realFeed(exited);
+      const stub = await writeStub(`cat <<'JSON'\n${feed}\nJSON\necho '[tracker] 2 sessions {ok}'`);
+      // What Claude Code would have recorded for this very process.
+      const procStart = (await readProcessStartsWithPs([process.pid])).get(process.pid);
+      const home = await makeClaudeHome({
+        [`${process.pid}.json`]: registryFile({ pid: process.pid, procStart }),
+        [`${exited}.json`]: registryFile({
+          pid: exited,
+          sessionId: ids.idle,
+          name: "demo-site",
+          entrypoint: "claude-desktop",
+        }),
+        [`${process.pid}.0f3a9c1d5e7b.key`]: "not-for-reading",
+      });
+
+      const adapter = createClaudeCodeAdapter({
+        env: {
+          AGENT_LOOKOUT_CLAUDE_HOME: home,
+          AGENT_LOOKOUT_CLAUDE_BIN: stub,
+          PATH: "/usr/bin:/bin",
+        },
+        homeDir: path.dirname(home),
+      });
+      const { health, sessions, basis } = await adapter.poll();
+
+      expect(health.state).toBe("ok");
+      expect(basis).toBe("registry+feed");
+      expect(
+        sessions.map((session) => [session.name, session.status, session.surface, session.alive]),
+      ).toEqual([
+        ["demo-project", "working", "vscode", true],
+        // The session whose process has exited is left out, and the job is there.
+        ["nightly-report", "failed", "unknown", undefined],
+      ]);
     });
 
-    const adapter = createClaudeCodeAdapter({
-      env: {
-        AGENT_LOOKOUT_CLAUDE_HOME: home,
-        AGENT_LOOKOUT_CLAUDE_BIN: stub,
-        PATH: "/usr/bin:/bin",
-      },
-      homeDir: path.dirname(home),
-    });
-    const { health, sessions, basis } = await adapter.poll();
+    test("a real binary that fails leaves a real registry, without its dead processes", async () => {
+      const exited = spawnSync(process.execPath, ["-e", ""]).pid;
+      const stub = await writeStub("echo 'something went wrong' >&2\nexit 1");
+      const procStart = (await readProcessStartsWithPs([process.pid])).get(process.pid);
+      const home = await makeClaudeHome({
+        [`${process.pid}.json`]: registryFile({ pid: process.pid, status: "idle", procStart }),
+        [`${exited}.json`]: registryFile({ pid: exited, sessionId: ids.idle }),
+      });
 
-    expect(health.state).toBe("ok");
-    expect(basis).toBe("registry+feed");
-    expect(
-      sessions.map((session) => [session.name, session.status, session.surface, session.alive]),
-    ).toEqual([
-      ["demo-project", "working", "vscode", true],
-      // The session whose process has exited is left out, and the job is there.
-      ["nightly-report", "failed", "unknown", undefined],
-    ]);
-  });
+      const adapter = createClaudeCodeAdapter({
+        env: { AGENT_LOOKOUT_CLAUDE_HOME: home, AGENT_LOOKOUT_CLAUDE_BIN: stub },
+        homeDir: path.dirname(home),
+      });
+      const { health, sessions } = await adapter.poll();
 
-  test("a real binary that fails leaves a real registry, without its dead processes", async () => {
-    const exited = spawnSync(process.execPath, ["-e", ""]).pid;
-    const stub = await writeStub("echo 'something went wrong' >&2\nexit 1");
-    const procStart = (await readProcessStartsWithPs([process.pid])).get(process.pid);
-    const home = await makeClaudeHome({
-      [`${process.pid}.json`]: registryFile({ pid: process.pid, status: "idle", procStart }),
-      [`${exited}.json`]: registryFile({ pid: exited, sessionId: ids.idle }),
+      expect(health.state).toBe("ok");
+      expect(health.detail).toContain("The claude agents --json command stopped with exit code 1");
+      expect(sessions.map((session) => [session.pid, session.status, session.alive])).toEqual([
+        [process.pid, "idle", true],
+        // The entry for the exited process is a crash leftover and is left out.
+      ]);
     });
 
-    const adapter = createClaudeCodeAdapter({
-      env: { AGENT_LOOKOUT_CLAUDE_HOME: home, AGENT_LOOKOUT_CLAUDE_BIN: stub },
-      homeDir: path.dirname(home),
+    test("a real binary is run with the two quiet variables and with the person's proxy settings as they are", async () => {
+      const stub = await writeStub(
+        `printf '[{"sessionId":"%s|%s|%s|%s"}]' "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" "$DISABLE_AUTOUPDATER" "$HTTPS_PROXY" "$NO_PROXY"`,
+      );
+      const home = await tempDir();
+      const adapter = createClaudeCodeAdapter({
+        env: {
+          AGENT_LOOKOUT_CLAUDE_HOME: home,
+          AGENT_LOOKOUT_CLAUDE_BIN: stub,
+          PATH: "/usr/bin:/bin",
+          HTTPS_PROXY: "http://proxy.example:8080",
+          NO_PROXY: "localhost",
+        },
+        homeDir: path.dirname(home),
+      });
+      const { sessions } = await adapter.poll();
+      expect(sessions.map((session) => session.id)).toEqual([
+        "claude-code:1|1|http://proxy.example:8080|localhost",
+      ]);
     });
-    const { health, sessions } = await adapter.poll();
 
-    expect(health.state).toBe("ok");
-    expect(health.detail).toContain("The claude agents --json command stopped with exit code 1");
-    expect(sessions.map((session) => [session.pid, session.status, session.alive])).toEqual([
-      [process.pid, "idle", true],
-      // The entry for the exited process is a crash leftover and is left out.
-    ]);
-  });
-
-  test("a real binary is run with the two quiet variables and with the person's proxy settings as they are", async () => {
-    const stub = await writeStub(
-      `printf '[{"sessionId":"%s|%s|%s|%s"}]' "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" "$DISABLE_AUTOUPDATER" "$HTTPS_PROXY" "$NO_PROXY"`,
-    );
-    const home = await tempDir();
-    const adapter = createClaudeCodeAdapter({
-      env: {
-        AGENT_LOOKOUT_CLAUDE_HOME: home,
-        AGENT_LOOKOUT_CLAUDE_BIN: stub,
-        PATH: "/usr/bin:/bin",
-        HTTPS_PROXY: "http://proxy.example:8080",
-        NO_PROXY: "localhost",
-      },
-      homeDir: path.dirname(home),
-    });
-    const { sessions } = await adapter.poll();
-    expect(sessions.map((session) => session.id)).toEqual([
-      "claude-code:1|1|http://proxy.example:8080|localhost",
-    ]);
-  });
-
-  test.skipIf(process.platform === "win32")(
-    "a real leftover file whose pid is now a different live process is left out",
-    async () => {
+    test("a real leftover file whose pid is now a different live process is left out", async () => {
       // This test process stands in for the unrelated program that was given the
       // crashed session's pid. It is alive, and it did not start in 2023.
       const home = await makeClaudeHome({
@@ -1892,12 +1921,9 @@ describe("end to end, with a real program and real processes", () => {
       const { health, sessions } = await adapter.poll();
       expect(health.state).toBe("ok");
       expect(sessions).toEqual([]);
-    },
-  );
+    });
 
-  test.skipIf(process.platform === "win32")(
-    "a real registry with a link to a .key file and a named pipe in it is read without either",
-    async () => {
+    test("a real registry with a link to a .key file and a named pipe in it is read without either", async () => {
       const procStart = (await readProcessStartsWithPs([process.pid])).get(process.pid);
       const home = await makeClaudeHome({
         [`${process.pid}.json`]: registryFile({ pid: process.pid, procStart }),
@@ -1919,7 +1945,108 @@ describe("end to end, with a real program and real processes", () => {
       const { sessions } = await adapter.poll();
       expect(Date.now() - started).toBeLessThan(3_000);
       expect(sessions.map((session) => session.name)).toEqual(["demo-project"]);
-    },
-    8_000,
-  );
+    }, 8_000);
+  },
+);
+
+describe("end to end, on any system", () => {
+  test("a real registry with a link to a .key file in it is read without it", async () => {
+    const home = await makeClaudeHome({
+      [`${process.pid}.json`]: registryFile({ pid: process.pid }),
+      "7.aaaa.key": registryFile({ pid: process.ppid, name: "key-file-content" }),
+    });
+    await symlink("7.aaaa.key", path.join(home, "sessions", "7.json"));
+
+    const adapter = createClaudeCodeAdapter({
+      env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+      homeDir: path.dirname(home),
+      readProcessStarts: noStartTimes,
+    });
+    const { sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.name)).toEqual(["demo-project"]);
+  });
 });
+
+describe.runIf(process.platform === "win32")(
+  "end to end on Windows, with a stand-in claude.exe",
+  () => {
+    test("runs the named claude.exe, reads past its trailing text and checks real pids", async () => {
+      const exited = spawnSync(process.execPath, ["-e", ""]).pid;
+      const stub = await writeWindowsStub(
+        `write(${JSON.stringify(realFeed(exited))} + "\\n[tracker] 2 sessions {ok}\\n");`,
+      );
+      // Claude Code on Windows records no start time Agent Lookout can compare.
+      const home = await makeClaudeHome({
+        [`${process.pid}.json`]: registryFile({ pid: process.pid, procStart: undefined }),
+        [`${exited}.json`]: registryFile({
+          pid: exited,
+          sessionId: ids.idle,
+          name: "demo-site",
+          entrypoint: "claude-desktop",
+          procStart: undefined,
+        }),
+        [`${process.pid}.0f3a9c1d5e7b.key`]: "not-for-reading",
+      });
+
+      const adapter = createClaudeCodeAdapter({
+        env: {
+          ...process.env,
+          ...stub.env,
+          AGENT_LOOKOUT_CLAUDE_HOME: home,
+          AGENT_LOOKOUT_CLAUDE_BIN: stub.file,
+        },
+        homeDir: path.dirname(home),
+        feedTimeoutMs: 20_000,
+      });
+      const { health, sessions, basis } = await adapter.poll();
+
+      expect(health.state).toBe("ok");
+      expect(basis).toBe("registry+feed");
+      expect(health.watching).toContainEqual({ label: "Command run", value: "every 30 seconds" });
+      expect(
+        sessions.map((session) => [session.name, session.status, session.surface, session.alive]),
+      ).toEqual([
+        ["demo-project", "working", "vscode", true],
+        // The session whose process has exited is left out, and the job is there.
+        ["nightly-report", "failed", "unknown", undefined],
+      ]);
+      // Nothing is offered Stop on Windows.
+      expect(sessions.filter((session) => session.stop !== undefined)).toEqual([]);
+    });
+
+    test("a real claude.exe that fails leaves a real registry, without its dead processes", async () => {
+      const exited = spawnSync(process.execPath, ["-e", ""]).pid;
+      const stub = await writeWindowsStub("process.exit(1);");
+      const home = await makeClaudeHome({
+        [`${process.pid}.json`]: registryFile({
+          pid: process.pid,
+          status: "idle",
+          procStart: undefined,
+        }),
+        [`${exited}.json`]: registryFile({
+          pid: exited,
+          sessionId: ids.idle,
+          procStart: undefined,
+        }),
+      });
+
+      const adapter = createClaudeCodeAdapter({
+        env: {
+          ...process.env,
+          ...stub.env,
+          AGENT_LOOKOUT_CLAUDE_HOME: home,
+          AGENT_LOOKOUT_CLAUDE_BIN: stub.file,
+        },
+        homeDir: path.dirname(home),
+        feedTimeoutMs: 20_000,
+      });
+      const { health, sessions } = await adapter.poll();
+
+      expect(health.state).toBe("ok");
+      expect(health.detail).toContain("The claude agents --json command stopped with exit code 1");
+      expect(sessions.map((session) => [session.pid, session.status, session.alive])).toEqual([
+        [process.pid, "idle", true],
+      ]);
+    });
+  },
+);

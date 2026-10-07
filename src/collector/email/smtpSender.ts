@@ -88,7 +88,8 @@ export function failureReason(error: unknown): string {
       return "the mail server refused the email";
     case "ECONNECTION":
     case "ESOCKET":
-      if (errno === "ECONNREFUSED" || errno === -61 || errno === -111) {
+      // A refused connection, as macOS, Linux and Windows number it.
+      if (errno === "ECONNREFUSED" || errno === -61 || errno === -111 || errno === -4078) {
         return "nothing answered at the mail server's address";
       }
       return "the connection to the mail server failed";

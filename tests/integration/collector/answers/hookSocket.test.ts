@@ -4,11 +4,15 @@ import { request } from "node:http";
 import net from "node:net";
 import path from "node:path";
 
-import { expect, onTestFinished, test, vi } from "vitest";
+import { expect, onTestFinished, test as anyTest, vi } from "vitest";
 
 import { createHookSocket, HOOK_PATH, MAX_HOOK_BODY_BYTES } from "@collector/answers/hookSocket";
 import type { HookReply, HookRequest } from "@collector/answers/heldAsks";
 import { tempDir } from "@tests/support/node/tempFiles";
+
+// The hook's socket is a Unix socket, which Windows does not give a path in a
+// folder, so these run on macOS and Linux only.
+const test = anyTest.skipIf(process.platform === "win32");
 
 const UUID = "00000000-0000-4000-8000-000000000001";
 

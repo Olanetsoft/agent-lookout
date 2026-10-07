@@ -5,6 +5,7 @@
 // this machine is handed over, so nothing else can reach that command line.
 
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 import { loopbackAddress } from "../localServer.ts";
 
@@ -20,16 +21,37 @@ export type RunProgram = (file: string, args: readonly string[]) => Promise<bool
 /** How long the opener is waited for, to tell whether it failed, before it counts as having worked. */
 export const OPEN_WAIT_MS = 10_000;
 
+/** Where Windows keeps itself when nothing says otherwise. */
+const WINDOWS_FOLDER = "C:\\Windows";
+
+/** The Windows folder, from `SystemRoot`, when that is a whole path. */
+function windowsFolder(env: NodeJS.ProcessEnv): string {
+  const named = env.SystemRoot?.trim() || env.SYSTEMROOT?.trim();
+  return named && path.win32.isAbsolute(named) ? named : WINDOWS_FOLDER;
+}
+
 /**
  * The command that opens an address in the default browser: `open` on macOS,
- * by its full path, and `xdg-open` on Linux. Null on a system with neither, or
- * for an address that is not Agent Lookout's own on this machine.
+ * by its full path, `xdg-open` on Linux, and on Windows the system's own
+ * `rundll32.exe`, by its full path, handing the address to the program
+ * Windows opens web addresses with. Null on a system with none of them, or for
+ * an address that is not Agent Lookout's own on this machine.
  */
-export function openCommand(platform: NodeJS.Platform, url: string): OpenCommand | null {
+export function openCommand(
+  platform: NodeJS.Platform,
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+): OpenCommand | null {
   const address = loopbackAddress(url);
   if (address === null) return null;
   if (platform === "darwin") return { file: "/usr/bin/open", args: [address] };
   if (platform === "linux") return { file: "xdg-open", args: [address] };
+  if (platform === "win32") {
+    return {
+      file: path.win32.join(windowsFolder(env), "System32", "rundll32.exe"),
+      args: ["url.dll,FileProtocolHandler", address],
+    };
+  }
   return null;
 }
 
@@ -53,7 +75,7 @@ export function runProgram(
       resolve(opened);
     };
     try {
-      const child = spawn(file, [...args], { stdio: "ignore", detached: true });
+      const child = spawn(file, [...args], { stdio: "ignore", detached: true, windowsHide: true });
       child.once("error", () => settle(false));
       child.once("exit", (code) => settle(code === 0));
       // Agent Lookout may stop while the opener still runs.
@@ -67,12 +89,14 @@ export function runProgram(
 
 export interface OpenOptions {
   platform?: NodeJS.Platform;
+  /** Where `SystemRoot` is read, on Windows. Defaults to this process's environment. */
+  env?: NodeJS.ProcessEnv;
   run?: RunProgram;
 }
 
 /** Opens the address in the default browser. Resolves with whether that worked. Never rejects. */
 export async function openInBrowser(url: string, options: OpenOptions = {}): Promise<boolean> {
-  const command = openCommand(options.platform ?? process.platform, url);
+  const command = openCommand(options.platform ?? process.platform, url, options.env);
   if (command === null) return false;
   return (options.run ?? runProgram)(command.file, command.args);
 }

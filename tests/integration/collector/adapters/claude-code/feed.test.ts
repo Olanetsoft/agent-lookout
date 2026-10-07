@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -16,7 +16,12 @@ import {
 import { findClaudeBinary } from "@collector/adapters/claude-code/findBinary";
 import { isProcessAlive } from "@collector/processes/pids";
 import { feedEntries, feedJsonWithTrailingText } from "@tests/fixtures/claudeCode";
-import { tempDir, writeStub } from "@tests/support/node/tempFiles";
+import {
+  tempDir,
+  writeStub,
+  writeWindowsStub,
+  type WindowsStub,
+} from "@tests/support/node/tempFiles";
 
 const env = { PATH: "/usr/bin:/bin" };
 
@@ -31,7 +36,9 @@ async function waitUntil(condition: () => boolean, timeoutMs = 5_000): Promise<v
 const one = [{ pid: 4242, sessionId: "00000000-0000-4000-8000-000000000001", status: "busy" }];
 const oneJson = JSON.stringify(one);
 
-describe("runProgram, against real programs", () => {
+// The stand-ins here are POSIX sh scripts, which Windows cannot run: the same is
+// checked there below, against a stand-in claude.exe.
+describe.skipIf(process.platform === "win32")("runProgram, against real programs", () => {
   test("returns what the program printed, trailing text and all", async () => {
     const stub = await writeStub(`cat <<'JSON'\n${feedJsonWithTrailingText}\nJSON`);
     const result = await runProgram(stub, ["agents", "--json"], { timeoutMs: 5_000, env });
@@ -83,14 +90,6 @@ describe("runProgram, against real programs", () => {
       ok: false,
       problem: "stopped with exit code 3",
       exitCode: 3,
-    });
-  });
-
-  test("a program that is not there is a failure, not an exception", async () => {
-    const dir = await tempDir();
-    expect(await runProgram(path.join(dir, "claude"), [], { timeoutMs: 5_000, env })).toEqual({
-      ok: false,
-      problem: "could not be started",
     });
   });
 
@@ -176,6 +175,107 @@ describe("runProgram, against real programs", () => {
     expect(elapsed).toBeLessThan(5_000);
   });
 });
+
+describe("runProgram, on any system", () => {
+  test("a program that is not there is a failure, not an exception", async () => {
+    const dir = await tempDir();
+    expect(await runProgram(path.join(dir, "claude"), [], { timeoutMs: 5_000, env })).toEqual({
+      ok: false,
+      problem: "could not be started",
+    });
+  });
+});
+
+describe.runIf(process.platform === "win32")(
+  "runProgram on Windows, against a stand-in claude.exe",
+  () => {
+    /** The stand-in's own environment, with this process's, less any proxy setting. */
+    const withStub = (stub: WindowsStub) => ({
+      ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !/proxy/i.test(name))),
+      ...stub.env,
+    });
+
+    test("returns what claude.exe printed, trailing text and all, and the list is read from it", async () => {
+      const stub = await writeWindowsStub(`write(${JSON.stringify(feedJsonWithTrailingText)});`);
+      const result = await runProgram(stub.file, FEED_ARGS, {
+        timeoutMs: 20_000,
+        env: withStub(stub),
+      });
+      expect(result.ok && result.stdout).toContain("session tracker");
+      expect(
+        await createFeedReader(runProgram).read(stub.file, {
+          timeoutMs: 20_000,
+          env: withStub(stub),
+        }),
+      ).toEqual({
+        ok: true,
+        entries: feedEntries,
+      });
+    });
+
+    test("passes the arguments and the environment through, with no shell in between", async () => {
+      const stub = await writeWindowsStub(
+        `write(JSON.stringify([{ sessionId: [args.length, ...args, process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, process.env.DISABLE_AUTOUPDATER, process.env.HTTPS_PROXY ?? "unset"].join("|") }]));`,
+      );
+      const env = withStub(stub);
+      expect(
+        await createFeedReader(runProgram).read(stub.file, { timeoutMs: 20_000, env }),
+      ).toEqual({
+        ok: true,
+        entries: [{ sessionId: "3|agents|--json|--all|1|1|unset" }],
+      });
+
+      // What cmd.exe would read as two commands, a variable or a pipe arrives untouched.
+      const echo = await writeWindowsStub('write(args.slice(1).join("\\n"));');
+      const untouched = "a & echo hacked | %PATH% ^ > out.txt";
+      const result = await runProgram(echo.file, ["agents", untouched], {
+        timeoutMs: 20_000,
+        env: withStub(echo),
+      });
+      expect(result).toEqual({ ok: true, stdout: untouched });
+    });
+
+    test("a program that exits with an error is a failure that names the exit code", async () => {
+      const stub = await writeWindowsStub("write('[]'); process.exit(3);");
+      expect(
+        await runProgram(stub.file, ["agents"], { timeoutMs: 20_000, env: withStub(stub) }),
+      ).toEqual({
+        ok: false,
+        problem: "stopped with exit code 3",
+        exitCode: 3,
+      });
+    });
+
+    test("a program that does not answer in time is stopped, and its process ends", async () => {
+      const dir = await tempDir();
+      const pidFile = path.join(dir, "pid");
+      const stub = await writeWindowsStub(
+        `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30_000);`,
+      );
+      const result = await runProgram(stub.file, ["agents"], {
+        timeoutMs: 3_000,
+        env: withStub(stub),
+      });
+      expect(result).toEqual({ ok: false, problem: "did not answer within 3 seconds" });
+      const written = await readFile(pidFile, "utf8").catch(() => "");
+      const pid = Number(written.trim());
+      if (pid > 0) await waitUntil(() => !isProcessAlive(pid));
+    }, 30_000);
+
+    test("a .cmd is never started, since only a shell can run one", async () => {
+      const dir = await tempDir();
+      const marker = path.join(dir, "ran");
+      const script = path.join(dir, "claude.cmd");
+      await writeFile(script, `@echo ran> "${marker}"\r\n@echo []\r\n`);
+      expect(await runProgram(script, ["agents"], { timeoutMs: 5_000, env: process.env })).toEqual({
+        ok: false,
+        problem: "could not be started",
+      });
+      expect(await readFile(marker, "utf8").catch(() => null)).toBeNull();
+    });
+  },
+);
 
 // The opt-in check: the real `claude` binary on this machine. It is skipped in
 // every ordinary run, because it runs Claude Code itself and so reads this

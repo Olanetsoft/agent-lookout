@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { expect, test } from "vitest";
 
 import { readHistorySetup, sourcesFingerprint } from "@collector/history/historySettings";
@@ -7,7 +9,7 @@ const HOME = "/Users/example";
 test("by default the history is kept in ~/.agent-lookout/history, beside the folder of status files", () => {
   expect(readHistorySetup({}, HOME)).toEqual({
     on: true,
-    dir: "/Users/example/.agent-lookout/history",
+    dir: path.resolve("/Users/example/.agent-lookout/history"),
     folder: "~/.agent-lookout/history",
     sources: sourcesFingerprint({}, HOME),
   });
@@ -18,15 +20,19 @@ test("AGENT_LOOKOUT_HISTORY_DIR names another folder", () => {
     readHistorySetup({ AGENT_LOOKOUT_HISTORY_DIR: "/Volumes/notes/lookout" }, HOME),
   ).toMatchObject({
     on: true,
-    dir: "/Volumes/notes/lookout",
-    folder: "/Volumes/notes/lookout",
+    dir: path.resolve("/Volumes/notes/lookout"),
+    folder: path.resolve("/Volumes/notes/lookout"),
   });
   expect(
     readHistorySetup({ AGENT_LOOKOUT_HISTORY_DIR: " /Users/example/kept/history " }, HOME),
-  ).toMatchObject({ on: true, dir: "/Users/example/kept/history", folder: "~/kept/history" });
+  ).toMatchObject({
+    on: true,
+    dir: path.resolve("/Users/example/kept/history"),
+    folder: "~/kept/history",
+  });
   // Set but empty is not set.
   expect(readHistorySetup({ AGENT_LOOKOUT_HISTORY_DIR: "  " }, HOME)).toMatchObject({
-    dir: "/Users/example/.agent-lookout/history",
+    dir: path.resolve("/Users/example/.agent-lookout/history"),
   });
 });
 

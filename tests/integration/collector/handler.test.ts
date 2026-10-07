@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
@@ -141,7 +142,7 @@ describe("routes", () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]?.state).toBe("ok");
     expect(sources[0]?.watching).toEqual([
-      { label: "Registry folder", value: `${home}/sessions` },
+      { label: "Registry folder", value: path.join(home, "sessions") },
       { label: "Registry read", value: "every 2 seconds" },
       { label: "Command", value: "claude agents --json --all" },
       { label: "Command run", value: "every 30 seconds" },

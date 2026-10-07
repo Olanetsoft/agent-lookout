@@ -1,4 +1,6 @@
-import path from "node:path";
+// Terminal and iTerm2 are Mac apps, so their paths are read by the rules of
+// macOS paths whatever system reads them.
+import path from "node:path/posix";
 
 import type { TerminalApp } from "../../core/sessions/session.ts";
 import type { ProcessFacts } from "../processes/processTable.ts";

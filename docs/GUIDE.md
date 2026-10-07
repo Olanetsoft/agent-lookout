@@ -1048,8 +1048,10 @@ def report(status, reason=None):
 
 atexit.register(lambda: status_file.unlink(missing_ok=True))
 # On kill or a closed terminal, end the program as on Ctrl-C, so the file is deleted then too.
-for signum in (signal.SIGTERM, signal.SIGHUP):
-    signal.signal(signum, lambda number, frame: sys.exit(128 + number))
+# Windows has no SIGHUP.
+for name in ("SIGTERM", "SIGHUP"):
+    if hasattr(signal, name):
+        signal.signal(getattr(signal, name), lambda number, frame: sys.exit(128 + number))
 
 report("working")  # As the work starts.
 time.sleep(8)

@@ -14,10 +14,11 @@
 // In each, the person is told to move the app to Applications and open it
 // from there, or to download the new version from its release page.
 //
-// It imports only Node's path module, and is given the check for a folder it
-// can write, so it is tested in plain Node.
+// It imports only Node's path module, with the rules of macOS paths whatever
+// system runs it, and is given the check for a folder it can write, so it is
+// tested in plain Node, on any system.
 
-import path from "node:path";
+import path from "node:path/posix";
 
 import type { InstallRefusal } from "../../../core/appUpdate.ts";
 
