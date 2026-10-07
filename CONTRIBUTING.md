@@ -61,6 +61,10 @@ npm run start:check
 
 It starts the app with `npm start` on a port the system picks, pointed at folders it makes for the check, prints one line for each check, runs `agent-lookout mcp` beside it and asks it for its tools and the sessions that need you, as an agent's app would, then stops the app as Ctrl+C would. It reads none of your own sessions and runs no `claude` command. Notifications with no dashboard tab open and Jump to a tab of Terminal or iTerm2 are macOS only, so on Linux their tests run with stand-ins for `osascript` and for Terminal's processes, as they do everywhere. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-linux) has what differs between the two systems.
 
+## Running on Windows
+
+The setup and the checks above are the same on Windows, in PowerShell or the Command Prompt. CI runs the tests and the start check on Windows too, in the jobs `test (Windows)` and `start (Windows)`. A test of something Windows does not have, a POSIX sh script, a Unix socket, `ps`, tmux, `osascript` or a POSIX signal, is skipped there, and a line above it says why. A few tests make symbolic links, which Windows lets you make only as an administrator or with Developer Mode on. On Windows the start check ends the app with every process under it, since Windows cannot send Ctrl+C to another program. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-windows) has what differs there.
+
 ## The npm package
 
 The package holds only what `npx agent-lookout` needs: the built dashboard and the bundled command in `dist/`, `bin/agent-lookout.mjs`, and the README, the licence, the changelog, `PRIVACY.md`, `SECURITY.md`, `DISCLAIMER.md`, `docs/GUIDE.md` and `docs/API.md`. `files` in `package.json` lists them, and nothing else goes in: no source, tests, scripts, site or local notes.

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agent Lookout shows the AI agent sessions on a Mac or Linux computer in one browser page. `src/collector/` is the Node code that finds sessions and serves them on a loopback address, `src/dashboard/` is the React app, `src/core/` is logic with no DOM and no Node APIs, and `src/cli/` is the `agent-lookout` command. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the map.
+Agent Lookout shows the AI agent sessions on a Mac, Linux or Windows computer in one browser page. `src/collector/` is the Node code that finds sessions and serves them on a loopback address, `src/dashboard/` is the React app, `src/core/` is logic with no DOM and no Node APIs, and `src/cli/` is the `agent-lookout` command. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the map.
 
 ## Commands
 

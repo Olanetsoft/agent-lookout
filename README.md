@@ -1,6 +1,6 @@
 # Agent Lookout
 
-Agent Lookout shows the AI agent sessions on your Mac or Linux computer in one browser page, and which need you.
+Agent Lookout shows the AI agent sessions on your Mac, Linux or Windows computer in one browser page, and which need you.
 
 It finds Claude Code and Codex sessions with no setup, and the sessions of any other agent that writes a small status file. It never starts a session. It stops one only when you press Stop and confirm, and answers a Claude Code permission prompt only when you press Allow or Deny, or by a permission rule you set, with its Claude Code plugin installed: it never acts on its own. By default Agent Lookout itself sends nothing anywhere. Start it with `npx agent-lookout`, or download the [Mac app](#mac-app).
 
@@ -44,7 +44,7 @@ Claude Code sessions are found whether they run in a terminal, in VS Code or in 
 
 A Codex session never shows as needing you. Codex's files do not record when it is waiting for your approval, so one that is waiting for you shows as working. Once it has written nothing for 5 minutes, its row says how long it has been quiet, which is the sign to look. Codex support has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) has the full table.
 
-Agent Lookout is developed and tested on macOS. On Linux, CI runs every test on Ubuntu and starts the app there, but no one has used it on a Linux desktop yet. Two things are macOS only: notifications with no dashboard tab open, and Jump to a Terminal or iTerm2 tab. [On Linux](docs/GUIDE.md#on-linux) has the rest. Windows is untested.
+Agent Lookout is developed and tested on macOS. On Linux and on Windows, CI runs every test and starts the app there, but no one has used it on a Linux or Windows desktop yet. Two things are macOS only: notifications with no dashboard tab open, and Jump to a Terminal or iTerm2 tab. On Windows, Stop, Allow and Deny, and Jump to a tmux pane are not there either. [On Linux](docs/GUIDE.md#on-linux) and [On Windows](docs/GUIDE.md#on-windows) have the rest.
 
 ## Install
 
@@ -102,7 +102,7 @@ Kept in Applications, it updates itself: about once a day it asks GitHub whether
 
 If a step prints something else, [When something goes wrong](docs/GUIDE.md#when-something-goes-wrong) says what to do for the common problems.
 
-To stop it, press Ctrl+C in its terminal. If it runs in the background, `lsof -nP -iTCP:4777 -sTCP:LISTEN` shows its process ID under `PID`, on macOS or on Linux with `lsof` installed. Put your port in place of 4777 if you chose another. `kill` followed by that number stops it.
+To stop it, press Ctrl+C in its terminal. If it runs in the background, `lsof -nP -iTCP:4777 -sTCP:LISTEN` shows its process ID under `PID`, on macOS or on Linux with `lsof` installed. Put your port in place of 4777 if you chose another. `kill` followed by that number stops it. On Windows, `netstat -ano | findstr :4777` shows the process ID in its last column, and `taskkill /F /PID` followed by that number stops it.
 
 To start it again, run `npx agent-lookout`. `npx agent-lookout --open` also opens the page in your browser, and `--port` chooses another port. [Start it with one command](docs/GUIDE.md#start-it-with-one-command) has the options.
 
@@ -223,7 +223,7 @@ It listens on a loopback address only, `127.0.0.1`, or `::1` if you set `AGENT_L
 - It does not resume a session itself: Resume copies the command that does, for a Claude Code session that has ended. It cannot send a session a message. It stops a Claude Code session only when you press Stop and confirm, and not one in the desktop app. It answers a permission prompt only with the plugin installed, and offers Deny alone for an edit, since it does not show the change, for a plan or a question, and for a request it cannot show whole and as it is. A permission rule answers Claude Code's prompts only, and an allow rule never allows what you could not allow by hand, or a Bash line of more than one plain command. An agent using `agent-lookout mcp` can do none of these.
 - It shows sessions on this computer, and on [another machine](docs/GUIDE.md#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and chats in a browser tab do not appear.
 - Claude Code's session files and Codex's files are not documented by their makers. An update to either can make Agent Lookout show less, or nothing, until it is updated. [docs/adapters/codex.md](docs/adapters/codex.md#what-breaks-when-codex-changes) lists what breaks when Codex changes.
-- The Mac app is not signed with an Apple Developer ID yet, so the first time it is opened, macOS does not open it until you allow it in Privacy & Security. There is no app for Linux. Support for more agents is planned in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).
+- The Mac app is not signed with an Apple Developer ID yet, so the first time it is opened, macOS does not open it until you allow it in Privacy & Security. There is no app for Linux or Windows. Support for more agents is planned in the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones).
 
 [What it does not do yet](docs/GUIDE.md#what-it-does-not-do-yet) has the details.
 

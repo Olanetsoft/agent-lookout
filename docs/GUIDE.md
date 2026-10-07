@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS or Linux. Agent Lookout is developed and tested on macOS. On Linux it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux desktop. [On Linux](#on-linux) says what differs there. Windows is untested.
+- macOS, Linux or Windows. Agent Lookout is developed and tested on macOS. On Linux and on Windows it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux or Windows desktop. [On Linux](#on-linux) and [On Windows](#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#desktop-app) needs no Node.js.
 - Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
@@ -613,6 +613,7 @@ Agent Lookout then checks again that the process is that session: it reads the s
 - A Claude Code background job, while Agent Lookout runs the `claude` command: not with `AGENT_LOOKOUT_CLAUDE_FEED=off`, and not with `AGENT_LOOKOUT_CLAUDE_HOME` set and `AGENT_LOOKOUT_CLAUDE_BIN` not.
 - Not a session in Claude Code's desktop app, which looks after its own processes: its details say to stop it there. Not a session whose file does not say what kind it is, or which app it runs in.
 - Not a Codex session, and not a session from a status file.
+- No session on Windows: [On Windows](#on-windows) says why.
 
 ### Sessions left running
 
@@ -669,7 +670,7 @@ The plugin is one hook that Claude Code runs as it is about to ask you for permi
 /plugin install agent-lookout@agent-lookout
 ```
 
-From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. Claude Code records the plugin in its own settings, and runs its hook wherever Claude Code runs: in a terminal, in VS Code and in the desktop app. Agent Lookout itself writes nothing under `~/.claude`. To take it away, run `/plugin uninstall agent-lookout@agent-lookout`. The hook needs `curl`, which macOS has, and most Linux systems do.
+From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. Claude Code records the plugin in its own settings, and runs its hook wherever Claude Code runs: in a terminal, in VS Code and in the desktop app. Agent Lookout itself writes nothing under `~/.claude`. To take it away, run `/plugin uninstall agent-lookout@agent-lookout`. The hook needs `curl`, which macOS has, and most Linux systems do. On Windows the plugin does nothing, and Claude Code asks as usual: [On Windows](#on-windows) says why.
 
 Settings, under Permission prompts, says whether the plugin's requests reach Agent Lookout. When a Claude Code session waits for permission and no request comes, it says the plugin may not be installed.
 
@@ -1203,9 +1204,35 @@ If the clock is set by more than a minute while a Claude Code session runs, that
 
 Agent Lookout runs `ps` from `/usr/bin` or `/bin`. Where it is not there, as on NixOS, no session in tmux has a Jump button, and a registry file left behind by a session that crashed shows as a session if another program is given its process ID.
 
+## On Windows
+
+Agent Lookout is installed and started on Windows as on a Mac, with `npx agent-lookout` in PowerShell or the Command Prompt, and reads the same folders in your user folder, `%USERPROFILE%`: `.claude\sessions`, `.codex` and `.agent-lookout\sessions`. It keeps its history and its settings in `.agent-lookout` there too. A path in your user folder is shown with `/`, as `~/.claude/sessions`. CI runs every test on Windows, and there it also starts the built app with `npm start` and checks that it lists a Claude Code session, Codex sessions and a session from a status file, each with the right status. No one has yet used it on a Windows desktop.
+
+These are the same as on a Mac:
+
+- The dashboard, its notifications while a dashboard tab is open, [email](#email), the [webhook](#webhook), `agent-lookout status` and `agent-lookout mcp`.
+- The `claude agents --json --all` command, run every 30 seconds, which lists the background jobs that have finished or failed.
+- Jump for a session in VS Code, which is a `vscode://` link, where VS Code has registered itself to open those links.
+- `--open`, which hands the address to Windows' own `rundll32.exe` to open in your default browser.
+
+The `claude` command is looked for on your `PATH` as `claude.exe`, then in `%USERPROFILE%\.local\bin`, where Claude Code's own installer puts it, then in npm's folder, `%APPDATA%\npm`. Agent Lookout runs a program only, never a script that needs a shell. So for the `claude.cmd` that npm makes, it runs the `claude.exe` that the script runs, which npm keeps beside it in `node_modules\@anthropic-ai\claude-code\bin`. Claude Code installed from npm before version 2.1.113 has no `claude.exe`, and has no `claude agents` command either: its sessions are read from `.claude\sessions` alone. `AGENT_LOOKOUT_CLAUDE_BIN` must name a `.exe`.
+
+These are macOS and Linux only, and [What each agent can report](#what-each-agent-can-report) says No or Partly for them on Windows:
+
+- [Stop](#stop-a-session), and ending the [sessions left running](#sessions-left-running). Agent Lookout stops a session only once `ps` has confirmed, by its start time, that the process is still the session's, and it stops it with a POSIX signal. Windows has neither, and Claude Code there records no start time to compare. No session has Stop, and the routes that stop one are not there.
+- [Allow and Deny](#answer-a-permission-prompt). The plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket. Agent Lookout opens no socket on Windows, so an installed plugin does nothing, and Settings, under Permission prompts, says so.
+- [Jump to a tmux pane](#a-session-in-tmux), or [to a tab of Terminal or iTerm2](#a-session-in-a-tab-of-terminal-or-iterm2). tmux is never run on Windows, and the two terminals are Mac apps.
+- Notifications with no dashboard tab open, which Agent Lookout shows itself with `osascript` on a Mac alone. Keep a dashboard tab open to be notified.
+
+With no `ps`, Agent Lookout cannot tell a registry file left behind by a Claude Code session that crashed from a live one when Windows has given its process ID to another program. Such a file shows as a session until that program ends.
+
+[Another machine over SSH](#another-machine-over-ssh) and [pull requests](#pull-requests) run the `ssh.exe` and the `gh.exe` on your `PATH`, such as the OpenSSH client that comes with Windows. Neither has been tried on Windows yet.
+
+The settings in this guide are written for a shell such as zsh or bash. In PowerShell, set one before the command, `$env:AGENT_LOOKOUT_CLAUDE_FEED = "off"; npx agent-lookout`, and in the Command Prompt, run `set AGENT_LOOKOUT_CLAUDE_FEED=off` and then `npx agent-lookout`.
+
 ## What it does not do yet
 
-It does not resume a session itself: for a Claude Code session that has ended, [Resume](#resume-a-session) copies the command that does, and you run it. It cannot send a session a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session or a session from a status file. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, when you press Allow or Deny or a [permission rule](#permission-rules) you added matches, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An allow rule never allows what you could not allow by hand, or a Bash line of more than one plain command. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), on this computer and on [another machine](#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
+It does not resume a session itself: for a Claude Code session that has ended, [Resume](#resume-a-session) copies the command that does, and you run it. It cannot send a session a message. It [stops](#stop-a-session) a Claude Code session only when you press Stop and confirm, and not one in the desktop app, a Codex session, a session from a status file or any session on Windows. It [answers a permission prompt](#answer-a-permission-prompt) only for a Claude Code session with the plugin installed, and not on Windows, when you press Allow or Deny or a [permission rule](#permission-rules) you added matches, allows or denies that one request only, and offers Deny alone for an edit, a plan or a question, and for a request it cannot show whole and as it is. An allow rule never allows what you could not allow by hand, or a Bash line of more than one plain command. An agent through [`agent-lookout mcp`](#for-your-agents), whose tools only read, can do none of these. It covers Claude Code and Codex, and any agent that writes a [status file](#your-own-agents), on this computer and on [another machine](#another-machine-over-ssh) running Agent Lookout that you reach over SSH. Cloud sessions, Codex cloud tasks and browser chats do not appear. [What each agent can report](#what-each-agent-can-report) has a table of what each agent can and cannot show.
 
 A notification, an email or a post is sent for four events: a session starting to wait, finishing, failing or ending, and, with the [time rules](#time-rules) on, also a reminder of a long wait and a summary of quiet hours. Only Claude Code sessions and sessions from a status file can be seen waiting. A Claude Code session that is not a background job does not say how it ended, so it sends Ended, never Finished or Failed. A Claude Code background job that starts and ends between two runs of the `claude` command, which is run every 30 seconds, leaves the list before the command lists it as finished, so it too sends Ended. A session from a Codex older than 0.155 is never shown as finished, so it sends Ended when it leaves the list, a day after it was last used. With no dashboard tab open, notifications are shown on a Mac only. Those come from Script Editor, unless Agent Lookout runs as the [desktop app](#desktop-app), cannot open the session, and are not cleared when the session moves on.
 
@@ -1296,12 +1323,12 @@ It prints `{"ok":true,"version":"0.2.1"}`, or a later version number. If you run
 
 `agent-lookout` on its own starts Agent Lookout from the built files, as `npm start` does: the dashboard and its API at `http://127.0.0.1:4777`, on this computer only. It prints `Agent Lookout is running at http://127.0.0.1:4777` and keeps running until you press Ctrl+C. `agent-lookout start` does the same.
 
-| Option            | What it does                                                                                                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--port <number>` | Listens on this port in place of 4777, such as `--port 4778`. `AGENT_LOOKOUT_PORT` does the same, and `--port` wins when both are given                                                    |
-| `--open`          | Opens the address in your default browser once it is listening, with `open` on macOS or `xdg-open` on Linux. If that cannot be done, it prints one line with the address and keeps running |
-| `--help`          | Prints the options of `agent-lookout`, `agent-lookout status` and `agent-lookout mcp`                                                                                                      |
-| `--version`       | Prints the version of Agent Lookout, such as `0.2.1`, and nothing else                                                                                                                     |
+| Option            | What it does                                                                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <number>` | Listens on this port in place of 4777, such as `--port 4778`. `AGENT_LOOKOUT_PORT` does the same, and `--port` wins when both are given                                                                               |
+| `--open`          | Opens the address in your default browser once it is listening, with `open` on macOS, `xdg-open` on Linux or `rundll32.exe` on Windows. If that cannot be done, it prints one line with the address and keeps running |
+| `--help`          | Prints the options of `agent-lookout`, `agent-lookout status` and `agent-lookout mcp`                                                                                                                                 |
+| `--version`       | Prints the version of Agent Lookout, such as `0.2.1`, and nothing else                                                                                                                                                |
 
 Every other setting under [Settings you can change](#settings-you-can-change) works with it as with `npm start`. It ends with 0 when you press Ctrl+C, and with 1 when it cannot start, such as when the port is in use. Under `npx agent-lookout`, the shell reports the interrupt instead, as exit code 130.
 
@@ -1402,6 +1429,12 @@ To see which program holds a port, on macOS or on Linux with `lsof` installed:
 
 ```sh
 lsof -nP -iTCP:4777 -sTCP:LISTEN
+```
+
+On Windows, the process ID is in the last column of:
+
+```text
+netstat -ano | findstr :4777
 ```
 
 ### No sessions appear
