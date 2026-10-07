@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.6 - 2026-10-07
+
+Set rules that answer Claude Code's permission prompts for you, run Agent Lookout on Windows, and see a prompt you answered leave Needs you at once.
 
 ### Added
 
