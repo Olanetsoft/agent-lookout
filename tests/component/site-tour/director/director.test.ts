@@ -103,6 +103,7 @@ afterEach(() => {
 /** Every scene and step, in order. */
 const ALL = SCENES.flatMap((scene, index) => scene.steps.map((_, step) => ({ index, step })));
 
+// It walks every step of every scene twice, which takes 10 to 12 seconds on CI's runners.
 test("every scene and step lands as it says, played forward and then back", async () => {
   const { store, clock, director } = setUp();
   await render(createElement(App, { store }));
@@ -207,7 +208,7 @@ test("every scene and step lands as it says, played forward and then back", asyn
     expect(document.documentElement.dataset.host, label).toBe(scene.app ? "app" : undefined);
     expect(clock.held, label).toBe(scene.app === true);
   }
-});
+}, 60_000);
 
 test("the Jump scene presses the waiting session's Jump, which says where it went", async () => {
   const { store, director, jumped } = setUp();

@@ -1337,6 +1337,10 @@ test.each([
 
     for (const width of [1200, 1000, 760, 375]) {
       await page.viewport(width, 700);
+      // A narrower window can start a transition of its own, which is let finish.
+      await vi.waitFor(() =>
+        expect(document.getAnimations().filter((a) => a.playState === "running")).toHaveLength(0),
+      );
       await drawn();
       const railBox = rail().getBoundingClientRect();
       const lightBox = light.getBoundingClientRect();
