@@ -82,8 +82,9 @@ export function fixedLocations(
 
 /**
  * Where `claude` would be in each `PATH` folder, in order. On Windows that is
- * `claude.com` or `claude.exe`, and then, for a folder npm puts `claude.cmd`
- * in, the program that script runs.
+ * `claude.com` or `claude.exe`, and then `NPM_PROGRAM` under the folder, the
+ * program that the `claude.cmd` npm puts in its folder runs. Each folder is
+ * looked in for it whether a `claude.cmd` is there or not.
  */
 function onPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string[] {
   if (platform !== "win32") return pathCandidates(env, "claude", platform);

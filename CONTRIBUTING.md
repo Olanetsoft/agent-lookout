@@ -63,7 +63,7 @@ It starts the app with `npm start` on a port the system picks, pointed at folder
 
 ## Running on Windows
 
-The setup and the checks above are the same on Windows, in PowerShell or the Command Prompt. CI runs the tests and the start check on Windows too, in the jobs `test (Windows)` and `start (Windows)`. A test of something Windows does not have, a POSIX sh script, a Unix socket, `ps`, tmux, `osascript` or a POSIX signal, is skipped there, and a line above it says why. A few tests make symbolic links, which Windows lets you make only as an administrator or with Developer Mode on. On Windows the start check ends the app with every process under it, since Windows cannot send Ctrl+C to another program. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-windows) has what differs there.
+The setup and the checks above are the same on Windows, in PowerShell or the Command Prompt. CI runs the tests and the start check on Windows too, in the jobs `test (Windows)` and `start (Windows)`. A test of something Windows does not have, a POSIX sh script, a Unix socket, `ps`, tmux, `osascript`, a POSIX signal, a named pipe or POSIX file modes, is skipped there, and a line above it says why. A few tests make symbolic links, which Windows lets you make only as an administrator or with Developer Mode on. On Windows the start check ends the app with every process under it, since Windows cannot send Ctrl+C to another program. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#on-windows) has what differs there.
 
 ## The npm package
 

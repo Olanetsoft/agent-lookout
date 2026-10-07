@@ -11,9 +11,9 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 #### On Windows
 
-- Agent Lookout runs on Windows, started the same way, with `npx agent-lookout`, and reading the same folders in your user folder: `.claude\sessions`, `.codex` and `.agent-lookout\sessions`. It has been checked in CI on Windows by running every test and by starting it with `npm start` and reading back its sessions, and not yet by a person on a Windows desktop. The guide's [On Windows](docs/GUIDE.md#on-windows) part says what works there.
+- Agent Lookout runs on Windows, started the same way, with `npx agent-lookout`, and reading the same folders in your user folder: `.claude\sessions`, `.codex` and `.agent-lookout\sessions`. It has been checked in CI on Windows by running the tests, less those of what Windows does not have, such as POSIX signals and Unix sockets, and by starting it with `npm start` and reading back its sessions, and not yet by a person on a Windows desktop. The guide's [On Windows](docs/GUIDE.md#on-windows) part says what works there.
 - The `claude` command is looked for as `claude.exe` on `PATH`, in `%USERPROFILE%\.local\bin` and in npm's folder, `%APPDATA%\npm`. For the `claude.cmd` that npm makes, Agent Lookout runs the `claude.exe` that it runs, and it never runs a `.cmd` or a `.bat`, which need a shell.
-- Stop, ending the sessions left running, Allow and Deny, Jump to a tmux pane or a tab of Terminal or iTerm2, and notifications with no dashboard tab open are not offered on Windows. What each agent can report, in Sources, says No or Partly for each there, and why.
+- Stop, ending the sessions left running, Allow and Deny, Resume, Jump to a tmux pane or a tab of Terminal or iTerm2, and notifications with no dashboard tab open are not offered on Windows. What each agent can report, in Sources, says why for Stop, Answer and Jump, and the guide's On Windows part says why for each.
 - `--open` opens the page in your default browser on Windows too.
 
 ### Changed

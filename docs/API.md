@@ -194,7 +194,7 @@ With `AGENT_LOOKOUT_PULL_REQUESTS=on`, a session on a branch that has a pull req
 | `url`              | Its page, `https://github.com/<owner>/<repository>/pull/<number>`, which the collector builds from the remote and the number rather than take from GitHub                                                                                      |
 
 It is what `gh` last said, asked at most once every 2 minutes for each repository and branch, so it can be up to about 2 minutes old. [Pull requests](GUIDE.md#pull-requests) in the guide says when it is asked for.
-`answering` says whether permission prompts can be answered from the dashboard: `{ state, plugin, holdMs, problem }`. `state` is `on` while Agent Lookout listens for the plugin's requests, `off` with `AGENT_LOOKOUT_ANSWER=off`, and `unavailable` when it could not listen, with `problem` saying why in one sentence. `plugin` is `seen` once a request has arrived since the last permission prompt it missed, `missed` when a Claude Code session waited for permission and no request arrived, as for a session without the plugin, and `unknown` before either. `holdMs` is how long a request is held.
+`answering` says whether permission prompts can be answered from the dashboard: `{ state, plugin, holdMs, problem }`. `state` is `on` while Agent Lookout listens for the plugin's requests, `off` with `AGENT_LOOKOUT_ANSWER=off`, and `unavailable` when it could not listen or does not, as on Windows, which has no Unix socket for the plugin's hook, with `problem` saying why in one sentence. `plugin` is `seen` once a request has arrived since the last permission prompt it missed, `missed` when a Claude Code session waited for permission and no request arrived, as for a session without the plugin, and `unknown` before either. `holdMs` is how long a request is held.
 
 ### `GET /api/events?since=<epoch ms>`
 
@@ -493,7 +493,7 @@ The server looks the session up in its own latest snapshot, and stops only one w
 | 429    | `reason: "too-soon"`, with `Retry-After: 1`                                                                                             |
 | 500    | `reason: "failed"`: the signal could not be sent, or `claude stop` failed                                                               |
 
-Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_STOP=off` there is no such route, and a POST to it gets 405.
+Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_STOP=off`, or on Windows, there is no such route, and a POST to it gets 405. Windows has no `ps` to confirm a process's start time and no POSIX signal to send, so no session there has a `stop` field.
 
 ### `POST /api/sessions/clean-up`
 
@@ -521,7 +521,7 @@ with 1 to 20 sessions, none named twice, each with the `statusSince` the page sh
 }
 ```
 
-The answer is 200 with an `outcome` for each session asked for, in order: `ended`, `became-active`, `not-stale`, `gone`, `unsupported`, `cannot-confirm`, `not-allowed`, `still-running` or `failed`, which mean what the stop route's reasons do. One `stopped` event is added for each session ended. A clean-up while a stop or another clean-up is under way, or less than a second after one began, gets 429 with `reason: "too-soon"`.
+The answer is 200 with an `outcome` for each session asked for, in order: `ended`, `became-active`, `not-stale`, `gone`, `unsupported`, `cannot-confirm`, `not-allowed`, `still-running` or `failed`, which mean what the stop route's reasons do. One `stopped` event is added for each session ended. A clean-up while a stop or another clean-up is under way, or less than a second after one began, gets 429 with `reason: "too-soon"`. With `AGENT_LOOKOUT_STOP=off`, or on Windows, there is no such route either, and a POST to it gets 405.
 
 ### `POST /api/permission/answer`
 
@@ -545,7 +545,7 @@ with `decision` `allow` or `deny`, and `requestId` the one the session's `ask` g
 | 409    | `reason: "gone"`: the session was answered there, is no longer waiting, or the request was held too long |
 | 429    | `reason: "too-soon"`: that request is being answered                                                     |
 
-Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_ANSWER=off` there is no such route, and a POST to it gets 405.
+Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_ANSWER=off`, on Windows, or with a setting that keeps Agent Lookout from listening, there is no such route, and a POST to it gets 405.
 
 The plugin's hook reaches Agent Lookout another way, not through this API: a Unix socket, `~/.agent-lookout/answer.sock` unless `AGENT_LOOKOUT_ANSWER_SOCKET` names another, of mode 600 in a folder of mode 700. It takes `POST /hooks/permission-request` with `X-Agent-Lookout-Hook: permission-request` and the hook's input as a JSON body of 1 MiB or less, holds it, and answers it with the decision JSON when you press Allow or Deny or a permission rule decides it, or with an empty 200 when the request is let go. [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt) says when that is.
 
