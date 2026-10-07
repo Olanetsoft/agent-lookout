@@ -4,7 +4,7 @@ Agent Lookout has one maintainer. Bug reports, fixes and adapters for other agen
 
 ## Two rules
 
-By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, or a webhook, whose posts go only to the address they set. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. The one exception is the Mac app's check of GitHub Releases for a newer version, about once a day, which the maintainer decided on and [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) describes. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
+By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, or a webhook, whose posts go only to the address they set. It runs the person's own `gh`, which asks GitHub for pull requests, only with `AGENT_LOOKOUT_PULL_REQUESTS=on`, and their own `ssh` only to the machines `AGENT_LOOKOUT_REMOTES` names. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. The one exception is the Mac app's check of GitHub Releases for a newer version, about once a day, which the maintainer decided on and [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) describes. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
 
 No invented data. The dashboard shows what the collector measured, or an honest loading, empty or error state. Sample sessions, placeholder numbers and demo modes stay out of the product. Fixtures exist only under `tests/`.
 
@@ -31,10 +31,10 @@ To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
-AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty npm run dev
+AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
 ```
 
-With all three set, Agent Lookout reads only that folder, does not run the `claude` command, and reads neither `~/.codex` nor `~/.agent-lookout/sessions`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
+With all four set, Agent Lookout reads only that folder, does not run the `claude` command, reads neither `~/.codex` nor `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
 
 ## Checks
 
@@ -67,7 +67,7 @@ The setup and the checks above are the same on Windows, in PowerShell or the Com
 
 ## The npm package
 
-The package holds only what `npx agent-lookout` needs: the built dashboard and the bundled command in `dist/`, `bin/agent-lookout.mjs`, and the README, the licence, the changelog, `PRIVACY.md`, `SECURITY.md`, `DISCLAIMER.md`, `docs/GUIDE.md` and `docs/API.md`. `files` in `package.json` lists them, and nothing else goes in: no source, tests, scripts, site or local notes.
+The package holds only what `npx agent-lookout` needs: the built dashboard and the bundled command in `dist/`, `bin/agent-lookout.mjs`, and the README, the licence, the changelog, `PRIVACY.md`, `SECURITY.md`, `DISCLAIMER.md`, `docs/INSTALL.md`, `docs/GUIDE.md` and `docs/API.md`. `files` in `package.json` lists them, and nothing else goes in: no source, tests, scripts, site or local notes.
 
 ```sh
 npm run build:package
@@ -98,7 +98,7 @@ node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false ag
 
 The maintainer publishes. A version tag starts `.github/workflows/release-npm.yml`, which publishes the package to npm from GitHub Actions once he approves it, with provenance: the package's page on npmjs.com shows the commit and the workflow run each version was built from. No npm token exists for it, in the repository or anywhere else. The tag is `v` and the version, such as `v0.2.3`, and the version only ever changes in its last number.
 
-The README, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
+The README, `docs/INSTALL.md`, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
 
 1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Commit, push, and wait for CI to pass for that commit.
 2. Tag the commit and push the tag:
