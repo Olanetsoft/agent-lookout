@@ -40,6 +40,9 @@ test("a session in a wait Agent Lookout answered is read as answered, and only o
     expect(readSession({ ...sent, answered }), String(answered)).not.toHaveProperty("answered");
   }
   expect(readSession({ ...sent, status: "working" })).not.toHaveProperty("answered");
+  // A wait answered on another machine, by Agent Lookout there, is read the same way.
+  const there = { ...sent, id: "remote:devbox:claude-code:1", machine: "devbox" };
+  expect(readSession(there)).toMatchObject({ machine: "devbox", answered: true });
 });
 
 test("a session from a status file keeps its agent's name, as text and only as text", () => {

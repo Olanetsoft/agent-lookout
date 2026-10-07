@@ -40,8 +40,9 @@ export const GREETING_NAME = "[127.0.0.1]";
 
 /**
  * What the mail library is told. TLS is required except to a relay on this
- * machine, a certificate is always checked, the library writes no log, and
- * every wait is short.
+ * machine, the library writes no log, and every wait is short. A certificate
+ * is always checked, even when `NODE_TLS_REJECT_UNAUTHORIZED=0` is in the
+ * environment, which would otherwise turn the check off for the whole process.
  */
 export function transportOptions(
   settings: EmailSettings,
@@ -54,6 +55,7 @@ export function transportOptions(
     secure: security === "tls",
     requireTLS: security === "starttls",
     ignoreTLS: security === "plain",
+    tls: { rejectUnauthorized: true },
     ...(auth ? { auth: { user: auth.user, pass: auth.pass } } : {}),
     name: GREETING_NAME,
     connectionTimeout: timeoutMs,

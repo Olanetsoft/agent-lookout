@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createCollectorSettings, type SettingsStore } from "@collector/settings/collectorSettings";
 import type { SettingsText, SettingsWrite } from "@collector/settings/settingsFile";
 import type { PermissionRule } from "@core/permission-rules/permissionRules";
+import type { RulesChangeResult } from "@core/permission-rules/rulesChange";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 
 const SETUP = {
@@ -16,20 +17,37 @@ const SET: TimeRules = {
   quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, days: ["sat", "sun"] },
 };
 
-/** A settings file held in memory: what it reads, and every text written to it. */
+/**
+ * A settings file held in memory: what it reads, which a write that is saved
+ * replaces, and every text written to it.
+ */
 function store(read: SettingsText, write: SettingsWrite = { ok: true }) {
   const written: string[] = [];
+  let held = read;
+  let saves = 0;
   const fake: SettingsStore = {
-    read: () => read,
+    read: () => held,
     write: (_setup, text) => {
       written.push(text);
+      if (write.ok) {
+        held = { kind: "read", text };
+        saves += 1;
+      }
       return write;
     },
+    stamp: () => String(saves),
   };
   return { fake, written };
 }
 
 const text = (value: unknown): SettingsText => ({ kind: "read", text: JSON.stringify(value) });
+
+/** A change to the permission rules that makes them this list. */
+const toList = (rules: PermissionRule[]) => (): RulesChangeResult => ({
+  ok: true,
+  rules,
+  changed: true,
+});
 
 describe("the settings, read as the collector starts", () => {
   test("with no file, every rule is off and nothing is said", () => {
@@ -145,7 +163,7 @@ describe("changing the time rules", () => {
     expect(settings.changeTimeRules(SET)).toEqual({
       ok: false,
       problem:
-        "~/.agent-lookout/settings.json could not be read when Agent Lookout started, so it is not written over and the change was not saved. Mend or remove the file, then start Agent Lookout again.",
+        "~/.agent-lookout/settings.json could not be read, so it is not written over and the change was not saved. Mend or remove the file, then make the change again.",
     });
     expect(written).toEqual([]);
     expect(settings.timeRules()).toEqual(DEFAULT_TIME_RULES);
@@ -217,7 +235,11 @@ describe("the permission rules", () => {
   test("a change writes the whole file, keeping the time rules and everything else in it", () => {
     const { fake, written } = store(text({ timeRules: SET, theme: "night" }));
     const settings = createCollectorSettings({ setup: SETUP, store: fake });
-    expect(settings.changePermissionRules([ALLOW])).toEqual({ ok: true });
+    expect(settings.changePermissionRules(toList([ALLOW]))).toEqual({
+      ok: true,
+      rules: [ALLOW],
+      changed: true,
+    });
     expect(settings.permissionRules()).toEqual([ALLOW]);
     expect(JSON.parse(written[0] as string)).toEqual({
       theme: "night",
@@ -244,7 +266,7 @@ describe("the permission rules", () => {
     expect(JSON.parse(written[0] as string).permissionRules).toEqual(unread);
     expect(settings.status().permissionRulesProblem).toMatch(/cannot read, so no rule is used/);
 
-    settings.changePermissionRules([DENY]);
+    settings.changePermissionRules(toList([DENY]));
     expect(JSON.parse(written[1] as string).permissionRules).toEqual([DENY]);
     expect(settings.status().permissionRulesProblem).toBeNull();
   });
@@ -256,7 +278,11 @@ describe("the permission rules", () => {
       setup: SETUP,
       store: store({ kind: "missing" }, { ok: false, problem }).fake,
     });
-    expect(settings.changePermissionRules([ALLOW])).toEqual({ ok: false, problem });
+    expect(settings.changePermissionRules(toList([ALLOW]))).toEqual({
+      ok: false,
+      reason: "not-saved",
+      problem,
+    });
     expect(settings.permissionRules()).toEqual([]);
     expect(settings.status().permissionRulesProblem).toBe(problem);
   });
@@ -265,7 +291,10 @@ describe("the permission rules", () => {
     const problem = "~/.agent-lookout/settings.json is a link.";
     const { fake, written } = store({ kind: "refused", problem });
     const settings = createCollectorSettings({ setup: SETUP, store: fake });
-    expect(settings.changePermissionRules([ALLOW]).ok).toBe(false);
+    expect(settings.changePermissionRules(toList([ALLOW]))).toMatchObject({
+      ok: false,
+      reason: "not-saved",
+    });
     expect(written).toEqual([]);
     expect(settings.permissionRules()).toEqual([]);
   });

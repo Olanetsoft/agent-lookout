@@ -20,7 +20,7 @@ const failed = (status: number, reason: PermissionRulesFailure, error: string): 
 });
 
 /** What each refusal of a change is answered with. */
-const STATUS_OF = { "no-rule": 404, full: 409, duplicate: 409 } as const;
+const STATUS_OF = { "no-rule": 404, full: 409, duplicate: 409, "not-saved": 500 } as const;
 
 /**
  * Why a request to the permission rules' route is refused before its body is
@@ -48,11 +48,13 @@ const newRuleId = () => randomBytes(6).toString("hex");
  * and nothing else, and the rule it adds or edits must be one the rules take
  * (`ruleProblem`): the checks the page makes are only there to help. Nothing
  * in it names a file: the file is the one the collector was started with.
- * The rules are in force only once they are saved, so a change that cannot
- * be written changes nothing.
+ * The change is made to the list the file holds, read again just before, so
+ * a change another copy of Agent Lookout saved is kept. The rules are in
+ * force only once they are saved, so a change that cannot be written changes
+ * nothing.
  */
 export function createPermissionRulesRoute(options: {
-  settings: Pick<CollectorSettings, "permissionRules" | "changePermissionRules">;
+  settings: Pick<CollectorSettings, "changePermissionRules">;
   /** Makes a new rule's id. Defaults to 48 random bits. */
   newId?: () => string;
 }) {
@@ -83,12 +85,10 @@ export function createPermissionRulesRoute(options: {
     const asked = rulesChangeIn(value);
     if (!asked.ok) return failed(400, "invalid", asked.problem);
 
-    const made = applyRulesChange(settings.permissionRules(), asked.change, newId);
+    const made = settings.changePermissionRules((rules) =>
+      applyRulesChange(rules, asked.change, newId),
+    );
     if (!made.ok) return failed(STATUS_OF[made.reason], made.reason, made.problem);
-    if (made.changed) {
-      const saved = settings.changePermissionRules(made.rules);
-      if (!saved.ok) return failed(500, "not-saved", saved.problem);
-    }
     return {
       status: 200,
       body: { ok: true, permissionRules: made.rules } satisfies PermissionRulesResponse,

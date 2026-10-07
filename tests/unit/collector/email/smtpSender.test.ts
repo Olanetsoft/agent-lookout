@@ -30,6 +30,7 @@ describe("transportOptions", () => {
       secure: true,
       requireTLS: false,
       ignoreTLS: false,
+      tls: { rejectUnauthorized: true },
       auth: { user: "name@example.com", pass: "p@ss:w/rd#" },
       name: GREETING_NAME,
       connectionTimeout: MAIL_TIMEOUT_MS,
@@ -56,7 +57,8 @@ describe("transportOptions", () => {
   test("a certificate is never left unchecked, nothing is logged, and this computer's name is not given", () => {
     for (const security of ["tls", "starttls", "plain"] as const) {
       const options = transportOptions(settings({ security }));
-      expect(options).not.toHaveProperty("tls");
+      // Set here, NODE_TLS_REJECT_UNAUTHORIZED=0 cannot turn the check off.
+      expect(options.tls).toEqual({ rejectUnauthorized: true });
       expect(options.logger).toBe(false);
       expect(options.debug).toBe(false);
       expect(options.name).toBe("[127.0.0.1]");

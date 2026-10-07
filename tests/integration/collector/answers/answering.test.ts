@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +60,7 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
 /** How the collector is built beyond its settings, for the tests that need more. */
 type Built = Pick<
   CollectorOptions,
-  "now" | "intervalMs" | "createEmailSender" | "createWebhookSender"
+  "now" | "intervalMs" | "createEmailSender" | "createWebhookSender" | "warn"
 > & {
   /** Takes the beat that checks the held requests, which then runs only when the test runs it. */
   beat?: (run: () => void) => void;
@@ -275,6 +275,23 @@ test("with AGENT_LOOKOUT_ANSWER off there is no socket and no route, and the hoo
   expect((await server.snapshot()).answering).toMatchObject({ state: "off" });
   const response = await server.answer("0".repeat(32), "allow");
   expect(response.status).toBe(405);
+});
+
+test("with a socket that could not be opened there is nothing to answer, and a POST that passes the checks gets 405", async () => {
+  // A folder Agent Lookout did not make, that other users can open.
+  const shared = path.join(await tempDir(), "shared");
+  await mkdir(shared, { mode: 0o755 });
+  await chmod(shared, 0o755);
+  const warned: string[] = [];
+  const server = await serve(
+    { AGENT_LOOKOUT_ANSWER_SOCKET: path.join(shared, "answer.sock") },
+    { warn: (line) => warned.push(line) },
+  );
+  expect(warned).toEqual([expect.stringContaining("Other users can open")]);
+  expect((await server.snapshot()).answering).toMatchObject({ state: "unavailable" });
+  const response = await server.answer("0".repeat(32), "allow");
+  expect(response.status).toBe(405);
+  expect(response.headers.allow).toBe("GET");
 });
 
 const MINUTE = 60_000;

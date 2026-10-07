@@ -9,8 +9,10 @@ import {
   MAX_PERMISSION_RULES_BODY_BYTES,
   permissionRulesRefusalFor,
 } from "@collector/settings/permissionRulesRoute";
+import type { PermissionRulesChange } from "@collector/settings/collectorSettings";
 import type { SettingsWrite } from "@collector/settings/settingsFile";
 import type { PermissionRule } from "@core/permission-rules/permissionRules";
+import type { RulesChangeResult } from "@core/permission-rules/rulesChange";
 
 /** The headers the dashboard's own page sends. Node gives header names in lower case. */
 const FROM_THE_PAGE = {
@@ -60,17 +62,25 @@ const A: PermissionRule = {
 /** The route over rules held in memory, which save, or not, as the test says. */
 function routeOver(rules: PermissionRule[] = [], saved: SettingsWrite = { ok: true }) {
   let held = rules;
+  /** Each list the route asked to save. */
+  const saves: (readonly PermissionRule[])[] = [];
   const settings = {
-    permissionRules: () => held,
-    changePermissionRules: vi.fn((next: readonly PermissionRule[]) => {
-      if (saved.ok) held = [...next];
-      return saved;
-    }),
+    changePermissionRules: vi.fn(
+      (change: (rules: readonly PermissionRule[]) => RulesChangeResult): PermissionRulesChange => {
+        const made = change(held);
+        if (!made.ok || !made.changed) return made;
+        saves.push(made.rules);
+        if (!saved.ok) return { ok: false, reason: "not-saved", problem: saved.problem };
+        held = [...made.rules];
+        return made;
+      },
+    ),
   };
   return {
     route: createPermissionRulesRoute({ settings, newId: () => "dddddddddddd" }),
     settings,
     held: () => held,
+    saves,
   };
 }
 
@@ -114,13 +124,13 @@ describe("permissionRulesRefusalFor, the checks of every route that acts, with i
 
 describe("POST /api/settings/permission-rules", () => {
   test("adds a rule once the list is saved, and answers with the list in force", async () => {
-    const { route, settings } = routeOver([A]);
+    const { route, saves } = routeOver([A]);
     const added = { id: "dddddddddddd", ...ADD.add };
     expect(await route(request())).toEqual({
       status: 200,
       body: { ok: true, permissionRules: [A, added] },
     });
-    expect(settings.changePermissionRules).toHaveBeenCalledWith([A, added]);
+    expect(saves).toEqual([[A, added]]);
   });
 
   test("moves, edits and removes a rule by its id", async () => {
@@ -139,12 +149,12 @@ describe("POST /api/settings/permission-rules", () => {
   });
 
   test("a move that changes nothing answers with the list, and writes nothing", async () => {
-    const { route, settings } = routeOver([A]);
+    const { route, saves } = routeOver([A]);
     const answer = await route(
       request({ body: JSON.stringify({ move: { id: "aaaaaaaaaaaa", to: "up" } }) }),
     );
     expect(answer).toEqual({ status: 200, body: { ok: true, permissionRules: [A] } });
-    expect(settings.changePermissionRules).not.toHaveBeenCalled();
+    expect(saves).toEqual([]);
   });
 
   test("a refused request changes nothing and its body is never read", async () => {

@@ -430,7 +430,8 @@ export interface Session {
    * the answer. The wait is over from the moment of the answer: nothing
    * announces it, reminds of it, counts it as a wait or shows it as needing
    * the person (`needsYou` in `src/core/waits/answeredWaits.ts`). Only the
-   * collector sets it, at each poll; a source never does.
+   * collector sets it, at each poll. The one source that passes it on is
+   * another machine's, for a wait Agent Lookout there answered.
    */
   answered?: true;
   /** True when the session has been idle longer than the stale threshold. */

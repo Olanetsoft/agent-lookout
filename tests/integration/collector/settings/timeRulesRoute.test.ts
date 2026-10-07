@@ -210,12 +210,13 @@ describe("POST /api/settings/time-rules", () => {
 
   test("a change that cannot be saved is not in force, and the answer says why", async () => {
     const server = await serve();
-    // A folder where the file should be.
+    // A folder where the file should be, put there after Agent Lookout started.
+    // The file is read again before the change, and what cannot be read is not written over.
     await mkdir(server.settingsFile, { recursive: true });
     const response = await server.change();
     expect(response.status).toBe(500);
     expect(response.json()).toEqual({
-      error: `${server.settingsFile} is a link or not an ordinary file, which Agent Lookout does not write through, so the change was not saved.`,
+      error: `${server.settingsFile} could not be read, so it is not written over and the change was not saved. Mend or remove the file, then make the change again.`,
       reason: "not-saved",
     });
     expect((await server.settings()).timeRules).toEqual(DEFAULT_TIME_RULES);

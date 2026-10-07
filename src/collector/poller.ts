@@ -118,6 +118,19 @@ function markAnswered(sessions: Session[], answered: ReadonlySet<string>): Sessi
 
 const NONE_ANSWERED: ReadonlySet<string> = new Set();
 
+/**
+ * The sessions answered here, with every session on another machine that its
+ * own Agent Lookout marked answered. Only the other machine knows of an answer
+ * given there, so its mark is the one word on it.
+ */
+function withAnsweredThere(answered: ReadonlySet<string>, sessions: readonly Session[]) {
+  const there = sessions.filter(
+    (session) => session.machine !== undefined && session.answered === true,
+  );
+  if (there.length === 0) return answered;
+  return new Set([...answered, ...there.map((session) => session.id)]);
+}
+
 export interface Poller {
   /** Polls now and then on every interval. Calling it twice changes nothing. */
   start(): void;
@@ -354,8 +367,9 @@ export function createPoller(options: PollerOptions): Poller {
       ...declared(adapters[index] as Adapter),
     }));
     // Asked now, after every source was read, so an answer given while this
-    // poll read them counts for it.
-    const answered = answeredIn({ sources, sessions: found });
+    // poll read them counts for it. A session on another machine comes marked
+    // when Agent Lookout there answered its wait, and is taken the same way.
+    const answered = withAnsweredThere(answeredIn({ sources, sessions: found }), found);
 
     const changes: SessionEvent[] = [];
     results.forEach((result, index) => {

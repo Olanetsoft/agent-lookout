@@ -21,8 +21,10 @@ import { tildify } from "../files/paths.ts";
 /**
  * The one file the collector keeps its own settings in, and everything it does
  * to it: `~/.agent-lookout/settings.json`, or the file
- * `AGENT_LOOKOUT_SETTINGS_FILE` names. It is read once, as the collector
- * starts, and written only when the person changes a setting in the dashboard.
+ * `AGENT_LOOKOUT_SETTINGS_FILE` names. It is read as the collector starts,
+ * again before each change, and again when another copy of Agent Lookout has
+ * written it, and written only when the person changes a setting in the
+ * dashboard.
  *
  * The folder is made with mode 700 and the file written with mode 600, read
  * and written by its owner alone. A link where the file or its folder should
@@ -123,6 +125,21 @@ const notOrdinary = (shown: string): SettingsText => ({
   kind: "refused",
   problem: `${shown} is not an ordinary file, so the time rules and the permission rules are off.`,
 });
+
+/**
+ * What tells this settings file from the next one written: its inode, size and
+ * time of change, without following a link, or null when nothing is there. A
+ * write puts a new file in the old one's place, so each write has a new inode.
+ * Never throws.
+ */
+export function readSettingsStamp(setup: SettingsSetup): string | null {
+  try {
+    const info = lstatSync(setup.file, { bigint: true });
+    return `${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+  } catch {
+    return null;
+  }
+}
 
 /** Reads the settings file, as its setup names it. Never throws. */
 export function readSettingsText(setup: SettingsSetup): SettingsText {

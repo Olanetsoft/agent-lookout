@@ -1,10 +1,12 @@
 // A mail server for integration tests, on a free port of 127.0.0.1. It speaks
 // just enough SMTP for the collector's mail library to hand it an email, and
 // writes down everything it was given. Nothing it receives goes any further.
-// It can also turn every email away, or say nothing at all.
+// It can also turn every email away, or say nothing at all, and it can speak
+// TLS from the first byte, as an smtps:// server does.
 
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
+import { createServer as createTlsServer } from "node:tls";
 
 import { onTestFinished } from "vitest";
 
@@ -151,6 +153,8 @@ export interface TestSmtpOptions {
   behaviour?: SmtpBehaviour;
   /** The user name and password a client must sign in with. Left out, it may send without. */
   auth?: { user: string; pass: string };
+  /** A key and certificate to speak TLS with from the first byte. Its `url` is then smtps://. */
+  tls?: { key: string; cert: string };
 }
 
 /** Starts the server and closes it, and every connection to it, when the test finishes. */
@@ -165,11 +169,11 @@ export async function startSmtpServer(options: TestSmtpOptions = {}): Promise<Te
       const login = credentials
         ? `${encodeURIComponent(credentials.user)}:${encodeURIComponent(credentials.pass)}@`
         : "";
-      return `smtp://${login}127.0.0.1:${state.port}`;
+      return `${options.tls ? "smtps" : "smtp"}://${login}127.0.0.1:${state.port}`;
     },
   };
 
-  const server: Server = createServer((socket) => {
+  const onConnection = (socket: Socket) => {
     state.connections += 1;
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
@@ -188,7 +192,12 @@ export async function startSmtpServer(options: TestSmtpOptions = {}): Promise<Te
       return;
     }
     serve(socket, state, options.auth);
-  });
+  };
+  const server: Server = options.tls
+    ? createTlsServer(options.tls, onConnection)
+    : createServer(onConnection);
+  // A client that refuses the certificate ends the handshake. There is nobody to tell.
+  server.on("tlsClientError", () => {});
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

@@ -113,9 +113,10 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
  * the machine's own source, `remote:devbox:claude-code:…`, its source the
  * machine's, its agent named in words as the other machine names it, and the
  * machine's name on it. What it is doing, where and since when are taken as
- * they were sent, cleaned again. Its process, its Jump, its Stop, the
- * permission request held for it there and its link are left behind: each
- * would act on this machine.
+ * they were sent, cleaned again, and so is the other machine's word that its
+ * wait was answered there. Its process, its Jump, its Stop, the permission
+ * request held for it there and its link are left behind: each would act on
+ * this machine.
  *
  * Null for one that cannot be told apart, and for one the other machine
  * itself read from yet another: only its own sessions are shown.
@@ -163,6 +164,10 @@ function readSession(
     // for a session there either.
     const asking = keepWaitingText ? waitingText(value.waitingText) : undefined;
     if (asking !== undefined) session.waitingText = asking;
+    // Agent Lookout there answered this wait, by a press or a rule, and Claude
+    // Code has not yet said what it does next. The wait is over here too. The
+    // mark acts on nothing: it only keeps the wait from being told of again.
+    if (value.answered === true) session.answered = true;
   }
   const lastWriteAt = plausibleTime(value.lastWriteAt, now);
   if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;

@@ -251,8 +251,9 @@ export function createCollector(options: CollectorOptions): Collector {
   // The stores in memory are what the page reads. With history kept on disk,
   // what they take is also written, and what was written is read back into
   // them before the first poll.
-  // Read once, here, as the collector starts. A change made in the dashboard
-  // is put in force at once and written back.
+  // Read here, as the collector starts. A change made in the dashboard is
+  // made to what the file holds then, put in force at once and written back,
+  // and a change another copy of Agent Lookout saved is read at the next poll.
   const settings = createCollectorSettings({
     setup: readSettingsSetup(env),
     store: options.settingsStore,
@@ -401,7 +402,12 @@ export function createCollector(options: CollectorOptions): Collector {
     // Every source's sessions alike are given the branch of their folder, and
     // with pull requests on, the branch's pull request, as last learnt.
     // Every snapshot carries the time rules in force, and is stale by them.
-    timeRules: () => settings.timeRules(),
+    // The settings file is looked at again here, once a poll, so a change
+    // another copy of Agent Lookout saved is in force by the next one.
+    timeRules: () => {
+      settings.readAgain();
+      return settings.timeRules();
+    },
     // And marks each session still in a wait whose permission request was
     // answered, so every channel, the page's too, takes that wait as over at
     // the same poll, and the Events log and the waits never count a wait a

@@ -139,6 +139,18 @@ describe("readRemoteSnapshot", () => {
     expect(taken.sessions[0]?.stale).toBe(true);
   });
 
+  test("a wait answered there is marked answered here, only while it waits and only for true", () => {
+    const answered = (value: unknown, status: "needs-you" | "working" = "needs-you") =>
+      read({ ...snapshotThere([]), sessions: [{ ...waitingThere({ status }), answered: value }] })
+        .sessions[0];
+    expect(answered(true)).toMatchObject({ status: "needs-you", answered: true });
+    for (const value of [false, "true", 1, {}, null]) {
+      expect(answered(value), String(value)).not.toHaveProperty("answered");
+    }
+    expect(answered(true, "working")).not.toHaveProperty("answered");
+    expect(read(snapshotThere([waitingThere()])).sessions[0]).not.toHaveProperty("answered");
+  });
+
   test("what a waiting session asks is kept only while it waits", () => {
     const [idle] = read(
       snapshotThere([waitingThere({ status: "idle", waitingText: "Run: npm test" })]),

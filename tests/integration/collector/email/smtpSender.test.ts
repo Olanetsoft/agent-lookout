@@ -1,9 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { waitEmail, type EmailContent } from "@collector/email/emailMessage";
 import { readEmailSetup, type EmailSettings } from "@collector/email/emailSettings";
 import { createSmtpSender } from "@collector/email/smtpSender";
 import { makeSession } from "@tests/fixtures/session";
+import { selfSignedCertificate } from "@tests/support/channels/selfSigned";
 import {
   decodedHeader,
   headersOf,
@@ -184,6 +185,26 @@ describe("createSmtpSender", () => {
       reason: "nothing answered at the mail server's address",
     });
   });
+
+  test.each(["1", "0"])(
+    "a server whose certificate no one vouches for is refused before the password goes, with NODE_TLS_REJECT_UNAUTHORIZED=%s",
+    async (value) => {
+      const server = await startSmtpServer({ auth: CREDENTIALS, tls: selfSignedCertificate() });
+      const sender = createSmtpSender(settingsFor(server.url(CREDENTIALS)));
+      // Node reads the variable at each connection, so it is set only for this send.
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", value);
+      try {
+        expect(await sender.send(emailFor("payments-api"))).toEqual({
+          sent: false,
+          reason: "the connection to the mail server failed",
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(server.connections).toBe(0);
+      expect(server.received).toEqual([]);
+    },
+  );
 
   test("a server that does not offer STARTTLS is refused when TLS is required, before anything is sent", async () => {
     const server = await startSmtpServer();

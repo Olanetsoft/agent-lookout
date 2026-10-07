@@ -1357,6 +1357,31 @@ describe("a wait whose permission request Agent Lookout answered", () => {
     expect(events.list().map((event) => [event.kind, event.to])).toEqual([["appeared", "working"]]);
   });
 
+  test("a session on another machine that its own Agent Lookout marked answered is taken as answered here", async () => {
+    const there = (session: Session): Session => ({
+      ...session,
+      id: `remote:devbox:${session.id}`,
+      source: "remote:devbox",
+      machine: "devbox",
+    });
+    const { adapter } = scriptedAdapter(
+      result([there(working)]),
+      result([there({ ...asking, answered: true })]),
+      result([there(goesOn)]),
+    );
+    // Nothing is answered here: the mark is the other machine's word alone.
+    const { poller, events, history } = withAnswers(adapter, () => new Set());
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    const read = await poller.pollOnce();
+    expect(read.sessions[0]).toMatchObject({ status: "needs-you", answered: true });
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+
+    expect(events.list()).toEqual([]);
+    expect(history.list(60_000, Date.now()).map((point) => point.needsYou)).toEqual([0, 0, 0]);
+  });
+
   test("an answer that cannot be asked for marks nothing, and the poll goes on", async () => {
     const { adapter } = scriptedAdapter(result([working]), result([asking]));
     const { poller, events } = withAnswers(adapter, () => {

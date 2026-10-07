@@ -11,6 +11,8 @@ import { createCollector } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
 import { createSmtpSender } from "@collector/email/smtpSender";
+import { createCollectorSettings } from "@collector/settings/collectorSettings";
+import { readSettingsSetup } from "@collector/settings/settingsFile";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
 import { NOTIFICATIONS_NOT_SHOWN_LINE } from "@collector/notifications/serverNotifications";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
@@ -25,6 +27,7 @@ import {
   type PullRequestsStatusResponse,
   type WebhookStatusResponse,
 } from "@core/api";
+import { applyRulesChange } from "@core/permission-rules/rulesChange";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
@@ -1450,6 +1453,36 @@ describe("what a host is told", () => {
   });
 });
 
+describe("a settings file shared with another copy of Agent Lookout", () => {
+  test("the rules the other copy saves are in force here from the next poll", async () => {
+    const file = path.join(await tempDir(), "settings.json");
+    const source = standInSource([working("docs-site")]);
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [source.adapter],
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: file },
+      notifier: fakeSystemNotifier(),
+      now: () => source.state.now,
+    });
+    expect((await collector.poller.pollOnce()).timeRules).toEqual(DEFAULT_TIME_RULES);
+
+    // The other copy, as the Mac app beside `npx agent-lookout`, on the same file.
+    const other = createCollectorSettings({
+      setup: readSettingsSetup({ AGENT_LOOKOUT_SETTINGS_FILE: file }),
+    });
+    const rules: TimeRules = { ...DEFAULT_TIME_RULES, idle: { on: true, hours: 2 } };
+    expect(other.changeTimeRules(rules)).toEqual({ ok: true });
+    const rule = { decision: "deny", tool: "Write" } as const;
+    other.changePermissionRules((held) =>
+      applyRulesChange(held, { kind: "add", words: rule }, () => "dddddddddddd"),
+    );
+
+    source.state.now += 2_000;
+    expect((await collector.poller.pollOnce()).timeRules).toEqual(rules);
+    expect(collector.settings.permissionRules()).toEqual([{ id: "dddddddddddd", ...rule }]);
+  });
+});
+
 describe("history kept on disk", () => {
   /**
    * A collector over a stand-in source, keeping its history in `dir`, served
@@ -2007,6 +2040,51 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       title: "demo-docs on devbox",
       body: "Asked you a question",
     });
+  });
+
+  test("a prompt answered there is no wait here: no event, no notification, and the page reads it as answered", async () => {
+    const claude = { id: "claude-code:00000000-0000-4000-8000-0000000000aa" };
+    const working = waitingThere({
+      ...claude,
+      status: "working",
+      waitingReason: undefined,
+      waitingDetail: undefined,
+      waitingText: undefined,
+      ask: undefined,
+    });
+    const lookout = await startStandInLookout(snapshotThere([working]));
+    const { until, port, notifier, collector } = await withMachine(lookout.port);
+    await until("ok");
+
+    // Agent Lookout there answered the prompt, by a press or a rule, and Claude
+    // Code has not yet rewritten its file.
+    lookout.answer(snapshotThere([waitingThere({ ...claude, answered: true, ask: undefined })]));
+    const id = `remote:devbox:${claude.id}`;
+    const seen = await vi.waitFor(
+      async () => {
+        await collector.poller.pollOnce();
+        const snapshot = readSnapshot((await request(port, "/api/sessions")).json());
+        const session = snapshot?.sessions.find((one) => one.id === id);
+        if (session?.status !== "needs-you") throw new Error(`still ${session?.status}`);
+        return session;
+      },
+      { timeout: 8_000, interval: 100 },
+    );
+    expect(seen).toMatchObject({ machine: "devbox", answered: true });
+    await collector.poller.pollOnce();
+
+    lookout.answer(snapshotThere([working]));
+    await vi.waitFor(
+      async () => {
+        await collector.poller.pollOnce();
+        const snapshot = readSnapshot((await request(port, "/api/sessions")).json());
+        expect(snapshot?.sessions.find((one) => one.id === id)?.status).toBe("working");
+      },
+      { timeout: 8_000, interval: 100 },
+    );
+    const events = readEvents((await request(port, "/api/events?since=0")).json()) ?? [];
+    expect(events).toEqual([]);
+    expect(notifier.shown).toEqual([]);
   });
 
   test("when Agent Lookout there stops, the card says so, nothing of its sessions is said to have ended, and the history goes on", async () => {

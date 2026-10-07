@@ -4,9 +4,9 @@ import type { RuleAnswer } from "../../core/api.ts";
 import type { PermissionRule } from "../../core/permission-rules/permissionRules.ts";
 import type { AnsweringStatus, SessionsSnapshot } from "../../core/sessions/session.ts";
 import type { EventStore } from "../eventStore.ts";
-import type { ApiAnswer } from "../handler.ts";
+import { refusal, type ApiAnswer } from "../handler.ts";
 import type { Poller } from "../poller.ts";
-import { createAnswerRoute } from "./answerRoute.ts";
+import { answerRefusalFor, createAnswerRoute } from "./answerRoute.ts";
 import { readAnswerSetup } from "./answerSettings.ts";
 import { createHeldAsks, type HeldAsks, type StatusReader } from "./heldAsks.ts";
 import { createHookSocket, type HookSocket } from "./hookSocket.ts";
@@ -35,7 +35,11 @@ export interface Answering {
    * is made. None while answering is off.
    */
   answeredIn(snapshot: Pick<SessionsSnapshot, "sources" | "sessions">): ReadonlySet<string>;
-  /** Answers `POST /api/permission/answer`, or undefined while answering is off. */
+  /**
+   * Answers `POST /api/permission/answer`, or undefined while answering is
+   * off. While the socket could not be opened, a POST that passes the route's
+   * checks gets 405, as it would with no route.
+   */
   route?: (req: IncomingMessage) => Promise<ApiAnswer>;
   /** The requests the permission rules answered since start, newest first. None while answering is off. */
   ruleAnswers(): RuleAnswer[];
@@ -98,6 +102,7 @@ export function createAnswering(options: AnsweringOptions): Answering {
   });
   let problem: string | null = null;
   let listening = false;
+  const answerRoute = createAnswerRoute({ poller, events, asks, now: options.now });
 
   return {
     async start() {
@@ -123,7 +128,17 @@ export function createAnswering(options: AnsweringOptions): Answering {
       if (listening) asks.observe(snapshot);
     },
     answeredIn: (snapshot) => asks.answeredIn(snapshot),
-    route: createAnswerRoute({ poller, events, asks, now: options.now }),
+    // A socket that could not be opened holds no request, so there is nothing
+    // to answer. Past the route's own checks, a POST is told what it would be
+    // told with answering off, where there is no such route.
+    async route(req) {
+      if (problem === null) return answerRoute(req);
+      req.resume();
+      return (
+        answerRefusalFor(req) ??
+        refusal(405, "This address only answers GET requests.", { Allow: "GET" })
+      );
+    },
     ruleAnswers: () => ruleAnswers.recent(),
   };
 }
