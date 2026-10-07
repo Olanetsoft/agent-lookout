@@ -9,7 +9,7 @@ import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import type { TmuxPane } from "@collector/tmux/panes";
-import { HOME, ids, pids, registryFiles } from "@tests/fixtures/claudeCode";
+import { HOME, ids, pids, registryFile, registryFiles } from "@tests/fixtures/claudeCode";
 import {
   adapterFor,
   fails,
@@ -366,5 +366,33 @@ describe("Stop", () => {
     clock.now += 2_000;
     await adapter.poll();
     expect(runs).toBe(2);
+  });
+});
+
+describe("a registry file read while Claude Code is writing it", () => {
+  test("keeps its session listed for that poll, and no longer", async () => {
+    const file = `${pids.busy}.json`;
+    let content = registryFile({
+      pid: pids.busy,
+      sessionId: ids.busy,
+      kind: "interactive",
+      status: "busy",
+    });
+    const adapter = createClaudeCodeAdapter({
+      env: { AGENT_LOOKOUT_CLAUDE_FEED: "off", AGENT_LOOKOUT_WAITING_TEXT: "off" },
+      homeDir: HOME,
+      now: () => now,
+      isAlive: () => true,
+      readProcessStarts: async () => new Map(),
+      registryIo: { readdir: async () => [file], readFile: async () => content },
+    });
+    const listed = async () => (await adapter.poll()).sessions.map((session) => session.id);
+
+    expect(await listed()).toEqual([`claude-code:${ids.busy}`]);
+    // Emptied, and not yet written again: the session has not ended.
+    content = "";
+    expect(await listed()).toEqual([`claude-code:${ids.busy}`]);
+    // Still not whole a poll later.
+    expect(await listed()).toEqual([]);
   });
 });

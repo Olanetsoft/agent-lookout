@@ -215,6 +215,28 @@ describe("POST /api/sessions/stop", () => {
     expect(poller.pollOnce).toHaveBeenCalledTimes(2);
   });
 
+  test("a poll under way that ran the command before a background job stopped is followed by one more", async () => {
+    // That poll's answer still says the job is working. Its process had gone
+    // by the time the poll read the registry, so it offers no Stop.
+    const before = listed({ alive: false, stop: undefined });
+    const after = listed({ status: "finished", alive: false, stop: undefined });
+    const { route, poller } = routeOver([listed({ stop: { how: "background" } })], {
+      target: JOB,
+      acted: "stopped",
+    });
+    const snapshotOf = (session: Session): SessionsSnapshot => ({
+      generatedAt: 2,
+      sources: [],
+      sessions: [session],
+    });
+    poller.pollOnce
+      .mockResolvedValueOnce(snapshotOf(before))
+      .mockResolvedValueOnce(snapshotOf(after));
+
+    expect((await route(request())).status).toBe(200);
+    expect(poller.pollOnce).toHaveBeenCalledTimes(2);
+  });
+
   test("a background job is stopped by its job, and the command is asked for again", async () => {
     const { route, stopper, targets } = routeOver([listed({ stop: { how: "background" } })], {
       target: JOB,
@@ -223,8 +245,42 @@ describe("POST /api/sessions/stop", () => {
 
     expect((await route(request())).status).toBe(200);
     expect(stopper.act).toHaveBeenCalledWith(JOB);
-    expect(stopper.waitForEnd).not.toHaveBeenCalled();
+    expect(stopper.waitForEnd).toHaveBeenCalledWith([4241]);
     expect(targets.askFeedSoon).toHaveBeenCalledOnce();
+  });
+
+  test("a background job whose process ends after claude stop has answered is read again once it has gone", async () => {
+    // Claude Code's supervisor ends the job's process a moment after the
+    // command answers. Until then its registry file says it is working.
+    let processRuns = true;
+    const working = listed({ stop: { how: "background" } });
+    const stopped = listed({ status: "finished", alive: false, stop: undefined });
+    const { route, poller, stopper } = routeOver([working], { target: JOB, acted: "stopped" });
+    const seen: SessionsSnapshot[] = [];
+    poller.pollOnce.mockImplementation(async () => {
+      const snapshot = { generatedAt: 2, sources: [], sessions: [processRuns ? working : stopped] };
+      seen.push(snapshot);
+      return snapshot;
+    });
+    vi.mocked(stopper.waitForEnd).mockImplementation(async () => {
+      processRuns = false;
+      return new Set();
+    });
+
+    expect((await route(request())).status).toBe(200);
+    // What the page reads next is the last poll's.
+    expect(seen.at(-1)?.sessions).toEqual([stopped]);
+  });
+
+  test("a background job whose process is still running 10 seconds later was stopped all the same", async () => {
+    const { route, added } = routeOver([listed({ stop: { how: "background" } })], {
+      target: JOB,
+      acted: "stopped",
+      running: [4241],
+    });
+
+    expect(await route(request())).toEqual({ status: 200, body: { ok: true } });
+    expect(added).toEqual([expect.objectContaining({ kind: "stopped" })]);
   });
 
   test("a process still running 10 seconds after SIGTERM is a 202 that says so, with no event", async () => {

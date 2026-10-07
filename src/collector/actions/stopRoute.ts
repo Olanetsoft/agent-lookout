@@ -75,9 +75,21 @@ export function stopRefusalFor(req: Pick<IncomingMessage, "method" | "headers">)
   return actionRefusalFor(req, STOP_ACTION, MAX_STOP_BODY_BYTES);
 }
 
-/** Whether a snapshot still offers Stop for the session, so it has not been seen to go yet. */
-function stillOffered(snapshot: SessionsSnapshot, sessionId: string): boolean {
-  return snapshot.sessions.some((session) => session.id === sessionId && session.stop);
+/**
+ * Whether a snapshot shows the session as it was before it stopped, so it has
+ * not been seen to go yet: still offering Stop, or, for a background job, not
+ * yet finished or failed, as a poll that ran the command before the job was
+ * stopped shows it once its process has gone.
+ */
+function notSeenToStop(snapshot: SessionsSnapshot, stopped: Pick<Session, "id" | "stop">): boolean {
+  return snapshot.sessions.some(
+    (session) =>
+      session.id === stopped.id &&
+      (session.stop !== undefined ||
+        (stopped.stop?.how === "background" &&
+          session.status !== "finished" &&
+          session.status !== "failed")),
+  );
 }
 
 /**
@@ -96,7 +108,7 @@ export async function lookAgain(
   }
   try {
     const first = await options.poller.pollOnce();
-    if (stopped.some((session) => stillOffered(first, session.id))) {
+    if (stopped.some((session) => notSeenToStop(first, session))) {
       await options.poller.pollOnce();
     }
   } catch {
@@ -115,9 +127,9 @@ export async function lookAgain(
  * session's and of a kind that is stopped, `ps` must give the same start time
  * for its process, and the process must not be Agent Lookout's own, the one it
  * was started from, or the first process (`stopSession.ts`). Only then is it
- * sent SIGTERM, never SIGKILL, and the collector waits up to 10 seconds for it
- * to end, or runs `claude stop` with the job's id. Nothing a request holds
- * reaches a signal or a command.
+ * sent SIGTERM, never SIGKILL, or `claude stop` is run with the job's id, and
+ * the collector waits up to 10 seconds for the process to end. Nothing a
+ * request holds reaches a signal or a command.
  *
  * One stop is made a second, and one at a time, with the clean-up's.
  */
@@ -135,7 +147,13 @@ export function createStopRoute(options: StopRouteOptions) {
       if (acted === "signalled") {
         const running = await stopper.waitForEnd([target.pid]);
         if (running.size > 0) return stopFailed("still-running");
-      } else if (acted !== "stopped") {
+      } else if (acted === "stopped") {
+        // Claude Code's supervisor ends the job's process, and can do so after
+        // `claude stop` has answered. Until it has, the job's registry file still
+        // says it is working, so the sessions are read again once it has gone.
+        // Claude Code has stopped the job either way.
+        await stopper.waitForEnd([target.pid]);
+      } else {
         return stopFailed(acted);
       }
       events.add([stoppedEvent(session, stopper.now())]);

@@ -119,6 +119,8 @@ export type RegistryRead =
       readable: true;
       /** By pid. Files that are malformed or have no usable pid are left out. */
       entries: Map<number, RegistryEntry>;
+      /** By file name, the entry each file held that was read and parsed this time. */
+      parsed: Map<string, RegistryEntry>;
     }
   | {
       readable: false;
@@ -182,10 +184,17 @@ export function parseRegistryEntry(content: string): RegistryEntry | null {
  * files with stray characters in them, and a link, a pipe or an oversized file
  * is not a registry file whatever it is called. Only a directory that cannot be
  * listed at all makes the registry unreadable.
+ *
+ * A file that was read but does not parse may be one read while it was being
+ * written. Given the files the read before parsed, `previous`, the entry that
+ * file held then stands in for it, this once: its session does not drop out of
+ * the list for a poll, which would read as the session ending and coming back.
+ * One that is still not whole the next time is skipped.
  */
 export async function readRegistry(
   sessionsDir: string,
   io: RegistryIo = nodeIo,
+  previous?: ReadonlyMap<string, RegistryEntry>,
 ): Promise<RegistryRead> {
   let names: string[];
   try {
@@ -196,23 +205,29 @@ export async function readRegistry(
   }
 
   const files = names.filter(isRegistryFileName).sort();
-  const parsed = await Promise.all(
+  const parsed = new Map<string, RegistryEntry>();
+  const found = await Promise.all(
     files.map(async (name) => {
+      let content: string;
       try {
-        return parseRegistryEntry(await io.readFile(path.join(sessionsDir, name)));
+        content = await io.readFile(path.join(sessionsDir, name));
       } catch {
         return null;
       }
+      const entry = parseRegistryEntry(content);
+      if (entry === null) return previous?.get(name) ?? null;
+      parsed.set(name, entry);
+      return entry;
     }),
   );
 
   const entries = new Map<number, RegistryEntry>();
-  parsed.forEach((entry, index) => {
+  found.forEach((entry, index) => {
     if (!entry) return;
     // The file named after the pid is the one Claude Code wrote for that process,
     // so it wins over any other file that happens to claim the same pid.
     const isNamedForPid = files[index] === `${entry.pid}.json`;
     if (isNamedForPid || !entries.has(entry.pid)) entries.set(entry.pid, entry);
   });
-  return { readable: true, entries };
+  return { readable: true, entries, parsed };
 }

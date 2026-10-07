@@ -110,7 +110,7 @@ describe("readRegistry", () => {
   test("an empty directory is readable and has no entries", async () => {
     const home = await makeClaudeHome();
     const registry = await readRegistry(path.join(home, "sessions"));
-    expect(registry).toEqual({ readable: true, entries: new Map() });
+    expect(registry).toEqual({ readable: true, entries: new Map(), parsed: new Map() });
   });
 
   test("a directory that is not there is reported as missing", async () => {

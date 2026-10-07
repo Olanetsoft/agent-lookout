@@ -327,6 +327,8 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   let lastRead: FeedRead | null = null;
   /** Set once a background job has been stopped, so the command is run at the next poll. */
   let feedSoon = false;
+  /** The registry files the last read parsed, for a file read while it was being written. */
+  let lastParsed: ReadonlyMap<string, RegistryEntry> | undefined;
   stops?.onAskFeedSoon(() => {
     feedSoon = true;
   });
@@ -363,7 +365,8 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
    * or of a kind that is not a session, is one of Claude Code's helper processes.
    */
   async function readRegistryNow(at: number): Promise<Reading> {
-    const registry = await readRegistry(sessionsDir, options.registryIo);
+    const registry = await readRegistry(sessionsDir, options.registryIo, lastParsed);
+    lastParsed = registry.readable ? registry.parsed : undefined;
     if (!registry.readable) return { registry, live: [], unknownStatus: false };
 
     const candidates = [...registry.entries.values()].filter(

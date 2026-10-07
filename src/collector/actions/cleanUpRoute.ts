@@ -78,7 +78,7 @@ interface Sent {
   index: number;
   session: Session;
   target: StopTarget;
-  /** Whether it was signalled, and so is waited on, or its background job was stopped. */
+  /** Whether it was signalled, and so is still running if it has not ended, or its background job was stopped. */
   signalled: boolean;
 }
 
@@ -177,9 +177,9 @@ export function createCleanUpRoute(options: CleanUpRouteOptions) {
       }
     }
 
-    const running = await stopper.waitForEnd(
-      sent.filter((one) => one.signalled).map((one) => one.target.pid),
-    );
+    // A background job's process is waited for too, as the stop route waits for
+    // it, but only a signalled process still running is said to be.
+    const running = await stopper.waitForEnd(sent.map((one) => one.target.pid));
     const ended: Session[] = [];
     for (const one of sent) {
       if (one.signalled && running.has(one.target.pid)) outcomes[one.index] = "still-running";

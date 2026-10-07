@@ -1090,15 +1090,21 @@ describe("through the poller", () => {
     await poller.pollOnce();
     expect(poller.getSnapshot().sessions).toHaveLength(5);
 
-    // A registry file goes wrong: the command alone.
+    // A registry file goes wrong. For one poll it could be one read while it
+    // was being written, and what it held before stands in for it.
     await writeFile(registryPath(home, `${pids.busy}.json`), `${registryFile()}}`);
     clock.moveTo(62_000);
+    expect(await basisNow()).toBe("every 30 seconds");
+    expect(poller.getSnapshot().sessions).toHaveLength(5);
+
+    // Still wrong at the next poll: the command alone.
+    clock.moveTo(64_000);
     expect(await basisNow()).toBe("every 5 seconds");
     expect(poller.getSnapshot().sessions).toHaveLength(5);
 
     // And is put right.
     await writeFile(registryPath(home, `${pids.busy}.json`), registryFile());
-    clock.moveTo(64_000);
+    clock.moveTo(66_000);
     expect(await basisNow()).toBe("every 30 seconds");
 
     expect(told()).toEqual([]);

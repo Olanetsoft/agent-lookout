@@ -338,11 +338,12 @@ describe("POST /api/sessions/clean-up", () => {
     expect(added.map((event) => event.sessionId)).toEqual([idOf(1)]);
   });
 
-  test("a background job is stopped with its job, and the command is asked for again", async () => {
-    const { outcomes, stopper, targets } = routeOver(
+  test("a background job is stopped with its job, its process is waited for, and the command is asked for again", async () => {
+    const { outcomes, stopper, targets, poller } = routeOver(
       [leftRunning(1, { stop: { how: "background" } })],
       {},
-      { background: [1] },
+      // Still running after the wait: Claude Code has stopped the job all the same.
+      { background: [1], running: [1] },
     );
 
     expect(await outcomes(asked(1))).toEqual({ [idOf(1)]: "ended" });
@@ -350,7 +351,11 @@ describe("POST /api/sessions/clean-up", () => {
       how: "background",
       jobId: "job-0001",
     });
-    expect(stopper.waitForEnd).toHaveBeenCalledWith([]);
+    expect(stopper.waitForEnd).toHaveBeenCalledWith([4241]);
+    // The sessions are read again only once the wait is over.
+    expect(vi.mocked(stopper.waitForEnd).mock.invocationCallOrder[0]).toBeLessThan(
+      poller.pollOnce.mock.invocationCallOrder[0] as number,
+    );
     expect(targets.askFeedSoon).toHaveBeenCalledOnce();
   });
 

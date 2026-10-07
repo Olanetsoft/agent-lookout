@@ -18,9 +18,9 @@ import { apiRequest } from "@dashboard/lib/api/apiHost";
 export type StopOutcome = "stopped" | StopFailure | "no-answer";
 
 /**
- * How long a press of Stop session waits for the answer. The collector waits
- * up to 10 seconds for the process to end, or runs `claude stop`, and then
- * reads the sessions again, so the page waits well past that.
+ * How long a press of Stop session waits for the answer. The collector sends
+ * SIGTERM or runs `claude stop`, waits up to 10 seconds for the process to end,
+ * and then reads the sessions again, so the page waits well past that.
  */
 export const STOP_REQUEST_TIMEOUT_MS = STOP_WAIT_MS + 20_000;
 

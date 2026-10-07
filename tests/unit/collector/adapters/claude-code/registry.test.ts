@@ -102,6 +102,36 @@ describe("readRegistry, with a stand-in for the folder", () => {
     expect(registry.readable && [...registry.entries.keys()]).toEqual([pids.busy]);
   });
 
+  test("a file read while it is being written stands for the entry the last read found in it, once", async () => {
+    const file = `${pids.busy}.json`;
+    let content = registryFile({ pid: pids.busy, status: "busy" });
+    const io: RegistryIo = { readdir: async () => [file], readFile: async () => content };
+    const dir = "/Users/example/.claude/sessions";
+    const parsedBy = (read: Awaited<ReturnType<typeof readRegistry>>) =>
+      read.readable ? read.parsed : undefined;
+
+    const first = await readRegistry(dir, io);
+    // Emptied, and not yet written again.
+    content = "";
+    const second = await readRegistry(dir, io, parsedBy(first));
+    expect(second.readable && second.entries.get(pids.busy)).toMatchObject({ status: "busy" });
+    // Still not whole the next time: no longer stood in for.
+    const third = await readRegistry(dir, io, parsedBy(second));
+    expect(third.readable && [...third.entries.keys()]).toEqual([]);
+  });
+
+  test("a file that has gone since the last read is not stood in for", async () => {
+    const io: RegistryIo = {
+      readdir: async () => [`${pids.busy}.json`],
+      readFile: async () => {
+        throw Object.assign(new Error("gone"), { code: "ENOENT" });
+      },
+    };
+    const before = new Map([[`${pids.busy}.json`, { pid: pids.busy, status: "busy" }]]);
+    const registry = await readRegistry("/Users/example/.claude/sessions", io, before);
+    expect(registry.readable && [...registry.entries.keys()]).toEqual([]);
+  });
+
   test("a directory that cannot be listed for another reason is unreadable, not missing", async () => {
     const io: RegistryIo = {
       readdir: async () => {

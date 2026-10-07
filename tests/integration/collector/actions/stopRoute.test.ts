@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { MAX_STOP_BODY_BYTES } from "@collector/actions/stopRoute";
 import { createCollector, type CollectorOptions } from "@collector/collector";
@@ -333,13 +333,14 @@ describe("a background job", () => {
           ...(status !== undefined && { status }),
         },
       ]);
-    // A stand-in for claude: it lists the job, and `claude stop` ends the
-    // job's process, as Claude Code's supervisor does, and lists it as stopped.
+    // A stand-in for claude: it lists the job, and `claude stop` lists it as
+    // stopped and ends the job's process, as Claude Code's supervisor does,
+    // which can be a moment after the command has answered.
     const claude = await writeStub(
       [
         `echo "$*" >> '${log}'`,
         'if [ "$1" = "stop" ]; then',
-        `  kill -TERM ${job.pid}`,
+        `  (sleep 1; kill -TERM ${job.pid}) </dev/null >/dev/null 2>&1 &`,
         `  touch '${stoppedFlag}'`,
         "  exit 0",
         "fi",
@@ -368,18 +369,15 @@ describe("a background job", () => {
     // Run with the job's id and nothing else, and the job's process was never signalled from here.
     const asked = (await readFile(log, "utf8")).trim().split("\n");
     expect(asked.filter((line) => line.startsWith("stop"))).toEqual(["stop 7c5dcf5d"]);
+    // The route answered once the job's process had gone.
+    expect(job.running()).toBe(false);
     expect(await job.exited).toBe("SIGTERM");
-    // The command was run again at once, so the job shows as stopped.
+    // The command was run again at once, so the job shows as stopped. Nothing
+    // polls in this test but the route, so this is what it left.
     expect(asked.filter((line) => line.startsWith("agents"))).toHaveLength(2);
-    // The next snapshot can be a poll behind on a slow machine, so wait for it.
-    await vi.waitFor(
-      async () => {
-        const after = named(await server.sessions(), "nightly-report");
-        expect(after).toMatchObject({ status: "finished" });
-        expect(after).not.toHaveProperty("stop");
-      },
-      { timeout: 5_000, interval: 100 },
-    );
+    const after = named(await server.sessions(), "nightly-report");
+    expect(after).toMatchObject({ status: "finished" });
+    expect(after).not.toHaveProperty("stop");
   }, 20_000);
 
   test("is not offered while the claude command may not be run", async () => {

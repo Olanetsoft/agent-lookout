@@ -2,6 +2,13 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- A background job you stopped could still show as working, with Stop, after its details said it was stopped, until Claude Code had ended its process and the sessions were read again. Agent Lookout now waits up to 10 seconds for that process to end before it answers, as it does after SIGTERM.
+- A Claude Code session whose registry file was read while it was being written dropped out of the list for a poll, which read as the session ending and starting again. What the file held at the read before now stands for it, once.
+
 ## 0.2.5 - 2026-10-07
 
 Answer a Claude Code permission prompt from the dashboard, watch the sessions on another machine over SSH, copy the command that resumes a finished session, and set reminders, quiet hours and how long a session is idle before it counts as stale.
