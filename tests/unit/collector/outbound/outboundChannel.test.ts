@@ -569,3 +569,70 @@ describe("the time rules", () => {
     });
   });
 });
+
+describe("a test the person asked for", () => {
+  test("goes at once, in quiet hours too, counts against the hourly limit, and is not the last notice", async () => {
+    const clock = { now: T0 };
+    const { made, sent } = channel(["needs-you"], clock);
+    made.handle({ ...snapshot([working(1)]), quiet: true });
+    const result = await made.test("test");
+    expect(result).toEqual({ tried: true, at: T0, outcome: { sent: true } });
+    expect(sent).toEqual(["test"]);
+    // A test is not a notice, so the card's line on the last one is not about it.
+    expect(made.last()).toBeNull();
+
+    for (let n = 1; n < SENDS_PER_HOUR; n += 1) await made.test("test");
+    expect(sent).toHaveLength(SENDS_PER_HOUR);
+    expect(made.limitedUntil()).toBe(T0 + HOUR_MS);
+    clock.now = T0 + 1_000;
+    expect(await made.test("test")).toEqual({ tried: false, limitedUntil: T0 + HOUR_MS });
+    expect(sent).toHaveLength(SENDS_PER_HOUR);
+
+    // And the tests hold back a wait, as any other send would.
+    made.handle(snapshot([working(1)]));
+    made.handle(snapshot([waiting(1)]));
+    await made.settled();
+    expect(sent).toHaveLength(SENDS_PER_HOUR);
+  });
+
+  test("goes in turn with the notices, one at a time, and a sender that rejects is a failure", async () => {
+    const clock = { now: T0 };
+    const order: string[] = [];
+    let release = () => {};
+    const made = createOutboundChannel<string>({
+      events: ["needs-you"],
+      afterMs: 0,
+      asking: false,
+      waitMessage: (facts) => `wait ${facts.session.name}`,
+      overMessage: () => "over",
+      reminderMessage: () => "reminder",
+      summaryMessage: () => "summary",
+      send: (words) => {
+        order.push(`start ${words}`);
+        if (words === "test") return Promise.reject(new Error("s3cret in a message"));
+        return new Promise<SendOutcome>((resolve) => {
+          release = () => {
+            order.push(`end ${words}`);
+            resolve({ sent: true });
+          };
+        });
+      },
+      failure: "it could not be sent",
+      now: () => clock.now,
+    });
+    made.handle(snapshot([working(1)]));
+    made.handle(snapshot([waiting(1)]));
+    const testing = made.test("test");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The wait's send has begun, and the test waits for it.
+    expect(order).toEqual(["start wait session-1"]);
+    release();
+    expect(await testing).toEqual({
+      tried: true,
+      at: T0,
+      outcome: { sent: false, reason: "it could not be sent" },
+    });
+    expect(order).toEqual(["start wait session-1", "end wait session-1", "start test"]);
+    expect(made.last()).toEqual({ at: T0, sent: true });
+  });
+});

@@ -92,7 +92,7 @@ describe("the idle rule's hours", () => {
 describe("while quiet hours hold", () => {
   test("the line says until when, and what is held", () => {
     expect(quietNowLine("08:00")).toBe(
-      "Quiet now, until 08:00. Notifications, emails and posts are held.",
+      "Quiet now, until 08:00. Notifications, emails, posts and pushes are held.",
     );
   });
 });

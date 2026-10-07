@@ -305,7 +305,7 @@ test("while the app says quiet hours hold, a line under the times says so, until
     <TimeRulesCard snapshot={{ generatedAt: at, timeRules: ALL_ON, quiet: true }} />,
   );
   const line = card().getByText(
-    "Quiet now, until 08:00. Notifications, emails and posts are held.",
+    "Quiet now, until 08:00. Notifications, emails, posts and pushes are held.",
   );
   await expect.element(line).toBeVisible();
   expect(line.element().getAttribute("role")).toBe("status");

@@ -166,8 +166,8 @@ It should print "Agent Lookout is running at http://127.0.0.1:4777".
 If it prints anything else, or says the port is in use, stop and tell
 me what it printed.
 
-Do not use sudo, and do not set up email, a webhook, pull requests
-or other machines. You are done when
+Do not use sudo, and do not set up email, a webhook, phone pushes,
+pull requests or other machines. You are done when
 curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
 version number. Tell me what it printed.
 ```

@@ -10,8 +10,9 @@ export interface OutboundStatusReading<Status> {
 }
 
 /**
- * Whether the app sends something off this computer, by email, to a webhook
- * or through gh for pull requests, read with `fetchStatus` when the component
+ * Whether the app sends something off this computer, by email, to a webhook,
+ * as a push through ntfy or Pushover, or through gh for pull requests, read
+ * with `fetchStatus` when the component
  * mounts and every few seconds while it stays. Null until the first answer.
  * `fetchStatus` is a function that does not change, such as `fetchEmailStatus`.
  */

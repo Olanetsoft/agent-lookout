@@ -8,6 +8,8 @@ import { ALLOW_OUTPUT, DENY_OUTPUT, type StatusReader } from "@collector/answers
 import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { createCollector, type CollectorOptions } from "@collector/collector";
 import { createSmtpSender } from "@collector/email/smtpSender";
+import { createNtfySender } from "@collector/ntfy/ntfySender";
+import { createPushoverSender } from "@collector/pushover/pushoverSender";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
 import type { EventsResponse, WaitsResponse } from "@core/api";
@@ -56,7 +58,13 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
 /** How the collector is built beyond its settings, for the tests that need more. */
 type Built = Pick<
   CollectorOptions,
-  "now" | "intervalMs" | "createEmailSender" | "createWebhookSender" | "warn"
+  | "now"
+  | "intervalMs"
+  | "createEmailSender"
+  | "createWebhookSender"
+  | "createNtfySender"
+  | "createPushoverSender"
+  | "warn"
 > & {
   /** Takes the beat that checks the held requests, which then runs only when the test runs it. */
   beat?: (run: () => void) => void;
@@ -393,8 +401,9 @@ describe("a wait whose request was answered is over at once, on every channel", 
 
   /**
    * The collector over the one session, with every channel on and set to go
-   * at once: its own notifications, email to a mail server of the test's own
-   * and posts to a webhook of its own, both on 127.0.0.1, and the long wait
+   * at once: its own notifications, email to a mail server of the test's own,
+   * posts to a webhook of its own and pushes to an ntfy server and a Pushover
+   * API of its own, all on 127.0.0.1, and the long wait
    * reminder after a minute. Its settings file holds these permission rules.
    * Its clock is the test's own, it polls only when asked, and it checks the
    * requests it holds only as one arrives or when the test runs `beat`.
@@ -403,6 +412,8 @@ describe("a wait whose request was answered is over at once, on every channel", 
     const time = clock();
     const mail = await startSmtpServer();
     const webhook = await startWebhookServer();
+    const ntfy = await startWebhookServer();
+    const pushover = await startWebhookServer();
     const settingsFile = path.join(await tempDir(), "settings.json");
     await writeFile(
       settingsFile,
@@ -421,6 +432,11 @@ describe("a wait whose request was answered is over at once, on every channel", 
         AGENT_LOOKOUT_EMAIL_AFTER: "0",
         AGENT_LOOKOUT_WEBHOOK_URL: webhook.url(),
         AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+        AGENT_LOOKOUT_NTFY_URL: ntfy.url("/agent-lookout-topic"),
+        AGENT_LOOKOUT_NTFY_AFTER: "0",
+        AGENT_LOOKOUT_PUSHOVER_TOKEN: "atest0000000000000000000000000",
+        AGENT_LOOKOUT_PUSHOVER_USER: "utest0000000000000000000000000",
+        AGENT_LOOKOUT_PUSHOVER_AFTER: "0",
       },
       {
         status,
@@ -432,6 +448,14 @@ describe("a wait whose request was answered is over at once, on every channel", 
         createEmailSender: (settings) => createSmtpSender(settings, { timeoutMs: 2_000 }),
         createWebhookSender: (settings) =>
           createHttpSender(settings, { version: "9.9.9-test", timeoutMs: 2_000 }),
+        createNtfySender: (settings) =>
+          createNtfySender(settings, { version: "9.9.9-test", timeoutMs: 2_000 }),
+        createPushoverSender: (settings) =>
+          createPushoverSender(settings, {
+            version: "9.9.9-test",
+            timeoutMs: 2_000,
+            endpoint: new URL(pushover.url("/1/messages.json")),
+          }),
       },
     );
     const { collector } = server;
@@ -443,6 +467,8 @@ describe("a wait whose request was answered is over at once, on every channel", 
       await collector.poller.pollOnce();
       await collector.email?.settled();
       await collector.webhook?.settled();
+      await collector.ntfy?.settled();
+      await collector.pushover?.settled();
     };
     return {
       ...server,
@@ -471,6 +497,11 @@ describe("a wait whose request was answered is over at once, on every channel", 
       subjects: () =>
         mail.received.map((email) => decodedHeader(headerValues(email.data, "Subject")[0] ?? "")),
       posts: () => webhook.received.map((post) => JSON.parse(post.body) as WebhookPost),
+      /** The titles of the pushes to ntfy, then to Pushover. */
+      pushes: () =>
+        [ntfy, pushover].map((server) =>
+          server.received.map((push) => (JSON.parse(push.body) as { title: string }).title),
+        ),
     };
   }
 
@@ -481,6 +512,7 @@ describe("a wait whose request was answered is over at once, on every channel", 
     expect(server.notifier.shown).toEqual([]);
     expect(server.subjects()).toEqual([]);
     expect(server.posts()).toEqual([]);
+    expect(server.pushes()).toEqual([[], []]);
     const events = await server.events();
     expect(events.filter((event) => event.kind === "answered")).toHaveLength(1);
     // No move into or out of needs-you: the session was working all along, as far as the log goes.
@@ -564,6 +596,7 @@ describe("a wait whose request was answered is over at once, on every channel", 
       expect(server.notifier.shown).toEqual([]);
       expect(server.subjects()).toEqual([]);
       expect(server.posts()).toEqual([]);
+      expect(server.pushes()).toEqual([[], []]);
     },
   );
 
@@ -608,6 +641,7 @@ describe("a wait whose request was answered is over at once, on every channel", 
     ]);
     expect(server.subjects()).toEqual(["checkout-flow is waiting for permission"]);
     expect(server.posts().map((post) => post.event)).toEqual(["needs-you"]);
+    expect(server.pushes()).toEqual([server.subjects(), server.subjects()]);
     expect((await server.events()).some((event) => event.to === "needs-you")).toBe(true);
     expect((await server.waits()).today.waits).toBe(1);
   });
@@ -646,5 +680,6 @@ describe("a wait whose request was answered is over at once, on every channel", 
     });
     expect(server.subjects()[1]).toBe("checkout-flow has waited 2 minutes for permission");
     expect(server.posts()[1]).toMatchObject({ event: "needs-you", reminder: true });
+    expect(server.pushes()).toEqual([server.subjects(), server.subjects()]);
   });
 });

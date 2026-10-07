@@ -4,7 +4,8 @@ import type { LongWaitRule } from "./timeRules.ts";
 
 /**
  * When a long wait's reminder is due, by one rule every channel shares: the
- * page's notifications, the collector's own, email and the webhook.
+ * page's notifications, the collector's own, email, the webhook, ntfy and
+ * Pushover.
  *
  * A wait is reminded of once it has lasted the threshold, if the channel saw
  * it before it had lasted that long, and only once for that threshold. So a
@@ -105,8 +106,8 @@ export interface ReminderWatch {
   /**
    * The reminders due at `at` by a schedule, in the snapshot's order: longest
    * wait first, one at most for each wait. `eligible` leaves out the waits a
-   * channel has not yet told of, as email and the webhook do for a wait still
-   * within their delay.
+   * channel has not yet told of, as email, the webhook and pushes do for a
+   * wait still within their delay.
    */
   due(
     snapshot: SessionsSnapshot,

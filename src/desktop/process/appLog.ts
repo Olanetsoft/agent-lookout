@@ -1,6 +1,6 @@
 // The app's own log, where what would otherwise be lost is written down: an
 // error in the main process, a startup that failed, and the collector's own
-// warnings, such as an email or webhook setting that is wrong. A packaged app
+// warnings, such as an email, webhook or push setting that is wrong. A packaged app
 // has no terminal to print them in.
 //
 // It is one file, `main.log`, in the folder macOS keeps each app's logs in,

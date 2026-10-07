@@ -205,7 +205,7 @@ export interface AskInput {
  * that cannot be shown whole, or the tool edits a file, only Deny is offered.
  * It is plain text, kept in memory for as long as the request is held, and is
  * never written to disk or copied into an event, the history, an email, a
- * webhook post or an MCP answer, as `waitingText` is not.
+ * webhook post, a push or an MCP answer, as `waitingText` is not.
  */
 export interface PermissionAsk {
   /** Agent Lookout's own id for the request, so an answer can only reach the request it was shown. */
@@ -697,7 +697,7 @@ export function withoutWaitingText<T extends Pick<Session, "waitingText"> & { as
  * The agent a session belongs to, in its own plain name: a status file names
  * its own, such as "Night Shift", and every other source is its own agent,
  * named as the source is, "Claude Code" or "Codex". Null when neither is known.
- * The page, the emails and posts, `agent-lookout status` and the MCP server all
+ * The page, the emails, posts and pushes, `agent-lookout status` and the MCP server all
  * name an agent by this rule.
  */
 export function agentName(

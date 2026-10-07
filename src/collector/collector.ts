@@ -50,7 +50,22 @@ import {
   systemNotificationsShownOn,
   type SystemNotifier,
 } from "./notifications/systemNotifier.ts";
+import {
+  createNtfyNotifications,
+  ntfyOffStatus,
+  type NtfyNotifications,
+} from "./ntfy/ntfyNotifications.ts";
+import { createNtfySender, type CreateNtfySender } from "./ntfy/ntfySender.ts";
+import { ntfyProblemLine, readNtfySetup } from "./ntfy/ntfySettings.ts";
+import { createTestSendRoute } from "./outbound/testSendRoute.ts";
 import { createPoller, POLL_INTERVAL_MS, type Poller } from "./poller.ts";
+import {
+  createPushoverNotifications,
+  pushoverOffStatus,
+  type PushoverNotifications,
+} from "./pushover/pushoverNotifications.ts";
+import { createPushoverSender, type CreatePushoverSender } from "./pushover/pushoverSender.ts";
+import { pushoverProblemLine, readPushoverSetup } from "./pushover/pushoverSettings.ts";
 import { createRemotes, type Remotes, type RemotesOptions } from "./remotes/remotes.ts";
 import { remotesProblemLine } from "./remotes/remoteSettings.ts";
 import type { ReadProcessStarts } from "./processes/processStart.ts";
@@ -155,14 +170,29 @@ export interface CollectorOptions {
    */
   createWebhookSender?: CreateWebhookSender;
   /**
+   * Makes what pushes through ntfy, once its topic's address has been set in
+   * the environment. Defaults to posting to that server over HTTPS. With no
+   * address set it is never called. Tests pass one with a short timeout,
+   * aimed at a server of their own on 127.0.0.1.
+   */
+  createNtfySender?: CreateNtfySender;
+  /**
+   * Makes what pushes through Pushover, once its token and key have been set
+   * in the environment. Defaults to posting to Pushover's API over HTTPS.
+   * With either unset it is never called. Tests pass one aimed at a server of
+   * their own on 127.0.0.1.
+   */
+  createPushoverSender?: CreatePushoverSender;
+  /**
    * What asks the person's own gh for a branch's pull request, once
    * `AGENT_LOOKOUT_PULL_REQUESTS=on` is set. Defaults to the gh on this
    * machine. With the setting off it is never called. Tests pass a stand-in.
    */
   gh?: AskGh;
   /**
-   * Where the one line goes that says email, the webhook or pull requests are
-   * off because a setting is wrong. Defaults to the console's errors.
+   * Where the one line goes that says email, the webhook, ntfy, Pushover or
+   * pull requests are off because a setting is wrong. Defaults to the
+   * console's errors.
    */
   warn?: (line: string) => void;
   /**
@@ -189,9 +219,10 @@ export interface CollectorOptions {
    */
   remotes?: Pick<RemotesOptions, "tunnels" | "read">;
   /**
-   * Told each poll's sessions, after the collector's own notifications, email
-   * and webhook have been. The Mac app puts the count that needs you on its
-   * Dock icon. A listener that throws changes nothing for the others.
+   * Told each poll's sessions, after the collector's own notifications, email,
+   * the webhook, ntfy and Pushover have been. The Mac app puts the count that
+   * needs you on its Dock icon. A listener that throws changes nothing for the
+   * others.
    */
   onSnapshot?: (snapshot: SessionsSnapshot) => void;
   intervalMs?: number;
@@ -215,6 +246,10 @@ export interface Collector {
   email: EmailNotifications | null;
   /** The webhook notifications, or null while no webhook address is set. */
   webhook: WebhookNotifications | null;
+  /** The pushes through ntfy, or null while no topic address is set. */
+  ntfy: NtfyNotifications | null;
+  /** The pushes through Pushover, or null while its token and key are not both set. */
+  pushover: PushoverNotifications | null;
   /** What gives each branch its pull request, or null while `AGENT_LOOKOUT_PULL_REQUESTS` is not on. */
   pullRequests: PullRequestFinder | null;
   /** What keeps the history on disk, or null with `AGENT_LOOKOUT_HISTORY=off`. */
@@ -237,7 +272,7 @@ export interface Collector {
 /**
  * The collector in one piece: adapters, poller, stores, the history kept on
  * disk unless `AGENT_LOOKOUT_HISTORY` is off, its own notifications,
- * the email and webhook notifications when they are set up, what finds and
+ * the email, webhook, ntfy and Pushover notifications when they are set up, what finds and
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
  * what stops a Claude Code session when the person asks, unless
  * `AGENT_LOOKOUT_STOP` is off, what holds a Claude Code session's permission
@@ -376,6 +411,36 @@ export function createCollector(options: CollectorOptions): Collector {
       })
     : null;
   const webhookOff = webhookOffStatus(webhookSetup.on ? null : webhookSetup.problem);
+  // The same for ntfy and Pushover: with their settings unset, nothing that
+  // could push is made, and Node's HTTPS client is never loaded for them.
+  const ntfySetup = readNtfySetup(env);
+  if (!ntfySetup.on && ntfySetup.problem !== null) warn(ntfyProblemLine(ntfySetup.problem));
+  const makeNtfySender: CreateNtfySender =
+    options.createNtfySender ??
+    ((settings) => createNtfySender(settings, { version: options.version }));
+  const ntfy = ntfySetup.on
+    ? createNtfyNotifications({
+        settings: ntfySetup.settings,
+        sender: makeNtfySender(ntfySetup.settings),
+        now,
+      })
+    : null;
+  const ntfyOff = ntfyOffStatus(ntfySetup.on ? null : ntfySetup.problem);
+  const pushoverSetup = readPushoverSetup(env);
+  if (!pushoverSetup.on && pushoverSetup.problem !== null) {
+    warn(pushoverProblemLine(pushoverSetup.problem));
+  }
+  const makePushoverSender: CreatePushoverSender =
+    options.createPushoverSender ??
+    ((settings) => createPushoverSender(settings, { version: options.version }));
+  const pushover = pushoverSetup.on
+    ? createPushoverNotifications({
+        settings: pushoverSetup.settings,
+        sender: makePushoverSender(pushoverSetup.settings),
+        now,
+      })
+    : null;
+  const pushoverOff = pushoverOffStatus(pushoverSetup.on ? null : pushoverSetup.problem);
   // The other machines: with none named, no ssh is looked for or run.
   const remotes = createRemotes({
     env,
@@ -431,6 +496,8 @@ export function createCollector(options: CollectorOptions): Collector {
       answering?.observe(snapshot);
       email?.handle(snapshot);
       webhook?.handle(snapshot);
+      ntfy?.handle(snapshot);
+      pushover?.handle(snapshot);
       notifications.handle(snapshot);
       options.onSnapshot?.(snapshot);
     },
@@ -481,6 +548,13 @@ export function createCollector(options: CollectorOptions): Collector {
     notifications,
     email: () => email?.status() ?? emailOff,
     webhook: () => webhook?.status() ?? webhookOff,
+    ntfy: () => ntfy?.status() ?? ntfyOff,
+    pushover: () => pushover?.status() ?? pushoverOff,
+    phoneTest: createTestSendRoute({
+      channels: { ntfy, pushover },
+      limiter: createActionLimiter(now),
+      now,
+    }),
     pullRequests: () => pullRequests?.status() ?? pullRequestsOff,
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
     stop: stopRoutes && createStopRoute(stopRoutes),
@@ -597,6 +671,8 @@ export function createCollector(options: CollectorOptions): Collector {
     poller,
     email,
     webhook,
+    ntfy,
+    pushover,
     pullRequests,
     history: keeper,
     answering: {

@@ -11,7 +11,9 @@ import {
   type HistoryResponse,
   type HistoryRestart,
   type HistorySince,
+  type NtfyStatusResponse,
   type PullRequestsStatusResponse,
+  type PushoverStatusResponse,
   type SendResult,
   type SessionWaitTotal,
   type WaitDay,
@@ -712,7 +714,7 @@ function shortText(value: unknown): string | null {
   return words && words.length <= MAX_EMAIL_WORDS ? words : null;
 }
 
-/** How the last email or post went. A reason that cannot be read is the plain one given. */
+/** How the last email, post or push went. A reason that cannot be read is the plain one given. */
 function readSendResult(value: unknown, plainReason: string): SendResult | null {
   if (!isRecord(value)) return null;
   const at = number(value.at);
@@ -805,6 +807,59 @@ export function readWebhookStatus(data: unknown): WebhookStatusResponse | null {
     asking: on ? data.asking === true : null,
     problem: on ? null : shortText(data.problem),
     last: on ? readSendResult(data.last, "the post could not be sent") : null,
+    limitedUntil: on ? number(data.limitedUntil) : null,
+  };
+}
+
+/**
+ * The answer of `/api/ntfy`. ntfy counts as on only when the answer says so
+ * and gives a host, the events and the delay, so a broken answer never claims
+ * that pushes are going out. The host is read by the rule the webhook's is,
+ * and the collector takes the topic's address by that rule too. Whether a
+ * token is set is a yes or a no, and anything else is a no: the page never
+ * claims a topic is guarded when it cannot tell.
+ */
+export function readNtfyStatus(data: unknown): NtfyStatusResponse | null {
+  if (!isRecord(data) || typeof data.on !== "boolean") return null;
+  const host = shortText(data.host);
+  const events = readSentEvents(data.events);
+  const afterMs = number(data.afterMs);
+  const on =
+    data.on &&
+    host !== null &&
+    isWebhookHost(host) &&
+    events !== null &&
+    afterMs !== null &&
+    afterMs >= 0;
+  return {
+    on,
+    host: on ? host : null,
+    tokenSet: on ? data.tokenSet === true : null,
+    events: on ? events : null,
+    afterMs: on ? afterMs : null,
+    asking: on ? data.asking === true : null,
+    problem: on ? null : shortText(data.problem),
+    last: on ? readSendResult(data.last, "the push could not be sent") : null,
+    limitedUntil: on ? number(data.limitedUntil) : null,
+  };
+}
+
+/**
+ * The answer of `/api/pushover`. Pushover counts as on only when the answer
+ * says so and gives the events and the delay.
+ */
+export function readPushoverStatus(data: unknown): PushoverStatusResponse | null {
+  if (!isRecord(data) || typeof data.on !== "boolean") return null;
+  const events = readSentEvents(data.events);
+  const afterMs = number(data.afterMs);
+  const on = data.on && events !== null && afterMs !== null && afterMs >= 0;
+  return {
+    on,
+    events: on ? events : null,
+    afterMs: on ? afterMs : null,
+    asking: on ? data.asking === true : null,
+    problem: on ? null : shortText(data.problem),
+    last: on ? readSendResult(data.last, "the push could not be sent") : null,
     limitedUntil: on ? number(data.limitedUntil) : null,
   };
 }

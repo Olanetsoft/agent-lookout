@@ -179,7 +179,7 @@ test("the view says that Agent Lookout sends nothing by default, names each way 
   await expect
     .element(about)
     .toHaveTextContent(
-      "Email, a webhook, pull requests through your own gh and other machines through your own ssh are off until you set them up.",
+      "Email, a webhook, pushes through ntfy or Pushover, pull requests through your own gh and other machines through your own ssh are off until you set them up.",
     );
   await expect
     .element(about)

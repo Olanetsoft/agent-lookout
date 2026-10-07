@@ -227,11 +227,12 @@ export function SourcesView({ state, now }: SourcesViewProps) {
             sessions in a folder that Agent Lookout reads.
           </p>
           <p>
-            By default Agent Lookout itself sends nothing anywhere. Email, a webhook, pull requests
-            through your own gh and other machines through your own ssh are off until you set them
-            up. The Mac app asks GitHub about once a day whether a newer version is out, unless you
-            turn that off in its Settings. A command listed under a source is that tool&apos;s own
-            program, and may reach the tool&apos;s own servers, as it does whenever it runs.
+            By default Agent Lookout itself sends nothing anywhere. Email, a webhook, pushes through
+            ntfy or Pushover, pull requests through your own gh and other machines through your own
+            ssh are off until you set them up. The Mac app asks GitHub about once a day whether a
+            newer version is out, unless you turn that off in its Settings. A command listed under a
+            source is that tool&apos;s own program, and may reach the tool&apos;s own servers, as it
+            does whenever it runs.
           </p>
           {machines && (
             <p data-part='machines'>

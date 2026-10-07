@@ -4,6 +4,7 @@ import {
   ACTION_HEADER,
   NOTIFICATIONS_HEADER,
   PERMISSION_RULES_PATH,
+  PHONE_TEST_PATH,
   readNotificationsHeader,
   SETTINGS_PATH,
   TIME_RULES_PATH,
@@ -16,7 +17,9 @@ import {
   type HistoryRestart,
   type HistorySince,
   type NotificationsSaid,
+  type NtfyStatusResponse,
   type PullRequestsStatusResponse,
+  type PushoverStatusResponse,
   type SettingsResponse,
   type WaitsResponse,
   type WebhookStatusResponse,
@@ -29,7 +32,9 @@ import { memoryOnlyStatus } from "./history/historyLimits.ts";
 import { HISTORY_CAPACITY, type HistoryStore } from "./historyStore.ts";
 import type { ServerNotifications } from "./notifications/serverNotifications.ts";
 import { pullRequestsOffStatus } from "./github/pullRequestSettings.ts";
+import { ntfyOffStatus } from "./ntfy/ntfyNotifications.ts";
 import { POLL_INTERVAL_MS, type Poller } from "./poller.ts";
+import { pushoverOffStatus } from "./pushover/pushoverNotifications.ts";
 import { webhookOffStatus } from "./webhook/webhookNotifications.ts";
 
 /**
@@ -46,16 +51,16 @@ export interface ApiAnswer {
 }
 
 /**
- * Where the collector's seven routes that do something are: jump, clear the
- * history, stop, clean up, answer, the time rules and the permission rules.
- * Every other route only reads.
+ * Where the collector's eight routes that do something are: jump, clear the
+ * history, stop, clean up, answer, the time rules, the permission rules and
+ * the test push. Every other route only reads.
  */
 export const JUMP_PATH = "/api/jump";
 export const CLEAR_HISTORY_PATH = "/api/history/clear";
 export const STOP_PATH = "/api/sessions/stop";
 export const CLEAN_UP_PATH = "/api/sessions/clean-up";
 export const ANSWER_PATH = "/api/permission/answer";
-export { PERMISSION_RULES_PATH, TIME_RULES_PATH };
+export { PERMISSION_RULES_PATH, PHONE_TEST_PATH, TIME_RULES_PATH };
 
 export interface ApiHandlerOptions {
   version: string;
@@ -78,6 +83,25 @@ export interface ApiHandlerOptions {
    * out, it answers that the webhook is off.
    */
   webhook?: () => WebhookStatusResponse;
+  /**
+   * What `GET /api/ntfy` answers: whether pushes go through ntfy, the
+   * server's host and never the topic, whether an access token is set and
+   * never the token, the delay and how the last push went. Left out, it
+   * answers that ntfy is off.
+   */
+  ntfy?: () => NtfyStatusResponse;
+  /**
+   * What `GET /api/pushover` answers: whether pushes go through Pushover, the
+   * delay and how the last push went, and never the token or the key. Left
+   * out, it answers that Pushover is off.
+   */
+  pushover?: () => PushoverStatusResponse;
+  /**
+   * Answers `POST /api/phone/test`, with the same checks of its own as the
+   * jump route: `createTestSendRoute` in `outbound/testSendRoute.ts`. Left
+   * out, there is no such route.
+   */
+  phoneTest?: (req: IncomingMessage) => Promise<ApiAnswer>;
   /**
    * What `GET /api/pull-requests` answers: whether pull requests are shown,
    * what gh was last found to be and how the last question to it went. Left
@@ -242,11 +266,11 @@ export function refusal(
 
 /**
  * Why a request to a route that acts is refused before its body is read, or
- * null when it may proceed. The collector's seven such routes,
+ * null when it may proceed. The collector's eight such routes,
  * `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop`,
  * `POST /api/sessions/clean-up`, `POST /api/permission/answer`,
- * `POST /api/settings/time-rules` and `POST /api/settings/permission-rules`,
- * and the Mac app's routes for
+ * `POST /api/settings/time-rules`, `POST /api/settings/permission-rules` and
+ * `POST /api/phone/test`, and the Mac app's routes for
  * its updates, in `src/desktop/updates/updateRoute.ts`, make these checks on
  * top of the ones every request has already passed in `refusalFor`, so each is
  * a request only the dashboard's own page can send:
@@ -383,6 +407,7 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
   if (options.answer) actions.set(ANSWER_PATH, options.answer);
   if (options.timeRules) actions.set(TIME_RULES_PATH, options.timeRules);
   if (options.permissionRules) actions.set(PERMISSION_RULES_PATH, options.permissionRules);
+  if (options.phoneTest) actions.set(PHONE_TEST_PATH, options.phoneTest);
   const serveSnapshot = options.serveSnapshot ?? ((snapshot: SessionsSnapshot) => snapshot);
 
   function route(req: IncomingMessage, res: ServerResponse): void {
@@ -456,6 +481,24 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
           res,
           200,
           (webhook ? webhook() : webhookOffStatus(null)) satisfies WebhookStatusResponse,
+        );
+        return;
+      }
+      case "/api/ntfy": {
+        send(
+          res,
+          200,
+          (options.ntfy ? options.ntfy() : ntfyOffStatus(null)) satisfies NtfyStatusResponse,
+        );
+        return;
+      }
+      case "/api/pushover": {
+        send(
+          res,
+          200,
+          (options.pushover
+            ? options.pushover()
+            : pushoverOffStatus(null)) satisfies PushoverStatusResponse,
         );
         return;
       }

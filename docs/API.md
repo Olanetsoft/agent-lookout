@@ -36,7 +36,7 @@ Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control
 | 400    | The address, `since` or `windowMs` could not be read                                                    |
 | 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                      |
 | 404    | There is no route at that path                                                                          |
-| 405    | Any method but `GET`, with `Allow: GET`. The seven routes that act take only `POST`, with `Allow: POST` |
+| 405    | Any method but `GET`, with `Allow: GET`. The eight routes that act take only `POST`, with `Allow: POST` |
 | 500    | Something went wrong that the server did not expect                                                     |
 
 ## Routes
@@ -49,16 +49,19 @@ Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control
 | `GET /api/history?windowMs=<ms>`      | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first                                                                                                                |
 | `GET /api/email`                      | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                   |
 | `GET /api/webhook`                    | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                 |
+| `GET /api/ntfy`                       | `{ on, host, tokenSet, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                       |
+| `GET /api/pushover`                   | `{ on, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                       |
 | `GET /api/pull-requests`              | `{ on, problem, gh, last }`: whether each branch's pull request is shown                                                                                                                             |
 | `GET /api/waits`                      | `{ at, today, sevenDays, since, where }`: how long sessions waited on you                                                                                                                            |
 | `GET /api/settings`                   | `{ timeRules, file, problem, permissionRules, permissionRulesProblem, ruleAnswers, ruleAnswersSince }`: the time rules, the permission rules, the file they are kept in, and what the rules answered |
-| `POST /api/jump`                      | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of seven routes that act                                                                                                             |
+| `POST /api/jump`                      | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of eight routes that act                                                                                                             |
 | `POST /api/history/clear`             | `{ ok: true, clearedAt }`. A route that acts                                                                                                                                                         |
 | `POST /api/sessions/stop`             | `{ ok: true }` once the session's process has ended. A route that acts                                                                                                                               |
 | `POST /api/sessions/clean-up`         | `{ results }`, what became of each session left running. A route that acts                                                                                                                           |
 | `POST /api/permission/answer`         | `{ ok: true, decision }` once a permission prompt was answered. A route that acts                                                                                                                    |
 | `POST /api/settings/time-rules`       | `{ ok: true, timeRules }` once the time rules are saved. A route that acts                                                                                                                           |
 | `POST /api/settings/permission-rules` | `{ ok: true, permissionRules }` once one change to the permission rules is saved. A route that acts                                                                                                  |
+| `POST /api/phone/test`                | `{ ok: true, channel, sentAt }` once a test push went through ntfy or Pushover. A route that acts                                                                                                    |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -311,6 +314,35 @@ Whether [email](GUIDE.md#email) or a [webhook](GUIDE.md#webhook) is set up, and 
 
 Neither ever holds the mail server's address, its user name or its password, the webhook's path, or anything a session was asking.
 
+### `GET /api/ntfy` and `GET /api/pushover`
+
+Whether pushes to a phone go through [ntfy](GUIDE.md#ntfy) or [Pushover](GUIDE.md#pushover), and how the last one went. They only read: both are set up in the environment Agent Lookout starts with.
+
+```json
+{
+  "on": true,
+  "host": "ntfy.sh",
+  "tokenSet": false,
+  "events": ["needs-you"],
+  "afterMs": 60000,
+  "asking": false,
+  "problem": null,
+  "last": { "at": 1791205920000, "sent": true },
+  "limitedUntil": null
+}
+```
+
+Each has the fields of `GET /api/webhook`, ntfy's with one more, `tokenSet`, and Pushover's without `host`. These differ:
+
+| Field      | Holds                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`     | ntfy only: the host of the server the topic is on, such as `ntfy.sh`, and never the topic                                                     |
+| `tokenSet` | ntfy only: whether `AGENT_LOOKOUT_NTFY_TOKEN` is set, `true` or `false`, and `null` while ntfy is off. Never the token                        |
+| `asking`   | `true` with `AGENT_LOOKOUT_NTFY_ASKING=on` or `AGENT_LOOKOUT_PUSHOVER_ASKING=on`, `false` when that setting is `off` or left out              |
+| `last`     | The last push of a notice that was tried. A test push from `POST /api/phone/test` is not counted here, though it counts toward the 20 an hour |
+
+Neither ever holds the ntfy topic or its token, Pushover's application token or the user key, or anything a session was asking.
+
 ### `GET /api/pull-requests`
 
 Whether Agent Lookout shows each session's [pull request](GUIDE.md#pull-requests), with `AGENT_LOOKOUT_PULL_REQUESTS=on`, and whether the GitHub CLI, `gh`, can be asked for them. It only reads.
@@ -425,9 +457,32 @@ A new rule goes to the end of the list, with an ID the server makes. A move at e
 
 A held permission request is put to the rules as its session's registry file confirms its wait, and a deny or an allow rule answers it through the same path as `POST /api/permission/answer`, below, with every check it makes. [Permission rules](GUIDE.md#permission-rules) says what each rule matches.
 
+### `POST /api/phone/test`
+
+A route that acts. It sends one test push through ntfy or Pushover, as Send a test on the card in Settings does. The push is titled "Agent Lookout test", says "Pushes from Agent Lookout reach this device.", and holds nothing of any session. It goes during quiet hours too, since the person asked, and counts toward the channel's 20 an hour. It makes the same checks as `POST /api/jump`, with its own action, in `src/collector/outbound/testSendRoute.ts`, and answers only a request that:
+
+- is a `POST`. Any other method gets 405, with `Allow: POST`.
+- has an `Origin` that names this computer, or gets 403.
+- is marked `same-origin` in `Sec-Fetch-Site`, when that header is sent, or gets 403.
+- carries `X-Agent-Lookout-Action: phone-test`, or gets 403.
+- has `Content-Type: application/json`, or gets 415.
+- has a body of 64 bytes or less, or gets 413, that is exactly `{ "channel": "ntfy" }` or `{ "channel": "pushover" }`, or gets 400.
+
+Nothing in the request reaches the push or says where it goes: that is the channel's own setting. It sends one test a second, and one at a time.
+
+| Status | Body                                                                                                                                      |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 200    | `{ "ok": true, "channel": "ntfy", "sentAt": 1791205920000 }`: the service took it                                                         |
+| 409    | `reason: "off"`: the channel is not set up                                                                                                |
+| 429    | `reason: "too-soon"`, with `Retry-After: 1`                                                                                               |
+| 429    | `reason: "limited"`, with `limitedUntil` and `Retry-After` in seconds: 20 pushes were tried through that channel in the last hour         |
+| 502    | `reason: "not-sent"`: it was tried, and the service did not take it. The `error` says why, such as `Pushover had a problem (status 503).` |
+
+Each of these has an `error` sentence beside its `reason`, and none holds the topic, a token or a key.
+
 ### `POST /api/jump`
 
-One of the seven routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
+One of the eight routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer. A request with no `Origin` gets 403 here, though a read may go without one.

@@ -13,6 +13,8 @@ import {
   NOTIFICATIONS_HEADER,
   type EventsResponse,
   type HistoryResponse,
+  type NtfyStatusResponse,
+  type PushoverStatusResponse,
   type WaitsResponse,
   type WebhookStatusResponse,
 } from "@core/api";
@@ -420,6 +422,67 @@ describe("routes", () => {
     });
     const answering = await listen(createServer(handler));
     expect((await request(answering, "/api/webhook")).json()).toEqual(on);
+  });
+});
+
+describe("/api/ntfy and /api/pushover", () => {
+  test("say whether pushes are set up, which with nothing set they are not, and can only be read", async () => {
+    const { port } = await serve();
+    const shared = {
+      events: null,
+      afterMs: null,
+      asking: null,
+      problem: null,
+      last: null,
+      limitedUntil: null,
+    };
+    expect((await request(port, "/api/ntfy")).json()).toEqual({
+      on: false,
+      host: null,
+      tokenSet: null,
+      ...shared,
+    });
+    expect((await request(port, "/api/pushover")).json()).toEqual({ on: false, ...shared });
+    for (const path of ["/api/ntfy", "/api/pushover"]) {
+      expect((await request(port, path, { method: "POST", body: "{}" })).status).toBe(405);
+      expect((await request(port, path, { headers: { Host: "evil.example" } })).status).toBe(403);
+    }
+
+    // A handler given what answers them says what that says.
+    const ntfy: NtfyStatusResponse = {
+      on: true,
+      host: "ntfy.sh",
+      tokenSet: false,
+      ...shared,
+      events: ["needs-you"],
+      afterMs: 0,
+      asking: false,
+    };
+    const pushover: PushoverStatusResponse = {
+      on: true,
+      ...shared,
+      events: ["needs-you"],
+      afterMs: 0,
+      asking: true,
+    };
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+      ntfy: () => ntfy,
+      pushover: () => pushover,
+    });
+    const answering = await listen(createServer(handler));
+    expect((await request(answering, "/api/ntfy")).json()).toEqual(ntfy);
+    expect((await request(answering, "/api/pushover")).json()).toEqual(pushover);
+    // Without a route for it, there is nothing to send a test to.
+    expect(
+      (await request(answering, "/api/phone/test", { method: "POST", body: "{}" })).status,
+    ).toBe(405);
   });
 });
 

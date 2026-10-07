@@ -13,10 +13,12 @@ import {
   type HealthResponse,
   type JumpRefusal,
   type JumpResponse,
+  type NtfyStatusResponse,
   type PermissionRulesFailure,
   type PermissionRulesRefusal,
   type PermissionRulesResponse,
   type PullRequestsStatusResponse,
+  type PushoverStatusResponse,
   type SettingsResponse,
   type StopRefusal,
   type StopResponse,
@@ -295,6 +297,28 @@ export function createTourApi(store: TourStore, now: () => number): ApiHost {
           last: null,
           limitedUntil: null,
         } satisfies WebhookStatusResponse);
+      case "/api/ntfy":
+        return answer(200, {
+          on: false,
+          host: null,
+          tokenSet: null,
+          events: null,
+          afterMs: null,
+          asking: null,
+          problem: null,
+          last: null,
+          limitedUntil: null,
+        } satisfies NtfyStatusResponse);
+      case "/api/pushover":
+        return answer(200, {
+          on: false,
+          events: null,
+          afterMs: null,
+          asking: null,
+          problem: null,
+          last: null,
+          limitedUntil: null,
+        } satisfies PushoverStatusResponse);
       default:
         return notFound();
     }

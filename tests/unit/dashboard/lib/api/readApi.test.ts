@@ -4,7 +4,9 @@ import {
   readEmailStatus,
   readEvents,
   readHistory,
+  readNtfyStatus,
   readPullRequestsStatus,
+  readPushoverStatus,
   readSession,
   readSettings,
   readSnapshot,
@@ -893,6 +895,73 @@ test("a webhook status that cannot be read never claims that posts are going out
     at: T,
     sent: false,
     reason: "the post could not be sent",
+  });
+});
+
+test("the ntfy and Pushover statuses are read as they were sent, on and off", () => {
+  const ntfy = {
+    on: true,
+    host: "ntfy.sh",
+    tokenSet: true,
+    events: ["needs-you", "failed"],
+    afterMs: 0,
+    asking: true,
+    problem: null,
+    last: { at: T, sent: true },
+    limitedUntil: null,
+  };
+  expect(readNtfyStatus(JSON.parse(JSON.stringify(ntfy)))).toEqual(ntfy);
+  const pushover = {
+    on: true,
+    events: ["needs-you"],
+    afterMs: 60_000,
+    asking: false,
+    problem: null,
+    last: { at: T, sent: false, reason: "Pushover had a problem (status 500)" },
+    limitedUntil: T + 3_600_000,
+  };
+  expect(readPushoverStatus(JSON.parse(JSON.stringify(pushover)))).toEqual(pushover);
+
+  const off = {
+    events: null,
+    afterMs: null,
+    asking: null,
+    problem: "AGENT_LOOKOUT_PUSHOVER_USER is not set.",
+    last: null,
+    limitedUntil: null,
+  };
+  expect(readPushoverStatus({ on: false, ...off })).toEqual({ on: false, ...off });
+  expect(readNtfyStatus({ on: false, host: null, tokenSet: null, ...off })).toEqual({
+    on: false,
+    host: null,
+    tokenSet: null,
+    ...off,
+  });
+});
+
+test("a push status that cannot be read never claims that pushes are going out, or that a token is set", () => {
+  const events = ["needs-you"];
+  expect(readNtfyStatus(null)).toBeNull();
+  expect(readPushoverStatus({})).toBeNull();
+  expect(readNtfyStatus({ on: true, events, afterMs: 0 })?.on).toBe(false);
+  expect(readPushoverStatus({ on: true, afterMs: 0 })?.on).toBe(false);
+  expect(readPushoverStatus({ on: true, events, afterMs: -1 })?.on).toBe(false);
+  // The topic is never shown: a host with a path after it is not a host.
+  for (const host of ["ntfy.sh/s3cret-topic", "https://ntfy.sh", "ntfy.sh?auth=s3cret"]) {
+    const read = readNtfyStatus({ on: true, host, events, afterMs: 0 });
+    expect(read?.on).toBe(false);
+    expect(JSON.stringify(read)).not.toContain("s3cret");
+  }
+  for (const tokenSet of [undefined, null, "true", 1]) {
+    expect(
+      readNtfyStatus({ on: true, host: "ntfy.sh", events, afterMs: 0, tokenSet })?.tokenSet,
+    ).toBe(false);
+  }
+  const base = { on: true, host: "ntfy.sh", events, afterMs: 0 };
+  expect(readNtfyStatus({ ...base, last: { at: T, sent: false } })?.last).toEqual({
+    at: T,
+    sent: false,
+    reason: "the push could not be sent",
   });
 });
 

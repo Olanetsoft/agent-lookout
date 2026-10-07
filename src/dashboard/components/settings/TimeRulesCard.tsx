@@ -451,11 +451,11 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
         )}
 
         <p className='mt-3 text-body text-ink-secondary'>
-          A reminder goes by each channel that is on for waits: a notification, an email or a
-          webhook post. It says how long the session has waited, as in “checkout-flow has waited 10
-          minutes for permission”. It goes once per wait, and with Remind again on, again every so
-          many minutes while the session still waits. None goes once the wait is answered or the
-          session ends.
+          A reminder goes by each channel that is on for waits: a notification, an email, a webhook
+          post or a push to your phone. It says how long the session has waited, as in
+          “checkout-flow has waited 10 minutes for permission”. It goes once per wait, and with
+          Remind again on, again every so many minutes while the session still waits. None goes once
+          the wait is answered or the session ends.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
           A session idle longer than the idle rule says is stale, and a Claude Code session among
@@ -463,13 +463,13 @@ export function TimeRulesCard({ onChanged, snapshot = null }: TimeRulesCardProps
           day.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
-          During quiet hours no notification, email or post goes. When they end, a session still
-          waiting is notified as usual, and everything else comes as one summary on each channel.
-          Hours that run past midnight belong to the day they begin.
+          During quiet hours no notification, email, post or push goes. When they end, a session
+          still waiting is notified as usual, and everything else comes as one summary on each
+          channel. Hours that run past midnight belong to the day they begin.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
           <FactText>
-            {`Agent Lookout keeps these in ${reading.file}, so they hold with no dashboard open. The switches under Notifications, and the email and webhook settings, still choose what is sent.`}
+            {`Agent Lookout keeps these in ${reading.file}, so they hold with no dashboard open. The switches under Notifications, and the email, webhook, ntfy and Pushover settings, still choose what is sent.`}
           </FactText>
         </p>
       </div>

@@ -24,9 +24,10 @@ import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outboundTiming.ts";
 
 /**
- * One way of sending notices off this computer, by the rules email and the
- * webhook share. Each supplies only what one says and how it is sent; the
- * rules of what is sent and when are all here, so the two cannot drift.
+ * One way of sending notices off this computer, by the rules email, the
+ * webhook, ntfy and Pushover share. Each supplies only what one says and how
+ * it is sent; the rules of what is sent and when are all here, so they cannot
+ * drift apart.
  *
  * What happened is decided by `sessionChanges` in the core, the rule the
  * dashboard and the collector's own notifications run over the same
@@ -51,7 +52,7 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * started, is reminded of once it has lasted the rule's minutes, by
  * `reminders.ts` in the core: once for each wait, and with the repeat on,
  * again each time the repeat's minutes pass while it waits, never before its
- * own email or post has gone. During quiet hours nothing is sent: a wait that
+ * own email, post or push has gone. During quiet hours nothing is sent: a wait that
  * comes due, a reminder, which is held as its wait, and a session that
  * finishes, fails or ends are held, by `quietHold.ts`, and when they end, a
  * wait still open is sent as usual, or reminded of when it was sent before
@@ -65,10 +66,21 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  *
  * Nothing here can stop a poll. `handle` never throws, and each is sent after
  * the poll has moved on, one at a time.
+ *
+ * `test` sends one the person asked for, from Send a test in Settings, by the
+ * same hourly limit and in the same turn, and with nothing of any session in
+ * it: what it is, the channel says.
  */
 
-/** How one email or post went: sent, or not sent, with a short reason in plain words. */
+/** How one email, post or push went: sent, or not sent, with a short reason in plain words. */
 export type SendOutcome = { sent: true } | { sent: false; reason: string };
+
+/**
+ * What became of a test the person asked for: tried, with how it went, or not
+ * tried, because the hourly limit is full until `limitedUntil`.
+ */
+export type TestResult =
+  { tried: true; at: number; outcome: SendOutcome } | { tried: false; limitedUntil: number };
 
 /** A wait that has lasted the delay and is still open. */
 export interface WaitFacts {
@@ -140,7 +152,7 @@ export interface OutboundChannelOptions<Content> {
   now?: () => number;
 }
 
-export interface OutboundChannel {
+export interface OutboundChannel<Content = unknown> {
   /** Takes each snapshot the poller produces, and sends what is due. */
   handle(snapshot: SessionsSnapshot): void;
   /** The last one that was tried, or null when none has been. */
@@ -149,11 +161,19 @@ export interface OutboundChannel {
   limitedUntil(): number | null;
   /** Resolves once every one handed over so far has been tried. For tests and for stopping. */
   settled(): Promise<void>;
+  /**
+   * Sends `content` once, now, because the person asked for it with Send a
+   * test: during quiet hours too, since they asked. It counts against the
+   * hourly limit like any other, and is not tried while that is full. It goes
+   * in turn with the rest, one at a time, touches no wait and is not `last`,
+   * which says how the last notice went. It never rejects.
+   */
+  test(content: Content): Promise<TestResult>;
 }
 
 export function createOutboundChannel<Content>(
   options: OutboundChannelOptions<Content>,
-): OutboundChannel {
+): OutboundChannel<Content> {
   const { afterMs, asking, waitMessage, overMessage, reminderMessage, summaryMessage, failure } =
     options;
   const now = options.now ?? Date.now;
@@ -186,20 +206,39 @@ export function createOutboundChannel<Content>(
   /** They go one after another, never side by side. */
   let queue: Promise<void> = Promise.resolve();
 
-  function send(content: Content): void {
-    queue = queue
+  /**
+   * Tries one after those before it, tells `after` how it went before the
+   * next is tried, and says how it went.
+   */
+  function tryInTurn(
+    content: Content,
+    after: (outcome: SendOutcome) => void = () => {},
+  ): Promise<SendOutcome> {
+    const tried = queue
       .then(() => options.send(content))
       .then(
-        (outcome) => {
-          last = outcome.sent
-            ? { at: now(), sent: true }
-            : { at: now(), sent: false, reason: outcome.reason };
-        },
-        () => {
-          // A sender should not reject. One that does is a failure like any other.
-          last = { at: now(), sent: false, reason: failure };
-        },
-      );
+        (outcome) => outcome,
+        // A sender should not reject. One that does is a failure like any other.
+        (): SendOutcome => ({ sent: false, reason: failure }),
+      )
+      .then((outcome) => {
+        after(outcome);
+        return outcome;
+      });
+    // The turn passes on however this one went.
+    queue = tried.then(
+      () => undefined,
+      () => undefined,
+    );
+    return tried;
+  }
+
+  function send(content: Content): void {
+    void tryInTurn(content, (outcome) => {
+      last = outcome.sent
+        ? { at: now(), sent: true }
+        : { at: now(), sent: false, reason: outcome.reason };
+    });
   }
 
   return {
@@ -340,5 +379,14 @@ export function createOutboundChannel<Content>(
     last: () => last,
     limitedUntil: () => limitLiftsAt(sentAt, now()),
     settled: () => queue,
+
+    async test(content) {
+      const at = now();
+      sentAt = sendsInLastHour(sentAt, at);
+      const limitedUntil = limitLiftsAt(sentAt, at);
+      if (limitedUntil !== null) return { tried: false, limitedUntil };
+      sentAt.push(at);
+      return { tried: true, at, outcome: await tryInTurn(content) };
+    },
   };
 }

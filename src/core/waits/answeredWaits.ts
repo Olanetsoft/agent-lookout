@@ -9,7 +9,8 @@
 // every snapshot that still finds it in that wait, for `ANSWER_HOLDS_MS` at
 // most. Every place that announces or counts a wait goes by `needsYou`, which
 // leaves such a session out: the page's notifications and the collector's
-// own, email, the webhook, the long wait reminder and quiet hours, which all
+// own, email, the webhook, ntfy, Pushover, the long wait reminder and quiet
+// hours, which all
 // read the same snapshot, the history's points, and the Events log and the
 // waits, which the poller works out at the same poll. So does every place
 // that says whether a session needs the person now: the page's lamp, its

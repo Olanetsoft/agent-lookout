@@ -9,7 +9,7 @@ import { STALE_THRESHOLD_MS } from "../sessions/staleness.ts";
  *   again every so many minutes while the wait goes on.
  * - `idle`: how long a session is idle before it is stale, in place of the
  *   built-in day. Stale marks and the sessions left running both go by it.
- * - `quietHours`: hours in which no notification, email or post goes, with one
+ * - `quietHours`: hours in which no notification, email, post or push goes, with one
  *   summary on each channel when they end.
  *
  * The collector keeps them, in its settings file, so they hold with no

@@ -15,7 +15,9 @@ import { createCollectorSettings } from "@collector/settings/collectorSettings";
 import { readSettingsSetup } from "@collector/settings/settingsFile";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
 import { NOTIFICATIONS_NOT_SHOWN_LINE } from "@collector/notifications/serverNotifications";
+import { createNtfySender } from "@collector/ntfy/ntfySender";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
+import { createPushoverSender } from "@collector/pushover/pushoverSender";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
 import {
@@ -24,7 +26,9 @@ import {
   type EmailStatusResponse,
   type EventsResponse,
   type HistoryResponse,
+  type NtfyStatusResponse,
   type PullRequestsStatusResponse,
+  type PushoverStatusResponse,
   type WebhookStatusResponse,
 } from "@core/api";
 import { applyRulesChange } from "@core/permission-rules/rulesChange";
@@ -1413,6 +1417,198 @@ describe("webhook notifications", () => {
   });
 });
 
+describe("pushes to a phone", () => {
+  const TOPIC = "s3cret-topic-3f9c2a7e";
+  const NTFY_TOKEN = "tk_s3cretaccesstoken00000000000";
+  const APP_TOKEN = "atest0000000000000000000000000";
+  const USER_KEY = "utest0000000000000000000000000";
+
+  /**
+   * A collector over a stand-in source, served over real HTTP, with the push
+   * settings in `env`. Pushover is reached at `pushover`, a server of the
+   * test's own, never at Pushover itself. Every line it would print is
+   * written down, and so is each sender it makes.
+   */
+  async function pushing(env: Record<string, string>, pushover?: { url(path?: string): string }) {
+    const { state, adapter } = standInSource();
+    const warnings: string[] = [];
+    const made = { ntfy: 0, pushover: 0 };
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [adapter],
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
+      notifier: fakeSystemNotifier(),
+      now: () => state.now,
+      warn: (line) => warnings.push(line),
+      createNtfySender: (settings) => {
+        made.ntfy += 1;
+        return createNtfySender(settings, { version: "9.9.9-test", timeoutMs: 300 });
+      },
+      createPushoverSender: (settings) => {
+        made.pushover += 1;
+        return createPushoverSender(settings, {
+          version: "9.9.9-test",
+          timeoutMs: 300,
+          endpoint: new URL(pushover?.url("/1/messages.json") ?? "http://127.0.0.1:1/"),
+        });
+      },
+    });
+    const port = await listen(createServer(collector.handler));
+    return {
+      collector,
+      warnings,
+      made,
+      port,
+      async poll(atOffsetMs: number, sessions: Session[]) {
+        state.now = T0 + atOffsetMs;
+        state.sessions = sessions;
+        await collector.poller.pollOnce();
+        await collector.ntfy?.settled();
+        await collector.pushover?.settled();
+      },
+      async status() {
+        const ntfy = await request(port, "/api/ntfy");
+        const pushed = await request(port, "/api/pushover");
+        expect([ntfy.status, pushed.status]).toEqual([200, 200]);
+        return {
+          ntfy: ntfy.json<NtfyStatusResponse>(),
+          pushover: pushed.json<PushoverStatusResponse>(),
+          said: `${ntfy.body}${pushed.body}`,
+        };
+      },
+    };
+  }
+
+  const pushId = (n: number) =>
+    `claude-code:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const busy = (n: number, name: string) =>
+    makeSession({ id: pushId(n), name, project: name, status: "working", statusSince: null });
+  const asking = (n: number, name: string, atOffsetMs: number) =>
+    makeSession({
+      id: pushId(n),
+      name,
+      project: name,
+      surface: "vscode",
+      cwd: `/Users/example/code/${name}`,
+      status: "needs-you",
+      waitingReason: "permission",
+      waitingDetail: "permission prompt",
+      waitingText: "Run: npm test",
+      statusSince: T0 + atOffsetMs,
+    });
+
+  test("with nothing set, nothing is pushed, nothing that could push is made, and no connection is opened", async () => {
+    const server = await pushing({ AGENT_LOOKOUT_NOTIFICATIONS: "on" });
+    const connects = vi.spyOn(Socket.prototype, "connect");
+    try {
+      await server.poll(0, [busy(1, "checkout-flow")]);
+      await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+      await server.poll(HOUR_MS, [asking(1, "checkout-flow", 2_000)]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(connects).not.toHaveBeenCalled();
+    } finally {
+      connects.mockRestore();
+    }
+    expect([server.collector.ntfy, server.collector.pushover]).toEqual([null, null]);
+    expect(server.made).toEqual({ ntfy: 0, pushover: 0 });
+    expect(server.warnings).toEqual([]);
+    const { ntfy, pushover } = await server.status();
+    expect(ntfy).toMatchObject({ on: false, host: null, tokenSet: null, problem: null });
+    expect(pushover).toMatchObject({ on: false, problem: null });
+  });
+
+  test("a wait that lasts the delay is pushed once each way, saying what it asks only where that is on, and the page is told no secret", async () => {
+    const ntfy = await startWebhookServer();
+    const pushover = await startWebhookServer();
+    const server = await pushing(
+      {
+        AGENT_LOOKOUT_NTFY_URL: ntfy.url(`/${TOPIC}`),
+        AGENT_LOOKOUT_NTFY_TOKEN: NTFY_TOKEN,
+        AGENT_LOOKOUT_NTFY_ASKING: "on",
+        AGENT_LOOKOUT_PUSHOVER_TOKEN: APP_TOKEN,
+        AGENT_LOOKOUT_PUSHOVER_USER: USER_KEY,
+        AGENT_LOOKOUT_PUSHOVER_AFTER: "30",
+      },
+      pushover,
+    );
+    await server.poll(0, [busy(1, "checkout-flow")]);
+    await server.poll(2_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(20_000, [asking(1, "checkout-flow", 2_000)]);
+    expect([ntfy.received, pushover.received]).toEqual([[], []]);
+    await server.poll(62_000, [asking(1, "checkout-flow", 2_000)]);
+    await server.poll(HOUR_MS, [asking(1, "checkout-flow", 2_000)]);
+
+    expect(ntfy.received.map((push) => JSON.parse(push.body))).toEqual([
+      {
+        topic: TOPIC,
+        title: "checkout-flow is waiting for permission",
+        message: "Asking: Run: npm test\n1m 00s · checkout-flow · VS Code · Claude Code",
+        priority: 4,
+        tags: ["hourglass"],
+      },
+    ]);
+    expect(ntfy.received[0]?.headers.authorization).toBe(`Bearer ${NTFY_TOKEN}`);
+    // Pushover's delay is its own, and it leaves out what is asked.
+    expect(pushover.received.map((push) => JSON.parse(push.body))).toEqual([
+      {
+        token: APP_TOKEN,
+        user: USER_KEY,
+        title: "checkout-flow is waiting for permission",
+        message: "1m 00s · checkout-flow · VS Code · Claude Code",
+        priority: 0,
+      },
+    ]);
+
+    const { ntfy: ntfyStatus, pushover: pushoverStatus, said } = await server.status();
+    expect(ntfyStatus).toEqual({
+      on: true,
+      host: "127.0.0.1",
+      tokenSet: true,
+      events: ["needs-you"],
+      afterMs: 60_000,
+      asking: true,
+      problem: null,
+      last: { at: T0 + 62_000, sent: true },
+      limitedUntil: null,
+    });
+    expect(pushoverStatus).toMatchObject({ on: true, afterMs: 30_000, asking: false });
+    for (const secret of [TOPIC, "s3cret", NTFY_TOKEN, APP_TOKEN, USER_KEY, "npm test"]) {
+      expect(said).not.toContain(secret);
+    }
+  });
+
+  test("a setting that is wrong turns that channel off, with one line that names it and never its value", async () => {
+    const ntfy = await startWebhookServer();
+    const pushover = await startWebhookServer();
+    const server = await pushing(
+      {
+        AGENT_LOOKOUT_NTFY_URL: `${ntfy.url(`/${TOPIC}`)}?auth=${NTFY_TOKEN}`,
+        AGENT_LOOKOUT_PUSHOVER_TOKEN: APP_TOKEN,
+      },
+      pushover,
+    );
+    await server.poll(0, [busy(1, "infra-terraform")]);
+    await server.poll(2_000, [asking(1, "infra-terraform", 2_000)]);
+    await server.poll(HOUR_MS, [asking(1, "infra-terraform", 2_000)]);
+
+    expect(server.warnings).toEqual([
+      "ntfy pushes are off: AGENT_LOOKOUT_NTFY_URL must end with the topic, with no ? or # after it. Put an access token in AGENT_LOOKOUT_NTFY_TOKEN.",
+      "Pushover pushes are off: AGENT_LOOKOUT_PUSHOVER_USER is not set.",
+    ]);
+    const { ntfy: ntfyStatus, pushover: pushoverStatus, said } = await server.status();
+    expect(ntfyStatus).toMatchObject({ on: false, host: null });
+    expect(pushoverStatus).toMatchObject({
+      on: false,
+      problem: "AGENT_LOOKOUT_PUSHOVER_USER is not set.",
+    });
+    for (const secret of [TOPIC, NTFY_TOKEN, APP_TOKEN, "127.0.0.1"]) {
+      expect(`${server.warnings.join("\n")}${said}`).not.toContain(secret);
+    }
+    expect(server.made).toEqual({ ntfy: 0, pushover: 0 });
+    expect([ntfy.connections, pushover.connections]).toEqual([0, 0]);
+  });
+});
+
 describe("what a host is told", () => {
   test("a host that listens is told each poll's sessions", async () => {
     const source = standInSource([waiting("mobile-onboarding")]);
@@ -1489,7 +1685,12 @@ describe("history kept on disk", () => {
    * over real HTTP and started as a host starts it: once the history has been
    * read back, it polls. It is stopped when the test finishes.
    */
-  async function keeping(dir: string, source: ReturnType<typeof standInSource>, env = {}) {
+  async function keeping(
+    dir: string,
+    source: ReturnType<typeof standInSource>,
+    env = {},
+    more: Pick<Parameters<typeof createCollector>[0], "createPushoverSender"> = {},
+  ) {
     const collector = createCollector({
       version: "9.9.9-test",
       adapters: [source.adapter],
@@ -1501,6 +1702,7 @@ describe("history kept on disk", () => {
       notifier: fakeSystemNotifier(),
       now: () => source.state.now,
       intervalMs: 1_000_000_000,
+      ...more,
     });
     const port = await listen(createServer(collector.handler));
     collector.start();
@@ -1651,22 +1853,45 @@ describe("history kept on disk", () => {
     expect(text).not.toContain("Run:");
   });
 
-  test("what a waiting session is asking, sent by email and to the webhook, is kept nowhere", async () => {
+  test("what a waiting session is asking, sent by email, to the webhook and as a push, is kept nowhere", async () => {
     const mail = await startSmtpServer();
     const hook = await startWebhookServer();
+    const ntfy = await startWebhookServer();
+    const pushover = await startWebhookServer();
     const dir = await tempDir();
     const source = standInSource([working("checkout-flow")]);
-    const server = await keeping(dir, source, {
-      AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
-      AGENT_LOOKOUT_SMTP_URL: mail.url(),
-      AGENT_LOOKOUT_EMAIL_AFTER: "0",
-      AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,finished,ended",
-      AGENT_LOOKOUT_EMAIL_ASKING: "on",
-      AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
-      AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
-      AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,finished,ended",
-      AGENT_LOOKOUT_WEBHOOK_ASKING: "on",
-    });
+    const server = await keeping(
+      dir,
+      source,
+      {
+        AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
+        AGENT_LOOKOUT_SMTP_URL: mail.url(),
+        AGENT_LOOKOUT_EMAIL_AFTER: "0",
+        AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,finished,ended",
+        AGENT_LOOKOUT_EMAIL_ASKING: "on",
+        AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
+        AGENT_LOOKOUT_WEBHOOK_AFTER: "0",
+        AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,finished,ended",
+        AGENT_LOOKOUT_WEBHOOK_ASKING: "on",
+        // The collector's own sender for ntfy, aimed at the stand-in by the setting alone.
+        AGENT_LOOKOUT_NTFY_URL: ntfy.url("/agent-lookout-topic"),
+        AGENT_LOOKOUT_NTFY_AFTER: "0",
+        AGENT_LOOKOUT_NTFY_EVENTS: "needs-you,finished,ended",
+        AGENT_LOOKOUT_NTFY_ASKING: "on",
+        AGENT_LOOKOUT_PUSHOVER_TOKEN: "atest0000000000000000000000000",
+        AGENT_LOOKOUT_PUSHOVER_USER: "utest0000000000000000000000000",
+        AGENT_LOOKOUT_PUSHOVER_AFTER: "0",
+        AGENT_LOOKOUT_PUSHOVER_EVENTS: "needs-you,finished,ended",
+        AGENT_LOOKOUT_PUSHOVER_ASKING: "on",
+      },
+      {
+        createPushoverSender: (settings) =>
+          createPushoverSender(settings, {
+            version: "9.9.9-test",
+            endpoint: new URL(pushover.url("/1/messages.json")),
+          }),
+      },
+    );
     const asked = { ...waiting("checkout-flow"), waitingText: "Run: ./scripts/release.sh" };
     await server.poll(2_000, [asked]);
     await server.poll(4_000, [asked]);
@@ -1674,19 +1899,32 @@ describe("history kept on disk", () => {
     await server.poll(8_000, []);
     await server.collector.email?.settled();
     await server.collector.webhook?.settled();
+    await server.collector.ntfy?.settled();
+    await server.collector.pushover?.settled();
 
-    // It went: once by email, once to the webhook, for the wait alone.
+    // It went: once by email, once to the webhook and once in each push, for the wait alone.
     expect(mail.received.map((email) => textOf(email.data).includes("release.sh"))).toEqual([
       true,
       false,
     ]);
     expect(hook.received.map((post) => post.body.includes("release.sh"))).toEqual([true, false]);
+    expect(ntfy.received.map((push) => push.body.includes("release.sh"))).toEqual([true, false]);
+    expect(pushover.received.map((push) => push.body.includes("release.sh"))).toEqual([
+      true,
+      false,
+    ]);
 
     // And nothing that is kept, or that the page is told, holds it.
     const answers = await Promise.all(
-      ["/api/sessions", "/api/events?since=0", "/api/history", "/api/email", "/api/webhook"].map(
-        async (target) => (await request(server.port, target)).body,
-      ),
+      [
+        "/api/sessions",
+        "/api/events?since=0",
+        "/api/history",
+        "/api/email",
+        "/api/webhook",
+        "/api/ntfy",
+        "/api/pushover",
+      ].map(async (target) => (await request(server.port, target)).body),
     );
     server.collector.stop();
     const text = await files(dir);
@@ -1695,8 +1933,9 @@ describe("history kept on disk", () => {
       expect(kept).not.toContain("release.sh");
       expect(kept).not.toContain("waitingText");
     }
-    expect(JSON.parse(answers[3] ?? "{}")).toMatchObject({ on: true, asking: true });
-    expect(JSON.parse(answers[4] ?? "{}")).toMatchObject({ on: true, asking: true });
+    for (const answer of answers.slice(3)) {
+      expect(JSON.parse(answer)).toMatchObject({ on: true, asking: true });
+    }
   });
 
   test("with AGENT_LOOKOUT_HISTORY=off nothing is written, and the history starts empty each time", async () => {

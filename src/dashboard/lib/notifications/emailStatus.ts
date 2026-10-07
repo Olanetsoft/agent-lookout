@@ -1,12 +1,12 @@
-import { SENDS_PER_HOUR, type EmailStatusResponse } from "@core/api";
+import type { EmailStatusResponse } from "@core/api";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { readEmailStatus } from "@dashboard/lib/api/readApi";
-import { sentenceStart } from "@dashboard/lib/format";
 import {
-  clockAt,
+  lastSendWords,
   STATUS_TIMEOUT_MS,
   whereAndWhen,
   type SendingWords,
+  type SendNouns,
 } from "@dashboard/lib/notifications/sendingWords";
 
 /**
@@ -27,6 +27,13 @@ export async function fetchEmailStatus(): Promise<EmailStatusResponse | null> {
     return null;
   }
 }
+
+const EMAIL_NOUNS: SendNouns = {
+  plural: "emails",
+  failed: "The last email could not be sent",
+  held: "Emails are held back",
+  lastAt: "Last sent at",
+};
 
 /** What the Email card in Settings says. */
 export function emailWords(status: EmailStatusResponse, now: number): SendingWords {
@@ -52,31 +59,5 @@ export function emailWords(status: EmailStatusResponse, now: number): SendingWor
       ? "Emails for a wait say what the session is asking."
       : "Emails leave out what a waiting session is asking.",
   };
-  return { ...said, ...lastWords(status, now) };
-}
-
-/** The line under the others: how the last email went, or that the hourly limit holds them. */
-function lastWords(
-  status: EmailStatusResponse,
-  now: number,
-): Pick<SendingWords, "title" | "detail"> {
-  const { last, limitedUntil } = status;
-  if (limitedUntil !== null) {
-    // Tries that failed count toward the limit, so a failure is said first:
-    // otherwise a wrong password would read as twenty emails gone.
-    const next = clockAt(limitedUntil, now);
-    return last !== null && !last.sent
-      ? {
-          title: "The last email could not be sent",
-          detail: `${sentenceStart(last.reason)}. No more will be tried until ${next}, as ${SENDS_PER_HOUR} were tried in the last hour.`,
-        }
-      : {
-          title: "Emails are held back",
-          detail: `${SENDS_PER_HOUR} emails were tried in the last hour, the most it tries. The next can go at ${next}.`,
-        };
-  }
-  if (last === null) return { title: null, detail: null };
-  return last.sent
-    ? { title: null, detail: `Last sent at ${clockAt(last.at, now)}.` }
-    : { title: "The last email could not be sent", detail: `${sentenceStart(last.reason)}.` };
+  return { ...said, ...lastSendWords(status, now, EMAIL_NOUNS) };
 }

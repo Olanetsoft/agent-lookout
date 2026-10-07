@@ -59,11 +59,13 @@ export interface Notice {
  * asking can hold a command, a web address, or a file's full path when the
  * file is outside the session's folder.
  *
- * It is shown on this machine alone, by the page or by the collector. An email
- * and a webhook post, which leave the machine, are written elsewhere, and hold
- * what the session is asking only for a wait, and only with
- * `AGENT_LOOKOUT_EMAIL_ASKING=on` or `AGENT_LOOKOUT_WEBHOOK_ASKING=on`.
- * `outboundChannel.ts` is the one place it is let through to them.
+ * It is shown on this machine alone, by the page or by the collector. An
+ * email, a webhook post and a push, which leave the machine, are written
+ * elsewhere, and hold what the session is asking only for a wait, and only
+ * with that channel's own setting on: `AGENT_LOOKOUT_EMAIL_ASKING=on`,
+ * `AGENT_LOOKOUT_WEBHOOK_ASKING=on`, `AGENT_LOOKOUT_NTFY_ASKING=on` or
+ * `AGENT_LOOKOUT_PUSHOVER_ASKING=on`. `outboundChannel.ts` is the one place it
+ * is let through to them.
  */
 export function waitNotice(
   session: Pick<Session, "id" | "name" | "project" | "machine" | "waitingReason" | "waitingText">,

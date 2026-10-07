@@ -5,7 +5,7 @@ import { needsYou } from "../waits/answeredWaits.ts";
 /**
  * What one channel holds back during quiet hours, and what it says when they
  * end. Each channel keeps its own: the page's notifications, the collector's,
- * email and the webhook. Each holds what it would have sent, by its own
+ * email, the webhook, ntfy and Pushover. Each holds what it would have sent, by its own
  * rules: a wait email only once the wait has lasted the email's delay, a
  * notification at once.
  *

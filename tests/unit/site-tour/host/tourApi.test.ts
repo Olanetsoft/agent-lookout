@@ -5,7 +5,9 @@ import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   readEmailStatus,
   readHistory,
+  readNtfyStatus,
   readPullRequestsStatus,
+  readPushoverStatus,
   readSettings,
   readSnapshot,
   readWaits,
@@ -57,6 +59,8 @@ test("every route the dashboard reads is answered, in a shape it reads", async (
   expect(readHistory((await json("/api/history?windowMs=21600000")).body)).not.toBeNull();
   expect(readEmailStatus((await json("/api/email")).body)).toMatchObject({ on: false });
   expect(readWebhookStatus((await json("/api/webhook")).body)).toMatchObject({ on: false });
+  expect(readNtfyStatus((await json("/api/ntfy")).body)).toMatchObject({ on: false });
+  expect(readPushoverStatus((await json("/api/pushover")).body)).toMatchObject({ on: false });
   expect(readWaits((await json("/api/waits")).body)).not.toBeNull();
   expect(readPullRequestsStatus((await json("/api/pull-requests")).body)).toMatchObject({
     on: true,

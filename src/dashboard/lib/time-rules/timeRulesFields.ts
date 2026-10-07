@@ -116,7 +116,7 @@ export const CLOCK_TAKES = "Type a time on the 24-hour clock, such as 22:00.";
 
 /** Said under the times while quiet hours hold, as the app says they do: "Quiet now, until 08:00. ..." */
 export function quietNowLine(to: string): string {
-  return `Quiet now, until ${to}. Notifications, emails and posts are held.`;
+  return `Quiet now, until ${to}. Notifications, emails, posts and pushes are held.`;
 }
 
 /** Said when both ends of the quiet hours are the same time. */

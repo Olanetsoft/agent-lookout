@@ -515,8 +515,8 @@ export interface PermissionRulesRefusal extends ErrorResponse {
 
 /**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`, `clear-history`, `stop`, `clean-up`, `answer`, `time-rules` or
- * `permission-rules`. A browser sends
+ * naming what: `jump`, `clear-history`, `stop`, `clean-up`, `answer`, `time-rules`,
+ * `permission-rules` or `phone-test`. A browser sends
  * no header of this kind to another origin without asking first, and the
  * collector never says yes, so a page at another address cannot send it.
  */
@@ -573,12 +573,13 @@ export function readNotificationsHeader(value: string): NotificationsSaid | null
 
 /**
  * The most the collector sends off this computer in any hour, by each way of
- * sending: emails, and posts to the webhook, each counted on its own. Past it,
- * none go that way until the hour has passed.
+ * sending: emails, posts to the webhook, and pushes through ntfy and through
+ * Pushover, each counted on its own, a test push among them. Past it, none go
+ * that way until the hour has passed.
  */
 export const SENDS_PER_HOUR = 20;
 
-/** How the last email or post went: when it was tried, and whether it was sent or why it was not. */
+/** How the last email, post or push went: when it was tried, and whether it was sent or why it was not. */
 export type SendResult = { at: number; sent: true } | { at: number; sent: false; reason: string };
 
 /**
@@ -646,6 +647,97 @@ export interface WebhookStatusResponse {
   last: SendResult | null;
   /** While the hourly limit holds posts back, when the next may go. */
   limitedUntil: number | null;
+}
+
+/**
+ * `GET /api/ntfy`: whether the collector sends pushes through ntfy, to which
+ * server, whether an access token is set, for which events and after how long
+ * a wait, whether the push for a wait says what the session is asking, and
+ * how the last push went. It is read-only. The settings live in the
+ * environment the collector was started with, and this never holds the topic,
+ * which is the secret anyone could read the pushes with, nor the token, nor
+ * anything a session was asking.
+ */
+export interface NtfyStatusResponse {
+  on: boolean;
+  /** The host of the ntfy server, such as `ntfy.sh`, and never the topic. Null while off. */
+  host: string | null;
+  /** Whether `AGENT_LOOKOUT_NTFY_TOKEN` is set. Never the token itself. Null while off. */
+  tokenSet: boolean | null;
+  /** The events that are pushed, in the order of `NOTICE_EVENTS`. Null while off. */
+  events: NoticeEvent[] | null;
+  /** How long a wait lasts before it is pushed, in milliseconds. Null while off. */
+  afterMs: number | null;
+  /** Whether the push for a wait says what the session is asking, with `AGENT_LOOKOUT_NTFY_ASKING=on`. Null while off. */
+  asking: boolean | null;
+  /** While off because a setting is wrong: one sentence naming the setting, never its value. */
+  problem: string | null;
+  /** The last push of a notice that was tried, or null when none has been. A test push is not one. */
+  last: SendResult | null;
+  /** While the hourly limit holds pushes back, when the next may go. */
+  limitedUntil: number | null;
+}
+
+/**
+ * `GET /api/pushover`: whether the collector sends pushes through Pushover,
+ * for which events and after how long a wait, whether the push for a wait
+ * says what the session is asking, and how the last push went. It is
+ * read-only, and never holds the app's token or the user key.
+ */
+export interface PushoverStatusResponse {
+  on: boolean;
+  /** The events that are pushed, in the order of `NOTICE_EVENTS`. Null while off. */
+  events: NoticeEvent[] | null;
+  /** How long a wait lasts before it is pushed, in milliseconds. Null while off. */
+  afterMs: number | null;
+  /** Whether the push for a wait says what the session is asking, with `AGENT_LOOKOUT_PUSHOVER_ASKING=on`. Null while off. */
+  asking: boolean | null;
+  /** While off because a setting is wrong: one sentence naming the setting, never its value. */
+  problem: string | null;
+  /** The last push of a notice that was tried, or null when none has been. A test push is not one. */
+  last: SendResult | null;
+  /** While the hourly limit holds pushes back, when the next may go. */
+  limitedUntil: number | null;
+}
+
+/** The two ways a push goes to a phone. */
+export const PHONE_CHANNELS = ["ntfy", "pushover"] as const;
+
+export type PhoneChannel = (typeof PHONE_CHANNELS)[number];
+
+/** The route that sends one test push, when the person presses Send a test in Settings. */
+export const PHONE_TEST_PATH = "/api/phone/test";
+
+/** What `ACTION_HEADER` says on a request that sends a test push. */
+export const PHONE_TEST_ACTION = "phone-test";
+
+/** The body of `POST /api/phone/test`: which channel the test goes through, and nothing else. */
+export interface PhoneTestRequest {
+  channel: PhoneChannel;
+}
+
+/** `POST /api/phone/test`, when the service took the test push. */
+export interface PhoneTestResponse {
+  ok: true;
+  channel: PhoneChannel;
+  sentAt: number;
+}
+
+/**
+ * Why no test push went, or why it did not arrive:
+ *
+ * off       409: the channel is not set up
+ * too-soon  429: a test is under way, or one began less than a second ago
+ * limited   429: the hourly limit is full, with `limitedUntil`
+ * not-sent  502: it was tried, and the service did not take it
+ */
+export type PhoneTestFailure = "off" | "too-soon" | "limited" | "not-sent";
+
+/** The body of an answer of `POST /api/phone/test` that says why no test push went. */
+export interface PhoneTestRefusal extends ErrorResponse {
+  reason: PhoneTestFailure;
+  /** With `limited`: when the next may go. */
+  limitedUntil?: number;
 }
 
 /**

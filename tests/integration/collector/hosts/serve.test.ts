@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
-import type { EmailStatusResponse, WebhookStatusResponse } from "@core/api";
+import type {
+  EmailStatusResponse,
+  NtfyStatusResponse,
+  PushoverStatusResponse,
+  WebhookStatusResponse,
+} from "@core/api";
 import type { SessionsSnapshot } from "@core/sessions/session";
 import { request } from "@tests/support/node/http";
 import {
@@ -107,7 +112,7 @@ describe("npm start, as a real process", () => {
     20_000,
   );
 
-  test("with no email or webhook settings, it never loads the mail library or the HTTPS client, and says both are off", async () => {
+  test("with no email, webhook, ntfy or Pushover settings, it never loads the mail library or the HTTPS client, and says each is off", async () => {
     // `serve.ts` with a stand-in for `dist/`, so the host gets as far as polling.
     const dir = await tempDir();
     const dist = path.join(dir, "dist");
@@ -161,6 +166,16 @@ describe("npm start, as a real process", () => {
       last: null,
       limitedUntil: null,
     });
+    expect((await request(port, "/api/ntfy")).json<NtfyStatusResponse>()).toMatchObject({
+      on: false,
+      host: null,
+      tokenSet: null,
+      problem: null,
+    });
+    expect((await request(port, "/api/pushover")).json<PushoverStatusResponse>()).toMatchObject({
+      on: false,
+      problem: null,
+    });
     const loaded = await readFile(log, "utf8");
     // The log is known to work: it holds the collector itself.
     expect(loaded).toContain("/src/collector/collector.ts");
@@ -168,6 +183,7 @@ describe("npm start, as a real process", () => {
     expect(loaded).not.toMatch(/^node:https$/m);
     expect(server.output()).not.toContain("Email notifications are off");
     expect(server.output()).not.toContain("Webhook notifications are off");
+    expect(server.output()).not.toContain("pushes are off");
   }, 30_000);
 
   test.each(["http", "-1", "70000", "50.5"])(

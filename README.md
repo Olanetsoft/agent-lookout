@@ -6,7 +6,7 @@ Shows the AI agent sessions on your computer in one browser page, and which need
 
 It finds Claude Code and Codex sessions with no setup, and any agent that writes a status file. It never starts a session, stops one only when you press Stop and confirm, and answers a permission prompt only on Allow, Deny or a rule you added.
 
-By default Agent Lookout sends nothing anywhere. The one exception: the Mac app's daily check on GitHub for a newer version, which Settings turns off. Email, a webhook, pull requests through your `gh` and other machines over your `ssh` stay off until you set them up. [Privacy](#privacy)
+By default Agent Lookout sends nothing anywhere. The one exception: the Mac app's daily check on GitHub for a newer version, which Settings turns off. Email, a webhook, pushes to your phone through ntfy or Pushover, pull requests through your `gh` and other machines over your `ssh` stay off until you set them up. [Privacy](#privacy)
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [For agents](#for-coding-agents) · [Roadmap](https://github.com/Olanetsoft/agent-lookout/milestones) · [Website](https://agent-lookout.vercel.app)
 
@@ -73,8 +73,8 @@ It should print "Agent Lookout is running at http://127.0.0.1:4777".
 If it prints anything else, or says the port is in use, stop and tell
 me what it printed.
 
-Do not use sudo, and do not set up email, a webhook, pull requests
-or other machines. You are done when
+Do not use sudo, and do not set up email, a webhook, phone pushes,
+pull requests or other machines. You are done when
 curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
 version number. Tell me what it printed.
 ```
@@ -94,6 +94,7 @@ To run it from a clone, see [From the repository](docs/INSTALL.md#from-the-repos
 | [Allow and Deny](docs/GUIDE.md#answer-a-permission-prompt)                                                   | Answers a Claude Code permission prompt from the page, or the Mac app's notification and menu bar, with the plugin. [Rules](docs/GUIDE.md#permission-rules) you add can answer some for you. |
 | [Notifications](docs/GUIDE.md#notifications) and [time rules](docs/GUIDE.md#time-rules)                      | Tell you when a session waits, remind you of long waits and keep quiet hours. Off until turned on.                                                                                           |
 | [Pull requests](docs/GUIDE.md#pull-requests), [email](docs/GUIDE.md#email), [webhook](docs/GUIDE.md#webhook) | Show a session's pull request on github.com and its checks, through your `gh`, and email or post events to one address. Off until set up.                                                    |
+| [ntfy](docs/GUIDE.md#ntfy) and [Pushover](docs/GUIDE.md#pushover)                                            | Push a wait, its reminders and what else you choose to your phone, with Send a test in Settings. Off until set up.                                                                           |
 | [Another machine](docs/GUIDE.md#another-machine-over-ssh)                                                    | Shows the sessions of another machine running Agent Lookout, through your `ssh`. Off until you name one.                                                                                     |
 | [Your own agents](docs/GUIDE.md#your-own-agents)                                                             | Shows any other agent that writes one small JSON file per session.                                                                                                                           |
 
@@ -113,17 +114,17 @@ Claude Code and Codex need no setup. Any other agent writes one small JSON file 
 
 A Codex session waiting for approval shows as working. After 5 minutes its row says how long it has been quiet. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
 
-|                                            | macOS | Linux | Windows |
-| ------------------------------------------ | ----- | ----- | ------- |
-| Dashboard, `status`, `mcp`, email, webhook | Yes   | Yes   | Yes     |
-| Jump to VS Code                            | Yes   | Yes   | Yes     |
-| Jump to a tmux pane                        | Yes   | Yes   | No      |
-| Jump to Terminal or iTerm2                 | Yes   | No    | No      |
-| Stop, and ending sessions left running     | Yes   | Yes   | No      |
-| Allow and Deny, permission rules           | Yes   | Yes   | No      |
-| Resume                                     | Yes   | Yes   | No      |
-| Notifications with no tab open             | Yes   | No    | No      |
-| Mac app and menu bar                       | Yes   | No    | No      |
+|                                                    | macOS | Linux | Windows |
+| -------------------------------------------------- | ----- | ----- | ------- |
+| Dashboard, `status`, `mcp`, email, webhook, pushes | Yes   | Yes   | Yes     |
+| Jump to VS Code                                    | Yes   | Yes   | Yes     |
+| Jump to a tmux pane                                | Yes   | Yes   | No      |
+| Jump to Terminal or iTerm2                         | Yes   | No    | No      |
+| Stop, and ending sessions left running             | Yes   | Yes   | No      |
+| Allow and Deny, permission rules                   | Yes   | Yes   | No      |
+| Resume                                             | Yes   | Yes   | No      |
+| Notifications with no tab open                     | Yes   | No    | No      |
+| Mac app and menu bar                               | Yes   | No    | No      |
 
 Developed and used on macOS. On Linux and Windows, CI runs the tests and starts the app, and no one has used it on those desktops yet. [On Linux](docs/GUIDE.md#on-linux) · [On Windows](docs/GUIDE.md#on-windows)
 
@@ -175,6 +176,7 @@ By default Agent Lookout sends nothing anywhere: no telemetry, analytics, crash 
 Each of these is off until you set it up:
 
 - Email and the webhook, each to the one address you name.
+- Pushes to your phone through ntfy, to the one topic you name, or Pushover, to the one user key you name.
 - Pull requests, through your own `gh`, with `AGENT_LOOKOUT_PULL_REQUESTS=on`.
 - Other machines, through your own `ssh`, named in `AGENT_LOOKOUT_REMOTES`.
 - The MCP server, whose answers the agent's app hands to its model.
@@ -241,7 +243,7 @@ To set Agent Lookout up for someone:
 - Run `npx --yes agent-lookout` in the background. It is ready when `curl -s http://127.0.0.1:4777/api/health` prints `{"ok":true`.
 - `npx agent-lookout status --json` prints the counts and the sessions that need you, and exits with 0, 1 or 2 as above.
 - `GET /api/sessions` lists every session. All routes answer on loopback only, and [docs/API.md](docs/API.md) lists them.
-- Do not use `sudo`, and do not set up email, a webhook, pull requests or other machines unless asked.
+- Do not use `sudo`, and do not set up email, a webhook, phone pushes, pull requests or other machines unless asked.
 
 To change its code, read [AGENTS.md](AGENTS.md) first. It has the commands, the rules a change must keep and where tests go. Run `npm run check` before you finish. Codex, and Claude Code from version 2.1.277, read AGENTS.md on their own. If you keep a CLAUDE.md or CLAUDE.local.md of your own in the clone, which git ignores here, Claude Code reads that instead, so put the line `@AGENTS.md` in it.
 

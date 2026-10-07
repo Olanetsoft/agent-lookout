@@ -40,7 +40,7 @@ export interface StandaloneOptions {
   distDir: string;
   /**
    * Where the settings are read: `AGENT_LOOKOUT_HOST`, `AGENT_LOOKOUT_PORT`,
-   * each adapter's own, the email settings and the webhook settings.
+   * each adapter's own, and the email, webhook, ntfy and Pushover settings.
    */
   env: NodeJS.ProcessEnv;
   print: Printer;

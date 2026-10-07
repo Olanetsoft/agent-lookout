@@ -1823,11 +1823,13 @@ test("pressing the button in Settings tells the app at once, in one request that
   const host = notificationsFor(true);
   const told: [string, string | null, boolean][] = [];
   setApiHost(async (path, init) => {
-    // The Email, Webhook and Pull requests cards read whether they are set up, and the
-    // Time rules card what they are. Those reads are not the news here.
+    // The Email, Webhook, ntfy, Pushover and Pull requests cards read whether they are
+    // set up, and the Time rules card what they are. Those reads are not the news here.
     if (
       path === "/api/email" ||
       path === "/api/webhook" ||
+      path === "/api/ntfy" ||
+      path === "/api/pushover" ||
       path === "/api/pull-requests" ||
       path === "/api/settings"
     ) {
@@ -1876,6 +1878,8 @@ test("finished switched on in Settings tells the app at once, and a session that
     if (
       path === "/api/email" ||
       path === "/api/webhook" ||
+      path === "/api/ntfy" ||
+      path === "/api/pushover" ||
       path === "/api/pull-requests" ||
       path === "/api/settings"
     ) {

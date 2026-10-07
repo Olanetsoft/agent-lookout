@@ -5,7 +5,9 @@ import { render } from "vitest-browser-react";
 import type {
   EmailStatusResponse,
   HistoryResponse,
+  NtfyStatusResponse,
   PullRequestsStatusResponse,
+  PushoverStatusResponse,
   SettingsResponse,
   WebhookStatusResponse,
 } from "@core/api";
@@ -55,6 +57,37 @@ const WEBHOOK_OFF: WebhookStatusResponse = {
   limitedUntil: null,
 };
 let webhook: WebhookStatusResponse | null;
+/** What the app says about ntfy, as `/api/ntfy` would. Off unless a test says otherwise. */
+const NTFY_OFF: NtfyStatusResponse = {
+  on: false,
+  host: null,
+  tokenSet: null,
+  events: null,
+  afterMs: null,
+  asking: null,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+let ntfy: NtfyStatusResponse | null;
+/** What the app says about Pushover, as `/api/pushover` would. Off unless a test says otherwise. */
+const PUSHOVER_OFF: PushoverStatusResponse = {
+  on: false,
+  events: null,
+  afterMs: null,
+  asking: null,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+let pushover: PushoverStatusResponse | null;
+/**
+ * What the app answers a press of Send a test with, as `POST /api/phone/test`
+ * would, and each request it was sent. The answer can be held back until the
+ * test lets it go.
+ */
+let testAnswer: { status: number; body: unknown; held?: Promise<void> };
+let tests: { init: RequestInit | undefined }[];
 /** What the app says about pull requests, as `/api/pull-requests` would. Off unless a test says otherwise. */
 const PULL_REQUESTS_OFF: PullRequestsStatusResponse = {
   on: false,
@@ -81,18 +114,34 @@ beforeEach(() => {
   setNotificationHost(host);
   email = EMAIL_OFF;
   webhook = WEBHOOK_OFF;
+  ntfy = NTFY_OFF;
+  pushover = PUSHOVER_OFF;
   pullRequests = PULL_REQUESTS_OFF;
+  testAnswer = { status: 200, body: { ok: true, channel: "ntfy", sentAt: Date.now() } };
+  tests = [];
   asked = [];
-  setApiHost(async (path) => {
+  setApiHost(async (path, init) => {
     asked.push(path);
+    if (path === "/api/phone/test") {
+      tests.push({ init });
+      await testAnswer.held;
+      return new Response(JSON.stringify(testAnswer.body), {
+        status: testAnswer.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const answer =
       path === "/api/webhook"
         ? webhook
-        : path === "/api/pull-requests"
-          ? pullRequests
-          : path === "/api/settings"
-            ? SETTINGS
-            : email;
+        : path === "/api/ntfy"
+          ? ntfy
+          : path === "/api/pushover"
+            ? pushover
+            : path === "/api/pull-requests"
+              ? pullRequests
+              : path === "/api/settings"
+                ? SETTINGS
+                : email;
     if (answer === null) throw new TypeError("Failed to fetch");
     return new Response(JSON.stringify(answer), {
       headers: { "Content-Type": "application/json" },
@@ -199,6 +248,8 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
     "Updates",
     "Email",
     "Webhook",
+    "ntfy",
+    "Pushover",
     "Pull requests",
     "Permission prompts",
     "Permission rules",
@@ -222,7 +273,7 @@ test.each(["dark", "light"] as const)(
 
     await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(10);
+    expect(cards).toHaveLength(12);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -765,7 +816,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications, the time rules and the history share the wide column, with email, the webhook, pull requests, permission prompts, the permission rules and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications, the time rules and the history share the wide column, with email, the webhook, ntfy, Pushover, pull requests, permission prompts, the permission rules and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -774,13 +825,28 @@ test("the theme, notifications, the time rules and the history share the wide co
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
   await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
-  const [theme, notes, rules, kept, mail, hook, pulls, prompts, permissions, copy] = [
+  const [
+    theme,
+    notes,
+    rules,
+    kept,
+    mail,
+    hook,
+    ntfyBox,
+    pushoverBox,
+    pulls,
+    prompts,
+    permissions,
+    copy,
+  ] = [
     box("Theme"),
     box("Notifications"),
     box("Time rules"),
     box("History"),
     box("Email"),
     box("Webhook"),
+    box("ntfy"),
+    box("Pushover"),
     box("Pull requests"),
     box("Permission prompts"),
     box("Permission rules"),
@@ -801,9 +867,15 @@ test("the theme, notifications, the time rules and the history share the wide co
   expect(hook.left).toBe(mail.left);
   expect(hook.width).toBe(mail.width);
   expect(hook.top - mail.bottom).toBe(16);
+  expect(ntfyBox.left).toBe(mail.left);
+  expect(ntfyBox.width).toBe(mail.width);
+  expect(ntfyBox.top - hook.bottom).toBe(16);
+  expect(pushoverBox.left).toBe(mail.left);
+  expect(pushoverBox.width).toBe(mail.width);
+  expect(pushoverBox.top - ntfyBox.bottom).toBe(16);
   expect(pulls.left).toBe(mail.left);
   expect(pulls.width).toBe(mail.width);
-  expect(pulls.top - hook.bottom).toBe(16);
+  expect(pulls.top - pushoverBox.bottom).toBe(16);
   expect(prompts.left).toBe(mail.left);
   expect(prompts.width).toBe(mail.width);
   expect(prompts.top - pulls.bottom).toBe(16);
@@ -833,7 +905,7 @@ const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
 };
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, Time rules, History, Email, Webhook, Pull requests, Permission prompts, Permission rules, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, Time rules, History, Email, Webhook, ntfy, Pushover, Pull requests, Permission prompts, Permission rules, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -858,6 +930,8 @@ test.each([1000, 375])(
       "History",
       "Email",
       "Webhook",
+      "ntfy",
+      "Pushover",
       "Pull requests",
       "Permission prompts",
       "Permission rules",
@@ -968,7 +1042,9 @@ test("with nothing set, the Email card says email is off and which two settings 
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
   expect([...new Set(asked)].sort()).toEqual([
     "/api/email",
+    "/api/ntfy",
     "/api/pull-requests",
+    "/api/pushover",
     "/api/settings",
     "/api/webhook",
   ]);
@@ -1458,3 +1534,282 @@ test("when the app does not answer about pull requests, the card says it could n
   ]);
   expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
 });
+
+/** The line that says whether a push channel is set up. */
+const stateIn = (screen: Awaited<ReturnType<typeof render>>, name: string) =>
+  screen
+    .getByRole("region", { name })
+    .element()
+    .querySelector('[data-part="state"]') as HTMLElement;
+
+/** The lines of the ntfy or Pushover card, once the app has answered. */
+async function pushLines(screen: Awaited<ReturnType<typeof render>>, name: "ntfy" | "Pushover") {
+  const card = screen.getByRole("region", { name });
+  await vi.waitFor(() => expect(stateIn(screen, name).textContent).not.toBe(""));
+  return [...card.element().querySelectorAll(SENDING_LINES)].map((line) => line.textContent);
+}
+
+const NTFY_ON: NtfyStatusResponse = {
+  on: true,
+  host: "ntfy.sh",
+  tokenSet: false,
+  events: ["needs-you"],
+  afterMs: 60_000,
+  asking: false,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+
+const PUSHOVER_ON: PushoverStatusResponse = {
+  on: true,
+  events: ["needs-you"],
+  afterMs: 60_000,
+  asking: false,
+  problem: null,
+  last: null,
+  limitedUntil: null,
+};
+
+test("with nothing set, the ntfy and Pushover cards say each is off and what turns it on, with no button", async () => {
+  const screen = await render(<SettingsView />);
+
+  expect(await pushLines(screen, "ntfy")).toEqual([
+    "ntfy is off.",
+    "Set AGENT_LOOKOUT_NTFY_URL to turn it on.",
+  ]);
+  expect(await pushLines(screen, "Pushover")).toEqual([
+    "Pushover is off.",
+    "Set AGENT_LOOKOUT_PUSHOVER_TOKEN and AGENT_LOOKOUT_PUSHOVER_USER to turn it on.",
+  ]);
+  for (const name of ["ntfy", "Pushover"]) {
+    const card = screen.getByRole("region", { name }).element();
+    expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
+    expect(stateIn(screen, name).getAttribute("aria-live")).toBe("polite");
+  }
+  expect(
+    [
+      ...screen
+        .getByRole("region", { name: "Pushover" })
+        .element()
+        .querySelectorAll('[data-slot="fact"]'),
+    ].map((fact) => fact.textContent),
+  ).toEqual(["AGENT_LOOKOUT_PUSHOVER_TOKEN", "AGENT_LOOKOUT_PUSHOVER_USER"]);
+  expect(yourData(screen)).toBe("Agent Lookout sends it nowhere");
+});
+
+test("a push setting that is wrong is named, with what to do, and there is no button", async () => {
+  ntfy = { ...NTFY_OFF, problem: "AGENT_LOOKOUT_NTFY_ASKING must be on or off." };
+  pushover = { ...PUSHOVER_OFF, problem: "AGENT_LOOKOUT_PUSHOVER_USER is not set." };
+  const screen = await render(<SettingsView />);
+
+  expect(await pushLines(screen, "ntfy")).toEqual([
+    "ntfy is off.",
+    "ntfy is not set up correctly",
+    "AGENT_LOOKOUT_NTFY_ASKING must be on or off. Correct it and start Agent Lookout again.",
+  ]);
+  expect(await pushLines(screen, "Pushover")).toEqual([
+    "Pushover is off.",
+    "Pushover is not set up correctly",
+    "AGENT_LOOKOUT_PUSHOVER_USER is not set. Correct it and start Agent Lookout again.",
+  ]);
+  expect(screen.container.querySelectorAll('[data-part="test"]')).toHaveLength(0);
+});
+
+test("with ntfy on, the card names the host, says whether a token guards the topic and how the last push went, and offers Send a test", async () => {
+  ntfy = { ...NTFY_ON, last: { at: today(14, 2), sent: true } };
+  const screen = await render(<SettingsView />);
+
+  expect(await pushLines(screen, "ntfy")).toEqual([
+    "Pushes go to ntfy.sh after a wait of 1 minute.",
+    "Pushes leave out what a waiting session is asking.",
+    "No access token is set, so the topic alone guards the pushes: keep it secret.",
+    "Last sent at 14:02.",
+  ]);
+  const card = screen.getByRole("region", { name: "ntfy" });
+  await expect.element(card.getByRole("button", { name: "Send a test" })).toBeVisible();
+  expect(yourData(screen)).toBe("Sent only in the pushes you set up");
+});
+
+test("with Pushover on, and email and the webhook too, the card offers Send a test and the facts name all three", async () => {
+  email = EMAIL_ON;
+  webhook = WEBHOOK_ON;
+  pushover = { ...PUSHOVER_ON, asking: true };
+  const screen = await render(<SettingsView />);
+
+  expect(await pushLines(screen, "Pushover")).toEqual([
+    "Pushes go to Pushover after a wait of 1 minute.",
+    "Pushes for a wait say what the session is asking.",
+  ]);
+  await emailLines(screen);
+  await webhookLines(screen);
+  await expect
+    .element(
+      screen.getByRole("region", { name: "Pushover" }).getByRole("button", { name: "Send a test" }),
+    )
+    .toBeVisible();
+  // ntfy is off, so its card has no button.
+  expect(
+    screen.getByRole("region", { name: "ntfy" }).element().querySelectorAll("button"),
+  ).toHaveLength(0);
+  expect(yourData(screen)).toBe("Sent only in the emails, posts and pushes you set up");
+});
+
+test("Send a test asks the app once for that channel, says it is sending, then when the test went, and keeps its focus", async () => {
+  ntfy = NTFY_ON;
+  let release = () => {};
+  testAnswer = {
+    status: 200,
+    body: { ok: true, channel: "ntfy", sentAt: today(14, 5) },
+    held: new Promise((resolve) => {
+      release = resolve;
+    }),
+  };
+  const screen = await render(<SettingsView />);
+  const card = screen.getByRole("region", { name: "ntfy" });
+  const button = card.getByRole("button", { name: "Send a test" });
+  await expect.element(button).toBeVisible();
+
+  await button.click();
+  const outcome = card.element().querySelector('[data-part="test"]') as HTMLElement;
+  expect(outcome.getAttribute("role")).toBe("status");
+  await vi.waitFor(() => expect(outcome.textContent).toBe("Sending a test…"));
+  expect(button.element().getAttribute("aria-disabled")).toBe("true");
+  // A second press while one is under way sends nothing. The browser's own
+  // driver will not press a button marked disabled, so the page is pressed.
+  (button.element() as HTMLElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(tests).toHaveLength(1);
+  const [{ init }] = tests as [{ init: RequestInit | undefined }];
+  expect(init?.method).toBe("POST");
+  expect(init?.body).toBe('{"channel":"ntfy"}');
+  expect(new Headers(init?.headers).get("X-Agent-Lookout-Action")).toBe("phone-test");
+
+  release();
+  await vi.waitFor(() => expect(outcome.textContent).toBe("Test sent at 14:05."));
+  expect(button.element().getAttribute("aria-disabled")).toBeNull();
+  expect(document.activeElement).toBe(button.element());
+  expect(card.element().querySelector('[data-slot="callout"]')).toBeNull();
+});
+
+test.each<[string, { status: number; body: unknown }, string]>([
+  [
+    "the service refused it",
+    {
+      status: 502,
+      body: {
+        error: "The ntfy server refused the access token or the topic (status 403).",
+        reason: "not-sent",
+      },
+    },
+    "The ntfy server refused the access token or the topic (status 403).",
+  ],
+  [
+    "the hourly limit is full",
+    {
+      status: 429,
+      body: {
+        error: "20 ntfy pushes were tried in the last hour, the most it tries.",
+        reason: "limited",
+        limitedUntil: today(15, 2),
+      },
+    },
+    "20 pushes were tried in the last hour, the most it tries. The next can go at 15:02.",
+  ],
+])("when %s, the note says the test was not sent, and why", async (_, answer, words) => {
+  ntfy = NTFY_ON;
+  testAnswer = answer;
+  const screen = await render(<SettingsView />);
+  const card = screen.getByRole("region", { name: "ntfy" });
+  await card.getByRole("button", { name: "Send a test" }).click();
+
+  const note = card.getByRole("status").filter({ hasText: "The test was not sent" });
+  await expect.element(note).toBeVisible();
+  await expect.element(note).toHaveTextContent(words);
+  expect((card.element().querySelector('[data-part="test"]') as HTMLElement).textContent).toBe("");
+  // The quiet note, not the error.
+  expect(getComputedStyle(note.element()).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+});
+
+test.each(["dark", "light"] as const)(
+  "in the %s theme the ntfy card is built like the Webhook card, its button is the quiet one, and nothing is warm",
+  async (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    ntfy = { ...NTFY_ON, tokenSet: true, last: { at: today(14, 2), sent: true } };
+    const screen = await render(<SettingsView />);
+    await pushLines(screen, "ntfy");
+
+    const state = stateIn(screen, "ntfy");
+    const asking = state.nextElementSibling as HTMLElement;
+    const note = asking.nextElementSibling as HTMLElement;
+    const last = note.nextElementSibling as HTMLElement;
+    const row = last.nextElementSibling as HTMLElement;
+    expect([asking.dataset.part, note.dataset.part]).toEqual(["asking", "note"]);
+    expect(note.textContent).toBe("An access token is set.");
+    for (const line of [asking, note, last]) {
+      expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+    }
+    for (const [above, below] of [
+      [state, asking],
+      [asking, note],
+      [note, last],
+      [last, row],
+    ] as const) {
+      expect(below.getBoundingClientRect().top - above.getBoundingClientRect().bottom).toBe(12);
+    }
+    const button = row.querySelector("button") as HTMLElement;
+    expect(button.dataset.variant).toBe("quiet");
+    expect(button.getBoundingClientRect().height).toBe(28);
+    expect(warmPaint(screen.container)).toEqual([]);
+    button.focus();
+    expect(warmPaint(screen.container)).toEqual([]);
+    await userEvent.hover(button);
+    expect(warmPaint(screen.container)).toEqual([]);
+    await pointAway();
+  },
+);
+
+test.each([1280, 375])(
+  "at %i pixels the push cards, with a failed test's note, keep inside the card",
+  async (width) => {
+    await page.viewport(width, 900);
+    onTestFinished(() => page.viewport(1280, 900));
+    ntfy = {
+      ...NTFY_ON,
+      host: "push.internal-notifications.example.com",
+      events: ["needs-you", "finished", "failed", "ended"],
+      last: {
+        at: today(14, 2),
+        sent: false,
+        reason: "the ntfy server refused the access token or the topic (status 403)",
+      },
+    };
+    pushover = PUSHOVER_ON;
+    testAnswer = {
+      status: 502,
+      body: {
+        error: "The ntfy server refused the access token or the topic (status 403).",
+        reason: "not-sent",
+      },
+    };
+    const screen = await render(<SettingsView />);
+    const card = screen.getByRole("region", { name: "ntfy" });
+    await card.getByRole("button", { name: "Send a test" }).click();
+    await expect
+      .element(card.getByRole("status").filter({ hasText: "The test was not sent" }))
+      .toBeVisible();
+
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    for (const name of ["ntfy", "Pushover"]) {
+      const element = screen.getByRole("region", { name }).element() as HTMLElement;
+      expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+      for (const part of element.querySelectorAll<HTMLElement>(
+        "p, button, [data-slot='callout']",
+      )) {
+        expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(
+          element.getBoundingClientRect().right - 24 + 0.5,
+        );
+      }
+    }
+  },
+);

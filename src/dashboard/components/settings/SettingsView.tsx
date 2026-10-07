@@ -1,4 +1,4 @@
-import type { HistoryResponse } from "@core/api";
+import type { HistoryResponse, PhoneChannel } from "@core/api";
 import type { AnsweringStatus } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { NOTICE_EVENT_LABEL } from "@core/notices/waiting";
@@ -13,6 +13,7 @@ import { AnswerCard } from "@dashboard/components/settings/AnswerCard";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
 import { PermissionRulesCard } from "@dashboard/components/settings/PermissionRulesCard";
+import { TestSend } from "@dashboard/components/settings/TestSend";
 import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
 import { useNow } from "@dashboard/hooks/data/useNow";
@@ -25,6 +26,8 @@ import { useTheme } from "@dashboard/hooks/shell/useTheme";
 import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
 import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
+import { fetchNtfyStatus, ntfyWords } from "@dashboard/lib/phone/ntfyStatus";
+import { fetchPushoverStatus, pushoverWords } from "@dashboard/lib/phone/pushoverStatus";
 import {
   asksGitHub,
   fetchPullRequestsStatus,
@@ -177,20 +180,37 @@ function wordsOf<Status>(
 }
 
 /**
- * Whether the app sends something off this computer one way, by email or to
- * a webhook, for which events, and how the last one went. It is only read
- * here. Both are set up in the environment Agent Lookout starts with, so the
- * card has no control, and the button for notifications does not cover them.
- * Before the app has answered, the card says nothing.
+ * Whether the app sends something off this computer one way, by email, to a
+ * webhook, or as a push through ntfy or Pushover, for which events, and how
+ * the last one went. It is only read here. Each is set up in the environment
+ * Agent Lookout starts with, so nothing here turns one on or off, and the
+ * button for notifications does not cover them. Before the app has answered,
+ * the card says nothing.
  *
- * While it is on, a line under the state says whether a wait's email or post
- * says what the session is asking, which is off unless its setting is on.
+ * While it is on, a line under the state says whether a wait's email, post or
+ * push says what the session is asking, which is off unless its setting is
+ * on, and for ntfy one more says whether an access token guards the topic.
  *
  * A setting that is wrong, a send that failed and the hourly limit are said in
  * the info note that says notifications are blocked, so a channel that is not
  * working never reads like one that is.
+ *
+ * The ntfy and Pushover cards have one control, Send a test, while they are
+ * on, last in the card: `test` names the channel it sends through.
  */
-function SendingCard({ title, words }: { title: string; words: SendingWords | null }) {
+function SendingCard({
+  title,
+  words,
+  test,
+}: {
+  title: string;
+  words: SendingWords | null;
+  /**
+   * The channel Send a test goes through, while it is on, and the page's
+   * clock, for the time a test went. Null for none.
+   */
+  test?: { channel: PhoneChannel; now: number } | null;
+}) {
   return (
     <SectionCard title={title}>
       <div className='px-6 pb-6'>
@@ -200,6 +220,11 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
         {words?.asking && (
           <p data-part='asking' className='mt-3 text-body text-ink-secondary'>
             <FactText>{words.asking}</FactText>
+          </p>
+        )}
+        {words?.note && (
+          <p data-part='note' className='mt-3 text-body text-ink-secondary'>
+            <FactText>{words.note}</FactText>
           </p>
         )}
         {words?.detail &&
@@ -214,9 +239,23 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
               <FactText>{words.detail}</FactText>
             </p>
           ))}
+        {test && <TestSend channel={test.channel} now={test.now} />}
       </div>
     </SectionCard>
   );
+}
+
+/** "a", "a and b", "a, b and c". */
+function listOf(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** Which ways of sending something off this computer are on. */
+interface Sending {
+  emailing: boolean;
+  posting: boolean;
+  pushing: boolean;
 }
 
 /**
@@ -225,15 +264,19 @@ function SendingCard({ title, words }: { title: string; words: SendingWords | nu
  * GitHub through it. While gh is missing or signed out nothing goes, and the
  * words say so.
  */
-function whereDataGoes(emailing: boolean, posting: boolean, pullRequests: boolean): string {
+function whereDataGoes({ emailing, posting, pushing }: Sending, pullRequests: boolean): string {
+  const kinds = [
+    ...(emailing ? ["emails"] : []),
+    ...(posting ? ["posts"] : []),
+    ...(pushing ? ["pushes"] : []),
+  ];
+  // A post alone is named as the webhook's, so it is not taken for something else.
   const sent =
-    emailing && posting
-      ? "the emails and posts you set up"
-      : emailing
-        ? "the emails you set up"
-        : posting
-          ? "the webhook posts you set up"
-          : null;
+    kinds.length === 0
+      ? null
+      : kinds.length === 1 && posting
+        ? "the webhook posts you set up"
+        : `the ${listOf(kinds)} you set up`;
   if (pullRequests) {
     return sent === null
       ? "Sent only as repository and branch names, to GitHub through gh"
@@ -263,7 +306,8 @@ interface SettingsViewProps {
  * choice to follow the computer that the header's switch does not offer,
  * whether to be notified and of what, the time rules, where the history is kept and the button
  * that clears it, in the Mac app whether it shows in the menu bar and its
- * updates, whether email and a webhook have been set up, whether pull requests
+ * updates, whether email, a webhook, ntfy and Pushover have been set up, with
+ * a test push for the last two, whether pull requests
  * are shown and gh can be asked for them, a few facts about this copy of the
  * app, whether permission prompts can be answered from here, and the
  * permission rules that answer them for the person.
@@ -287,13 +331,21 @@ export function SettingsView({
   const ticking = useNow();
   const email = useOutboundStatus(fetchEmailStatus);
   const webhook = useOutboundStatus(fetchWebhookStatus);
+  const ntfy = useOutboundStatus(fetchNtfyStatus);
+  const pushover = useOutboundStatus(fetchPushoverStatus);
   const pullRequests = useOutboundStatus(fetchPullRequestsStatus);
-  // Emails and webhook posts are the only things Agent Lookout sends off this
-  // computer, and only once set up, with the names gh sends GitHub for pull
-  // requests, once those are on and gh can be asked.
-  const emailing = typeof email?.status === "object" && email.status.on;
-  const posting = typeof webhook?.status === "object" && webhook.status.on;
+  // Emails, webhook posts and pushes are the only things Agent Lookout sends
+  // off this computer, and only once set up, with the names gh sends GitHub
+  // for pull requests, once those are on and gh can be asked.
+  const pushingNtfy = typeof ntfy?.status === "object" && ntfy.status.on;
+  const pushingPushover = typeof pushover?.status === "object" && pushover.status.on;
+  const sending: Sending = {
+    emailing: typeof email?.status === "object" && email.status.on,
+    posting: typeof webhook?.status === "object" && webhook.status.on,
+    pushing: pushingNtfy || pushingPushover,
+  };
   const askingGh = typeof pullRequests?.status === "object" && asksGitHub(pullRequests.status);
+  const clock = now ?? ticking;
 
   return (
     <div
@@ -302,7 +354,7 @@ export function SettingsView({
     >
       {/*
        * The settings on the left, and on the right what is only read: email,
-       * the webhook, pull requests and the facts about this copy, as Sources keeps its
+       * the webhook, ntfy, Pushover, pull requests and the facts about this copy, as Sources keeps its
        * explanations in the right third. When the view narrows the right stacks
        * under the left.
        */}
@@ -326,7 +378,7 @@ export function SettingsView({
 
         <TimeRulesCard onChanged={onTimeRulesChanged} snapshot={snapshot} />
 
-        <HistoryCard history={history} now={now ?? ticking} onCleared={onHistoryCleared} />
+        <HistoryCard history={history} now={clock} onCleared={onHistoryCleared} />
 
         {inApp && <MenuBarCard />}
 
@@ -343,6 +395,16 @@ export function SettingsView({
           words={wordsOf(webhook, "Whether the webhook is set up could not be read.", webhookWords)}
         />
         <SendingCard
+          title='ntfy'
+          words={wordsOf(ntfy, "Whether ntfy is set up could not be read.", ntfyWords)}
+          test={pushingNtfy ? { channel: "ntfy", now: clock } : null}
+        />
+        <SendingCard
+          title='Pushover'
+          words={wordsOf(pushover, "Whether Pushover is set up could not be read.", pushoverWords)}
+          test={pushingPushover ? { channel: "pushover", now: clock } : null}
+        />
+        <SendingCard
           title='Pull requests'
           words={wordsOf(
             pullRequests,
@@ -352,14 +414,14 @@ export function SettingsView({
         />
         <AnswerCard answering={answering} />
         {/* Next to Permission prompts, since a rule answers only while those can be answered. */}
-        <PermissionRulesCard answering={answering} now={now ?? ticking} />
+        <PermissionRulesCard answering={answering} now={clock} />
         <SectionCard title='This copy'>
           <FactList className='px-6 pb-3'>
             <FactRow label='Version' mono>
               v{__APP_VERSION__}
             </FactRow>
             <FactRow label='Your data'>
-              <FactText>{whereDataGoes(emailing, posting, askingGh)}</FactText>
+              <FactText>{whereDataGoes(sending, askingGh)}</FactText>
             </FactRow>
           </FactList>
         </SectionCard>
