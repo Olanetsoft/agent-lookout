@@ -41,9 +41,10 @@ import {
  *       "permissionRules": [{ "id": "…", "decision": "allow", "tool": "Bash", "command": "npm test:*" }] }
  *
  * The permission rules are read whole or not at all (`readPermissionRules`):
- * a list that cannot be read is no rule in force, and says so, and is kept in
- * the file as it was until the person changes a permission rule, which
- * writes the list again with the rules then shown.
+ * a list that cannot be read, or holds a rule this version refuses, such as
+ * an allow rule for `curl` saved before it was refused, is no rule in force,
+ * and says so, and is kept in the file as it was until the person changes a
+ * permission rule, which writes the list again with the rules then shown.
  *
  * A key the collector does not know is passed over when it is read, and kept
  * as it was when the file is written again, beside the rules or among them, so
@@ -224,7 +225,7 @@ function rulesIn(read: SettingsText, shown: string): FileHeld {
 
 /** What is said while the file holds permission rules that cannot be read. */
 function unreadRulesLine(shown: string): string {
-  return `${shown} holds permission rules Agent Lookout cannot read, so no rule is used. Changing a rule in Settings writes the list again with only the rules shown there.`;
+  return `${shown} holds permission rules Agent Lookout cannot read, or a rule it refuses, so no rule is used. Changing a rule in Settings writes the list again with only the rules shown there.`;
 }
 
 export function createCollectorSettings(options: CollectorSettingsOptions): CollectorSettings {

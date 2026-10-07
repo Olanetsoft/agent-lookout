@@ -320,6 +320,36 @@ test("a rule added through the page's route answers the next request", async () 
   expect(again.running()).toBe(true);
 });
 
+test("a settings file holding an allow rule for curl puts no rule in force, and the page's route refuses one", async () => {
+  const curl: RuleWords = { decision: "allow", tool: "Bash", command: "curl:*" };
+  const server = await serve([ALLOW_TESTS, curl]);
+  const settings = await server.settings();
+  expect(settings.permissionRules).toEqual([]);
+  expect(settings.permissionRulesProblem).toMatch(/or a rule it refuses, so no rule is used/);
+
+  // Not even the allow rule beside it answers: the request waits for the person.
+  const asked = hook(server.socketPath, "Bash", { command: "npm test" });
+  await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+    timeout: 5_000,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  expect(asked.running()).toBe(true);
+  expect((await server.settings()).ruleAnswers).toEqual([]);
+
+  const refused = await server.changeRules({ add: curl });
+  expect(refused.status).toBe(400);
+  expect(refused.json()).toMatchObject({
+    reason: "invalid",
+    error: expect.stringMatching(/^curl can send requests, or run code that does/),
+  });
+  // The file is as it was.
+  expect(JSON.parse(await readFile(server.settingsFile, "utf8")).permissionRules).toHaveLength(2);
+
+  const ask = (await server.session())?.ask;
+  expect((await server.answer(ask?.requestId ?? "", "deny")).status).toBe(200);
+  expect(await asked.done).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });
+});
+
 test("with AGENT_LOOKOUT_ANSWER off, no rule answers anything and the hook prints nothing", async () => {
   const server = await serve([ALLOW_TESTS], { AGENT_LOOKOUT_ANSWER: "off" });
   expect(await hook(server.socketPath, "Bash", { command: "npm test" }).done).toEqual({

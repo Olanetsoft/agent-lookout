@@ -164,6 +164,8 @@ test.each([
   ["WebFetch", "curl", /goes with Bash only/],
   ["bash", "npm test", /writes this tool's name Bash/],
   ["Bash", "sudo npm test", /sudo runs another command/],
+  ["Bash", "curl:*", /curl can send requests, or run code that does/],
+  ["Bash", "python -m pytest", /allow a script the project owns, such as \.\/scripts\/test\.sh/],
   ["mcp__docs", "", /names one tool of a server/],
 ])(
   "an allow rule for %j with %j is not sent: the card says why, in the app's own words",
@@ -176,6 +178,17 @@ test.each([
     expect(changes).toEqual([]);
   },
 );
+
+test("the help says no allow rule may begin with a program that sends requests or runs code, and that a list holding one is not used", async () => {
+  await shown();
+  const text = card().element().textContent ?? "";
+  expect(text).toContain(
+    "Claude can reach Agent Lookout on this computer, so no allow rule may begin with a program that sends requests or runs the code it is given, such as curl or python, and a saved list that holds one is not used at all.",
+  );
+  expect(text).toContain(
+    "A rule for a program that runs a file Claude can edit, such as npm test, still lets Claude change these rules and answer its own prompts.",
+  );
+});
 
 test("moving a rule sends its id, keeps focus on its button, and the first rule cannot move up", async () => {
   await shown();
@@ -423,7 +436,7 @@ test("rules the file holds and Agent Lookout could not read are said in a note a
           problem: null,
           permissionRules: [],
           permissionRulesProblem:
-            "~/.agent-lookout/settings.json holds permission rules Agent Lookout cannot read, so no rule is used.",
+            "~/.agent-lookout/settings.json holds permission rules Agent Lookout cannot read, or a rule it refuses, so no rule is used.",
           ruleAnswers: [],
           ruleAnswersSince: NOW,
         }),
@@ -435,7 +448,7 @@ test("rules the file holds and Agent Lookout could not read are said in a note a
     .getByRole("status")
     .filter({ hasText: "The settings file could not be used" });
   await expect.element(note).toBeVisible();
-  expect(note.element().textContent).toContain("cannot read, so no rule is used.");
+  expect(note.element().textContent).toContain("or a rule it refuses, so no rule is used.");
   // 12px above the first part.
   const rulesPart = card().element().querySelector("[data-part='rules']") as HTMLElement;
   expect(

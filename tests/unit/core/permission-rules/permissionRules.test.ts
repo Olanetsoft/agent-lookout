@@ -158,6 +158,70 @@ describe("the rules a person can write", () => {
     },
   );
 
+  test.each([
+    "curl:*",
+    "curl -s http://127.0.0.1:4777/api/health",
+    "wget:*",
+    "nc:*",
+    "socat:*",
+    "ssh:*",
+    "scp:*",
+    "http:*",
+    "xh:*",
+    "node:*",
+    "node scripts/build.js",
+    "deno:*",
+    "bun:*",
+    "python:*",
+    "python -m pytest",
+    "python3 -m pytest:*",
+    "python3.12:*",
+    "ruby:*",
+    "perl:*",
+    "php:*",
+    "lua:*",
+    "osascript:*",
+    "swift:*",
+    "Rscript:*",
+    "awk:*",
+    "gawk:*",
+    "expect:*",
+    "/usr/bin/curl:*",
+    "CURL:*",
+    "/opt/homebrew/bin/Python3 -m pytest",
+  ])(
+    "an allow rule for %j, which can send requests or run the code it is given, is refused, but it may be denied",
+    (command) => {
+      const problem = ruleProblem({ decision: "allow", tool: "Bash", command });
+      expect(problem).toMatch(
+        /can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you/,
+      );
+      expect(problem).toMatch(
+        /Answer such commands by hand, or allow a script the project owns, such as \.\/scripts\/test\.sh, knowing Claude can edit it\./,
+      );
+      expect(ruleProblem({ decision: "deny", tool: "Bash", command })).toBeNull();
+      expect(ruleProblem({ decision: "ask", tool: "Bash", command })).toBeNull();
+    },
+  );
+
+  test("the refusal names the program as it was written", () => {
+    expect(ruleProblem({ decision: "allow", tool: "Bash", command: "python3 -m pytest" })).toMatch(
+      /^python3 can send requests/,
+    );
+  });
+
+  test("a program that runs another is still refused as one, before it is read as anything else", () => {
+    expect(ruleProblem({ decision: "allow", tool: "Bash", command: "env python3 x.py" })).toMatch(
+      /^env runs another command/,
+    );
+  });
+
+  test("jq, a script the project owns, and a command that only names such a program later may be allowed", () => {
+    for (const command of ["jq:*", "./scripts/test.sh", "npm run python", "make curl", "ncdu:*"]) {
+      expect(ruleProblem({ decision: "allow", tool: "Bash", command })).toBeNull();
+    }
+  });
+
   test("a program whose name only begins like one that runs others may be allowed", () => {
     expect(ruleProblem({ decision: "allow", tool: "Bash", command: "envsubst:*" })).toBeNull();
     expect(ruleProblem({ decision: "allow", tool: "Bash", command: "shellcheck:*" })).toBeNull();
@@ -227,6 +291,14 @@ describe("the rules a file holds", () => {
     ["a rule with an id that is not one", [ALLOW, { ...DENY, id: "two words" }]],
     ["two rules with one id", [ALLOW, { ...DENY, id: "r1" }]],
     ["an allow rule for every command", [{ id: "r3", decision: "allow", tool: "Bash" }]],
+    [
+      "an allow rule for a program that sends requests, as saved before it was refused",
+      [ALLOW, { id: "r3", decision: "allow", tool: "Bash", command: "curl:*" }, DENY],
+    ],
+    [
+      "an allow rule for an interpreter, exactly",
+      [{ id: "r3", decision: "allow", tool: "Bash", command: "python -m pytest" }, DENY],
+    ],
     [
       "more rules than the list holds",
       Array.from({ length: MAX_RULES + 1 }, (_, index) => ({ ...DENY, id: `r${index}` })),

@@ -3,6 +3,8 @@ import {
   looselyMatches,
   plainCommandWords,
   ruleCommandOf,
+  runsAnotherCommand,
+  sendsOrRunsCode,
   wordsMatch,
 } from "./commandWords.ts";
 import {
@@ -40,7 +42,10 @@ import {
  *   Claude Code's sandbox, leaves it to the person.
  *
  * An allow rule for every tool, or for Bash with no command, never matches,
- * should a file hold one: the rules refuse such a rule when it is written.
+ * should a list hold one, and nor does one whose command begins with a
+ * program that runs another, sends requests or runs the code it is given,
+ * such as `sudo`, `curl` or `python`: the rules refuse such a rule when it is
+ * written, and a file that holds one is read as no rule at all.
  */
 
 /** A request, as much of it as the rules read. */
@@ -92,8 +97,11 @@ function lets(rule: PermissionRule, request: RuleRequest): boolean {
   if (request.tool !== COMMAND_TOOL) return rule.command === undefined;
   if (rule.command === undefined || request.command === undefined) return false;
   if (!request.inputNames.every((name) => INPUTS_AN_ALLOW_RULE_TAKES.includes(name))) return false;
+  const wanted = ruleCommandOf(rule.command);
+  const [program = ""] = wanted.words;
+  if (runsAnotherCommand(program) || sendsOrRunsCode(program)) return false;
   const words = plainCommandWords(request.command);
-  return words !== null && wordsMatch(ruleCommandOf(rule.command), words);
+  return words !== null && wordsMatch(wanted, words);
 }
 
 /** The rule that decides the request, deny first, then ask, then allow, or null when none does. */

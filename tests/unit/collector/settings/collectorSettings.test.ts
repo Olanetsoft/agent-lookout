@@ -216,10 +216,33 @@ describe("the permission rules", () => {
     expect(settings.permissionRules()).toEqual([]);
     expect(settings.timeRules()).toEqual(SET);
     const line =
-      "~/.agent-lookout/settings.json holds permission rules Agent Lookout cannot read, so no rule is used. Changing a rule in Settings writes the list again with only the rules shown there.";
+      "~/.agent-lookout/settings.json holds permission rules Agent Lookout cannot read, or a rule it refuses, so no rule is used. Changing a rule in Settings writes the list again with only the rules shown there.";
     expect(settings.rulesProblemAtStart).toBe(line);
     expect(settings.status()).toMatchObject({ problem: null, permissionRulesProblem: line });
     expect(settings.problemAtStart).toBeNull();
+  });
+
+  test("a list saved with an allow rule now refused, such as one for curl, is no rule in force, and says so", () => {
+    const curl = { id: "cccccccccccc", decision: "allow", tool: "Bash", command: "curl:*" };
+    const held = [DENY, curl, ALLOW];
+    const { fake, written } = store(text({ timeRules: SET, permissionRules: held }));
+    const settings = createCollectorSettings({ setup: SETUP, store: fake });
+    // Not the rules beside it either: the list is read whole or not at all.
+    expect(settings.permissionRules()).toEqual([]);
+    expect(settings.status().permissionRulesProblem).toMatch(
+      /cannot read, or a rule it refuses, so no rule is used/,
+    );
+
+    // A change to the time rules keeps the list in the file as it was.
+    settings.changeTimeRules(DEFAULT_TIME_RULES);
+    expect(JSON.parse(written[0] as string).permissionRules).toEqual(held);
+    expect(settings.permissionRules()).toEqual([]);
+
+    // Taken out of the file, by hand or by the other copy, the rest are in force by the next read.
+    fake.write(SETUP, JSON.stringify({ timeRules: SET, permissionRules: [DENY, ALLOW] }));
+    settings.readAgain();
+    expect(settings.permissionRules()).toEqual([DENY, ALLOW]);
+    expect(settings.status().permissionRulesProblem).toBeNull();
   });
 
   test("a file that is not JSON, or was refused, is said of both kinds of rule, once at start", () => {
@@ -264,7 +287,7 @@ describe("the permission rules", () => {
     const settings = createCollectorSettings({ setup: SETUP, store: fake });
     settings.changeTimeRules(DEFAULT_TIME_RULES);
     expect(JSON.parse(written[0] as string).permissionRules).toEqual(unread);
-    expect(settings.status().permissionRulesProblem).toMatch(/cannot read, so no rule is used/);
+    expect(settings.status().permissionRulesProblem).toMatch(/cannot read, or a rule it refuses/);
 
     settings.changePermissionRules(toList([DENY]));
     expect(JSON.parse(written[1] as string).permissionRules).toEqual([DENY]);

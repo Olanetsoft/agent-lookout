@@ -1,5 +1,11 @@
 import { EDIT_TOOLS, NOT_YES_OR_NO_TOOLS } from "../sessions/session.ts";
-import { ASSIGNMENT, plainCommandWords, PREFIX_MARK, runsAnotherCommand } from "./commandWords.ts";
+import {
+  ASSIGNMENT,
+  plainCommandWords,
+  PREFIX_MARK,
+  runsAnotherCommand,
+  sendsOrRunsCode,
+} from "./commandWords.ts";
 
 /**
  * The permission rules: an ordered list the person keeps in Settings, each
@@ -10,9 +16,11 @@ import { ASSIGNMENT, plainCommandWords, PREFIX_MARK, runsAnotherCommand } from "
  *   asking the person, and only when the person could allow it by hand on the
  *   dashboard right then, and, for Bash, only one plain command
  *   (`commandWords.ts`). An allow rule names one tool: never every tool, an
- *   MCP server's every tool, Bash with no command, or a command that begins
+ *   MCP server's every tool, Bash with no command, a command that begins
  *   with a program that runs another, such as `sudo` or `bash`
- *   (`COMMAND_RUNNERS`).
+ *   (`COMMAND_RUNNERS`), or one that begins with a program that sends
+ *   requests or runs the code it is given, such as `curl` or `python`, which
+ *   could reach Agent Lookout itself (`NETWORK_CLIENTS_AND_INTERPRETERS`).
  * - `ask`: the prompt waits for the person, as with no rule, even when an
  *   allow rule matches too.
  * - `deny`: Agent Lookout denies it at once.
@@ -162,6 +170,9 @@ function commandProblem(command: string, decision: RuleDecision): string | null 
   }
   if (decision === "allow" && runsAnotherCommand(program)) {
     return `${program} runs another command, so an allow rule for it would let Claude Code run anything without asking you. Name the command it would run instead.`;
+  }
+  if (decision === "allow" && sendsOrRunsCode(program)) {
+    return `${program} can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you. Answer such commands by hand, or allow a script the project owns, such as ./scripts/test.sh, knowing Claude can edit it.`;
   }
   return null;
 }

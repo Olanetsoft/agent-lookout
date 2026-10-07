@@ -89,6 +89,61 @@ export const COMMAND_RUNNERS: readonly string[] = [
   "zsh",
 ];
 
+/**
+ * The programs that send requests over the network, and the interpreters,
+ * which run the code they are given: `curl -d @rule.json http://127.0.0.1:…`,
+ * `python -m pytest`, `node build.js`. Through any of them Claude can reach
+ * Agent Lookout's own API on this computer, so an allow rule may not begin
+ * with one (`permissionRules.ts`): it would let Claude Code add a rule, or
+ * answer its own prompt, without asking. Each is written in small letters,
+ * by its name alone, and is found with a version after it too, such as
+ * `python3`, `python3.12`, `perl5.34` or `tclsh8.6` (`sendsOrRunsCode`). The
+ * list cannot hold every program that can: `npm test`, `make` and a test
+ * runner each run a file Claude can edit, and `git -c` can run anything.
+ */
+export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
+  // Programs that send requests, or open a connection, to an address.
+  "aria2c",
+  "curl",
+  "ftp",
+  "http",
+  "https",
+  "nc",
+  "ncat",
+  "netcat",
+  "scp",
+  "sftp",
+  "socat",
+  "ssh",
+  "telnet",
+  "wget",
+  "xh",
+  // Interpreters, which run code given in their words or in a file.
+  "awk",
+  "bun",
+  "deno",
+  "expect",
+  "gawk",
+  "julia",
+  "lua",
+  "nawk",
+  "node",
+  "nodejs",
+  "osascript",
+  "perl",
+  "php",
+  "pypy",
+  "python",
+  "rscript",
+  "ruby",
+  "swift",
+  "tclsh",
+  "wish",
+];
+
+/** A version at the end of a program's name, as in `python3`, `python3.12` or `perl5.34`. */
+const VERSION_AT_END = /\d+(?:\.\d+)*$/;
+
 /** A word as the program it names: its last part after any `/`, in small letters. */
 export function programOf(word: string): string {
   return word.slice(word.lastIndexOf("/") + 1).toLowerCase();
@@ -97,6 +152,20 @@ export function programOf(word: string): string {
 /** Whether a word names a program that runs another command (`COMMAND_RUNNERS`). */
 export function runsAnotherCommand(word: string): boolean {
   return COMMAND_RUNNERS.includes(programOf(word));
+}
+
+/**
+ * Whether a word names a program that sends requests or runs code given in
+ * its words (`NETWORK_CLIENTS_AND_INTERPRETERS`), by its name alone, whatever
+ * its capitals, its folder and a version after it: `/usr/bin/Python3.12` is
+ * `python`.
+ */
+export function sendsOrRunsCode(word: string): boolean {
+  const program = programOf(word);
+  return (
+    NETWORK_CLIENTS_AND_INTERPRETERS.includes(program) ||
+    NETWORK_CLIENTS_AND_INTERPRETERS.includes(program.replace(VERSION_AT_END, ""))
+  );
 }
 
 /** A character a word of a plain command may hold: nothing any shell gives a meaning to. */

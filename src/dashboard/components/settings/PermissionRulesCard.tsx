@@ -510,10 +510,11 @@ export function PermissionRulesCard({ answering = null, now: given }: Permission
           <Code>git push:*</Code> also holds back <Code>git -C . push</Code>.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
-          An allow rule trusts what it names. Claude can reach Agent Lookout on this computer, so a
-          rule for a program that sends requests, such as <Code>curl</Code>, or that runs a file
-          Claude can edit, such as <Code>npm test</Code>, lets Claude change these rules and answer
-          its own prompts.
+          An allow rule trusts what it names. Claude can reach Agent Lookout on this computer, so no
+          allow rule may begin with a program that sends requests or runs the code it is given, such
+          as <Code>curl</Code> or <Code>python</Code>, and a saved list that holds one is not used
+          at all. A rule for a program that runs a file Claude can edit, such as{" "}
+          <Code>npm test</Code>, still lets Claude change these rules and answer its own prompts.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>
           Claude Code&apos;s own deny and allow rules decide first: Claude Code does not ask Agent

@@ -90,6 +90,33 @@ describe("an allow rule answers only what the person could allow by hand now", (
     expect(decideByRules([everything, everyCommand], bash("ls"))).toBeNull();
   });
 
+  test("an allow rule for a program that sends requests, runs code or runs another never allows, should a list hold one", () => {
+    const held = (command: string): PermissionRule => ({
+      id: command,
+      decision: "allow",
+      tool: "Bash",
+      command,
+    });
+    const asked: [string, string][] = [
+      ["curl:*", "curl -s http://127.0.0.1:4777/api/health"],
+      [
+        "/usr/bin/CURL:*",
+        "/usr/bin/CURL -d @rule.json http://127.0.0.1:4777/api/settings/permission-rules",
+      ],
+      ["python -m pytest", "python -m pytest"],
+      ["python3.12:*", "python3.12 -m pytest"],
+      ["node:*", "node build.js"],
+      ["awk:*", "awk -f x.awk"],
+      ["sudo:*", "sudo npm test"],
+    ];
+    for (const [command, request] of asked) {
+      expect(decideByRules([held(command)], bash(request))).toBeNull();
+    }
+    // A deny rule for one still denies it.
+    const denyCurl = rule({ decision: "deny", tool: "Bash", command: "curl:*" });
+    expect(decideByRules([denyCurl], bash("curl -s example.com"))?.decision).toBe("deny");
+  });
+
   test("a Bash rule allows its command, exactly or as a prefix, word by word", () => {
     expect(decideByRules([ALLOW_TESTS], bash("npm test"))?.decision).toBe("allow");
     expect(decideByRules([ALLOW_TESTS], bash("npm test --watch"))?.decision).toBe("allow");

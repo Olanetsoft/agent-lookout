@@ -4,10 +4,12 @@ import {
   COMMAND_RUNNERS,
   looseCommandWords,
   looselyMatches,
+  NETWORK_CLIENTS_AND_INTERPRETERS,
   plainCommandWords,
   programOf,
   ruleCommandOf,
   runsAnotherCommand,
+  sendsOrRunsCode,
   wordsMatch,
 } from "@core/permission-rules/commandWords";
 
@@ -248,6 +250,79 @@ describe("the programs that run another command", () => {
   test("the list is written in small letters, each once", () => {
     expect(COMMAND_RUNNERS.every((name) => name === name.toLowerCase())).toBe(true);
     expect(new Set(COMMAND_RUNNERS).size).toBe(COMMAND_RUNNERS.length);
+  });
+});
+
+describe("the programs that send requests or run the code they are given", () => {
+  test.each([
+    "curl",
+    "wget",
+    "nc",
+    "ncat",
+    "netcat",
+    "socat",
+    "telnet",
+    "http",
+    "https",
+    "xh",
+    "aria2c",
+    "ftp",
+    "sftp",
+    "scp",
+    "ssh",
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "python",
+    "python3",
+    "python2",
+    "python3.12",
+    "pypy",
+    "pypy3",
+    "ruby",
+    "perl",
+    "perl5.34",
+    "php",
+    "lua",
+    "lua5.4",
+    "osascript",
+    "swift",
+    "Rscript",
+    "julia",
+    "tclsh",
+    "tclsh8.6",
+    "wish",
+    "expect",
+    "awk",
+    "gawk",
+    "nawk",
+  ])("%s is one", (word) => {
+    expect(sendsOrRunsCode(word)).toBe(true);
+  });
+
+  test("by its name alone, whatever its capitals, its folder or a version after it", () => {
+    expect(sendsOrRunsCode("/usr/bin/curl")).toBe(true);
+    expect(sendsOrRunsCode("CURL")).toBe(true);
+    expect(sendsOrRunsCode("/opt/homebrew/bin/Python3.12")).toBe(true);
+    expect(sendsOrRunsCode("./node_modules/.bin/node")).toBe(true);
+    expect(sendsOrRunsCode("/usr/local/bin/rscript")).toBe(true);
+  });
+
+  test("not jq, nor a program whose name only begins like one, nor a runner, which has its own list", () => {
+    for (const word of ["jq", "ncdu", "curly", "nodemon", "pythonista", "python-config", "npm"]) {
+      expect(sendsOrRunsCode(word)).toBe(false);
+    }
+    expect(sendsOrRunsCode("sudo")).toBe(false);
+    expect(sendsOrRunsCode("bash")).toBe(false);
+  });
+
+  test("the list is written in small letters, each once, and shares no name with the runners", () => {
+    const list = NETWORK_CLIENTS_AND_INTERPRETERS;
+    expect(list.every((name) => name === name.toLowerCase())).toBe(true);
+    expect(new Set(list).size).toBe(list.length);
+    expect(list.some((name) => COMMAND_RUNNERS.includes(name))).toBe(false);
+    expect(list).not.toContain("jq");
   });
 });
 

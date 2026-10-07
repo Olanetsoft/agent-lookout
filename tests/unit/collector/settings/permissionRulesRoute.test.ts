@@ -194,6 +194,42 @@ describe("POST /api/settings/permission-rules", () => {
     expect(settings.changePermissionRules).not.toHaveBeenCalled();
   });
 
+  test.each([
+    { add: { decision: "allow", tool: "Bash", command: "curl:*" } },
+    { add: { decision: "allow", tool: "Bash", command: "/usr/bin/CURL -s 127.0.0.1:4777" } },
+    { add: { decision: "allow", tool: "Bash", command: "python -m pytest" } },
+    { add: { decision: "allow", tool: "Bash", command: "python3.12:*" } },
+    { add: { decision: "allow", tool: "Bash", command: "node build.js" } },
+    { edit: { id: "aaaaaaaaaaaa", decision: "allow", tool: "Bash", command: "wget:*" } },
+  ])(
+    "an allow rule for a program that sends requests or runs code, %j, is refused with 400 and the sentence that says why, and nothing is saved",
+    async (body) => {
+      const { route, settings, held } = routeOver([A]);
+      const answer = await route(request({ body: JSON.stringify(body) }));
+      expect(answer.status).toBe(400);
+      expect(answer.body).toMatchObject({
+        reason: "invalid",
+        error: expect.stringMatching(
+          /can send requests, or run code that does, so an allow rule for it would let Claude Code reach Agent Lookout on this computer and add a rule or answer its own prompts without asking you\. Answer such commands by hand, or allow a script the project owns, such as \.\/scripts\/test\.sh, knowing Claude can edit it\./,
+        ),
+      });
+      expect(settings.changePermissionRules).not.toHaveBeenCalled();
+      expect(held()).toEqual([A]);
+    },
+  );
+
+  test("a deny or an ask rule for such a program is taken, and so is an allow rule for a script the project owns", async () => {
+    for (const add of [
+      { decision: "deny", tool: "Bash", command: "curl:*" },
+      { decision: "ask", tool: "Bash", command: "python:*" },
+      { decision: "allow", tool: "Bash", command: "./scripts/test.sh" },
+    ]) {
+      const { route, held } = routeOver();
+      expect((await route(request({ body: JSON.stringify({ add }) }))).status).toBe(200);
+      expect(held()).toEqual([{ id: "dddddddddddd", ...add }]);
+    }
+  });
+
   test("a rule the list does not hold, a rule it holds already, and a full list are refused", async () => {
     const { route } = routeOver([A]);
     expect(
