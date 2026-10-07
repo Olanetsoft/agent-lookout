@@ -112,6 +112,18 @@ function syncFolder(folder: string): void {
   }
 }
 
+/** What is said of a settings file that is a link. */
+const linkRefused = (shown: string): SettingsText => ({
+  kind: "refused",
+  problem: `${shown} is a link, which Agent Lookout does not follow, so the time rules and the permission rules are off.`,
+});
+
+/** What is said of a settings file that is a folder, a pipe or a device. */
+const notOrdinary = (shown: string): SettingsText => ({
+  kind: "refused",
+  problem: `${shown} is not an ordinary file, so the time rules and the permission rules are off.`,
+});
+
 /** Reads the settings file, as its setup names it. Never throws. */
 export function readSettingsText(setup: SettingsSetup): SettingsText {
   const { file, shown } = setup;
@@ -125,6 +137,10 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
         problem: `The folder of ${shown} is a link or not a folder, which Agent Lookout does not follow, so the time rules and the permission rules are off.`,
       };
     }
+    // Said the same on every system, before the open, which refuses either too.
+    const fileKind = kindAt(file);
+    if (fileKind === "link") return linkRefused(shown);
+    if (fileKind === "folder" || fileKind === "other") return notOrdinary(shown);
   } catch {
     return {
       kind: "refused",
@@ -138,12 +154,7 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
   } catch (error) {
     const code = codeOf(error);
     if (code === "ENOENT") return { kind: "missing" };
-    if (code === "ELOOP") {
-      return {
-        kind: "refused",
-        problem: `${shown} is a link, which Agent Lookout does not follow, so the time rules and the permission rules are off.`,
-      };
-    }
+    if (code === "ELOOP") return linkRefused(shown);
     return {
       kind: "refused",
       problem: `${shown} could not be read, so the time rules and the permission rules are off.`,
@@ -151,12 +162,7 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
   }
   try {
     const info = fstatSync(fd);
-    if (!info.isFile()) {
-      return {
-        kind: "refused",
-        problem: `${shown} is not an ordinary file, so the time rules and the permission rules are off.`,
-      };
-    }
+    if (!info.isFile()) return notOrdinary(shown);
     if (info.size > MAX_SETTINGS_BYTES) {
       return {
         kind: "refused",
