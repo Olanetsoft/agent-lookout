@@ -17,8 +17,8 @@ export interface PushoverBody {
   title: string;
   message: string;
   /**
-   * 0, normal, for a wait and a reminder of one, so it sounds as the device
-   * is set to; -1, quiet, for the rest. Never 1, which would sound through
+   * 0, normal, for a wait, a reminder of one and the test, so it sounds as
+   * the device is set to; -1, quiet, for the rest. Never 1, which would sound through
    * the quiet hours set in Pushover, or 2, which repeats until it is
    * acknowledged.
    */

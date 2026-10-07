@@ -541,13 +541,13 @@ The topic's name is a secret. On ntfy.sh anyone who knows or guesses a topic's n
 
 5. Open Settings and press Send a test on the ntfy card. Your phone shows "Agent Lookout test", and the card says "Test sent at 14:02."
 
-An access token keeps a topic to you on a server that guards its topics, however its name is found. On a server of your own with access control, run `ntfy token add` for your user there and give that user the topic with `ntfy access`. On ntfy.sh, a topic is guarded once it is reserved for your account, as its account pages explain, and the token is made there too. Put the token in the same file, and sign in to the app with the same account so it can still read the topic:
+An access token keeps a topic to you on a server that guards its topics, however its name is found. On a server of your own with access control, run `ntfy token add` for your user there and give that user the topic with `ntfy access`. On ntfy.sh, only a topic reserved for your account is guarded, and reserving topics needs one of its paid plans, as its pricing says: reserve the topic and make the token on its account pages. On ntfy.sh's free plan nothing guards a topic but its name, so keep that name secret. Put the token in the same file, and sign in to the app with the same account so it can still read the topic:
 
 ```sh
 export AGENT_LOOKOUT_NTFY_TOKEN='tk_YOUR_TOKEN'
 ```
 
-For a server of your own, the address is its own followed by the topic, such as `https://ntfy.example.com/YOUR-TOPIC`. It must begin `https://`, unless the server is on this computer, at `127.0.0.1` or `localhost`. It may hold no user name, password, `?` or `#`: an access token goes in `AGENT_LOOKOUT_NTFY_TOKEN`.
+For a server of your own, the address is its own followed by the topic, such as `https://ntfy.example.com/YOUR-TOPIC`. It must begin `https://`, unless the server is on this computer, at `127.0.0.1` or `localhost`. It may hold no user name, password, `?` or `#`: an access token goes in `AGENT_LOOKOUT_NTFY_TOKEN`. For the iPhone app, set `upstream-base-url: "https://ntfy.sh"` in your server's config: without it, ntfy's documentation says, a push can take hours to reach an iPhone. With it, your server tells ntfy.sh only that a push is waiting, by its ID and a checksum of the topic's address, never its words.
 
 To check that it is set up, open Settings. The ntfy card says where pushes go and when, naming the host alone, such as "Pushes go to ntfy.sh after a wait of 1 minute.", then whether the push for a wait says what the session is asking, and whether an access token is set: "No access token is set, so the topic alone guards the pushes: keep it secret." Once a push has been tried, the line under those says when the last one went, such as "Last sent at 14:02.", or, in a note headed "The last push failed", why it did not, such as "The ntfy server refused the access token or the topic (status 403)." If a setting cannot be read, ntfy stays off: the card says "ntfy is off.", and a note headed "ntfy is not set up correctly" names the setting, and the terminal you started Agent Lookout in prints one line that says the same. Neither ever shows the topic or the token.
 
@@ -566,11 +566,12 @@ Agent Lookout can also push to your phone through [Pushover](https://pushover.ne
 | `AGENT_LOOKOUT_PUSHOVER_TOKEN` | The API token of a Pushover application you make for Agent Lookout |
 | `AGENT_LOOKOUT_PUSHOVER_USER`  | Your user key, or a group key, which the pushes go to              |
 
-Both are needed: with one alone, Pushover stays off and Settings names the other. `AGENT_LOOKOUT_PUSHOVER_EVENTS`, `AGENT_LOOKOUT_PUSHOVER_AFTER` and `AGENT_LOOKOUT_PUSHOVER_ASKING` work as ntfy's do, with the same defaults. A wait and a reminder sound as your device is set to, and the rest arrive without a sound. None sounds through the quiet hours you set in Pushover's own app.
+Both are needed: with one alone, Pushover stays off and Settings names the other. `AGENT_LOOKOUT_PUSHOVER_EVENTS`, `AGENT_LOOKOUT_PUSHOVER_AFTER` and `AGENT_LOOKOUT_PUSHOVER_ASKING` work as ntfy's do, with the same defaults. A wait, a reminder and the test sound as your device is set to, and the rest arrive without a sound. None sounds through the quiet hours you set in Pushover's own app.
 
-1. Sign in at <https://pushover.net>. Your user key is on the first page you see.
-2. Make an application at <https://pushover.net/apps/build>. Name it, for example Agent Lookout, and copy the API token it shows.
-3. Keep the two in a file that only you can read:
+1. Install the Pushover app on your phone, from its app store, and sign in to it, or make your account there. Pushover delivers only to a device signed in to it, and that starts its free trial of 30 days.
+2. Sign in at <https://pushover.net>. Your user key is on the first page you see.
+3. Make an application at <https://pushover.net/apps/build>. Name it, for example Agent Lookout, and copy the API token it shows.
+4. Keep the two in a file that only you can read:
 
    ```sh
    touch ~/.agent-lookout-pushover && chmod 600 ~/.agent-lookout-pushover
@@ -583,15 +584,15 @@ Both are needed: with one alone, Pushover stays off and Settings names the other
    export AGENT_LOOKOUT_PUSHOVER_USER='YOUR_USER_KEY'
    ```
 
-4. Start Agent Lookout with it, brackets included:
+5. Start Agent Lookout with it, brackets included:
 
    ```sh
    (source ~/.agent-lookout-pushover && npx agent-lookout)
    ```
 
-5. Open Settings and press Send a test on the Pushover card.
+6. Open Settings and press Send a test on the Pushover card.
 
-The Pushover card says "Pushes go to Pushover after a wait of 1 minute." and the lines the ntfy card has but the one on a token. Neither the token nor the key is ever shown. A free application can send 10,000 pushes a month: past that, Pushover refuses them, and the card says "Pushover's monthly limit for the application was reached (status 429)". [PRIVACY.md](../PRIVACY.md#pushover) lists all a push holds.
+The Pushover card says "Pushes go to Pushover after a wait of 1 minute." and the lines the ntfy card has but the one on a token. Neither the token nor the key is ever shown. Your Pushover account can send 10,000 pushes a month for free, shared by all its applications: past that, Pushover refuses them, and the card says "Pushover's monthly limit for your account was reached (status 429)". [PRIVACY.md](../PRIVACY.md#pushover) lists all a push holds.
 
 To turn Pushover off, start Agent Lookout again without `AGENT_LOOKOUT_PUSHOVER_TOKEN` and `AGENT_LOOKOUT_PUSHOVER_USER`. To make the token useless to anyone who has it, delete the application on Pushover's site.
 
@@ -737,7 +738,7 @@ Paste it in a terminal and run it. It goes to the session's folder first, becaus
 
 ## Answer a permission prompt
 
-With the Agent Lookout plugin installed in Claude Code, a Claude Code session that waits for your permission shows Deny and Allow in the [Needs you](#needs-you) panel and at the top of its [details](#a-sessions-details). Above them is the whole of what it asks: for a shell command, every line of the command, in the mono, with any other input such as `run_in_background` and then the description Claude gave it, and for any other tool, its name and each of its inputs. While Allow is offered, all of it is drawn, however many lines it has. Press Allow to let that one request go ahead, or Deny to refuse it. Deny comes first, so it is in the same place whether Allow is offered or not. Neither button has focus until you move to it, and neither takes a press in the first second a request is shown, so a click meant for what was there before is not taken as an answer. A line then says what came of it, and the Events log says the session had a request allowed or denied from Agent Lookout. From that moment the wait is over: no reminder, email or webhook post follows for it. Claude Code can take a second or two to say the session is working again, but the session leaves Needs you at once, and until then is listed with the working sessions as Answered. If its file still says it waits 10 seconds after the answer, Agent Lookout takes it that the session needs you again, and tells you so. When the session asks again, its next request is shown under that line.
+With the Agent Lookout plugin installed in Claude Code, a Claude Code session that waits for your permission shows Deny and Allow in the [Needs you](#needs-you) panel and at the top of its [details](#a-sessions-details). Above them is the whole of what it asks: for a shell command, every line of the command, in the mono, with any other input such as `run_in_background` and then the description Claude gave it, and for any other tool, its name and each of its inputs. While Allow is offered, all of it is drawn, however many lines it has. Press Allow to let that one request go ahead, or Deny to refuse it. Deny comes first, so it is in the same place whether Allow is offered or not. Neither button has focus until you move to it, and neither takes a press in the first second a request is shown, so a click meant for what was there before is not taken as an answer. A line then says what came of it, and the Events log says the session had a request allowed or denied from Agent Lookout. From that moment the wait is over: no reminder, email, webhook post or push follows for it. Claude Code can take a second or two to say the session is working again, but the session leaves Needs you at once, and until then is listed with the working sessions as Answered. If its file still says it waits 10 seconds after the answer, Agent Lookout takes it that the session needs you again, and tells you so. When the session asks again, its next request is shown under that line.
 
 The prompt in the session is still there, and still works: whichever you answer first wins. Answered in the session, the request leaves the dashboard within a few seconds. A Deny from the dashboard lets Claude carry on without the tool, and tells it that you denied it from Agent Lookout, while No in the terminal stops the turn.
 
@@ -830,7 +831,7 @@ A deny or an ask rule only holds a request back, so it matches more loosely. A r
 
 It still goes by the words as written, in the first 4,000 characters, which is what the dashboard shows. A command that a program not in that list runs, such as `npm exec rm`, or that a script, an alias or a git setting runs, is not caught, and neither is a letter that only looks like another. A deny rule here is a convenience, not a fence. Claude Code's own deny rules and its sandbox are the places to fence a command off.
 
-A rule answers by the same path as Allow and Deny. Agent Lookout waits for the session's file to say it waits for permission, reads it again, answers only in that same wait, and hands the plugin one of the same two answers. It never rewrites a command and never saves a rule in Claude Code. The prompt in the session may show for the moment that takes, and Claude Code's file can say the session waits for a second or two after the answer. Agent Lookout knows it answered, or that a rule is about to, so it takes that wait as over: no notification, email, webhook post or reminder says the session needs you, the Events log shows no wait, only the answer, and [Waits](#waits) does not count it. Only a read of the file in the instant before the plugin's request reaches Agent Lookout can still see the wait begin. Nor does the session light the lamp or come into the Needs you panel, its count, the tab's title, or the Dock icon and menu bar of the Mac app, and the history, its charts and the Timeline show no wait. For that second or two it is listed with the working sessions as Answered, and [`agent-lookout status`](#in-the-terminal) and [`agent-lookout mcp`](#for-your-agents) count it as working too. With `AGENT_LOOKOUT_ANSWER=off`, no rule answers anything, and the card says so.
+A rule answers by the same path as Allow and Deny. Agent Lookout waits for the session's file to say it waits for permission, reads it again, answers only in that same wait, and hands the plugin one of the same two answers. It never rewrites a command and never saves a rule in Claude Code. The prompt in the session may show for the moment that takes, and Claude Code's file can say the session waits for a second or two after the answer. Agent Lookout knows it answered, or that a rule is about to, so it takes that wait as over: no notification, email, webhook post, push or reminder says the session needs you, the Events log shows no wait, only the answer, and [Waits](#waits) does not count it. Only a read of the file in the instant before the plugin's request reaches Agent Lookout can still see the wait begin. Nor does the session light the lamp or come into the Needs you panel, its count, the tab's title, or the Dock icon and menu bar of the Mac app, and the history, its charts and the Timeline show no wait. For that second or two it is listed with the working sessions as Answered, and [`agent-lookout status`](#in-the-terminal) and [`agent-lookout mcp`](#for-your-agents) count it as working too. With `AGENT_LOOKOUT_ANSWER=off`, no rule answers anything, and the card says so.
 
 Each answer a rule gives is an event in the Events log, such as "checkout-flow had Bash allowed by the rule Bash(npm test:*)", and the card lists the last 100 since Agent Lookout started, under Recent automatic answers, with the session, the time, the tool, the decision and the rule. Neither holds the command or anything else of what was asked. The Events log is kept in the [history](#history), so its rule answers are kept for 8 days, as every event is. [PRIVACY.md](../PRIVACY.md#the-settings-file) says what the rules file holds.
 
@@ -1575,7 +1576,7 @@ Use `http://localhost:5173` if you started it with `npm run dev`. It prints the 
 1. Open Settings. If the ntfy or Pushover card says it is off, it names the setting to correct, or says what to set. Set it in the terminal you start Agent Lookout from, then start it again.
 2. Press Send a test on its card. If your phone shows "Agent Lookout test", pushes reach it, and the card's other lines say why the last notice did not go, or that none has been due yet.
 3. If the test was not sent, the note says why. For ntfy, a refused token or topic most often means the token is wrong, or the topic is reserved by another account, or the server lets no one write to it without a token. A server that could not be found, did not answer or had nothing answering is a problem with the network or with the address. For Pushover, a refusal with status 400 means the application's token or the user key is wrong: copy both again. A monthly limit reached waits for the next month.
-4. If the test was sent and nothing arrived, check the phone: that the ntfy app is subscribed to the same topic on the same server, that Pushover is signed in on it, and that its notifications are allowed for the app. A Pushover push that is not a wait arrives without a sound.
+4. If the test was sent and nothing arrived, check the phone: that the ntfy app is subscribed to the same topic on the same server, that Pushover is signed in on it, and that its notifications are allowed for the app. A Pushover push for anything but a wait, a reminder or the test arrives without a sound. On an iPhone with an ntfy server of your own, a push can take hours unless the server sets `upstream-base-url`, as under [ntfy](#ntfy).
 5. Check [Time rules](#time-rules) in Settings. During quiet hours no push goes until they end, but a test does.
 
 ### No pull request shows

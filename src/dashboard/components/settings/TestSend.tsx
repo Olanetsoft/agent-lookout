@@ -20,7 +20,9 @@ interface TestSendProps {
  * is a test from Agent Lookout, and beside it, in a polite live region that is
  * in the page before there is anything to say, what it came to: "Sending a
  * test…", then "Test sent at 14:02." A test that did not go is the info note
- * "The test was not sent" under the row, with why.
+ * "The test was not sent" under the row, with why, and the same words in that
+ * line for a screen reader alone: a note put in the page already holding its
+ * words is not always read out, and the line, there from the start, is.
  *
  * The button keeps its words and its focus while a test is under way, and a
  * press then does nothing. The row is as tall as its button.
@@ -41,6 +43,9 @@ export function TestSend({ channel, now, request }: TestSendProps) {
             <>
               Test sent at <span className='tabular-nums'>{clockAt(step.at, now)}</span>.
             </>
+          )}
+          {step.kind === "failed" && (
+            <span className='sr-only'>The test was not sent. {step.words}</span>
           )}
         </p>
       </div>

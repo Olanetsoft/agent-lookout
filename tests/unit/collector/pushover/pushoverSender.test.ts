@@ -10,7 +10,7 @@ describe("PUSHOVER_WORDS", () => {
 
   test.each([
     [400, "Pushover refused the push: check the application's token and the user key (status 400)"],
-    [429, "Pushover's monthly limit for the application was reached (status 429)"],
+    [429, "Pushover's monthly limit for your account was reached (status 429)"],
     [403, "Pushover refused the push (status 403)"],
     [500, "Pushover had a problem (status 500)"],
   ])("an answer of %i says why, by the status alone", (status, reason) => {

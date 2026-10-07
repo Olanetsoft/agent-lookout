@@ -37,7 +37,7 @@ export const PUSHOVER_WORDS: PostWords = {
       return `Pushover refused the push: check the application's token and the user key (status ${status})`;
     }
     if (status === 429)
-      return `Pushover's monthly limit for the application was reached (status ${status})`;
+      return `Pushover's monthly limit for your account was reached (status ${status})`;
     return `Pushover refused the push (status ${status})`;
   },
   troubled: (status) => `Pushover had a problem (status ${status})`,

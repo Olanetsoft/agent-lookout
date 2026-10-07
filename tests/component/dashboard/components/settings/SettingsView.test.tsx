@@ -1723,12 +1723,19 @@ test.each<[string, { status: number; body: unknown }, string]>([
   const card = screen.getByRole("region", { name: "ntfy" });
   await card.getByRole("button", { name: "Send a test" }).click();
 
-  const note = card.getByRole("status").filter({ hasText: "The test was not sent" });
+  const note = card.getByRole("status").filter({ hasText: "The test was not sent" }).last();
   await expect.element(note).toBeVisible();
   await expect.element(note).toHaveTextContent(words);
-  expect((card.element().querySelector('[data-part="test"]') as HTMLElement).textContent).toBe("");
+  expect(note.element().getAttribute("data-slot")).toBe("callout");
   // The quiet note, not the error.
   expect(getComputedStyle(note.element()).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+  // The line beside the button, there before the press, says it too, for a
+  // screen reader alone, since a note put in already filled is not always read.
+  const line = card.element().querySelector('[data-part="test"]') as HTMLElement;
+  expect(line.getAttribute("role")).toBe("status");
+  expect(line.textContent).toBe(`The test was not sent. ${words}`);
+  const said = line.firstElementChild as HTMLElement;
+  expect(said.getBoundingClientRect().width).toBeLessThanOrEqual(1);
 });
 
 test.each(["dark", "light"] as const)(
@@ -1796,7 +1803,7 @@ test.each([1280, 375])(
     const card = screen.getByRole("region", { name: "ntfy" });
     await card.getByRole("button", { name: "Send a test" }).click();
     await expect
-      .element(card.getByRole("status").filter({ hasText: "The test was not sent" }))
+      .element(card.getByRole("status").filter({ hasText: "The test was not sent" }).last())
       .toBeVisible();
 
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);

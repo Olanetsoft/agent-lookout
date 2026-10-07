@@ -6,8 +6,8 @@ import {
 } from "../../core/notices/sessionChanges.ts";
 
 /**
- * The settings email and the webhook read the same way, each under its own
- * names: which events are sent, how long a wait lasts first, and whether what a
+ * The settings email, the webhook, ntfy and Pushover read the same way, each
+ * under its own names: which events are sent, how long a wait lasts first, and whether what a
  * waiting session is asking goes too. Nothing here ever puts a setting's value
  * in a sentence.
  */

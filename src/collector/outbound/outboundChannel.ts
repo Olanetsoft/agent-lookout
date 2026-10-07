@@ -94,7 +94,7 @@ export interface WaitFacts {
   asking: string | null;
   /** When the wait began. */
   begunAt: number;
-  /** When the email or post is written. */
+  /** When the email, post or push is written. */
   now: number;
 }
 
@@ -114,7 +114,7 @@ export interface ReminderFacts extends WaitFacts {
 /** One item of a summary, with its session's agent. */
 export type SummaryFacts = Omit<QuietSummary, "items"> & {
   items: (SummaryItem & { agent: string | null })[];
-  /** When the email or post is written. */
+  /** When the email, post or push is written. */
   now: number;
 };
 
@@ -126,7 +126,7 @@ export interface OverFacts {
   agent: string | null;
   /** When the collector saw it happen. */
   seenAt: number;
-  /** When the email or post is written. */
+  /** When the email, post or push is written. */
   now: number;
 }
 

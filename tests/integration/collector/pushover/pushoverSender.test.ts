@@ -62,7 +62,7 @@ describe("createPushoverSender", () => {
 
   test.each([
     [400, "Pushover refused the push: check the application's token and the user key (status 400)"],
-    [429, "Pushover's monthly limit for the application was reached (status 429)"],
+    [429, "Pushover's monthly limit for your account was reached (status 429)"],
     [503, "Pushover had a problem (status 503)"],
   ])(
     "an answer of %i says why, holds neither key and is not tried again",

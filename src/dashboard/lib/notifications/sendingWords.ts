@@ -14,11 +14,12 @@ export { clockAt };
 export const STATUS_TIMEOUT_MS = 4_000;
 
 /**
- * What Settings says about email or the webhook: one line of state, while it is
- * on a line on whether what a waiting session is asking goes too, and a line
- * under those when there is more to say. When something is wrong, a setting,
- * the last send or the hourly limit, that last line has a title, and the card
- * shows the two as a note, as it shows that notifications are blocked.
+ * What Settings says about email, the webhook, ntfy or Pushover: one line of
+ * state, while it is on a line on whether what a waiting session is asking
+ * goes too, and a line under those when there is more to say. When something
+ * is wrong, a setting, the last send or the hourly limit, that last line has a
+ * title, and the card shows the two as a note, as it shows that notifications
+ * are blocked.
  */
 export interface SendingWords {
   state: string;

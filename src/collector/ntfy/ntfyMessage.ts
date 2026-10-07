@@ -14,7 +14,7 @@ export interface NtfyBody {
   topic: string;
   title: string;
   message: string;
-  /** 4, high, for a wait and a reminder of one, so it sounds; 3, ntfy's default, for the rest. */
+  /** 4, high, for a wait, a reminder of one and the test, so it sounds; 3, ntfy's default, for the rest. */
   priority: 3 | 4;
   /** One of ntfy's emoji names, shown before the title. Left out for a summary. */
   tags?: [string];

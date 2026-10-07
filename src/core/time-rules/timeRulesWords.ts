@@ -5,7 +5,7 @@ import { oneLine } from "../text.ts";
 import type { SummaryItem } from "./quietHold.ts";
 
 // What a reminder and a summary say, wherever they go: a notification on this
-// computer, an email and a webhook post all take their words from here.
+// computer, an email, a webhook post and a push all take their words from here.
 
 const MINUTE_MS = 60_000;
 
