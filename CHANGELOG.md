@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.7 - 2026-10-07
+
+Remind again every few minutes while a session keeps waiting, and read a README rewritten for people and coding agents.
 
 ### Added
 
@@ -11,6 +13,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Changed
 
+- The README is rewritten for people and for coding agents, with install three ways and a prompt to hand an agent, and a new install guide, [docs/INSTALL.md](docs/INSTALL.md), takes the details.
 - About sources, in Sources, now names every way Agent Lookout can send something off this computer: email, the webhook, pull requests through your own `gh`, other machines through your own `ssh`, and the Mac app's daily check for a newer version.
 - A long wait reminder that falls due in quiet hours, for a session told of before they began, now holds its wait as any notice is held: if the wait is answered before they end, it is an item of the summary. Before, it was left out.
 
