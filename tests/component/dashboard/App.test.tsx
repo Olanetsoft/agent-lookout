@@ -3225,6 +3225,13 @@ describe("a session's details", () => {
   });
 
   test("the Needs you panel is no row: a click anywhere in it but a name opens nothing", async () => {
+    // A click finds its element by the text in it, and a wait's text holds its
+    // timer, so the clock stands still while the test clicks: a second ticking
+    // over between finding and clicking would leave nothing to click.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     await render(<App store={fixedStore(twoWaiting())} />);
     await vi.waitFor(() => expect(heroName(24)).not.toBeNull());
 
