@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, onTestFinished, test, vi } from "vitest";
+import { expect, onTestFinished, test as anyTest, vi } from "vitest";
 
 import { ALLOW_OUTPUT, DENY_OUTPUT } from "@collector/answers/heldAsks";
 import { createCollector } from "@collector/collector";
@@ -16,6 +16,10 @@ import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { listen, request } from "@tests/support/node/http";
 import { startStandIn, type StandIn } from "@tests/support/node/standIns";
 import { makeClaudeHome, tempDir } from "@tests/support/node/tempFiles";
+
+// A rule answers through the plugin's hook, a POSIX sh script that reaches
+// Agent Lookout through a Unix socket, so these run on macOS and Linux only.
+const test = anyTest.skipIf(process.platform === "win32");
 
 // The permission rules from end to end: the collector as every host builds
 // it, with its real Claude Code adapter reading a registry folder of the

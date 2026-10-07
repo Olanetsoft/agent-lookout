@@ -678,7 +678,7 @@ To take Allow and Deny away altogether, start Agent Lookout with `AGENT_LOOKOUT_
 
 ## Permission rules
 
-Most permission prompts are routine. A permission rule answers one kind for you, every time: always allow, always ask or always deny. Rules answer Claude Code sessions with the [plugin](#install-the-plugin) installed, the one agent Agent Lookout can answer for. Codex records no approval waits, and a status file holds nothing to answer through, so neither has rules. There are none until you add one, and with none, nothing is answered on its own.
+Most permission prompts are routine. A permission rule answers one kind for you, every time: always allow, always ask or always deny. Rules answer Claude Code sessions with the [plugin](#install-the-plugin) installed, the one agent Agent Lookout can answer for. Codex records no approval waits, and a status file holds nothing to answer through, so neither has rules. There are none until you add one, and with none, nothing is answered on its own. No rule answers a prompt on Windows, as [On Windows](#on-windows) says.
 
 The Permission rules card in Settings, under Permission prompts, lists the rules in their order. To add one, choose Allow, Ask or Deny, name a tool and, for Bash, a command, then press Add rule. Each rule has Move up, Move down, Edit and Remove, each a button you can reach with Tab, and focus stays with the rule you moved. Every change goes to Agent Lookout, which checks the rule again, saves the list in `~/.agent-lookout/settings.json`, or the file `AGENT_LOOKOUT_SETTINGS_FILE` names, and puts it in force for the next request. The card shows what was saved: a change that was not saved leaves the list as it was, and the line under Add rule, or for a rule's own buttons a note above the rules, says why. A list holds 100 rules at most.
 
@@ -1220,7 +1220,7 @@ The `claude` command is looked for on your `PATH` as `claude.exe`, then in `%USE
 These are not on Windows:
 
 - [Stop](#stop-a-session), and ending the [sessions left running](#sessions-left-running). Agent Lookout stops a session only once `ps` has confirmed, by its start time, that the process is still the session's, and it stops it with a POSIX signal. Windows has neither, and Claude Code there records no start time to compare. No session has Stop, and the routes that stop one are not there.
-- [Allow and Deny](#answer-a-permission-prompt). The plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket. Agent Lookout opens no socket on Windows, so an installed plugin does nothing, and Settings, under Permission prompts, says so.
+- [Allow and Deny](#answer-a-permission-prompt), and the [permission rules](#permission-rules). The plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket. Agent Lookout opens no socket on Windows, so an installed plugin does nothing, no rule answers a prompt, and Settings, under Permission prompts, says so.
 - [Jump to a tmux pane](#a-session-in-tmux), or [to a tab of Terminal or iTerm2](#a-session-in-a-tab-of-terminal-or-iterm2). tmux is never run on Windows, and the two terminals are Mac apps.
 - [Resume](#resume-a-session). The command it copies is for sh, bash and zsh, and is given only for a folder that starts with `/` and holds no backslash, so no session on Windows has Resume.
 - Notifications with no dashboard tab open, which Agent Lookout shows itself with `osascript` on a Mac alone. Keep a dashboard tab open to be notified.

@@ -44,7 +44,7 @@ Claude Code sessions are found whether they run in a terminal, in VS Code or in 
 
 A Codex session never shows as needing you. Codex's files do not record when it is waiting for your approval, so one that is waiting for you shows as working. Once it has written nothing for 5 minutes, its row says how long it has been quiet, which is the sign to look. Codex support has been checked with the Codex desktop app, and not yet with the Codex CLI or its IDE extension. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) has the full table.
 
-Agent Lookout is developed and tested on macOS. On Linux, CI runs every test and starts the app there. On Windows, it runs the tests, less those of what Windows does not have, such as POSIX signals and Unix sockets, and starts the app there. No one has used it on a Linux or Windows desktop yet. Two things are macOS only: notifications with no dashboard tab open, and Jump to a Terminal or iTerm2 tab. On Windows, Stop, Allow and Deny, Resume and Jump to a tmux pane are not there either. [On Linux](docs/GUIDE.md#on-linux) and [On Windows](docs/GUIDE.md#on-windows) have the rest.
+Agent Lookout is developed and tested on macOS. On Linux, CI runs every test and starts the app there. On Windows, it runs the tests, less those of what Windows does not have, such as POSIX signals and Unix sockets, and starts the app there. No one has used it on a Linux or Windows desktop yet. Two things are macOS only: notifications with no dashboard tab open, and Jump to a Terminal or iTerm2 tab. On Windows, Stop, Allow and Deny, the permission rules, Resume and Jump to a tmux pane are not there either. [On Linux](docs/GUIDE.md#on-linux) and [On Windows](docs/GUIDE.md#on-windows) have the rest.
 
 ## Install
 
