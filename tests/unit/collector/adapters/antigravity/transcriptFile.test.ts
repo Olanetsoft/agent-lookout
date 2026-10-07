@@ -109,6 +109,26 @@ describe("a transcript", () => {
     });
   });
 
+  test("gives the index of its last step, read whole or onward, passing over steps agy cleared", async () => {
+    const { files, read } = setUp(finishedTurn(0, START).join(""));
+    expect((await read()).lastIndex).toBe(3);
+    // agy went back and cleared a step: what it writes next counts from where it went on.
+    files.append(
+      FILE,
+      step({ index: 9, type: "PLANNER_RESPONSE", status: "CLEARED", at: START + 5 * SECOND }) +
+        step({ index: 4, type: "USER_INPUT", at: START + 6 * SECOND }),
+      { mtimeMs: NOW + 1 },
+    );
+    expect((await read()).lastIndex).toBe(4);
+    const fresh = setUp(
+      [
+        ...finishedTurn(0, START),
+        step({ index: 9, type: "PLANNER_RESPONSE", status: "CLEARED", at: START + 5 * SECOND }),
+      ].join(""),
+    );
+    expect((await fresh.read()).lastIndex).toBe(3);
+  });
+
   test("whose turn goes on is working since the person's prompt", async () => {
     const { read } = setUp(
       [...finishedTurn(0, START - 600 * SECOND), ...workingTurn(4, START)].join(""),

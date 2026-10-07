@@ -19,14 +19,29 @@
 //   Responding to tool confirmation: convID=<id>, stepIdx=2, approved=true
 //
 // Every other line is passed over, and nothing of one is kept.
+//
+// glog writes a message that holds newlines as it is, and agy's own output goes
+// to the log too, so a line can be written to look like one of these. Each
+// kind is taken only from the source file agy writes it from, the folder only
+// from the first line that names it, and an approval only for the step just
+// after the transcript's last (`waitsForApproval`), so such a line can at most
+// show a wait that ends with the next step.
 
-/** One line of a glog log: its level, month, day and local time, then the message. */
+/** One line of a glog log: its level, month, day and local time, its source file, then the message. */
 const GLOG_LINE =
-  /^[IWEF](\d{2})(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))? +\d+ [\w.-]+:\d+\] (.*)$/;
+  /^[IWEF](\d{2})(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))? +\d+ ([\w.-]+):\d+\] (.*)$/;
+
+/** The source file each kind of line comes from, as agy 1.3.1 logs them. */
+const SOURCE = {
+  backend: "server.go",
+  created: "server.go",
+  streaming: "conversation_manager.go",
+  confirmation: "tool_confirmation_manager.go",
+} as const;
 
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
-const OPENED = new RegExp(`^(?:Created|Streaming) conversation (${UUID})$`);
+const OPENED = new RegExp(`^(Created|Streaming) conversation (${UUID})$`);
 
 const BACKEND = /^Creating CLI server backend: (?:.* )?workspaceDirs=\[([^\]\s]+)\](?: |$)/;
 
@@ -39,6 +54,9 @@ const ANSWERED = new RegExp(
 
 /** An absolute path, on macOS and Linux or on Windows. */
 const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/])/;
+
+/** A control or formatting character, such as an escape or a mark that turns text right to left. */
+const UNPRINTABLE = /[\p{Cc}\p{Cf}]/u;
 
 /** What one line says, of the few kinds used. */
 export type AgyLogLine =
@@ -61,10 +79,22 @@ export interface AgyLogTime {
 export function readAgyLogLine(line: string): AgyLogLine | null {
   const glog = GLOG_LINE.exec(line);
   if (glog === null) return null;
-  const message = glog[7];
+  const source = glog[7];
+  const message = glog[8];
 
   const opened = OPENED.exec(message);
-  if (opened !== null) return { kind: "opened", conversation: opened[1].toLowerCase() };
+  if (opened !== null) {
+    const from = opened[1] === "Created" ? SOURCE.created : SOURCE.streaming;
+    return source === from ? { kind: "opened", conversation: opened[2].toLowerCase() } : null;
+  }
+
+  if (source === SOURCE.backend) {
+    const backend = BACKEND.exec(message);
+    return backend !== null && ABSOLUTE.test(backend[1]) && !UNPRINTABLE.test(backend[1])
+      ? { kind: "folder", folder: backend[1] }
+      : null;
+  }
+  if (source !== SOURCE.confirmation) return null;
 
   const asking = ASKING.exec(message);
   if (asking !== null) {
@@ -88,9 +118,6 @@ export function readAgyLogLine(line: string): AgyLogLine | null {
   if (answered !== null) {
     return { kind: "answered", conversation: answered[1].toLowerCase(), step: Number(answered[2]) };
   }
-
-  const backend = BACKEND.exec(message);
-  if (backend !== null && ABSOLUTE.test(backend[1])) return { kind: "folder", folder: backend[1] };
   return null;
 }
 
@@ -107,8 +134,14 @@ export interface AgyAsk {
 
 /** What one program's log has said, read from its start. */
 export interface AgyLogState {
-  /** The folder the program works in. Null when the log has not said, or named more than one. */
+  /**
+   * The folder the program works in, from the first line that names it, which
+   * agy writes as it starts. Null when that line has not been read, or named
+   * several folders or one with a space, which cannot be told apart.
+   */
   folder: string | null;
+  /** Whether that line has been read, so no later line can name another. */
+  folderNamed: boolean;
   /** Every conversation the program has opened, in lower case. */
   opened: Set<string>;
   /** The one it opened last, which it has open now. Null before it opens one. */
@@ -118,7 +151,7 @@ export interface AgyLogState {
 }
 
 export function emptyAgyLogState(): AgyLogState {
-  return { folder: null, opened: new Set(), current: null, ask: null };
+  return { folder: null, folderNamed: false, opened: new Set(), current: null, ask: null };
 }
 
 /**
@@ -132,7 +165,8 @@ export function emptyAgyLogState(): AgyLogState {
 export function addAgyLogLine(state: AgyLogState, line: AgyLogLine): void {
   switch (line.kind) {
     case "folder":
-      state.folder = line.folder;
+      if (!state.folderNamed) state.folder = line.folder;
+      state.folderNamed = true;
       return;
     case "opened":
       state.opened.add(line.conversation);
@@ -154,12 +188,19 @@ export function addAgyLogLine(state: AgyLogState, line: AgyLogLine): void {
 }
 
 /**
+ * How far past the transcript's last step a step that waits for approval may
+ * be. Seen in agy 1.3.1: the very next one.
+ */
+export const ASK_STEPS_AHEAD = 2;
+
+/**
  * Whether a conversation waits for the person's approval: its program's log
- * says it asked and has had no answer, and the transcript has no step yet at
- * or after the one that waits. agy writes that step only once it is
- * answered, so a step there means the wait is over, however it ended.
+ * says it asked and has had no answer, and the step that waits is just past
+ * the transcript's last. agy was not seen to write that step while it waits,
+ * so a step there means the wait is over, however it ended, and one asked for
+ * far past the transcript's end is not taken for agy's.
  *
- * `lastIndex` is the highest `step_index` the transcript holds, null when it
+ * `lastIndex` is the `step_index` of the transcript's last step, null when it
  * holds none that could be read.
  */
 export function waitsForApproval(
@@ -167,8 +208,8 @@ export function waitsForApproval(
   conversation: string,
   lastIndex: number | null,
 ): boolean {
-  if (ask === null || ask.conversation !== conversation) return false;
-  return lastIndex === null || lastIndex < ask.step;
+  if (ask === null || ask.conversation !== conversation || lastIndex === null) return false;
+  return ask.step > lastIndex && ask.step <= lastIndex + ASK_STEPS_AHEAD;
 }
 
 /**

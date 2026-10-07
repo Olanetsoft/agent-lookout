@@ -20,8 +20,12 @@ export const ANNOTATIONS_DIR = "annotations";
 /** The largest annotation file read. agy's hold a title and little else. */
 export const ANNOTATION_LIMIT_BYTES = 4 * 1024;
 
-/** A `title` field at the start of a line: `title: "…"` or `title:"…"`, the string with its escapes. */
-const TITLE_FIELD = /^[ \t]*title[ \t]*:[ \t]*"((?:[^"\\\n]|\\.)*)"[ \t]*$/m;
+/**
+ * A top-level `title` field, at the very start of a line, `title: "…"` or
+ * `title:"…"`, the string with its escapes. A field inside another message is
+ * written indented, and is not this one.
+ */
+const TITLE_FIELD = /^title[ \t]*:[ \t]*"((?:[^"\\\n]|\\.)*)"[ \t]*$/m;
 
 const SIMPLE_ESCAPES: Record<string, number> = {
   n: 0x0a,
@@ -40,8 +44,9 @@ const SIMPLE_ESCAPES: Record<string, number> = {
 /**
  * A text-format string's bytes, from its escapes: `\n` and the like, `\"`,
  * three octal digits and `\x` with hexadecimal ones, in which a letter
- * outside ASCII is written byte by byte, then read as UTF-8. Null when an
- * escape is not one of these.
+ * outside ASCII is written byte by byte, and `\u` and `\U` with four or eight
+ * hexadecimal digits for a letter by its code point, then read as UTF-8.
+ * Null when an escape is not one of these.
  */
 export function unescapeTextFormat(body: string): string | null {
   // By code point, so a letter made of two code units is kept whole. Escapes are ASCII.
@@ -61,6 +66,16 @@ export function unescapeTextFormat(body: string): string | null {
       if (value > 0xff) return null;
       bytes.push(value);
       i += octal[0].length;
+      continue;
+    }
+    if (next === "u" || next === "U") {
+      const digits = next === "u" ? 4 : 8;
+      const hex = chars.slice(i + 2, i + 2 + digits).join("");
+      if (!new RegExp(`^[0-9a-fA-F]{${digits}}$`).test(hex)) return null;
+      const point = parseInt(hex, 16);
+      if (point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) return null;
+      bytes.push(...Buffer.from(String.fromCodePoint(point), "utf8"));
+      i += 1 + digits;
       continue;
     }
     if (next === "x" || next === "X") {

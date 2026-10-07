@@ -17,6 +17,11 @@ describe("a title in protocol buffer text format", () => {
     expect(readTitle('title: "Rename a helper"')).toBe("Rename a helper");
   });
 
+  test("is the top-level title, not one inside another message", () => {
+    expect(readTitle('step {\n  title: "Inner"\n}\ntitle: "Outer"\n')).toBe("Outer");
+    expect(readTitle('step {\n  title: "Inner"\n}\n')).toBeNull();
+  });
+
   test("is read among other fields, and only the title", () => {
     expect(readTitle('summary:"other words"\ntitle:"Tidy the notes"\nstarred:true\n')).toBe(
       "Tidy the notes",
@@ -29,12 +34,16 @@ describe("a title in protocol buffer text format", () => {
     expect(unescapeTextFormat("Tab\\there")).toBe("Tab\there");
     expect(unescapeTextFormat("\\xe2\\x9c\\x93 done")).toBe("✓ done");
     expect(unescapeTextFormat("Plain 🙂 text")).toBe("Plain 🙂 text");
+    expect(unescapeTextFormat("Caf\\u00e9 \\U0001F642")).toBe("Café 🙂");
   });
 
   test("is none when an escape is not one, or the bytes are not UTF-8", () => {
     expect(unescapeTextFormat("bad \\q escape")).toBeNull();
     expect(unescapeTextFormat("ends in \\")).toBeNull();
     expect(unescapeTextFormat("\\377 alone")).toBeNull();
+    expect(unescapeTextFormat("\\u12 short")).toBeNull();
+    expect(unescapeTextFormat("\\ud800 alone")).toBeNull();
+    expect(unescapeTextFormat("\\U00110000 too high")).toBeNull();
     expect(readTitle('title:"bad \\q"')).toBeNull();
   });
 

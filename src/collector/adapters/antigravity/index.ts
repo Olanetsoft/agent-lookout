@@ -256,7 +256,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
 
   const finder = createConversationFinder({ home, io, oldRefreshMs: options.oldRefreshMs });
   const reader = createTranscriptReader(io);
-  const logs = createAgyLogReader({ home, io });
+  const logs = createAgyLogReader({ home, io, now });
   const titles = createTitleReader({ home, io });
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */

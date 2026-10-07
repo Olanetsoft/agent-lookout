@@ -9,7 +9,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 - Claude Code, Codex or the Antigravity CLI, `agy`. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
-- For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from and checked against. The Antigravity desktop app's conversations do not appear.
+- For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity desktop app's conversations do not appear.
 
 Check what you have:
 

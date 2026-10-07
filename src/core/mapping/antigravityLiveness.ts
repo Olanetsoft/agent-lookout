@@ -1,11 +1,12 @@
 // Which Antigravity CLI conversations an agy program may have open, from the
 // process table and when each conversation's transcript was last written. Pure.
 //
-// The adapter does not yet read any mark agy keeps of an open conversation
+// The adapter does not read the lock agy keeps of an open conversation
 // (docs/adapters/antigravity.md). What it knows is which agy programs run,
-// when each started, and, for one started with `--conversation <id>`, which
-// conversation it opened. A program writes to the conversation it has open, so
-// a conversation written since a program started may be that program's.
+// when each started, and which conversation each names: the one its log says
+// it opened last, else the one it was started with, `--conversation <id>`. A
+// program writes to the conversation it has open, so a conversation written
+// since a program started may be that program's.
 
 import type { AntigravityLiveness } from "./antigravityMapping.ts";
 

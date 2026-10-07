@@ -24,7 +24,7 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * - From the end, the last step that says how the conversation stands, its
  *   `type`, its `status` and whether it has any `tool_calls`, when the run of
  *   steps that say the same began, when the last step was made, and the
- *   highest `step_index`.
+ *   last step's `step_index`.
  *
  * `content`, `thinking`, `media`, `source` and the tool calls themselves are
  * never kept: each line is parsed, those four fields are read and the rest is
@@ -77,8 +77,10 @@ export interface TranscriptState {
   /** When the last step of any kind was made. */
   lastAt: number | null;
   /**
-   * The highest `step_index` of any step read, passed over or not, so a step
-   * written after an approval agy asked for is seen. Null when none had one.
+   * The `step_index` of the last step in the file, passed over or not, so a
+   * step written after an approval agy asked for is seen. A step agy cleared
+   * or marked invalid does not count, so a conversation it rewound counts
+   * from where it went on. Null when none had one.
    */
   lastIndex: number | null;
 }
@@ -127,17 +129,15 @@ function emptyState(): TranscriptState {
   return { firstAt: null, last: undefined, since: null, lastAt: null, lastIndex: null };
 }
 
-/** Keeps the highest `step_index` seen. */
-function noteIndex(state: TranscriptState, step: TranscriptStep): void {
-  if (step.index !== null && (state.lastIndex === null || step.index > state.lastIndex)) {
-    state.lastIndex = step.index;
-  }
+/** Whether a step's `step_index` counts as the last: not one agy cleared or marked invalid. */
+function countsForIndex(step: TranscriptStep): boolean {
+  return step.index !== null && step.status !== "CLEARED" && step.status !== "INVALID";
 }
 
 /** Moves the state on by one step, read in the order agy wrote them. */
 function addStep(state: TranscriptState, step: TranscriptStep): void {
   if (step.at !== null) state.lastAt = step.at;
-  noteIndex(state, step);
+  if (countsForIndex(step)) state.lastIndex = step.index;
   if (isAsideStep(step)) return;
   const was = state.last ? openStatusOf(state.last) : null;
   if (was !== openStatusOf(step)) state.since = step.at;
@@ -196,7 +196,7 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   const take = (step: TranscriptStep | null): boolean => {
     if (step === null) return false;
     if (state.lastAt === null && step.at !== null) state.lastAt = step.at;
-    noteIndex(state, step);
+    if (state.lastIndex === null && countsForIndex(step)) state.lastIndex = step.index;
     if (isAsideStep(step)) return false;
     if (state.last === undefined || state.last === null) {
       state.last = step;

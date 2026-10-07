@@ -8,8 +8,8 @@
 // that was measured, and is still one wait. Each session's waits are added up,
 // so two sessions waiting at once for a minute are two minutes.
 //
-// Only Claude Code sessions and sessions from status files can be seen waiting.
-// A Codex session never shows as needing the person, so it never counts here.
+// Codex sessions never show as needing the person, so they never count here,
+// and Antigravity CLI sessions count only while agy asks for approval of a tool.
 
 import type { SessionWaitTotal, WaitDay, WaitPeriod } from "../api.ts";
 import { isStatusEvent, type SessionEvent } from "../sessions/session.ts";

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   addAgyLogLine,
+  ASK_STEPS_AHEAD,
   agyLogTimeAt,
   emptyAgyLogState,
   readAgyLogLine,
@@ -10,12 +11,14 @@ import {
 } from "@core/mapping/antigravityLog";
 import {
   answeredLine,
+  askingLine,
   askingLog,
   conversationId,
   logLine,
   NOW,
   PRIVATE_WORDS,
   SECOND,
+  streamingLine,
   WORKSPACE,
 } from "@tests/fixtures/antigravity";
 
@@ -39,33 +42,55 @@ describe("a line of agy's log", () => {
         logLine(
           NOW,
           `Creating CLI server backend: product=antigravity workspaceDirs=[${WORKSPACE}] appDataDir=/x`,
+          "server.go:323",
         ).trimEnd(),
       ),
     ).toEqual({ kind: "folder", folder: WORKSPACE });
   });
 
-  test("names no folder for more than one, a relative one, or one it cannot tell apart", () => {
-    for (const dirs of ["/a /b", "demo", "", "/a]b"]) {
-      const text = logLine(NOW, `Creating CLI server backend: workspaceDirs=[${dirs}] x=1`);
+  test("names no folder for more than one, a relative one, one it cannot tell apart, or one with a control character", () => {
+    for (const dirs of ["/a /b", "demo", "", "/a]b", "/tmp/\u001b[31mred", "/tmp/\u202edemo"]) {
+      const text = logLine(
+        NOW,
+        `Creating CLI server backend: workspaceDirs=[${dirs}] x=1`,
+        "server.go:323",
+      );
       expect(readAgyLogLine(text.trimEnd()), dirs).toBeNull();
     }
   });
 
   test("says which conversation was opened, in lower case", () => {
     const id = FIRST.toUpperCase();
-    for (const words of ["Created conversation", "Streaming conversation"]) {
-      expect(readAgyLogLine(logLine(NOW, `${words} ${id}`).trimEnd())).toEqual({
+    for (const [words, source] of [
+      ["Created conversation", "server.go:1263"],
+      ["Streaming conversation", "conversation_manager.go:967"],
+    ]) {
+      expect(readAgyLogLine(logLine(NOW, `${words} ${id}`, source).trimEnd())).toEqual({
         kind: "opened",
         conversation: FIRST,
       });
     }
   });
 
+  test("is passed over when it comes from another source file than agy writes it from, as a line inside another message would", () => {
+    for (const text of [
+      logLine(NOW, `Streaming conversation ${FIRST}`, "server.go:1263"),
+      logLine(NOW, `Created conversation ${FIRST}`, "errorreport.go:224"),
+      logLine(NOW, 'Surfacing tool confirmation: "RunCommand" at step 2', "server.go:100"),
+      logLine(NOW, answeredLine(NOW, FIRST, 2).split("] ")[1]?.trimEnd() ?? "", "main.go:1"),
+      logLine(
+        NOW,
+        `Creating CLI server backend: workspaceDirs=[/tmp/elsewhere] x=1`,
+        "errorreport.go:224",
+      ),
+    ]) {
+      expect(readAgyLogLine(text.trimEnd()), text).toBeNull();
+    }
+  });
+
   test("says an approval is asked for, with the tool, the step and the local time", () => {
     const at = new Date(2026, 9, 7, 13, 0, 19, 223);
-    const line = readAgyLogLine(
-      logLine(at.getTime(), 'Surfacing tool confirmation: "RunCommand" at step 2').trimEnd(),
-    );
+    const line = readAgyLogLine(askingLine(at.getTime(), 2).trimEnd());
     expect(line).toEqual({
       kind: "asking",
       tool: "RunCommand",
@@ -105,6 +130,7 @@ describe("what a program's log says", () => {
     const state = stateOf(askingLog(NOW, FIRST, 2));
     expect(state).toEqual({
       folder: WORKSPACE,
+      folderNamed: true,
       opened: new Set([FIRST]),
       current: FIRST,
       ask: { conversation: FIRST, step: 2, tool: "RunCommand", at: expect.any(Object) },
@@ -130,15 +156,27 @@ describe("what a program's log says", () => {
   test("opening another conversation takes the approval off the screen", () => {
     const state = stateOf([
       ...askingLog(NOW, FIRST, 2),
-      logLine(NOW + 40 * SECOND, `Streaming conversation ${SECOND_ONE}`),
+      streamingLine(NOW + 40 * SECOND, SECOND_ONE),
     ]);
     expect(state).toMatchObject({ current: SECOND_ONE, ask: null });
     expect(state.opened).toEqual(new Set([FIRST, SECOND_ONE]));
   });
 
   test("an approval asked for before any conversation is open is not one", () => {
-    const state = stateOf([logLine(NOW, 'Surfacing tool confirmation: "RunCommand" at step 2')]);
+    const state = stateOf([askingLine(NOW, 2)]);
     expect(state.ask).toBeNull();
+  });
+
+  test("the folder is the one the first line names: a later line cannot name another", () => {
+    const state = stateOf([
+      ...askingLog(NOW, FIRST, 2),
+      logLine(
+        NOW + 30 * SECOND,
+        "Creating CLI server backend: product=antigravity workspaceDirs=[/tmp/elsewhere] x=1",
+        "server.go:323",
+      ),
+    ]);
+    expect(state.folder).toBe(WORKSPACE);
   });
 });
 
@@ -150,9 +188,15 @@ describe("whether a conversation waits for approval", () => {
     at: { month: 10, day: 1, hour: 12, minute: 0, second: 0, millisecond: 0 },
   };
 
-  test("while the transcript holds no step at the one that waits", () => {
+  test("while the step that waits is just past the transcript's last", () => {
     expect(waitsForApproval(ask, FIRST, 1)).toBe(true);
-    expect(waitsForApproval(ask, FIRST, null)).toBe(true);
+    expect(waitsForApproval(ask, FIRST, 2 - ASK_STEPS_AHEAD)).toBe(true);
+  });
+
+  test("not for a step further ahead, as a line written to look like agy's could ask, nor with no step read", () => {
+    expect(waitsForApproval(ask, FIRST, 2 - ASK_STEPS_AHEAD - 1)).toBe(false);
+    expect(waitsForApproval({ ...ask, step: 999 }, FIRST, 1)).toBe(false);
+    expect(waitsForApproval(ask, FIRST, null)).toBe(false);
   });
 
   test("not once the transcript holds that step or a later one", () => {

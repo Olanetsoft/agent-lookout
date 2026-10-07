@@ -2,13 +2,16 @@ import { describe, expect, test } from "vitest";
 
 import {
   createAgyLogReader,
+  LINE_LIMIT_BYTES,
   LOG_LIMIT_BYTES,
   logStartOf,
   matchLogs,
+  RELIST_MS,
 } from "@collector/adapters/antigravity/agyLogs";
 import {
   AGY_HOME,
   answeredLine,
+  askingLine,
   askingLog,
   conversationId,
   logLine,
@@ -18,6 +21,7 @@ import {
   NOW,
   PRIVATE_WORDS,
   SECOND,
+  streamingLine,
   WORKSPACE,
 } from "@tests/fixtures/antigravity";
 import { memoryFiles } from "@tests/support/adapters/antigravityAdapter";
@@ -58,10 +62,16 @@ describe("which log each program wrote", () => {
     ).toEqual([logName(START + SECOND), logName(START + 5 * MINUTE + 2 * SECOND)]);
   });
 
-  test("none named before it started or long after", () => {
-    expect(matchLogs([{ startedAt: START }], logs(START - SECOND, START + 11 * SECOND))).toEqual([
-      null,
+  test("the one named up to 2 seconds before the start ps gives, which can be late", () => {
+    expect(matchLogs([{ startedAt: START }], logs(START - 2 * SECOND))).toEqual([
+      logName(START - 2 * SECOND),
     ]);
+  });
+
+  test("none named well before it started or long after", () => {
+    expect(
+      matchLogs([{ startedAt: START }], logs(START - 3 * SECOND, START + 11 * SECOND)),
+    ).toEqual([null]);
   });
 
   test("none when two programs could have written it, or a program could be two logs", () => {
@@ -82,10 +92,11 @@ describe("the log reader", () => {
   const file = logPath(AGY_HOME, logName(START + SECOND));
 
   function setUp(lines: string[]) {
-    const files = memoryFiles(() => NOW);
+    let at = NOW;
+    const files = memoryFiles(() => at);
     files.write(file, lines.join(""));
-    const reader = createAgyLogReader({ home: AGY_HOME, io: files.io });
-    return { files, reader };
+    const reader = createAgyLogReader({ home: AGY_HOME, io: files.io, now: () => at });
+    return { files, reader, wait: (ms: number) => (at += ms) };
   }
 
   test("reads what a running program's log says, and nothing else of it", async () => {
@@ -121,6 +132,40 @@ describe("the log reader", () => {
     expect(files.reads.length).toBe(before);
   });
 
+  test("the rest of a line too long to use is passed over, up to its newline, and the next line counts", async () => {
+    const { files, reader } = setUp(askingLog(START, ID, 2));
+    await reader.read([{ startedAt: START }]);
+    const long = logLine(NOW, `Error report: ${"x".repeat(2 * LINE_LIMIT_BYTES)}`);
+    files.append(file, long.slice(0, LINE_LIMIT_BYTES + 100));
+    await reader.read([{ startedAt: START }]);
+    // What follows on the same line looks like a whole line of agy's, and is not one.
+    files.append(file, answeredLine(NOW, ID, 2));
+    expect((await reader.read([{ startedAt: START }]))[0]?.ask).not.toBeNull();
+    files.append(file, answeredLine(NOW, ID, 2));
+    expect((await reader.read([{ startedAt: START }]))[0]?.ask).toBeNull();
+  });
+
+  test("more added at once than the limit is read from near its end, from the first whole line", async () => {
+    const { files, reader } = setUp(askingLog(START, ID, 2));
+    await reader.read([{ startedAt: START }]);
+    const filler = logLine(NOW, `Error report: ${PRIVATE_WORDS}`);
+    files.append(
+      file,
+      filler.repeat(Math.ceil((LOG_LIMIT_BYTES + 1000) / filler.length)) +
+        streamingLine(NOW, conversationId("b2")) +
+        askingLine(NOW, 5),
+    );
+    const [state] = await reader.read([{ startedAt: START }]);
+    expect(state).toMatchObject({
+      folder: WORKSPACE,
+      current: conversationId("b2"),
+      ask: { conversation: conversationId("b2"), step: 5 },
+    });
+    expect(Math.max(...files.reads.map((read) => read.length))).toBeLessThanOrEqual(
+      LOG_LIMIT_BYTES,
+    );
+  });
+
   test("a line written in two parts counts once it is whole", async () => {
     const { files, reader } = setUp(askingLog(START, ID, 2));
     await reader.read([{ startedAt: START }]);
@@ -136,7 +181,7 @@ describe("the log reader", () => {
     const lines = [
       ...askingLog(START, ID, 2).slice(0, 6),
       filler.repeat(Math.ceil((LOG_LIMIT_BYTES + 1000) / filler.length)),
-      logLine(NOW - SECOND, 'Surfacing tool confirmation: "RunCommand" at step 8'),
+      askingLine(NOW - SECOND, 8),
     ];
     const { files, reader } = setUp(lines);
     const [state] = await reader.read([{ startedAt: START }]);
@@ -150,10 +195,7 @@ describe("the log reader", () => {
   test("a log that was replaced is read afresh", async () => {
     const { files, reader } = setUp(askingLog(START, ID, 2));
     await reader.read([{ startedAt: START }]);
-    files.write(
-      file,
-      logLine(START + 3 * SECOND, `Streaming conversation ${conversationId("b2")}`),
-    );
+    files.write(file, streamingLine(START + 3 * SECOND, conversationId("b2")));
     const [state] = await reader.read([{ startedAt: START }]);
     expect(state).toMatchObject({ folder: null, current: conversationId("b2"), ask: null });
   });
@@ -172,19 +214,31 @@ describe("the log reader", () => {
     expect(files.calls).toEqual([]);
   });
 
-  test("lists the folder again while a program's log has not appeared", async () => {
-    const files = memoryFiles(() => NOW);
+  test("lists the folder again every 10 seconds, and at once for a program it has not seen", async () => {
+    let at = NOW;
+    const files = memoryFiles(() => at);
     files.mkdir(`${AGY_HOME}/log`);
-    const reader = createAgyLogReader({ home: AGY_HOME, io: files.io });
+    const reader = createAgyLogReader({ home: AGY_HOME, io: files.io, now: () => at });
+    const listed = () => files.calls.filter((call) => call.method === "readdir").length;
     expect(await reader.read([{ startedAt: START }])).toEqual([null]);
     files.write(file, askingLog(START, ID, 2).join(""));
-    const [state] = await reader.read([{ startedAt: START }]);
-    expect(state?.current).toBe(ID);
-    // Once every program has its log, the folder is not listed on each poll.
-    const listed = () => files.calls.filter((call) => call.method === "readdir").length;
-    const before = listed();
-    await reader.read([{ startedAt: START }]);
-    expect(listed()).toBe(before);
+    // Not before 10 seconds have passed: the folder is not listed on each poll.
+    expect(await reader.read([{ startedAt: START }])).toEqual([null]);
+    expect(listed()).toBe(1);
+    at += RELIST_MS;
+    expect((await reader.read([{ startedAt: START }]))[0]?.current).toBe(ID);
+    expect(listed()).toBe(2);
+    // A program `ps` shows for the first time has the folder listed at once.
+    await reader.read([{ startedAt: START }, { startedAt: NOW - MINUTE }]);
+    expect(listed()).toBe(3);
+  });
+
+  test("a second log that could be the program's, seen when the folder is listed again, makes it no one's", async () => {
+    const { files, reader, wait } = setUp(askingLog(START, ID, 2));
+    expect((await reader.read([{ startedAt: START }]))[0]).not.toBeNull();
+    files.write(logPath(AGY_HOME, logName(START + 3 * SECOND)), askingLog(START, ID, 2).join(""));
+    wait(RELIST_MS);
+    expect(await reader.read([{ startedAt: START }])).toEqual([null]);
   });
 
   test("a log folder that cannot be listed gives no logs, and does not throw", async () => {

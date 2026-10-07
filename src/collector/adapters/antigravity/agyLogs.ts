@@ -7,7 +7,7 @@ import {
   type AgyLogState,
 } from "../../../core/mapping/antigravityLog.ts";
 import type { AgySessionProcess } from "../../../core/mapping/antigravityLiveness.ts";
-import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
  * Reading each running agy program's own log, for the few lines that say what
@@ -23,7 +23,9 @@ import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyI
  * Each line is matched against the few kinds used and dropped at once: nothing
  * else of it is kept. A log is read from its start, then only what was added.
  * Every read is bounded: a log longer than the limit is read from the limit's
- * length before its end, and the folder may then not be known.
+ * length before its end, and the folder may then not be known. The list of
+ * programs comes from the last `ps`, which can be 10 seconds old, so the log
+ * of a program that has just ended can be read once more.
  */
 
 /** Where the logs are, in the agy folder. */
@@ -32,11 +34,20 @@ export const LOG_DIR = "log";
 /** The most of a log read at once: on the first read, and of what was added since. */
 export const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
 
-/** The longest line kept while its end is not yet written. A longer one is not used. */
-const LINE_LIMIT_BYTES = 64 * 1024;
+/** The longest line kept while its end is not yet written. A longer one is skipped, to its newline. */
+export const LINE_LIMIT_BYTES = 64 * 1024;
 
 /** How long after a program starts its log may be named. Seen a second after, in agy 1.3.1. */
 export const LOG_NAMED_WITHIN_MS = 10_000;
+
+/**
+ * How much later than the log's name `ps` may say its program started: the
+ * start `ps` gives can move by a second or so on Linux (`processStart.ts`).
+ */
+export const PS_LATE_MS = 2_000;
+
+/** How often the folder of logs is listed again, so a log named late, or a second log, is seen. */
+export const RELIST_MS = 10_000;
 
 /** `cli-20261007_125834.log`: the local date and time the program started. */
 const LOG_NAME = /^cli-(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.log$/;
@@ -55,8 +66,11 @@ export function logStartOf(name: string): number | null {
 
 /**
  * Which log each program wrote: the one named in the seconds after it
- * started. A log two programs could have written, or a program two logs could
- * be, is left out, so a log is never taken for another program's.
+ * started, or a moment before the start `ps` gives. A log two programs could
+ * have written, or a program two logs could be, is left out, so a log is
+ * never taken for another program's. A program started in the hour a clock
+ * set back repeats has a log whose name gives the first such hour, and is
+ * matched to none.
  */
 export function matchLogs(
   processes: readonly AgySessionProcess[],
@@ -65,7 +79,9 @@ export function matchLogs(
   const candidates = (startedAt: number | null) =>
     startedAt === null
       ? []
-      : [...logs].filter(([, at]) => at >= startedAt && at - startedAt <= LOG_NAMED_WITHIN_MS);
+      : [...logs].filter(
+          ([, at]) => at >= startedAt - PS_LATE_MS && at - startedAt <= LOG_NAMED_WITHIN_MS,
+        );
   const owners = new Map<string, number>();
   for (const { startedAt } of processes) {
     for (const [name] of candidates(startedAt)) owners.set(name, (owners.get(name) ?? 0) + 1);
@@ -86,6 +102,8 @@ interface Cursor {
   offset: number;
   /** The bytes after the last newline, not yet a whole line. */
   pending: Buffer;
+  /** True while the rest of a line too long to use is passed over, up to its newline. */
+  skipping: boolean;
   state: AgyLogState;
 }
 
@@ -97,26 +115,34 @@ export interface AgyLogReader {
   read(processes: readonly AgySessionProcess[]): Promise<(AgyLogState | null)[]>;
 }
 
-export function createAgyLogReader(options: { home: string; io: ReadOnlyIo }): AgyLogReader {
+export function createAgyLogReader(options: {
+  home: string;
+  io: ReadOnlyIo;
+  now?: () => number;
+}): AgyLogReader {
   const { io } = options;
+  const now = options.now ?? Date.now;
   const logDir = path.join(options.home, LOG_DIR);
   const cursors = new Map<string, Cursor>();
   /** The logs by name and start, from the last listing. */
   let listed = new Map<string, number>();
-  /** The programs the last listing was made for, by their start. */
+  /** The programs the last listing was made for, by their start, and when it was made. */
   let listedFor = "";
+  let listedAt = -Infinity;
 
   async function list(processes: readonly AgySessionProcess[]): Promise<void> {
     const key = processes.map((p) => p.startedAt ?? "?").join(",");
-    // A program's log can be named a moment after `ps` first shows it, so the
-    // folder is listed again while some program has none.
-    if (key === listedFor && matchLogs(processes, listed).every((name) => name !== null)) return;
+    // Listed again when the programs change, and every 10 seconds, so a log
+    // named a moment after `ps` first shows its program is found, and a second
+    // log that makes a match unsure is seen. A clock set back counts as due.
+    const since = now() - listedAt;
+    if (key === listedFor && since >= 0 && since < RELIST_MS) return;
     listedFor = key;
+    listedAt = now();
     let names: string[];
     try {
       names = await io.readdir(logDir);
-    } catch (error) {
-      if (!isMissing(error)) listedFor = "";
+    } catch {
       listed = new Map();
       return;
     }
@@ -129,7 +155,13 @@ export function createAgyLogReader(options: { home: string; io: ReadOnlyIo }): A
   }
 
   function addLines(cursor: Cursor, data: Buffer): void {
-    const buffer = cursor.pending.byteLength > 0 ? Buffer.concat([cursor.pending, data]) : data;
+    let buffer = cursor.pending.byteLength > 0 ? Buffer.concat([cursor.pending, data]) : data;
+    if (cursor.skipping) {
+      const end = buffer.indexOf(NEWLINE);
+      if (end === -1) return;
+      buffer = buffer.subarray(end + 1);
+      cursor.skipping = false;
+    }
     let start = 0;
     let newline = buffer.indexOf(NEWLINE);
     while (newline !== -1) {
@@ -139,8 +171,9 @@ export function createAgyLogReader(options: { home: string; io: ReadOnlyIo }): A
       newline = buffer.indexOf(NEWLINE, start);
     }
     const rest = buffer.subarray(start);
-    // A line too long to be one of those used is dropped, up to its newline.
-    cursor.pending = rest.byteLength > LINE_LIMIT_BYTES ? Buffer.alloc(0) : Buffer.from(rest);
+    // A line too long to be one of those used is passed over, up to its newline.
+    cursor.skipping = rest.byteLength > LINE_LIMIT_BYTES;
+    cursor.pending = cursor.skipping ? Buffer.alloc(0) : Buffer.from(rest);
   }
 
   async function readLog(file: string, info: FileInfo): Promise<AgyLogState> {
@@ -165,19 +198,18 @@ export function createAgyLogReader(options: { home: string; io: ReadOnlyIo }): A
             mtimeMs: 0,
             offset: 0,
             pending: Buffer.alloc(0),
+            skipping: false,
             state: emptyAgyLogState(),
           };
       let from = cursor.offset;
       if (opened.size - from > LOG_LIMIT_BYTES) {
-        // Too much to read at once: only the end, from a line's start. What
-        // was asked before then is no longer known.
+        // Too much to read at once: only the end, from the first line that
+        // starts in it. What was asked before then is no longer known.
         from = opened.size - LOG_LIMIT_BYTES;
         cursor.state.ask = null;
         cursor.pending = Buffer.alloc(0);
-        const data = Buffer.from(await handle.read(from, opened.size - from));
-        const first = data.indexOf(NEWLINE);
-        addLines(cursor, first === -1 ? Buffer.alloc(0) : data.subarray(first + 1));
-        if (first === -1) cursor.pending = Buffer.alloc(0);
+        cursor.skipping = true;
+        addLines(cursor, Buffer.from(await handle.read(from, opened.size - from)));
       } else if (opened.size > from) {
         addLines(cursor, Buffer.from(await handle.read(from, opened.size - from)));
       }

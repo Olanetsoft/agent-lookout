@@ -191,18 +191,28 @@ export function askingLog(start: number, id: string, step: number, folder = WORK
     logLine(start + 2 * SECOND, `Error report: ${PRIVATE_WORDS}`, "errorreport.go:224", "E"),
     logLine(start + 20 * SECOND, "Starting new conversation (agent=false)"),
     logLine(start + 20 * SECOND, `Created conversation ${id}`, "server.go:1263"),
-    logLine(start + 20 * SECOND, `Streaming conversation ${id}`, "conversation_manager.go:967"),
+    streamingLine(start + 20 * SECOND, id),
     logLine(
       start + 20 * SECOND,
       `Sending user message to conversation ${id} (items=1, media=0)`,
       "server.go:1840",
     ),
-    logLine(
-      start + 25 * SECOND,
-      `Surfacing tool confirmation: "RunCommand" at step ${step}`,
-      "tool_confirmation_manager.go:226",
-    ),
+    askingLine(start + 25 * SECOND, step),
   ];
+}
+
+/** The line agy logs when a program opens a conversation, by starting it or switching to it. */
+export function streamingLine(ms: number, id: string): string {
+  return logLine(ms, `Streaming conversation ${id}`, "conversation_manager.go:967");
+}
+
+/** The line agy logs when it asks for approval of a tool at `step`. */
+export function askingLine(ms: number, step: number, tool = "RunCommand"): string {
+  return logLine(
+    ms,
+    `Surfacing tool confirmation: "${tool}" at step ${step}`,
+    "tool_confirmation_manager.go:226",
+  );
 }
 
 /** The line agy logs once the person answers the approval asked at `step`. */

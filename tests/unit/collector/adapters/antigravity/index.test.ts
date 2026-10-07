@@ -25,9 +25,9 @@ import {
   failedTurn,
   finishedTurn,
   HOME,
-  logLine,
   logName,
   logPath,
+  streamingLine,
   MINUTE,
   NOW,
   SECOND,
@@ -456,7 +456,7 @@ describe("an agy program's own log and a conversation's title", () => {
     const started = NOW - 5 * SECOND;
     files.write(
       logPath(AGY_HOME, logName(started + SECOND)),
-      logLine(started + 2 * SECOND, `Streaming conversation ${IDLE}`),
+      streamingLine(started + 2 * SECOND, IDLE),
     );
     processes.set([{ startedAt: started }]);
     const result = await adapter.poll();
@@ -466,6 +466,41 @@ describe("an agy program's own log and a conversation's title", () => {
       [IDLE]: "idle",
       [FAILED]: "failed",
     });
+  });
+
+  test("the conversation a program's log opened last is the one it holds, not the one its command line named", async () => {
+    const { adapter, processes, files } = setUp();
+    const started = NOW - 5 * SECOND;
+    files.write(
+      logPath(AGY_HOME, logName(started + SECOND)),
+      streamingLine(started + 2 * SECOND, IDLE),
+    );
+    // Its command line named the old conversation, which it has since left.
+    processes.set([{ startedAt: started, conversation: OLD }]);
+    await adapter.poll();
+    const result = await adapter.poll();
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+  });
+
+  test("a conversation its program opened earlier has that program's folder too", async () => {
+    const { adapter, files, write } = waiting();
+    const earlier = conversationId("f6");
+    write(earlier, finishedTurn(0, STARTED + 5 * SECOND), STARTED + 9 * SECOND);
+    files.write(
+      LOG,
+      [
+        ...askingLog(STARTED, earlier, 9).slice(0, 6),
+        streamingLine(STARTED + 20 * SECOND, ASKING),
+        ...askingLog(STARTED, ASKING, 2).slice(-1),
+      ].join(""),
+    );
+    const { sessions } = await adapter.poll();
+    expect(find(sessions, earlier)).toMatchObject({ cwd: WORKSPACE, status: "idle" });
+    expect(find(sessions, ASKING)).toMatchObject({ cwd: WORKSPACE, status: "needs-you" });
   });
 
   test("a conversation with no title is named by its folder", async () => {
