@@ -96,7 +96,7 @@ npm install -g agent-lookout
 agent-lookout
 ```
 
-`agent-lookout status` and `agent-lookout mcp` then run from any folder too, which suits a tmux status line or a shell prompt. Run `npm install -g agent-lookout` again to update it, and `npm uninstall -g agent-lookout` to take it away.
+`agent-lookout status` and `agent-lookout mcp` then start without npm asking its registry each time, which suits a tmux status line or a shell prompt that runs them every few seconds. Run `npm install -g agent-lookout` again to update it, and `npm uninstall -g agent-lookout` to take it away.
 
 ## Mac app
 
@@ -150,7 +150,7 @@ npm start
 
 `npm start` prints the same two lines as `npx agent-lookout`, at the same address, and takes another port as `AGENT_LOOKOUT_PORT=4778 npm start`. Run before `npm run build`, it stops and tells you to build first. After a `git pull`, run `npm install` and `npm run build` again.
 
-`npm link`, run once in the folder after `npm run build`, puts `agent-lookout` on your `PATH`, pointing at the clone, so it keeps up when you pull new code.
+`npm link`, run once in the folder after `npm run build`, puts `agent-lookout` on your `PATH`, pointing at the clone, so it starts from any folder. It serves the same built page, so a pull needs the same `npm install` and `npm run build`.
 
 `npm run dev` starts it at <http://localhost:5173> with the development tools used to work on its code, as [CONTRIBUTING.md](../CONTRIBUTING.md) describes.
 
@@ -166,8 +166,9 @@ It should print "Agent Lookout is running at http://127.0.0.1:4777".
 If it prints anything else, or says the port is in use, stop and tell
 me what it printed.
 
-Do not use sudo, and do not set up email or a webhook. You are done
-when curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
+Do not use sudo, and do not set up email, a webhook, pull requests
+or other machines. You are done when
+curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
 version number. Tell me what it printed.
 ```
 

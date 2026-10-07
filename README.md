@@ -8,7 +8,7 @@ It finds Claude Code and Codex sessions with no setup, and any agent that writes
 
 By default Agent Lookout sends nothing anywhere. The one exception: the Mac app's daily check on GitHub for a newer version, which Settings turns off. Email, a webhook, pull requests through your `gh` and other machines over your `ssh` stay off until you set them up. [Privacy](#privacy)
 
-[Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [For agents](AGENTS.md) · [Roadmap](https://github.com/Olanetsoft/agent-lookout/milestones) · [Website](https://agent-lookout.vercel.app)
+[Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [For agents](#for-coding-agents) · [Roadmap](https://github.com/Olanetsoft/agent-lookout/milestones) · [Website](https://agent-lookout.vercel.app)
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Olanetsoft/agent-lookout/main/docs/images/dashboard-day.png">
@@ -73,14 +73,15 @@ It should print "Agent Lookout is running at http://127.0.0.1:4777".
 If it prints anything else, or says the port is in use, stop and tell
 me what it printed.
 
-Do not use sudo, and do not set up email or a webhook. You are done
-when curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
+Do not use sudo, and do not set up email, a webhook, pull requests
+or other machines. You are done when
+curl -s http://127.0.0.1:4777/api/health prints {"ok":true and a
 version number. Tell me what it printed.
 ```
 
 An agent's background command can end when its session does. If the page then says Agent Lookout has stopped updating, run `npx agent-lookout` yourself.
 
-To build it from a clone, see [Contributing](#contributing).
+To run it from a clone, see [From the repository](docs/INSTALL.md#from-the-repository).
 
 ## What it does
 
@@ -92,7 +93,7 @@ To build it from a clone, see [Contributing](#contributing).
 | [Stop and Resume](docs/GUIDE.md#stop-a-session)                                                              | Stop ends a Claude Code session, or those left running, after you confirm. Resume copies the command that reopens it.                            |
 | [Allow and Deny](docs/GUIDE.md#answer-a-permission-prompt)                                                   | Answers a Claude Code permission prompt from the page, with the plugin. [Rules](docs/GUIDE.md#permission-rules) you add can answer some for you. |
 | [Notifications](docs/GUIDE.md#notifications) and [time rules](docs/GUIDE.md#time-rules)                      | Tell you when a session waits, remind you of long waits and keep quiet hours. Off until turned on.                                               |
-| [Pull requests](docs/GUIDE.md#pull-requests), [email](docs/GUIDE.md#email), [webhook](docs/GUIDE.md#webhook) | Show each branch's pull request through your `gh`, and email or post events to one address. Off until set up.                                    |
+| [Pull requests](docs/GUIDE.md#pull-requests), [email](docs/GUIDE.md#email), [webhook](docs/GUIDE.md#webhook) | Show a session's pull request on github.com and its checks, through your `gh`, and email or post events to one address. Off until set up.        |
 | [Another machine](docs/GUIDE.md#another-machine-over-ssh)                                                    | Shows the sessions of another machine running Agent Lookout, through your `ssh`. Off until you name one.                                         |
 | [Your own agents](docs/GUIDE.md#your-own-agents)                                                             | Shows any other agent that writes one small JSON file per session.                                                                               |
 
@@ -169,7 +170,7 @@ Settings are environment variables, put before the command, as in `AGENT_LOOKOUT
 
 ## Privacy
 
-By default Agent Lookout sends nothing anywhere: no telemetry, analytics, crash reports or account. The one exception is the Mac app, which asks GitHub about once a day whether a newer version is out, sends nothing about your sessions, and stops when you turn it off in Settings. `npx` and a build from the repository make no such check.
+By default Agent Lookout sends nothing anywhere: no telemetry, analytics, crash reports or account. The one exception is the Mac app, which asks GitHub about once a day whether a newer version is out, sends nothing about your sessions, and stops when you turn it off in Settings. `npx agent-lookout`, `npm start` and `npm run dev` make no such check.
 
 Each of these is off until you set it up:
 
@@ -181,14 +182,14 @@ Each of these is off until you set it up:
 
 Other programs make their own traffic. `npx` asks npm's registry for the package. `claude agents`, which Agent Lookout runs, may contact Anthropic as Claude Code does, and `AGENT_LOOKOUT_CLAUDE_FEED=off` stops Agent Lookout running it.
 
-It listens on a loopback address only, 127.0.0.1 unless you set another, turns away websites and has no password, so other programs and user accounts on this computer can use it as you can. The Mac app opens no port. [PRIVACY.md](PRIVACY.md) lists every file it reads and every command it runs, and [SECURITY.md](SECURITY.md) what it guards against.
+It listens on a loopback address only, 127.0.0.1 unless you set another, turns away requests from websites open in your browser, and has no password, so other programs and user accounts on this computer can use it as you can. The Mac app opens no port. [PRIVACY.md](PRIVACY.md) lists every file it reads and every command it runs, and [SECURITY.md](SECURITY.md) what it guards against.
 
 ## What it does not do yet
 
 - It cannot send a session a message, and Resume only copies the command.
 - Cloud sessions, Codex cloud tasks and browser chats do not appear.
 - Claude Code's and Codex's files are undocumented, so an update can hide sessions. [What breaks when Codex changes](docs/adapters/codex.md#what-breaks-when-codex-changes)
-- The Mac app is unsigned, and there is no Linux or Windows app.
+- The Mac app is not signed with an Apple Developer ID yet, and there is no Linux or Windows app.
 
 [What it does not do yet](docs/GUIDE.md#what-it-does-not-do-yet) has the details, and the [milestones](https://github.com/Olanetsoft/agent-lookout/milestones) what is planned.
 
@@ -240,9 +241,9 @@ To set Agent Lookout up for someone:
 - Run `npx --yes agent-lookout` in the background. It is ready when `curl -s http://127.0.0.1:4777/api/health` prints `{"ok":true`.
 - `npx agent-lookout status --json` prints the counts and the sessions that need you, and exits with 0, 1 or 2 as above.
 - `GET /api/sessions` lists every session. All routes answer on loopback only, and [docs/API.md](docs/API.md) lists them.
-- Do not use `sudo`, and do not set up email, a webhook or other machines unless asked.
+- Do not use `sudo`, and do not set up email, a webhook, pull requests or other machines unless asked.
 
-To change its code, read [AGENTS.md](AGENTS.md) first. It has the commands, the rules a change must keep and where tests go. Run `npm run check` before you finish. Claude Code reads CLAUDE.md rather than AGENTS.md, so put the line `@AGENTS.md` in a CLAUDE.md of your own.
+To change its code, read [AGENTS.md](AGENTS.md) first. It has the commands, the rules a change must keep and where tests go. Run `npm run check` before you finish. Codex, and Claude Code from version 2.1.277, read AGENTS.md on their own. If you keep a CLAUDE.md or CLAUDE.local.md of your own in the clone, which git ignores here, Claude Code reads that instead, so put the line `@AGENTS.md` in it.
 
 ## Contributing
 
@@ -253,9 +254,9 @@ git clone https://github.com/Olanetsoft/agent-lookout.git
 cd agent-lookout
 npm install
 npx playwright install chromium
-npm run dev
-npm run check
 ```
+
+`npm run dev` then serves the page at http://localhost:5173, with the collector inside, until you press Ctrl+C. `npm run check` runs every check, and is the one to run before you finish.
 
 ```text
 src/collector/          Node: finds sessions and serves them on 127.0.0.1
@@ -268,7 +269,7 @@ tests/                  Every test, in unit/, integration/ and component/
 site/                   The website
 ```
 
-Start at `src/core/sessions/session.ts`. The full map is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). [CONTRIBUTING.md](CONTRIBUTING.md) covers setup and checks, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) how to work together. Ask questions in [issues](https://github.com/Olanetsoft/agent-lookout/issues). Report a security problem privately, as [SECURITY.md](SECURITY.md) describes.
+Start at `src/core/sessions/session.ts`. The full map is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, checks and [adding an agent](CONTRIBUTING.md#adding-an-adapter), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) how to work together. Ask questions in [issues](https://github.com/Olanetsoft/agent-lookout/issues). Report a security problem privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 
