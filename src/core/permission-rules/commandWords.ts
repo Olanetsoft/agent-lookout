@@ -55,6 +55,7 @@ export const COMMAND_RUNNERS: readonly string[] = [
   "time",
   // Programs that run the command after their own words.
   "arch",
+  "bunx",
   "caffeinate",
   "chroot",
   "doas",
@@ -64,6 +65,7 @@ export const COMMAND_RUNNERS: readonly string[] = [
   "ionice",
   "nice",
   "nohup",
+  "npx",
   "parallel",
   "sandbox-exec",
   "script",
@@ -74,16 +76,21 @@ export const COMMAND_RUNNERS: readonly string[] = [
   "taskset",
   "timeout",
   "unbuffer",
+  "uvx",
   "watch",
   "xargs",
+  "xcrun",
   // Shells, which run the command they are given or a file.
   "ash",
   "bash",
   "busybox",
+  "cmd",
   "csh",
   "dash",
   "fish",
   "ksh",
+  "powershell",
+  "pwsh",
   "sh",
   "tcsh",
   "zsh",
@@ -118,14 +125,19 @@ export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
   "telnet",
   "wget",
   "xh",
+  "xhs",
   // Interpreters, which run code given in their words or in a file.
   "awk",
   "bun",
   "deno",
   "expect",
   "gawk",
+  "irb",
+  "jrunscript",
   "julia",
   "lua",
+  "luajit",
+  "mawk",
   "nawk",
   "node",
   "nodejs",
@@ -144,9 +156,23 @@ export const NETWORK_CLIENTS_AND_INTERPRETERS: readonly string[] = [
 /** A version at the end of a program's name, as in `python3`, `python3.12` or `perl5.34`. */
 const VERSION_AT_END = /\d+(?:\.\d+)*$/;
 
+/** The ending of a program on Windows, `curl.exe` or `cmd.com`, run the same from WSL. */
+const WINDOWS_PROGRAM_END = /\.(?:exe|com)$/;
+
+/**
+ * The name a program's own name begins with, before a digit, a dot or a dash:
+ * `python` in `python3-intel64` and `python3.13t`, `nc` in `nc.openbsd`,
+ * `gawk` in `gawk-5.3.1`. It refuses more than it must, `ssh-keygen` among
+ * them, which is the safe side for an allow rule.
+ */
+const NAME_BEFORE_ITS_ENDING = /^[a-z]+/;
+
 /** A word as the program it names: its last part after any `/`, in small letters. */
 export function programOf(word: string): string {
-  return word.slice(word.lastIndexOf("/") + 1).toLowerCase();
+  return word
+    .slice(word.lastIndexOf("/") + 1)
+    .toLowerCase()
+    .replace(WINDOWS_PROGRAM_END, "");
 }
 
 /** Whether a word names a program that runs another command (`COMMAND_RUNNERS`). */
@@ -162,10 +188,12 @@ export function runsAnotherCommand(word: string): boolean {
  */
 export function sendsOrRunsCode(word: string): boolean {
   const program = programOf(word);
-  return (
-    NETWORK_CLIENTS_AND_INTERPRETERS.includes(program) ||
-    NETWORK_CLIENTS_AND_INTERPRETERS.includes(program.replace(VERSION_AT_END, ""))
-  );
+  const names = [
+    program,
+    program.replace(VERSION_AT_END, ""),
+    NAME_BEFORE_ITS_ENDING.exec(program)?.[0] ?? program,
+  ];
+  return names.some((name) => NETWORK_CLIENTS_AND_INTERPRETERS.includes(name));
 }
 
 /** A character a word of a plain command may hold: nothing any shell gives a meaning to. */

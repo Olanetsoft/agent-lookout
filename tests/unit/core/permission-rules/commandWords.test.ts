@@ -247,6 +247,20 @@ describe("the programs that run another command", () => {
     expect(runsAnotherCommand("sudoku")).toBe(false);
   });
 
+  test.each(["npx", "bunx", "uvx", "xcrun", "pwsh", "powershell", "cmd"])(
+    "%s, which runs another program or is a shell, is one",
+    (word) => {
+      expect(runsAnotherCommand(word)).toBe(true);
+    },
+  );
+
+  test("a Windows program, run the same from WSL, is found by its name without .exe or .com", () => {
+    expect(programOf("C:/Windows/System32/BASH.EXE")).toBe("bash");
+    expect(runsAnotherCommand("bash.exe")).toBe(true);
+    expect(runsAnotherCommand("cmd.com")).toBe(true);
+    expect(runsAnotherCommand("npm.exe")).toBe(false);
+  });
+
   test("the list is written in small letters, each once", () => {
     expect(COMMAND_RUNNERS.every((name) => name === name.toLowerCase())).toBe(true);
     expect(new Set(COMMAND_RUNNERS).size).toBe(COMMAND_RUNNERS.length);
@@ -310,7 +324,7 @@ describe("the programs that send requests or run the code they are given", () =>
   });
 
   test("not jq, nor a program whose name only begins like one, nor a runner, which has its own list", () => {
-    for (const word of ["jq", "ncdu", "curly", "nodemon", "pythonista", "python-config", "npm"]) {
+    for (const word of ["jq", "ncdu", "curly", "nodemon", "pythonista", "npm"]) {
       expect(sendsOrRunsCode(word)).toBe(false);
     }
     expect(sendsOrRunsCode("sudo")).toBe(false);
@@ -348,5 +362,47 @@ describe("a rule's command, matched word by word", () => {
     expect(wordsMatch(rule, ["npm", "test:unit"])).toBe(false);
     expect(wordsMatch(rule, ["npmx", "test"])).toBe(false);
     expect(wordsMatch(rule, ["npm"])).toBe(false);
+  });
+});
+
+describe("the programs that send requests or run code, by the name their own begins with", () => {
+  test.each([
+    "curl.exe",
+    "C:/Windows/System32/CURL.EXE",
+    "python.exe",
+    "python3.12.exe",
+    "node.exe",
+    "python3-intel64",
+    "python3.13t",
+    "nc.openbsd",
+    "nc.traditional",
+    "gawk-5.3.1",
+    "mawk",
+    "luajit",
+    "irb",
+    "jrunscript",
+    "xhs",
+  ])("%s is one", (word) => {
+    expect(sendsOrRunsCode(word)).toBe(true);
+  });
+
+  test("a program named for one with a dash after it is refused too, the safe side", () => {
+    expect(sendsOrRunsCode("python-config")).toBe(true);
+    expect(sendsOrRunsCode("ssh-keygen")).toBe(true);
+  });
+
+  test.each([
+    "npm",
+    "make",
+    "git",
+    "cargo",
+    "swiftlint",
+    "nodemon",
+    "curlie",
+    "ncdu",
+    "pytest",
+    "jq",
+  ])("%s is not", (word) => {
+    expect(sendsOrRunsCode(word)).toBe(false);
   });
 });
