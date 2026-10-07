@@ -182,6 +182,12 @@ export const DENY_ONLY_REASONS = [
 
 export type DenyOnlyReason = (typeof DENY_ONLY_REASONS)[number];
 
+/** The tools that change a file. The change is not shown, so they offer Deny only. */
+export const EDIT_TOOLS: readonly string[] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+/** The tools answered with more than yes or no, which offer Deny only. */
+export const NOT_YES_OR_NO_TOOLS: readonly string[] = ["ExitPlanMode", "AskUserQuestion"];
+
 /** One input of a tool, as text, for a request that is not a shell command. */
 export interface AskInput {
   name: string;
@@ -589,8 +595,9 @@ export interface SessionsSnapshot {
  *                 ended it with the sessions left running. Its leaving the
  *                 list is an `ended` event of its own, at the next poll
  * answered        Agent Lookout answered a permission prompt of the session's,
- *                 when the person pressed Allow or Deny. It holds the decision
- *                 and nothing of what was asked
+ *                 when the person pressed Allow or Deny, or by a permission
+ *                 rule the person set. It holds the decision, and for a rule
+ *                 the tool and the rule, and nothing of what was asked
  *
  * A reader drops an event of a kind it does not know, so a later kind never
  * reads as one of these.
@@ -625,10 +632,31 @@ export interface SessionEvent {
   from?: SessionStatus;
   to?: SessionStatus;
   severity: EventSeverity;
-  /** For a `stopped` or `answered` event: who acted, which is always Agent Lookout, at the person's request. */
+  /**
+   * For a `stopped` or `answered` event: who acted, which is always Agent
+   * Lookout, at the person's request or by a rule the person set.
+   */
   by?: EventActor;
-  /** For an `answered` event: what the person answered. */
+  /** For an `answered` event: what the person answered, or the rule did. */
   decision?: AnswerDecision;
+  /**
+   * For an `answered` event a permission rule made: the tool the request was
+   * for, as Claude Code named it. Nothing else of the request: no command
+   * and no input.
+   */
+  tool?: string;
+  /**
+   * For an `answered` event a permission rule made: the rule, in the words
+   * the person wrote it in, as it read then. Its decision is the event's.
+   * Left out when the person pressed Allow or Deny.
+   */
+  rule?: EventRule;
+}
+
+/** A permission rule as an event names it: its tool, and for Bash its command. */
+export interface EventRule {
+  tool: string;
+  command?: string;
 }
 
 export interface HistoryPoint {

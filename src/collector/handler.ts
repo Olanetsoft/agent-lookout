@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   ACTION_HEADER,
   NOTIFICATIONS_HEADER,
+  PERMISSION_RULES_PATH,
   readNotificationsHeader,
   SETTINGS_PATH,
   TIME_RULES_PATH,
@@ -44,13 +45,17 @@ export interface ApiAnswer {
   headers?: Record<string, string>;
 }
 
-/** Where the collector's six routes that do something are. Every other route only reads. */
+/**
+ * Where the collector's seven routes that do something are: jump, clear the
+ * history, stop, clean up, answer, the time rules and the permission rules.
+ * Every other route only reads.
+ */
 export const JUMP_PATH = "/api/jump";
 export const CLEAR_HISTORY_PATH = "/api/history/clear";
 export const STOP_PATH = "/api/sessions/stop";
 export const CLEAN_UP_PATH = "/api/sessions/clean-up";
 export const ANSWER_PATH = "/api/permission/answer";
-export { TIME_RULES_PATH };
+export { PERMISSION_RULES_PATH, TIME_RULES_PATH };
 
 export interface ApiHandlerOptions {
   version: string;
@@ -118,9 +123,10 @@ export interface ApiHandlerOptions {
    */
   serveSnapshot?: (snapshot: SessionsSnapshot) => SessionsSnapshot;
   /**
-   * What `GET /api/settings` answers: the time rules the collector keeps in
-   * its settings file, where that file is, and whether it could be read. Left
-   * out, there is no such route.
+   * What `GET /api/settings` answers: the time rules and the permission rules
+   * the collector keeps in its settings file, where that file is, whether it
+   * could be read, and what the permission rules answered since it started.
+   * Left out, there is no such route.
    */
   settings?: () => SettingsResponse;
   /**
@@ -129,6 +135,12 @@ export interface ApiHandlerOptions {
    * Left out, there is no such route.
    */
   timeRules?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `POST /api/settings/permission-rules`, with the same checks of
+   * its own as the jump route: `createPermissionRulesRoute` in
+   * `settings/permissionRulesRoute.ts`. Left out, there is no such route.
+   */
+  permissionRules?: (req: IncomingMessage) => Promise<ApiAnswer>;
   /**
    * Where the history held begins, where it is kept and the restarts in it,
    * for `/api/history`. Left out, it is kept in memory only and begins when
@@ -230,10 +242,11 @@ export function refusal(
 
 /**
  * Why a request to a route that acts is refused before its body is read, or
- * null when it may proceed. The collector's six such routes,
+ * null when it may proceed. The collector's seven such routes,
  * `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop`,
- * `POST /api/sessions/clean-up`, `POST /api/permission/answer` and
- * `POST /api/settings/time-rules`, and the Mac app's routes for
+ * `POST /api/sessions/clean-up`, `POST /api/permission/answer`,
+ * `POST /api/settings/time-rules` and `POST /api/settings/permission-rules`,
+ * and the Mac app's routes for
  * its updates, in `src/desktop/updates/updateRoute.ts`, make these checks on
  * top of the ones every request has already passed in `refusalFor`, so each is
  * a request only the dashboard's own page can send:
@@ -369,6 +382,7 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
   if (options.cleanUp) actions.set(CLEAN_UP_PATH, options.cleanUp);
   if (options.answer) actions.set(ANSWER_PATH, options.answer);
   if (options.timeRules) actions.set(TIME_RULES_PATH, options.timeRules);
+  if (options.permissionRules) actions.set(PERMISSION_RULES_PATH, options.permissionRules);
   const serveSnapshot = options.serveSnapshot ?? ((snapshot: SessionsSnapshot) => snapshot);
 
   function route(req: IncomingMessage, res: ServerResponse): void {

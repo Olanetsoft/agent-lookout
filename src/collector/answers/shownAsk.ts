@@ -1,5 +1,14 @@
-import type { AskInput, DenyOnlyReason, PermissionAsk } from "../../core/sessions/session.ts";
+import {
+  EDIT_TOOLS,
+  NOT_YES_OR_NO_TOOLS,
+  type AskInput,
+  type DenyOnlyReason,
+  type PermissionAsk,
+} from "../../core/sessions/session.ts";
 import { oneLine } from "../../core/text.ts";
+
+// The two lists live in the core, so the permission rules name the same tools.
+export { EDIT_TOOLS, NOT_YES_OR_NO_TOOLS };
 
 /**
  * What the dashboard shows of a permission request, and whether it offers
@@ -51,12 +60,6 @@ export const MAX_TOOL_NAME_CHARS = 200;
 
 /** The longest description kept of a command, on one line. */
 export const MAX_DESCRIPTION_CHARS = 200;
-
-/** The tools that change a file. The change is not shown, so they offer Deny only. */
-export const EDIT_TOOLS: readonly string[] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
-
-/** The tools answered with more than yes or no. */
-export const NOT_YES_OR_NO_TOOLS: readonly string[] = ["ExitPlanMode", "AskUserQuestion"];
 
 /** The inputs of an edit that are shown: where it would write. */
 const EDIT_INPUTS = ["file_path", "notebook_path"];

@@ -8,6 +8,7 @@ import {
   writeNoticeEvents,
   type NoticeEvent,
 } from "./notices/sessionChanges.ts";
+import type { PermissionRule, RuleWords } from "./permission-rules/permissionRules.ts";
 import type { TimeRules } from "./time-rules/timeRules.ts";
 
 /** `GET /api/health` */
@@ -404,9 +405,38 @@ export const TIME_RULES_PATH = "/api/settings/time-rules";
 /** What `ACTION_HEADER` says on a request that changes the time rules. */
 export const TIME_RULES_ACTION = "time-rules";
 
+/** `POST /api/settings/permission-rules`: changes the permission rules. */
+export const PERMISSION_RULES_PATH = "/api/settings/permission-rules";
+
+/** What `ACTION_HEADER` says on a request that changes the permission rules. */
+export const PERMISSION_RULES_ACTION = "permission-rules";
+
+/**
+ * One permission request a permission rule answered, for the list under the
+ * rules in Settings: the session, the tool it asked to use, the decision and
+ * the rule, in the person's own words, and when. Nothing of what was asked:
+ * no command and no input.
+ */
+export interface RuleAnswer {
+  at: number;
+  sessionId: string;
+  /** The session's name, as it was listed then. */
+  sessionName: string;
+  /** The tool the request was for, as Claude Code named it. */
+  tool: string;
+  decision: AnswerDecision;
+  /** The rule that answered it, as it read then. */
+  rule: RuleWords;
+}
+
+/** The most answers by a rule that `GET /api/settings` gives, newest first. */
+export const MAX_RULE_ANSWERS = 100;
+
 /**
  * `GET /api/settings`: the settings the collector keeps in its own file, so
- * they hold with no dashboard open: the time rules. It only reads.
+ * they hold with no dashboard open: the time rules and the permission rules,
+ * and the requests the permission rules answered since it started. It only
+ * reads.
  */
 export interface SettingsResponse {
   timeRules: TimeRules;
@@ -418,6 +448,18 @@ export interface SettingsResponse {
    * Null otherwise.
    */
   problem: string | null;
+  /** The permission rules in force, in their order. Empty is none, which answers nothing. */
+  permissionRules: PermissionRule[];
+  /**
+   * While the permission rules could not be read, which leaves none in
+   * force, or the last change to them could not be saved: one sentence that
+   * says so. Null otherwise.
+   */
+  permissionRulesProblem: string | null;
+  /** The requests the permission rules answered since the collector started, newest first: 100 at most. */
+  ruleAnswers: RuleAnswer[];
+  /** When the collector started, which is where that list begins. Null when the answer does not say. */
+  ruleAnswersSince: number | null;
 }
 
 /**
@@ -444,8 +486,37 @@ export interface TimeRulesRefusal extends ErrorResponse {
 }
 
 /**
+ * The body of `POST /api/settings/permission-rules` is one change, and
+ * nothing else: `{"add": rule}`, `{"edit": rule with its "id"}`,
+ * `{"move": {"id", "to": "up" or "down"}}` or `{"remove": {"id"}}`, as
+ * `rulesChangeIn` in `src/core/permission-rules/rulesChange.ts` reads it. It
+ * answers with the rules now in force, once they are saved.
+ */
+export interface PermissionRulesResponse {
+  ok: true;
+  permissionRules: PermissionRule[];
+}
+
+/**
+ * Why the permission rules were not changed:
+ *
+ * invalid    400: the body is not one change, or the rule it names cannot be one
+ * no-rule    404: no rule has that id: it was removed, perhaps in another tab
+ * full       409: the list holds 100 rules already
+ * duplicate  409: the list holds a rule that says the same already
+ * not-saved  500: the file could not be written, so nothing changed
+ */
+export type PermissionRulesFailure = "invalid" | "no-rule" | "full" | "duplicate" | "not-saved";
+
+/** The body of an answer of `POST /api/settings/permission-rules` that says why nothing changed. */
+export interface PermissionRulesRefusal extends ErrorResponse {
+  reason: PermissionRulesFailure;
+}
+
+/**
  * The request header a dashboard page sends with a request that does something,
- * naming what: `jump`, `clear-history`, `stop`, `clean-up`, `answer` or `time-rules`. A browser sends
+ * naming what: `jump`, `clear-history`, `stop`, `clean-up`, `answer`, `time-rules` or
+ * `permission-rules`. A browser sends
  * no header of this kind to another origin without asking first, and the
  * collector never says yes, so a page at another address cannot send it.
  */

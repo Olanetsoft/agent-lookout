@@ -34,6 +34,10 @@ describe("fetchSettings", () => {
       timeRules: SET,
       file: "~/.agent-lookout/settings.json",
       problem: null,
+      permissionRules: [],
+      permissionRulesProblem: null,
+      ruleAnswers: [],
+      ruleAnswersSince: null,
     });
     expect(host.mock.calls[0]?.[0]).toBe("/api/settings");
   });

@@ -100,7 +100,8 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Codex records no approval waits, so there is nothing to answer from here.",
+    reason:
+      "Codex records no approval waits, so there is nothing to answer from here, by hand or by a permission rule.",
   },
 };
 

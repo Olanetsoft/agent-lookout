@@ -62,7 +62,7 @@ describe("readSettingsText", () => {
     expect(readSettingsText(setup)).toEqual({
       kind: "refused",
       problem:
-        "~/.agent-lookout/settings.json is a link, which Agent Lookout does not follow, so the time rules are off.",
+        "~/.agent-lookout/settings.json is a link, which Agent Lookout does not follow, so the time rules and the permission rules are off.",
     });
   });
 
@@ -77,7 +77,7 @@ describe("readSettingsText", () => {
     expect(readSettingsText(setup)).toEqual({
       kind: "refused",
       problem:
-        "The folder of ~/.agent-lookout/settings.json is a link or not a folder, which Agent Lookout does not follow, so the time rules are off.",
+        "The folder of ~/.agent-lookout/settings.json is a link or not a folder, which Agent Lookout does not follow, so the time rules and the permission rules are off.",
     });
   });
 
@@ -86,7 +86,8 @@ describe("readSettingsText", () => {
     await mkdir(setup.file, { recursive: true });
     expect(readSettingsText(setup)).toEqual({
       kind: "refused",
-      problem: "~/.agent-lookout/settings.json is not an ordinary file, so the time rules are off.",
+      problem:
+        "~/.agent-lookout/settings.json is not an ordinary file, so the time rules and the permission rules are off.",
     });
   });
 
@@ -97,7 +98,7 @@ describe("readSettingsText", () => {
     expect(readSettingsText(setup)).toEqual({
       kind: "refused",
       problem:
-        "~/.agent-lookout/settings.json is larger than 64 KB, so it was not read and the time rules are off.",
+        "~/.agent-lookout/settings.json is larger than 64 KB, so it was not read and the time rules and the permission rules are off.",
     });
   });
 });

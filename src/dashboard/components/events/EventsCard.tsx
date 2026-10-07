@@ -16,6 +16,7 @@ import {
   type SessionEvent,
 } from "@core/sessions/session";
 import { OnMachine } from "@dashboard/components/sessions/Machine";
+import { Literal } from "@dashboard/components/ui/facts/Literal";
 import { EmptyState } from "@dashboard/components/ui/feedback/EmptyState";
 import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { StatusMark, type MarkKind } from "@dashboard/components/ui/status/StatusMark";
@@ -37,7 +38,7 @@ import {
   formatFullTime,
   startOfDay,
 } from "@dashboard/lib/format";
-import { eventPhrase, STOPPED_WAITING } from "@dashboard/lib/sessions/status";
+import { eventPhrase, ruleAnswerWords, STOPPED_WAITING } from "@dashboard/lib/sessions/status";
 import { cn } from "@dashboard/lib/utils";
 
 interface EventsCardProps {
@@ -108,13 +109,15 @@ function MarkColumn({ thread, children }: { thread: Thread; children?: ReactNode
  * One row of the log: the time, a mark on the thread, then what happened. A row
  * is at least 38px tall; past what the card can show, the log scrolls. In a
  * narrow window, what happened goes on to a second line when it does not fit
- * beside the name.
+ * beside the name, and so does a prompt's answer at any width, since what it
+ * says is long enough to leave the name no room.
  */
 function Row({
   at,
   mark,
   thread,
   lit = false,
+  wraps = false,
   className,
   children,
   ...data
@@ -123,6 +126,8 @@ function Row({
   mark: ReactNode;
   thread: Thread;
   lit?: boolean;
+  /** What happened goes under the name when it does not fit beside it, at every width. */
+  wraps?: boolean;
   /** In place of the card's inset, for a list that is not in a card. */
   className?: string;
   children: ReactNode;
@@ -147,7 +152,12 @@ function Row({
         </time>
       </Tooltip>
       <MarkColumn thread={thread}>{mark}</MarkColumn>
-      <div className='flex min-w-0 flex-1 items-baseline gap-x-1 self-center py-2 max-mid:flex-wrap'>
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-baseline gap-x-1 self-center py-2 max-mid:flex-wrap",
+          wraps && "flex-wrap",
+        )}
+      >
         {children}
       </div>
     </li>
@@ -183,6 +193,7 @@ const EventRow = memo(function EventRow({
       data-slot='event-row'
       at={event.at}
       lit={open}
+      wraps={event.kind === "answered"}
       thread={{ above, below }}
       mark={<StatusMark kind={mark} labelled />}
     >
@@ -191,7 +202,9 @@ const EventRow = memo(function EventRow({
       </Truncated>
       <OnMachine machine={machine} className='shrink-0 whitespace-nowrap' />
       <span data-part='phrase' className='max-w-full shrink-0'>
-        {waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
+        {event.rule !== undefined ? (
+          <RuleAnswerPhrase event={event} />
+        ) : waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
           <>
             {STOPPED_WAITING}{" "}
             <span className='whitespace-nowrap tabular-nums'>{formatDuration(waitedMs)}</span>
@@ -207,6 +220,26 @@ const EventRow = memo(function EventRow({
 /** What happened, as the start of a line: "Stopped waiting after 1m 05s". */
 function sentenceOf(phrase: string): string {
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+/**
+ * What a permission rule's answer says: the words, then the rule in the mono,
+ * as a command in a sentence is, "had Bash allowed by the rule
+ * Bash(npm test:*)". Null for any other event.
+ */
+function RuleAnswerPhrase({ event, start = false }: { event: SessionEvent; start?: boolean }) {
+  const words = ruleAnswerWords(event);
+  if (words === null) return null;
+  const lead = start ? sentenceOf(words.lead) : words.lead;
+  if (words.rule === null) return <>{lead}</>;
+  return (
+    <>
+      {lead}{" "}
+      <code data-part='rule' className='font-mono text-fact'>
+        <Literal>{words.rule}</Literal>
+      </code>
+    </>
+  );
 }
 
 /** The most rows a session's own events show before they scroll. */
@@ -283,7 +316,9 @@ export function OwnEvents({
             className='px-0'
           >
             <span data-part='phrase'>
-              {entry.waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
+              {entry.event.rule !== undefined ? (
+                <RuleAnswerPhrase event={entry.event} start />
+              ) : entry.waitedMs !== null && phrase.startsWith(STOPPED_WAITING) ? (
                 <>
                   {sentenceOf(STOPPED_WAITING)}{" "}
                   <span className='whitespace-nowrap tabular-nums'>

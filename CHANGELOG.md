@@ -4,6 +4,15 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Permission rules, a card in Settings under Permission prompts. Decide once how a kind of Claude Code permission prompt is answered: always allow, always ask or always deny, by tool and, for Bash, by command, exactly or as a prefix written as Claude Code writes one, such as `npm test:*`. Add, edit, move up and down, and remove rules there; Agent Lookout keeps them in `~/.agent-lookout/settings.json`. Deny goes first, then ask, then allow, as in Claude Code's own rules. A deny or an allow rule answers a matching request at once through the plugin, with every check Allow and Deny make. An allow rule answers only what you could allow by hand, and for Bash only one plain command: a line with `;`, `&&`, `|`, `$( )`, a variable, quotes or a redirection in it waits for you, and no allow rule can begin with a program that runs another, such as `sudo`, `env` or `bash`. A deny or an ask rule finds its words in any command of the line, with options between them, so `git push:*` also holds back `git -C . push`, and can name every tool of an MCP server, such as `mcp__docs`. Each answer is in the Events log with the rule, never the command, and the card lists the last 100. A deny or an allow rule in Claude Code's own settings still decides first. There is no rule until you add one, and rules answer Claude Code sessions with the plugin only. [Permission rules](docs/GUIDE.md#permission-rules) has the details.
+- `GET /api/settings` gives the permission rules and the requests they answered since Agent Lookout started, and `POST /api/settings/permission-rules`, which only the dashboard's own page can send, makes one change to them. An `answered` event a rule gave has `tool` and `rule`.
+
+### Changed
+
+- Agent Lookout now answers a permission prompt, with the plugin installed, only when you press Allow or Deny or a permission rule you added matches, and never on its own. What each agent can report, in Sources, has an Answer column, and Settings has a Permission prompts card that says whether the plugin's requests arrive.
+
 ### Fixed
 
 - A background job you stopped could still show as working, with Stop, after its details said it was stopped, until Claude Code had ended its process and the sessions were read again. Agent Lookout now waits up to 10 seconds for that process to end before it answers, as it does after SIGTERM.

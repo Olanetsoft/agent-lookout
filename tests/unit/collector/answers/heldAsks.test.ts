@@ -16,7 +16,10 @@ import {
   type RegistryReading,
   type RegistryStatus,
 } from "@collector/answers/heldAsks";
+import { createRuleAnswers, type RuleAnswers } from "@collector/answers/ruleAnswers";
 import { shownAsk } from "@collector/answers/shownAsk";
+import type { PermissionRule } from "@core/permission-rules/permissionRules";
+import type { SessionEvent } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
@@ -57,8 +60,11 @@ function reading(
   return status === "waiting" ? { status, wait } : { status };
 }
 
-/** Held requests over a clock and a registry the test moves, with no timer. */
-function standIns(status: RegistryStatus = "waiting") {
+/** Held requests over a clock and a registry the test moves, with no timer, and perhaps rules. */
+function standIns(
+  status: RegistryStatus = "waiting",
+  rules?: Pick<RuleAnswers, "verdictFor" | "answered">,
+) {
   const clock = { now: T0 };
   /** `wait` stands for the moment the registry says the wait began, and what for. */
   const registry = { status, wait: "1700000000000|permission prompt", reads: 0 };
@@ -76,6 +82,7 @@ function standIns(status: RegistryStatus = "waiting") {
     every: () => () => {},
     newId: () => (ids += 1).toString(16).padStart(32, "0"),
     onDrop: (reason, sessionId) => drops.push([reason, sessionId]),
+    ...(rules && { rules }),
   });
   return { asks, clock, registry, drops };
 }
@@ -448,5 +455,148 @@ describe("whether the plugin's requests arrive", () => {
       snapshot([waiting({ statusSince: T0 + 5_000, source: "codex", id: "codex:x" })], T0 + 60_000),
     );
     expect(asks.status().plugin).toBe("unknown");
+  });
+});
+
+describe("the permission rules", () => {
+  const ALLOW_TESTS: PermissionRule = {
+    id: "aaaaaaaaaaaa",
+    decision: "allow",
+    tool: "Bash",
+    command: "npm test:*",
+  };
+  const DENY_RM: PermissionRule = {
+    id: "bbbbbbbbbbbb",
+    decision: "deny",
+    tool: "Bash",
+    command: "rm:*",
+  };
+  const ASK_PUSH: PermissionRule = {
+    id: "cccccccccccc",
+    decision: "ask",
+    tool: "Bash",
+    command: "npm test --update:*",
+  };
+
+  /** The rules in force, over the real record of what they answered. */
+  function withRules(rules: PermissionRule[], status: RegistryStatus = "waiting") {
+    const events: SessionEvent[] = [];
+    const answers = createRuleAnswers({
+      rules: () => rules,
+      poller: {
+        getSnapshot: () => snapshot([waiting()]),
+        pollOnce: async () => snapshot([waiting()]),
+      },
+      events: { add: (added) => events.push(...added) },
+      now: () => T0,
+    });
+    return { ...standIns(status, answers), events, answers };
+  }
+
+  test("an allow rule answers allow at once, once the registry confirms the wait, and is never shown", async () => {
+    const { asks, events, answers } = withRules([ALLOW_TESTS]);
+    const hook = standInReply();
+    asks.receive(bash("npm test --watch"), hook.reply);
+    // Nothing is answered before the registry says the session waits.
+    expect(hook.sent).toEqual([]);
+    await asks.check();
+    expect(asks.withAsks(snapshot([waiting()])).sessions[0]).not.toHaveProperty("ask");
+    await vi.waitFor(() => expect(hook.sent).toEqual([ALLOW_OUTPUT]));
+    expect(asks.size).toBe(0);
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: "answered",
+        decision: "allow",
+        by: "agent-lookout",
+        tool: "Bash",
+        rule: { tool: "Bash", command: "npm test:*" },
+      }),
+    ]);
+    expect(answers.recent()).toHaveLength(1);
+    // The event and the list hold the rule, never the command.
+    expect(JSON.stringify([events, answers.recent()])).not.toContain("--watch");
+  });
+
+  test("a deny rule answers deny at once", async () => {
+    const { asks, events } = withRules([DENY_RM, ALLOW_TESTS]);
+    const hook = standInReply();
+    asks.receive(bash("cd build && rm -rf dist"), hook.reply);
+    await asks.check();
+    await vi.waitFor(() => expect(hook.sent).toEqual([DENY_OUTPUT]));
+    expect(events[0]).toMatchObject({ decision: "deny", rule: { command: "rm:*" } });
+  });
+
+  test("a deny rule answers what offers Deny alone, as an edit does", async () => {
+    const denyWrite: PermissionRule = { id: "dddddddddddd", decision: "deny", tool: "Write" };
+    const { asks } = withRules([denyWrite]);
+    const hook = standInReply();
+    asks.receive(
+      { sessionId: ID, shown: shownAsk("Write", { file_path: "/tmp/a", content: "x" })! },
+      hook.reply,
+    );
+    await asks.check();
+    await vi.waitFor(() => expect(hook.sent).toEqual([DENY_OUTPUT]));
+  });
+
+  test("an ask rule, a compound command and no rule leave the request held and shown, for the person", async () => {
+    for (const [rules, command] of [
+      [[ALLOW_TESTS, ASK_PUSH], "npm test --update snapshots"],
+      [[ALLOW_TESTS], "npm test && rm -rf ~"],
+      [[ALLOW_TESTS], "npm run build"],
+      [[], "npm test"],
+    ] as const) {
+      const { asks, events } = withRules([...rules]);
+      const hook = standInReply();
+      asks.receive(bash(command), hook.reply);
+      await asks.check();
+      await asks.check();
+      expect(hook.sent, command).toEqual([]);
+      expect(asks.withAsks(snapshot([waiting()])).sessions[0]?.ask, command).toBeDefined();
+      expect(events, command).toEqual([]);
+    }
+  });
+
+  test("an allow rule never answers what offers Deny alone", async () => {
+    const { asks } = withRules([ALLOW_TESTS]);
+    const hook = standInReply();
+    asks.receive(bash(`npm test ${"x".repeat(5_000)}`), hook.reply);
+    await asks.check();
+    await asks.check();
+    expect(hook.sent).toEqual([]);
+    expect(asks.withAsks(snapshot([waiting()])).sessions[0]?.ask).toMatchObject({
+      allow: false,
+      denyOnly: "too-long",
+    });
+  });
+
+  test("a rule answers only in the wait it was confirmed in, through the same checks as a press", async () => {
+    const { asks, registry, events } = withRules([ALLOW_TESTS]);
+    const hook = standInReply();
+    // The registry says the session waits, then, by the time the answer is
+    // written, that it moved on: the read made right before writing catches it.
+    let reads = 0;
+    const was = registry.status;
+    Object.defineProperty(registry, "status", {
+      get: () => ((reads += 1) === 1 ? was : "not-waiting"),
+      configurable: true,
+    });
+    asks.receive(bash(), hook.reply);
+    await asks.check();
+    await vi.waitFor(() => expect(hook.sent).toEqual([""]));
+    expect(events).toEqual([]);
+  });
+
+  test("a rule that throws answers nothing, and the request waits for the person", async () => {
+    const { asks } = standIns("waiting", {
+      verdictFor: () => {
+        throw new Error("broken");
+      },
+      answered: () => {},
+    });
+    const hook = standInReply();
+    asks.receive(bash(), hook.reply);
+    await asks.check();
+    expect(hook.sent).toEqual([]);
+    expect(asks.withAsks(snapshot([waiting()])).sessions[0]?.ask).toBeDefined();
   });
 });

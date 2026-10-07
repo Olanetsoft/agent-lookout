@@ -24,6 +24,7 @@ import {
   EVENT_SEVERITIES,
   SESSION_STATUSES,
   type EventKind,
+  type EventRule,
   type EventSeverity,
   type HistoryPoint,
   type SessionEvent,
@@ -124,7 +125,8 @@ function recordValue(record: HistoryRecord): unknown {
 
 /** An event's own fields and nothing else, in a fixed order. */
 function eventFields(event: SessionEvent): SessionEvent {
-  const { id, at, sessionId, sessionName, kind, from, to, severity, by, decision } = event;
+  const { id, at, sessionId, sessionName, kind, from, to, severity, by, decision, tool, rule } =
+    event;
   return {
     id,
     at,
@@ -136,6 +138,11 @@ function eventFields(event: SessionEvent): SessionEvent {
     severity,
     ...(by !== undefined && { by }),
     ...(decision !== undefined && { decision }),
+    ...(tool !== undefined && { tool }),
+    // The rule's own two fields, and nothing else it might carry.
+    ...(rule !== undefined && {
+      rule: { tool: rule.tool, ...(rule.command !== undefined && { command: rule.command }) },
+    }),
   };
 }
 
@@ -190,6 +197,11 @@ function readEvent(value: unknown): SessionEvent | null {
   if (value.by !== undefined && !by) return null;
   const decision = oneOf(ANSWER_DECISIONS, value.decision);
   if (value.decision !== undefined && !decision) return null;
+  // The tool and the rule a permission rule's answer names, each whole or the event is spoilt.
+  const tool = field(value.tool);
+  if (value.tool !== undefined && !tool) return null;
+  const rule = value.rule === undefined ? undefined : readRule(value.rule);
+  if (rule === null) return null;
   return {
     id,
     at,
@@ -201,7 +213,20 @@ function readEvent(value: unknown): SessionEvent | null {
     severity,
     ...(by && { by }),
     ...(decision && { decision }),
+    ...(tool && { tool }),
+    ...(rule && { rule }),
   };
+}
+
+/** A permission rule as an event names it: its tool, and perhaps its command, and nothing else. */
+function readRule(value: unknown): EventRule | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (!keys.every((key) => key === "tool" || key === "command")) return null;
+  const tool = field(value.tool);
+  const command = value.command === undefined ? undefined : field(value.command);
+  if (!tool || command === null) return null;
+  return { tool, ...(command !== undefined && { command }) };
 }
 
 /**

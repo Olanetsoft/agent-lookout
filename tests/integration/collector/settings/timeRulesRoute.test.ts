@@ -87,6 +87,10 @@ describe("GET /api/settings", () => {
       timeRules: DEFAULT_TIME_RULES,
       file: server.settingsFile,
       problem: null,
+      permissionRules: [],
+      permissionRulesProblem: null,
+      ruleAnswers: [],
+      ruleAnswersSince: expect.any(Number),
     });
     expect(response.headers["cache-control"]).toBe("no-store");
   });
@@ -102,7 +106,7 @@ describe("GET /api/settings", () => {
     const answer = await server.settings();
     expect(answer.timeRules).toEqual(DEFAULT_TIME_RULES);
     expect(answer.problem).toMatch(
-      /is not JSON that Agent Lookout can read, so the time rules are off/,
+      /is not JSON that Agent Lookout can read, so the time rules and the permission rules are off/,
     );
     expect(warned).toEqual([answer.problem]);
   });

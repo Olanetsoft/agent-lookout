@@ -61,7 +61,8 @@ export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "A status file only says a session waits, and holds nothing to answer it through.",
+    reason:
+      "A status file only says a session waits, and holds nothing to answer it through, by hand or by a permission rule.",
   },
 };
 

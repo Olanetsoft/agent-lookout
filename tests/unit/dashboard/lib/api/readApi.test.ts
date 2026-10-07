@@ -1095,17 +1095,88 @@ test("a snapshot keeps the collector's word on quiet hours when it is true or fa
   expect(made(undefined)).not.toHaveProperty("quiet");
 });
 
+/** What `GET /api/settings` gives of the permission rules while there are none. */
+const NO_PERMISSION_RULES = {
+  permissionRules: [],
+  permissionRulesProblem: null,
+  ruleAnswers: [],
+  ruleAnswersSince: null,
+};
+
 test("the settings are read with their rules, the file and any problem", () => {
   const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 3 } };
   expect(
     readSettings({ timeRules: rules, file: "~/.agent-lookout/settings.json", problem: null }),
-  ).toEqual({ timeRules: rules, file: "~/.agent-lookout/settings.json", problem: null });
+  ).toEqual({
+    timeRules: rules,
+    file: "~/.agent-lookout/settings.json",
+    problem: null,
+    ...NO_PERMISSION_RULES,
+  });
   expect(
     readSettings({ timeRules: {}, file: "~/.agent-lookout/settings.json", problem: "Not read." }),
   ).toEqual({
     timeRules: DEFAULT_TIME_RULES,
     file: "~/.agent-lookout/settings.json",
     problem: "Not read.",
+    ...NO_PERMISSION_RULES,
+  });
+});
+
+describe("the permission rules and what they answered, with the settings", () => {
+  const SETTINGS = { timeRules: DEFAULT_TIME_RULES, file: "~/.agent-lookout/settings.json" };
+  const RULE = { id: "a1b2c3d4e5f6", decision: "allow", tool: "Bash", command: "npm test:*" };
+  const ANSWER = {
+    at: 1_700_000_000_000,
+    sessionId: "claude-code:00000000-0000-4000-8000-000000000001",
+    sessionName: "demo-project",
+    tool: "Bash",
+    decision: "allow",
+    rule: { decision: "allow", tool: "Bash", command: "npm test:*" },
+  };
+
+  test("the rules, their problem, what they answered and since when are read", () => {
+    expect(
+      readSettings({
+        ...SETTINGS,
+        problem: null,
+        permissionRules: [RULE],
+        permissionRulesProblem: "Not saved.",
+        ruleAnswers: [ANSWER],
+        ruleAnswersSince: 1_699_999_000_000,
+      }),
+    ).toMatchObject({
+      permissionRules: [RULE],
+      permissionRulesProblem: "Not saved.",
+      ruleAnswers: [ANSWER],
+      ruleAnswersSince: 1_699_999_000_000,
+    });
+  });
+
+  test("a list that cannot be read whole is no rule at all, and says so", () => {
+    const read = readSettings({
+      ...SETTINGS,
+      permissionRules: [RULE, { ...RULE, id: "x", decision: "maybe" }],
+    });
+    expect(read?.permissionRules).toEqual([]);
+    expect(read?.permissionRulesProblem).toBe(
+      "The permission rules Agent Lookout sent could not be read.",
+    );
+  });
+
+  test("an answer that cannot be read whole is left out, and a later field of one is dropped", () => {
+    const read = readSettings({
+      ...SETTINGS,
+      ruleAnswers: [
+        ANSWER,
+        { ...ANSWER, decision: "maybe" },
+        { ...ANSWER, rule: { decision: "allow", tool: "*" } },
+        { ...ANSWER, at: "soon" },
+        { ...ANSWER, command: "npm test" },
+      ],
+    });
+    expect(read?.ruleAnswers).toEqual([ANSWER, ANSWER]);
+    expect(JSON.stringify(read?.ruleAnswers)).not.toContain('"command":"npm test"');
   });
 });
 

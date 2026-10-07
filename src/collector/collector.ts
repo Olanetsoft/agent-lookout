@@ -59,6 +59,7 @@ import {
   type CollectorSettings,
   type SettingsStore,
 } from "./settings/collectorSettings.ts";
+import { createPermissionRulesRoute } from "./settings/permissionRulesRoute.ts";
 import { readSettingsSetup } from "./settings/settingsFile.ts";
 import { createTimeRulesRoute } from "./settings/timeRulesRoute.ts";
 import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
@@ -220,7 +221,7 @@ export interface Collector {
   answering: Pick<Answering, "start" | "stop">;
   /** The other machines read over SSH, none unless `AGENT_LOOKOUT_REMOTES` names them. */
   remotes: Remotes;
-  /** The settings the collector keeps itself: the time rules. */
+  /** The settings the collector keeps itself: the time rules and the permission rules. */
   settings: CollectorSettings;
 }
 
@@ -231,12 +232,13 @@ export interface Collector {
  * selects a tmux pane, what finds and brings forward a Terminal or iTerm2 tab,
  * what stops a Claude Code session when the person asks, unless
  * `AGENT_LOOKOUT_STOP` is off, what holds a Claude Code session's permission
- * request and answers it when the person presses Allow or Deny, unless
- * `AGENT_LOOKOUT_ANSWER` is off, what reads each session's git branch, with
+ * request and answers it when the person presses Allow or Deny, or by a
+ * permission rule the person set, unless `AGENT_LOOKOUT_ANSWER` is off, what
+ * reads each session's git branch, with
  * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
  * the other machines `AGENT_LOOKOUT_REMOTES` names, each read through an ssh
- * tunnel of its own, the time rules kept in its settings file, and the
- * request handler. Every host builds it the same way: the dev server, the
+ * tunnel of its own, the time rules and the permission rules kept in its
+ * settings file, and the request handler. Every host builds it the same way: the dev server, the
  * standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
@@ -254,6 +256,7 @@ export function createCollector(options: CollectorOptions): Collector {
     store: options.settingsStore,
   });
   if (settings.problemAtStart !== null) warn(settings.problemAtStart);
+  if (settings.rulesProblemAtStart !== null) warn(settings.rulesProblemAtStart);
   const memoryEvents = createEventStore();
   const memoryHistory = createHistoryStore();
   const historySetup = readHistorySetup(env);
@@ -416,7 +419,16 @@ export function createCollector(options: CollectorOptions): Collector {
   // adapters of its own answers nothing, unless it is told how to.
   const answers = options.adapters === undefined || options.answering !== undefined;
   const answering: Answering | null = answers
-    ? createAnswering({ env, poller, events, now, warn, ...options.answering })
+    ? createAnswering({
+        env,
+        poller,
+        events,
+        now,
+        warn,
+        // Read for each request, so a change in Settings holds for the next one.
+        rules: () => settings.permissionRules(),
+        ...options.answering,
+      })
     : null;
   const stopper = createStopper({
     env,
@@ -447,8 +459,13 @@ export function createCollector(options: CollectorOptions): Collector {
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
     stop: stopRoutes && createStopRoute(stopRoutes),
     cleanUp: stopRoutes && createCleanUpRoute(stopRoutes),
-    settings: () => settings.status(),
+    settings: () => ({
+      ...settings.status(),
+      ruleAnswers: answering?.ruleAnswers() ?? [],
+      ruleAnswersSince: poller.startedAt,
+    }),
     timeRules: createTimeRulesRoute({ settings }),
+    permissionRules: createPermissionRulesRoute({ settings }),
     clearHistory: createClearHistoryRoute({
       keeper,
       forget: () => {

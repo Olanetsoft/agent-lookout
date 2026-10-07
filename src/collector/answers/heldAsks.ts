@@ -7,6 +7,7 @@ import type {
   Session,
   SessionsSnapshot,
 } from "../../core/sessions/session.ts";
+import type { RuleAnswers } from "./ruleAnswers.ts";
 import { shownAsk, type ShownAsk } from "./shownAsk.ts";
 
 /**
@@ -36,6 +37,13 @@ import { shownAsk, type ShownAsk } from "./shownAsk.ts";
  * is written: it must still say the session waits for permission, in the same
  * wait it was confirmed in. Nothing of a request is kept but what is shown, and that only
  * in memory, for as long as it is held.
+ *
+ * At that same moment, the moment it would be shown, the request is put to
+ * the permission rules, when there are any (`ruleAnswers.ts`). A deny or an
+ * allow rule that decides it answers it at once, through `answer`, the one
+ * path a press of Deny or Allow takes too, so it makes every check a press
+ * makes, and the request is never shown. An ask rule, or none, leaves it held
+ * for the person.
  */
 
 /**
@@ -183,6 +191,12 @@ export interface HeldAsksOptions {
   newId?: () => string;
   /** Told of each request let go with no answer. */
   onDrop?: (reason: DropReason, sessionId: string) => void;
+  /**
+   * The permission rules, which may answer a request as it is confirmed, and
+   * are told of each they answered. Left out, every request waits for the
+   * person.
+   */
+  rules?: Pick<RuleAnswers, "verdictFor" | "answered">;
 }
 
 export interface HeldAsks {
@@ -256,6 +270,7 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
       if (!entry.confirmed) {
         entry.confirmed = true;
         entry.wait = reading.wait;
+        answerByRule(entry);
         return;
       }
       // Answered in the session, and waiting again since, for something else.
@@ -280,6 +295,63 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     } finally {
       if (inFlight === run) inFlight = null;
     }
+  }
+
+  /**
+   * Writes the person's answer to the request the page showed, after reading
+   * the registry once more. A rule's answer takes this same path.
+   */
+  async function answer(
+    sessionId: string,
+    requestId: string,
+    decision: AnswerDecision,
+  ): Promise<AnswerOutcome> {
+    const entry = held.get(sessionId);
+    // A request not yet shown cannot be answered.
+    if (!entry || entry.requestId !== requestId || !entry.confirmed) return "no-ask";
+    if (decision === "allow" && !entry.shown.allow) return "not-allowable";
+    if (entry.answering) return "too-soon";
+    entry.answering = true;
+    const reading = await read(sessionId);
+    if (held.get(sessionId) !== entry || !entry.reply.isOpen()) {
+      if (held.get(sessionId) === entry) drop(entry, "closed");
+      return "gone";
+    }
+    const sameWait = reading.status === "waiting" && reading.wait === entry.wait;
+    if (!sameWait || now() >= entry.until) {
+      drop(entry, sameWait ? "limit" : "left-waiting");
+      return "gone";
+    }
+    held.delete(sessionId);
+    entry.reply.send(decisionOutput(decision));
+    if (held.size === 0 && stopTimer !== null) {
+      stopTimer();
+      stopTimer = null;
+    }
+    return "answered";
+  }
+
+  /**
+   * Puts a request just confirmed to the rules, and answers it when a deny or
+   * an allow rule decides it. Called before anything can serve it, and
+   * `answer` marks it as being answered before it reads the registry again,
+   * so the page never shows a request a rule answers.
+   */
+  function answerByRule(entry: Held): void {
+    const rules = options.rules;
+    if (rules === undefined) return;
+    const request: HookRequest = { sessionId: entry.sessionId, shown: entry.shown };
+    let verdict;
+    try {
+      verdict = rules.verdictFor(request);
+    } catch {
+      // A rule that cannot be applied answers nothing: the person decides.
+      return;
+    }
+    if (verdict === null) return;
+    void answer(entry.sessionId, entry.requestId, verdict.decision).then((outcome) => {
+      if (outcome === "answered") rules.answered(request, verdict);
+    });
   }
 
   function status(): AnsweringStatus {
@@ -329,31 +401,7 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
 
     check,
 
-    async answer(sessionId, requestId, decision) {
-      const entry = held.get(sessionId);
-      // A request not yet shown cannot be answered.
-      if (!entry || entry.requestId !== requestId || !entry.confirmed) return "no-ask";
-      if (decision === "allow" && !entry.shown.allow) return "not-allowable";
-      if (entry.answering) return "too-soon";
-      entry.answering = true;
-      const reading = await read(sessionId);
-      if (held.get(sessionId) !== entry || !entry.reply.isOpen()) {
-        if (held.get(sessionId) === entry) drop(entry, "closed");
-        return "gone";
-      }
-      const sameWait = reading.status === "waiting" && reading.wait === entry.wait;
-      if (!sameWait || now() >= entry.until) {
-        drop(entry, sameWait ? "limit" : "left-waiting");
-        return "gone";
-      }
-      held.delete(sessionId);
-      entry.reply.send(decisionOutput(decision));
-      if (held.size === 0 && stopTimer !== null) {
-        stopTimer();
-        stopTimer = null;
-      }
-      return "answered";
-    },
+    answer,
 
     withAsks(snapshot) {
       const answering = status();

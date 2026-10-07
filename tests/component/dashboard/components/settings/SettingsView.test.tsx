@@ -63,11 +63,15 @@ const PULL_REQUESTS_OFF: PullRequestsStatusResponse = {
   last: null,
 };
 let pullRequests: PullRequestsStatusResponse | null;
-/** What the app says of the time rules, as `/api/settings` would: all off. */
+/** What the app says of the time rules and the permission rules, as `/api/settings` would: all off, and none. */
 const SETTINGS: SettingsResponse = {
   timeRules: DEFAULT_TIME_RULES,
   file: "~/.agent-lookout/settings.json",
   problem: null,
+  permissionRules: [],
+  permissionRulesProblem: null,
+  ruleAnswers: [],
+  ruleAnswersSince: Date.now() - 60_000,
 };
 /** The paths the view asked the app for. */
 let asked: string[];
@@ -197,6 +201,7 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
     "Webhook",
     "Pull requests",
     "Permission prompts",
+    "Permission rules",
     "This copy",
   ]);
   // In the left column, with Theme, Notifications and History.
@@ -217,7 +222,7 @@ test.each(["dark", "light"] as const)(
 
     await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
     const cards = screen.container.querySelectorAll('[data-slot="section-card"]');
-    expect(cards).toHaveLength(9);
+    expect(cards).toHaveLength(10);
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor).toBe(rgbOf("var(--glass-card)"));
       expect(getComputedStyle(card).borderRadius).toBe("24px");
@@ -760,7 +765,7 @@ test("the notifications card is built from the same parts as the rest: a quiet b
   expect(getComputedStyle(note).borderRadius).toBe("14px");
 });
 
-test("the theme, notifications, the time rules and the history share the wide column, with email, the webhook, pull requests, permission prompts and the facts beside them, and the gaps are the one gap", async () => {
+test("the theme, notifications, the time rules and the history share the wide column, with email, the webhook, pull requests, permission prompts, the permission rules and the facts beside them, and the gaps are the one gap", async () => {
   await page.viewport(1440, 900);
   onTestFinished(() => page.viewport(1280, 900));
   const screen = await render(<SettingsView />);
@@ -769,7 +774,7 @@ test("the theme, notifications, the time rules and the history share the wide co
     screen.getByRole("region", { name }).element().getBoundingClientRect();
   await expect.element(webhookState(screen)).toHaveTextContent("The webhook is off.");
   await expect.element(screen.getByRole("radiogroup", { name: "Quiet hours" })).toBeVisible();
-  const [theme, notes, rules, kept, mail, hook, pulls, prompts, copy] = [
+  const [theme, notes, rules, kept, mail, hook, pulls, prompts, permissions, copy] = [
     box("Theme"),
     box("Notifications"),
     box("Time rules"),
@@ -778,6 +783,7 @@ test("the theme, notifications, the time rules and the history share the wide co
     box("Webhook"),
     box("Pull requests"),
     box("Permission prompts"),
+    box("Permission rules"),
     box("This copy"),
   ];
 
@@ -801,9 +807,13 @@ test("the theme, notifications, the time rules and the history share the wide co
   expect(prompts.left).toBe(mail.left);
   expect(prompts.width).toBe(mail.width);
   expect(prompts.top - pulls.bottom).toBe(16);
+  // The permission rules sit next to the permission prompts they answer.
+  expect(permissions.left).toBe(mail.left);
+  expect(permissions.width).toBe(mail.width);
+  expect(permissions.top - prompts.bottom).toBe(16);
   expect(copy.left).toBe(mail.left);
   expect(copy.width).toBe(mail.width);
-  expect(copy.top - prompts.bottom).toBe(16);
+  expect(copy.top - permissions.bottom).toBe(16);
 });
 
 /** The history as `/api/history` gives it while another copy writes the files. */
@@ -823,7 +833,7 @@ const KEPT_ELSEWHERE: Pick<HistoryResponse, "startedAt" | "since" | "kept"> = {
 };
 
 test.each([1000, 375])(
-  "at %i pixels the cards stack as Theme, Notifications, Time rules, History, Email, Webhook, Pull requests, Permission prompts, This copy, and nothing runs off the side",
+  "at %i pixels the cards stack as Theme, Notifications, Time rules, History, Email, Webhook, Pull requests, Permission prompts, Permission rules, This copy, and nothing runs off the side",
   async (width) => {
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
@@ -850,6 +860,7 @@ test.each([1000, 375])(
       "Webhook",
       "Pull requests",
       "Permission prompts",
+      "Permission rules",
       "This copy",
     ]);
     const boxes = cards.map((card) => card.getBoundingClientRect());
@@ -955,7 +966,7 @@ test("with nothing set, the Email card says email is off and which two settings 
   ]);
   // Nothing on the page turns it on or off.
   expect(card.querySelectorAll("button, a, input")).toHaveLength(0);
-  expect([...asked].sort()).toEqual([
+  expect([...new Set(asked)].sort()).toEqual([
     "/api/email",
     "/api/pull-requests",
     "/api/settings",

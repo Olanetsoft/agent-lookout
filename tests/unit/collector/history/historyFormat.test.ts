@@ -192,6 +192,59 @@ describe("encoding", () => {
     expect(parseRecord(JSON.stringify({ event: { ...answered, decision: "maybe" } }))).toBeNull();
   });
 
+  test("an event a permission rule answered keeps the tool and the rule, and nothing of what was asked", () => {
+    const answered: SessionEvent = {
+      id: `claude-code:demo@${T0}:answered`,
+      at: T0,
+      sessionId: "claude-code:demo",
+      sessionName: "demo-project",
+      kind: "answered",
+      from: "needs-you",
+      severity: "advisory",
+      by: "agent-lookout",
+      decision: "allow",
+      tool: "Bash",
+      rule: { tool: "Bash", command: "npm test:*" },
+    };
+    const line = encodeRecord({ kind: "event", event: answered });
+    expect(Object.keys((JSON.parse(line) as { event: object }).event)).toEqual([
+      "id",
+      "at",
+      "sessionId",
+      "sessionName",
+      "kind",
+      "from",
+      "severity",
+      "by",
+      "decision",
+      "tool",
+      "rule",
+    ]);
+    expect(parseRecord(line.trim())).toEqual({ kind: "event", event: answered });
+    // The rule's own two fields alone reach the file.
+    const withMore = {
+      ...answered,
+      rule: { ...answered.rule, input: "npm test --grep secret" },
+    } as SessionEvent;
+    expect(encodeRecord({ kind: "event", event: withMore })).not.toContain("secret");
+    // A tool or a rule that cannot be read spoils the event.
+    for (const spoilt of [
+      { ...answered, tool: 7 },
+      { ...answered, rule: "npm test:*" },
+      { ...answered, rule: { command: "npm test:*" } },
+      { ...answered, rule: { tool: "Bash", command: 7 } },
+      { ...answered, rule: { tool: "Bash", path: "/etc" } },
+    ]) {
+      expect(parseRecord(JSON.stringify({ event: spoilt }))).toBeNull();
+    }
+    const { command: _command, ...toolRule } = answered.rule ?? { tool: "" };
+    const forTool = { ...answered, rule: toolRule };
+    expect(parseRecord(encodeRecord({ kind: "event", event: forTool }).trim())).toEqual({
+      kind: "event",
+      event: forTool,
+    });
+  });
+
   test("every record reads back as it was written", () => {
     const appeared: SessionEvent = {
       id: "x",

@@ -1115,3 +1115,79 @@ test.each([375, 1280])(
     await page.viewport(414, 896);
   },
 );
+
+test("an answer by a permission rule says which rule, in the mono, and is the answered mark", async () => {
+  const byRule = event(4, at(17, 59, 50), "demo-project", undefined, "advisory", {
+    kind: "answered",
+    from: "needs-you",
+    by: "agent-lookout",
+    decision: "allow",
+    tool: "Bash",
+    rule: { tool: "Bash", command: "npm test:*" },
+  });
+  const forEveryTool = event(4, at(17, 59, 40), "demo-project", undefined, "advisory", {
+    kind: "answered",
+    from: "needs-you",
+    by: "agent-lookout",
+    decision: "deny",
+    tool: "Write",
+    rule: { tool: "*" },
+  });
+  const screen = await render(<EventsCard events={[byRule, forEveryTool]} now={NOW} />);
+  const [allowed, denied] = rows(screen.container) as HTMLElement[];
+  expect(allowed?.textContent).toBe(
+    "17:59:50demo-projecthad Bash allowed by the rule Bash(npm test:*)",
+  );
+  expect(denied?.textContent).toBe(
+    "17:59:40demo-projecthad Write denied by the rule for every tool",
+  );
+  const rule = allowed?.querySelector<HTMLElement>("[data-part='rule']");
+  expect(getComputedStyle(rule as HTMLElement).fontFamily).toMatch(/Mono/);
+  expect(denied?.querySelector("[data-part='rule']")).toBeNull();
+  for (const row of [allowed, denied]) {
+    expect(row?.querySelector<HTMLElement>('[data-slot="status-mark"]')?.dataset.kind).toBe(
+      "answered",
+    );
+  }
+});
+
+test.each([
+  [1280, 259],
+  [1440, 318],
+])(
+  "at %i pixels, in a card %i pixels wide, an answered prompt keeps its session's name in view",
+  async (viewport, width) => {
+    onTestFinished(() => page.viewport(414, 896));
+    await page.viewport(viewport, 900);
+    const fields = { kind: "answered", from: "needs-you", by: "agent-lookout" } as const;
+    const byRule = event(4, at(17, 59, 50), "checkout-flow", undefined, "advisory", {
+      ...fields,
+      decision: "deny",
+      tool: "Bash",
+      rule: { tool: "Bash", command: "git push --force:*" },
+    });
+    const byPress = event(5, at(17, 59, 40), "checkout-flow", undefined, "advisory", {
+      ...fields,
+      decision: "allow",
+    });
+    const screen = await render(
+      <div style={{ width, height: 400, display: "flex" }}>
+        <EventsCard events={[byRule, byPress]} now={NOW} className='flex-1' />
+      </div>,
+    );
+    for (const row of rows(screen.container)) {
+      const name = row.querySelector<HTMLElement>("[data-part='name']") as HTMLElement;
+      const phrase = row.querySelector<HTMLElement>("[data-part='phrase']") as HTMLElement;
+      // The whole name, never cut to nothing, and what was done after it or under it.
+      expect(name.getBoundingClientRect().width).toBeGreaterThan(0);
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+      const [nameBox, phraseBox] = [name, phrase].map((part) => part.getBoundingClientRect());
+      expect(phraseBox.right).toBeLessThanOrEqual(
+        (row.getBoundingClientRect().right as number) + 0.5,
+      );
+      expect(
+        phraseBox.top >= (nameBox?.bottom ?? 0) - 1 || phraseBox.left >= (nameBox?.right ?? 0),
+      ).toBe(true);
+    }
+  },
+);

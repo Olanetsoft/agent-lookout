@@ -356,7 +356,7 @@ test("a change the app does not take leaves the switch as it was, and a note say
 
 test("a settings file that could not be read is said in a note, naming the file", async () => {
   problem =
-    "~/.agent-lookout/settings.json is a link, which Agent Lookout does not follow, so the time rules are off.";
+    "~/.agent-lookout/settings.json is a link, which Agent Lookout does not follow, so the time rules and the permission rules are off.";
   await render(<TimeRulesCard />);
   const note = card()
     .getByRole("status")

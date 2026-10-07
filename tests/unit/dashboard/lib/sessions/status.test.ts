@@ -1,6 +1,12 @@
 import { expect, test } from "vitest";
 
-import { eventPhrase, jumpWay, safeJumpLink, waitingDetail } from "@dashboard/lib/sessions/status";
+import {
+  eventPhrase,
+  jumpWay,
+  ruleAnswerWords,
+  safeJumpLink,
+  waitingDetail,
+} from "@dashboard/lib/sessions/status";
 import { makeSession } from "@tests/fixtures/session";
 
 test("the vendor's wording is kept only when it adds something", () => {
@@ -32,6 +38,31 @@ test("an event reads as what happened to the session", () => {
   expect(eventPhrase({ kind: "status-changed", to: "failed" })).toBe("failed");
   expect(eventPhrase({ kind: "status-changed", to: "unknown" })).toBe("changed status");
   expect(eventPhrase({ kind: "stopped", from: "working" })).toBe("was stopped from Agent Lookout");
+});
+
+test("an answer by a permission rule says the tool, the decision and the rule, as Claude Code writes one", () => {
+  const byRule = {
+    kind: "answered" as const,
+    decision: "allow" as const,
+    tool: "Bash",
+    rule: { tool: "Bash", command: "npm test:*" },
+  };
+  expect(eventPhrase(byRule)).toBe("had Bash allowed by the rule Bash(npm test:*)");
+  expect(ruleAnswerWords(byRule)).toEqual({
+    lead: "had Bash allowed by the rule",
+    rule: "Bash(npm test:*)",
+  });
+  const denied = { ...byRule, decision: "deny" as const, tool: "Write", rule: { tool: "*" } };
+  expect(eventPhrase(denied)).toBe("had Write denied by the rule for every tool");
+  expect(ruleAnswerWords(denied)).toEqual({
+    lead: "had Write denied by the rule for every tool",
+    rule: null,
+  });
+  expect(eventPhrase({ ...byRule, tool: "WebFetch", rule: { tool: "WebFetch" } })).toBe(
+    "had WebFetch allowed by the rule WebFetch",
+  );
+  // A press is no rule.
+  expect(ruleAnswerWords({ kind: "answered", decision: "allow" })).toBeNull();
 });
 
 test("a wait that ended says how long it lasted, when its start is held", () => {

@@ -12,6 +12,7 @@ import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedCon
 import { AnswerCard } from "@dashboard/components/settings/AnswerCard";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
+import { PermissionRulesCard } from "@dashboard/components/settings/PermissionRulesCard";
 import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
 import { useNow } from "@dashboard/hooks/data/useNow";
@@ -264,7 +265,8 @@ interface SettingsViewProps {
  * that clears it, in the Mac app whether it shows in the menu bar and its
  * updates, whether email and a webhook have been set up, whether pull requests
  * are shown and gh can be asked for them, a few facts about this copy of the
- * app, and whether permission prompts can be answered from here.
+ * app, whether permission prompts can be answered from here, and the
+ * permission rules that answer them for the person.
  *
  * The page knows it is in the app's window by its address. In a browser there
  * is no Menu bar card and no Updates card: a browser tab has no menu bar item,
@@ -349,6 +351,8 @@ export function SettingsView({
           )}
         />
         <AnswerCard answering={answering} />
+        {/* Next to Permission prompts, since a rule answers only while those can be answered. */}
+        <PermissionRulesCard answering={answering} now={now ?? ticking} />
         <SectionCard title='This copy'>
           <FactList className='px-6 pb-3'>
             <FactRow label='Version' mono>

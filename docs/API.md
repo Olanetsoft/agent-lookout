@@ -1,6 +1,6 @@
 # API
 
-Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but six only reads.
+Agent Lookout's server answers a small HTTP API under `/api/`. The dashboard reads it, and so do `agent-lookout status` and `agent-lookout mcp`. It is meant for this computer only: it listens on a loopback address, and it answers only requests made to a loopback name. Every route returns JSON, and every route but seven only reads.
 
 The answers hold your session names and folder paths. Check one before you share it.
 
@@ -31,33 +31,34 @@ curl -s http://127.0.0.1:4777/api/sessions
 
 Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Every answer that is not a 200 has the body `{ "error": "<one sentence>" }`.
 
-| Status | When                                                                                                  |
-| ------ | ----------------------------------------------------------------------------------------------------- |
-| 400    | The address, `since` or `windowMs` could not be read                                                  |
-| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                    |
-| 404    | There is no route at that path                                                                        |
-| 405    | Any method but `GET`, with `Allow: GET`. The six routes that act take only `POST`, with `Allow: POST` |
-| 500    | Something went wrong that the server did not expect                                                   |
+| Status | When                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| 400    | The address, `since` or `windowMs` could not be read                                                    |
+| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                      |
+| 404    | There is no route at that path                                                                          |
+| 405    | Any method but `GET`, with `Allow: GET`. The seven routes that act take only `POST`, with `Allow: POST` |
+| 500    | Something went wrong that the server did not expect                                                     |
 
 ## Routes
 
-| Route                              | Answers                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET /api/health`                  | `{ ok: true, version }`                                                                |
-| `GET /api/sessions`                | The latest snapshot: `{ generatedAt, sources, sessions, answering, timeRules, quiet }` |
-| `GET /api/events?since=<epoch ms>` | `{ events }`, newest first, at most 200                                                |
-| `GET /api/history?windowMs=<ms>`   | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first  |
-| `GET /api/email`                   | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                     |
-| `GET /api/webhook`                 | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                   |
-| `GET /api/pull-requests`           | `{ on, problem, gh, last }`: whether each branch's pull request is shown               |
-| `GET /api/waits`                   | `{ at, today, sevenDays, since, where }`: how long sessions waited on you              |
-| `GET /api/settings`                | `{ timeRules, file, problem }`: the time rules, and the file they are kept in          |
-| `POST /api/jump`                   | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of six routes that act |
-| `POST /api/history/clear`          | `{ ok: true, clearedAt }`. A route that acts                                           |
-| `POST /api/sessions/stop`          | `{ ok: true }` once the session's process has ended. A route that acts                 |
-| `POST /api/sessions/clean-up`      | `{ results }`, what became of each session left running. A route that acts             |
-| `POST /api/permission/answer`      | `{ ok: true, decision }` once a permission prompt was answered. A route that acts      |
-| `POST /api/settings/time-rules`    | `{ ok: true, timeRules }` once the time rules are saved. A route that acts             |
+| Route                                 | Answers                                                                                                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                     | `{ ok: true, version }`                                                                                                                                                                              |
+| `GET /api/sessions`                   | The latest snapshot: `{ generatedAt, sources, sessions, answering, timeRules, quiet }`                                                                                                               |
+| `GET /api/events?since=<epoch ms>`    | `{ events }`, newest first, at most 200                                                                                                                                                              |
+| `GET /api/history?windowMs=<ms>`      | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first                                                                                                                |
+| `GET /api/email`                      | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                   |
+| `GET /api/webhook`                    | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                 |
+| `GET /api/pull-requests`              | `{ on, problem, gh, last }`: whether each branch's pull request is shown                                                                                                                             |
+| `GET /api/waits`                      | `{ at, today, sevenDays, since, where }`: how long sessions waited on you                                                                                                                            |
+| `GET /api/settings`                   | `{ timeRules, file, problem, permissionRules, permissionRulesProblem, ruleAnswers, ruleAnswersSince }`: the time rules, the permission rules, the file they are kept in, and what the rules answered |
+| `POST /api/jump`                      | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of seven routes that act                                                                                                             |
+| `POST /api/history/clear`             | `{ ok: true, clearedAt }`. A route that acts                                                                                                                                                         |
+| `POST /api/sessions/stop`             | `{ ok: true }` once the session's process has ended. A route that acts                                                                                                                               |
+| `POST /api/sessions/clean-up`         | `{ results }`, what became of each session left running. A route that acts                                                                                                                           |
+| `POST /api/permission/answer`         | `{ ok: true, decision }` once a permission prompt was answered. A route that acts                                                                                                                    |
+| `POST /api/settings/time-rules`       | `{ ok: true, timeRules }` once the time rules are saved. A route that acts                                                                                                                           |
+| `POST /api/settings/permission-rules` | `{ ok: true, permissionRules }` once one change to the permission rules is saved. A route that acts                                                                                                  |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -197,7 +198,7 @@ It is what `gh` last said, asked at most once every 2 minutes for each repositor
 
 ### `GET /api/events?since=<epoch ms>`
 
-`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed`, `ended`, `stopped` or `answered`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. A `stopped` event says that Agent Lookout stopped the session, when you pressed Stop or ended the sessions left running: it has `from`, the status the session had, no `to`, and `by: "agent-lookout"`. Its leaving the list is an `ended` event of its own. An `answered` event says that Agent Lookout answered a permission prompt of the session's, when you pressed Allow or Deny: it has `from`, `by: "agent-lookout"` and `decision`, `allow` or `deny`, and nothing of what was asked. A reader should pass over a `kind` it does not know: later versions may add others. The collector keeps the last 1,000 in memory, and with history kept on disk it reads them back when it starts again.
+`{ "events": [...] }`: what changed, newest first, at most 200, and with `since` only those after it. Each event is `{ id, at, sessionId, sessionName, kind, from, to, severity }`, where `kind` is `appeared`, `status-changed`, `ended`, `stopped` or `answered`, `from` and `to` are statuses, and `severity` is `advisory`, `warning` for a change to `needs-you` or `critical` for a change to `failed`. A `stopped` event says that Agent Lookout stopped the session, when you pressed Stop or ended the sessions left running: it has `from`, the status the session had, no `to`, and `by: "agent-lookout"`. Its leaving the list is an `ended` event of its own. An `answered` event says that Agent Lookout answered a permission prompt of the session's, when you pressed Allow or Deny, or by a permission rule: it has `from`, `by: "agent-lookout"` and `decision`, `allow` or `deny`, and nothing of what was asked. One a rule gave also has `tool`, the tool's name as Claude Code gave it, and `rule`, `{ tool, command }`, the rule as you wrote it, with `command` only for a Bash rule that names one; its decision is the event's. Neither holds the command the session asked to run. A reader should pass over a `kind` it does not know: later versions may add others. The collector keeps the last 1,000 in memory, and with history kept on disk it reads them back when it starts again.
 
 ### `GET /api/history?windowMs=<ms>`
 
@@ -328,7 +329,7 @@ It never holds a token: `gh` signs in with its own login, which Agent Lookout ne
 
 ### `GET /api/settings`
 
-The settings Agent Lookout keeps itself, in a file on this computer, so they hold with no dashboard open: the [time rules](GUIDE.md#time-rules). It only reads.
+The settings Agent Lookout keeps itself, in a file on this computer, so they hold with no dashboard open: the [time rules](GUIDE.md#time-rules) and the [permission rules](GUIDE.md#permission-rules), with what the permission rules answered since Agent Lookout started. It only reads.
 
 ```json
 {
@@ -344,20 +345,41 @@ The settings Agent Lookout keeps itself, in a file on this computer, so they hol
     }
   },
   "file": "~/.agent-lookout/settings.json",
-  "problem": null
+  "problem": null,
+  "permissionRules": [
+    { "id": "3f9c2a71b0de", "decision": "deny", "tool": "Bash", "command": "git push --force:*" },
+    { "id": "8a41d07e6c2b", "decision": "allow", "tool": "Bash", "command": "npm test:*" },
+    { "id": "c5e0b9124fa3", "decision": "allow", "tool": "WebFetch" }
+  ],
+  "permissionRulesProblem": null,
+  "ruleAnswers": [
+    {
+      "at": 1791331869617,
+      "sessionId": "claude-code:00000000-0000-4000-8000-000000000001",
+      "sessionName": "checkout-flow",
+      "tool": "Bash",
+      "decision": "allow",
+      "rule": { "decision": "allow", "tool": "Bash", "command": "npm test:*" }
+    }
+  ],
+  "ruleAnswersSince": 1791328269617
 }
 ```
 
-| Field                         | Holds                                                                                                                                                                                                                                     |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeRules.longWait`          | The long wait reminder: `on`, and `minutes`, a whole number from 1 to 1,440, how long a wait lasts before it is reminded of. 10 unless set                                                                                                |
-| `timeRules.idle`              | The idle rule: `on`, and `hours`, a whole number from 1 to 720, how long a session is idle before it is stale. 48 unless set. While it is off a session is stale after 24 hours                                                           |
-| `timeRules.quietHours`        | Quiet hours: `on`, `from` and `to` on the 24-hour clock as `HH:MM`, two different times, which run past midnight when `to` is the earlier, and `days`, the days they begin on, any of `mon` to `sun`. 22:00 to 08:00 every day unless set |
-| `quietHours.leaveOutAnswered` | Whether the summary sent when quiet hours end leaves out the waits that were answered while they held                                                                                                                                     |
-| `file`                        | The file they are kept in, `~/.agent-lookout/settings.json` or the one `AGENT_LOOKOUT_SETTINGS_FILE` names, with your home folder written `~`                                                                                             |
-| `problem`                     | While the file could not be read when Agent Lookout started, or the last change could not be saved: one sentence that says why and names the file. `null` otherwise                                                                       |
+| Field                         | Holds                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeRules.longWait`          | The long wait reminder: `on`, and `minutes`, a whole number from 1 to 1,440, how long a wait lasts before it is reminded of. 10 unless set                                                                                                                                                                                        |
+| `timeRules.idle`              | The idle rule: `on`, and `hours`, a whole number from 1 to 720, how long a session is idle before it is stale. 48 unless set. While it is off a session is stale after 24 hours                                                                                                                                                   |
+| `timeRules.quietHours`        | Quiet hours: `on`, `from` and `to` on the 24-hour clock as `HH:MM`, two different times, which run past midnight when `to` is the earlier, and `days`, the days they begin on, any of `mon` to `sun`. 22:00 to 08:00 every day unless set                                                                                         |
+| `quietHours.leaveOutAnswered` | Whether the summary sent when quiet hours end leaves out the waits that were answered while they held                                                                                                                                                                                                                             |
+| `file`                        | The file they are kept in, `~/.agent-lookout/settings.json` or the one `AGENT_LOOKOUT_SETTINGS_FILE` names, with your home folder written `~`                                                                                                                                                                                     |
+| `problem`                     | While the file could not be read when Agent Lookout started, or the last change could not be saved: one sentence that says why and names the file. `null` otherwise                                                                                                                                                               |
+| `permissionRules`             | The permission rules in force, in their order, each `{ id, decision, tool, command }`: `decision` `allow`, `ask` or `deny`, `tool` a tool's name as Claude Code writes it or `*` for every tool, and `command` only for a Bash rule that names one, exactly, `npm test`, or as a prefix, `npm test:*`. 100 at most. Empty is none |
+| `permissionRulesProblem`      | While the permission rules in the file could not be read whole, which leaves none in force, or the last change to them could not be saved: one sentence that says so. `null` otherwise                                                                                                                                            |
+| `ruleAnswers`                 | The requests the permission rules answered since Agent Lookout started, newest first, 100 at most, each `{ at, sessionId, sessionName, tool, decision, rule }`, with `rule` as it read then. Never the command the session asked to run                                                                                           |
+| `ruleAnswersSince`            | When Agent Lookout started, which is where `ruleAnswers` begins                                                                                                                                                                                                                                                                   |
 
-Every rule is off until you turn it on. A rule the file holds in a form that cannot be read is off, and `problem` names it.
+Every time rule is off until you turn it on, and there is no permission rule until you add one. A time rule the file holds in a form that cannot be read is off, and `problem` names it. Permission rules are read whole or not at all: a list that cannot be read whole is none in force, so an allow rule never answers what an ask rule beside it, unread, would have held back.
 
 ### `POST /api/settings/time-rules`
 
@@ -378,9 +400,32 @@ The rules are in force once they are saved, and not before: the file is written 
 | 400    | `reason: "invalid"`, with an `error` sentence that says what the body must be                   |
 | 500    | `reason: "not-saved"`: the file could not be written, as when it is a link, and nothing changed |
 
+### `POST /api/settings/permission-rules`
+
+A route that acts. It makes one change to the permission rules and saves the list in the settings file, as the Permission rules card in Settings does. It makes the same checks as `POST /api/jump`, with `X-Agent-Lookout-Action: permission-rules`, in `src/collector/settings/permissionRulesRoute.ts`, and takes a body of 1,024 bytes or less that is exactly one of:
+
+```text
+{ "add": { "decision": "allow", "tool": "Bash", "command": "npm test:*" } }
+{ "edit": { "id": "8a41d07e6c2b", "decision": "ask", "tool": "Bash", "command": "npm test:*" } }
+{ "move": { "id": "8a41d07e6c2b", "to": "up" } }
+{ "remove": { "id": "8a41d07e6c2b" } }
+```
+
+A new rule goes to the end of the list, with an ID the server makes. A move at either end of the list changes nothing. The server checks the rule itself, whatever the page checked, by `ruleProblem` in `src/core/permission-rules/permissionRules.ts`: a tool's name of letters, digits, `_` and `-` starting with a letter, or `*`; a command for Bash alone, in plain ASCII with one space between words, with no `;`, `&`, `|`, `<`, `>`, parentheses, quotes, backslashes, `$`, braces, and no `*` but a final `:*`; a command that begins with the program's name, not a variable set before it; and an allow rule that names one tool, never an MCP server alone such as `mcp__docs`, for Bash a command, and never `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `ExitPlanMode` or `AskUserQuestion`, whose command is one plain command that does not begin with a program that runs another, such as `sudo`, `env`, `xargs` or a shell (`COMMAND_RUNNERS` in `src/core/permission-rules/commandWords.ts`). The rules are in force once they are saved, and not before. Nothing in the request names a file.
+
+| Status | Body                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------ |
+| 200    | `{ "ok": true, "permissionRules": [ ... ] }`: the rules now in force                             |
+| 400    | `reason: "invalid"`, with an `error` sentence that says what the body or the rule must be        |
+| 404    | `reason: "no-rule"`: no rule has that ID, as when another tab removed it                         |
+| 409    | `reason: "full"`, the list holds 100 rules, or `reason: "duplicate"`, it holds that rule already |
+| 500    | `reason: "not-saved"`: the file could not be written, and nothing changed                        |
+
+A held permission request is put to the rules as its session's registry file confirms its wait, and a deny or an allow rule answers it through the same path as `POST /api/permission/answer`, below, with every check it makes. [Permission rules](GUIDE.md#permission-rules) says what each rule matches.
+
 ### `POST /api/jump`
 
-One of the six routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
+One of the seven routes that act. It selects the tmux pane a session runs in, or brings its tab of Terminal or iTerm2 to the front, as the Jump button does. Its checks, on top of the ones every request passes, are `jumpRefusalFor` in `src/collector/jumpRoute.ts`, which makes those `actionRefusalFor` in `src/collector/handler.ts` makes for every route that acts. It answers only a request that:
 
 - is a `POST`. Any other method gets 405, with `Allow: POST`.
 - has an `Origin` that names this computer. A request with no `Origin` gets 403 here, though a read may go without one.
@@ -502,7 +547,7 @@ with `decision` `allow` or `deny`, and `requestId` the one the session's `ask` g
 
 Each of these has an `error` sentence beside its `reason`. With `AGENT_LOOKOUT_ANSWER=off` there is no such route, and a POST to it gets 405.
 
-The plugin's hook reaches Agent Lookout another way, not through this API: a Unix socket, `~/.agent-lookout/answer.sock` unless `AGENT_LOOKOUT_ANSWER_SOCKET` names another, of mode 600 in a folder of mode 700. It takes `POST /hooks/permission-request` with `X-Agent-Lookout-Hook: permission-request` and the hook's input as a JSON body of 1 MiB or less, holds it, and answers it with the decision JSON when you press Allow or Deny, or with an empty 200 when the request is let go. [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt) says when that is.
+The plugin's hook reaches Agent Lookout another way, not through this API: a Unix socket, `~/.agent-lookout/answer.sock` unless `AGENT_LOOKOUT_ANSWER_SOCKET` names another, of mode 600 in a folder of mode 700. It takes `POST /hooks/permission-request` with `X-Agent-Lookout-Hook: permission-request` and the hook's input as a JSON body of 1 MiB or less, holds it, and answers it with the decision JSON when you press Allow or Deny or a permission rule decides it, or with an empty 200 when the request is let go. [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt) says when that is.
 
 ## In the Mac app only
 

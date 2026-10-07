@@ -1,5 +1,7 @@
 import type { IncomingMessage } from "node:http";
 
+import type { RuleAnswer } from "../../core/api.ts";
+import type { PermissionRule } from "../../core/permission-rules/permissionRules.ts";
 import type { AnsweringStatus, SessionsSnapshot } from "../../core/sessions/session.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { ApiAnswer } from "../handler.ts";
@@ -9,11 +11,14 @@ import { readAnswerSetup } from "./answerSettings.ts";
 import { createHeldAsks, type HeldAsks, type StatusReader } from "./heldAsks.ts";
 import { createHookSocket, type HookSocket } from "./hookSocket.ts";
 import { createRegistryStatus } from "./registryStatus.ts";
+import { createRuleAnswers } from "./ruleAnswers.ts";
 
 /**
  * Answering permission prompts from the dashboard, in one piece: the socket
- * the plugin's hook sends to, the requests held, and the route the page
- * answers through. With `AGENT_LOOKOUT_ANSWER=off` there is none of it.
+ * the plugin's hook sends to, the requests held, the permission rules that
+ * may answer them, and the route the page answers through. With
+ * `AGENT_LOOKOUT_ANSWER=off` there is none of it, and no rule answers
+ * anything.
  */
 export interface Answering {
   /** Opens the socket. Resolves once it listens, or has said why it cannot. */
@@ -26,6 +31,8 @@ export interface Answering {
   observe(snapshot: SessionsSnapshot): void;
   /** Answers `POST /api/permission/answer`, or undefined while answering is off. */
   route?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /** The requests the permission rules answered since start, newest first. None while answering is off. */
+  ruleAnswers(): RuleAnswer[];
 }
 
 export interface AnsweringOptions {
@@ -41,6 +48,8 @@ export interface AnsweringOptions {
   warn?: (line: string) => void;
   /** Runs the held requests' checks. Tests pass one that does nothing. */
   every?: (run: () => void, ms: number) => () => void;
+  /** The permission rules in force, read again for each request. Left out, there are none. */
+  rules?: () => readonly PermissionRule[];
 }
 
 export function createAnswering(options: AnsweringOptions): Answering {
@@ -57,14 +66,23 @@ export function createAnswering(options: AnsweringOptions): Answering {
       stop: async () => {},
       serve: (snapshot) => ({ ...snapshot, answering: off }),
       observe: () => {},
+      ruleAnswers: () => [],
     };
   }
+
+  const ruleAnswers = createRuleAnswers({
+    rules: options.rules ?? (() => []),
+    poller,
+    events,
+    now: options.now,
+  });
 
   const asks: HeldAsks = createHeldAsks({
     status: options.status ?? createRegistryStatus({ snapshot: poller.getSnapshot, env }),
     holdMs: setup.holdMs,
     now: options.now,
     every: options.every,
+    rules: ruleAnswers,
   });
   const socket: HookSocket = createHookSocket({
     socketPath: setup.socketPath,
@@ -98,5 +116,6 @@ export function createAnswering(options: AnsweringOptions): Answering {
       if (listening) asks.observe(snapshot);
     },
     route: createAnswerRoute({ poller, events, asks, now: options.now }),
+    ruleAnswers: () => ruleAnswers.recent(),
   };
 }

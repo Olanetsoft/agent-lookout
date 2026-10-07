@@ -90,8 +90,9 @@ const LABEL = "Claude Code";
  *   and `claude stop` for a background job (`stopOffers.ts`). The desktop app
  *   looks after its own process, so its sessions are not stopped from here.
  * - Answer is the Agent Lookout plugin's hook, which hands Agent Lookout each
- *   permission request (`../../answers/`). Without the plugin a session's
- *   prompts are answered only in the session.
+ *   permission request (`../../answers/`), to answer by a press of Allow or
+ *   Deny or by a permission rule. Without the plugin a session's prompts are
+ *   answered only in the session.
  */
 export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -121,7 +122,7 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "partly",
     reason:
-      "With the Agent Lookout plugin installed. Allow only when all it allows is shown, so edits, plans and questions can only be denied.",
+      "With the Agent Lookout plugin, by Allow, Deny or a permission rule. Allow only if all is shown: never edits, plans or questions.",
   },
 };
 

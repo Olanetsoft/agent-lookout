@@ -122,11 +122,14 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
     if (folderKind !== "folder") {
       return {
         kind: "refused",
-        problem: `The folder of ${shown} is a link or not a folder, which Agent Lookout does not follow, so the time rules are off.`,
+        problem: `The folder of ${shown} is a link or not a folder, which Agent Lookout does not follow, so the time rules and the permission rules are off.`,
       };
     }
   } catch {
-    return { kind: "refused", problem: `${shown} could not be read, so the time rules are off.` };
+    return {
+      kind: "refused",
+      problem: `${shown} could not be read, so the time rules and the permission rules are off.`,
+    };
   }
 
   let fd: number;
@@ -138,23 +141,26 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
     if (code === "ELOOP") {
       return {
         kind: "refused",
-        problem: `${shown} is a link, which Agent Lookout does not follow, so the time rules are off.`,
+        problem: `${shown} is a link, which Agent Lookout does not follow, so the time rules and the permission rules are off.`,
       };
     }
-    return { kind: "refused", problem: `${shown} could not be read, so the time rules are off.` };
+    return {
+      kind: "refused",
+      problem: `${shown} could not be read, so the time rules and the permission rules are off.`,
+    };
   }
   try {
     const info = fstatSync(fd);
     if (!info.isFile()) {
       return {
         kind: "refused",
-        problem: `${shown} is not an ordinary file, so the time rules are off.`,
+        problem: `${shown} is not an ordinary file, so the time rules and the permission rules are off.`,
       };
     }
     if (info.size > MAX_SETTINGS_BYTES) {
       return {
         kind: "refused",
-        problem: `${shown} is larger than 64 KB, so it was not read and the time rules are off.`,
+        problem: `${shown} is larger than 64 KB, so it was not read and the time rules and the permission rules are off.`,
       };
     }
     const buffer = Buffer.alloc(info.size);
@@ -166,7 +172,10 @@ export function readSettingsText(setup: SettingsSetup): SettingsText {
     }
     return { kind: "read", text: buffer.toString("utf8", 0, filled) };
   } catch {
-    return { kind: "refused", problem: `${shown} could not be read, so the time rules are off.` };
+    return {
+      kind: "refused",
+      problem: `${shown} could not be read, so the time rules and the permission rules are off.`,
+    };
   } finally {
     closeSync(fd);
   }

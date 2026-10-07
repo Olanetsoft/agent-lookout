@@ -8,6 +8,7 @@ import {
   type SourceId,
   type TerminalApp,
 } from "@core/sessions/session";
+import { ruleText } from "@core/permission-rules/permissionRules";
 import { formatDuration } from "@dashboard/lib/format";
 
 // The core keeps the surfaces' words, which an email uses too. An app that is
@@ -50,6 +51,22 @@ export const ALLOWED_HERE = "had a request allowed from Agent Lookout";
 export const DENIED_HERE = "had a request denied from Agent Lookout";
 
 /**
+ * What the log says of a permission prompt a permission rule answered: the
+ * words, "had Bash allowed by the rule", and the rule as Claude Code writes
+ * one, `Bash(npm test:*)`, to set in the mono, or null for the rule for every
+ * tool, which the words say. Null for any other event.
+ */
+export function ruleAnswerWords(
+  event: Pick<SessionEvent, "kind" | "decision" | "tool" | "rule">,
+): { lead: string; rule: string | null } | null {
+  if (event.kind !== "answered" || event.rule === undefined) return null;
+  const done = event.decision === "deny" ? "denied" : "allowed";
+  const lead = `had ${event.tool ?? "a request"} ${done} by the rule`;
+  const rule = ruleText(event.rule);
+  return rule === null ? { lead: `${lead} for every tool`, rule } : { lead, rule };
+}
+
+/**
  * What happened, as the words that follow the session's name in the event log.
  *
  * A move out of "needs you" says how long the wait lasted when the page holds
@@ -57,13 +74,17 @@ export const DENIED_HERE = "had a request denied from Agent Lookout";
  * was, since a length that was not seen is not guessed.
  */
 export function eventPhrase(
-  event: Pick<SessionEvent, "kind" | "from" | "to" | "decision">,
+  event: Pick<SessionEvent, "kind" | "from" | "to" | "decision" | "tool" | "rule">,
   waitedMs: number | null = null,
 ): string {
   if (event.kind === "appeared") return "appeared";
   if (event.kind === "ended") return "ended";
   if (event.kind === "stopped") return STOPPED_HERE;
-  if (event.kind === "answered") return event.decision === "deny" ? DENIED_HERE : ALLOWED_HERE;
+  if (event.kind === "answered") {
+    const byRule = ruleAnswerWords(event);
+    if (byRule) return byRule.rule === null ? byRule.lead : `${byRule.lead} ${byRule.rule}`;
+    return event.decision === "deny" ? DENIED_HERE : ALLOWED_HERE;
+  }
   if (event.from === "needs-you" && event.to !== "needs-you" && waitedMs !== null) {
     return `${STOPPED_WAITING} ${formatDuration(waitedMs)}`;
   }

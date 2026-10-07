@@ -1,5 +1,7 @@
 import {
   GH_STATES,
+  MAX_RULE_ANSWERS,
+  type RuleAnswer,
   type SettingsResponse,
   HISTORY_BEGINNINGS,
   isWebhookHost,
@@ -56,6 +58,7 @@ import {
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { MAX_NAME_LENGTH } from "@core/text";
+import { readPermissionRules, ruleWordsIn } from "@core/permission-rules/permissionRules";
 import { readTimeRules } from "@core/time-rules/timeRules";
 
 /**
@@ -477,7 +480,30 @@ export function readEvent(value: unknown): SessionEvent | null {
   if (by) event.by = by;
   const decision = oneOf(ANSWER_DECISIONS, value.decision);
   if (decision) event.decision = decision;
+  // What a permission rule's answer names: the tool, and the rule in the person's words.
+  const tool = nameText(value.tool);
+  if (tool) event.tool = tool;
+  const rule = readEventRule(value.rule);
+  if (rule) event.rule = rule;
   return event;
+}
+
+/** The longest tool's name or rule's command the page draws. The collector's own are far shorter. */
+const MAX_RULE_TEXT = 400;
+
+function nameText(value: unknown): string | null {
+  const words = text(value);
+  return words && words.length <= MAX_RULE_TEXT ? words : null;
+}
+
+/** A permission rule as an event names it, or null when it names none that can be read. */
+function readEventRule(value: unknown): SessionEvent["rule"] | null {
+  if (!isRecord(value)) return null;
+  const tool = nameText(value.tool);
+  if (!tool) return null;
+  if (value.command === undefined) return { tool };
+  const command = nameText(value.command);
+  return command ? { tool, command } : null;
 }
 
 /** The answer of `/api/events`. */
@@ -788,9 +814,41 @@ export function readSettings(data: unknown): SettingsResponse | null {
   if (!isRecord(data) || !isRecord(data.timeRules)) return null;
   const file = text(data.file);
   if (file === null) return null;
+  // Read whole or not at all, as the collector reads its own file. An answer
+  // from before there were any holds none.
+  const permissions = readPermissionRules(data.permissionRules);
+  const answers = Array.isArray(data.ruleAnswers) ? data.ruleAnswers : [];
   return {
     timeRules: readTimeRules(data.timeRules).rules,
     file,
     problem: text(data.problem),
+    permissionRules: permissions.ok ? permissions.rules : [],
+    permissionRulesProblem: permissions.ok
+      ? text(data.permissionRulesProblem)
+      : "The permission rules Agent Lookout sent could not be read.",
+    ruleAnswers: answers
+      .slice(0, MAX_RULE_ANSWERS)
+      .map(readRuleAnswer)
+      .filter((answer): answer is RuleAnswer => answer !== null),
+    ruleAnswersSince: number(data.ruleAnswersSince),
+  };
+}
+
+/** One request a rule answered, or null when it cannot be read whole. */
+export function readRuleAnswer(value: unknown): RuleAnswer | null {
+  if (!isRecord(value)) return null;
+  const at = number(value.at);
+  const sessionId = text(value.sessionId);
+  const tool = nameText(value.tool);
+  const decision = oneOf(ANSWER_DECISIONS, value.decision);
+  const rule = ruleWordsIn(value.rule);
+  if (at === null || !sessionId || !tool || !decision || !rule.ok) return null;
+  return {
+    at,
+    sessionId,
+    sessionName: text(value.sessionName) ?? sessionId,
+    tool,
+    decision,
+    rule: rule.words,
   };
 }
