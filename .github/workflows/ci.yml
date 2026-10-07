@@ -177,7 +177,7 @@ jobs:
       - name: The tarball holds only what the package needs
         run: |
           tar -tzf "$RUNNER_TEMP"/agent-lookout-*.tgz | sort | tee "$RUNNER_TEMP/files.txt"
-          if grep -Ev '^package/(bin/agent-lookout\.mjs|dist/.+|docs/(API|GUIDE)\.md|(CHANGELOG|DISCLAIMER|PRIVACY|README|SECURITY)\.md|LICENSE|package\.json)$' "$RUNNER_TEMP/files.txt"; then
+          if grep -Ev '^package/(bin/agent-lookout\.mjs|dist/.+|docs/(API|GUIDE|INSTALL)\.md|(CHANGELOG|DISCLAIMER|PRIVACY|README|SECURITY)\.md|LICENSE|package\.json)$' "$RUNNER_TEMP/files.txt"; then
             echo "The lines above should not be in the package."
             exit 1
           fi

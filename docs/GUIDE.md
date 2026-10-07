@@ -2,13 +2,7 @@
 
 ## Requirements
 
-- macOS, Linux or Windows. Agent Lookout is developed and tested on macOS. On Linux and on Windows it has been checked in CI by starting it with `npm start`, and not yet by a person on a Linux or Windows desktop. [On Linux](#on-linux) and [On Windows](#on-windows) say what differs there.
-- Node.js 22.12 or newer. The [Mac app](#desktop-app) needs no Node.js.
-- Claude Code, Codex or both. Neither needs any setup. Any other agent can appear too, by writing a status file: see [Your own agents](#your-own-agents).
-- For Claude Code, a version that has the `claude agents` command. `claude agents --help` should print `Usage: claude agents`. Without that command Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
-- For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
-
-The [README](../README.md#install) has the steps to install and start it.
+Node.js 22.12 or newer, or the Mac app, which needs none, and Claude Code, Codex or both. [INSTALL.md](INSTALL.md) has the versions each needs, how to check them, and the steps to install and start Agent Lookout.
 
 ## The screen
 
@@ -931,7 +925,7 @@ In a clone without `npm link`, give the path to yours:
 claude mcp add agent-lookout -- /path/to/agent-lookout/bin/agent-lookout.mjs mcp
 ```
 
-Claude Code adds it for the folder you run that in. Put `--scope user` after `add` to have it in every folder. Any other app that takes MCP servers starts it with the same command: the program `npx` with the arguments `-y`, `agent-lookout` and `mcp`, or `agent-lookout` with the one argument `mcp`. Many take it as JSON in this shape:
+Claude Code adds it for the folder you run that in. Put `--scope user` after `add` to have it in every folder. `claude mcp list` then lists `agent-lookout`. Any other app that takes MCP servers starts it with the same command: the program `npx` with the arguments `-y`, `agent-lookout` and `mcp`, or `agent-lookout` with the one argument `mcp`. Many take it as JSON in this shape:
 
 ```json
 {
@@ -1314,60 +1308,17 @@ npm run dev -- --port 5180
 
 ## Run the built version
 
-In a clone, `npm run dev` runs Agent Lookout with its development tools. To run it from built files instead:
-
-```sh
-npm run build
-npm start
-```
-
-`npm start` prints `Agent Lookout is running at http://127.0.0.1:4777`. Open that address. To check it from a terminal:
-
-```sh
-curl -s http://127.0.0.1:4777/api/health
-```
-
-It prints `{"ok":true,"version":"0.2.1"}`, or a later version number. If you run `npm start` before `npm run build`, it stops and tells you to build first. After you pull new code, run `npm run build` again.
+In a clone, `npm run build` and then `npm start` run Agent Lookout from built files, at `http://127.0.0.1:4777`. [From the repository](INSTALL.md#from-the-repository) has the steps.
 
 ## Start it with one command
 
-`agent-lookout` on its own starts Agent Lookout from the built files, as `npm start` does: the dashboard and its API at `http://127.0.0.1:4777`, on this computer only. It prints `Agent Lookout is running at http://127.0.0.1:4777` and keeps running until you press Ctrl+C. `agent-lookout start` does the same.
-
-| Option            | What it does                                                                                                                                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--port <number>` | Listens on this port in place of 4777, such as `--port 4778`. `AGENT_LOOKOUT_PORT` does the same, and `--port` wins when both are given                                                                               |
-| `--open`          | Opens the address in your default browser once it is listening, with `open` on macOS, `xdg-open` on Linux or `rundll32.exe` on Windows. If that cannot be done, it prints one line with the address and keeps running |
-| `--help`          | Prints the options of `agent-lookout`, `agent-lookout status` and `agent-lookout mcp`                                                                                                                                 |
-| `--version`       | Prints the version of Agent Lookout, such as `0.2.1`, and nothing else                                                                                                                                                |
-
-Every other setting under [Settings you can change](#settings-you-can-change) works with it as with `npm start`. It ends with 0 when you press Ctrl+C, and with 1 when it cannot start, such as when the port is in use. Under `npx agent-lookout`, the shell reports the interrupt instead, as exit code 130.
-
-Agent Lookout is on npm, so `npx agent-lookout` starts it with nothing to clone or install first, and `npx agent-lookout --open` opens it in the browser as well. npm downloads the package the first time, under 2 MB with what it needs and about 4 MB once installed, and keeps it in its cache. The package holds the built dashboard and the collector as plain JavaScript, so it needs Node.js and nothing else. Each time, npx asks npm's registry whether a newer version is out, as it does for any package it runs. To start it without that, install it once with `npm install -g agent-lookout` and run `agent-lookout`.
-
-In a clone, run `npm run build` and `npm link` once in the `agent-lookout` folder, then `agent-lookout` from any folder.
+`npx agent-lookout`, or `agent-lookout` once it is installed, starts Agent Lookout at `http://127.0.0.1:4777`, on this computer only. [With npx](INSTALL.md#with-npx) has its options, and how to run it in the background, stop it and update it.
 
 ## Desktop app
 
 Agent Lookout can also run as a Mac app: the same dashboard in a window of its own, with the collector running inside the app. The app opens no port, so nothing else on this computer can reach it. It keeps its rules in the same [settings file](#time-rules) as `npx agent-lookout`, though, and takes up a change to that file at its next poll, so a program running as you can change them by writing the file. It needs no Node.js.
 
-To install it, download the disk image for your Mac from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest) on GitHub: `Agent-Lookout-<version>-mac-arm64.dmg` for Apple silicon, or `Agent-Lookout-<version>-mac-x64.dmg` for Intel. About This Mac, in the Apple menu, shows which you have: a chip such as Apple M1 is Apple silicon, and a processor named Intel is Intel. Open the disk image and drag Agent Lookout to Applications. Keep it there: the app [updates itself](#updates) only from a folder it can change.
-
-The app is not yet signed with an Apple Developer ID, so the first time a downloaded copy is opened, macOS does not open it. Its message is titled “Agent Lookout” Not Opened and says that Apple could not verify “Agent Lookout” is free of malware. To open it anyway:
-
-1. Press Done. Do not press Move to Bin, or Move to Trash, which deletes the app.
-2. Open System Settings › Privacy & Security.
-3. Under Security, next to the line that says Agent Lookout was blocked, press Open Anyway, and confirm with your password or Touch ID. The button is there for about an hour after macOS stopped the app. If it has gone, open the app again, press Done, and go back to Privacy & Security.
-
-macOS remembers the choice.
-
-To build the app yourself instead, from a clone, on a Mac:
-
-```sh
-npm install
-npm run dist:mac
-```
-
-It takes a minute or two, and the first time it downloads Electron for each kind of Mac. It puts a disk image and a zip for each in `release/`, with the same names as on the release. Open the disk image for your Mac and drag Agent Lookout to Applications. A copy you built yourself on this Mac opens without the steps above.
+To install it, download it from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest) and drag it to Applications, or build it yourself: [Mac app](INSTALL.md#mac-app) has the steps, and what to do the first time macOS will not open it. Keep it in Applications: the app [updates itself](#updates) only from a folder it can change.
 
 It behaves as a Mac app does:
 
@@ -1526,7 +1477,7 @@ The program serving the page has stopped. The page keeps the last thing it saw, 
 
 ## How it finds sessions
 
-For Claude Code, Agent Lookout reads the small file Claude Code keeps for each running session in `~/.claude/sessions/`, every 2 seconds. That starts no program and uses no network. When it starts, and every 30 seconds after that, it also runs `claude agents --json --all`, the command Claude Code [documents](https://code.claude.com/docs/en/agent-view) for listing its sessions. That answer decides which sessions exist, and it adds background jobs that have finished or failed. If the command cannot be found or fails, Agent Lookout uses the files alone. While a session is waiting for you, Agent Lookout also reads the end of its transcript, in `~/.claude/projects/`, to say what it is asking, and forgets it when the wait ends. Claude Code does not document its transcripts, so a new version can change them, and then the reason shows alone.
+For Claude Code, Agent Lookout reads the small file Claude Code keeps for each running session in `~/.claude/sessions/`, every 2 seconds, whether the session runs in a terminal, in VS Code or in the desktop app. That starts no program and uses no network. When it starts, and every 30 seconds after that, it also runs `claude agents --json --all`, the command Claude Code [documents](https://code.claude.com/docs/en/agent-view) for listing its sessions. That answer decides which sessions exist, and it adds background jobs that have finished or failed. If the command cannot be found or fails, Agent Lookout uses the files alone. While a session is waiting for you, Agent Lookout also reads the end of its transcript, in `~/.claude/projects/`, to say what it is asking, and forgets it when the wait ends. Claude Code does not document its transcripts, so a new version can change them, and then the reason shows alone.
 
 For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder, and when each file was last changed, which says how long a working session has been [quiet](#quiet-for). Codex documents none of these files, so a new Codex version can change them.
 
