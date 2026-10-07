@@ -1,6 +1,7 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test, vi } from "vitest";
 
+import { shownAsk } from "@collector/answers/shownAsk";
 import type { Session, SourceState } from "@core/sessions/session";
 import {
   MAX_MENU_DETAIL_LENGTH,
@@ -15,6 +16,7 @@ import {
   menuBarToolTip,
   waitingSessions,
   type MenuBarActions,
+  type MenuBarPress,
   type MenuBarSnapshot,
 } from "@desktop/menu-bar/menuBarMenu";
 import { makeSession } from "@tests/fixtures/session";
@@ -57,6 +59,7 @@ const BOTH: SourceState[] = ["ok", "ok"];
 function actions() {
   return {
     openSession: vi.fn<(sessionId: string) => void>(),
+    answer: vi.fn<(press: MenuBarPress) => void>(),
     openApp: vi.fn<() => void>(),
     checkForUpdates: vi.fn<() => void>(),
     openSettings: vi.fn<() => void>(),
@@ -424,4 +427,127 @@ test("the sessions that need you are ordered as the Needs you panel orders them"
     "b",
     "unknown-start",
   ]);
+});
+
+describe("a session whose permission request is held", () => {
+  const REQUEST_ID = "0123456789abcdef0123456789abcdef";
+
+  /** A held request, made by the collector's own rule for what is shown. */
+  function ask(tool: string, input: Record<string, unknown>, requestId = REQUEST_ID) {
+    const shown = shownAsk(tool, input);
+    if (shown === null) throw new Error(`${tool} is not held`);
+    return { requestId, ...shown, until: NOW + 5 * MINUTE };
+  }
+
+  const asking = (held: ReturnType<typeof ask>) => waiting("checkout-flow", MINUTE, { ask: held });
+
+  function submenuOf(template: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
+    const submenu = template[1]?.submenu;
+    if (!Array.isArray(submenu)) throw new Error("The session has no submenu.");
+    return submenu;
+  }
+
+  test("opens a submenu: Open Details, what it asks a line each, then Deny and Allow", () => {
+    const template = menuBarTemplate(
+      snapshot([asking(ask("Bash", { command: "npm test\nnpm run build" }))]),
+      NOW,
+      actions(),
+    );
+    expect(template[1]).toMatchObject({ label: "checkout-flow · 1m 00s" });
+    expect(template[1]?.click).toBeUndefined();
+    const submenu = submenuOf(template);
+    expect(labels(submenu)).toEqual([
+      "Open Details",
+      "-",
+      "Asks to run",
+      "npm test",
+      "npm run build",
+      "-",
+      "Deny",
+      "Allow",
+    ]);
+    // What it asks is there to be read, and does nothing when chosen.
+    expect(submenu.slice(2, 5).every((item) => item.enabled === false)).toBe(true);
+  });
+
+  test("Deny and Allow name the session, the request and when the menu was shown; Open Details opens it", () => {
+    const chosen = actions();
+    let shownAt: number | null = null;
+    const template = menuBarTemplate(
+      snapshot([asking(ask("Bash", { command: "npm test" }))]),
+      NOW,
+      chosen,
+      () => shownAt,
+    );
+    const submenu = submenuOf(template);
+    const find = (label: string) => submenu.find((item) => item.label === label);
+    click(find("Deny"));
+    shownAt = NOW - 3 * SECOND;
+    click(find("Allow"));
+    expect(chosen.answer.mock.calls.map(([press]) => press)).toEqual([
+      {
+        sessionId: "claude-code:checkout-flow",
+        name: "checkout-flow",
+        requestId: REQUEST_ID,
+        decision: "deny",
+        shownAt: null,
+      },
+      {
+        sessionId: "claude-code:checkout-flow",
+        name: "checkout-flow",
+        requestId: REQUEST_ID,
+        decision: "allow",
+        shownAt: NOW - 3 * SECOND,
+      },
+    ]);
+    click(find("Open Details"));
+    expect(chosen.openSession).toHaveBeenCalledWith("claude-code:checkout-flow");
+  });
+
+  test.each<[string, Record<string, unknown>, string]>([
+    ["Write", { file_path: "/Users/example/code/demo/a.ts", content: "x" }, "Asks to use Write"],
+    ["ExitPlanMode", { plan: "Do it" }, "Asks to use ExitPlanMode"],
+    ["Bash", { command: "ls ..." }, "Asks to run"],
+  ])("offers Deny alone for %s it cannot allow from here, and says why", (tool, input, heading) => {
+    const submenu = submenuOf(
+      menuBarTemplate(snapshot([asking(ask(tool, input))]), NOW, actions()),
+    );
+    expect(submenu[2]?.label).toBe(heading);
+    expect(labels(submenu)).toContain("Deny");
+    expect(labels(submenu)).not.toContain("Allow");
+    const note = submenu.at(-3);
+    expect(note?.enabled).toBe(false);
+    expect(note?.label).toMatch(/only Deny|Answer in the session|open Agent Lookout/);
+  });
+
+  test("an & in what it asks is written so the menu draws it", () => {
+    const submenu = submenuOf(
+      menuBarTemplate(snapshot([asking(ask("Bash", { command: "a && b" }))]), NOW, actions()),
+    );
+    expect(submenu[3]?.label).toBe("a &&&& b");
+  });
+
+  test("the menu is made again for a newer request, and with what the last press came to", () => {
+    const first = snapshot([asking(ask("Bash", { command: "npm test" }))]);
+    const newer = snapshot([asking(ask("Bash", { command: "npm test" }, "f".repeat(32)))]);
+    expect(menuBarKey(newer)).not.toBe(menuBarKey(first));
+    expect(menuBarKey({ ...first, note: "checkout-flow: Allowed from Agent Lookout." })).not.toBe(
+      menuBarKey(first),
+    );
+  });
+
+  test("what the last press came to is the line under the headline, which does nothing", () => {
+    const template = menuBarTemplate(
+      {
+        ...snapshot([]),
+        note: "checkout-flow: That request is no longer held, so nothing was sent.",
+      },
+      NOW,
+      actions(),
+    );
+    expect(template[1]).toEqual({
+      label: "checkout-flow: That request is no longer held, so nothing was sent.",
+      enabled: false,
+    });
+  });
 });

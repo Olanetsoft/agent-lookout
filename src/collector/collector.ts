@@ -219,8 +219,15 @@ export interface Collector {
   pullRequests: PullRequestFinder | null;
   /** What keeps the history on disk, or null with `AGENT_LOOKOUT_HISTORY=off`. */
   history: HistoryKeeper | null;
-  /** Answering permission prompts: resolves once its socket listens, or has said why not. */
-  answering: Pick<Answering, "start" | "stop">;
+  /**
+   * Answering permission prompts: `start` resolves once its socket listens,
+   * or has said why not. `serve` gives a snapshot as the page is sent it, with
+   * each held request, `check` reads the held requests' registry files again
+   * at once, and `answer` answers one from this process, as the Mac app's
+   * notifications and menu bar do, by the route's own path. `answer` is
+   * undefined while answering is off.
+   */
+  answering: Pick<Answering, "start" | "stop" | "serve" | "check" | "answer">;
   /** The other machines read over SSH, none unless `AGENT_LOOKOUT_REMOTES` names them. */
   remotes: Remotes;
   /** The settings the collector keeps itself: the time rules and the permission rules. */
@@ -597,6 +604,11 @@ export function createCollector(options: CollectorOptions): Collector {
       stop: async () => {
         await answering?.stop();
       },
+      serve: (snapshot) => answering?.serve(snapshot) ?? snapshot,
+      check: async () => {
+        await answering?.check();
+      },
+      ...(answering?.answer && { answer: answering.answer }),
     },
     remotes,
     settings,

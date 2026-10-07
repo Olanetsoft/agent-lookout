@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { ANSWER_SETTLE_MS } from "@core/answers/settle";
 import type { AnswerDecision, Session } from "@core/sessions/session";
 import { requestAnswer, type AnswerOutcome } from "@dashboard/lib/answer/answerRequest";
-
-/**
- * How long a request is drawn before Allow or Deny takes a press. A press
- * aimed at the request before it, or at another session's block that moved
- * up into the same place, lands in this time and is not sent.
- */
-export const ANSWER_SETTLE_MS = 1_000;
 
 /** Where one session's answers are. */
 export type AnswerStep =

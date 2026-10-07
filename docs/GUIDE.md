@@ -657,6 +657,23 @@ A request waits for an answer for 5 minutes, or `AGENT_LOOKOUT_ANSWER_WAIT` seco
 | Agent Lookout did not answer in time. The session shows whether it went on.   | Agent Lookout gave no answer within 10 seconds. The answer may have reached it all the same. |
 | The answer could not be handed to the session.                                | Something went wrong in Agent Lookout. Nothing more is known of it.                          |
 
+### In the Mac app
+
+The [Mac app](#desktop-app) offers Deny and Allow outside its window too: on its own notification of a wait, and in its [menu bar](#menu-bar). A press there is answered as a press on the dashboard is, with every check it makes, and the Events log says the request was allowed or denied from Agent Lookout. As on the page, neither takes a press in the first second what it answers is shown, and Allow is offered only for what is shown there whole, as it is written, and never for an edit, a new file, a plan or a question.
+
+- **The notification.** While Agent Lookout holds the request of a session it tells you of, the notification has Deny, and Allow too for one shell command with no other input, on one line of at most 80 characters with no tab, no two spaces in a row and no space at either end, when the notification can hold all of it with the session's name: its text is then the whole command, under "Asks to run". For anything else it has Deny alone, and its text says why, or to open Agent Lookout to see it whole, then the start of what it asks. macOS shows the buttons as it shows any notification's, which depends on the style chosen for Agent Lookout in System Settings, under Notifications. Click the notification itself to open the session's details. A press that sent nothing is followed by a notification that says why. The app shows these only while its window is closed, or the page in it is not checking the sessions: with the window open, the page shows its own notifications, which have no buttons.
+- **The menu bar.** A session whose request is held opens a submenu instead of its details: Open Details, then what it asks, each line of the command and each other input on a line of its own, then Deny and Allow. Allow is there only when every line is at most 80 characters, with no tab, no two spaces in a row and no space at either end, in 20 lines at most, and the menu draws each as it is written, which rules out a line with `...` or `(&)` in it. Otherwise Deny is there alone, with a line that says why. What a press came to is the menu's second line for a minute, and a press that sent nothing opens the menu again to say why.
+
+Nothing is answered while the Mac is locked, though macOS lets a notification's buttons be pressed on the lock screen. With `AGENT_LOOKOUT_ANSWER=off`, or when Agent Lookout cannot listen for the plugin, neither has Deny or Allow, and the dashboard in a browser and `npx agent-lookout` have neither of these.
+
+A notification that offers Allow shows the whole command, and one that offers Deny alone the start of it, over other apps, in Notification Centre and, unless you change it, on the lock screen. To keep them off the lock screen, open System Settings, then Notifications, choose Agent Lookout, and turn off its notifications on the lock screen, or set Show previews to When Unlocked or Never.
+
+| What it says                                                                | Why                                                                                       |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| It was pressed in the first second it was shown, so nothing was sent.       | The notification, or the menu, had shown the request for less than a second. Press again. |
+| Nothing is answered while this Mac is locked, so nothing was sent.          | A notification's button was pressed on the lock screen.                                   |
+| Agent Lookout is not answering permission prompts now, so nothing was sent. | Answering is off, or Agent Lookout could not listen for the plugin.                       |
+
 ### Install the plugin
 
 The plugin is one hook that Claude Code runs as it is about to ask you for permission. It hands the request to Agent Lookout on this computer, over a socket only you can open, and prints the answer when you press Allow or Deny. It is in this repository, in `plugins/agent-lookout/`. In Claude Code, run:
@@ -1326,9 +1343,9 @@ It behaves as a Mac app does:
 
 - One copy runs at a time. Opening it again brings its window forward.
 - Closing the window leaves it running, still watching your sessions and showing notifications. Click its icon in the Dock to open the window again. Cmd+Q quits it.
-- With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window.
+- With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window. A wait's notification that the app shows itself, with the window closed, opens the session's details, and can have Deny and Allow: [In the Mac app](#in-the-mac-app) says when.
 - Its icon in the Dock shows how many sessions need you, with the window open or closed, and no number when none do.
-- Its icon in the menu bar shows the same count, and lists those sessions when you click it. Choose one to open its details. [Menu bar](#menu-bar) says more.
+- Its icon in the menu bar shows the same count, and lists those sessions when you click it. Choose one to open its details, or, while Agent Lookout holds its permission request, to answer it. [Menu bar](#menu-bar) says more.
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
 - [Resume](#resume-a-session) copies its command as it does in a browser. The window may write to the clipboard when you press a button that copies, and never reads it.
@@ -1341,6 +1358,8 @@ It behaves as a Mac app does:
 The app puts the Agent Lookout mark in the menu bar, in the menu bar's own colour, light or dark. While one or more sessions need you, the small circle above its horizon, the lamp, is filled and the number of them is beside it, with the window open or closed. While none do, it is the mark alone, with the lamp hollow.
 
 Click it to list the sessions that need you, the longest wait first, each with how long it has waited, as in `checkout-flow · 4m 12s`. Two sessions with the same name have what tells them apart in brackets, their agent, project, branch or app, as in `checkout-flow (Codex) · 4m 12s`. Under each name are the reason and what the session is asking, when that is known, cut to one line: rest the pointer on a session to read all of it. macOS shows the line under a name from macOS 14.4 on; before that, resting the pointer is the way to read it. Up to 10 sessions are listed, and a line under them counts the rest. Choose a session to open its [details](#a-sessions-details) in the window, which opens if it was closed. With nothing waiting, the menu says Nothing needs you, and before Agent Lookout has read any agent, Looking for agents…. It ends with Open Agent Lookout, Check for Updates…, Settings… and Quit Agent Lookout.
+
+A Claude Code session whose permission request Agent Lookout holds, through the plugin, opens a submenu instead: Open Details, then what it asks, a line each, then Deny and, when the whole of it is shown as written, Allow. [In the Mac app](#in-the-mac-app) says when Allow is there. What the last press came to is the line under the first for a minute.
 
 The times are those of the moment the pointer comes over the icon, or at most a minute old when you open the menu from the keyboard, and while it is open it stays as it is. A session that starts or stops waiting meanwhile shows the next time you open it, and the count beside the icon follows at once.
 

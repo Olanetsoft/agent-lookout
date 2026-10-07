@@ -1,14 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, type Ref } from "react";
 
+import { answerOutcomeWords, askHeading, denyOnlyWords } from "@core/answers/askWords";
 import type { PermissionAsk, Session } from "@core/sessions/session";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { useAnswer, type AnswerPress } from "@dashboard/hooks/actions/useAnswer";
-import {
-  answerOutcomeWords,
-  askHeading,
-  denyOnlyWords,
-  type requestAnswer,
-} from "@dashboard/lib/answer/answerRequest";
+import type { requestAnswer } from "@dashboard/lib/answer/answerRequest";
 import { cn } from "@dashboard/lib/utils";
 
 /**

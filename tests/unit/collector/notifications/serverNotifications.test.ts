@@ -735,3 +735,37 @@ describe("the time rules", () => {
     });
   });
 });
+
+test("a wait and its reminder name the session they are about, for a host that opens it or answers it; a summary and a finish do not", () => {
+  const notifier = fakeSystemNotifier();
+  const noon = new Date(2026, 9, 5, 12, 0).getTime();
+  const clock = { now: noon };
+  const notifications = createServerNotifications({
+    notifier,
+    onAtStart: false,
+    now: () => clock.now,
+  });
+  const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 10 } };
+  const poll = (at: number, sessions: Session[]) => {
+    clock.now = at;
+    notifications.handle({
+      generatedAt: at,
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+      sessions,
+      timeRules: rules,
+    });
+  };
+  const wait = waiting(1, "checkout-flow", { statusSince: noon + 2_000 });
+  // A page chose these a minute before, and closed, so nothing is held for it.
+  clock.now = noon - 60_000;
+  notifications.pageSaid(["needs-you", "finished"], true);
+  poll(noon, [working(1, "checkout-flow"), working(2, "docs-site")]);
+  poll(noon + 2_000, [wait, makeSession({ id: id(2), name: "docs-site", status: "finished" })]);
+  poll(noon + 10 * 60_000 + 2_000, [wait]);
+  expect(notifier.shown.map((notice) => notice.body)).toEqual([
+    "Waiting for permission",
+    "Finished",
+    "Has waited 10 minutes for permission",
+  ]);
+  expect(notifier.about).toEqual([{ sessionId: id(1) }, undefined, { sessionId: id(1) }]);
+});

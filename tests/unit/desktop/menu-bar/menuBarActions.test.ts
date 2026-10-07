@@ -44,6 +44,7 @@ function setUp() {
     activate: () => void steps.push("activate"),
     checkForUpdates: () => void steps.push("check for updates"),
     openSettings: () => void steps.push("settings"),
+    answer: (press) => void steps.push(`answer ${press.decision} ${press.requestId}`),
     quit,
   });
   const template = menuBarTemplate(
@@ -118,4 +119,41 @@ test("Quit Agent Lookout quits, and brings nothing forward", () => {
   click(item(template, "Quit Agent Lookout"));
   expect(quit).toHaveBeenCalledOnce();
   expect(steps).toEqual([]);
+});
+
+test("Deny and Allow in a session's submenu go to the app's answers, and bring nothing forward", () => {
+  const { steps } = setUp();
+  const requestId = "0123456789abcdef0123456789abcdef";
+  const answered: string[] = [];
+  const actions = menuBarActions({
+    showWindow: () => void steps.push("show"),
+    activate: () => void steps.push("activate"),
+    checkForUpdates: () => {},
+    openSettings: () => {},
+    answer: (press) => void answered.push(`${press.decision} ${press.requestId}`),
+    quit: () => {},
+  });
+  const template = menuBarTemplate(
+    {
+      sessions: [
+        makeSession({
+          id: ID,
+          name: "checkout-flow",
+          status: "needs-you",
+          statusSince: NOW,
+          ask: { requestId, tool: "Bash", command: "npm test", allow: true, until: NOW + 60_000 },
+        }),
+      ],
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok" }],
+    },
+    NOW,
+    actions,
+  );
+  const submenu = item(template, "checkout-flow")?.submenu as MenuItemConstructorOptions[];
+  click(item(submenu, "Deny"));
+  click(item(submenu, "Allow"));
+  expect(answered).toEqual([`deny ${requestId}`, `allow ${requestId}`]);
+  expect(steps).toEqual([]);
+  click(item(submenu, "Open Details"));
+  expect(steps).toEqual(["activate", "show"]);
 });

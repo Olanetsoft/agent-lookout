@@ -11,6 +11,14 @@
 // only, as a notification shows them. Two sessions listed under one name are
 // told apart by their agent, project, branch or app, in brackets after it.
 //
+// A session whose permission request Agent Lookout holds opens a submenu
+// instead: Open Details, what it asks, a line each, and Deny, then Allow when
+// the whole of it is shown as written (`menuOffer` in
+// `answers/answerOffer.ts`). Each names the request it was made for, and the
+// time the menu was shown goes with a press, so an answer reaches only the
+// request that was on the screen, and none is taken in its first second. What
+// the last press came to is the line under the headline for a minute.
+//
 // It imports only types from Electron, so it is tested in plain Node.
 // `menuBar.ts` builds the menu from it on each poll.
 
@@ -21,12 +29,14 @@ import { sessionTitle, waitNotice } from "../../core/notices/waiting.ts";
 import {
   agentName,
   surfaceLabel,
+  type AnswerDecision,
   type Session,
   type SourceHealth,
 } from "../../core/sessions/session.ts";
 import { sortSessions } from "../../core/sessions/sorting.ts";
 import { MAX_NOTICE_TEXT_LENGTH, oneLine } from "../../core/text.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
+import { DECISION_LABEL, menuOffer, menuText, type MenuOffer } from "../answers/answerOffer.ts";
 
 /** The longest a session's name runs in the menu, in characters. A longer one is cut. */
 export const MAX_MENU_NAME_LENGTH = 40;
@@ -55,18 +65,34 @@ export type MenuBarSession = Pick<
   | "waitingReason"
   | "waitingText"
   | "answered"
+  | "ask"
 >;
 
 /** What the menu needs of a poll's snapshot. */
 export interface MenuBarSnapshot {
   sessions: readonly MenuBarSession[];
   sources: readonly Pick<SourceHealth, "id" | "label" | "state">[];
+  /** What the last press of Deny or Allow in the menu came to, while it is recent. */
+  note?: string | null;
+}
+
+/** A press of Deny or Allow in the menu. */
+export interface MenuBarPress {
+  sessionId: string;
+  /** The session's name, as the menu lists it. */
+  name: string;
+  requestId: string;
+  decision: AnswerDecision;
+  /** When the menu was last shown, or null when it is not known to have been. */
+  shownAt: number | null;
 }
 
 /** What the menu's items do. `main.ts` gives each its part of the app. */
 export interface MenuBarActions {
   /** Opens the window on a session's details. */
   openSession: (sessionId: string) => void;
+  /** Answers a held permission request with Deny or Allow. */
+  answer: (press: MenuBarPress) => void;
   /** Opens the window, or brings it forward. */
   openApp: () => void;
   checkForUpdates: () => void;
@@ -181,11 +207,15 @@ interface MenuBarListing {
   sublabel: string;
   /** The same, whole, for a Mac that does not show the line under a name. */
   toolTip: string;
+  /** The session's held permission request, as the menu shows it, when there is one. */
+  ask?: MenuOffer & { requestId: string };
 }
 
 /** What the menu shows of a snapshot, all but the times. */
 interface MenuBarList {
   headline: string;
+  /** What the last press in the menu came to, while it is recent. */
+  note: string | null;
   listed: MenuBarListing[];
   /** How many more need you than are listed. */
   more: number;
@@ -197,14 +227,17 @@ function menuBarList(snapshot: MenuBarSnapshot | null): MenuBarList {
   const names = menuNames(listed, snapshot?.sources ?? []);
   return {
     headline: menuBarHeadline(snapshot),
+    note: snapshot?.note ?? null,
     listed: listed.map((session, index) => {
       const { body } = waitNotice(session);
+      const { ask } = session;
       return {
         id: session.id,
         name: names[index] ?? sessionTitle(session),
         statusSince: session.statusSince,
         sublabel: oneLine(body, MAX_MENU_DETAIL_LENGTH),
         toolTip: oneLine(body, MAX_NOTICE_TEXT_LENGTH),
+        ...(ask !== undefined && { ask: { ...menuOffer(ask), requestId: ask.requestId } }),
       };
     }),
     more: waiting.length - listed.length,
@@ -225,38 +258,81 @@ export function menuBarHasTimes(snapshot: MenuBarSnapshot | null): boolean {
 }
 
 /**
+ * The submenu of a session whose permission request is held: Open Details,
+ * then what it asks, the heading and a line each, which do nothing, with the
+ * reason when only Deny is offered, then Deny and, when the whole of it is
+ * shown, Allow. Deny is in the same place whether Allow is there or not.
+ */
+function askItems(
+  listing: MenuBarListing,
+  ask: NonNullable<MenuBarListing["ask"]>,
+  actions: MenuBarActions,
+  shownAt: () => number | null,
+): MenuItemConstructorOptions[] {
+  const answer = (decision: AnswerDecision) => () =>
+    actions.answer({
+      sessionId: listing.id,
+      name: listing.name,
+      requestId: ask.requestId,
+      decision,
+      shownAt: shownAt(),
+    });
+  const decisions: AnswerDecision[] = ask.allow ? ["deny", "allow"] : ["deny"];
+  return [
+    { label: "Open Details", click: () => actions.openSession(listing.id) },
+    { type: "separator" },
+    { label: ask.heading, enabled: false },
+    ...ask.lines.map((line): MenuItemConstructorOptions => ({ label: line, enabled: false })),
+    ...(ask.note === null ? [] : [{ label: ask.note, enabled: false }]),
+    { type: "separator" },
+    ...decisions.map((decision): MenuItemConstructorOptions => ({
+      label: DECISION_LABEL[decision],
+      click: answer(decision),
+    })),
+  ];
+}
+
+/**
  * A session's item: its name and how long it has waited, "checkout-flow ·
  * 4m 12s", with the reason and what it is asking under it, cut short, and the
  * whole of that when the pointer rests on it, for a Mac that does not show the
- * line under a name. A wait whose start is not known gives no time.
+ * line under a name. A wait whose start is not known gives no time. Choosing
+ * it opens the session's details, or, while its request is held, its submenu.
  */
 function sessionItem(
   listing: MenuBarListing,
   now: number,
   actions: MenuBarActions,
+  shownAt: () => number | null,
 ): MenuItemConstructorOptions {
   const waited = listing.statusSince === null ? null : formatDuration(now - listing.statusSince);
-  return {
+  const item = {
     label: waited === null ? listing.name : `${listing.name} · ${waited}`,
     sublabel: listing.sublabel,
     toolTip: listing.toolTip,
-    click: () => actions.openSession(listing.id),
   };
+  return listing.ask === undefined
+    ? { ...item, click: () => actions.openSession(listing.id) }
+    : { ...item, submenu: askItems(listing, listing.ask, actions, shownAt) };
 }
 
 /**
- * The menu for a snapshot, at a moment: the headline, the sessions that need
- * you, and the app's own items. The snapshot is null before the first poll.
+ * The menu for a snapshot, at a moment: the headline, what the last press in
+ * it came to, the sessions that need you, and the app's own items. The
+ * snapshot is null before the first poll. `shownAt` says when the menu was
+ * last shown, which a press of Deny or Allow takes with it.
  */
 export function menuBarTemplate(
   snapshot: MenuBarSnapshot | null,
   now: number,
   actions: MenuBarActions,
+  shownAt: () => number | null = () => null,
 ): MenuItemConstructorOptions[] {
-  const { headline, listed, more } = menuBarList(snapshot);
+  const { headline, note, listed, more } = menuBarList(snapshot);
   return [
     { label: headline, enabled: false },
-    ...listed.map((listing) => sessionItem(listing, now, actions)),
+    ...(note === null ? [] : [{ label: menuText(note), enabled: false }]),
+    ...listed.map((listing) => sessionItem(listing, now, actions, shownAt)),
     ...(more > 0 ? [{ label: `And ${more} more`, enabled: false }] : []),
     { type: "separator" },
     { label: "Open Agent Lookout", click: () => actions.openApp() },

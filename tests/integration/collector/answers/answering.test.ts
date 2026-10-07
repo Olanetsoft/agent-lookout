@@ -1,8 +1,6 @@
-import { spawn } from "node:child_process";
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test as anyTest, vi } from "vitest";
 
@@ -22,6 +20,7 @@ import { decodedHeader, headerValues, startSmtpServer } from "@tests/support/cha
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { startWebhookServer } from "@tests/support/channels/webhook";
 import { listen, request } from "@tests/support/node/http";
+import { runPermissionHook } from "@tests/support/plugins/permissionHook";
 import { startStandIn, type StandIn } from "@tests/support/node/standIns";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
@@ -35,9 +34,6 @@ const test = anyTest.skipIf(process.platform === "win32");
 // sending a request to it, and the page's own request answering it. The
 // session is a stand-in process; no Claude Code is run.
 
-const SCRIPT = fileURLToPath(
-  new URL("../../../../plugins/agent-lookout/hooks/ask-agent-lookout.sh", import.meta.url),
-);
 const SESSION_ID = `claude-code:${ids.busy}`;
 const COMMAND = "npm test\nnpm run build";
 
@@ -165,38 +161,7 @@ async function serve(
 
 /** The plugin's hook, run as Claude Code runs it, with the request on stdin. */
 function hook(socketPath: string, toolName = "Bash", toolInput: unknown = { command: COMMAND }) {
-  const child = spawn("/bin/sh", [SCRIPT], {
-    env: {
-      PATH: "/usr/bin:/bin",
-      HOME: "/nonexistent-home",
-      AGENT_LOOKOUT_ANSWER_SOCKET: socketPath,
-    },
-    stdio: ["pipe", "pipe", "ignore"],
-  });
-  let stdout = "";
-  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
-  const done = new Promise<{ code: number | null; stdout: string }>((resolve) =>
-    child.once("exit", (code) => resolve({ code, stdout })),
-  );
-  onTestFinished(() => {
-    child.kill("SIGKILL");
-  });
-  // With no socket the script leaves before it reads its input, as it should,
-  // so writing that input can find the pipe already closed.
-  child.stdin.on("error", (error: NodeJS.ErrnoException) => {
-    if (error.code !== "EPIPE") throw error;
-  });
-  child.stdin.end(
-    JSON.stringify({
-      session_id: ids.busy,
-      transcript_path: "/Users/example/.claude/projects/demo/x.jsonl",
-      cwd: "/Users/example/code/demo",
-      hook_event_name: "PermissionRequest",
-      tool_name: toolName,
-      tool_input: toolInput,
-    }),
-  );
-  return done;
+  return runPermissionHook(socketPath, { sessionId: ids.busy, toolName, toolInput });
 }
 
 test("Allow from the page reaches the hook, which prints the allow decision for Claude Code", async () => {

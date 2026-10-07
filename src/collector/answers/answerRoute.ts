@@ -17,7 +17,7 @@ import { needsYou } from "../../core/waits/answeredWaits.ts";
 import type { EventStore } from "../eventStore.ts";
 import { actionRefusalFor, readRequestBody, refusal, type ApiAnswer } from "../handler.ts";
 import type { Poller } from "../poller.ts";
-import type { HeldAsks } from "./heldAsks.ts";
+import type { AnswerOutcome, HeldAsks } from "./heldAsks.ts";
 
 /** The most a request's body may hold. Two ids and a word are far shorter. */
 export const MAX_ANSWER_BODY_BYTES = 1024;
@@ -96,6 +96,13 @@ export interface AnswerRouteOptions {
   now?: () => number;
 }
 
+/** Hands the person's answer to one held request, and says what came of it. */
+export type Answerer = (
+  sessionId: string,
+  requestId: string,
+  decision: AnswerDecision,
+) => Promise<AnswerOutcome>;
+
 /**
  * Polls at once, so the page's read of the sessions straight after a press
  * no longer finds the session needing the person: it finds the wait marked
@@ -130,6 +137,29 @@ export function answerRefusalFor(
 }
 
 /**
+ * The one path a press of Allow or Deny takes, on the dashboard and in the
+ * Mac app's notifications and menu bar alike: the session must be listed,
+ * `answer` in `heldAsks.ts` makes every check of the request it holds, and
+ * once the answer is handed over, the Events log keeps it as an answer by
+ * Agent Lookout and the sessions are read again (`pollAfterAnswer`).
+ */
+export function createAnswerer(options: AnswerRouteOptions): Answerer {
+  const { poller, events, asks } = options;
+  const now = options.now ?? Date.now;
+  return async (sessionId, requestId, decision) => {
+    const session = poller.getSnapshot().sessions.find((listed) => listed.id === sessionId);
+    if (!session) return "no-ask";
+    const outcome = await asks.answer(sessionId, requestId, decision);
+    if (outcome !== "answered") return outcome;
+    events.add([answeredEvent(session, decision, now())]);
+    // Whoever asked reads the sessions again as soon as this is answered, and
+    // finds the wait over.
+    await pollAfterAnswer(poller, sessionId);
+    return "answered";
+  };
+}
+
+/**
  * Answers `POST /api/permission/answer`: hands the person's Allow or Deny to
  * the hook of a Claude Code session's permission request, when they pressed
  * it on the dashboard.
@@ -144,8 +174,7 @@ export function answerRefusalFor(
  * before the reply (`pollAfterAnswer`), so the page's next read finds the wait over.
  */
 export function createAnswerRoute(options: AnswerRouteOptions) {
-  const { poller, events, asks } = options;
-  const now = options.now ?? Date.now;
+  const answer = createAnswerer(options);
 
   return async function answerPermission(req: IncomingMessage): Promise<ApiAnswer> {
     const refused = answerRefusalFor(req);
@@ -167,15 +196,8 @@ export function createAnswerRoute(options: AnswerRouteOptions) {
         'The body must be {"sessionId": "...", "requestId": "...", "decision": "allow" or "deny"} and nothing else.',
       );
     }
-    const session = poller.getSnapshot().sessions.find((listed) => listed.id === asked.sessionId);
-    if (!session) return answerFailed("no-ask");
-
-    const outcome = await asks.answer(asked.sessionId, asked.requestId, asked.decision);
+    const outcome = await answer(asked.sessionId, asked.requestId, asked.decision);
     if (outcome !== "answered") return answerFailed(outcome);
-    events.add([answeredEvent(session, asked.decision, now())]);
-    // The page reads the sessions again as soon as this is answered, and
-    // finds the wait over.
-    await pollAfterAnswer(poller, asked.sessionId);
     return {
       status: 200,
       body: { ok: true, decision: asked.decision } satisfies AnswerResponse,

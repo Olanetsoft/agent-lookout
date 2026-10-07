@@ -1,78 +1,16 @@
-import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test, vi } from "vitest";
 
+import { shownAsk } from "@collector/answers/shownAsk";
 import type { Session } from "@core/sessions/session";
-import {
-  createMenuBar,
-  MENU_TIMES_MAX_AGE_MS,
-  type MenuBarTrayLike,
-} from "@desktop/menu-bar/menuBar";
+import { createMenuBar, MENU_TIMES_MAX_AGE_MS } from "@desktop/menu-bar/menuBar";
 import type { MenuBarActions, MenuBarSnapshot } from "@desktop/menu-bar/menuBarMenu";
 import type { MenuBarSettings, MenuBarSettingsStore } from "@desktop/menu-bar/menuBarSettings";
+import { FakeMenu, FakeTray } from "@tests/support/desktop/electronStandIns";
 import { makeSession } from "@tests/fixtures/session";
 
 const NOW = 1_700_000_600_000;
 
 type Image = "quiet" | "lit";
-
-/** A menu as `Menu.buildFromTemplate` makes it, which a test can open and close. */
-class FakeMenu {
-  private readonly listeners = new Map<string, () => void>();
-  constructor(readonly template: MenuItemConstructorOptions[]) {}
-  on(event: "menu-will-show" | "menu-will-close", listener: () => void): this {
-    this.listeners.set(event, listener);
-    return this;
-  }
-  open(): void {
-    this.listeners.get("menu-will-show")?.();
-  }
-  close(): void {
-    this.listeners.get("menu-will-close")?.();
-  }
-  get labels(): (string | undefined)[] {
-    return this.template.map((item) => (item.type === "separator" ? "-" : item.label));
-  }
-}
-
-/** The item in the menu bar, as `new Tray(image)` makes it, writing down what it is told. */
-class FakeTray implements MenuBarTrayLike<Image, FakeMenu> {
-  image: Image;
-  title = "";
-  toolTip = "";
-  menu: FakeMenu | null = null;
-  destroyed = false;
-  told: string[] = [];
-  private pointerOver: (() => void) | null = null;
-  constructor(image: Image) {
-    this.image = image;
-  }
-  setImage(image: Image): void {
-    this.told.push(`image ${image}`);
-    this.image = image;
-  }
-  setTitle(title: string, options?: { fontType?: string }): void {
-    this.told.push(`title "${title}" ${options?.fontType}`);
-    this.title = title;
-  }
-  setToolTip(toolTip: string): void {
-    this.told.push(`tooltip "${toolTip}"`);
-    this.toolTip = toolTip;
-  }
-  setContextMenu(menu: FakeMenu | null): void {
-    this.told.push("menu");
-    this.menu = menu;
-  }
-  on(_event: "mouse-enter", listener: () => void): this {
-    this.pointerOver = listener;
-    return this;
-  }
-  hover(): void {
-    this.pointerOver?.();
-  }
-  destroy(): void {
-    this.destroyed = true;
-  }
-}
 
 function memorySettings(show = true): MenuBarSettingsStore & { written: MenuBarSettings[] } {
   const written: MenuBarSettings[] = [];
@@ -83,12 +21,13 @@ function memorySettings(show = true): MenuBarSettingsStore & { written: MenuBarS
   };
 }
 
-function setUp(options: { show?: boolean; makeTray?: (image: Image) => FakeTray } = {}) {
-  const trays: FakeTray[] = [];
+function setUp(options: { show?: boolean; makeTray?: (image: Image) => FakeTray<Image> } = {}) {
+  const trays: FakeTray<Image>[] = [];
   const pending: (() => void)[] = [];
   let now = NOW;
   const actions: MenuBarActions = {
     openSession: vi.fn(),
+    answer: vi.fn(),
     openApp: vi.fn(),
     checkForUpdates: vi.fn(),
     openSettings: vi.fn(),
@@ -357,5 +296,93 @@ describe("the switch Show in menu bar", () => {
     expect(trays[0]?.destroyed).toBe(true);
     expect(settings.written).toEqual([]);
     expect(bar.status()).toEqual({ show: true });
+  });
+});
+
+describe("Deny and Allow in the menu", () => {
+  const REQUEST_ID = "0123456789abcdef0123456789abcdef";
+
+  function held(command: string, requestId = REQUEST_ID): Session {
+    const shown = shownAsk("Bash", { command });
+    if (shown === null) throw new Error("not held");
+    return waiting("checkout-flow", NOW - 60_000, {
+      ask: { requestId, ...shown, until: NOW + 300_000 },
+    });
+  }
+
+  test("a press takes the moment the menu, or the submenu it is in, was last shown", () => {
+    const { bar, tray, actions, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(held("npm test")));
+    const menu = tray()?.menu as FakeMenu;
+    menu.open();
+    tick(5_000);
+    const submenu = menu.openSubmenu("checkout-flow");
+    tick(300);
+    submenu.click("Allow");
+    expect(actions.answer).toHaveBeenCalledWith({
+      sessionId: "claude-code:checkout-flow",
+      name: "checkout-flow",
+      requestId: REQUEST_ID,
+      decision: "allow",
+      shownAt: NOW + 5_000,
+    });
+  });
+
+  test("a submenu's own opening counts, should Electron not tell the top menu of it", () => {
+    const { bar, tray, actions, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(held("npm test")));
+    const menu = tray()?.menu as FakeMenu;
+    menu.open();
+    tick(2_000);
+    const submenu = menu.items[1]?.submenu as FakeMenu;
+    submenu.open();
+    submenu.click("Deny");
+    expect(actions.answer).toHaveBeenCalledWith(expect.objectContaining({ shownAt: NOW + 2_000 }));
+  });
+
+  test("a menu never shown sends no moment, and a menu made again has its own", () => {
+    const { bar, tray, actions, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(held("npm test")));
+    const first = tray()?.menu as FakeMenu;
+    first.open();
+    first.close();
+    tick(1_000);
+    bar.update(snapshot(held("npm test", "f".repeat(32))));
+    const second = tray()?.menu as FakeMenu;
+    expect(second).not.toBe(first);
+    (second.items[1]?.submenu as FakeMenu).click("Deny");
+    expect(actions.answer).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requestId: "f".repeat(32), shownAt: null }),
+    );
+  });
+
+  test("the line of the last press is shown, and the menu is made again for it", () => {
+    const { bar, tray } = setUp();
+    bar.start();
+    bar.update(snapshot(held("npm test")));
+    const before = tray()?.menu;
+    bar.update({ ...snapshot(), note: "checkout-flow: Allowed from Agent Lookout." });
+    expect(tray()?.menu).not.toBe(before);
+    expect(tray()?.menu?.labels.slice(0, 2)).toEqual([
+      "Nothing needs you",
+      "checkout-flow: Allowed from Agent Lookout.",
+    ]);
+  });
+
+  test("reopen makes the menu afresh and opens it, but leaves one that is open alone", () => {
+    const { bar, tray } = setUp();
+    bar.reopen();
+    bar.start();
+    const menu = tray()?.menu as FakeMenu;
+    menu.open();
+    bar.reopen();
+    expect(tray()?.told).not.toContain("pop up");
+    menu.close();
+    bar.reopen();
+    expect(tray()?.menu).not.toBe(menu);
+    expect(tray()?.told.at(-1)).toBe("pop up");
   });
 });

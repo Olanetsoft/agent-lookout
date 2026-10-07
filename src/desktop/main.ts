@@ -14,7 +14,10 @@
 // the collector keeps watching, shows its own notifications and keeps the
 // count of sessions that need you on the Dock icon and in the menu bar, whose
 // menu lists them and opens one's details; clicking its Dock icon opens the
-// window again; Cmd+Q quits, and the collector stops.
+// window again; Cmd+Q quits, and the collector stops. A permission request
+// Agent Lookout holds can be answered from the app's own notification and
+// from the menu bar too, through the collector's own answer in this process
+// (`answers/desktopAnswers.ts`), with every check a press on the page makes.
 //
 // It asks the internet one thing: whether GitHub has a newer version of it, at
 // start and then about once a day while the switch in Settings is on, or when
@@ -37,6 +40,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  powerMonitor,
   protocol,
   session,
   shell,
@@ -48,9 +52,10 @@ import { APP_SCHEME, APP_START_URL } from "../core/appAddress.ts";
 import { UPDATES_HASH, type InstallRefusal } from "../core/appUpdate.ts";
 import { createCollector, type Collector } from "../collector/collector.ts";
 import { isQuietAt } from "../core/time-rules/quietHours.ts";
+import { createDesktopAnswers } from "./answers/desktopAnswers.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
 import { createMenuBar, type MenuBar } from "./menu-bar/menuBar.ts";
-import { menuBarActions } from "./menu-bar/menuBarActions.ts";
+import { menuBarActions, sessionAddress } from "./menu-bar/menuBarActions.ts";
 import { createMenuBarRoute } from "./menu-bar/menuBarRoute.ts";
 import { menuBarSettingsFile } from "./menu-bar/menuBarSettings.ts";
 import { applySessionRules } from "./navigation/sessionRules.ts";
@@ -268,6 +273,30 @@ function start(): void {
       // server has, the app has. Its own notifications are the app's, and its
       // warnings go to the app's log.
       const badge = createDockBadge((text) => app.dock?.setBadge(text));
+      // Deny and Allow in the app's own notifications and its menu bar. The
+      // answers are made first, and reach the notifier, the menu bar and the
+      // collector once each is made.
+      const answers = createDesktopAnswers({
+        collector: () => collector,
+        // Nothing is answered from the lock screen.
+        locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+        tell: (notice, sessionId) => notifier.tell(notice, sessionId),
+        menuChanged: (refused) => {
+          if (collector !== null) menuBar?.update(answers.forMenu(collector.poller.getSnapshot()));
+          if (refused) menuBar?.reopen();
+        },
+      });
+      const notifier = createDesktopNotifier({
+        notifications: {
+          isSupported: () => Notification.isSupported(),
+          create: (options) => new Notification(options),
+        },
+        // A wait's notification opens its session's details.
+        onClick: (sessionId) =>
+          showWindow(sessionId === undefined ? undefined : sessionAddress(sessionId)),
+        answers,
+        warn: log,
+      });
       // The count in the menu bar, and the sessions in its menu, each one
       // opening its details. Show in menu bar, in Settings, takes it away.
       const bar = createMenuBar({
@@ -279,6 +308,7 @@ function start(): void {
           activate: () => app.focus({ steal: true }),
           checkForUpdates,
           openSettings: () => showWindow(SETTINGS_URL),
+          answer: (press) => void answers.press({ ...press, from: "menu" }),
           quit: () => app.quit(),
         }),
         settings: menuBarSettingsFile(app.getPath("userData")),
@@ -288,7 +318,7 @@ function start(): void {
       collector = createCollector({
         version: app.getVersion(),
         env: process.env,
-        notifier: createDesktopNotifier({ onClick: () => showWindow(), warn: log }),
+        notifier,
         warn: log,
         // Each is told on its own, so one that fails leaves the other right.
         onSnapshot: (snapshot) => {
@@ -299,7 +329,11 @@ function start(): void {
           }
           // It never throws: the notice is shown inside a try of its own.
           foundNotices.quietNow(snapshot.quiet === true);
-          bar.update(snapshot);
+          // The notifications with buttons and the menu bar see each held request.
+          answers.follow(snapshot, (served, menu) => {
+            notifier.observe(served);
+            bar.update(menu);
+          });
         },
       });
       // The one thing the app asks the internet: whether GitHub has a newer

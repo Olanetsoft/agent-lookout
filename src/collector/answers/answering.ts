@@ -2,21 +2,38 @@ import type { IncomingMessage } from "node:http";
 
 import type { RuleAnswer } from "../../core/api.ts";
 import type { PermissionRule } from "../../core/permission-rules/permissionRules.ts";
-import type { AnsweringStatus, SessionsSnapshot } from "../../core/sessions/session.ts";
+import type {
+  AnswerDecision,
+  AnsweringStatus,
+  SessionsSnapshot,
+} from "../../core/sessions/session.ts";
 import type { EventStore } from "../eventStore.ts";
 import { refusal, type ApiAnswer } from "../handler.ts";
 import type { Poller } from "../poller.ts";
-import { answerRefusalFor, createAnswerRoute } from "./answerRoute.ts";
+import { answerRefusalFor, createAnswerer, createAnswerRoute } from "./answerRoute.ts";
 import { readAnswerSetup } from "./answerSettings.ts";
-import { createHeldAsks, type HeldAsks, type StatusReader } from "./heldAsks.ts";
+import {
+  createHeldAsks,
+  type AnswerOutcome,
+  type HeldAsks,
+  type StatusReader,
+} from "./heldAsks.ts";
 import { createHookSocket, type HookSocket } from "./hookSocket.ts";
 import { createRegistryStatus } from "./registryStatus.ts";
 import { createRuleAnswers } from "./ruleAnswers.ts";
 
 /**
+ * What became of an answer given in the host's own process, as the Mac app
+ * gives one: what the route would say, or `unavailable` while the socket
+ * could not be opened, so nothing is held.
+ */
+export type InProcessOutcome = AnswerOutcome | "unavailable";
+
+/**
  * Answering permission prompts from the dashboard, in one piece: the socket
  * the plugin's hook sends to, the requests held, the permission rules that
- * may answer them, and the route the page answers through. With
+ * may answer them, the route the page answers through, and the same answer
+ * in-process for the Mac app, which has no route of its own for it. With
  * `AGENT_LOOKOUT_ANSWER=off` there is none of it, and no rule answers
  * anything.
  */
@@ -41,6 +58,21 @@ export interface Answering {
    * checks gets 405, as it would with no route.
    */
   route?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers a held request from the host's own process, through the path the
+   * route takes, with every check it makes, and an event of it in the Events
+   * log. Undefined while answering is off.
+   */
+  answer?: (
+    sessionId: string,
+    requestId: string,
+    decision: AnswerDecision,
+  ) => Promise<InProcessOutcome>;
+  /**
+   * Reads each held request's registry file again now, as the half-second
+   * check does, so a request whose wait a poll has just seen is shown at once.
+   */
+  check(): Promise<void>;
   /** The requests the permission rules answered since start, newest first. None while answering is off. */
   ruleAnswers(): RuleAnswer[];
 }
@@ -79,6 +111,7 @@ export function createAnswering(options: AnsweringOptions): Answering {
       serve: (snapshot) => ({ ...snapshot, answering: off }),
       observe: () => {},
       answeredIn: () => new Set(),
+      check: async () => {},
       ruleAnswers: () => [],
     };
   }
@@ -108,6 +141,7 @@ export function createAnswering(options: AnsweringOptions): Answering {
   let problem: string | null = null;
   let listening = false;
   const answerRoute = createAnswerRoute({ poller, events, asks, now: options.now });
+  const answer = createAnswerer({ poller, events, asks, now: options.now });
 
   return {
     async start() {
@@ -144,6 +178,10 @@ export function createAnswering(options: AnsweringOptions): Answering {
         refusal(405, "This address only answers GET requests.", { Allow: "GET" })
       );
     },
+    // The same answer, from the host's own process. With no socket nothing is held.
+    answer: async (sessionId, requestId, decision) =>
+      problem === null ? answer(sessionId, requestId, decision) : "unavailable",
+    check: () => asks.check(),
     ruleAnswers: () => ruleAnswers.recent(),
   };
 }

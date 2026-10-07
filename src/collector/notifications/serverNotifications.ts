@@ -21,7 +21,7 @@ import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWo
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { waitBegan } from "../outbound/outboundTiming.ts";
 import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
-import type { SystemNotifier } from "./systemNotifier.ts";
+import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
 
 /**
  * The collector's own notifications: one for each event the person chose, a
@@ -145,9 +145,9 @@ export function createServerNotifications(
   /** What quiet hours hold back. */
   const quiet = createQuietHold();
 
-  function show(notice: Notice): void {
+  function show(notice: Notice, about?: NoticeAbout): void {
     try {
-      notifier.show(notice);
+      notifier.show(notice, about);
     } catch {
       // A notifier should not throw. One that does must not stop the poll.
     }
@@ -273,9 +273,15 @@ export function createServerNotifications(
           }
           continue;
         }
-        if (entry.kind === "change") show(changeNotice(entry.change));
-        else if (entry.kind === "reminder") {
-          show(reminderNotice(entry.reminder.session, at - entry.reminder.begunAt));
+        if (entry.kind === "change") {
+          const { change } = entry;
+          show(
+            changeNotice(change),
+            change.event === "needs-you" ? { sessionId: change.session.id } : undefined,
+          );
+        } else if (entry.kind === "reminder") {
+          const { session, begunAt } = entry.reminder;
+          show(reminderNotice(session, at - begunAt), { sessionId: session.id });
         } else show(summaryNotice(entry.summary.items));
       }
     },

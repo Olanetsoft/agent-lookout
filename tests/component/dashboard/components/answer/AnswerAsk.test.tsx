@@ -2,9 +2,9 @@ import { expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { ANSWER_SETTLE_MS } from "@core/answers/settle";
 import type { PermissionAsk, Session } from "@core/sessions/session";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
-import { ANSWER_SETTLE_MS } from "@dashboard/hooks/actions/useAnswer";
 import type { AnswerOutcome } from "@dashboard/lib/answer/answerRequest";
 import { makeSession } from "@tests/fixtures/session";
 import { startAtTop } from "@tests/support/browser/browser";

@@ -17,9 +17,19 @@ export { OSASCRIPT };
 export interface SystemNotifier {
   /**
    * Shows a notification on this machine. It never throws, and a notification
-   * that could not be shown is dropped without a word.
+   * that could not be shown is dropped without a word. `about` names the
+   * session of a wait, or of a reminder of one, for a host that can do more
+   * with that than show it: the Mac app opens that session's details on a
+   * click, and offers Deny and Allow for a permission request Agent Lookout
+   * holds. `osascript` takes no notice of it.
    */
-  show(notice: Notice): void;
+  show(notice: Notice, about?: NoticeAbout): void;
+}
+
+/** What a notification is about, beyond its words. */
+export interface NoticeAbout {
+  /** The session that waits. */
+  sessionId: string;
 }
 
 /** How long `osascript` gets. It normally answers in well under a second. */

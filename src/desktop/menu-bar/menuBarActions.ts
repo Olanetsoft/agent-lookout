@@ -4,13 +4,14 @@
 // forward if it was not, as the page's own links to a session do.
 //
 // A choice in the menu bar leaves the app where it was among the others, so
-// each item that shows something brings the app to the front first.
+// each item that shows something brings the app to the front first. Deny and
+// Allow show nothing, and leave it where it was.
 //
 // It imports nothing from Electron, so it is tested in plain Node.
 
 import { APP_START_URL } from "../../core/appAddress.ts";
 import { sessionHash } from "../../core/sessions/sessionHash.ts";
-import type { MenuBarActions } from "./menuBarMenu.ts";
+import type { MenuBarActions, MenuBarPress } from "./menuBarMenu.ts";
 
 /** The app's address of a session's details. */
 export function sessionAddress(sessionId: string): string {
@@ -26,6 +27,8 @@ export interface MenuBarActionsOptions {
   checkForUpdates: () => void;
   /** Settings…, as the app menu has it. */
   openSettings: () => void;
+  /** Deny or Allow for a held permission request, as the app answers one. */
+  answer: (press: MenuBarPress) => void;
   quit: () => void;
 }
 
@@ -38,6 +41,7 @@ export function menuBarActions(options: MenuBarActionsOptions): MenuBarActions {
     };
   return {
     openSession: (sessionId) => inFront(() => options.showWindow(sessionAddress(sessionId)))(),
+    answer: (press) => options.answer(press),
     openApp: inFront(() => options.showWindow()),
     checkForUpdates: inFront(options.checkForUpdates),
     openSettings: inFront(options.openSettings),

@@ -8,6 +8,7 @@ import {
   answeredEvent,
   answerIn,
   answerRefusalFor,
+  createAnswerer,
   createAnswerRoute,
   MAX_ANSWER_BODY_BYTES,
 } from "@collector/answers/answerRoute";
@@ -75,8 +76,14 @@ function routeOver(sessions: Session[] = [waiting()], outcome: AnswerOutcome = "
   const added: SessionEvent[] = [];
   const events = { add: vi.fn((more: readonly SessionEvent[]) => added.push(...more)) };
   const asks = { answer: vi.fn(async () => outcome) };
-  const route = createAnswerRoute({ poller, events, asks, now: () => 1_700_000_000_000 });
-  return { route, poller, added, asks };
+  const options = { poller, events, asks, now: () => 1_700_000_000_000 };
+  return {
+    route: createAnswerRoute(options),
+    answer: createAnswerer(options),
+    poller,
+    added,
+    asks,
+  };
 }
 
 describe("answerRefusalFor, as the jump and stop routes' checks with its own action", () => {
@@ -290,4 +297,26 @@ test("the event holds the decision and nothing of what was asked", () => {
   );
   expect(JSON.stringify(event)).not.toContain("npm test");
   expect(event).toMatchObject({ kind: "answered", decision: "deny", by: "agent-lookout" });
+});
+
+describe("the one path an answer takes, from the page or from the Mac app", () => {
+  test("answers, keeps the event of an answer by Agent Lookout and reads the sessions again, as the route does", async () => {
+    const { answer, asks, added, poller } = routeOver();
+    expect(await answer(ID, REQUEST_ID, "deny")).toBe("answered");
+    expect(asks.answer).toHaveBeenCalledWith(ID, REQUEST_ID, "deny");
+    expect(added).toEqual([
+      expect.objectContaining({ kind: "answered", by: "agent-lookout", decision: "deny" }),
+    ]);
+    expect(poller.pollOnce).toHaveBeenCalled();
+  });
+
+  test("a session not listed holds no request, and a refusal keeps no event", async () => {
+    const unlisted = routeOver([]);
+    expect(await unlisted.answer(ID, REQUEST_ID, "allow")).toBe("no-ask");
+    expect(unlisted.asks.answer).not.toHaveBeenCalled();
+    const gone = routeOver(undefined, "gone");
+    expect(await gone.answer(ID, REQUEST_ID, "allow")).toBe("gone");
+    expect(gone.added).toEqual([]);
+    expect(gone.poller.pollOnce).not.toHaveBeenCalled();
+  });
 });

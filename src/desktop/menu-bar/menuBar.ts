@@ -11,6 +11,11 @@
 // snapshot that came meanwhile is shown once it has closed, after the item
 // chosen in it, if any, has been told.
 //
+// Each menu made remembers when it was last shown, its own opening or a
+// submenu's, and a press of Deny or Allow in it takes that time with it, so
+// none is taken in the first second what it answers was shown. A press that
+// sent nothing opens the menu again (`reopen`), with a line that says why.
+//
 // The switch Show in menu bar, in Settings, takes the item away and puts it
 // back, and is remembered in `menu-bar-state.json` (`menuBarSettings.ts`). It
 // reads off while the item could not be put there.
@@ -37,6 +42,8 @@ import type { MenuBarSettingsStore } from "./menuBarSettings.ts";
 export interface MenuBarMenuLike {
   on(event: "menu-will-show", listener: () => void): unknown;
   on(event: "menu-will-close", listener: () => void): unknown;
+  /** Its items, each with its submenu when it has one. */
+  readonly items?: readonly { readonly submenu?: MenuBarMenuLike | null }[];
 }
 
 /** What the item needs of Electron's `Tray`. */
@@ -45,6 +52,8 @@ export interface MenuBarTrayLike<Image, Menu extends MenuBarMenuLike> {
   setTitle(title: string, options?: TitleOptions): void;
   setToolTip(toolTip: string): void;
   setContextMenu(menu: Menu | null): void;
+  /** Opens its menu, as a click on it does. */
+  popUpContextMenu(): void;
   on(event: "mouse-enter", listener: () => void): unknown;
   destroy(): void;
 }
@@ -74,6 +83,8 @@ export interface MenuBar {
   status(): MenuBarStatus;
   /** Turns the switch on or off, remembers it, puts the item in or takes it out, and says which it is. */
   setShown(show: boolean): MenuBarStatus;
+  /** Opens the menu again, made afresh, after a press in it that sent nothing. */
+  reopen(): void;
   /** Takes the item out of the menu bar, as the app quits. */
   stop(): void;
 }
@@ -105,11 +116,21 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
   function setMenu(): void {
     if (tray === null) return;
     const at = now();
-    const menu = options.buildMenu(menuBarTemplate(latest, at, options.actions));
+    /** When this menu, or a submenu of it, was last shown. */
+    let shownAt: number | null = null;
+    const menu = options.buildMenu(menuBarTemplate(latest, at, options.actions, () => shownAt));
     built = { key: menuBarKey(latest), at };
     menu.on("menu-will-show", () => {
       open = true;
+      shownAt = now();
     });
+    // Electron tells the top menu of a submenu's opening too, but a
+    // submenu's own is heard as well, should that ever change.
+    for (const item of menu.items ?? []) {
+      item.submenu?.on("menu-will-show", () => {
+        shownAt = now();
+      });
+    }
     menu.on("menu-will-close", () => {
       open = false;
       if (!behind) return;
@@ -183,7 +204,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       if (show) putIn();
     },
     update(snapshot) {
-      latest = { sessions: snapshot.sessions, sources: snapshot.sources };
+      latest = { sessions: snapshot.sessions, sources: snapshot.sources, note: snapshot.note };
       refresh();
     },
     status: () => ({ show: show && !missing }),
@@ -193,6 +214,16 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
       if (show) putIn();
       else takeOut();
       return { show: show && !missing };
+    },
+    reopen() {
+      if (tray === null || open) return;
+      const current = tray;
+      setMenu();
+      try {
+        current.popUpContextMenu();
+      } catch {
+        // The line is there the next time the menu opens.
+      }
     },
     stop: takeOut,
   };
