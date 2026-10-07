@@ -475,6 +475,7 @@ body {
 h1,
 h2,
 h3,
+h4,
 p,
 ul,
 ol,
@@ -489,6 +490,7 @@ pre {
 h1,
 h2,
 h3,
+h4,
 strong {
   font-weight: 600;
 }
@@ -642,7 +644,7 @@ pre {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* The ground keeps still. The one thing that moves on this page is the lamp. */
+/* The ground keeps still. What moves on this page is the lamp, the tour and the cards coming in. */
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
@@ -1793,13 +1795,6 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
 .fact-shows {
   grid-column: 8 / 13;
 }
-.fact-sends {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  column-gap: 48px;
-  align-items: center;
-}
 
 /* Fact one: the sessions it found, drawn as the app lists them. */
 .found {
@@ -1939,37 +1934,27 @@ html:not(.js) :is(.tour-steps, .tour-controls, .tour-line) {
   font-size: 14px;
 }
 
-/* Fact three: four counts in a row with no boxes, and every one is nought. */
-.counts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 20px 16px;
+/* Under the two facts, one slim band: what it sends, which by default is nothing. */
+.sends {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 24px 16px 20px;
 }
-.counts li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 12px;
-}
-.counts .figure {
-  grid-row: 1 / 3;
-  align-self: center;
-  font-size: 28px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-.counts .label {
-  align-self: end;
-  font-size: 14px;
-  font-weight: 600;
+.sends h3 {
+  font-size: 17px;
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
-.counts .note {
-  align-self: start;
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--ink-muted);
+.sends p {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.sends .link {
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------- install and the rest */
@@ -2093,28 +2078,158 @@ h2 {
   text-wrap: pretty;
 }
 
-/* What it does today: a sheet of plain rows on the ground. */
-.sheet {
-  border-top: 1px solid var(--rule);
+/*
+ * What it does today: four groups of small cards, each a link to its part of
+ * the guide. The whole card is the link; its ring is drawn on the card.
+ */
+.today {
+  margin-top: var(--section);
 }
-.sheet > div {
-  display: grid;
-  grid-template-columns: 196px minmax(0, 1fr);
-  column-gap: var(--gap);
-  padding: 15px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-.sheet dt {
+.today-head p {
+  max-width: 62ch;
+  margin-top: 14px;
   color: var(--ink-secondary);
-}
-.sheet dd {
-  color: var(--ink);
   text-wrap: pretty;
 }
-/* Beside its heading, the first row stands on the heading's baseline. */
-@media (width >= 901px) {
-  .sheet > div:first-child {
-    padding-top: 12px;
+.today-groups {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 36px var(--gap);
+  align-items: start;
+  margin-top: 36px;
+}
+.today-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.today-title,
+.today-title h3 {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+}
+.tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-capsule);
+  background-color: var(--fill-quiet);
+  box-shadow: inset 0 0 0 1px var(--control-rim);
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+.today-note {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+.today-cards {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.today-card {
+  padding: 16px 18px;
+  border-radius: var(--radius-inner);
+  transition: background-color 120ms;
+}
+.today-card:hover {
+  background-color: var(--glass-raised);
+}
+.today-card:has(a:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.today-card h4 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.3;
+  letter-spacing: -0.006em;
+}
+.today-card a {
+  outline: none;
+  text-decoration: none;
+}
+/* The whole card is the link. */
+.today-card a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: inherit;
+}
+/* Where it goes, shown under the pointer. */
+.today-card h4::after {
+  content: "↗";
+  content: "↗" / "";
+  flex: none;
+  color: var(--ink-muted);
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.today-card:hover h4::after {
+  opacity: 1;
+}
+.today-card p {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+  text-wrap: pretty;
+}
+.today-card code {
+  font-size: 13px;
+  color: var(--ink);
+}
+.today-foot {
+  max-width: 80ch;
+  margin-top: 28px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+.today-foot .link {
+  color: var(--ink-secondary);
+}
+
+/* The cards rise into place as they come into view, where the browser ties that to the scroll. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .today-card {
+      animation: today-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 80%;
+    }
+  }
+  /* On a phone each group is one card, and the card rises whole. */
+  @media (prefers-reduced-motion: no-preference) and (width < 761px) {
+    .today-card {
+      animation: none;
+    }
+    .today-cards {
+      animation: today-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+  }
+}
+@keyframes today-in {
+  from {
+    translate: 0 20px;
+    scale: 0.98;
   }
 }
 
@@ -2206,12 +2321,9 @@ body:has(> .lost) {
   }
 }
 
-/* Under 1101px the four counts become two rows of two. */
+/* Under 1101px the groups of what it does today take two columns. */
 @media (width < 1101px) {
-  .fact-sends {
-    column-gap: 40px;
-  }
-  .counts {
+  .today-groups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .bar-status span {
@@ -2251,14 +2363,6 @@ body:has(> .lost) {
   .fact-shows {
     grid-column: 1 / -1;
   }
-  .fact-sends {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 28px;
-  }
-  .counts {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   .split .intro,
   .split .body {
     grid-column: 1 / -1;
@@ -2357,10 +2461,6 @@ body:has(> .lost) {
     color: var(--ink-muted);
   }
 
-  .counts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .steps {
     padding: 2px var(--pad);
   }
@@ -2377,14 +2477,70 @@ body:has(> .lost) {
     font-size: 12px;
   }
 
-  .sheet > div {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 2px;
-    padding: 13px 0;
+  .sends {
+    align-items: start;
+    gap: 14px;
+    padding: 16px 18px 16px 16px;
   }
-  .sheet dt {
-    font-size: 13px;
-    color: var(--ink-secondary);
+  .sends svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* One column, and each group is one card, its rows split by a hairline. Each row is still a link. */
+  .today-groups {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .today-cards {
+    --rim-paint: var(--rim);
+    position: relative;
+    isolation: isolate;
+    gap: 0;
+    padding-block: 2px;
+    border-radius: var(--radius-panel);
+    background-color: var(--glass-card);
+    box-shadow: var(--elev-2);
+  }
+  .today-cards::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--rim-paint);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+  .today-card {
+    padding: 14px 18px;
+    border-radius: 0;
+    background-color: transparent;
+    box-shadow: none;
+  }
+  .today-card::before,
+  .today-card::after {
+    display: none;
+  }
+  .today-card + .today-card {
+    border-top: 1px solid var(--hairline);
+  }
+  .today-card:first-child {
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+  .today-card:last-child {
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+  }
+  .today-card:has(a:focus-visible) {
+    outline-offset: -2px;
   }
 
   .closing {

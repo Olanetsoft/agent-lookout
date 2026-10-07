@@ -6,7 +6,7 @@
     <title>Agent Lookout: your agent sessions on one page</title>
     <meta
       name="description"
-      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#090908" media="(prefers-color-scheme: dark)" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Agent Lookout" />
     <meta
       property="og:description"
-      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta property="og:url" content="https://agent-lookout.vercel.app/" />
     <meta property="og:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Agent Lookout" />
     <meta
       name="twitter:description"
-      content="Agent Lookout puts the Claude Code, Codex and Antigravity CLI sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
+      content="Agent Lookout puts the Claude Code and Codex sessions running on your Mac, Linux or Windows computer, and those of any agent that writes a status file, on one page, and shows which Claude Code sessions are waiting for you and what each is asking. Free and open source."
     />
     <meta name="twitter:image" content="https://agent-lookout.vercel.app/assets/social-card.png" />
     <meta
@@ -131,9 +131,8 @@
 
         <div class="pitch">
           <h1>
-            <span>Agent Lookout</span> puts every Claude Code, Codex and Antigravity CLI session on
-            your computer on one page, and shows which Claude Code sessions are waiting for you and
-            what each one is asking.
+            <span>Agent Lookout</span> puts every Claude Code and Codex session on your computer on
+            one page, and shows which Claude Code session needs you and what it is asking.
           </h1>
           <div class="actions">
             <a class="btn btn-solid" href="https://github.com/Olanetsoft/agent-lookout"
@@ -481,11 +480,8 @@
         <article class="fact fact-finds glass-card">
           <h3>It finds the sessions already running</h3>
           <p>
-            It reads the list of sessions Claude Code keeps, the session files Codex saves and the
-            transcripts the Antigravity CLI keeps. A session in a terminal, in VS Code or in a
-            desktop app appears with no setup, and any other agent can show its sessions by writing
-            a small status file. Another machine’s sessions can be read over SSH too, from the Agent
-            Lookout running there. Agent Lookout starts nothing.
+            It reads what Claude Code and Codex already keep, so running sessions appear with no
+            setup. Agent Lookout starts nothing.
           </p>
 
           <div class="found">
@@ -566,15 +562,8 @@
         <article class="fact fact-shows glass-raised">
           <h3>It shows which one needs you</h3>
           <p>
-            A Claude Code session that stops for permission or asks you a question moves to the top
-            of the page, with its reason, what it is asking and a timer. With the Agent Lookout
-            plugin installed in Claude Code, a permission prompt shows its whole command, with Deny
-            and Allow. The browser tab counts the sessions that are waiting, as in
-            <code>(1) Agent Lookout</code>, and so do the Mac app’s menu bar and Dock icon. Once you
-            turn notifications on, your browser or your Mac tells you when one starts waiting, and
-            in the Mac app the notification and the menu bar have Deny, and Allow when the whole
-            command shows. An Antigravity CLI session moves to the top while agy asks you to approve
-            a command.
+            A Claude Code session that stops to ask moves to the top, with what it is asking and a
+            timer, and the lamp lights on every view.
           </p>
 
           <div class="lamp-pair">
@@ -609,52 +598,29 @@
 
           <p class="limit">
             Codex does not record that it is waiting, so a Codex session shows as working, idle or
-            finished, and so does an Antigravity CLI session that asks you a question.
+            finished.
           </p>
         </article>
 
-        <article class="fact fact-sends glass-card">
+        <article class="sends glass-chrome">
+          <svg class="lookout" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+            <path class="sea" d="M3.63 20a13 13 0 0 0 24.74 0z" />
+            <circle cx="16" cy="16" r="13" />
+            <path d="M3.63 20h24.74" />
+            <circle class="lamp" cx="20.6" cy="15.1" r="2.7" />
+          </svg>
           <div>
-            <h3>By default it sends nothing anywhere</h3>
+            <h3>By default, it sends nothing anywhere.</h3>
             <p>
-              The one exception is the Mac app, which asks GitHub about once a day whether a newer
-              version is out, sends nothing about your sessions, and stops asking when you turn that
-              off in its Settings. Email, a Slack-compatible webhook and phone pushes through ntfy
-              or Pushover are off until you set them up, and then send only what
+              No telemetry, no analytics, no account. Only the Mac app checks GitHub for updates,
+              about once a day, and you can turn that off.
               <a
                 class="link"
                 href="https://github.com/Olanetsoft/agent-lookout/blob/main/PRIVACY.md"
-                >PRIVACY.md</a
+                >What it reads and runs</a
               >
-              lists. Pull requests are off too, and once on, your own <code>gh</code> sends GitHub
-              the names of the repository and branch. Another machine is read only once you name it,
-              through your own <code>ssh</code>. It does run Claude Code’s own listing command,
-              which may contact Anthropic the way Claude Code normally does. PRIVACY.md lists
-              everything it reads and runs.
             </p>
           </div>
-          <ul class="counts">
-            <li>
-              <span class="figure">0</span>
-              <span class="label">Telemetry</span>
-              <span class="note">none sent</span>
-            </li>
-            <li>
-              <span class="figure">0</span>
-              <span class="label">Analytics</span>
-              <span class="note">none collected</span>
-            </li>
-            <li>
-              <span class="figure">0</span>
-              <span class="label">Remote fonts</span>
-              <span class="note">none fetched</span>
-            </li>
-            <li>
-              <span class="figure">0</span>
-              <span class="label">Update checks</span>
-              <span class="note">none outside the Mac app</span>
-            </li>
-          </ul>
         </article>
       </section>
 
@@ -683,8 +649,7 @@
                   <a class="link" href="https://github.com/Olanetsoft/agent-lookout/releases/latest"
                     >latest release</a
                   >
-                  on GitHub, open it and drag Agent Lookout to Applications. It needs macOS 13
-                  Ventura or later, and no Node.js.
+                  on GitHub, open it and drag Agent Lookout to Applications. It needs no Node.js.
                 </p>
                 <p>
                   The first time you open it, macOS says “Agent Lookout” Not Opened: press Done,
@@ -697,9 +662,7 @@
               <span class="n" aria-hidden="true">2</span>
               <div>
                 <h3>Start it with one command</h3>
-                <p>
-                  You need Node.js 22.12 or newer, and Claude Code, Codex or the Antigravity CLI.
-                </p>
+                <p>You need Node.js 22.12 or newer, and Claude Code, Codex or both.</p>
                 <pre><code><span>npx agent-lookout</span></code></pre>
                 <p>
                   The first time, npm asks <code>Ok to proceed? (y)</code>: press Enter, and it
@@ -766,206 +729,244 @@
         </div>
       </section>
 
-      <section class="split" aria-labelledby="today-title">
-        <div class="intro">
+      <section class="today" aria-labelledby="today-title">
+        <div class="today-head">
           <h2 id="today-title">What it does today</h2>
           <p>
-            It watches your sessions, here and on another machine over SSH, and notifies you if you
-            ask it to. For Claude Code it also takes you to a session, stops one when you press Stop
-            and confirm, copies the command that resumes one that has ended, and answers a
-            permission prompt when you press Allow or Deny, or by a permission rule you set.
+            It watches your sessions. For Claude Code it also acts, only when you press a button or
+            set a rule.
           </p>
         </div>
 
-        <div class="body">
-          <dl class="sheet">
-            <div>
-              <dt>Runs on</dt>
-              <dd>
-                macOS, Linux and Windows, as a local page in your browser, and on a Mac as an app
-                that updates itself and counts in the menu bar the sessions that need you. Linux and
-                Windows are checked in CI, not yet by a person at a desktop. On Windows, Stop, Allow
-                and Deny, permission rules, Resume, Jump to tmux, Terminal or iTerm2, and
-                notifications with no tab open are not offered:
-                <a
-                  class="link"
-                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#on-windows"
-                  >On Windows</a
-                >
-                says why.
-              </dd>
+        <div class="today-groups">
+          <div class="today-group">
+            <h3 class="today-title">What it watches</h3>
+            <ul class="today-cards">
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#how-it-finds-sessions"
+                    >Claude Code and Codex</a
+                  >
+                </h4>
+                <p>Sessions already running appear with no setup. It starts nothing.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#your-own-agents"
+                    >Your own agents</a
+                  >
+                </h4>
+                <p>Any agent that writes a small status file appears beside them.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#sessions"
+                    >Branches and boards</a
+                  >
+                </h4>
+                <p>
+                  Each session’s git branch, as a list, by repository or as a board, with a search.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#pull-requests"
+                    >Pull requests</a
+                  >
+                </h4>
+                <p>
+                  Once on, each branch’s pull request and its checks, through your own
+                  <code>gh</code>.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#history"
+                    >History</a
+                  >
+                </h4>
+                <p>The Events log and charts are kept for 8 days, across restarts.</p>
+              </li>
+            </ul>
+          </div>
+          <div class="today-group">
+            <h3 class="today-title">How it tells you</h3>
+            <ul class="today-cards">
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#needs-you"
+                    >Needs you</a
+                  >
+                </h4>
+                <p>A Claude Code session that stops to ask moves to the top, with a timer.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#notifications"
+                    >Notifications</a
+                  >
+                </h4>
+                <p>Off until you turn them on. Then your browser, or your Mac, tells you.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#email"
+                    >Email and webhook</a
+                  >
+                </h4>
+                <p>
+                  An email, or a post to a Slack-compatible webhook, once a session has waited a
+                  minute. Off until you set it up.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#time-rules"
+                    >Time rules</a
+                  >
+                </h4>
+                <p>
+                  Reminders of long waits, when idle turns stale, and quiet hours. Off until you
+                  turn them on.
+                </p>
+              </li>
+            </ul>
+          </div>
+          <div class="today-group">
+            <div class="today-title">
+              <h3>What you can do</h3>
+              <span class="tag">Claude Code</span>
             </div>
-            <div>
-              <dt>Finds</dt>
-              <dd>
-                Claude Code, Codex and Antigravity CLI sessions already running, in a terminal, in
-                VS Code or in a desktop app, and the sessions of any agent that writes a
-                <a
-                  class="link"
-                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#your-own-agents"
-                  >status file</a
-                >.
-              </dd>
-            </div>
-            <div>
-              <dt>Other machines</dt>
-              <dd>
-                Another computer’s sessions, beside this one’s, once you name it in
-                <code>AGENT_LOOKOUT_REMOTES</code>. It needs Agent Lookout running there, and is
-                read through your own <code>ssh</code>. Its sessions have no Jump, Stop, Allow or
-                Deny.
-              </dd>
-            </div>
-            <div>
-              <dt>Claude Code</dt>
-              <dd>
-                Shows which sessions are waiting for you, why and for how long, and what each one is
-                asking, such as <code>Run: npm test</code>.
-              </dd>
-            </div>
-            <div>
-              <dt>Codex</dt>
-              <dd>
-                Shows a session as working, idle or finished. Codex does not record that it is
-                waiting, so Agent Lookout cannot show it. It has been checked with the Codex desktop
-                app, and not yet with the Codex CLI or its IDE extension.
-              </dd>
-            </div>
-            <div>
-              <dt>Antigravity CLI</dt>
-              <dd>
-                Shows a session as working, idle, failed or finished, named by the title agy gives
-                it, and as waiting for you while agy asks you to approve a command. A question it
-                asks you shows as working. Built from agy 1.3.1 and checked against one
-                conversation.
-              </dd>
-            </div>
-            <div>
-              <dt>Sessions</dt>
-              <dd>
-                Each one’s git branch, grouped by repository if you choose, as a list or a board,
-                with a search (<code>/</code>, or <code>⌘K</code> on a Mac and
-                <code>Ctrl+K</code> elsewhere) and a page of details for each. With pull requests
-                on, the details show the branch’s pull request and its checks, through your own
-                <code>gh</code>.
-              </dd>
-            </div>
-            <div>
-              <dt>History</dt>
-              <dd>
-                The Events log and the charts are kept on this computer across restarts, for 8 days,
-                and Settings clears them. Waits says how long sessions waited on you today and over
-                7 days.
-              </dd>
-            </div>
-            <div>
-              <dt>Notifications</dt>
-              <dd>
-                Off until you turn them on. Then your browser tells you when a session starts
-                waiting, and, as you choose, when one finishes, fails or ends. On a Mac, Agent
-                Lookout tells you itself once the tab is closed. Nothing is sent off your computer.
-              </dd>
-            </div>
-            <div>
-              <dt>Time rules</dt>
-              <dd>
-                Off until you turn them on in Settings. One reminds you of a long wait, and again
-                every few minutes while it goes on if you choose, one sets how long a session is
-                idle before it is stale, and quiet hours hold notifications, emails and posts back,
-                with one summary when they end.
-              </dd>
-            </div>
-            <div>
-              <dt>Email, webhook and phone</dt>
-              <dd>
-                Off until you set them up. Then an email, a post to a Slack-compatible webhook, or a
-                push to your phone through ntfy or Pushover, when a session has waited a minute,
-                and, if you choose, when one finishes, fails or ends. What the session is asking
-                goes in only if you turn that on too.
-              </dd>
-            </div>
-            <div>
-              <dt>Jump</dt>
-              <dd>
-                Opens a Claude Code session that runs in VS Code, selects its pane when it runs
-                inside tmux, and brings its tab forward in Terminal or iTerm2 (macOS asks once
-                whether that is allowed). Codex and Antigravity CLI sessions, sessions in Claude
-                Code’s desktop app and sessions in other terminals outside tmux have no Jump button.
-              </dd>
-            </div>
-            <div>
-              <dt>From a terminal</dt>
-              <dd>
-                <code>agent-lookout status</code> prints which sessions need you, and
-                <code>agent-lookout mcp</code> lets an agent ask the same. Both only read.
-              </dd>
-            </div>
-            <div>
-              <dt>Stop</dt>
-              <dd>
-                Stop, in a Claude Code session’s details, ends its process, and End all… ends the
-                sessions left running, idle a day or more or as long as the idle rule says. Each
-                asks first. Agent Lookout never stops a session on its own, nor one in Claude Code’s
-                desktop app. The conversation is kept.
-              </dd>
-            </div>
-            <div>
-              <dt>Resume</dt>
-              <dd>
-                Copies the command that continues a Claude Code session that has ended,
-                <code>cd</code> to its folder and <code>claude --resume</code> with its ID, for you
-                to run in a terminal. A background job that finished, failed or was stopped has it,
-                and so does a session you stop with Stop, in its details. Agent Lookout runs
-                nothing, and a session still running has no Resume.
-              </dd>
-            </div>
-            <div>
-              <dt>Allow and Deny</dt>
-              <dd>
-                With the
-                <a
-                  class="link"
-                  href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/INSTALL.md#claude-code-plugin"
-                  >Agent Lookout plugin</a
-                >
-                installed in Claude Code, a session waiting for permission shows Allow and Deny on
-                the dashboard, and in the Mac app on its notification and in its menu bar. The whole
-                command is shown first, every line, and an edit, a plan, a question, or a request
-                that cannot be shown whole can only be denied there. The prompt in the session still
-                works, and whichever you answer first wins. Agent Lookout answers only when you
-                press one or a permission rule you set matches, rewrites no command and saves no
-                rule in Claude Code.
-              </dd>
-            </div>
-            <div>
-              <dt>Permission rules</dt>
-              <dd>
-                None until you add one in Settings. With the plugin installed, a rule decides how a
-                kind of Claude Code permission prompt is answered: always allow, always ask or
-                always deny, by tool and, for Bash, by command, such as <code>npm test:*</code>. An
-                allow rule answers only what you could allow by hand, for Bash one plain command,
-                and never one that begins with a program on Agent Lookout’s list of those that run
-                another command, send requests or run the code they are given, such as
-                <code>sudo</code>, <code>curl</code> or <code>python</code>. The Events log records
-                each answer.
-              </dd>
-            </div>
-            <div>
-              <dt>Licence</dt>
-              <dd>MIT, free and open source.</dd>
-            </div>
-            <div>
-              <dt>Coming next</dt>
-              <dd>
-                The
-                <a class="link" href="https://github.com/Olanetsoft/agent-lookout/milestones"
-                  >milestones</a
-                >
-                on GitHub say what is being built, in order.
-              </dd>
-            </div>
-          </dl>
+            <p class="today-note">
+              On Windows, only Jump to VS Code.
+              <a
+                class="link"
+                href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#on-windows"
+                >Why</a
+              >
+            </p>
+            <ul class="today-cards">
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#answer-a-permission-prompt"
+                    >Allow or Deny</a
+                  >
+                </h4>
+                <p>With the plugin, see the whole command and answer from the page.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#permission-rules"
+                    >Permission rules</a
+                  >
+                </h4>
+                <p>
+                  Always allow, ask or deny a kind of prompt, such as <code>npm test:*</code>. None
+                  until you add one.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#jump"
+                    >Jump</a
+                  >
+                </h4>
+                <p>
+                  Takes you to the session in VS Code, its tmux pane, or its Terminal or iTerm2 tab.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#stop-a-session"
+                    >Stop</a
+                  >
+                </h4>
+                <p>Ends a session once you confirm. Its conversation is kept.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#resume-a-session"
+                    >Resume</a
+                  >
+                </h4>
+                <p>
+                  Copies the command that continues a finished background job or a session you
+                  stopped.
+                </p>
+              </li>
+            </ul>
+          </div>
+          <div class="today-group">
+            <h3 class="today-title">Where it runs</h3>
+            <ul class="today-cards">
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#desktop-app"
+                    >Mac app</a
+                  >
+                </h4>
+                <p>Counts waiting sessions in the menu bar and the Dock, and updates itself.</p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#another-machine-over-ssh"
+                    >Another machine</a
+                  >
+                </h4>
+                <p>
+                  Once you name it, its sessions show beside yours, through your own
+                  <code>ssh</code>.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#in-the-terminal"
+                    >From a terminal</a
+                  >
+                </h4>
+                <p>
+                  <code>agent-lookout status</code> prints who needs you, and
+                  <code>agent-lookout mcp</code> lets an agent ask. Both only read.
+                </p>
+              </li>
+              <li class="today-card glass-card">
+                <h4>
+                  <a
+                    href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#on-linux"
+                    >Linux and Windows</a
+                  >
+                </h4>
+                <p>In your browser. Checked in CI, not yet by a person at a desktop.</p>
+              </li>
+            </ul>
+          </div>
         </div>
+
+        <p class="today-foot">
+          Codex shows as working, idle or finished: it does not record when it waits. Checked with
+          the Codex desktop app, not yet its CLI or IDE extension.
+          <a
+            class="link"
+            href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#what-it-does-not-do-yet"
+            >What it does not do yet</a
+          >
+        </p>
       </section>
 
       <aside class="closing glass-chrome" aria-label="Agent Lookout on GitHub">
