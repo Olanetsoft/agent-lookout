@@ -91,6 +91,16 @@ describe("the count beside the icon", () => {
     ).toBe("3");
   });
 
+  test("leaves out a prompt already answered, by a press or a rule, while Claude Code's file still says it waits", () => {
+    const answered = waiting("answered-one", MINUTE, { answered: true });
+    expect(menuBarTitle(snapshot([answered]))).toBe("");
+    expect(menuBarToolTip(snapshot([answered]))).toBe("Agent Lookout");
+    expect(menuBarTitle(snapshot([answered, waiting("a", SECOND)]))).toBe("1");
+    expect(menuBarToolTip(snapshot([answered, waiting("a", SECOND)]))).toBe(
+      "Agent Lookout: 1 session needs you",
+    );
+  });
+
   test("is said in the tooltip too", () => {
     expect(menuBarToolTip(null)).toBe("Agent Lookout");
     expect(menuBarToolTip(snapshot([]))).toBe("Agent Lookout");
@@ -161,6 +171,25 @@ describe("the menu", () => {
       "Waiting for permission",
       "Waiting for you",
     ]);
+  });
+
+  test("lists no session whose prompt was answered, and with only such, says Nothing needs you", () => {
+    const answered = waiting("answered-one", 2 * MINUTE, { answered: true });
+    const only = menuBarTemplate(snapshot([answered]), NOW, actions());
+    expect(labels(only)[0]).toBe("Nothing needs you");
+    expect(labels(only).join(" ")).not.toContain("answered-one");
+
+    const both = menuBarTemplate(
+      snapshot([answered, waiting("billing-webhooks", 63 * SECOND)]),
+      NOW,
+      actions(),
+    );
+    expect(labels(both).slice(0, 2)).toEqual(["1 session needs you", "billing-webhooks · 1m 03s"]);
+    expect(labels(both).join(" ")).not.toContain("answered-one");
+    // What the menu shows changes once the answer is taken, so it is made again.
+    expect(menuBarKey(snapshot([answered]))).not.toBe(
+      menuBarKey(snapshot([waiting("answered-one", 2 * MINUTE)])),
+    );
   });
 
   test("with nothing waiting, says so, and has the app's own items", () => {

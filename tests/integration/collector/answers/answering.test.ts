@@ -585,6 +585,25 @@ describe("a wait whose request was answered is over at once, on every channel", 
     },
   );
 
+  test.each(["allow", "deny"] as const)(
+    "the page's read straight after a press of %s finds the wait over, though Claude Code's file still says it waits",
+    async (decision) => {
+      const server = await everyChannel("waiting");
+      const asked = hook(server.socketPath);
+      await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+        timeout: 5_000,
+      });
+      const before = await server.session();
+      expect(before?.status).toBe("needs-you");
+      expect(before?.answered).toBeUndefined();
+
+      expect((await server.answer(before?.ask?.requestId ?? "", decision)).status).toBe(200);
+      // The test asks for no poll: the answer's reply waited for one.
+      expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+      expect((await asked).code).toBe(0);
+    },
+  );
+
   test("a session that still reads as in the wait it was answered in, ten seconds on, needs you again, and is told of then", async () => {
     const server = await everyChannel("busy", [ALLOW_TESTS]);
     await server.rewrite("waiting");

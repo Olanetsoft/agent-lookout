@@ -637,6 +637,60 @@ test("stale rows and endings are said in words, with their own mark, and are qui
   }
 });
 
+test("a session whose prompt was answered is listed with the working ones, as Answered with the answered mark and no time, and nothing warm", async () => {
+  // Its file still says it waits, though Allow, Deny or a rule answered it a moment ago.
+  const answered = session(8, {
+    name: "answered-one",
+    surface: "vscode",
+    status: "needs-you",
+    waitingReason: "permission",
+    answered: true,
+    statusSince: NOW - 3 * MINUTE,
+    links: { open: jumpLink(8) },
+  });
+  const screen = await render(
+    <SessionsCard sessions={[answered, ...MIXED]} sources={[SOURCE_OK]} now={NOW} />,
+  );
+
+  const row = rowOf(screen.container, "answered-one");
+  expect(row.closest('[data-slot="session-group"]')?.getAttribute("data-group")).toBe("working");
+  // At the head of the working group, its change the newest, and counted there.
+  const working = screen.container.querySelector('[data-group="working"]') as HTMLElement;
+  expect(
+    [...working.querySelectorAll('[data-slot="session-row"] [data-part="name"]')].map(
+      (name) => name.textContent,
+    ),
+  ).toEqual(["answered-one", "busy-one"]);
+  expect(working.querySelector('[data-slot="group-row"]')?.textContent).toContain("2");
+  expect(row.querySelector('[data-part="status"]')?.textContent).toBe("Answered");
+  expect(row.querySelector('[data-slot="status-mark"]')?.getAttribute("data-kind")).toBe(
+    "answered",
+  );
+  // When it was answered is not known here, and its wait's start is no time for its word.
+  expect(row.querySelector('[data-part="duration"]')).toBeNull();
+  // Live, so full ink at 600, with the quiet Jump.
+  const name = getComputedStyle(row.querySelector('[data-part="name"]')!);
+  expect(name.fontWeight).toBe("600");
+  expect(name.color).toBe(rgbOf("var(--ink)"));
+  expect(solidButtons(screen.container)).toEqual([]);
+  expect(warmPaint(screen.container)).toEqual([]);
+  // Still nothing of the two that need the person.
+  expect(screen.container.textContent).not.toContain("blocked-one");
+  expect(screen.container.textContent).not.toContain("asked-one");
+
+  // On the board it is a card in Working, and Needs you holds the two that wait.
+  await screen.getByRole("radio", { name: "Board" }).click();
+  await expect.element(screen.getByRole("list", { name: "Needs you 2" })).toBeVisible();
+  const column = screen.getByRole("list", { name: "Working 2" }).element();
+  const card = column.querySelector(`[data-slot="board-card"][data-session="${answered.id}"]`);
+  expect(card?.querySelector('[data-part="status"]')?.textContent).toBe("Answered");
+  expect(card?.querySelector('[data-slot="status-mark"]')?.getAttribute("data-kind")).toBe(
+    "answered",
+  );
+  expect(card?.querySelector('[data-part="duration"]')).toBeNull();
+  expect(warmPaint(card as HTMLElement)).toEqual([]);
+});
+
 test("every row's status is in words in its own column, and the mark beside the name is not read twice", async () => {
   const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
 

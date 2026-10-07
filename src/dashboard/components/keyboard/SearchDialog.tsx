@@ -7,7 +7,7 @@ import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { formatShortDuration, shortDurationInWords } from "@dashboard/lib/format";
 import { searchSessions } from "@dashboard/lib/sessions/search";
-import { rowLook } from "@dashboard/lib/sessions/sessions";
+import { isAnswered, rowLook } from "@dashboard/lib/sessions/sessions";
 import { jumpWay } from "@dashboard/lib/sessions/status";
 import { agentLabel } from "@dashboard/lib/sources/sources";
 import { cn } from "@dashboard/lib/utils";
@@ -27,8 +27,12 @@ interface SearchDialogProps {
 /** What follows the dialog's closing: the chosen session, the sheet of shortcuts, or nothing. */
 type After = { session: Session } | "shortcuts" | null;
 
-/** How long a session has had its status, in the table's short form and in words. */
-function lastedOf(session: Session, asOf: number): { shown: string; said: string } {
+/**
+ * How long a session has had its status, in the table's short form and in
+ * words, or null for one whose prompt was answered, as its row has none.
+ */
+function lastedOf(session: Session, asOf: number): { shown: string; said: string } | null {
+  if (isAnswered(session)) return null;
   if (session.statusSince === null) return { shown: "–", said: "time not reported" };
   const lasted = Math.max(0, asOf - session.statusSince);
   const ended = session.status === "finished" || session.status === "failed";
@@ -73,7 +77,7 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
   const way = jumpWay(session);
   const label = [
     session.name,
-    `${word} ${lasted.said}`,
+    lasted === null ? word : `${word} ${lasted.said}`,
     placeInWords(session),
     session.machine === undefined ? agent : `${agent} on ${session.machine}`,
     way && `Jump to ${way.where}`,
@@ -114,13 +118,18 @@ function Result({ session, agent, asOf, id, active, onPoint, onPick }: ResultPro
             data-part='status'
             className='shrink-0 text-body whitespace-nowrap text-ink-secondary'
           >
-            {word}{" "}
-            <span
-              data-part='duration'
-              className={cn("tabular-nums", quiet ? "text-ink-secondary" : "text-ink")}
-            >
-              {lasted.shown}
-            </span>
+            {word}
+            {lasted !== null && (
+              <>
+                {" "}
+                <span
+                  data-part='duration'
+                  className={cn("tabular-nums", quiet ? "text-ink-secondary" : "text-ink")}
+                >
+                  {lasted.shown}
+                </span>
+              </>
+            )}
           </span>
         </p>
         {/* A long folder or branch breaks between words where it can. The agent keeps its dot and stays whole. */}

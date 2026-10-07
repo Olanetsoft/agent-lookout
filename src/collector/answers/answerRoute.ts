@@ -13,6 +13,7 @@ import {
   type Session,
   type SessionEvent,
 } from "../../core/sessions/session.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 import type { EventStore } from "../eventStore.ts";
 import { actionRefusalFor, readRequestBody, refusal, type ApiAnswer } from "../handler.ts";
 import type { Poller } from "../poller.ts";
@@ -96,6 +97,28 @@ export interface AnswerRouteOptions {
 }
 
 /**
+ * Polls at once, so the page's read of the sessions straight after a press
+ * no longer finds the session needing the person: it finds the wait marked
+ * answered while Claude Code's file still says it waits, or the session gone
+ * on. Again when the first poll was already under way and was done before the
+ * answer counted for it, as the stop route's `lookAgain` does. A poll that
+ * fails is left to the poller's next beat.
+ */
+export async function pollAfterAnswer(
+  poller: Pick<Poller, "pollOnce">,
+  sessionId: string,
+): Promise<void> {
+  try {
+    const first = await poller.pollOnce();
+    if (first.sessions.some((session) => session.id === sessionId && needsYou(session))) {
+      await poller.pollOnce();
+    }
+  } catch {
+    // The poller answers at its next beat all the same.
+  }
+}
+
+/**
  * Why a request to the answer route is refused before its body is read, or
  * null when it may proceed: `actionRefusalFor` in `handler.ts`, with `answer`
  * as the action, as the jump and stop routes do.
@@ -117,7 +140,8 @@ export function answerRefusalFor(
  * registry file is read once more first, and must still say it is waiting:
  * otherwise it was answered in the session, and nothing is sent. What is
  * written is fixed: allow, or deny with fixed words, and never a rewritten
- * input or a saved rule.
+ * input or a saved rule. Once it is handed over, the sessions are read again
+ * before the reply (`pollAfterAnswer`), so the page's next read finds the wait over.
  */
 export function createAnswerRoute(options: AnswerRouteOptions) {
   const { poller, events, asks } = options;
@@ -149,8 +173,9 @@ export function createAnswerRoute(options: AnswerRouteOptions) {
     const outcome = await asks.answer(asked.sessionId, asked.requestId, asked.decision);
     if (outcome !== "answered") return answerFailed(outcome);
     events.add([answeredEvent(session, asked.decision, now())]);
-    // The page's next request finds the session moving on.
-    void poller.pollOnce().catch(() => {});
+    // The page reads the sessions again as soon as this is answered, and
+    // finds the wait over.
+    await pollAfterAnswer(poller, asked.sessionId);
     return {
       status: 200,
       body: { ok: true, decision: asked.decision } satisfies AnswerResponse,

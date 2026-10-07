@@ -7,6 +7,7 @@
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
 import { isStatusEvent, type Session, type SessionEvent } from "@core/sessions/session";
+import { needsYou } from "@core/waits/answeredWaits";
 import type { MarkKind } from "@dashboard/components/ui/status/StatusMark";
 import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
 
@@ -34,15 +35,14 @@ export interface LogEntry {
  *
  * A wait is open while its session is still listed as needing the person and
  * the event that began it is that session's newest. Anything later, or a
- * session that has left the list, means it was answered or is over.
+ * session that has left the list, means it was answered or is over, and so
+ * does a session still listed in a wait Agent Lookout answered (`needsYou`).
  */
 export function logEntries(
   events: readonly SessionEvent[],
-  sessions: readonly Pick<Session, "id" | "status">[],
+  sessions: readonly Pick<Session, "id" | "status" | "answered">[],
 ): LogEntry[] {
-  const waiting = new Set(
-    sessions.filter((session) => session.status === "needs-you").map((session) => session.id),
-  );
+  const waiting = new Set(sessions.filter(needsYou).map((session) => session.id));
   // Newest first, so the first event met for a session is its newest, and the
   // next one met is the one just before it.
   const newest = new Set<string>();

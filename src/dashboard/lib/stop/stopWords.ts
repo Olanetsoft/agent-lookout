@@ -1,4 +1,5 @@
 import type { Session } from "@core/sessions/session";
+import { needsYou } from "@core/waits/answeredWaits";
 import type { TextRun } from "@dashboard/lib/sources/facts";
 
 /**
@@ -85,12 +86,15 @@ export function stopDoes(session: Pick<Session, "id" | "source" | "surface" | "s
   return [words("Its process ends now. "), ...kept];
 }
 
-/** What is lost of what it is doing now, or null when it is doing nothing. */
-export function stopInterrupts(session: Pick<Session, "status">): string | null {
+/**
+ * What is lost of what it is doing now, or null when it is doing nothing or
+ * that is not known: a wait that was answered has no question left
+ * unanswered, and what it does next its source has not yet said.
+ */
+export function stopInterrupts(session: Pick<Session, "status" | "answered">): string | null {
   if (session.status === "working")
     return "It is working now. What it is doing will stop part-way.";
-  if (session.status === "needs-you")
-    return "It is waiting for you. The question is left unanswered.";
+  if (needsYou(session)) return "It is waiting for you. The question is left unanswered.";
   return null;
 }
 

@@ -10,9 +10,10 @@ export const DEFAULT_HISTORY_WINDOW_MS = 15 * 60 * 1000;
  * it is counted on its own and not as idle, as the dashboard's counts have it,
  * so the Idle chart's line ends at the Idle count's figure. A session in a
  * wait Agent Lookout answered is done waiting (`answeredWaits.ts`), so it is
- * not counted as needing the person, though the Needs you count can still
- * show it for the second or two before its source says it moved on. So a
- * prompt a rule answered is never in the history, as it is never in Waits.
+ * not counted as needing the person, and is counted as working, as the
+ * page's counts have it, so the Working chart's line ends at the Working
+ * count's figure. So a prompt a rule answered is never in the history as a
+ * wait, as it is never in Waits.
  */
 export function historyPointFor(sessions: readonly Session[], at: number): HistoryPoint {
   let needsYou = 0;
@@ -20,7 +21,7 @@ export function historyPointFor(sessions: readonly Session[], at: number): Histo
   let idle = 0;
   for (const session of sessions) {
     if (needsThePerson(session)) needsYou += 1;
-    else if (session.status === "working") working += 1;
+    else if (session.status === "working" || session.status === "needs-you") working += 1;
     else if (session.status === "idle" && !session.stale) idle += 1;
   }
   return { at, needsYou, working, idle, total: sessions.length };

@@ -19,6 +19,7 @@ const NOTE = {
   idle: "ready for a prompt",
   sessions: "all sessions found",
   noneWorking: "none working",
+  justAnswered: "just answered",
   noneIdle: "none idle",
   noneRunning: "none running",
   timeNotReported: "time not reported",
@@ -47,6 +48,19 @@ function longestNote(
     );
   }
   return count > 0 ? NOTE.timeNotReported : none;
+}
+
+/**
+ * Working's note. A session whose prompt was answered, by a press or a rule,
+ * is counted as working until its source says what it does next, but how
+ * long it has worked is not known, so it is never the longest. When the
+ * working sessions are all such, the note says so: "just answered".
+ */
+function workingNote(summary: SessionsSummary, asOf: number): ReactNode {
+  const answeredOnly =
+    summary.longestWorking === null && summary.working > 0 && summary.working === summary.answered;
+  if (answeredOnly) return NOTE.justAnswered;
+  return longestNote(summary.longestWorking, summary.working, asOf, NOTE.noneWorking);
 }
 
 /** "7 open, 1 finished", or "7 open" when nothing has finished, and the failures when there are any. */
@@ -156,7 +170,9 @@ interface CountsRowProps {
  *
  * Each session is counted once: Needs you, Working, Idle and Stale, with the
  * endings the Sessions note names, add up to the Sessions figure. A stale
- * session is idle, but it is counted under Stale and not under Idle.
+ * session is idle, but it is counted under Stale and not under Idle. A
+ * session whose prompt was answered needs nobody, so it is counted under
+ * Working, as it is listed, and never under Needs you.
  *
  * A count is shown only when it was counted. Before the first answer each holds
  * its place. When no source could be read, or one is still being looked for, it
@@ -186,11 +202,7 @@ export function CountsRow({
         label='Working'
         mark={<StatusMark kind='working' />}
         value={value(summary?.working)}
-        note={
-          summary && counted
-            ? longestNote(summary.longestWorking, summary.working, asOf, NOTE.noneWorking)
-            : NOTE.working
-        }
+        note={summary && counted ? workingNote(summary, asOf) : NOTE.working}
         onOpen={opens("working")}
       />
       <Count

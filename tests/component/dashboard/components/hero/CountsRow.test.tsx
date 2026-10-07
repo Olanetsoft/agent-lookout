@@ -183,6 +183,39 @@ test("with sessions whose start was not reported, there is no longest", async ()
   expect(noteOf(screen.container, "Idle")).toBe("time not reported");
 });
 
+test("a session whose prompt was answered is counted under Working, never as needing you or as the longest", async () => {
+  // Its file still says it waits, though Allow, Deny or a rule answered it a moment ago.
+  const answered = session(6, {
+    status: "needs-you",
+    waitingReason: "permission",
+    answered: true,
+    statusSince: NOW - 50 * MINUTE,
+  });
+  const sessions = [answered, ...SESSIONS];
+  const screen = await renderCounts(sessions);
+
+  expect(LABELS.map((label) => valueOf(screen.container, label))).toEqual(["2", "1", "1", "6"]);
+  // The time it began waiting is no time working, so the longest is still the one working 34 minutes.
+  expect(noteOf(screen.container, "Working")).toBe("longest 34m 00s");
+  // The two that need the person, and the counts, still add up to the total.
+  const { summary } = countState(sessions, OK);
+  expect(summary?.needsYou).toBe(2);
+  const counted = ["Working", "Idle", "Stale"].map((label) =>
+    Number(valueOf(screen.container, label)),
+  );
+  expect(2 + counted.reduce((sum, value) => sum + value, 0)).toBe(6);
+  expect(warmPaint(screen.container)).toEqual([]);
+
+  // Alone under Working, it says it was just answered, not that its time was not reported.
+  await screen.rerender(
+    <div style={{ width: 760, padding: 20 }}>
+      <CountsRow counts={countState([answered, SESSIONS[3]!], OK)} asOf={NOW} />
+    </div>,
+  );
+  expect(valueOf(screen.container, "Working")).toBe("1");
+  expect(noteOf(screen.container, "Working")).toBe("just answered");
+});
+
 test("with no sessions and a source read, each count is a real zero, and says so", async () => {
   const screen = await renderCounts([]);
 

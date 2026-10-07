@@ -36,9 +36,10 @@ import {
   type SessionStatus,
 } from "@core/sessions/session";
 import { STALE_THRESHOLD_MS } from "@core/sessions/staleness";
+import { needsYou } from "@core/waits/answeredWaits";
 import type { TrackSegment } from "@dashboard/components/ui/charts/StatusTrack";
 import { measuredSpans, pollRuns, uncovered, type Span } from "@dashboard/lib/charts/measured";
-import { groupSessions } from "@dashboard/lib/sessions/sessions";
+import { groupSessions, isAnswered } from "@dashboard/lib/sessions/sessions";
 import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
 
 /** The timeline covers the last hour. */
@@ -54,6 +55,12 @@ export interface TimelineRow {
   status: SessionStatus | null;
   /** Whether a listed session is stale now. */
   stale: boolean;
+  /**
+   * Whether a listed session is in a wait Agent Lookout answered, while its
+   * source still says it waits. That wait is over: it is not open, and the
+   * row's mark is the answered one.
+   */
+  answered: boolean;
   /** In time order, never overlapping. Time with no segment is time it was not running. */
   segments: TrackSegment[];
 }
@@ -332,6 +339,23 @@ function byTime(a: SessionEvent, b: SessionEvent): number {
 }
 
 /**
+ * A listed session as the events log has it. One in a wait Agent Lookout
+ * answered, while its source still says it waits, is drawn as it is when the
+ * log saw that wait begin: answered, not open. A wait a permission rule
+ * answered before any poll saw it never begins in the log, so its row goes on
+ * with the last status the log gives it, or, with nothing in the log of it,
+ * working, which a session at a permission prompt was. So the row, and the
+ * waits worked out from it, never draw that wait, and do not change when the
+ * source says it has moved on.
+ */
+function asLogged(session: Session, own: readonly SessionEvent[]): Session {
+  if (!isAnswered(session)) return session;
+  const newest = own[own.length - 1];
+  if (newest?.to === "needs-you") return session;
+  return { ...session, status: newest?.to ?? "working", statusSince: newest?.at ?? null };
+}
+
+/**
  * The timeline for the last hour.
  *
  * Rows are the sessions in the snapshot, in the order of the Sessions list,
@@ -364,10 +388,12 @@ export function buildTimeline(input: TimelineInput): Timeline {
   );
   const measured = measuredSpans(runs, window, until, vouchFrom, gapMs);
 
-  const rowFor = (id: string, name: string, session: Session | undefined): TimelineRow => {
+  const rowFor = (id: string, name: string, found: Session | undefined): TimelineRow => {
+    const own = eventsBySession.get(id) ?? [];
+    const session = found && asLogged(found, own);
     const pieces = statusPieces(
       session,
-      eventsBySession.get(id) ?? [],
+      own,
       window,
       until,
       gapMs,
@@ -386,7 +412,8 @@ export function buildTimeline(input: TimelineInput): Timeline {
     // The wait the latest answer shows is open: at the present while answers
     // arrive. Once they stop it is cut where they stopped, not answered, so it is
     // still open as far as anyone knows, though it no longer reaches the present.
-    if (session?.status === "needs-you") {
+    // A wait Agent Lookout answered is over, however its source still reads.
+    if (session && needsYou(session)) {
       for (const segment of segments) {
         if (segment.kind === "needs-you" && segment.to === until) segment.open = true;
       }
@@ -397,6 +424,7 @@ export function buildTimeline(input: TimelineInput): Timeline {
       ended: session === undefined,
       status: session?.status ?? null,
       stale: session?.stale ?? false,
+      answered: found !== undefined && isAnswered(found),
       segments,
     };
   };

@@ -12,6 +12,20 @@ test("the badge counts the sessions that need you, and says nothing at zero", ()
   expect(dockBadgeText(sessions("needs-you", "working", "needs-you", "needs-you"))).toBe("3");
 });
 
+test("a prompt already answered, by a press or a rule, is not counted while Claude Code's file still says it waits", () => {
+  const answered = { status: "needs-you" as const, answered: true as const };
+  expect(dockBadgeText([answered])).toBe("");
+  expect(dockBadgeText([answered, { status: "needs-you" }, { status: "working" }])).toBe("1");
+
+  // The badge goes as the answer is taken, before the session is seen to move on.
+  const setBadge = vi.fn<(text: string) => void>();
+  const show = createDockBadge(setBadge);
+  show({ sessions: [{ status: "needs-you" }] });
+  show({ sessions: [answered] });
+  show({ sessions: [{ status: "working" }] });
+  expect(setBadge.mock.calls.map(([text]) => text)).toEqual(["1", ""]);
+});
+
 test("the Dock is told only when the badge changes", () => {
   const setBadge = vi.fn<(text: string) => void>();
   const show = createDockBadge(setBadge);

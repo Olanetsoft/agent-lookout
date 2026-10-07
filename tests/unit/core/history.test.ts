@@ -49,7 +49,7 @@ test("a stale session is not counted as idle, as the tiles do not count it, but 
   });
 });
 
-test("a session in a wait Agent Lookout answered is not counted as needing you, but is in the total", () => {
+test("a session in a wait Agent Lookout answered is not counted as needing you, but as working, as the counts row counts it", () => {
   const sessions = [
     makeSession({ id: "claude-code:1", status: "needs-you", waitingReason: "permission" }),
     makeSession({
@@ -62,7 +62,7 @@ test("a session in a wait Agent Lookout answered is not counted as needing you, 
   expect(historyPointFor(sessions, at)).toEqual({
     at,
     needsYou: 1,
-    working: 0,
+    working: 1,
     idle: 0,
     total: 2,
   });

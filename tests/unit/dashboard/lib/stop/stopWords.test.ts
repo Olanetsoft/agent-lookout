@@ -80,3 +80,7 @@ test("what is lost: the work under way, or the question left unanswered, and not
   );
   expect(stopInterrupts({ status: "idle" })).toBeNull();
 });
+
+test("a session whose prompt was answered has no question left unanswered, and what it does next is not yet known", () => {
+  expect(stopInterrupts({ status: "needs-you", answered: true })).toBeNull();
+});

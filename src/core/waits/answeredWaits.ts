@@ -11,9 +11,14 @@
 // leaves such a session out: the page's notifications and the collector's
 // own, email, the webhook, the long wait reminder and quiet hours, which all
 // read the same snapshot, the history's points, and the Events log and the
-// waits, which the poller works out at the same poll. So the page and the
-// collector decide alike at the same poll. Nothing of it is written anywhere,
-// and it holds nothing of what was asked.
+// waits, which the poller works out at the same poll. So does every place
+// that says whether a session needs the person now: the page's lamp, its
+// Needs you panel and count, the tab's title, the lists, the board, the
+// timeline, Last hour and the log's lit rows, and the Mac app's Dock badge
+// and menu bar. The page lists and counts such a session with the working
+// ones, as "Answered". So the page and the collector decide alike at the same
+// poll. Nothing of it is written anywhere, and it holds nothing of what was
+// asked.
 
 import type { Session, SessionsSnapshot, SourceId } from "../sessions/session.ts";
 

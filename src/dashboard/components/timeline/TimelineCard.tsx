@@ -65,6 +65,7 @@ function percent(share: number): string {
 /** The mark beside a row's name: what the session is doing now. None once it has left the list. */
 function markOf(row: TimelineRow): MarkKind | null {
   if (row.status === null) return null;
+  if (row.answered) return "answered";
   return row.stale && row.status === "idle" ? "stale" : row.status;
 }
 
@@ -85,7 +86,7 @@ function Row({
   named: boolean;
 }) {
   const mark = markOf(row);
-  const lit = row.status === "needs-you";
+  const lit = row.status === "needs-you" && !row.answered;
   // A session on another machine says which, so two of one name are told apart.
   const machine = machineInId(row.id);
   const said = nameOnMachine(row.name, machine);

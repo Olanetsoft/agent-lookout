@@ -177,6 +177,19 @@ describe("in the menu bar", () => {
     expect(tray()?.menu?.labels[0]).toBe("Nothing needs you");
   });
 
+  test("a prompt answered by a press or a rule puts the lamp out at once, before the session is seen to move on", () => {
+    const { bar, tray } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("a", NOW - 1_000)));
+    expect(tray()?.image).toBe("lit");
+
+    bar.update(snapshot(waiting("a", NOW - 1_000, { answered: true })));
+    expect(tray()?.image).toBe("quiet");
+    expect(tray()?.title).toBe("");
+    expect(tray()?.toolTip).toBe("Agent Lookout");
+    expect(tray()?.menu?.labels[0]).toBe("Nothing needs you");
+  });
+
   test("the icon, the count, the tooltip and the menu are told only of a change", () => {
     const { bar, tray, tick } = setUp();
     bar.start();

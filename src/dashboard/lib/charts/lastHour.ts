@@ -14,6 +14,7 @@
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
 import type { Session, SessionEvent } from "@core/sessions/session";
+import { needsYou } from "@core/waits/answeredWaits";
 import { countAxis, type CountAxis } from "@dashboard/lib/charts/historyChart";
 import {
   intersect,
@@ -78,7 +79,7 @@ export interface LastHourInput {
   /** The history the page holds, or null when it could not be read. */
   history: HistoryResponse | null;
   /** The sessions in the latest snapshot. They say which waits are still open. */
-  sessions: readonly Pick<Session, "id" | "status" | "statusSince">[];
+  sessions: readonly Pick<Session, "id" | "status" | "statusSince" | "answered">[];
   /** Every event the page holds, in any order. */
   events: readonly Pick<SessionEvent, "sessionId" | "at" | "to">[];
   /** The present. The window ends here. */
@@ -103,7 +104,8 @@ export function bucketMark(at: number): number {
 /**
  * When each wait still open began, oldest first: the time its source reports,
  * or else the event that began it, or else as far back as anything goes. A
- * session that needs the person now is the only kind with an open wait.
+ * session that needs the person now is the only kind with an open wait: one
+ * in a wait Agent Lookout answered has none, however its source still reads.
  */
 function openWaitStarts(
   sessions: LastHourInput["sessions"],
@@ -111,7 +113,7 @@ function openWaitStarts(
 ): number[] {
   const starts: number[] = [];
   for (const session of sessions) {
-    if (session.status !== "needs-you") continue;
+    if (!needsYou(session)) continue;
     if (session.statusSince !== null) {
       starts.push(session.statusSince);
       continue;

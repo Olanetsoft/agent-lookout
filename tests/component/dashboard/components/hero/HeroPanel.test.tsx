@@ -1621,3 +1621,88 @@ describe("what a waiting session is asking", () => {
     },
   );
 });
+
+describe("a session whose prompt was answered, while its source still says it waits", () => {
+  /** Session 1's prompt, answered by Allow, Deny or a permission rule a moment ago. */
+  const ANSWERED = { ...WAITING, answered: true as const };
+
+  test("lights no lamp, is not in Needs you and leaves the hero quiet, with nothing warm", async () => {
+    const screen = await renderHero({ sessions: [ANSWERED, BUSY, RESTING] });
+    const panel = hero(screen.container);
+
+    expect(panel.dataset.state).toBe("quiet");
+    expect(panel.dataset.light).toBe("rest");
+    await expect
+      .element(screen.getByRole("heading", { level: 2, name: "Nothing needs you" }))
+      .toBeVisible();
+    expect(panel.querySelector('[data-slot="hero-session"]')).toBeNull();
+    expect(panel.querySelector('[data-part="jump"]')).toBeNull();
+    expect(warmPaint(panel)).toEqual([]);
+  });
+
+  test("beside a session that waits, only that one is in Needs you and counted", async () => {
+    const screen = await renderHero({ sessions: [ANSWERED, LATER, BUSY] });
+    const panel = hero(screen.container);
+
+    expect(panel.dataset.state).toBe("one");
+    expect(panel.dataset.light).toBe("lamp");
+    expect(part(panel, "count").textContent).toBe("1");
+    expect(
+      [...panel.querySelectorAll<HTMLElement>('[data-slot="hero-session"]')].map(
+        (row) => row.dataset.session,
+      ),
+    ).toEqual([LATER.id]);
+    // It is counted with the working sessions instead.
+    const working = panel.querySelector('[data-slot="count"][aria-label="Working"]') as HTMLElement;
+    expect(part(working, "value").textContent).toBe("2");
+  });
+
+  test("after a press of Allow, the read straight after finds it answered: it leaves Needs you at once, the lamp goes out and focus goes to the hero's title", async () => {
+    setApiHost(async () => new Response(JSON.stringify({ ok: true, decision: "allow" })));
+    const held = {
+      ...WAITING,
+      ask: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        tool: "Bash",
+        command: "npm test",
+        allow: true,
+        until: NOW + 300_000,
+      },
+    };
+    const shown = (sessions: Session[]) => (
+      <div style={{ width: 820, padding: 24 }}>
+        <HeroPanel
+          sessions={sessions}
+          sources={[CLAUDE]}
+          history={watched()}
+          now={NOW}
+          onAnswered={() => answered()}
+        />
+      </div>
+    );
+    // The page reads the sessions again once the answer is handed over. The
+    // collector polled before it replied, so that read marks the session answered.
+    let answered = () => {};
+    const reread = new Promise<void>((resolve) => (answered = resolve));
+    const screen = await render(shown([held, BUSY]));
+    expect(hero(screen.container).dataset.light).toBe("lamp");
+    const allow = screen.getByRole("button", { name: `Allow, for ${held.name}` });
+    await expect
+      .poll(() => allow.element().getAttribute("aria-disabled"), { timeout: 3_000 })
+      .toBeNull();
+    await allow.click();
+    await reread;
+    await expect
+      .element(screen.getByRole("status"))
+      .toHaveTextContent("Allowed from Agent Lookout.");
+    await screen.rerender(shown([{ ...held, ask: undefined, answered: true }, BUSY]));
+
+    const panel = hero(screen.container);
+    expect(panel.dataset.state).toBe("quiet");
+    expect(panel.dataset.light).toBe("rest");
+    expect(panel.querySelector('[data-slot="hero-session"]')).toBeNull();
+    expect(panel.querySelector('[data-part="allow"], [data-part="deny"]')).toBeNull();
+    expect(warmPaint(panel)).toEqual([]);
+    await expect.poll(() => document.activeElement?.getAttribute("data-part")).toBe("title");
+  });
+});

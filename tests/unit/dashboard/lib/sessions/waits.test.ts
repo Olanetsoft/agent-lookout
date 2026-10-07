@@ -169,6 +169,35 @@ describe("each session's waits", () => {
     expect(result.sessions[0]?.times).toBe(1);
   });
 
+  test("a wait answered by a press, while its source still says it waits, is no longer open", () => {
+    const answered = SESSIONS.map((s) => (s.id === id(2) ? { ...s, answered: true as const } : s));
+    const result = waits({ sessions: answered, events: EVENTS });
+
+    expect(result.sessions.map((s) => [s.name, s.ms, s.open])).toEqual([
+      ["project-2", 7 * MINUTE + 30 * SECOND, false],
+      ["project-1", 7 * MINUTE, false],
+      ["project-3", 1 * MINUTE, false],
+    ]);
+  });
+
+  test("a wait a rule answered before any poll saw it begin is no wait at all", () => {
+    // Working since 14:22 as far as the log goes; its file has said for a second that it waits.
+    const result = waits({
+      sessions: [
+        session(1, {
+          status: "needs-you",
+          waitingReason: "permission",
+          answered: true,
+          statusSince: NOW - SECOND,
+        }),
+      ],
+      events: [changed(1, at(14, 22), "idle", "working")],
+    });
+
+    expect(result.sessions).toEqual([]);
+    expect(result.totalMs).toBe(0);
+  });
+
   test("with nothing waited, there are no bars, no total and no last wait", () => {
     const result = waits({ sessions: [session(1, { status: "working", statusSince: at(14, 0) })] });
 

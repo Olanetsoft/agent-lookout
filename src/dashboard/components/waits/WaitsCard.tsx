@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 
 import type { WaitDay, WaitPeriod, WaitsResponse, WaitTotal } from "@core/api";
 import { machineInId, nameOnMachine, type Session } from "@core/sessions/session";
+import { needsYou } from "@core/waits/answeredWaits";
 import { OnMachine } from "@dashboard/components/sessions/Machine";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
@@ -312,8 +313,11 @@ function WaitsBody({ waits }: { waits: WaitsResponse }) {
 interface WaitsCardProps {
   /** The history the page holds. A restart or a clearing it shows has the totals read again at once. */
   history: CollectorHistory | null;
-  /** The sessions the page holds. A wait that opens or ends among them has the totals read again at once. */
-  sessions: readonly Pick<Session, "id" | "status">[];
+  /**
+   * The sessions the page holds. A wait that opens or ends among them, an
+   * answered one included, has the totals read again at once.
+   */
+  sessions: readonly Pick<Session, "id" | "status" | "answered">[];
   /** The moment counted to: now, or the last answer once answers stop. Open waits grow to it between answers. */
   asOf: number;
   className?: string;
@@ -329,9 +333,7 @@ interface WaitsCardProps {
  * it is warm but the part of today's bar that is a wait still open.
  */
 export function WaitsCard({ history, sessions, asOf, className }: WaitsCardProps) {
-  const waiting = sessions
-    .filter((session) => session.status === "needs-you")
-    .map((session) => session.id);
+  const waiting = sessions.filter(needsYou).map((session) => session.id);
   const reading = useWaitTotals(history, waiting);
   return (
     <SectionCard title='Waits' className={className}>

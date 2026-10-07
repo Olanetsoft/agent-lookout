@@ -177,6 +177,35 @@ describe("list_sessions", () => {
     expect(listSessions(snapshot(), NOW, "failed")).toMatchObject({ count: 0, sessions: [] });
   });
 
+  test("a session whose permission prompt was just answered is working, at the head of the working ones, with no reason and no since", () => {
+    const answered = snapshot();
+    answered.sessions = answered.sessions.map((session) =>
+      session.name === "checkout-flow"
+        ? { ...session, answered: true as const, lastWriteAt: NOW - 5 * MINUTE }
+        : session,
+    );
+    const list = listSessions(answered, NOW);
+    expect(list.sessions.map(({ name, status }) => [name, status])).toEqual([
+      ["search-indexing", "needs-you"],
+      ["api-rate-limits", "needs-you"],
+      ["checkout-flow", "working"],
+      ["billing-webhooks", "working"],
+      ["docs-site", "idle"],
+    ]);
+    // Its status time is when the wait began, and its file was last written then.
+    expect(list.sessions[2]).toMatchObject({
+      reason: null,
+      since: null,
+      quietFor: null,
+      quietForMs: null,
+    });
+    expect(listSessions(answered, NOW, "needs-you").count).toBe(2);
+    expect(listSessions(answered, NOW, "working").sessions.map((session) => session.name)).toEqual([
+      "checkout-flow",
+      "billing-webhooks",
+    ]);
+  });
+
   test("with pull requests on, a branch's pull request is its number and how its checks stand, and never its title", () => {
     const pullRequest = {
       number: 51,
@@ -370,6 +399,27 @@ describe("sessions_needing_you", () => {
     expect(said).not.toContain("npm run deploy");
     expect(said).not.toContain("0123456789abcdef");
     expect(said).not.toContain("answering");
+  });
+
+  test("leaves out a session whose permission prompt was just answered, though its source still says it waits", () => {
+    const answered = snapshot();
+    answered.sessions = answered.sessions.map((session) =>
+      session.status === "needs-you" ? { ...session, answered: true as const } : session,
+    );
+    expect(sessionsNeedingYou(answered, NOW)).toMatchObject({
+      counted: true,
+      summary: "Nothing needs you.",
+      sessions: [],
+    });
+
+    const one = snapshot();
+    one.sessions = one.sessions.map((session) =>
+      session.name === "checkout-flow" ? { ...session, answered: true as const } : session,
+    );
+    expect(sessionsNeedingYou(one, NOW).sessions.map((session) => session.name)).toEqual([
+      "search-indexing",
+      "api-rate-limits",
+    ]);
   });
 
   test("with nothing waiting, says so, and says when that is not known", () => {

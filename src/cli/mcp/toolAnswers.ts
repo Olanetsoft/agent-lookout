@@ -32,6 +32,7 @@ import {
 import { sortSessions } from "../../core/sessions/sorting.ts";
 import { sessionTitle } from "../../core/notices/waiting.ts";
 import { REORDERING_MARKS } from "../../core/text.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 import {
   machineOf,
   statusReport,
@@ -131,7 +132,11 @@ export interface ListedSession {
   pullRequest: PullRequestSummary | null;
   /** "Terminal", "VS Code", "Desktop app", "Cloud" or "Browser". */
   app: string | null;
-  /** When the status began, in ISO 8601, when the source says. */
+  /**
+   * When the status began, in ISO 8601, when the source says. Null for a
+   * session whose wait was just answered, listed as working, since when it
+   * went on is not known.
+   */
   since: string | null;
   /**
    * For a working session, how long since its agent last wrote the file it is
@@ -258,12 +263,17 @@ function listed(
   sources: ToolSnapshot["sources"],
   now: number,
 ): ListedSession {
-  const status = isOneOf(SESSION_STATUSES, session.status) ? session.status : "unknown";
+  const read = isOneOf(SESSION_STATUSES, session.status) ? session.status : "unknown";
+  // A wait that was answered, by a press or a rule, while its source still
+  // says it waits, is over: the session is going on, as the dashboard lists it.
+  // Its status time is when the wait began, so when it went on is not known.
+  const answered = read === "needs-you" && !needsYou(session);
+  const status = answered ? "working" : read;
   const id = clean(session.id) ?? "";
   const git = isObject(session.git) ? session.git : {};
   const lastWriteAt = session.lastWriteAt;
   const quietForMs =
-    status === "working" && typeof lastWriteAt === "number" && Number.isFinite(lastWriteAt)
+    read === "working" && typeof lastWriteAt === "number" && Number.isFinite(lastWriteAt)
       ? Math.max(0, now - lastWriteAt)
       : null;
   return {
@@ -284,20 +294,25 @@ function listed(
     commit: clean(git.commit),
     pullRequest: pullRequestSummaryOf(git.pullRequest),
     app: isOneOf(SURFACES, session.surface) ? surfaceLabel(session.surface) : null,
-    since: iso(session.statusSince),
+    since: answered ? null : iso(session.statusSince),
     quietFor: quietForMs === null ? null : formatDuration(quietForMs),
     quietForMs,
     stale: session.stale === true,
   };
 }
 
-/** Every session, or those with one status, in the order the dashboard lists them. */
+/**
+ * Every session, or those with one status, in the order the dashboard lists
+ * them: one whose wait was answered heads the working ones, after every
+ * session that needs the person.
+ */
 export function listSessions(
   snapshot: ToolSnapshot,
   now: number,
   status: SessionStatus | null = null,
 ): SessionList {
   const sessions = sortSessions(snapshot.sessions)
+    .sort((a, b) => Number(needsYou(b)) - Number(needsYou(a)))
     .map((session) => listed(session, snapshot.sources, now))
     .filter((session) => status === null || session.status === status);
   return {

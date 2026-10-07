@@ -16,6 +16,7 @@ import {
 } from "../core/sessions/session.ts";
 import { sessionTitle, waitingLabel } from "../core/notices/waiting.ts";
 import { REORDERING_MARKS } from "../core/text.ts";
+import { needsYou } from "../core/waits/answeredWaits.ts";
 
 /** The fields of a session the report reads. The rest of the answer is left alone. */
 export type ReportedSession = Pick<
@@ -30,6 +31,7 @@ export type ReportedSession = Pick<
   | "waitingReason"
   | "statusSince"
   | "stale"
+  | "answered"
 > & {
   /** Read as the rest of the answer is not: field by field, and only for its pull request. */
   git?: unknown;
@@ -67,8 +69,10 @@ export interface WaitingSession {
 
 /**
  * Each session is counted once, as the dashboard counts it: a stale session is
- * counted as stale and not as idle. Finished, failed and unknown sessions are
- * not counted here.
+ * counted as stale and not as idle, and a session whose permission prompt was
+ * just answered, while its source still says it waits, is counted as working
+ * and not as needing the person (`needsYou` in the core). Finished, failed and
+ * unknown sessions are not counted here.
  */
 export interface StatusReport {
   /**
@@ -122,6 +126,11 @@ export function statusReport(snapshot: ReportedSnapshot, now: number): StatusRep
   for (const session of snapshot.sessions) {
     switch (session.status) {
       case "needs-you": {
+        if (!needsYou(session)) {
+          // Answered, by a press or a rule: it is going on, as the Overview counts it.
+          report.working += 1;
+          break;
+        }
         report.needsYou += 1;
         const since = session.statusSince;
         const git = session.git;

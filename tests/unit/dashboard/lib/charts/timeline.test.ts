@@ -563,6 +563,53 @@ test("a wait that was answered is neither open nor ongoing, and one still open i
   ]);
 });
 
+test("a wait answered by a press or a rule, while its source still says it waits, is drawn answered, not open, with the answered mark", () => {
+  const { rows } = timeline({
+    sessions: [
+      session(1, {
+        status: "needs-you",
+        waitingReason: "permission",
+        answered: true,
+        statusSince: ago(5),
+      }),
+    ],
+    events: [changed(1, ago(5), "working", "needs-you"), changed(1, ago(30), "idle", "working")],
+  });
+  const row = rows[0]!;
+  expect([row.status, row.answered]).toEqual(["needs-you", true]);
+  expect(row.segments).toEqual([
+    { from: START, to: ago(30), kind: "idle", startKnown: false },
+    { from: ago(30), to: ago(5), kind: "working", startKnown: true },
+    { from: ago(5), to: NOW, kind: "needs-you", startKnown: true, ongoing: true },
+  ]);
+});
+
+test("a wait a rule answered before any poll saw it begin is never drawn: the row goes on as the log has it", () => {
+  // The log has it working since 30 minutes ago; the source has said for a second that it waits.
+  const answered = { status: "needs-you", waitingReason: "permission", answered: true } as const;
+  const { rows } = timeline({
+    sessions: [
+      session(1, { ...answered, statusSince: NOW - SECOND }),
+      session(2, { ...answered, statusSince: NOW - SECOND }),
+    ],
+    events: [changed(1, ago(30), "idle", "working")],
+  });
+  const byId = (n: number) => rows.find((row) => row.id === id(n))!;
+  expect(byId(1).segments).toEqual([
+    { from: START, to: ago(30), kind: "idle", startKnown: false },
+    { from: ago(30), to: NOW, kind: "working", startKnown: true, ongoing: true },
+  ]);
+  // With nothing in the log of it, it was working, as a session at a permission prompt is.
+  expect(byId(2).segments).toEqual([
+    { from: START, to: NOW, kind: "working", startKnown: false, ongoing: true },
+  ]);
+  // Its mark is still the answered one, as in the list.
+  expect(rows.map((row) => [row.status, row.answered])).toEqual([
+    ["working", true],
+    ["working", true],
+  ]);
+});
+
 test("a stale session's idle stretch is idle until the stale threshold and stale after it", () => {
   // Idle since 24 hours and 30 minutes ago, so it turned stale 30 minutes ago.
   const since = NOW - 24.5 * 60 * MINUTE;
@@ -592,10 +639,10 @@ test("a row says what a listed session is doing now, and nothing for one that en
     ],
     events: [ended(3, ago(10), "idle", "old-project")],
   });
-  expect(rows.map((row) => [row.name, row.status, row.stale])).toEqual([
-    ["project-2", "needs-you", false],
-    ["project-1", "idle", true],
-    ["old-project", null, false],
+  expect(rows.map((row) => [row.name, row.status, row.stale, row.answered])).toEqual([
+    ["project-2", "needs-you", false, false],
+    ["project-1", "idle", true, false],
+    ["old-project", null, false, false],
   ]);
 });
 

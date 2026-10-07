@@ -5,6 +5,8 @@ import {
   countState,
   groupSessions,
   heroLight,
+  isAnswered,
+  rowLook,
   summarizeSessions,
   tableGroups,
   waitingSessions,
@@ -243,6 +245,51 @@ test("the count that lights the lamp is the sessions that need the person now, a
   expect(countNeedingYou([])).toBe(0);
   expect(countNeedingYou(null)).toBe(0);
   expect(countNeedingYou(undefined)).toBe(0);
+});
+
+test("a session whose prompt was answered, while its source still says it waits, needs nobody: it is listed and counted as working, as Answered", () => {
+  const answered = session("answered", {
+    status: "needs-you",
+    waitingReason: "permission",
+    answered: true,
+    statusSince: T - 40 * MINUTE,
+  });
+  const sessions = [
+    answered,
+    session("blocked", { status: "needs-you", waitingReason: "permission", statusSince: T }),
+    session("busy", { status: "working", statusSince: T - 5 * MINUTE }),
+  ];
+
+  expect(isAnswered(answered)).toBe(true);
+  expect(isAnswered(sessions[1]!)).toBe(false);
+  expect(countNeedingYou(sessions)).toBe(1);
+  expect(countNeedingYou([answered])).toBe(0);
+  expect(waitingSessions(sessions).map((s) => s.name)).toEqual(["blocked"]);
+  // Under working, its change the newest, so first there.
+  expect(
+    groupSessions(sessions).map((group) => [group.id, group.sessions.map((s) => s.name)]),
+  ).toEqual([
+    ["needs-you", ["blocked"]],
+    ["working", ["answered", "busy"]],
+  ]);
+  expect(tableGroups(sessions).map((group) => [group.id, group.count])).toEqual([["working", 2]]);
+  expect(rowLook(answered)).toEqual({
+    mark: "answered",
+    word: "Answered",
+    ended: false,
+    stale: false,
+    answered: true,
+    quiet: false,
+    orphaned: false,
+  });
+
+  const summary = summarizeSessions(sessions);
+  expect([summary.needsYou, summary.working, summary.answered, summary.total]).toEqual([
+    1, 2, 1, 3,
+  ]);
+  // The time its wait began is no time working.
+  expect(summary.longestWorking?.session.name).toBe("busy");
+  expect(heroLight(countState([answered], [{ state: "ok" }]))).toBe("rest");
 });
 
 test("the sessions that need the person are the hero's, longest wait first, with an unreported start last", () => {

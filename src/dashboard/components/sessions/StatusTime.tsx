@@ -2,6 +2,7 @@ import type { Session } from "@core/sessions/session";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
 import { formatShortDuration, formatSince, shortDurationInWords } from "@dashboard/lib/format";
 import { quietFor, quietPhrase, quietPhraseInWords } from "@dashboard/lib/sessions/quiet";
+import { isAnswered } from "@dashboard/lib/sessions/sessions";
 import { cn } from "@dashboard/lib/utils";
 
 /**
@@ -10,16 +11,21 @@ import { cn } from "@dashboard/lib/utils";
  * ago, "2h ago". The exact start is in the tooltip. A quiet session, stale or
  * ended, has it in the secondary ink. The row and the board's card both draw
  * it after the status word, so the two read as one phrase: "Working 34m".
+ *
+ * A session whose prompt was answered has none: its status time is when the
+ * wait began, and when it was answered the page does not know, so its word,
+ * "Answered", stands alone for the second or two it lasts.
  */
 export function Duration({
   session,
   now,
   quiet,
 }: {
-  session: Pick<Session, "status" | "statusSince">;
+  session: Pick<Session, "status" | "statusSince" | "answered">;
   now: number;
   quiet: boolean;
 }) {
+  if (isAnswered(session)) return null;
   const ended = session.status === "finished" || session.status === "failed";
   const since = session.statusSince;
   const lasted = since !== null ? now - since : null;

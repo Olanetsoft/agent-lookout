@@ -84,6 +84,23 @@ describe("the counts", () => {
     expect(countsLine(counted)).toBe("1 needs you · 2 working · 1 idle · 1 stale");
   });
 
+  test("count a session whose permission prompt was just answered as working, as the Overview does, and list no wait for it", () => {
+    const counted = report([
+      waiting("checkout-flow", { answered: true }),
+      waiting("search-indexing", { waitingReason: "question" }),
+      makeSession({ id: "a", status: "working" }),
+    ]);
+    expect(counted).toMatchObject({ needsYou: 1, working: 2, idle: 0, stale: 0 });
+    expect(counted.waiting.map((session) => session.name)).toEqual(["search-indexing"]);
+    expect(statusCount(counted)).toBe("1\n");
+
+    // Answered by a rule before Claude Code said it moved on: nothing needs you, so a tmux line shows 0.
+    const alone = report([waiting("checkout-flow", { answered: true })]);
+    expect(statusText(alone)).toBe("Nothing needs you · 1 working · 0 idle\n");
+    expect(statusCount(alone)).toBe("0\n");
+    expect(JSON.parse(statusJson(alone))).toMatchObject({ needsYou: 0, working: 1, waiting: [] });
+  });
+
   test("say nothing needs you when nothing does, and leave stale out when there is none", () => {
     const quiet = report([
       makeSession({ id: "a", status: "working" }),

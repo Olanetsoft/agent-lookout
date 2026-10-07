@@ -1,5 +1,6 @@
 import type { Session, SessionStatus, SourceHealth } from "@core/sessions/session";
 import { compareSessions } from "@core/sessions/sorting";
+import { needsYou } from "@core/waits/answeredWaits";
 import { STATUS_LABEL } from "@dashboard/lib/sessions/status";
 
 /** The sections of the sessions list, in the order they are shown. */
@@ -23,32 +24,54 @@ export function isStaleIdle(session: Pick<Session, "status" | "stale">): boolean
   return session.stale && session.status === "idle";
 }
 
+/** The word for a session whose permission prompt was answered while its source still says it waits. */
+export const ANSWERED_WORD = "Answered";
+
+/**
+ * Whether a session's source still says it waits, in a wait Agent Lookout
+ * answered, by Allow, Deny or a permission rule, as it can for a second or
+ * two before Claude Code says it has moved on. It needs nobody: it is going
+ * on. It is listed and counted with the working sessions, under its own mark
+ * and word, and never lights the lamp (`needsYou` in the core).
+ */
+export function isAnswered(session: Pick<Session, "status" | "answered">): boolean {
+  return session.status === "needs-you" && !needsYou(session);
+}
+
 /**
  * How a session's row reads, wherever one is drawn: in the list, on the board
- * and in the search. Its mark is its status, or stale. It is quiet, its name
- * at 500 in the secondary ink, when it is stale, has ended, or its process has
- * gone; and orphaned, with the "Process ended" badge, when its process has gone
- * while it still claims to run.
+ * and in the search. Its mark is its status, or stale, or for a session whose
+ * prompt was answered while its source still says it waits, the answered
+ * mark, with the word "Answered", since the wait is over. It is quiet, its
+ * name at 500 in the secondary ink, when it is stale, has ended, or its
+ * process has gone; and orphaned, with the "Process ended" badge, when its
+ * process has gone while it still claims to run.
  */
 export interface RowLook {
-  mark: SessionStatus | "stale";
-  /** "Stale", or the status in words. */
+  mark: SessionStatus | "stale" | "answered";
+  /** "Stale", "Answered", or the status in words. */
   word: string;
   ended: boolean;
   stale: boolean;
+  /** Its prompt was answered, and its source has not yet said it moved on: `isAnswered`. */
+  answered: boolean;
   quiet: boolean;
   orphaned: boolean;
 }
 
-export function rowLook(session: Pick<Session, "status" | "stale" | "alive">): RowLook {
+export function rowLook(
+  session: Pick<Session, "status" | "stale" | "alive" | "answered">,
+): RowLook {
   const ended = session.status === "finished" || session.status === "failed";
   const gone = session.alive === false;
   const stale = isStaleIdle(session);
+  const answered = isAnswered(session);
   return {
-    mark: stale ? "stale" : session.status,
-    word: stale ? "Stale" : STATUS_LABEL[session.status],
+    mark: stale ? "stale" : answered ? "answered" : session.status,
+    word: stale ? "Stale" : answered ? ANSWERED_WORD : STATUS_LABEL[session.status],
     ended,
     stale,
+    answered,
     quiet: stale || ended || gone,
     // A session that finished or failed is expected to have no process.
     orphaned: gone && !ended,
@@ -64,11 +87,15 @@ const GROUP_LABEL: Record<Exclude<SessionGroupId, "ended">, string> = {
 
 const GROUP_ORDER: readonly SessionGroupId[] = ["needs-you", "working", "idle", "ended", "unknown"];
 
-/** The section a session is listed in, and the column of the board it is drawn in. */
-export function groupOf(session: Pick<Session, "status">): SessionGroupId {
+/**
+ * The section a session is listed in, and the column of the board it is drawn
+ * in. A session whose prompt was answered is going on, so it is with the
+ * working ones, not in Needs you, until its source says what it does next.
+ */
+export function groupOf(session: Pick<Session, "status" | "answered">): SessionGroupId {
   switch (session.status) {
     case "needs-you":
-      return "needs-you";
+      return needsYou(session) ? "needs-you" : "working";
     case "working":
       return "working";
     case "idle":
@@ -93,8 +120,9 @@ function labelOf(id: SessionGroupId, members: readonly Session[]): string {
 /**
  * Order inside a section. The collector's own ordering does the work: the longest
  * wait first under "Needs you", the most recent change first everywhere else, so
- * stale sessions sink. The one addition is that a failure is listed before a
- * clean finish.
+ * stale sessions sink. A session whose prompt was just answered still reads as
+ * a wait, so it sorts as the waits do, longest first, and heads the working
+ * ones. The one addition is that a failure is listed before a clean finish.
  */
 function compareInGroup(a: Session, b: Session): number {
   const failedFirst = Number(b.status === "failed") - Number(a.status === "failed");
@@ -151,13 +179,15 @@ export function waitingSessions(sessions: readonly Session[]): Session[] {
 /**
  * How many sessions need the person now, from the latest snapshot. It is the one
  * rule for the lamp's colour: the mark, the hero and the Needs you history are
- * lit while this is above zero, and hold no warm colour at zero. Before the first
- * answer there are no sessions, and it is zero.
+ * lit while this is above zero, and hold no warm colour at zero. It goes by
+ * `needsYou`, so a wait that was answered, by a press or a rule, is not counted
+ * however its source still reads. Before the first answer there are no
+ * sessions, and it is zero.
  */
 export function countNeedingYou(
-  sessions: readonly Pick<Session, "status">[] | null | undefined,
+  sessions: readonly Pick<Session, "status" | "answered">[] | null | undefined,
 ): number {
-  return sessions?.filter((session) => session.status === "needs-you").length ?? 0;
+  return sessions?.filter(needsYou).length ?? 0;
 }
 
 /** The session that has been in a status longest, and since when. */
@@ -169,12 +199,16 @@ export interface Longest {
 /**
  * The numbers behind the hero and its counts row. Every session is counted under
  * exactly one of needs you, working, idle, stale, finished, failed and unknown,
- * so the counts add up to the total.
+ * so the counts add up to the total. A session whose prompt was answered is
+ * counted as working, as it is listed.
  */
 export interface SessionsSummary {
   total: number;
   needsYou: number;
+  /** The working sessions, with those whose prompt was answered. */
   working: number;
+  /** Of the working sessions, those whose prompt was answered while their source still says they wait. */
+  answered: number;
   /** The idle sessions that are not stale. */
   idle: number;
   /** The idle sessions left a day or more. They are not counted as idle. */
@@ -204,6 +238,7 @@ export function summarizeSessions(sessions: readonly Session[]): SessionsSummary
     total: sessions.length,
     needsYou: 0,
     working: 0,
+    answered: 0,
     idle: 0,
     stale: 0,
     open: 0,
@@ -222,8 +257,15 @@ export function summarizeSessions(sessions: readonly Session[]): SessionsSummary
 
     switch (session.status) {
       case "needs-you":
-        summary.needsYou += 1;
-        summary.longestWait = longer(summary.longestWait, session);
+        if (needsYou(session)) {
+          summary.needsYou += 1;
+          summary.longestWait = longer(summary.longestWait, session);
+        } else {
+          // Its status time is when the wait began, which says nothing of how
+          // long it has been working, so it is never the longest.
+          summary.working += 1;
+          summary.answered += 1;
+        }
         break;
       case "working":
         summary.working += 1;

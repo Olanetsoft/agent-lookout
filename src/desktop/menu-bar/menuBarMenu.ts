@@ -6,7 +6,8 @@
 // Settings… and Quit Agent Lookout.
 //
 // The count is the Dock badge's, by the same rule that lights the lamp in the
-// page. A session's name and what it is asking are shown on this computer
+// page, `needsYou`: a prompt already answered, by Allow, Deny or a permission
+// rule, is neither counted nor listed. A session's name and what it is asking are shown on this computer
 // only, as a notification shows them. Two sessions listed under one name are
 // told apart by their agent, project, branch or app, in brackets after it.
 //
@@ -25,6 +26,7 @@ import {
 } from "../../core/sessions/session.ts";
 import { sortSessions } from "../../core/sessions/sorting.ts";
 import { MAX_NOTICE_TEXT_LENGTH, oneLine } from "../../core/text.ts";
+import { needsYou } from "../../core/waits/answeredWaits.ts";
 
 /** The longest a session's name runs in the menu, in characters. A longer one is cut. */
 export const MAX_MENU_NAME_LENGTH = 40;
@@ -52,6 +54,7 @@ export type MenuBarSession = Pick<
   | "statusSince"
   | "waitingReason"
   | "waitingText"
+  | "answered"
 >;
 
 /** What the menu needs of a poll's snapshot. */
@@ -71,9 +74,12 @@ export interface MenuBarActions {
   quit: () => void;
 }
 
-/** The sessions that need you, the longest wait first, and one whose start is not known last. */
+/**
+ * The sessions that need you, the longest wait first, and one whose start is
+ * not known last. One in a wait that was answered needs nobody.
+ */
 export function waitingSessions<T extends MenuBarSession>(sessions: readonly T[]): T[] {
-  return sortSessions(sessions.filter((session) => session.status === "needs-you"));
+  return sortSessions(sessions.filter(needsYou));
 }
 
 /**

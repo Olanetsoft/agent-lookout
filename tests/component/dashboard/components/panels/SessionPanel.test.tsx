@@ -744,6 +744,29 @@ function withClaude(overrides: Partial<Session>): CollectorState {
   });
 }
 
+test("a session whose prompt was answered, while its file still says it waits, says Answered and when it asked, with nothing warm", async () => {
+  await renderPanel(CLAUDE_ID, withClaude({ answered: true }));
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+
+  // The answered mark and the word, with no length: when it was answered is not known here.
+  expect(facts(root).Status).toBe("Answeredasked for permission at 14:28:30");
+  const status = root.querySelector('[data-slot="fact-row"] [data-slot="status-mark"]');
+  expect(status?.getAttribute("data-kind")).toBe("answered");
+  // Its Jump is the quiet one, and its wait is over in its events and on its timeline.
+  const jump = page.getByRole("link", { name: "Jump to checkout-flow in VS Code" });
+  expect(jump.element().getAttribute("data-variant")).toBe("quiet");
+  const own = page.getByRole("list", { name: "Its events, newest first" });
+  const newest = own.element().querySelector('[data-slot="event-row"]');
+  expect(newest?.querySelector('[data-slot="status-mark"]')?.getAttribute("aria-label")).toBe(
+    "Needed you, answered",
+  );
+  expect(newest?.hasAttribute("data-lit")).toBe(false);
+  expect(root.querySelector('[data-part="segment"][data-open="true"]')).toBeNull();
+  expect(warmElements(root)).toEqual([]);
+});
+
 test.each([375, 1440])(
   "at %ipx, a session the collector can stop has Stop beside its Jump, which asks first at the top of the details",
   async (width) => {

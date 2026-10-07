@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { withoutWaitingText, type Session } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { staleAfterMs } from "@core/time-rules/timeRules";
+import { needsYou } from "@core/waits/answeredWaits";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
@@ -30,7 +31,7 @@ import {
 } from "@dashboard/lib/format";
 import { logEntries, logStart } from "@dashboard/lib/events/events";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
-import { isStaleIdle } from "@dashboard/lib/sessions/sessions";
+import { ANSWERED_WORD, isAnswered, isStaleIdle } from "@dashboard/lib/sessions/sessions";
 import { STATUS_LABEL, surfaceLabel, waitingDetail } from "@dashboard/lib/sessions/status";
 import { waitedOnYou } from "@dashboard/lib/sessions/waits";
 import { agentLabel } from "@dashboard/lib/sources/sources";
@@ -68,6 +69,11 @@ function nameOf(sessionId: string, opener: HTMLElement | null): HTMLElement | nu
  * what a waiting session is asking, cut at two lines, and the agent's own
  * wording of a wait, when it says more. A session that has left the list is
  * waiting no more, so what it was asking is not said.
+ *
+ * A session whose prompt was answered, by Allow, Deny or a rule, while its
+ * source still says it waits, is "Answered" with the answered mark, as its
+ * row is: no length, since when it was answered the page does not know, and
+ * under it when it asked, "asked for permission at 14:28".
  */
 function StatusFact({
   session,
@@ -82,22 +88,23 @@ function StatusFact({
 }) {
   const ended = session.status === "finished" || session.status === "failed";
   const stale = isStaleIdle(session);
+  const answered = isAnswered(session);
   // A wait whose session has gone is over, and its lamp is out, as it is in the log.
   const mark: MarkKind = stale
     ? "stale"
-    : gone && session.status === "needs-you"
+    : answered || (gone && session.status === "needs-you")
       ? "answered"
       : session.status;
   const since = session.statusSince;
-  const lasted = since !== null ? Math.max(0, asOf - since) : null;
+  const lasted = since !== null && !answered ? Math.max(0, asOf - since) : null;
   const quiet = quietFor(session, asOf);
-  const waiting = session.status === "needs-you";
+  const waiting = needsYou(session);
   const detail = waiting ? waitingDetail(session) : null;
   // A held request is shown whole at the top of the details, in place of the line.
   const asking = (waiting && !gone && !session.ask && session.waitingText?.trim()) || null;
   const when =
     since !== null
-      ? `${ended ? "at" : stale ? "idle since" : "since"} ${formatSince(since, now)}`
+      ? `${ended ? "at" : stale ? "idle since" : answered ? "asked for permission at" : "since"} ${formatSince(since, now)}`
       : "time not reported";
   const line = [waiting ? waitingLabel(session) : null, when, quiet && quietPhrase(quiet)].filter(
     (part) => typeof part === "string",
@@ -121,7 +128,9 @@ function StatusFact({
     >
       <span className='inline-flex items-center gap-2'>
         <StatusMark kind={mark} />
-        <span data-part='status'>{stale ? "Stale" : STATUS_LABEL[session.status]}</span>
+        <span data-part='status'>
+          {stale ? "Stale" : answered ? ANSWERED_WORD : STATUS_LABEL[session.status]}
+        </span>
         {lasted !== null && (
           <span data-part='duration' className='tabular-nums'>
             <span className='sr-only'>
@@ -501,7 +510,7 @@ function SessionDialog({
                 <Jump
                   session={session}
                   jump={jump}
-                  variant={session.status === "needs-you" ? "needs-you" : "quiet"}
+                  variant={needsYou(session) ? "needs-you" : "quiet"}
                 />
                 <StopButton session={session} stop={stop} />
               </>

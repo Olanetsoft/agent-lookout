@@ -369,6 +369,16 @@ describe("waits", () => {
     expect(hour.openMs).toBe(0);
   });
 
+  test("a wait answered by a press or a rule is not open, while its source still says the session waits", () => {
+    const hour = lastHour({
+      history: twoWaits(),
+      sessions: [{ ...waiting(1, at(14, 25)), answered: true }],
+    });
+
+    expect(bucketAt(hour.buckets, at(14, 25)).means).toMatchObject({ open: 0, answered: 1 });
+    expect(hour.openMs).toBe(0);
+  });
+
   test("no more of the count is open than the waits still open that had begun by then", () => {
     // Two waited from 14:20, but only one of the waits open now had begun.
     const hour = lastHour({

@@ -63,6 +63,15 @@ test("a wait whose session is no longer listed as needing the person is answered
   expect(logEntries([wait], [])[0]).toMatchObject({ mark: "answered", open: false });
 });
 
+test("a wait answered by a press or a rule is not lit, while its source still says the session waits", () => {
+  const wait = changed(1, ago(2), "working", "needs-you");
+
+  expect(logEntries([wait], [{ ...listed(1, "needs-you"), answered: true }])[0]).toMatchObject({
+    mark: "answered",
+    open: false,
+  });
+});
+
 test("a move out of a wait says how long it lasted when the event that began it is held", () => {
   const wait = changed(1, ago(30), "working", "needs-you");
   const answer = changed(1, ago(28), "needs-you", "working");

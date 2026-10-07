@@ -218,6 +218,61 @@ describe("POST /api/permission/answer", () => {
     expect(asks.answer).not.toHaveBeenCalled();
   });
 
+  test("replies only once a poll begun after the answer is done, so the page's read straight after finds the wait over", async () => {
+    const { route, poller } = routeOver();
+    let finish = () => {};
+    const answered: SessionsSnapshot = {
+      generatedAt: 2,
+      sources: [],
+      sessions: [waiting({ answered: true })],
+    };
+    poller.pollOnce.mockImplementationOnce(
+      () => new Promise((resolve) => (finish = () => resolve(answered))),
+    );
+    let replied = false;
+    const answer = route(request()).then((reply) => {
+      replied = true;
+      return reply;
+    });
+
+    await vi.waitFor(() => expect(poller.pollOnce).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(replied).toBe(false);
+    finish();
+    expect(await answer).toEqual({ status: 200, body: { ok: true, decision: "allow" } });
+    // That poll marked the wait answered, so it is not asked for again.
+    expect(poller.pollOnce).toHaveBeenCalledTimes(1);
+  });
+
+  test("polls once more when the poll it was handed was under way already, and still finds the session needing the person", async () => {
+    const { route, poller } = routeOver();
+    const before: SessionsSnapshot = { generatedAt: 1, sources: [], sessions: [waiting()] };
+    const after: SessionsSnapshot = {
+      generatedAt: 2,
+      sources: [],
+      sessions: [waiting({ answered: true })],
+    };
+    poller.pollOnce.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+    expect((await route(request())).status).toBe(200);
+    expect(poller.pollOnce).toHaveBeenCalledTimes(2);
+  });
+
+  test.each<[string, Session[]]>([
+    ["gone on working", [waiting({ status: "working", waitingReason: undefined })]],
+    ["left the list", []],
+  ])("polls once when the session has %s", async (_what, sessions) => {
+    const { route, poller } = routeOver();
+    poller.pollOnce.mockResolvedValueOnce({ generatedAt: 2, sources: [], sessions });
+    expect((await route(request())).status).toBe(200);
+    expect(poller.pollOnce).toHaveBeenCalledTimes(1);
+  });
+
+  test("a poll that fails leaves the answer said, for the poller's next beat to read", async () => {
+    const { route, poller } = routeOver();
+    poller.pollOnce.mockRejectedValueOnce(new Error("read failed"));
+    expect(await route(request())).toEqual({ status: 200, body: { ok: true, decision: "allow" } });
+  });
+
   test("a body larger than it said is a 413", async () => {
     const { route } = routeOver();
     const answer = await route(
