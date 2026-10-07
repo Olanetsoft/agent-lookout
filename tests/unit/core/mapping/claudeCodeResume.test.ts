@@ -102,6 +102,9 @@ describe("resumeCommand", () => {
     ["a folder from the current one", "./demo"],
     ["a home folder written with a tilde", "~/code/demo"],
     ["a folder with spaces before it", "  /Users/example/code/demo"],
+    // The command is for a POSIX shell, so a session on Windows has none.
+    ["a Windows folder", "C:\\Users\\example\\code\\demo"],
+    ["a Windows folder written with /", "C:/Users/example/code/demo"],
   ])("gives no command for %s", (_name, folder) => {
     expect(resumeCommand(ID, folder)).toBeNull();
   });

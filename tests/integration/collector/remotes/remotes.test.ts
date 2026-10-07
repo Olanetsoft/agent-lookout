@@ -5,7 +5,8 @@ import { REMOTES_ENV } from "@collector/remotes/remoteSettings";
 import { snapshotThere } from "@tests/fixtures/remote";
 import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
 
-// The stand-in ssh is a POSIX sh script, which Windows cannot run.
+// The stand-in ssh is a POSIX sh script, and Node named ssh.exe cannot be one on
+// Windows: it takes ssh's first argument, -N, for an option of its own.
 const posixTest = test.skipIf(process.platform === "win32");
 
 const WAIT = { timeout: 8_000, interval: 50 };
