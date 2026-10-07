@@ -76,6 +76,15 @@ jobs:
       # Component tests run in real Chromium.
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      # A browser test that fails leaves a picture of the page in
+      # tests/.artifacts/, kept for a week so a failure can be seen, not guessed.
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-failures-node-${{ matrix.node }}
+          path: tests/.artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # The unit, integration and component tests on Windows. A test of something
   # Windows does not have, such as a POSIX sh script, a Unix socket, ps, tmux,
@@ -93,6 +102,13 @@ jobs:
       # Component tests run in real Chromium.
       - run: npx playwright install chromium
       - run: npm test
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-failures-windows
+          path: tests/.artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
 
   build:
     runs-on: ubuntu-latest
