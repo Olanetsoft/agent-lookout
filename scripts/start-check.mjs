@@ -32,10 +32,14 @@
 // registry file whose process is not the one it names is not looked for,
 // since Agent Lookout compares no start times there. Windows has no Ctrl+C to
 // send another program either, so the app is ended with every process under
-// it by `taskkill`, and the check is that nothing is left and nothing answers.
+// it, each by its own ID, and the check is that nothing is left and nothing
+// answers. There a process keeps the ID of a parent that has ended, and the ID
+// can pass to a new process, so a process is known by its ID and when it
+// began, and counts as under another only if it did not begin before it.
 //
-// It prints one line for each check and exits with 0 when all pass, 1 when one
-// fails and 2 when it could not get as far as checking.
+// It prints one line for each check, and a note when a process only seemed to
+// be under the app, and exits with 0 when all pass, 1 when one fails and 2
+// when it could not get as far as checking.
 
 import { execFile, spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -105,6 +109,10 @@ function fail(line) {
 
 function skip(line) {
   console.log(`skip  ${line}`);
+}
+
+function note(line) {
+  console.log(`note  ${line}`);
 }
 
 function wait(ms) {
@@ -187,47 +195,105 @@ async function getJson(base, route) {
 }
 
 /**
- * Each process's ID and its parent's, a line each: from `ps`, or on Windows,
- * which has none, from PowerShell, which takes a few seconds to start.
+ * Every process, with its ID, its parent's ID, and on Windows when it began
+ * and its name: from `ps`, or on Windows, which has none, from PowerShell,
+ * which takes a few seconds to start. Elsewhere `began` is null and `name`
+ * empty, since a process whose parent ends is moved under another there.
  */
-function processTable() {
-  if (onWindows) {
-    return run(
-      path.join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.ParentProcessId }",
-      ],
-      process.env,
-      30_000,
-    );
+async function processTable() {
+  const printed = onWindows
+    ? await run(
+        path.join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2} {3}' -f $_.ProcessId, $_.ParentProcessId, $(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }), $_.Name }",
+        ],
+        process.env,
+        30_000,
+      )
+    : await run("ps", ["-A", "-o", "pid=,ppid="], { PATH: "/usr/bin:/bin", LC_ALL: "C" });
+  const rows = [];
+  for (const line of printed.split(/\r?\n/)) {
+    const match = onWindows
+      ? /^(\d+) (\d+) (\d+) (.*)$/.exec(line)
+      : /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+    if (!match) continue;
+    rows.push({
+      pid: Number(match[1]),
+      parent: Number(match[2]),
+      began: onWindows ? BigInt(match[3]) : null,
+      name: onWindows ? match[4].trim() : "",
+    });
   }
-  return run("ps", ["-A", "-o", "pid=,ppid="], { PATH: "/usr/bin:/bin", LC_ALL: "C" });
+  return rows;
 }
 
-/** Every process below this one, from one reading of the table, by walking down from it. */
+/**
+ * Every process below this one, from one reading of the table, by walking
+ * down from it, as `found`. Only for a process Node has not seen end, so its
+ * ID is still its own. On Windows one that names a parent in the tree but
+ * began before it is that ID's earlier holder's, as Microsoft's page on
+ * Win32_Process warns, so it comes back in `others` instead. `listed` says
+ * whether the reading had the process itself: one that failed lists nothing.
+ */
 async function descendantsOf(pid) {
-  const printed = await processTable();
-  const children = new Map();
-  for (const line of printed.split("\n")) {
-    const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
-    if (!match) continue;
-    const [child, parent] = [Number(match[1]), Number(match[2])];
-    children.set(parent, [...(children.get(parent) ?? []), child]);
-  }
+  const rows = await processTable();
+  const root = rows.find((row) => row.pid === pid);
   const found = [];
-  const queue = [pid];
+  const others = [];
+  const queue = root ? [root] : [];
   while (queue.length > 0) {
-    for (const child of children.get(queue.shift()) ?? []) {
-      if (!found.includes(child)) {
-        found.push(child);
-        queue.push(child);
+    const parent = queue.shift();
+    for (const row of rows) {
+      if (row.parent !== parent.pid || row === parent) continue;
+      if (row === root || found.includes(row) || others.includes(row)) continue;
+      if (onWindows && row.began < parent.began) {
+        others.push(row);
+      } else {
+        found.push(row);
+        queue.push(row);
       }
     }
   }
-  return found;
+  return { found, others, listed: root !== undefined };
+}
+
+/**
+ * Those of these processes still running, by one more reading of the table on
+ * Windows, where only the same ID with the same start is the same process.
+ * Null when that reading lists nothing, which says nothing either way.
+ */
+async function stillRunning(processes) {
+  if (!onWindows) return processes.filter((row) => isAlive(row.pid));
+  const now = await processTable();
+  if (now.length === 0) return null;
+  return processes.filter((row) =>
+    now.some((other) => other.pid === row.pid && other.began === row.began),
+  );
+}
+
+/** A process as a line names it: its ID, and on Windows its name. */
+function nameOf(row) {
+  return row.name ? `${row.pid} ${row.name}` : String(row.pid);
+}
+
+/** Whether Node has not seen a process this script started end, so its ID is still its own. */
+function isRunning(child) {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+/**
+ * Ends a process this script started, through Node's own handle, and every
+ * process under it while Node has not seen it end. Once it has, its ID may be
+ * another's, so nothing found under it is ended, even if it ended while the
+ * table was being read.
+ */
+async function endWithTree(child) {
+  const { found } = isRunning(child) ? await descendantsOf(child.pid) : { found: [] };
+  if (isRunning(child)) for (const row of found) signal(row.pid, "SIGKILL");
+  child.kill("SIGKILL");
 }
 
 /** The folders and files the app is pointed at. */
@@ -558,37 +624,54 @@ async function checkMcp(address, env) {
   } else {
     const ended = code === null ? "went on running" : `ended with ${code}`;
     fail(`${command.label} ${ended} once its stdin was closed`);
-    for (const pid of [mcp.pid, ...(await descendantsOf(mcp.pid))]) signal(pid, "SIGKILL");
+    await endWithTree(mcp);
   }
   started.mcp = null;
-}
-
-/**
- * Ends a process and every process under it, on Windows, with the system's
- * own `taskkill`. Only a process ID this script started is ever handed to it.
- */
-function endTree(pid) {
-  return run(path.join(system32, "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], process.env);
 }
 
 /**
  * Stops the app as Ctrl+C in its terminal does, by sending SIGINT to npm
  * and to every process under it at once, each by its own ID, and checks that
  * the app stopped with it. Windows cannot send Ctrl+C to another program's
- * console, so there npm is ended with every process under it, as closing its
+ * console, so there npm and every process under it are ended, as closing its
  * window would.
  */
 async function stopApp(address) {
   const npm = started.npm;
-  const below = await descendantsOf(npm.pid);
-  if (onWindows) await endTree(npm.pid);
-  else for (const pid of [npm.pid, ...below]) signal(pid, "SIGINT");
+  // A reading that failed lists nothing, npm included, so it is read again.
+  let tree = { found: [], others: [], listed: false };
+  for (let tries = 0; tries < 3 && !tree.listed && isRunning(npm); tries += 1) {
+    tree = await descendantsOf(npm.pid);
+  }
+  const below = tree.found;
+  if (tree.others.length > 0) {
+    note(
+      `Left alone, as each began before the process its parent's ID names now: ${tree.others.map(nameOf).join(", ")}`,
+    );
+  }
+  if (isRunning(npm) && tree.listed) {
+    for (const row of below) signal(row.pid, onWindows ? "SIGKILL" : "SIGINT");
+    npm.kill(onWindows ? "SIGKILL" : "SIGINT");
+  } else if (isRunning(npm)) {
+    // With nothing known of what is under npm, on Windows `taskkill` finds it as
+    // it ends npm, and elsewhere npm passes Ctrl+C on to the app.
+    fail(`The processes under ${start.label} could not be listed`);
+    if (onWindows) {
+      await run(
+        path.join(system32, "taskkill.exe"),
+        ["/PID", String(npm.pid), "/T", "/F"],
+        process.env,
+      );
+    } else {
+      npm.kill("SIGINT");
+    }
+  }
   const how = onWindows ? "once it was ended" : "on Ctrl+C";
   const code = await exitOf(npm, STOP_TIMEOUT_MS);
   started.npm = null;
   if (code === null) {
     fail(`${start.label} did not stop ${how}`);
-    signal(npm.pid, "SIGKILL");
+    npm.kill("SIGKILL");
   }
 
   let answering = true;
@@ -600,14 +683,17 @@ async function stopApp(address) {
     );
     if (answering) await wait(200);
   }
-  // The processes under npm can end a moment after npm does.
-  let left = below.filter(isAlive);
+  // The processes under npm can end a moment after npm does, and a reading
+  // that lists nothing is read again.
+  let left = await stillRunning(below);
   const gone = Date.now() + 5_000;
-  while (left.length > 0 && Date.now() < gone) {
+  while ((left === null || left.length > 0) && Date.now() < gone) {
     await wait(200);
-    left = left.filter(isAlive);
+    left = await stillRunning(left ?? below);
   }
-  if (code !== null && !answering && left.length === 0) {
+  if (left === null) {
+    fail(`The processes under ${start.label} could not be listed once it was ended`);
+  } else if (tree.listed && code !== null && !answering && left.length === 0) {
     if (onWindows) {
       pass(
         `It was ended with the ${below.length} processes under ${start.label}, and nothing answers at its address`,
@@ -617,25 +703,23 @@ async function stopApp(address) {
       pass(`It stopped on Ctrl+C, and ${start.label} ended with ${ended}`);
     }
   } else if (answering || left.length > 0) {
-    fail(`The app went on running ${how}: process ${left.join(", ") || "unknown"}`);
+    fail(`The app went on running ${how}: process ${left.map(nameOf).join(", ") || "unknown"}`);
   }
-  for (const pid of left) signal(pid, "SIGKILL");
+  for (const row of left ?? []) signal(row.pid, "SIGKILL");
 }
 
 /** Stops whatever is still running, each process by its own ID, and removes the folders. */
 async function cleanUp() {
   if (started.mcp) {
-    const below = await descendantsOf(started.mcp.pid);
-    for (const pid of [started.mcp.pid, ...below]) signal(pid, "SIGKILL");
+    await endWithTree(started.mcp);
     started.mcp = null;
   }
   if (started.npm) {
-    const below = await descendantsOf(started.npm.pid);
-    for (const pid of [started.npm.pid, ...below]) signal(pid, "SIGKILL");
+    await endWithTree(started.npm);
     started.npm = null;
   }
   for (const standIn of started.standIns) {
-    signal(standIn.pid, "SIGTERM");
+    standIn.kill("SIGTERM");
     await exitOf(standIn, 2_000);
   }
   started.standIns = [];
