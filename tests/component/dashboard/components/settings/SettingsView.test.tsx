@@ -975,8 +975,11 @@ test.each(
 
     const screen = await render(<SettingsView />);
     await expect.element(notifications(screen)).toBeVisible();
-    expect(stateOf(screen).textContent).toBe(
-      stored ? "Notifications are on." : "Notifications are off.",
+    // The state is drawn once the stored choice and the permission are read.
+    await vi.waitFor(() =>
+      expect(stateOf(screen).textContent).toBe(
+        stored ? "Notifications are on." : "Notifications are off.",
+      ),
     );
 
     expect(warmPaint(screen.container)).toEqual([]);
