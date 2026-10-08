@@ -3025,20 +3025,10 @@ h2 {
   padding: 6px var(--pad);
 }
 .steps li {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  column-gap: 16px;
   padding: 24px 0 26px;
 }
 .steps li + li {
   border-top: 1px solid var(--hairline);
-}
-.steps .n {
-  font-size: 28px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
 }
 .steps h3 {
   padding-top: 3px;
@@ -3103,8 +3093,9 @@ h2 {
 }
 
 /*
- * What it does today: four groups of small cards, each a link to its part of
- * the guide. The whole card is the link; its ring is drawn on the card.
+ * What it does today: four groups, each one card with a row per link to its
+ * part of the guide, split by a hairline. The whole row is the link; its ring
+ * is drawn on the row.
  */
 .today {
   margin-top: var(--section);
@@ -3158,20 +3149,29 @@ h2 {
 }
 .today-cards {
   display: grid;
-  gap: 8px;
   margin-top: 12px;
+  padding-block: 2px;
 }
 .today-card {
-  padding: 16px 18px;
-  border-radius: var(--radius-inner);
+  position: relative;
+  padding: 14px 18px;
   transition: background-color 120ms;
+}
+.today-card + .today-card {
+  border-top: 1px solid var(--hairline);
+}
+.today-card:first-child {
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+}
+.today-card:last-child {
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 }
 .today-card:hover {
   background-color: var(--glass-raised);
 }
 .today-card:has(a:focus-visible) {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .today-card h4 {
   display: flex;
@@ -3193,29 +3193,18 @@ h2 {
   z-index: 4;
   border-radius: inherit;
 }
-/* Where it goes, shown under the pointer. */
+/* Where it goes: shown faintly on every row, so a touch screen shows it too, and fully under the pointer. */
 .today-card h4::after {
   content: "↗";
   content: "↗" / "";
   flex: none;
   color: var(--ink-muted);
   font-weight: 500;
-  opacity: 0;
+  opacity: 0.5;
   transition: opacity 120ms;
 }
 .today-card:hover h4::after {
   opacity: 1;
-}
-.today-card p {
-  margin-top: 4px;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--ink-secondary);
-  text-wrap: pretty;
-}
-.today-card code {
-  font-size: 13px;
-  color: var(--ink);
 }
 .today-foot {
   max-width: 80ch;
@@ -3229,20 +3218,9 @@ h2 {
   color: var(--ink-secondary);
 }
 
-/* The cards rise into place as they come into view, where the browser ties that to the scroll. */
+/* Each group's card rises into place as it comes into view, where the browser ties that to the scroll. */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .today-card {
-      animation: today-in linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 80%;
-    }
-  }
-  /* On a phone each group is one card, and the card rises whole. */
-  @media (prefers-reduced-motion: no-preference) and (width < 761px) {
-    .today-card {
-      animation: none;
-    }
     .today-cards {
       animation: today-in linear both;
       animation-timeline: view();
@@ -3644,14 +3622,6 @@ body:has(> .lost) {
   .steps {
     padding: 2px var(--pad);
   }
-  .steps li {
-    grid-template-columns: 26px minmax(0, 1fr);
-    column-gap: 12px;
-  }
-  .steps .n {
-    font-size: 22px;
-    padding-top: 2px;
-  }
   .steps pre {
     padding: 12px 14px;
     font-size: 12px;
@@ -3667,60 +3637,10 @@ body:has(> .lost) {
     height: 28px;
   }
 
-  /* One column, and each group is one card, its rows split by a hairline. Each row is still a link. */
+  /* One column of groups. */
   .today-groups {
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
-  }
-  .today-cards {
-    --rim-paint: var(--rim);
-    position: relative;
-    isolation: isolate;
-    gap: 0;
-    padding-block: 2px;
-    border-radius: var(--radius-panel);
-    background-color: var(--glass-card);
-    box-shadow: var(--elev-2);
-  }
-  .today-cards::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    padding: 1px;
-    border-radius: inherit;
-    pointer-events: none;
-    background: var(--rim-paint);
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-  }
-  .today-card {
-    padding: 14px 18px;
-    border-radius: 0;
-    background-color: transparent;
-    box-shadow: none;
-  }
-  .today-card::before,
-  .today-card::after {
-    display: none;
-  }
-  .today-card + .today-card {
-    border-top: 1px solid var(--hairline);
-  }
-  .today-card:first-child {
-    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
-  }
-  .today-card:last-child {
-    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
-  }
-  .today-card:has(a:focus-visible) {
-    outline-offset: -2px;
   }
 
   .closing {
