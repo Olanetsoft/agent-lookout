@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.10 - 2026-10-08
+
+A Codex session's details show how many tokens its newest reply took, and the Mac app asks once whether to turn notifications on, then sends a test that says what macOS did with it.
 
 ### Added
 
