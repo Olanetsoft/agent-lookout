@@ -25,22 +25,22 @@ type Theme = "dark" | "light";
 
 /** Every raw colour token, night then day. */
 const TOKENS: Record<string, [night: string, day: string]> = {
-  "--ground-top": ["#090908", "#d4d0ca"],
-  "--glass-chrome": ["rgba(16, 15, 14, 0.6)", "rgba(252, 251, 249, 0.52)"],
-  "--glass-card": ["rgba(19, 18, 17, 0.62)", "rgba(255, 255, 254, 0.56)"],
-  "--glass-raised": ["rgba(33, 31, 29, 0.66)", "rgba(255, 255, 255, 0.66)"],
-  "--glass-float": ["rgba(30, 28, 26, 0.84)", "rgba(253, 252, 250, 0.84)"],
+  "--ground-top": ["#060605", "#d4d0ca"],
+  "--glass-chrome": ["rgba(11, 10, 9, 0.64)", "rgba(252, 251, 249, 0.52)"],
+  "--glass-card": ["rgba(13, 12, 11, 0.66)", "rgba(255, 255, 254, 0.56)"],
+  "--glass-raised": ["rgba(25, 23, 21, 0.68)", "rgba(255, 255, 255, 0.66)"],
+  "--glass-float": ["rgba(21, 20, 18, 0.88)", "rgba(253, 252, 250, 0.84)"],
   "--fill-quiet": ["rgba(255, 248, 238, 0.055)", "rgba(255, 255, 255, 0.62)"],
   "--fill-hover": ["rgba(255, 248, 238, 0.045)", "rgba(255, 255, 255, 0.55)"],
   "--fill-selected": ["rgba(255, 248, 238, 0.1)", "rgba(255, 255, 255, 0.85)"],
   "--fill-zebra": ["rgba(255, 248, 238, 0.022)", "rgba(38, 32, 26, 0.035)"],
-  "--control-rim": ["rgba(255, 248, 238, 0.1)", "rgba(38, 32, 26, 0.13)"],
+  "--control-rim": ["rgba(255, 248, 238, 0.11)", "rgba(38, 32, 26, 0.13)"],
   "--control-top": ["rgba(255, 248, 238, 0.1)", "rgba(255, 255, 255, 0.9)"],
   "--well": ["rgba(0, 0, 0, 0.3)", "rgba(38, 32, 26, 0.055)"],
   "--thumb": ["rgba(255, 248, 238, 0.11)", "#ffffff"],
-  "--hairline": ["rgba(255, 248, 238, 0.075)", "rgba(38, 32, 26, 0.08)"],
-  "--rule": ["rgba(255, 248, 238, 0.12)", "rgba(38, 32, 26, 0.13)"],
-  "--rule-strong": ["rgba(255, 248, 238, 0.22)", "rgba(38, 32, 26, 0.28)"],
+  "--hairline": ["rgba(255, 248, 238, 0.085)", "rgba(38, 32, 26, 0.08)"],
+  "--rule": ["rgba(255, 248, 238, 0.135)", "rgba(38, 32, 26, 0.13)"],
+  "--rule-strong": ["rgba(255, 248, 238, 0.24)", "rgba(38, 32, 26, 0.28)"],
   "--ink": ["#f3f0ea", "#181613"],
   "--ink-secondary": ["#c3beb5", "#3f3b36"],
   "--ink-muted": ["#9e988f", "#5b564f"],
@@ -67,14 +67,14 @@ const TOKENS: Record<string, [night: string, day: string]> = {
 const LIGHTS: Record<string, [night: string, day: string]> = {
   "--field": ["218 214 207", "255 255 255"],
   "--field-deep": ["142 137 130", "240 235 227"],
-  "--field-strength": ["0.23", "0.72"],
+  "--field-strength": ["0.16", "0.72"],
   "--lamp": ["255 166 60", "255 176 80"],
   "--lamp-strength": ["0.48", "0.46"],
   "--rest": ["226 221 213", "255 255 255"],
-  "--rest-strength": ["0.34", "0.7"],
+  "--rest-strength": ["0.28", "0.7"],
   "--saturate": ["118%", "160%"],
   "--saturate-hero": ["185%", "190%"],
-  "--grain": ["0.5", "0.3"],
+  "--grain": ["0.3", "0.3"],
 };
 
 /** Tokens written as gradients and shadows, read for the colours in them. */
@@ -187,7 +187,7 @@ function light(token: string, strength: string, scale = 1): Rgba {
 /** The ground at the point where words on glass are hardest to read. */
 function worstGround(theme: Theme): Rgba {
   // Night: the lightest stop, at the foot. Day: the darkest, at the top.
-  return theme === "dark" ? resolveColour("#11100e") : resolveColour("var(--ground-top)");
+  return theme === "dark" ? resolveColour("#0c0b0a") : resolveColour("var(--ground-top)");
 }
 
 /** Every backdrop words sit on, at its worst point, by name. */
@@ -508,8 +508,8 @@ test("the muted ink is kept out of the hero because at night it falls short over
 
 test("night is the default, with no data-theme set", () => {
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
-  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(9, 9, 8)");
-  expect(rgbOf("var(--glass-card)")).toBe("rgba(19, 18, 17, 0.62)");
+  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(6, 6, 5)");
+  expect(rgbOf("var(--glass-card)")).toBe("rgba(13, 12, 11, 0.66)");
   expect(rgbOf("var(--ink)")).toBe("rgb(243, 240, 234)");
   expect(getComputedStyle(document.documentElement).colorScheme).toBe("dark");
 });

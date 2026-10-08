@@ -609,7 +609,7 @@ test("the header's switch shows Night and Day, marks the theme in force and stor
   await night.click();
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
-  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(9, 9, 8)");
+  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(6, 6, 5)");
 });
 
 test("the theme chosen in Settings is remembered, and System follows the computer, which the header's switch shows", async () => {

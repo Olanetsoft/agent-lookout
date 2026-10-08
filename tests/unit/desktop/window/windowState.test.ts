@@ -15,7 +15,7 @@ import {
 const SAVED: WindowState = {
   bounds: { x: 120, y: 80, width: 1200, height: 800 },
   maximized: false,
-  background: "#090908",
+  background: "#060605",
 };
 
 describe("reading the file", () => {
@@ -57,7 +57,7 @@ describe("reading the file", () => {
     for (const maximized of ["true", 1, null]) {
       expect(read({ maximized }).maximized).toBe(false);
     }
-    for (const background of ["#fff", "black", "rgb(0,0,0)", "#0909089", 9, null, "url(x)"]) {
+    for (const background of ["#fff", "black", "rgb(0,0,0)", "#0606059", 9, null, "url(x)"]) {
       expect(read({ background }).background, String(background)).toBeNull();
     }
   });

@@ -19,7 +19,7 @@
  */
 ((root) => {
   const KEY = "agent-lookout-theme";
-  const GROUND = { dark: "#090908", light: "#d4d0ca" };
+  const GROUND = { dark: "#060605", light: "#d4d0ca" };
   const systemDay = matchMedia("(prefers-color-scheme: light)");
 
   // Before the first paint.

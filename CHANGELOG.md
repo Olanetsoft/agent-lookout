@@ -10,6 +10,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Changed
 
+- Night is darker and crisper: a deeper ground, denser smoked glass and finer, brighter edges, on the dashboard, in the Mac app's window and on the landing page. Day is unchanged.
 - No program Agent Lookout starts is given its own settings any more. `claude`, `tmux`, `ssh`, `osascript`, the program that opens your browser and the Mac app's check of a downloaded update were handed every `AGENT_LOOKOUT_` setting in their environment, the mail server's password, the webhook's address and the push tokens among them, as only `gh` was not. None of them used them.
 
 ## 0.2.8 - 2026-10-07

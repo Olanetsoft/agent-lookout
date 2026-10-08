@@ -48,5 +48,5 @@ test("the window opens large enough for two columns, and can be made no smaller 
 });
 
 test("before the page says its theme, the window is the Night ground", () => {
-  expect(NIGHT_GROUND).toBe("#090908");
+  expect(NIGHT_GROUND).toBe("#060605");
 });

@@ -98,8 +98,8 @@
    * The ground: black with the faintest warmth, never #000. It shows only in the
    * gaps between panels and at the edges.
    */
-  --ground-top: #090908;
-  --ground: linear-gradient(180deg, #090908 0%, #0b0a09 46%, #11100e 100%);
+  --ground-top: #060605;
+  --ground: linear-gradient(180deg, #060605 0%, #080706 46%, #0c0b0a 100%);
   /*
    * The light behind the glass: silver, and a deeper pewter low on the left.
    * Each light is three channels, so it can be drawn at any strength with
@@ -107,22 +107,22 @@
    */
   --field: 218 214 207;
   --field-deep: 142 137 130;
-  --field-strength: 0.23;
+  --field-strength: 0.16;
   /* A fine dither over the ground, so its dark gradients do not band. */
-  --grain: 0.5;
+  --grain: 0.3;
 
   /* The lamp's light, behind the hero while a session needs the person. */
   --lamp: 255 166 60;
   --lamp-strength: 0.48;
   /* The light that holds the hero when nothing needs the person. */
   --rest: 226 221 213;
-  --rest-strength: 0.34;
+  --rest-strength: 0.28;
 
   /* Smoked glass, from the thinnest to the densest. */
-  --glass-chrome: rgba(16, 15, 14, 0.6);
-  --glass-card: rgba(19, 18, 17, 0.62);
-  --glass-raised: rgba(33, 31, 29, 0.66);
-  --glass-float: rgba(30, 28, 26, 0.84);
+  --glass-chrome: rgba(11, 10, 9, 0.64);
+  --glass-card: rgba(13, 12, 11, 0.66);
+  --glass-raised: rgba(25, 23, 21, 0.68);
+  --glass-float: rgba(21, 20, 18, 0.88);
   /* How far blurred glass saturates what is behind it, and the hero's lights. */
   --saturate: 118%;
   --saturate-hero: 185%;
@@ -130,17 +130,17 @@
   /* Light caught on the edge of the glass, brightest at the top right. */
   --rim: linear-gradient(
     205deg,
-    rgba(255, 248, 238, 0.3) 0%,
-    rgba(255, 248, 238, 0.09) 20%,
-    rgba(255, 248, 238, 0.03) 58%,
-    rgba(255, 248, 238, 0.08) 100%
+    rgba(255, 248, 238, 0.36) 0%,
+    rgba(255, 248, 238, 0.11) 20%,
+    rgba(255, 248, 238, 0.035) 58%,
+    rgba(255, 248, 238, 0.09) 100%
   );
   --rim-raised: linear-gradient(
     205deg,
-    rgba(255, 248, 238, 0.42) 0%,
-    rgba(255, 248, 238, 0.13) 20%,
-    rgba(255, 248, 238, 0.045) 58%,
-    rgba(255, 248, 238, 0.12) 100%
+    rgba(255, 248, 238, 0.5) 0%,
+    rgba(255, 248, 238, 0.15) 20%,
+    rgba(255, 248, 238, 0.05) 58%,
+    rgba(255, 248, 238, 0.14) 100%
   );
   /* The hero's top left edge catching the lamp, and catching the rest light. */
   --rim-lamp: linear-gradient(
@@ -158,9 +158,9 @@
   /* A little more light just under the top edge, so the surface reads as polished. */
   --sheen: linear-gradient(
     180deg,
-    rgba(255, 248, 238, 0.065),
-    rgba(255, 248, 238, 0.012) 120px,
-    rgba(255, 248, 238, 0) 260px
+    rgba(255, 248, 238, 0.04),
+    rgba(255, 248, 238, 0.007) 120px,
+    rgba(255, 248, 238, 0) 240px
   );
   /* The three heights: a 1px dark outer line, then a deep drop. */
   --elev-1:
@@ -178,7 +178,7 @@
   --fill-hover: rgba(255, 248, 238, 0.045);
   --fill-selected: rgba(255, 248, 238, 0.1);
   --fill-zebra: rgba(255, 248, 238, 0.022);
-  --control-rim: rgba(255, 248, 238, 0.1);
+  --control-rim: rgba(255, 248, 238, 0.11);
   --control-top: rgba(255, 248, 238, 0.1);
   --well: rgba(0, 0, 0, 0.3);
   --well-shade: rgba(0, 0, 0, 0.35);
@@ -186,9 +186,9 @@
   --thumb-drop: rgba(0, 0, 0, 0.35);
 
   /* Rules, from the faintest to the one a chart stands on. */
-  --hairline: rgba(255, 248, 238, 0.075);
-  --rule: rgba(255, 248, 238, 0.12);
-  --rule-strong: rgba(255, 248, 238, 0.22);
+  --hairline: rgba(255, 248, 238, 0.085);
+  --rule: rgba(255, 248, 238, 0.135);
+  --rule-strong: rgba(255, 248, 238, 0.24);
 
   /* Ink. All three are fit for words on every glass; the hero never takes the third. */
   --ink: #f3f0ea;

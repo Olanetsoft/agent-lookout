@@ -189,46 +189,46 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --ground-top: #090908;
-  --ground: linear-gradient(180deg, #090908 0%, #0b0a09 46%, #11100e 100%);
+  --ground-top: #060605;
+  --ground: linear-gradient(180deg, #060605 0%, #080706 46%, #0c0b0a 100%);
   --field: 218 214 207;
   --field-deep: 142 137 130;
-  --field-strength: 0.23;
-  --grain: 0.5;
+  --field-strength: 0.16;
+  --grain: 0.3;
 
   /* The lamp's light, and the light that holds the frame when nothing waits. */
   --lamp: 255 166 60;
   --lamp-strength: 0.48;
   --rest: 226 221 213;
-  --rest-strength: 0.34;
+  --rest-strength: 0.28;
   /* How much of the lamp's strength reaches the page outside the frame. */
   --halo-strength: 0.8;
   /* The light of the tour's effects when nothing waits, and the shade a spotlight leaves. */
   --beat-rgb: 243 240 234;
-  --spot-dim: rgba(9, 9, 8, 0.45);
+  --spot-dim: rgba(6, 6, 5, 0.45);
 
-  --glass-chrome: rgba(16, 15, 14, 0.6);
+  --glass-chrome: rgba(11, 10, 9, 0.64);
   /* The header's own glass. Bright things pass behind it, so at Night it is denser. */
-  --glass-bar: rgba(16, 15, 14, 0.84);
-  --glass-card: rgba(19, 18, 17, 0.62);
-  --glass-raised: rgba(33, 31, 29, 0.66);
-  --glass-float: rgba(30, 28, 26, 0.84);
+  --glass-bar: rgba(11, 10, 9, 0.86);
+  --glass-card: rgba(13, 12, 11, 0.66);
+  --glass-raised: rgba(25, 23, 21, 0.68);
+  --glass-float: rgba(21, 20, 18, 0.88);
   --saturate: 118%;
   --saturate-hero: 185%;
 
   --rim: linear-gradient(
     205deg,
-    rgba(255, 248, 238, 0.3) 0%,
-    rgba(255, 248, 238, 0.09) 20%,
-    rgba(255, 248, 238, 0.03) 58%,
-    rgba(255, 248, 238, 0.08) 100%
+    rgba(255, 248, 238, 0.36) 0%,
+    rgba(255, 248, 238, 0.11) 20%,
+    rgba(255, 248, 238, 0.035) 58%,
+    rgba(255, 248, 238, 0.09) 100%
   );
   --rim-raised: linear-gradient(
     205deg,
-    rgba(255, 248, 238, 0.42) 0%,
-    rgba(255, 248, 238, 0.13) 20%,
-    rgba(255, 248, 238, 0.045) 58%,
-    rgba(255, 248, 238, 0.12) 100%
+    rgba(255, 248, 238, 0.5) 0%,
+    rgba(255, 248, 238, 0.15) 20%,
+    rgba(255, 248, 238, 0.05) 58%,
+    rgba(255, 248, 238, 0.14) 100%
   );
   --rim-lamp: linear-gradient(
     135deg,
@@ -244,9 +244,9 @@
   );
   --sheen: linear-gradient(
     180deg,
-    rgba(255, 248, 238, 0.065),
-    rgba(255, 248, 238, 0.012) 120px,
-    rgba(255, 248, 238, 0) 260px
+    rgba(255, 248, 238, 0.04),
+    rgba(255, 248, 238, 0.007) 120px,
+    rgba(255, 248, 238, 0) 240px
   );
   --elev-1:
     0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 1px rgba(0, 0, 0, 0.35),
@@ -261,7 +261,7 @@
   --fill-quiet: rgba(255, 248, 238, 0.055);
   --fill-hover: rgba(255, 248, 238, 0.045);
   --fill-selected: rgba(255, 248, 238, 0.1);
-  --control-rim: rgba(255, 248, 238, 0.1);
+  --control-rim: rgba(255, 248, 238, 0.11);
   --control-top: rgba(255, 248, 238, 0.1);
   --well: rgba(0, 0, 0, 0.3);
   --well-shade: rgba(0, 0, 0, 0.35);
@@ -270,9 +270,9 @@
   --thumb-edge: rgba(255, 248, 238, 0.42);
   --thumb-drop: rgba(0, 0, 0, 0.35);
 
-  --hairline: rgba(255, 248, 238, 0.075);
-  --rule: rgba(255, 248, 238, 0.12);
-  --rule-strong: rgba(255, 248, 238, 0.22);
+  --hairline: rgba(255, 248, 238, 0.085);
+  --rule: rgba(255, 248, 238, 0.135);
+  --rule-strong: rgba(255, 248, 238, 0.24);
 
   --ink: #f3f0ea;
   --ink-secondary: #c3beb5;
@@ -291,7 +291,7 @@
    * Page only. The one solid button is drawn in ink, the colour of the rest
    * light, because the lamp's amber is not the page's to spend.
    */
-  --on-ink: #11100e;
+  --on-ink: #0c0b0a;
   --solid-top: rgba(255, 255, 255, 0.7);
   --solid-drop: rgba(0, 0, 0, 0.7);
   --solid-hover: #ffffff;

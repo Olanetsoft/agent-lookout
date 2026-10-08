@@ -20,7 +20,7 @@ export const MIN_WINDOW_SIZE = { width: 480, height: 520 } as const;
  * until the page says which theme is in force. The page says so with
  * `<meta name="theme-color">`, and the window remembers it for next time.
  */
-export const NIGHT_GROUND = "#090908";
+export const NIGHT_GROUND = "#060605";
 
 /** The rail and the header, as the stylesheet draws them in the app. */
 const RAIL = { inset: 12, width: 76, cellHeight: 56 } as const;

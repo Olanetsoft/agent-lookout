@@ -202,7 +202,7 @@ test("System follows the computer's setting, and changes when it does", async ()
 
   await preferColorScheme("dark");
   await vi.waitFor(() => expect(document.documentElement.getAttribute("data-theme")).toBe("dark"));
-  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(9, 9, 8)");
+  expect(getComputedStyle(document.documentElement).backgroundColor).toBe("rgb(6, 6, 5)");
   // The choice is still System: only what it resolves to has changed.
   await expect
     .element(screen.getByRole("radio", { name: "Follow the computer's setting" }))

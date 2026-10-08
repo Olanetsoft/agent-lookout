@@ -79,7 +79,7 @@ test("the first subscriber puts the theme on html when no inline script has", ()
 test("the page says the colour of its ground in the theme in force, for the app's window to take", () => {
   const stop = subscribeToTheme(() => {});
   // Night is the default, and its ground is the colour the app's window opens in.
-  expect(themeColour()).toBe("#090908");
+  expect(themeColour()).toBe("#060605");
 
   setThemePreference("light");
   expect(themeColour()).toBe("#d4d0ca");
@@ -87,6 +87,6 @@ test("the page says the colour of its ground in the theme in force, for the app'
   expect(document.head.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
 
   setThemePreference("dark");
-  expect(themeColour()).toBe("#090908");
+  expect(themeColour()).toBe("#060605");
   stop();
 });
