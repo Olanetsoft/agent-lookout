@@ -2,6 +2,8 @@
 
 Agent Lookout has one maintainer. Bug reports, fixes and adapters for other agent tools are welcome. For anything larger than a fix, open an issue first so the approach is agreed before you write it.
 
+New to the code? [docs/TOUR.md](docs/TOUR.md) walks through every part in plain language: what it does, where its code is, the issue it came from and why it works the way it does.
+
 ## Two rules
 
 By default Agent Lookout itself sends nothing anywhere. Its code makes no network request to anything but its own local server, unless the person has set up email notifications, which go only to the mail server they named, a webhook, whose posts go only to the address they set, or a push through ntfy or Pushover, which goes only to the topic's server or to Pushover's own address. It runs the person's own `gh`, which asks GitHub for pull requests, only with `AGENT_LOOKOUT_PULL_REQUESTS=on`, and their own `ssh` only to the machines `AGENT_LOOKOUT_REMOTES` names. That rules out telemetry, analytics, remote fonts, update checks and CDN links, and it covers dependencies as well as your own code. The one exception is the Mac app's check of GitHub Releases for a newer version, about once a day, which the maintainer decided on and [Updates (Mac app only)](PRIVACY.md#updates-mac-app-only) describes. A new way of sending something off the machine is off until the person sets it up, sends only what PRIVACY.md lists, and is described there and in the README. Claude Code's own listing command, which the Claude Code adapter runs, may contact Anthropic the way Claude Code normally does. That is why the adapter runs it seldom.
