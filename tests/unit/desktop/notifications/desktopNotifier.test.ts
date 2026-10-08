@@ -1,8 +1,13 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { PermissionAsk, Session } from "@core/sessions/session";
 import type { AnswerPress } from "@desktop/answers/desktopAnswers";
-import { createDesktopNotifier, type NoticeAnswers } from "@desktop/notifications/desktopNotifier";
+import {
+  createDesktopNotifier,
+  TEST_ANSWER_MS,
+  TEST_NOTICE,
+  type NoticeAnswers,
+} from "@desktop/notifications/desktopNotifier";
 import { fakeNotifications } from "@tests/support/desktop/electronStandIns";
 
 const NOW = 1_700_000_600_000;
@@ -214,4 +219,114 @@ test("a line the app tells has no buttons, and a click opens the session it is a
   expect(made[0]?.options.body).toBe("That request is no longer held, so nothing was sent.");
   made[0]?.click();
   expect(onClick).toHaveBeenCalledWith(ID);
+});
+
+describe("a test notification", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("says what it is and nothing of a session, and resolves shown once macOS shows it", async () => {
+    const { notifier, made, onClick } = setUp();
+    const answer = notifier.test();
+    expect(made).toHaveLength(1);
+    expect(made[0]?.options).toEqual({
+      title: "Agent Lookout",
+      body: "This is a test notification.",
+    });
+    expect(made[0]?.options).toEqual(TEST_NOTICE);
+    expect(made[0]?.shown).toBe(true);
+    made[0]?.appear();
+    await expect(answer).resolves.toEqual({ outcome: "shown" });
+    expect(notifier.lastRefusal()).toBeNull();
+    // A click opens the window, on no session.
+    made[0]?.click();
+    expect(onClick).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  test("resolves refused with macOS's reason, keeps the reason, and says it once", async () => {
+    const { notifier, made, warn } = setUp();
+    const answer = notifier.test();
+    made[0]?.fail("Notifications are not allowed for this application");
+    await expect(answer).resolves.toEqual({
+      outcome: "refused",
+      reason: "Notifications are not allowed for this application",
+    });
+    expect(notifier.lastRefusal()).toBe("Notifications are not allowed for this application");
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "macOS did not show a notification from Agent Lookout: Notifications are not allowed for this application",
+    );
+
+    // A second refusal is kept, and not said again.
+    const again = notifier.test();
+    made[1]?.fail("not allowed");
+    await expect(again).resolves.toEqual({ outcome: "refused", reason: "not allowed" });
+    expect(notifier.lastRefusal()).toBe("not allowed");
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  test("resolves unsupported, and makes nothing, where notifications are not supported", async () => {
+    const { notifier, made } = setUp({ supported: false });
+    await expect(notifier.test()).resolves.toEqual({ outcome: "unsupported" });
+    expect(made).toEqual([]);
+    expect(notifier.lastRefusal()).toBeNull();
+  });
+
+  test("resolves with no answer once the time is up when macOS says nothing, as while it asks the person", async () => {
+    vi.useFakeTimers();
+    const { notifier, made } = setUp();
+    let answered: unknown = null;
+    void notifier.test().then((outcome) => {
+      answered = outcome;
+    });
+    await vi.advanceTimersByTimeAsync(TEST_ANSWER_MS - 1);
+    expect(answered).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answered).toEqual({ outcome: "no-answer" });
+    // macOS answers later: the refusal is still kept for Settings to read.
+    made[0]?.fail("not allowed");
+    expect(answered).toEqual({ outcome: "no-answer" });
+    expect(notifier.lastRefusal()).toBe("not allowed");
+  });
+
+  test("resolves unsupported, never rejects, when Electron throws making it, and keeps no refusal, since macOS gave none", async () => {
+    const notifier = createDesktopNotifier({
+      notifications: {
+        isSupported: () => true,
+        create: () => {
+          throw new Error("no  notification\ncenter");
+        },
+      },
+      onClick: () => {},
+    });
+    await expect(notifier.test()).resolves.toEqual({ outcome: "unsupported" });
+    expect(notifier.lastRefusal()).toBeNull();
+  });
+});
+
+describe("the last refusal", () => {
+  test("is none until macOS refuses a notification, and is kept from any notification, not only a test", () => {
+    const { notifier, made } = setUp();
+    expect(notifier.lastRefusal()).toBeNull();
+    notifier.show({ title: "billing-webhooks", body: "Finished" });
+    made[0]?.fail("not allowed");
+    expect(notifier.lastRefusal()).toBe("not allowed");
+  });
+
+  test("goes once macOS shows a notification again", () => {
+    const { notifier, made } = setUp();
+    notifier.show({ title: "billing-webhooks", body: "Finished" });
+    made[0]?.fail("not allowed");
+    notifier.show({ title: "billing-webhooks", body: "Failed" });
+    made[1]?.appear();
+    expect(notifier.lastRefusal()).toBeNull();
+  });
+
+  test("says that macOS gave no reason when it gave none", async () => {
+    const { notifier, made } = setUp();
+    const answer = notifier.test();
+    made[0]?.fail("  ");
+    await expect(answer).resolves.toEqual({ outcome: "refused", reason: "macOS gave no reason." });
+    expect(notifier.lastRefusal()).toBe("macOS gave no reason.");
+  });
 });

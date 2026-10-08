@@ -52,11 +52,47 @@ test("the three states cannot be mistaken for one another", async () => {
   expect(empty?.querySelector(".animate-spin-loader")).toBeNull();
 });
 
+test("a title id names the title, so a row inside can be labelled by it", async () => {
+  const screen = await render(
+    <Callout title='Keep the window open?' titleId='keep-title'>
+      <div role='group' aria-labelledby='keep-title'>
+        <button type='button'>Keep</button>
+      </div>
+    </Callout>,
+  );
+  const group = screen.getByRole("group", { name: "Keep the window open?" });
+  await expect.element(group).toBeVisible();
+  expect(document.getElementById("keep-title")?.textContent).toBe("Keep the window open?");
+});
+
 test("an info callout is a status, not an alert", async () => {
   const screen = await render(<Callout title='Claude Code was not found'>Install it.</Callout>);
 
   await expect.element(screen.getByRole("status")).toHaveTextContent("Claude Code was not found");
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();
+});
+
+test("a callout that is not live has no role, so a line of its own can say its words once", async () => {
+  const screen = await render(
+    <div>
+      <Callout title='Claude Code was not found' live={false}>
+        Install it.
+      </Callout>
+      <Callout tone='error' title='Claude Code could not be read' live={false}>
+        It keeps trying.
+      </Callout>
+    </div>,
+  );
+
+  const callouts = [...screen.container.querySelectorAll('[data-slot="callout"]')];
+  expect(callouts).toHaveLength(2);
+  for (const callout of callouts) expect(callout.getAttribute("role")).toBeNull();
+  expect(screen.container.querySelector('[role="status"], [role="alert"], [aria-live]')).toBeNull();
+  // It looks the same: only what is announced changes.
+  expect(callouts.map((callout) => (callout as HTMLElement).dataset.tone)).toEqual([
+    "info",
+    "error",
+  ]);
 });
 
 test.each(["dark", "light"] as const)(

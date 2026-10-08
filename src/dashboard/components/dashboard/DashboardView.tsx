@@ -1,5 +1,6 @@
 import { staleAfterMs } from "@core/time-rules/timeRules";
 import { StaleNotice, Unreachable } from "@dashboard/components/dashboard/ConnectionNotices";
+import { NotificationPrompt } from "@dashboard/components/dashboard/NotificationPrompt";
 import { EventsCard } from "@dashboard/components/events/EventsCard";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { LastHourCard } from "@dashboard/components/last-hour/LastHourCard";
@@ -13,6 +14,7 @@ import { SESSION_ROWS } from "@dashboard/hooks/dom/useShowSession";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import { countState, heroLight } from "@dashboard/lib/sessions/sessions";
+import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 import { cn } from "@dashboard/lib/utils";
 
 interface DashboardViewProps {
@@ -29,6 +31,8 @@ interface DashboardViewProps {
   newSince?: number | null;
   /** Told whether that line is in view. */
   onNewLineInView?: (inView: boolean) => void;
+  /** Whether the page is in the Mac app's window, which alone asks about notifications. Tests say which it is. */
+  inApp?: boolean;
 }
 
 /*
@@ -60,6 +64,9 @@ const PLACE = {
  * needs the person, the rest light while none does, and neither before anything
  * is counted.
  *
+ * In the Mac app, until notifications have been turned on or left off once,
+ * a question over the cards asks whether to turn them on.
+ *
  * Focus held in a session's row follows the session when its row is drawn
  * somewhere else: to another group of the table, or up into the hero when the
  * session starts waiting. On the board it follows the card to its new column.
@@ -73,6 +80,7 @@ export function DashboardView({
   onOpenHistory,
   newSince = null,
   onNewLineInView,
+  inApp = inAppWindow(),
 }: DashboardViewProps) {
   const { snapshot, phase } = state;
   const [grid, followFocus] = useFocusFollowsRow<HTMLDivElement>(SESSION_ROWS, "data-session");
@@ -95,6 +103,9 @@ export function DashboardView({
       {snapshot && phase === "stalled" && state.lastOkAt !== null && (
         <StaleNotice lastOkAt={state.lastOkAt} now={now} onRetry={onRetry} />
       )}
+
+      {/* In the Mac app, until it is answered: whether to turn notifications on. */}
+      <NotificationPrompt inApp={inApp} />
 
       <div
         ref={grid}

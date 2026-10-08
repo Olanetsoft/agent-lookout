@@ -110,7 +110,11 @@ The app is not yet signed with an Apple Developer ID, so the first time a downlo
 2. Open System Settings › Privacy & Security.
 3. Under Security, next to the line that says Agent Lookout was blocked, press Open Anyway, and confirm with your password or Touch ID. The button is there for about an hour after macOS stopped the app. If it has gone, open the app again, press Done, and go back to Privacy & Security.
 
-macOS remembers the choice. [Desktop app](GUIDE.md#desktop-app) says how the app behaves, [Menu bar](GUIDE.md#menu-bar) what its icon in the menu bar lists, and [Updates](GUIDE.md#updates) how it checks for a newer version and installs it.
+macOS remembers the choice.
+
+Notifications are off until you turn them on in the app, and the app's setting is apart from a browser's. The first time it opens, the Overview asks "Get a notification when a session needs you?" Press Turn on, and allow Agent Lookout to show notifications if macOS asks. You can also turn them on later under Notifications in the app's Settings, where Send a test says whether macOS shows them. [Notifications in the Mac app](GUIDE.md#notifications-in-the-mac-app) has more.
+
+[Desktop app](GUIDE.md#desktop-app) says how the app behaves, [Menu bar](GUIDE.md#menu-bar) what its icon in the menu bar lists, and [Updates](GUIDE.md#updates) how it checks for a newer version and installs it.
 
 ### Build it yourself
 

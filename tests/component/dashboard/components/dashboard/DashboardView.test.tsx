@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -6,12 +6,18 @@ import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@cor
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
+import {
+  NOTIFICATIONS_STORAGE_KEY,
+  resetNotificationSettingForTests,
+} from "@dashboard/lib/notifications/notificationSetting";
 import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
 import { quietWaits } from "@tests/fixtures/waits";
 import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
+import { fakeNotificationHost } from "@tests/support/notifications";
 
 const NOW = new Date(2026, 0, 5, 18, 0, 0).getTime();
 const MINUTE = 60_000;
@@ -948,4 +954,98 @@ test("on the board a card moves to its new column with the next answer, and keyb
     expect(document.activeElement?.closest('[data-slot="board-card"]')).toBe(cards[0]),
   );
   expect(heads()).toEqual(["Needs you1", "Working0", "Idle1", "Finished or failed0"]);
+});
+
+describe("the question about notifications", () => {
+  const QUESTION = "Get a notification when a session needs you?";
+  /** The test notifications the page asked the app for. */
+  let posted: (RequestInit | undefined)[];
+  /** What the app answers a test with, as macOS made of it. */
+  let outcome: unknown;
+
+  beforeEach(() => {
+    // Granted, as the app's window grants it whatever macOS decides, so nothing asks this browser.
+    setNotificationHost(fakeNotificationHost({ permission: "granted" }));
+    resetNotificationSettingForTests();
+    posted = [];
+    outcome = { outcome: "shown" };
+    setApiHost(async (path, init) => {
+      if (path === "/api/app/notifications/test") {
+        posted.push(init);
+        return new Response(JSON.stringify(outcome), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return path === "/api/waits"
+        ? new Response(JSON.stringify(quietWaits(NOW)))
+        : new Response("{}");
+    });
+  });
+
+  afterEach(() => {
+    localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    resetNotificationSettingForTests();
+    setNotificationHost();
+  });
+
+  test("in the Mac app, with nothing chosen, it is over the cards, and Turn on asks the app itself for a test notification", async () => {
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp />,
+    );
+    await expect.element(screen.getByText(QUESTION)).toBeVisible();
+    const prompt = slot(screen.container, "notification-prompt");
+    expect(
+      prompt.compareDocumentPosition(slot(screen.container, "overview-grid")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await screen.getByRole("button", { name: "Turn on", exact: true }).click();
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    const [init] = posted;
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe("{}");
+    expect(new Headers(init?.headers).get("X-Agent-Lookout-Action")).toBe("notification-test");
+    expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+    await expect.element(screen.getByText(QUESTION)).not.toBeInTheDocument();
+  });
+
+  test("when macOS refuses the test, a quiet note over the cards says so in the question's place and links to Settings", async () => {
+    outcome = { outcome: "refused", reason: "Notifications are not allowed for this application" };
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp />,
+    );
+    await screen.getByRole("button", { name: "Turn on", exact: true }).click();
+
+    await expect
+      .element(screen.getByText("macOS did not show the test notification", { exact: true }))
+      .toBeVisible();
+    expect(screen.container.textContent).not.toContain(QUESTION);
+    const prompt = slot(screen.container, "notification-prompt");
+    expect(
+      prompt.compareDocumentPosition(slot(screen.container, "overview-grid")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(prompt.querySelector('[data-slot="callout"]')?.getAttribute("data-tone")).toBe("info");
+    expect(prompt.querySelector("a")?.getAttribute("href")).toBe("#settings");
+    await pointAway();
+    expect(warmPaint(prompt)).toEqual([]);
+
+    // Dismissed, it leaves no gap over the cards.
+    const grid = slot(screen.container, "overview-grid");
+    await screen.getByRole("button", { name: "Dismiss", exact: true }).click();
+    expect(slot(screen.container, "notification-prompt")).toBeNull();
+    expect(grid.getBoundingClientRect().top).toBe(
+      slot(screen.container, "dashboard").getBoundingClientRect().top,
+    );
+  });
+
+  test("in a browser, with nothing chosen, it is not there and nothing asks the app", async () => {
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp={false} />,
+    );
+    await waitsRead(screen);
+    expect(slot(screen.container, "notification-prompt")).toBeNull();
+    expect(screen.container.textContent).not.toContain(QUESTION);
+    expect(posted).toEqual([]);
+  });
 });

@@ -22,7 +22,9 @@ import {
  * asked.
  *
  * They are off until the person turns them on, and turning them on is the only
- * thing that ever asks the browser for permission.
+ * thing that ever asks the browser for permission. Off because nothing was ever
+ * stored is told apart from off because the person chose it, so the Mac app
+ * can ask once whether to turn them on.
  *
  * The events, a session starting to wait, finishing, failing or ending, are
  * chosen one by one and kept in local storage beside the choice. Until the
@@ -41,8 +43,10 @@ export const NOTIFICATIONS_STORAGE_KEY = "agent-lookout-notifications";
 export const NOTIFICATION_EVENTS_STORAGE_KEY = "agent-lookout-notification-events";
 
 export interface NotificationSettingState {
-  /** What the person chose here. */
+  /** What the person chose here, or off when they never chose. */
   choice: NotificationChoice;
+  /** Whether a choice, on or off, is stored here: false until the person first makes one. */
+  chosen: boolean;
   /** What the browser allows this address. */
   permission: NotificationPermissionState;
   /** Whether a notification is sent: the choice is on and the permission is granted. */
@@ -51,12 +55,15 @@ export interface NotificationSettingState {
   events: readonly NoticeEvent[];
 }
 
-function readStoredChoice(): NotificationChoice {
+/** The stored choice, or null when none is stored. Anything else stored reads as off. */
+function readStoredChoice(): NotificationChoice | null {
   try {
-    return localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) === "on" ? "on" : "off";
+    const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+    if (stored === null) return null;
+    return stored === "on" ? "on" : "off";
   } catch {
-    // Storage can be blocked. Keep the default.
-    return "off";
+    // Storage can be blocked. Nothing can be read as chosen.
+    return null;
   }
 }
 
@@ -71,7 +78,8 @@ function readStoredEvents(): readonly NoticeEvent[] {
   }
 }
 
-let choice: NotificationChoice | null = null;
+/** The choice: undefined before it is read, and null while none is stored. */
+let choice: NotificationChoice | null | undefined;
 let events: readonly NoticeEvent[] | null = null;
 let state: NotificationSettingState | null = null;
 /** The state listeners were last told of, or have read for themselves on subscribing. */
@@ -85,16 +93,25 @@ let stopWatching: (() => void) | null = null;
  * is the same object for as long as nothing has changed.
  */
 export function getNotificationSetting(): NotificationSettingState {
-  choice ??= readStoredChoice();
+  if (choice === undefined) choice = readStoredChoice();
   events ??= readStoredEvents();
   const permission = notificationHost().permission();
+  const chosen = choice !== null;
+  const current = choice ?? "off";
   if (
     !state ||
-    state.choice !== choice ||
+    state.choice !== current ||
+    state.chosen !== chosen ||
     state.permission !== permission ||
     state.events !== events
   ) {
-    state = { choice, permission, on: choice === "on" && permission === "granted", events };
+    state = {
+      choice: current,
+      chosen,
+      permission,
+      on: current === "on" && permission === "granted",
+      events,
+    };
   }
   return state;
 }
@@ -222,7 +239,7 @@ export function chooseNotificationEvent(event: NoticeEvent, chosen: boolean): vo
 
 /** For tests: forget the cached state so the next read comes from storage. */
 export function resetNotificationSettingForTests(): void {
-  choice = null;
+  choice = undefined;
   events = null;
   state = null;
   announced = null;
