@@ -14,6 +14,7 @@ import type {
   Session,
   SessionEvent,
   SessionsSnapshot,
+  TokenCounts,
 } from "@core/sessions/session";
 import { isStale } from "@core/sessions/staleness";
 import { messageText } from "@core/text";
@@ -140,6 +141,15 @@ function stepAt(session: HourSession, offset: number, answer: number | null = nu
   return step;
 }
 
+/** The token counts of a session's newest reply at a moment, from `t0`: none before its first. */
+function tokensAt(session: HourSession, offset: number): TokenCounts | undefined {
+  let counts: TokenCounts | undefined;
+  for (const { at, ...reply } of session.tokens ?? []) {
+    if (at <= offset) counts = reply;
+  }
+  return counts;
+}
+
 /** Whether a session is listed at a moment. */
 function listedAt(session: HourSession, offset: number): boolean {
   return session.appearsAt === undefined || session.appearsAt <= offset;
@@ -204,6 +214,8 @@ export function createFeed(t0: number): Feed {
         // A working agent writes as it works. Any other has not since it stopped.
         session.lastWriteAt = step.status === "working" ? now - 3_000 : at(step.at);
       }
+      const tokens = tokensAt(hour, offset);
+      if (tokens) session.tokens = tokens;
       if (hour.pid !== undefined) {
         session.pid = hour.pid;
         session.alive = step.status !== "finished";

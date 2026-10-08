@@ -9,12 +9,14 @@ import {
   readWaits,
 } from "@dashboard/lib/api/readApi";
 import { countState } from "@dashboard/lib/sessions/sessions";
+import { NONE_YET, noTokensReason, tokenCountsLine } from "@dashboard/lib/tokens/tokenWords";
 import { messageText } from "@core/text";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { createFeed, HOLD_MS, POLL_MS, type Shown } from "@site-tour/feed/derive";
 import {
   FINISHED_JOB,
   MACHINE,
+  MOMENTS,
   RESUMED_AT,
   SESSIONS,
   STOPPED_AT,
@@ -492,5 +494,72 @@ describe("what a session last said", () => {
         expect(answers).not.toContain(session.said.slice(0, 40));
       }
     }
+  });
+});
+
+describe("token counts", () => {
+  const feed = createFeed(T0);
+  const codex = SESSIONS.filter((session) => session.source === "codex");
+
+  test("each Codex session gives the counts of its newest reply at every moment, and no other session gives any", () => {
+    for (const [, shown] of SHOWN) {
+      // Every moment after the quiet one is the end of the hour or later.
+      const offset = shown.moment === "quiet" ? MOMENTS.quiet : 0;
+      for (const session of feed.snapshot(shown, NOW).sessions) {
+        const hour = SESSIONS.find((one) => one.id === session.id)!;
+        if (session.source !== "codex") {
+          expect(session.tokens).toBeUndefined();
+          continue;
+        }
+        const { input, cached, output } = hour
+          .tokens!.filter((reply) => reply.at <= offset)
+          .at(-1)!;
+        expect(session.tokens).toEqual({ input, cached, output });
+      }
+    }
+  });
+
+  test("a working Codex session's counts move on with its replies, and an idle one's stay as they were", () => {
+    const quiet = feed.snapshot({ moment: "quiet" }, NOW).sessions;
+    const waiting = feed.snapshot({ moment: "waiting" }, NOW).sessions;
+    const statuses = new Set<string>();
+    for (const { id } of codex) {
+      const before = quiet.find((session) => session.id === id)!;
+      const after = waiting.find((session) => session.id === id)!;
+      statuses.add(after.status);
+      if (after.status === "working") {
+        expect(after.tokens!.input).toBeGreaterThan(before.tokens!.input);
+      } else {
+        expect(after.tokens).toEqual(before.tokens);
+      }
+    }
+    expect([...statuses].sort()).toEqual(["idle", "working"]);
+  });
+
+  test("a Codex session's details show its counts, and every other session's say why it has none", () => {
+    const snapshot = feed.snapshot({ moment: "answered", answeredAt: LEFT }, NOW);
+    for (const session of snapshot.sessions) {
+      if (session.source === "codex") {
+        expect(tokenCountsLine(session.tokens!)).toMatch(/^[\d,]+ in, [\d,]+ out$/);
+      } else {
+        expect(noTokensReason(session, snapshot.sources)).not.toBe(NONE_YET);
+      }
+    }
+  });
+
+  test("the counts are in the snapshot alone, never in the log, the history or the Waits card", () => {
+    const shown: Shown = { moment: "waiting" };
+    const counts = feed
+      .snapshot(shown, NOW)
+      .sessions.flatMap((session) => (session.tokens ? [JSON.stringify(session.tokens)] : []));
+    expect(counts).toHaveLength(codex.length);
+    const answers = JSON.stringify([
+      feed.events(shown),
+      feed.history(shown, NOW, HOUR),
+      feed.waits(shown, NOW),
+      SESSIONS.map((session) => feed.lastMessage(session.id, shown, NOW)),
+    ]);
+    expect(answers).not.toContain('"tokens"');
+    for (const one of counts) expect(answers).not.toContain(one.slice(1, -1));
   });
 });

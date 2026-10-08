@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 
+import { tokenCountsOf } from "@core/tokens/tokenCounts";
 import { createFeed, type Shown } from "@site-tour/feed/derive";
-import { SESSIONS, WAIT_STARTS } from "@site-tour/feed/hour";
+import { SESSIONS, WAIT_STARTS, WATCHING_SINCE } from "@site-tour/feed/hour";
 
 const T0 = Date.UTC(2026, 9, 5, 8, 12, 0);
 const NOW = T0 + 30_000;
@@ -47,4 +48,39 @@ test("checkout-flow is still waiting when the hour ends", () => {
   const checkout = SESSIONS.find((session) => session.name === "checkout-flow")!;
   const last = checkout.steps.at(-1)!;
   expect(last).toMatchObject({ at: WAIT_STARTS, status: "needs-you", waitingText: ASKED });
+});
+
+test("only the Codex sessions have token counts, and each has some from before it is first listed", () => {
+  for (const session of SESSIONS) {
+    if (session.source !== "codex") {
+      expect(session.tokens).toBeUndefined();
+      continue;
+    }
+    expect(session.tokens?.length).toBeGreaterThan(0);
+    expect(session.tokens![0].at).toBeLessThanOrEqual(session.appearsAt ?? WATCHING_SINCE);
+  }
+});
+
+test("a Codex session's counts are each one reply's, in the order they came, as a long session has them", () => {
+  for (const session of SESSIONS) {
+    const replies = session.tokens ?? [];
+    for (const [i, { at, ...counts }] of replies.entries()) {
+      // The one check every reader makes keeps them as they are, cached part and all.
+      expect(tokenCountsOf(counts)).toEqual(counts);
+      expect(at).toBeGreaterThan(session.startedAt);
+      expect(at).toBeLessThanOrEqual(0);
+      // Most of a long session's prompt comes from a cache, and a reply writes a few thousand at most.
+      expect(counts.cached / counts.input).toBeGreaterThan(0.9);
+      expect(counts.output).toBeLessThanOrEqual(5_000);
+      // Its context grows with every reply, and stays far from filling the model's window.
+      expect(counts.input).toBeLessThan(200_000);
+      if (i > 0) {
+        expect(at).toBeGreaterThan(replies[i - 1].at);
+        expect(counts.input).toBeGreaterThan(replies[i - 1].input);
+      }
+      // A reply comes while the session works, or ends its turn as it goes idle.
+      const step = session.steps.filter((one) => one.at <= at).at(-1);
+      if (step?.status !== "working") expect(step).toMatchObject({ at, status: "idle" });
+    }
+  }
 });

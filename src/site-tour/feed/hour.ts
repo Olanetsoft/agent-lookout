@@ -6,6 +6,7 @@ import type {
   SessionStatus,
   SourceId,
   Surface,
+  TokenCounts,
   WaitingReason,
 } from "@core/sessions/session";
 
@@ -80,6 +81,15 @@ export interface StatusStep {
   ask?: Omit<PermissionAsk, "until">;
 }
 
+/**
+ * The token counts of a session's newest reply from a moment on, as Codex
+ * records them and the collector reads them: the whole prompt, the part of it
+ * read from a cache, which Codex always records, and what the reply wrote.
+ */
+export interface TokenStep extends Required<TokenCounts> {
+  at: number;
+}
+
 /** One session of the hour. */
 export interface HourSession {
   id: string;
@@ -112,6 +122,12 @@ export interface HourSession {
    * this computer. Left out, it has said nothing yet.
    */
   said?: string;
+  /**
+   * For a Codex session, the token counts of its newest reply, and of each
+   * newer reply from when it came. The first can be older than the hour. Left
+   * out for the others, whose agents record none that Agent Lookout reads.
+   */
+  tokens?: readonly TokenStep[];
 }
 
 const HOME = "/Users/sam/code";
@@ -238,6 +254,12 @@ export const SESSIONS: readonly HourSession[] = [
       { at: -12 * MINUTE, status: "working" },
     ],
     writes: true,
+    tokens: [
+      { at: -57 * MINUTE, input: 58_904, cached: 57_472, output: 1_118 },
+      { at: -20 * MINUTE, input: 117_633, cached: 115_840, output: 2_374 },
+      { at: -(5 * MINUTE + 6 * SECOND), input: 128_419, cached: 125_952, output: 963 },
+      { at: -38 * SECOND, input: 131_275, cached: 129_280, output: 1_587 },
+    ],
   },
   {
     id: "codex:019a6b8f-91d2-7c34-a0e6-5f3b2d7c8e41",
@@ -251,6 +273,7 @@ export const SESSIONS: readonly HourSession[] = [
     startedAt: -3 * HOUR,
     steps: [{ at: -65 * MINUTE, status: "idle" }],
     writes: true,
+    tokens: [{ at: -65 * MINUTE, input: 96_212, cached: 94_592, output: 1_846 }],
   },
   {
     id: "claude-code:5b7f03c8-e46a-4d91-a2b0-7c3e9f1d6a28",
