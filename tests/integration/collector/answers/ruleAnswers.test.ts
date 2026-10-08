@@ -147,6 +147,11 @@ function hook(socketPath: string, toolName: string, toolInput: unknown) {
   onTestFinished(() => {
     child.kill("SIGKILL");
   });
+  // With no socket the script leaves before it reads its input, as it should,
+  // so writing that input can find the pipe already closed.
+  child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
   child.stdin.end(
     JSON.stringify({
       session_id: ids.busy,
