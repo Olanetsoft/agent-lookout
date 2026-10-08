@@ -446,3 +446,15 @@ describe("--json", () => {
     expect(printed).toContain('"name": "数据同步 🚀"');
   });
 });
+
+test("a session's token counts are never printed, in words, in a count or in --json", () => {
+  const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+  const counted = report([
+    waiting("checkout-flow", { tokens }),
+    makeSession({ id: "codex:a", source: "codex", status: "working", tokens }),
+  ]);
+  const printed = [statusText(counted), statusCount(counted), statusJson(counted)].join("\n");
+  for (const said of ["873215", "873,215", "641331", "52717", "tokens", "input"]) {
+    expect(printed).not.toContain(said);
+  }
+});

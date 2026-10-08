@@ -9,6 +9,7 @@ import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import { LastMessage } from "@dashboard/components/panels/LastMessage";
 import { PullRequestFact } from "@dashboard/components/panels/PullRequestFact";
+import { TokensFact } from "@dashboard/components/panels/TokensFact";
 import { ResumeBlock, ResumeButton } from "@dashboard/components/resume/Resume";
 import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
 import { TimelineChart } from "@dashboard/components/timeline/TimelineCard";
@@ -351,6 +352,7 @@ function Details({
             {session.pid}
           </FactRow>
         )}
+        <TokensFact session={session} sources={sources} />
         <WaitsFact session={session} state={state} now={now} asOf={asOf} />
       </FactList>
 
@@ -586,12 +588,12 @@ interface SessionPanelProps {
  * Under them, as facts: its status with how long and since when, its agent,
  * the other machine it runs on, when it runs on one, its app when known, its
  * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the
- * branch's pull request and its checks, when it started, its process, and how
- * often and how long it waited over the period the page holds. Then what it
- * last said, as plain text, asked for while the details are open and the
- * page is in sight, or one line that says why there is none, then its own
- * events, newest first, as the Events log draws them, and its row of the
- * Timeline across the whole width.
+ * branch's pull request and its checks, when it started, its process, the
+ * token counts of its newest reply, and how often and how long it waited over
+ * the period the page holds. Then what it last said, as plain text, asked for
+ * while the details are open and the page is in sight, or one line that says
+ * why there is none, then its own events, newest first, as the Events log
+ * draws them, and its row of the Timeline across the whole width.
  *
  * The only warm things are the needs-you signals the rest of the page has for
  * the same wait: the lamp of its status, the lit lamp of the event that began

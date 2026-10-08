@@ -63,6 +63,7 @@ import {
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
 import { MAX_NAME_LENGTH, messageText } from "@core/text";
+import { tokenCountsOf } from "@core/tokens/tokenCounts";
 import { readPermissionRules, ruleWordsIn } from "@core/permission-rules/permissionRules";
 import { readTimeRules } from "@core/time-rules/timeRules";
 
@@ -160,6 +161,9 @@ export function readSession(value: unknown): Session | null {
   if (isMachineName(value.machine)) session.machine = value.machine;
   const lastWriteAt = number(value.lastWriteAt);
   if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
+  // The newest reply's counts, each checked, or none: never zeros in their place.
+  const tokens = tokenCountsOf(value.tokens);
+  if (tokens) session.tokens = tokens;
   const pid = number(value.pid);
   if (pid !== null) session.pid = pid;
   if (typeof value.alive === "boolean") session.alive = value.alive;

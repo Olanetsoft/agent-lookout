@@ -53,6 +53,8 @@ export interface CodexSessionInput {
  * - The last write is the file's modified time: every line Codex adds moves
  *   it on. A time that could not be right, or that is before the session
  *   began, is not known.
+ * - The token counts are those of the newest reply, when Codex recorded counts
+ *   that could be right. Otherwise there are none, not zeros.
  * - There is no pid, no `alive` and no link: Codex's files name no process, and
  *   its deep link into the desktop app is undocumented.
  */
@@ -100,5 +102,6 @@ export function codexSession(input: CodexSessionInput): Session {
   const beforeStart =
     writtenAt !== null && startedAt !== null && writtenAt < startedAt - WRITE_ORDER_SLACK_MS;
   if (writtenAt !== null && !beforeStart) session.lastWriteAt = writtenAt;
+  if (state.tokens) session.tokens = { ...state.tokens };
   return session;
 }

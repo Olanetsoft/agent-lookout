@@ -6,6 +6,7 @@ import {
   listSessions,
   MAX_DETAIL_COLUMNS,
   MAX_TEXT_COLUMNS,
+  NO_TOKENS_CELL,
   sessionsNeedingYou,
   sourceList,
   TOOL_NAMES,
@@ -378,6 +379,24 @@ describe("sessions_needing_you", () => {
     expect(said).not.toContain("waitingText");
   });
 
+  test("never holds a session's token counts, which only its details show", () => {
+    const counted = snapshot();
+    counted.sessions = counted.sessions.map((session) => ({
+      ...session,
+      tokens: { input: 873_215, cached: 641_331, output: 52_717 },
+    }));
+    const said = JSON.stringify([
+      sessionsNeedingYou(counted, NOW),
+      listSessions(counted, NOW),
+      sourceList(counted, NOW),
+    ]);
+    for (const count of ["873215", "641331", "52717", "873,215"]) {
+      expect(said).not.toContain(count);
+    }
+    expect(said).not.toContain('"tokens"');
+    expect(said).not.toContain('"input"');
+  });
+
   test("never holds a permission request held for the dashboard, or whether answering is on", () => {
     const held = snapshot();
     held.sessions = held.sessions.map((session) =>
@@ -636,6 +655,7 @@ describe("sources", () => {
       expect.objectContaining({ capability: "names", level: "partly" }),
       expect.objectContaining({ capability: "jump", level: "no" }),
       { capability: "quiet-for", label: "Quiet for", level: "yes", reason: null },
+      { capability: "tokens", label: "Tokens", level: "yes", reason: null },
       {
         capability: "stop",
         label: "Stop",
@@ -675,6 +695,55 @@ describe("sources", () => {
       NOW,
     );
     expect(answer.sources[0]).toMatchObject({ state: "error", stateLabel: "Not working" });
+  });
+
+  test("a row from an older app, with no Tokens cell, is kept, with Tokens as no and why", () => {
+    const { tokens: _tokens, ...older } = CODEX_CAPABILITIES;
+    const answer = sourceList(
+      {
+        sources: [{ id: "codex", label: "Codex", state: "ok", capabilities: older }],
+        sessions: [],
+      },
+      NOW,
+    );
+    const row = answer.sources[0]?.canReport;
+    expect(row?.map((cell) => cell.capability)).toEqual([
+      "working-and-idle",
+      "needs-you",
+      "finished",
+      "failed",
+      "names",
+      "jump",
+      "quiet-for",
+      "tokens",
+      "stop",
+      "answer",
+    ]);
+    expect(row?.[7]).toEqual({
+      capability: "tokens",
+      label: "Tokens",
+      level: "no",
+      reason: NO_TOKENS_CELL,
+    });
+    expect(NO_TOKENS_CELL).toMatch(/^[A-Z].*\.$/);
+  });
+
+  test("a Tokens cell that is sent but cannot be read loses the row, as any other cell does", () => {
+    const answer = sourceList(
+      {
+        sources: [
+          {
+            id: "codex",
+            label: "Codex",
+            state: "ok",
+            capabilities: { ...CODEX_CAPABILITIES, tokens: { level: "lots" } },
+          },
+        ],
+        sessions: [],
+      },
+      NOW,
+    );
+    expect(answer.sources[0]?.canReport).toBeNull();
   });
 
   test("a row that cannot be read is no row, not a row of guesses", () => {

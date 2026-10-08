@@ -31,7 +31,9 @@ import {
   rolloutName,
   rolloutPath,
   threadId,
+  tokenCountLine,
   turnLine,
+  usage,
 } from "@tests/fixtures/codex";
 import {
   codexAdapterFor,
@@ -711,6 +713,60 @@ describe("when Codex is read", () => {
     for (const mtimeMs of [NOW - 40 * MINUTE, NOW + 2 * MINUTE]) {
       expect((await poll(mtimeMs))[0]?.lastWriteAt, String(mtimeMs)).toBe(NOW - 20 * MINUTE);
     }
+  });
+
+  test("a session has its own newest reply's counts, and never a subagent's", async () => {
+    const files = emptyCodex();
+    addSession(files, {
+      thread: ids.working,
+      lines: [
+        ...linesFor("demo", ids.working, [[NOW - 30 * MINUTE, "task_started"]]),
+        tokenCountLine(NOW - 29 * MINUTE, usage(40_000, 32_000, 900)),
+      ],
+      lock: true,
+      mtimeMs: NOW - 20 * MINUTE,
+    });
+    addSession(files, {
+      thread: ids.subagent,
+      created: "2026-10-01T10-00-00",
+      lines: [
+        metaLine(NOW - 25 * MINUTE, {
+          id: ids.subagent,
+          source: { subagent: { thread_spawn: { parent_thread_id: ids.working, depth: 1 } } },
+          thread_source: "subagent",
+          parent_thread_id: ids.working,
+        }),
+        turnLine(NOW - 25 * MINUTE, "task_started"),
+        tokenCountLine(NOW - 10_000, usage(99_999, 1_111, 7_777)),
+      ],
+      lock: true,
+      mtimeMs: NOW - 10_000,
+    });
+    const { sessions } = await codexAdapterFor(files).poll();
+    expect(sessions.map((session) => [session.id, session.tokens, session.lastWriteAt])).toEqual([
+      [`codex:${ids.working}`, { input: 40_000, cached: 32_000, output: 900 }, NOW - 10_000],
+    ]);
+    expect(JSON.stringify(sessions)).not.toMatch(/99999|7777/);
+
+    // With no token line of its own, it has none, whatever its subagent wrote.
+    const alone = emptyCodex();
+    addSession(alone, {
+      thread: ids.working,
+      lines: linesFor("demo", ids.working, [[NOW - 30 * MINUTE, "task_started"]]),
+      lock: true,
+    });
+    addSession(alone, {
+      thread: ids.subagent,
+      created: "2026-10-01T10-00-00",
+      lines: [
+        metaLine(NOW - 25 * MINUTE, { id: ids.subagent, parent_thread_id: ids.working }),
+        tokenCountLine(NOW - 10_000, usage(99_999, 1_111, 7_777)),
+      ],
+      lock: true,
+    });
+    const [only] = (await codexAdapterFor(alone).poll()).sessions;
+    expect(only?.id).toBe(`codex:${ids.working}`);
+    expect(only).not.toHaveProperty("tokens");
   });
 
   test("names come from Codex's names file, the newest for each session", async () => {

@@ -21,6 +21,7 @@ const FIRST: SourceCapabilities = {
   names: { level: "yes" },
   jump: { level: "partly", reason: LONG_REASON },
   "quiet-for": { level: "no", reason: "Its file is not rewritten as a session works." },
+  tokens: { level: "no", reason: "Its transcripts are not read for token counts yet." },
   stop: {
     level: "partly",
     reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
@@ -36,6 +37,7 @@ const SECOND: SourceCapabilities = {
   names: { level: "partly", reason: "Its desktop app keeps no names, so folders name them." },
   jump: { level: "no", reason: "Its files name no process to find and no link to open." },
   "quiet-for": { level: "yes" },
+  tokens: { level: "yes" },
   stop: { level: "no", reason: "Its files name no process that could be confirmed and stopped." },
   answer: { level: "no", reason: "It records no approval waits." },
 };
@@ -48,6 +50,7 @@ const THIRD: SourceCapabilities = {
   names: { level: "partly", reason: "If the agent writes a name." },
   jump: { level: "no", reason: "Nothing in a file is used to reach a session." },
   "quiet-for": { level: "partly", reason: "If the agent writes its file again as it works." },
+  tokens: { level: "no", reason: "A file has no field for token counts." },
   stop: { level: "no", reason: "Nothing in a file is used to stop a session." },
   answer: { level: "no", reason: "Nothing in a file is used to answer a session." },
 };
@@ -81,6 +84,7 @@ const HEADS = [
   "Names",
   "Jump",
   "Quiet for",
+  "Tokens",
   "Stop",
   "Answer",
 ];
@@ -160,9 +164,9 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Status files",
     ]);
     expect(rows.map((row) => cellsOf(row).map((cell) => cell.firstChild?.textContent))).toEqual([
-      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No", "Partly", "Partly"],
-      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes", "No", "No"],
-      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly", "No", "No"],
+      ["Yes", "Yes", "Partly", "Partly", "Yes", "Partly", "No", "No", "Partly", "Partly"],
+      ["Yes", "No", "Partly", "No", "Partly", "No", "Yes", "Yes", "No", "No"],
+      ["Partly", "Partly", "Partly", "Partly", "Partly", "No", "Partly", "No", "No", "No"],
     ]);
     for (const cell of rows.flatMap(cellsOf)) expectWordInk(cell);
 
@@ -194,6 +198,7 @@ describe.each(["dark", "light"] as const)("in the %s theme", (theme) => {
       "Partly",
       "Yes",
       "Partly",
+      "No",
       "No",
       "Partly",
       "Partly",
@@ -246,7 +251,7 @@ test("Tab reaches each no and partly in reading order and opens its reason, and 
   const reachable = [...card().querySelectorAll<HTMLElement>('[data-part="capability"]')].filter(
     (cell) => cell.getAttribute("data-level") !== "yes",
   );
-  expect(reachable).toHaveLength(6 + 7 + 9);
+  expect(reachable).toHaveLength(7 + 7 + 10);
   for (const cell of card().querySelectorAll('[data-level="yes"]')) {
     expect(cell.hasAttribute("tabindex")).toBe(false);
   }
@@ -280,6 +285,7 @@ test("a screen reader hears each cell's word with its reason, and the table's he
     "No: It does not record errors in its files.",
     "Partly: Its desktop app keeps no names, so folders name them.",
     "No: Its files name no process to find and no link to open.",
+    "Yes",
     "Yes",
     "No: Its files name no process that could be confirmed and stopped.",
     "No: It records no approval waits.",
@@ -363,11 +369,11 @@ test.each([1440, 375] as const)(
         "As Claude Code on this computer, but Jump: No, Stop: No and Answer: No, which act on this computer only.",
       );
       // One that has no match here keeps its rows.
-      expect(cellsOf(rows[2] as HTMLElement)).toHaveLength(9);
+      expect(cellsOf(rows[2] as HTMLElement)).toHaveLength(10);
     } else {
       const levels = cellsOf(there).map((cell) => cell.getAttribute("data-level"));
-      // Jump, Stop and Answer, the sixth, the eighth and the ninth, are no.
-      expect([levels[5], levels[7], levels[8]]).toEqual(["no", "no", "no"]);
+      // Jump, Stop and Answer, the sixth, the ninth and the tenth, are no.
+      expect([levels[5], levels[8], levels[9]]).toEqual(["no", "no", "no"]);
     }
     expectCalmCard();
   },
@@ -392,5 +398,5 @@ test("on a phone, an agent there that reports otherwise than here, beyond Jump, 
   await renderAt(375, [source("claude-code", "Claude Code", FIRST), different]);
   const there = card().querySelector<HTMLElement>('[data-agent="Claude Code"]') as HTMLElement;
   expect(there.querySelector('[data-part="same-as"]')).toBeNull();
-  expect(cellsOf(there)).toHaveLength(9);
+  expect(cellsOf(there)).toHaveLength(10);
 });

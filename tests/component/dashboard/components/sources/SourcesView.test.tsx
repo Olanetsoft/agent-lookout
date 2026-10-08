@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import type { SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { SourcesView } from "@dashboard/components/sources/SourcesView";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { sourcesAt } from "@site-tour/feed/sources";
 import { makeSession } from "@tests/fixtures/session";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
@@ -144,6 +145,7 @@ test("what each agent can report sits under the source cards, from what each sou
     names: { level: "yes" },
     jump: { level: "partly", reason: "Only where a place is found." },
     "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
+    tokens: { level: "no", reason: "Its transcripts are not read for token counts yet." },
     stop: { level: "partly", reason: "Not in the desktop app." },
     answer: { level: "partly", reason: "With the plugin installed." },
   } as const;
@@ -238,6 +240,88 @@ test.each([1280, 620])(
     );
     expect(value.getBoundingClientRect().height).toBeGreaterThan(20);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);
+
+test.each([
+  [1280, "beside About sources"],
+  [1180, "with About sources under it"],
+])(
+  "at %i, %s, what each agent can report has a column for each of its ten things, Tokens among them, and nothing spills",
+  async (width) => {
+    await page.viewport(width, 900);
+    // Every source as its adapter declares it, another machine included.
+    const every = snapshot(sourcesAt(NOW, 1, "0.2.9"));
+    const screen = await render(<SourcesView state={state({ snapshot: every })} now={NOW} />);
+    const card = screen.getByRole("region", { name: "What each agent can report" });
+    await expect.element(card).toBeVisible();
+    const table = card.element().querySelector("table") as HTMLTableElement;
+    expect(table).not.toBeNull();
+
+    const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(heads).toEqual([
+      "Agent",
+      "Working and idle",
+      "Needs you",
+      "Finished",
+      "Failed",
+      "Names",
+      "Jump",
+      "Quiet for",
+      "Tokens",
+      "Stop",
+      "Answer",
+    ]);
+    const rows = [...table.querySelectorAll("tbody tr")];
+    expect(rows.map((row) => row.querySelector("th")?.textContent)).toEqual([
+      "Claude Code",
+      "Codex",
+      "Antigravity CLI",
+      "Status files",
+      "Claude Code on devbox",
+    ]);
+    const tokens = rows.map(
+      (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
+    );
+    expect(tokens).toEqual(["No", "Yes", "No", "No", "No"]);
+
+    // Each word sits whole on one line in its cell, and the heads take at most two.
+    for (const cell of table.querySelectorAll<HTMLElement>('[data-part="capability"]')) {
+      const word = cell.firstChild as Text;
+      const range = document.createRange();
+      range.selectNodeContents(word);
+      expect(range.getClientRects().length, word.textContent ?? "").toBe(1);
+      const box = cell.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(
+        (cell.closest("td") as HTMLElement).getBoundingClientRect().right + 0.5,
+      );
+    }
+    for (const head of table.querySelectorAll<HTMLElement>("thead th")) {
+      const range = document.createRange();
+      range.selectNodeContents(head);
+      const lines = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+      expect(lines.size, head.textContent ?? "").toBeLessThanOrEqual(2);
+    }
+
+    const element = card.element() as HTMLElement;
+    expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+    expect(table.getBoundingClientRect().right).toBeLessThanOrEqual(
+      element.getBoundingClientRect().right,
+    );
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    expect(warmPaint(element)).toEqual([]);
+
+    // Beside About sources while the window is wide, and over it, full width, once it is not.
+    const about = screen.getByRole("region", { name: "About sources" }).element();
+    if (width === 1280) {
+      expect(about.getBoundingClientRect().left).toBeGreaterThan(
+        element.getBoundingClientRect().right,
+      );
+    } else {
+      expect(about.getBoundingClientRect().top).toBeGreaterThan(
+        element.getBoundingClientRect().bottom,
+      );
+    }
   },
 );
 
@@ -836,6 +920,7 @@ describe("the card for another machine", () => {
       names: { level: "yes" },
       jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
       "quiet-for": { level: "no", reason: "Its file is not rewritten as it works." },
+      tokens: { level: "no", reason: "Its transcripts are not read for token counts yet." },
       stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
       answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
     } as const;
@@ -854,9 +939,9 @@ describe("the card for another machine", () => {
     const levels = [...row.querySelectorAll('[data-part="capability"]')].map((cell) =>
       cell.getAttribute("data-level"),
     );
-    expect(levels).toHaveLength(9);
-    // Jump, Stop and Answer, the sixth, the eighth and the ninth.
-    expect([levels[5], levels[7], levels[8]]).toEqual(["no", "no", "no"]);
+    expect(levels).toHaveLength(10);
+    // Jump, Stop and Answer, the sixth, the ninth and the tenth.
+    expect([levels[5], levels[8], levels[9]]).toEqual(["no", "no", "no"]);
   });
 
   test("About sources says what another machine is, once one is named, and not before", async () => {

@@ -26,6 +26,7 @@ import {
 } from "../../core/sessions/session.ts";
 import { cut, MAX_NAME_LENGTH, sessionName, waitingText } from "../../core/text.ts";
 import { plausibleTime } from "../../core/time.ts";
+import { tokenCountsOf } from "../../core/tokens/tokenCounts.ts";
 import { repositoryId } from "../git/repository.ts";
 
 /** The most sessions taken from one machine. Far more than one person runs. */
@@ -114,7 +115,8 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
  * machine's, its agent named in words as the other machine names it, and the
  * machine's name on it. What it is doing, where and since when are taken as
  * they were sent, cleaned again, and so is the other machine's word that its
- * wait was answered there. Its process, its Jump, its Stop, the permission
+ * wait was answered there, and its newest reply's token counts, through the
+ * same check this machine's own make. Its process, its Jump, its Stop, the permission
  * request held for it there and its link are left behind: each would act on
  * this machine.
  *
@@ -171,6 +173,8 @@ function readSession(
   }
   const lastWriteAt = plausibleTime(value.lastWriteAt, now);
   if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
+  const tokens = tokenCountsOf(value.tokens);
+  if (tokens) session.tokens = tokens;
   if (typeof value.alive === "boolean") session.alive = value.alive;
   const git = readGit(value.git, machine);
   if (git) session.git = git;
@@ -193,14 +197,22 @@ const ACTS_HERE = ["jump", "stop", "answer"] as const satisfies readonly Capabil
  * What an agent on the other machine can report, as seen from here: what that
  * machine says, every cell of it, with Jump, Stop and Answer as no, since each
  * acts on this machine only. Those three are not read, so an older Agent
- * Lookout there that has not heard of one still has its row. Null unless
- * every other cell can be read.
+ * Lookout there that has not heard of one still has its row. For the same
+ * reason Tokens, which an Agent Lookout from before token counts does not
+ * send, is no when it is not sent. Null unless every other cell can be read.
  */
 function readCapabilities(value: unknown, machine: string): SourceCapabilities | null {
   if (!isRecord(value)) return null;
   const read: Partial<Record<Capability, CapabilityCell>> = {};
   for (const capability of CAPABILITIES) {
     if ((ACTS_HERE as readonly Capability[]).includes(capability)) continue;
+    if (capability === "tokens" && value.tokens === undefined) {
+      read.tokens = {
+        level: "no",
+        reason: `The Agent Lookout on ${machine} does not send token counts.`,
+      };
+      continue;
+    }
     const cell = readCell(value[capability]);
     if (!cell) return null;
     read[capability] = cell;

@@ -15,6 +15,11 @@ import { SessionPanel } from "@dashboard/components/panels/SessionPanel";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { readSession } from "@dashboard/lib/api/readApi";
+import {
+  CLAUDE_CODE_CAPABILITIES,
+  CODEX_CAPABILITIES,
+  STATUS_FILE_CAPABILITIES,
+} from "@site-tour/feed/sources";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
@@ -29,9 +34,21 @@ const FILE_ID = "status-files:billing-webhooks.json";
 const LINK = "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000001";
 
 const SOURCES: SourceHealth[] = [
-  { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: NOW },
-  { id: "codex", label: "Codex", state: "ok", checkedAt: NOW },
-  { id: "status-files", label: "Status files", state: "ok", checkedAt: NOW },
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    state: "ok",
+    capabilities: CLAUDE_CODE_CAPABILITIES,
+    checkedAt: NOW,
+  },
+  { id: "codex", label: "Codex", state: "ok", capabilities: CODEX_CAPABILITIES, checkedAt: NOW },
+  {
+    id: "status-files",
+    label: "Status files",
+    state: "ok",
+    capabilities: STATUS_FILE_CAPABILITIES,
+    checkedAt: NOW,
+  },
 ];
 
 /**
@@ -68,6 +85,7 @@ function sessions(): Session[] {
       startedAt: null,
       statusSince: ago(30),
       lastWriteAt: ago(12),
+      tokens: { input: 182_431, cached: 141_002, output: 9_120 },
     }),
     makeSession({
       id: FILE_ID,
@@ -240,6 +258,7 @@ test("a Claude Code session waiting in VS Code: its name, the lamp's Jump, every
     Branch: "checkout-flow",
     Started: "13:52:30",
     Process: "4242",
+    Tokens: "–Not recordedAgent Lookout does not read the token counts in its transcripts yet.",
     Waits: "2 times, 6m 00s in allsince 13:47",
   });
   // The folder is the whole path in the mono, and can be selected to copy.
@@ -323,6 +342,8 @@ test("a Codex session working and quiet: its commit in the mono, how long it has
     Folder: "/Users/example/code/payments",
     Commit: "3f9a2c1",
     Started: "Not reported",
+    Tokens:
+      "182,431 in, 9,120 out182,431 tokens in, 9,120 tokens outNewest reply · 141,002 of the input from a cache",
     Waits: "Nonesince 13:47",
   });
   const commit = [...root.querySelectorAll("dt")].find((dt) => dt.textContent === "Commit");
@@ -332,6 +353,39 @@ test("a Codex session working and quiet: its commit in the mono, how long it has
   expect(root.querySelectorAll('[data-slot="event-row"]')).toHaveLength(1);
   // Nothing about it is warm.
   expect(warmPaint(root)).toEqual([]);
+});
+
+test("the token counts of the newest reply are a fact after the process and before the waits, and nothing about them is warm", async () => {
+  const claude = await renderPanel(CLAUDE_ID);
+  await expect.element(dialog("checkout-flow")).toBeVisible();
+  expect(Object.keys(facts(dialog("checkout-flow").element()))).toEqual([
+    "Status",
+    "Agent",
+    "App",
+    "Folder",
+    "Repository",
+    "Branch",
+    "Started",
+    "Process",
+    "Tokens",
+    "Waits",
+  ]);
+  await claude.unmount();
+
+  await renderPanel(CODEX_ID);
+  const root = dialog("api-rate-limits").element();
+  await expect.element(root).toBeVisible();
+  const labels = Object.keys(facts(root));
+  // With no process reported, it follows when the session started.
+  expect(labels.slice(labels.indexOf("Started"))).toEqual(["Started", "Tokens", "Waits"]);
+  const tokens = root.querySelector('[data-part="tokens"]') as HTMLElement;
+  expect(tokens.closest('[data-slot="fact-row"]')?.querySelector("dt")?.textContent).toBe("Tokens");
+  expect(root.querySelector('[data-part="tokens-note"]')?.textContent).toBe(
+    "Newest reply · 141,002 of the input from a cache",
+  );
+  expect(warmPaint(tokens.closest('[data-slot="fact-row"]') as Element)).toEqual([]);
+  // The counts are said once, in the details, and nowhere else in them.
+  expect(root.textContent?.match(/182,431/g)).toHaveLength(2);
 });
 
 test("a session from a status file: its own agent, no app, no folder known, and a calm line where it has no events", async () => {
@@ -345,6 +399,7 @@ test("a session from a status file: its own agent, no app, no folder known, and 
     Agent: "night-shift",
     Folder: "Not known",
     Started: "Not reported",
+    Tokens: "–Not recordedA status file has no field for token counts.",
     Waits: "Nonesince 13:47",
   });
   // An app that is not known is left out, and so is a branch it does not have.

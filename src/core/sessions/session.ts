@@ -320,6 +320,22 @@ export interface PullRequest {
 }
 
 /**
+ * The token counts an agent recorded for a session's newest reply: the last
+ * request it made to its model. They are the agent's own numbers, read from a
+ * file the adapter already reads, never added up and never guessed. Only
+ * whole numbers that could be right are kept: `tokenCountsOf` in
+ * `src/core/tokens/tokenCounts.ts` checks them.
+ */
+export interface TokenCounts {
+  /** The whole prompt the reply was given, cached tokens included: how much context is in use. */
+  input: number;
+  /** The part of `input` read from a cache. Left out when the agent did not record it. */
+  cached?: number;
+  /** What the reply wrote, reasoning included. */
+  output: number;
+}
+
+/**
  * The repository a session's folder belongs to, worked out from the `.git` the
  * branch was read through and, for a worktree, the `commondir` beside its
  * `HEAD`. A worktree belongs to the repository it was made from. A submodule,
@@ -409,6 +425,14 @@ export interface Session {
    * how long, not which.
    */
   lastWriteAt?: number;
+  /**
+   * The token counts of the session's newest reply, as its agent recorded them:
+   * see `TokenCounts`. Present only when the agent recorded counts that could
+   * be right, which today only a Codex session's file does. Shown in the
+   * session's details alone: never copied into an event, the history, an
+   * email, a webhook post, a push, an MCP answer or `agent-lookout status`.
+   */
+  tokens?: TokenCounts;
   pid?: number;
   /** Whether the process still exists, when a pid is known. */
   alive?: boolean;
@@ -477,7 +501,8 @@ export interface SourceFact {
  * The things a source can tell about its sessions, and do to them, in the
  * order the Sources view and docs/GUIDE.md list them: the last two, Stop and
  * Answer, are what Agent Lookout can do to a session when the person presses
- * Stop, or Allow or Deny on a permission prompt. The branch
+ * Stop, or Allow or Deny on a permission prompt. Tokens is whether a session's
+ * details can give the token counts of its newest reply. The branch
  * is not among them: it is read from each session's folder, the same way for
  * every source.
  */
@@ -489,6 +514,7 @@ export const CAPABILITIES = [
   "names",
   "jump",
   "quiet-for",
+  "tokens",
   "stop",
   "answer",
 ] as const;
@@ -504,6 +530,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   names: "Names",
   jump: "Jump",
   "quiet-for": "Quiet for",
+  tokens: "Tokens",
   stop: "Stop",
   answer: "Answer",
 };

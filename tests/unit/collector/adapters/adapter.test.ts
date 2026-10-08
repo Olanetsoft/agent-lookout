@@ -180,6 +180,7 @@ describe("each declaration agrees with what its adapter does", () => {
         lastTurnAt: NOW - 30_000,
         lastTurnImported: false,
         lastLineAt: NOW - 20_000,
+        tokens: null,
       },
       live: true,
       writtenAt: NOW - 10_000,

@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- A Codex session's details give the token counts of its newest reply, as Codex recorded them: the input, with how much of it came from a cache, and the output, such as `182,431 in, 9,120 out`. The input is how much of the session's context is in use. Sessions read over SSH from another machine have them too. A session with none shows a dash and why. What each agent can report, in Sources, has a Tokens column: Yes for Codex, and No for Claude Code, the Antigravity CLI and status files, with the reason. `GET /api/sessions` gives the counts as `tokens`. Nothing else is kept of the line Codex writes them on, and no event, history, email, post, push, `agent-lookout mcp` answer or `agent-lookout status` holds them.
+
 ## 0.2.9 - 2026-10-08
 
 The Mac app no longer looks frozen, a Claude Code session's details show what it last said, and Night is darker and crisper everywhere.

@@ -15,6 +15,7 @@ function state(overrides: Partial<RolloutState> = {}): RolloutState {
     lastTurnAt: NOW - 10 * MINUTE,
     lastTurnImported: false,
     lastLineAt: NOW - 5 * MINUTE,
+    tokens: null,
     ...overrides,
   };
 }
@@ -224,6 +225,23 @@ describe("codexSession", () => {
         expect(session).not.toHaveProperty("waitingReason");
       }
     }
+  });
+
+  test("carries the newest reply's token counts, and with none the key is absent, not 0", () => {
+    const tokens = { input: 182_431, cached: 141_002, output: 9_120 };
+    const counted = codexSession({
+      threadId: ids.working,
+      state: state({ tokens }),
+      live: true,
+      now: NOW,
+    });
+    expect(counted.tokens).toEqual(tokens);
+    // A copy, so the session never shares an object with what the reader keeps.
+    expect(counted.tokens).not.toBe(tokens);
+
+    const none = codexSession({ threadId: ids.working, state: state(), live: true, now: NOW });
+    expect(none).not.toHaveProperty("tokens");
+    expect(JSON.stringify(none)).not.toContain("tokens");
   });
 });
 

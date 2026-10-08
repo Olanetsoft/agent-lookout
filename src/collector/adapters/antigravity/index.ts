@@ -116,6 +116,8 @@ export const UNMATCHED_NOTE =
  * - No Jump, Stop or Answer: nothing ties a conversation to one terminal, and
  *   agy takes its answers only in that terminal.
  * - Quiet for is the newest modified time of the conversation's files.
+ * - Tokens are not read: where agy's transcripts record them has not been
+ *   checked.
  */
 export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -145,6 +147,10 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
       "The transcripts name no terminal, and agy documents no link that opens a conversation.",
   },
   "quiet-for": { level: "yes" },
+  tokens: {
+    level: "no",
+    reason: "Agent Lookout does not read token counts from agy's transcripts yet.",
+  },
   stop: {
     level: "no",
     reason:
