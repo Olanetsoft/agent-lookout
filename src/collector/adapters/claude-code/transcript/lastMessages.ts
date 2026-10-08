@@ -5,6 +5,7 @@ import type { Session } from "../../../../core/sessions/session.ts";
 import { messageText } from "../../../../core/text.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 import { lastSaidInTail } from "./lastSaid.ts";
+import { lastUsageInTail } from "./lastUsage.ts";
 import {
   findTranscript,
   readTranscriptTail,
@@ -101,22 +102,30 @@ function runLater(run: () => void, ms: number): void {
   setTimeout(run, ms).unref();
 }
 
-/** The answer the end of a transcript gives, made fit to show. Nothing of the tail is kept. */
+/**
+ * The answer the end of a transcript gives, made fit to show, with the token
+ * counts of the newest reply when they could be right. Both come from the
+ * same bytes, and nothing of the tail is kept.
+ */
 function answerFrom(tail: string, fromStart: boolean): LastMessageResponse {
+  const tokens = lastUsageInTail(tail, fromStart);
+  const counted = tokens === null ? {} : { tokens };
   const said = lastSaidInTail(tail, fromStart);
-  if (said.text === null) return { message: null, reason: said.reason };
+  if (said.text === null) return { message: null, reason: said.reason, ...counted };
   const shown = messageText(said.text);
   // What it said is made only of what cannot be shown: there is nothing to show.
   if (shown === undefined) {
-    return { message: null, reason: fromStart ? "nothing-yet" : "too-far-back" };
+    return { message: null, reason: fromStart ? "nothing-yet" : "too-far-back", ...counted };
   }
-  return { message: { text: shown.text, cut: shown.cut || said.startCut === true } };
+  return { message: { text: shown.text, cut: shown.cut || said.startCut === true }, ...counted };
 }
 
 /**
  * Reads what a Claude Code session last said, from the end of its transcript,
  * `<claude home>/projects/<folder>/<sessionId>.jsonl`, when the route asks for
- * it, and only then: no poll opens a transcript for this.
+ * it, and only then: no poll opens a transcript for this. The token counts of
+ * its newest reply come with it, from the same bytes, and no file is opened or
+ * read for them that would not be for the text.
  *
  * - Only a session the adapter listed on its last poll is read. The path is
  *   made from what the adapter read for it, its id once it is checked to be
@@ -130,9 +139,9 @@ function answerFrom(tail: string, fromStart: boolean): LastMessageResponse {
  *   while its transcript is being read share that read.
  * - At most four transcripts are read in a second, for every session
  *   together. Above that the answer is `busy`, and no file is touched.
- * - What is kept is the place of the file, its stamp and the last answer, for
- *   eight sessions at most, and only for 15 seconds after each was last asked
- *   for, or until a poll does not list the session.
+ * - What is kept is the place of the file, its stamp and the last answer,
+ *   counts and all, for eight sessions at most, and only for 15 seconds after
+ *   each was last asked for, or until a poll does not list the session.
  */
 export function createLastMessageReader(options: LastMessageReaderOptions): LastMessageReader {
   const io = options.io ?? nodeIo;

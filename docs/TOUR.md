@@ -260,7 +260,7 @@ The guide has the same table in [What each agent can report](GUIDE.md#what-each-
 
 In short:
 
-- **Claude Code** reports working, idle, needs you and names. Finished and failed only for background jobs. No Quiet for, because its registry file is not rewritten as a session works. Jump, Stop and Answer only in some places, and fewer on Windows.
+- **Claude Code** reports working, idle, needs you and names. Finished and failed only for background jobs. No Quiet for, because its registry file is not rewritten as a session works. Jump, Stop and Answer only in some places, and fewer on Windows. Tokens only on this computer, from its newest reply, while its details are open.
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle and Quiet for. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
@@ -431,7 +431,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 
 - The route: `createLastMessageRoute` and `idIn` in `src/collector/messages/lastMessageRoute.ts`.
 - The off switch: `AGENT_LOOKOUT_LAST_MESSAGE`, read in `src/collector/messages/lastMessageSettings.ts`.
-- The reader: `createLastMessageReader` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`, and `lastSaidInTail` in `lastSaid.ts` beside it.
+- The reader: `createLastMessageReader` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`, and `lastSaidInTail` in `lastSaid.ts` beside it, with `lastUsageInTail` in `lastUsage.ts` for the token counts.
 - The hook an adapter may offer: the optional `lastMessage` in `src/collector/adapters/adapter.ts`. `collector.ts` hands the route this computer's own adapters only.
 - The page: `src/dashboard/hooks/data/useLastMessage.ts` and `src/dashboard/components/panels/LastMessage.tsx`.
 
@@ -455,12 +455,13 @@ It is the one read that waits on a file, so the handler answers it the way it an
 
 **Why.** #55: a session that has used most of its context is about to need you. The agents already write these counts to their own files, so showing them keeps to what was measured. No price is shown, and there are no totals: one figure, the newest reply's.
 
-**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only. It is on `main`, under Unreleased in CHANGELOG.md, and not yet in a release. Claude Code and the Antigravity CLI are to follow in their own pull requests, so #55 stays open. Until then their row in Sources says No for Tokens, with the reason.
+**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only, released in 0.2.10. The second slice gives a Claude Code session's counts with its last message, from the same end of its transcript, while its details are open. They are never put on the session, so `GET /api/sessions` does not have them. The Antigravity CLI is to follow in its own pull request, so #55 stays open. Until then its row in Sources says No for Tokens, with the reason.
 
 **Where it is.**
 
-- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
+- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the Claude Code adapter's reader of last messages, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
 - `src/collector/adapters/codex/rolloutFile.ts` finds the newest `token_count` line and keeps only the three numbers in `info.last_token_usage`. It drops `total_token_usage`, the model's context window and `rate_limits`, which holds your plan and credits.
+- `src/collector/adapters/claude-code/transcript/lastUsage.ts` takes the counts of a Claude Code session's newest reply from the bytes read for its last message. [adapters/claude-code.md](adapters/claude-code.md) has the fields.
 - `src/collector/remotes/remoteSessions.ts` passes on the counts another machine sends.
 - On the page: `src/dashboard/components/panels/TokensFact.tsx` and `src/dashboard/lib/tokens/tokenWords.ts`.
 
@@ -557,7 +558,7 @@ The panel also shows:
 
 - the full folder path, start time and status
 - the branch and its pull request (`components/panels/PullRequestFact.tsx`, #51)
-- the token counts of a Codex session's newest reply (`components/panels/TokensFact.tsx`, #83)
+- the token counts of a session's newest reply (`components/panels/TokensFact.tsx`, #55)
 - Resume, which copies the command that resumes a finished Claude Code session (#8)
 - Deny and Allow (#9)
 - the session's own events and timeline
@@ -954,13 +955,14 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 
 ### What is never sent
 
-Three things a session carries are private, and each has a list of places it must never go. A channel's secrets have one too.
+Three things a session carries are private, and each has a list of places it must never go. Token counts have two, since a Claude Code session's come another way. A channel's secrets have one too.
 
 | What                                                                                 | Where it may go                                                                                                                                                             | Where it never goes                                                                                                                         |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `waitingText`, what a waiting Claude Code session is asking, such as `Run: npm test` | The snapshot, the Needs you panel, the session's details, notifications on this computer and the Mac menu bar. An email, post or push only with that channel's `_ASKING=on` | Events, the history, the poller's baselines, MCP answers, a notice that a session finished, failed or ended, an email subject, a push title |
 | A session's last message                                                             | `GET /api/sessions/last-message` only, kept in memory for at most 15 seconds                                                                                                | The snapshot, events, the history, any notification, email, post or push, MCP answers, another machine                                      |
 | `tokens`, the counts of a session's newest reply                                     | The snapshot, `GET /api/sessions` and the session's details                                                                                                                 | Events, the history, notifications, emails, posts, pushes, MCP answers, `agent-lookout status`                                              |
+| The counts of a Claude Code session's newest reply                                   | `GET /api/sessions/last-message` and the session's details only, kept in memory for at most 15 seconds                                                                      | The snapshot, events, the history, any notification, email, post or push, MCP answers, `agent-lookout status`, another machine              |
 | A channel's secrets: password, webhook address, topic, token, key                    | The environment Agent Lookout starts with, and the one server each is for                                                                                                   | Any file, the dashboard, the log, an error line                                                                                             |
 
 **How the code keeps to it.**
@@ -968,6 +970,7 @@ Three things a session carries are private, and each has a list of places it mus
 - `withoutWaitingText` in `src/core/sessions/session.ts` removes `waitingText`, and a held permission request (`ask`), from every session handed to a message, held through quiet hours, or kept as a poller baseline.
 - `outboundChannel.ts` reads the asking line only at the moment a wait's message goes out, from that poll's snapshot. While a wait sits out its delay, all the channel remembers is its id and when it began.
 - The history file and every message are built field by field, so a new field on a session cannot leak by accident.
+- A Claude Code session's counts are put only on the answer of `GET /api/sessions/last-message`, by `answerFrom` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`. The adapter never puts them on a session, so they are in no snapshot and never reach another machine.
 - Tests guard each rule, such as `tests/unit/collector/history/historyKeeper.test.ts` ("the files never hold what a waiting session is asking", and the same for token counts), `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/collector/outbound/phoneMessage.test.ts` and `tests/unit/collector/outbound/outboundChannel.test.ts`.
 
 **How the rule came about.** #56 (76cfb6d) first put the asking line into notifications on this computer only. #65 (db59482) added `AGENT_LOOKOUT_EMAIL_ASKING` and `AGENT_LOOKOUT_WEBHOOK_ASKING`, off by default, because the line can hold a command, a web address or a file's full path. ntfy and Pushover got their own switches with #82. PRIVACY.md has a section for each: [Claude Code's transcripts](../PRIVACY.md#claude-codes-transcripts), [A session's last message](../PRIVACY.md#a-sessions-last-message), [Storage](../PRIVACY.md#storage), and [Email](../PRIVACY.md#email), [Webhook](../PRIVACY.md#webhook), [ntfy](../PRIVACY.md#ntfy) and [Pushover](../PRIVACY.md#pushover).

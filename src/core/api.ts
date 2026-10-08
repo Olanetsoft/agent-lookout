@@ -1,7 +1,13 @@
 // The shapes the API returns, shared by the collector that writes them and the
 // dashboard that reads them. `/api/sessions` returns a `SessionsSnapshot`.
 
-import type { AnswerDecision, HistoryPoint, JumpTarget, SessionEvent } from "./sessions/session.ts";
+import type {
+  AnswerDecision,
+  HistoryPoint,
+  JumpTarget,
+  SessionEvent,
+  TokenCounts,
+} from "./sessions/session.ts";
 import {
   DEFAULT_NOTICE_EVENTS,
   readNoticeEvents,
@@ -241,14 +247,23 @@ export type LastMessageSetting = (typeof LAST_MESSAGE_SETTINGS)[number];
  * text it last said, at most its last 2,000 characters, with `cut` true when
  * the start of a longer message is left out, or why there is none.
  *
+ * Either can carry `tokens`, the token counts of the session's newest reply,
+ * read from the same end of its transcript: only for a Claude Code session,
+ * whose counts are in no other answer, and only when they could be right.
+ *
  * Other answers carry an `ErrorResponse`: 400 for a query that is not one
  * `id` and nothing else, 403 for a request a browser did not mark
  * `same-origin`, 404 for a session that is not listed, and 429, with
  * `Retry-After: 1`, while more transcripts are asked for than are read in a second.
  */
 export type LastMessageResponse =
-  | { message: { text: string; cut: boolean } }
-  | { message: null; reason: LastMessageReason; setting?: LastMessageSetting };
+  | { message: { text: string; cut: boolean }; tokens?: TokenCounts }
+  | {
+      message: null;
+      reason: LastMessageReason;
+      setting?: LastMessageSetting;
+      tokens?: TokenCounts;
+    };
 
 /**
  * The body of `POST /api/jump`: the id of the session to go to, and nothing

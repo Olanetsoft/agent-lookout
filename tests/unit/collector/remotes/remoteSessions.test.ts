@@ -18,6 +18,9 @@ import {
   workingThere,
 } from "@tests/fixtures/remote";
 
+/** Why Claude Code on devbox has no Tokens, as seen from here. */
+const CLAUDE_CODE_TOKENS_THERE = "Read only on devbox, while a session's details are open there.";
+
 function read(value: unknown) {
   const snapshot = readRemoteSnapshot(value, "devbox", NOW);
   if (snapshot === null) throw new Error("expected a snapshot");
@@ -248,13 +251,14 @@ describe("readRemoteSnapshot", () => {
     ]);
   });
 
-  test("each agent there that was found can report what it says, with no Jump, no Stop and no Answer", () => {
+  test("each agent there that was found can report what it says, with no Jump, no Stop and no Answer, and Claude Code no Tokens", () => {
     const { agents } = read(snapshotThere());
     // Codex is not on the other machine, so it has no row.
     expect(agents.map((agent) => agent.label)).toEqual(["Claude Code", "Status files"]);
     expect(agents[0]?.capabilities).toEqual({
       ...CLAUDE_CODE_CAPABILITIES,
       jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
+      tokens: { level: "no", reason: CLAUDE_CODE_TOKENS_THERE },
       stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
       answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
     });
@@ -296,21 +300,60 @@ describe("readRemoteSnapshot", () => {
     const sources = sourcesThere().map((source) => ({ ...source, state: "ok" as const }));
     const { agents } = read({ generatedAt: NOW, sources, sessions: [] });
     expect(agents.map((agent) => [agent.label, agent.capabilities.tokens])).toEqual([
-      ["Claude Code", CLAUDE_CODE_CAPABILITIES.tokens],
+      ["Claude Code", { level: "no", reason: CLAUDE_CODE_TOKENS_THERE }],
       ["Codex", { level: "yes" }],
       ["Status files", STATUS_FILE_CAPABILITIES.tokens],
     ]);
 
-    const [claude] = sources;
-    if (!claude?.capabilities) throw new Error("expected capabilities");
-    claude.capabilities = {
-      ...claude.capabilities,
-      tokens: { level: "partly" } as unknown as typeof claude.capabilities.tokens,
+    const [, codex] = sources;
+    if (!codex?.capabilities) throw new Error("expected capabilities");
+    codex.capabilities = {
+      ...codex.capabilities,
+      tokens: { level: "partly" } as unknown as typeof codex.capabilities.tokens,
     };
     expect(read({ generatedAt: NOW, sources, sessions: [] }).agents.map((a) => a.label)).toEqual([
-      "Codex",
+      "Claude Code",
       "Status files",
     ]);
+  });
+
+  test("Claude Code there has no Tokens when its machine says yes or partly, or sends a cell that cannot be read, since its counts are read only on that machine", () => {
+    const sources = sourcesThere();
+    const [claude] = sources;
+    if (!claude?.capabilities) throw new Error("expected capabilities");
+    for (const tokens of [
+      { level: "partly", reason: "On the computer it runs on." },
+      { level: "yes" },
+      { level: "partly" },
+      { level: "no" },
+      "partly",
+    ]) {
+      claude.capabilities = {
+        ...claude.capabilities,
+        tokens: tokens as typeof claude.capabilities.tokens,
+      };
+      const [agent] = read({ generatedAt: NOW, sources, sessions: [] }).agents;
+      expect(agent?.label).toBe("Claude Code");
+      expect(agent?.capabilities.tokens, JSON.stringify(tokens)).toEqual({
+        level: "no",
+        reason: CLAUDE_CODE_TOKENS_THERE,
+      });
+    }
+  });
+
+  test("Claude Code there keeps the reason its machine gives when it says no to Tokens itself", () => {
+    const sources = sourcesThere();
+    const [claude] = sources;
+    if (!claude?.capabilities) throw new Error("expected capabilities");
+    for (const reason of [
+      "Agent Lookout does not read the token counts in its transcripts yet.",
+      "AGENT_LOOKOUT_LAST_MESSAGE is off.",
+    ]) {
+      claude.capabilities = { ...claude.capabilities, tokens: { level: "no", reason } };
+      const [agent] = read({ generatedAt: NOW, sources, sessions: [] }).agents;
+      expect(agent?.label).toBe("Claude Code");
+      expect(agent?.capabilities.tokens).toEqual({ level: "no", reason });
+    }
   });
 
   test("a session there keeps the token counts it was sent, through the same check as this machine's", () => {

@@ -1,3 +1,4 @@
+import type { LastMessageResponse } from "@core/api";
 import type { CapabilityCell, Session, SourceHealth, TokenCounts } from "@core/sessions/session";
 
 /**
@@ -44,6 +45,33 @@ export const NOT_RECORDED = "Not recorded";
 /** Said under the dash when nothing more is known: the agent can record counts, and has not yet. */
 export const NONE_YET = "None recorded yet";
 
+/** Said under the dash while the counts read with a Claude Code session's last message are still to come. */
+export const NOT_READ_YET = "Not read yet";
+
+/** Said under the dash of a Claude Code session that has left the list before its counts were read. */
+export const READ_WHILE_LISTED = "Read only while it is in the list";
+
+/**
+ * Why the answer for what a Claude Code session last said, whose counts come
+ * with it, gave none, when that is not that none are recorded: its transcript
+ * was not found or could not be read, or its newest reply is further back than
+ * the end of it that is read. Undefined when it gave counts, or none were
+ * recorded.
+ */
+export function countsNotRead(answer: LastMessageResponse): string | undefined {
+  if (answer.tokens !== undefined || answer.message !== null) return undefined;
+  switch (answer.reason) {
+    case "not-found":
+      return "Its transcript was not found";
+    case "unreadable":
+      return "Its transcript could not be read";
+    case "too-far-back":
+      return "Further back in its transcript than Agent Lookout reads";
+    default:
+      return undefined;
+  }
+}
+
 /**
  * What the session's agent says of Tokens: its source's cell, or for a
  * session on another machine the cell of the agent there, as that machine
@@ -64,15 +92,18 @@ function tokensCell(
  * Why a session has no counts, under the dash: the reason its agent gives when
  * it cannot report them, such as "A status file has no field for token
  * counts."; for a session on another machine whose agent can, "devbox sent
- * none"; otherwise "None recorded yet", as for a Codex session before its first
- * reply.
+ * none"; for a Claude Code session, whose counts are read with its last
+ * message, why they were not read, `notRead`, such as "Not read yet" while
+ * that answer is still to come; otherwise "None recorded yet", as for a Codex
+ * session before its first reply.
  */
 export function noTokensReason(
   session: Pick<Session, "source" | "agent" | "machine">,
   sources: readonly Pick<SourceHealth, "id" | "capabilities" | "agents">[],
+  notRead?: string,
 ): string {
   const cell = tokensCell(session, sources);
   if (cell?.level === "no") return cell.reason;
   if (session.machine !== undefined) return `${session.machine} sent none`;
-  return NONE_YET;
+  return notRead ?? NONE_YET;
 }

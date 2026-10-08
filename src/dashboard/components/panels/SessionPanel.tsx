@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 
-import { withoutWaitingText, type Session } from "@core/sessions/session";
+import { withoutWaitingText, type Session, type TokenCounts } from "@core/sessions/session";
 import { waitingLabel } from "@core/notices/waiting";
 import { staleAfterMs } from "@core/time-rules/timeRules";
 import { needsYou } from "@core/waits/answeredWaits";
@@ -40,6 +40,7 @@ import { STATUS_LABEL, surfaceLabel, waitingDetail } from "@dashboard/lib/sessio
 import { waitedOnYou } from "@dashboard/lib/sessions/waits";
 import { agentLabel } from "@dashboard/lib/sources/sources";
 import { DESKTOP_NO_STOP } from "@dashboard/lib/stop/stopWords";
+import { countsNotRead, NOT_READ_YET, READ_WHILE_LISTED } from "@dashboard/lib/tokens/tokenWords";
 import { cn } from "@dashboard/lib/utils";
 
 /** Why a session on another machine has no Jump, no Stop and no Allow or Deny, in one line, for its details. */
@@ -235,6 +236,7 @@ function Part({
 function Details({
   session,
   gone,
+  open,
   state,
   now,
   asOf,
@@ -242,11 +244,43 @@ function Details({
 }: {
   session: Session;
   gone: boolean;
+  /** False while the details fade out once closed. */
+  open: boolean;
   state: CollectorState;
   now: number;
   asOf: number;
   lastMessage: LastMessageReading;
 }) {
+  // A Claude Code session's token counts come with what it last said, from the same answer, and
+  // are in no session list. The last answer's are held here, numbers alone, with why it gave
+  // none, for when it leaves the list and while the details fade out. They go with the details,
+  // so opening them again starts with none.
+  const [answered, setAnswered] = useState<{
+    tokens: TokenCounts | undefined;
+    notRead: string | undefined;
+  } | null>(null);
+  const answer = lastMessage.answer;
+  const notReadNow = answer === null ? undefined : countsNotRead(answer);
+  if (
+    answer !== null &&
+    (answered === null || answer.tokens !== answered.tokens || notReadNow !== answered.notRead)
+  ) {
+    setAnswered({ tokens: answer.tokens, notRead: notReadNow });
+  }
+  let readTokens: TokenCounts | undefined;
+  let notRead: string | undefined;
+  if (answer !== null) {
+    readTokens = answer.tokens;
+    notRead = notReadNow;
+  } else if (gone || !open) {
+    readTokens = answered?.tokens;
+    // Never answered: it left the list first, or closed while its first answer was to come.
+    notRead = answered ? answered.notRead : gone ? READ_WHILE_LISTED : NOT_READ_YET;
+  } else if (lastMessage.status === "loading" || lastMessage.status === "failed") {
+    notRead = NOT_READ_YET;
+  }
+  // Only a Claude Code session's counts come with what it last said.
+  if (session.source !== "claude-code") notRead = undefined;
   const sources = state.snapshot?.sources ?? [];
   const sessions = state.snapshot?.sessions ?? NO_SESSIONS;
   const staleAfter = staleAfterMs(state.snapshot?.timeRules);
@@ -352,7 +386,7 @@ function Details({
             {session.pid}
           </FactRow>
         )}
-        <TokensFact session={session} sources={sources} />
+        <TokensFact session={session} sources={sources} read={readTokens} notRead={notRead} />
         <WaitsFact session={session} state={state} now={now} asOf={asOf} />
       </FactList>
 
@@ -496,6 +530,7 @@ function SessionDialog({
         <Details
           session={session}
           gone={gone}
+          open={open}
           state={state}
           now={now}
           asOf={asOf}
@@ -589,8 +624,9 @@ interface SessionPanelProps {
  * the other machine it runs on, when it runs on one, its app when known, its
  * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the
  * branch's pull request and its checks, when it started, its process, the
- * token counts of its newest reply, and how often and how long it waited over
- * the period the page holds. Then what it last said, as plain text, asked for
+ * token counts of its newest reply, which for a Claude Code session come with
+ * what it last said, and how often and how long it waited over the period the
+ * page holds. Then what it last said, as plain text, asked for
  * while the details are open and the page is in sight, or one line that says
  * why there is none, then its own events, newest first, as the Events log
  * draws them, and its row of the Timeline across the whole width.
@@ -603,8 +639,9 @@ interface SessionPanelProps {
  * A session that leaves the list while it is open keeps what was last known,
  * under one calm line that says so, and has no Jump and no Stop, though Resume
  * stays for one that Stop ended or that was over. What it last said is not
- * kept: that part goes with it. An address that names no
- * session says so and offers the Overview.
+ * kept: that part goes with it, though the token counts that came with it
+ * stay until the details close. An address that names no session says so
+ * and offers the Overview.
  */
 export function SessionPanel({
   sessionId,

@@ -283,7 +283,8 @@ test.each([
     const tokens = rows.map(
       (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
     );
-    expect(tokens).toEqual(["No", "Yes", "No", "No", "No"]);
+    // Claude Code's are read here while its details are open, and never from another machine.
+    expect(tokens).toEqual(["Partly", "Yes", "No", "No", "No"]);
 
     // Each word sits whole on one line in its cell, and the heads take at most two.
     for (const cell of table.querySelectorAll<HTMLElement>('[data-part="capability"]')) {

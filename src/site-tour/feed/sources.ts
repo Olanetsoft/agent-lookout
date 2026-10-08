@@ -36,8 +36,8 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     reason: "The file Agent Lookout reads is not rewritten as a session works.",
   },
   tokens: {
-    level: "no",
-    reason: "Agent Lookout does not read the token counts in its transcripts yet.",
+    level: "partly",
+    reason: "On the computer it runs on, from its newest reply, read while its details are open.",
   },
   stop: {
     level: "partly",
@@ -156,11 +156,16 @@ export const CODEX_NEEDS_YOU_NOTE =
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
- * acts on this computer only.
+ * acts on this computer only, and Tokens as no, since its counts are read
+ * only on that machine.
  */
 export const CLAUDE_CODE_THERE_CAPABILITIES: SourceCapabilities = {
   ...CLAUDE_CODE_CAPABILITIES,
   jump: { level: "no", reason: `Jump acts on this computer only, not on ${MACHINE.name}.` },
+  tokens: {
+    level: "no",
+    reason: `Read only on ${MACHINE.name}, while a session's details are open there.`,
+  },
   stop: { level: "no", reason: `Stop acts on this computer only, not on ${MACHINE.name}.` },
   answer: { level: "no", reason: `Answer acts on this computer only, not on ${MACHINE.name}.` },
 };

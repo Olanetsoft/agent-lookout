@@ -117,7 +117,8 @@ export interface Feed {
   /**
    * `/api/sessions/last-message` for one session at a moment, with the present
    * `now`, or null for a session that is not listed then, which the collector
-   * answers 404. Only a Claude Code session on this computer is read.
+   * answers 404. Only a Claude Code session on this computer is read, and its
+   * answer holds the token counts of the same reply.
    */
   lastMessage(id: string, shown: Shown, now: number): LastMessageResponse | null;
 }
@@ -436,8 +437,13 @@ export function createFeed(t0: number): Feed {
       if (!session) return null;
       // As the collector answers: another agent, or another machine, is not read.
       if (session.source !== "claude-code") return { message: null, reason: "not-read" };
-      const said = messageText(SESSIONS.find((hour) => hour.id === id)?.said);
-      return said ? { message: said } : { message: null, reason: "nothing-yet" };
+      const hour = SESSIONS.find((one) => one.id === id);
+      const said = messageText(hour?.said);
+      if (!said) return { message: null, reason: "nothing-yet" };
+      // The counts of the same reply come in the same answer, as the collector gives them.
+      return hour?.saidTokens
+        ? { message: said, tokens: { ...hour.saidTokens } }
+        : { message: said };
     },
   };
   return feed;
