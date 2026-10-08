@@ -27,10 +27,16 @@ import { gunzipSync } from "node:zlib";
  * unpacked, and 3.96 MB installed with nodemailer. Before, they were 0.63 MB,
  * 1.69 MB and 20.45 MB. Raise a limit only on purpose, and say why in the
  * pull request.
+ *
+ * Unpacked was raised from 3.00 MB to 3.25 MB once it reached 3.01 MB. Of
+ * the 0.64 MB it grew from 2.37 MB, about half is the documents the package
+ * ships, the guide, PRIVACY.md, the API, SECURITY.md and the CHANGELOG, and
+ * the rest the dashboard and the command, as phone pushes, other machines,
+ * the Antigravity CLI and permission rules came.
  */
 const LIMITS = {
   tarball: 1_000_000,
-  unpacked: 3_000_000,
+  unpacked: 3_250_000,
   installed: 5_000_000,
 };
 
