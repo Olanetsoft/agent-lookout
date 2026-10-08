@@ -2,14 +2,16 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { createEventStore } from "@collector/eventStore";
 import { createApiHandler, type ApiHandler } from "@collector/handler";
 import { createHistoryStore } from "@collector/historyStore";
 import { contentSecurityPolicy } from "@collector/hosts/staticFiles";
 import { APP_ORIGIN, APP_START_URL } from "@core/appAddress";
+import { createNotificationRoute } from "@desktop/notifications/notificationRoute";
 import { createAppProtocolHandler } from "@desktop/protocol/appProtocol";
+import { createAppRoutes } from "@desktop/protocol/appRoutes";
 import type { AppRequest } from "@desktop/protocol/requestAdapter";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -166,6 +168,56 @@ describe("the app's own scheme", () => {
     const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
     const answer = await serve(from(`${APP_ORIGIN}/api/app/update`, APP_ORIGIN));
     expect(answer.status).toBe(404);
+  });
+
+  describe("a test of the app's own notifications", () => {
+    const TEST_URL = `${APP_ORIGIN}/api/app/notifications/test`;
+    /** The POST the Notifications card sends, as the app's own page or another page makes it. */
+    const press = (initiator: string) =>
+      from(TEST_URL, initiator, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Agent-Lookout-Action": "notification-test",
+        },
+        body: "{}",
+      });
+    const notifier = () => ({
+      test: vi.fn(async () => ({ outcome: "shown" as const })),
+      lastRefusal: vi.fn(() => null),
+    });
+    const nothing: ApiHandler = () => {
+      throw new Error("Not this route.");
+    };
+
+    test("is shown for the app's own page, and answers with what macOS made of it", async () => {
+      const { dist } = await makeApp();
+      const notifications = notifier();
+      const app = createAppRoutes({
+        update: nothing,
+        menuBar: nothing,
+        notifications: createNotificationRoute(notifications),
+      });
+      const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
+      const answer = await serve(press(APP_ORIGIN));
+      expect(answer.status).toBe(200);
+      expect(await answer.json()).toEqual({ outcome: "shown" });
+      expect(notifications.test).toHaveBeenCalledOnce();
+
+      // Another page's request never reaches it.
+      expect((await serve(press("https://evil.example"))).status).toBe(403);
+      expect(notifications.test).toHaveBeenCalledOnce();
+    });
+
+    test("is not there without the app's own routes, as in the standalone server and the dev server", async () => {
+      const { dist } = await makeApp();
+      const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
+      // The collector acts on none of its addresses but its own, and has nothing to read there.
+      expect((await serve(press(APP_ORIGIN))).status).toBe(405);
+      expect((await serve(from(`${APP_ORIGIN}/api/app/notifications`, APP_ORIGIN))).status).toBe(
+        404,
+      );
+    });
   });
 
   test.each(["agent-lookout://other/", "agent-lookout://other/api/sessions"])(

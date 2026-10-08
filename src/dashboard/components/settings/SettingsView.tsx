@@ -16,6 +16,10 @@ import { PermissionRulesCard } from "@dashboard/components/settings/PermissionRu
 import { TestSend } from "@dashboard/components/settings/TestSend";
 import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
 import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
+import {
+  useNotificationTest,
+  type NotificationTest,
+} from "@dashboard/hooks/app/useNotificationTest";
 import { useNow } from "@dashboard/hooks/data/useNow";
 import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
 import {
@@ -23,6 +27,7 @@ import {
   type OutboundStatusReading,
 } from "@dashboard/hooks/notifications/useOutboundStatus";
 import { useTheme } from "@dashboard/hooks/shell/useTheme";
+import { clockAt } from "@dashboard/lib/format";
 import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
 import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
@@ -35,6 +40,7 @@ import {
 } from "@dashboard/lib/pull-requests/pullRequestsStatus";
 import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 import type { ThemePreference } from "@dashboard/lib/shell/theme";
+import { cn } from "@dashboard/lib/utils";
 
 const THEME_OPTIONS = [
   { value: "dark", label: "Night", name: "Dark theme" },
@@ -83,10 +89,124 @@ function EventSwitches({
   );
 }
 
+/** What to do when the app could not show a test. */
+const RESTART_AND_TEST = "Quit Agent Lookout, open it again, and send another test.";
+
+/** What to do when the app's window may not show notifications. */
+const RESTART_AND_TURN_ON = "Quit Agent Lookout, open it again, and turn them on here.";
+
+/** What to do when macOS will not show the app's notifications. */
+const ALLOW_AND_TEST =
+  "Open System Settings, choose Notifications, then Agent Lookout, and turn on Allow notifications. Then send a test again.";
+
+/** What to do when macOS will not show the app's notifications, and what it said. */
+function AllowInSystemSettings({ reason }: { reason: string }) {
+  return (
+    <>
+      <p>{ALLOW_AND_TEST}</p>
+      <p className='mt-2'>
+        macOS said: <FactText>{reason}</FactText>
+      </p>
+    </>
+  );
+}
+
+/**
+ * Send a test, on the Notifications card in the Mac app only: one quiet button
+ * at `sm` that asks the app for one test notification, and beside it, in a
+ * polite live region that is in the page before there is anything to say,
+ * what macOS made of it: "Sending a test…", then "macOS took the test at
+ * 14:02.", or that it has not answered yet, as while it asks whether Agent
+ * Lookout may show notifications. A refusal is the info note "macOS did not
+ * allow it" under the row, with what to do and macOS's own words, and the
+ * same title and what to do in the line for a screen reader alone. A test
+ * that could not be shown, whether this Mac gives the app no way or Electron
+ * could not make it, is the note "Agent Lookout could not show a notification",
+ * with what to do.
+ *
+ * While no test's answer is on screen, before any press, while a test is under
+ * way and after one the app did not answer, the last refusal the page knows of
+ * is the same note, titled for the last notification: the one the app said
+ * when the card was drawn, or the one a later test was refused with. A test
+ * macOS shows clears it.
+ *
+ * As on the ntfy and Pushover cards, the button keeps its words and its focus
+ * while a test is under way, and a press then does nothing.
+ */
+function AppNotificationTest({ test, now }: { test: NotificationTest; now: number }) {
+  const { step, lastRefusal, send } = test;
+  const sending = step.kind === "sending";
+  const answer = step.kind === "answered" ? step.answer : null;
+
+  return (
+    <>
+      <div className='mt-3 flex min-h-button flex-wrap items-center gap-x-3 gap-y-2'>
+        <Button size='sm' onClick={send} aria-disabled={sending || undefined}>
+          Send a test
+        </Button>
+        <p data-part='test' role='status' className='text-body text-ink'>
+          {sending && "Sending a test…"}
+          {step.kind === "answered" && answer?.outcome === "shown" && (
+            <>
+              macOS took the test at <span className='tabular-nums'>{clockAt(step.at, now)}</span>.
+            </>
+          )}
+          {answer?.outcome === "no-answer" &&
+            "macOS has not answered yet. If it asks whether Agent Lookout may show notifications, allow them, then send a test again."}
+          {answer?.outcome === "refused" && (
+            <span className='sr-only'>macOS did not allow it. {ALLOW_AND_TEST}</span>
+          )}
+          {answer?.outcome === "unsupported" && (
+            <span className='sr-only'>
+              Agent Lookout could not show a notification. {RESTART_AND_TEST}
+            </span>
+          )}
+          {step.kind === "failed" && (
+            <span className='sr-only'>
+              The test was not sent. Agent Lookout did not answer. Try again in a moment.
+            </span>
+          )}
+        </p>
+      </div>
+      {answer?.outcome === "refused" && (
+        <Callout title='macOS did not allow it' className='mt-3'>
+          <AllowInSystemSettings reason={answer.reason} />
+        </Callout>
+      )}
+      {answer?.outcome === "unsupported" && (
+        <Callout title='Agent Lookout could not show a notification' className='mt-3'>
+          <p>{RESTART_AND_TEST}</p>
+        </Callout>
+      )}
+      {step.kind === "failed" && (
+        <Callout title='The test was not sent' className='mt-3'>
+          <p>Agent Lookout did not answer. Try again in a moment.</p>
+        </Callout>
+      )}
+      {step.kind !== "answered" && lastRefusal !== null && (
+        <Callout title='macOS did not show the last notification' className='mt-3'>
+          <AllowInSystemSettings reason={lastRefusal} />
+        </Callout>
+      )}
+    </>
+  );
+}
+
+/**
+ * Whether what the app last heard from macOS is a refusal: a test's answer
+ * while it is on screen, and otherwise, while one is under way or after the
+ * app did not answer, the last refusal the page knows of.
+ */
+function refusedByMacOS({ step, lastRefusal }: NotificationTest): boolean {
+  if (step.kind === "answered") return step.answer.outcome === "refused";
+  return lastRefusal !== null;
+}
+
 /**
  * Whether notifications are sent, and for which events. They are off until
- * the person turns them on here, and pressing the button is the only thing in
- * the app that asks the browser for permission.
+ * the person turns them on, with the button here or, in the Mac app, with Turn
+ * on in the Overview's question (`dashboard/NotificationPrompt.tsx`), and
+ * those two are the only things in the app that ask for permission.
  *
  * The state is said in words beside a button that changes it. It is not the
  * switch the theme uses, because that chooses as soon as it has focus, and the
@@ -96,9 +216,35 @@ function EventSwitches({
  *
  * Every request the page makes tells the app what these are set to, and the
  * notifications the app shows itself, when no page is open, follow them.
+ *
+ * In the Mac app the card speaks of macOS and this app, not of a browser and
+ * a tab, and says the app's setting is its own: its page keeps the choice
+ * apart from any browser's. There the page's own permission always reads
+ * granted, whatever macOS decides, so the card has Send a test, which says
+ * what macOS made of a notification, and turning them on sends one too, so
+ * macOS asks its own question then. While macOS refuses them, the state says
+ * so.
  */
-function NotificationsCard() {
+function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
   const { on, permission, events, turnOn, turnOff, chooseEvent } = useNotificationSetting();
+  const test = useNotificationTest(inApp);
+  const refused = inApp && refusedByMacOS(test);
+
+  const turnOnHere = () => {
+    turnOn();
+    // The app's first notification is when macOS asks whether it may show them.
+    if (inApp) test.send();
+  };
+
+  const state = inApp
+    ? on
+      ? refused
+        ? "Notifications are on in this app, but macOS is not showing them."
+        : "Notifications are on in this app."
+      : "Notifications are off in this app."
+    : on
+      ? "Notifications are on."
+      : "Notifications are off.";
 
   return (
     <SectionCard title='Notifications'>
@@ -107,10 +253,10 @@ function NotificationsCard() {
         <div className='flex min-h-button flex-wrap items-center gap-x-3 gap-y-2'>
           {/* Said again to a screen reader when the button changes it. */}
           <p data-part='state' aria-live='polite' className='text-body font-medium text-ink'>
-            {on ? "Notifications are on." : "Notifications are off."}
+            {state}
           </p>
           {permission !== "unsupported" && (
-            <Button size='sm' onClick={on ? turnOff : turnOn}>
+            <Button size='sm' onClick={on ? turnOff : turnOnHere}>
               {on ? "Turn off notifications" : "Turn on notifications"}
             </Button>
           )}
@@ -123,22 +269,41 @@ function NotificationsCard() {
           </p>
         )}
 
-        {permission === "denied" && (
-          <Callout title='Notifications are blocked' className='mt-3'>
-            <p>
-              Your browser is blocking notifications from this address. Allow them for this address
-              in the browser's site settings, then turn them on here.
-            </p>
-          </Callout>
-        )}
-        {permission === "unsupported" && (
-          <Callout title='This browser cannot show notifications' className='mt-3'>
-            <p>Open Agent Lookout in a browser that can, then turn them on here.</p>
-          </Callout>
-        )}
+        {inApp && <AppNotificationTest test={test} now={now} />}
 
+        {permission === "denied" &&
+          (inApp ? (
+            <Callout title='This window is not allowed to show notifications' className='mt-3'>
+              <p>{RESTART_AND_TURN_ON}</p>
+            </Callout>
+          ) : (
+            <Callout title='Notifications are blocked' className='mt-3'>
+              <p>
+                Your browser is blocking notifications from this address. Allow them for this
+                address in the browser's site settings, then turn them on here.
+              </p>
+            </Callout>
+          ))}
+        {permission === "unsupported" &&
+          (inApp ? (
+            <Callout title='This window cannot show notifications' className='mt-3'>
+              <p>{RESTART_AND_TURN_ON}</p>
+            </Callout>
+          ) : (
+            <Callout title='This browser cannot show notifications' className='mt-3'>
+              <p>Open Agent Lookout in a browser that can, then turn them on here.</p>
+            </Callout>
+          ))}
+
+        {/* In the app, first: the app's choice is not a browser's. */}
+        {inApp && (
+          <p className='mt-3 text-body text-ink-secondary'>
+            This setting is the app's own. Turning notifications on in a browser does not turn them
+            on here.
+          </p>
+        )}
         {/* Says what turning them on does, and nothing of what this browser can do. */}
-        <p className='mt-3 text-body text-ink-secondary'>
+        <p className={cn("text-body text-ink-secondary", inApp ? "mt-2" : "mt-3")}>
           With Needs you on, a notification appears each time a session starts waiting for you. It
           names the session and the reason, and is cleared when the session moves on.
         </p>
@@ -151,8 +316,10 @@ function NotificationsCard() {
           </p>
         )}
         <p className='mt-2 text-body text-ink-secondary'>
-          On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout
-          keeps running, and those stay until you clear them. What each agent can report, under{" "}
+          {inApp
+            ? "They also arrive while this window is closed, for as long as Agent Lookout keeps running, and those stay until you clear them."
+            : "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them."}{" "}
+          What each agent can report, under{" "}
           <a
             href='#sources'
             className='rounded-bar underline decoration-rule-strong underline-offset-2 transition-colors duration-120 hover:text-ink'
@@ -161,6 +328,13 @@ function NotificationsCard() {
           </a>
           , says which agents can be seen waiting.
         </p>
+        {inApp && (
+          <p className='mt-2 text-body text-ink-secondary'>
+            macOS hides their banners while the display is shared or mirrored, unless Allow
+            notifications when mirroring or sharing the display is on, in System Settings under
+            Notifications.
+          </p>
+        )}
       </div>
     </SectionCard>
   );
@@ -374,7 +548,7 @@ export function SettingsView({
           </div>
         </SectionCard>
 
-        <NotificationsCard />
+        <NotificationsCard inApp={inApp} now={clock} />
 
         <TimeRulesCard onChanged={onTimeRulesChanged} snapshot={snapshot} />
 

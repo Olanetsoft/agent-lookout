@@ -24,7 +24,9 @@
 // the person chooses Check for Updates…. A newer one is downloaded and checked,
 // and installed only when the person presses Install and Restart
 // (`updates/updater.ts`). The page reaches that through `/api/app/*` on the
-// app's own scheme, which only this host answers (`updates/updateRoute.ts`).
+// app's own scheme, which only this host answers (`updates/updateRoute.ts`),
+// and so it reaches the menu bar's switch and a test of the app's own
+// notifications, which reports what macOS made of it.
 //
 // What would otherwise be lost, an error here or a warning from the collector,
 // goes to the app's log (`process/appLog.ts`). A startup that fails says so in
@@ -61,6 +63,7 @@ import { menuBarSettingsFile } from "./menu-bar/menuBarSettings.ts";
 import { applySessionRules } from "./navigation/sessionRules.ts";
 import { createDesktopNotifier } from "./notifications/desktopNotifier.ts";
 import { createDockBadge } from "./notifications/dockBadge.ts";
+import { createNotificationRoute } from "./notifications/notificationRoute.ts";
 import { createAppLog, describeError, LOG_FILE } from "./process/appLog.ts";
 import { refusedSwitch } from "./process/launchSwitches.ts";
 import { createAppProtocolHandler } from "./protocol/appProtocol.ts";
@@ -357,6 +360,7 @@ function start(): void {
           app: createAppRoutes({
             update: createUpdateRoute(updater),
             menuBar: createMenuBarRoute(bar),
+            notifications: createNotificationRoute(notifier),
           }),
           distDir: path.join(app.getAppPath(), "dist"),
         }),

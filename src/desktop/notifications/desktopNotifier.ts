@@ -14,12 +14,18 @@
 // answered, let go or replaced. A reminder's says how long the session has
 // waited before what it asks.
 //
+// Settings can ask it for one test notification, which says what macOS made
+// of it (`test`), and for the reason macOS gave the last time it would not
+// show one (`lastRefusal`). The page's own `Notification` cannot tell: in the
+// app it reads "granted" whatever macOS decides.
+//
 // It imports only types from Electron, so it is tested in plain Node with a
 // stand-in for Electron's `Notification`. `main.ts` hands it Electron's.
 
 import type { NotificationConstructorOptions } from "electron";
 
 import type { NoticeAbout, SystemNotifier } from "../../collector/notifications/systemNotifier.ts";
+import type { NotificationTestOutcome } from "../../core/notices/appNotifications.ts";
 import type { Notice } from "../../core/notices/waiting.ts";
 import type { Session, SessionsSnapshot } from "../../core/sessions/session.ts";
 import { DECISION_LABEL, noticeOffer, type NoticeOffer } from "../answers/answerOffer.ts";
@@ -27,6 +33,19 @@ import type { AnswerPress } from "../answers/desktopAnswers.ts";
 
 /** How many notifications with no buttons are held on to, so a click on one can still be heard. */
 const KEPT = 20;
+
+/**
+ * How long a test waits for macOS to say it showed the notification or would
+ * not. The first notification an app makes has macOS ask the person whether
+ * it may show them, and macOS says nothing until they answer.
+ */
+export const TEST_ANSWER_MS = 5_000;
+
+/** The test notification: it says what it is, and nothing about a session. */
+export const TEST_NOTICE = {
+  title: "Agent Lookout",
+  body: "This is a test notification.",
+} as const;
 
 /** What the notifier needs of one of Electron's notifications. */
 export interface NotificationLike {
@@ -77,6 +96,18 @@ export interface DesktopNotifier extends SystemNotifier {
    * notification whose request is no longer held for its session.
    */
   observe(snapshot: Pick<SessionsSnapshot, "sessions">): void;
+  /**
+   * Shows one test notification, and resolves with what macOS made of it:
+   * shown, refused with its reason, or unsupported, as when Electron cannot
+   * make or show one, or with no answer once `TEST_ANSWER_MS` has passed. It
+   * never rejects.
+   */
+  test(): Promise<NotificationTestOutcome>;
+  /**
+   * The reason macOS gave the last time it would not show a notification, or
+   * null when none has been refused since one was last shown.
+   */
+  lastRefusal(): string | null;
 }
 
 /**
@@ -93,6 +124,29 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
   /** The notifications with buttons, by the request they answer. */
   const asking = new Map<string, { notification: NotificationLike; sessionId: string }>();
   let warned = false;
+  let refusal: string | null = null;
+
+  /** Keeps a notification with no buttons, so it is not collected and its click lost. */
+  function keep(notification: NotificationLike): void {
+    kept.push(notification);
+    if (kept.length > KEPT) kept.shift();
+  }
+
+  /**
+   * Hears what macOS says of a notification: the reason it would not show
+   * one is kept, and said once, and one it showed means it no longer refuses.
+   */
+  function listen(notification: NotificationLike): void {
+    notification.on("show", () => {
+      refusal = null;
+    });
+    notification.on("failed", (_event, error) => {
+      refusal = reasonOf(error);
+      if (warned) return;
+      warned = true;
+      options.warn?.(`macOS did not show a notification from Agent Lookout: ${error}`);
+    });
+  }
 
   function forget(requestId: string, notification: NotificationLike): void {
     if (asking.get(requestId)?.notification === notification) asking.delete(requestId);
@@ -132,11 +186,7 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
         shownAt = now();
       });
       notification.on("click", () => options.onClick(sessionId));
-      notification.on("failed", (_event, error) => {
-        if (warned) return;
-        warned = true;
-        options.warn?.(`macOS did not show a notification from Agent Lookout: ${error}`);
-      });
+      listen(notification);
       if (held !== null && decisions.length > 0) {
         const { requestId: id } = held;
         notification.on("action", (details) => {
@@ -166,8 +216,7 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
         asking.set(id, { notification, sessionId: held.sessionId });
         if (older !== undefined) takeDown(older.notification);
       } else {
-        kept.push(notification);
-        if (kept.length > KEPT) kept.shift();
+        keep(notification);
       }
       notification.show();
       shownAt = now();
@@ -191,8 +240,42 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
       });
   }
 
+  function test(): Promise<NotificationTestOutcome> {
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const settle = (outcome: NotificationTestOutcome) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(outcome);
+      };
+      try {
+        if (!notifications.isSupported()) {
+          settle({ outcome: "unsupported" });
+          return;
+        }
+        const notification = notifications.create({ ...TEST_NOTICE });
+        listen(notification);
+        notification.on("show", () => settle({ outcome: "shown" }));
+        notification.on("failed", (_event, error) =>
+          settle({ outcome: "refused", reason: reasonOf(error) }),
+        );
+        notification.on("click", () => options.onClick());
+        keep(notification);
+        timer = setTimeout(() => settle({ outcome: "no-answer" }), TEST_ANSWER_MS);
+        notification.show();
+      } catch {
+        // Electron could not make or show it, which is not macOS refusing it.
+        settle({ outcome: "unsupported" });
+      }
+    });
+  }
+
   return {
     show,
+    test,
+    lastRefusal: () => refusal,
     tell(notice, sessionId) {
       present(noticeOffer(notice), sessionId);
     },
@@ -205,4 +288,12 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
       }
     },
   };
+}
+
+/** What macOS gave as its reason, as one line, or a line that says it gave none. */
+function reasonOf(error: unknown): string {
+  const text = (error instanceof Error ? error.message : String(error ?? ""))
+    .replace(/\s+/g, " ")
+    .trim();
+  return text === "" ? "macOS gave no reason." : text;
 }

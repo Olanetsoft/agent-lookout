@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -108,6 +108,17 @@ const SETTINGS: SettingsResponse = {
 };
 /** The paths the view asked the app for. */
 let asked: string[];
+/**
+ * What the Mac app says of its own notifications: the reason macOS gave the
+ * last time it refused one, as `GET /api/app/notifications` would, and what
+ * macOS made of a test, as `POST /api/app/notifications/test` would, with each
+ * test asked for. The answer can be held back until the test lets it go.
+ */
+let lastRefusal: string | null;
+/** Holds back the answer to `GET /api/app/notifications` until the test lets it go. */
+let refusalRead: Promise<void> | undefined;
+let macTest: { status: number; body: unknown; held?: Promise<void> };
+let macTests: { init: RequestInit | undefined }[];
 
 beforeEach(() => {
   host = fakeNotificationHost();
@@ -120,8 +131,26 @@ beforeEach(() => {
   testAnswer = { status: 200, body: { ok: true, channel: "ntfy", sentAt: Date.now() } };
   tests = [];
   asked = [];
+  lastRefusal = null;
+  refusalRead = undefined;
+  macTest = { status: 200, body: { outcome: "shown" } };
+  macTests = [];
   setApiHost(async (path, init) => {
     asked.push(path);
+    if (path === "/api/app/notifications/test" || path === "/api/app/notifications") {
+      if (path === "/api/app/notifications") {
+        await refusalRead;
+        return new Response(JSON.stringify({ lastRefusal }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      macTests.push({ init });
+      await macTest.held;
+      return new Response(JSON.stringify(macTest.body), {
+        status: macTest.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (path === "/api/phone/test") {
       tests.push({ init });
       await testAnswer.held;
@@ -510,6 +539,394 @@ test("the card says what a notification holds, that on a Mac they arrive with no
   ).toBe("#sources");
   // One switch covers the page's notifications and the app's own.
   expect(notifications(screen).getByRole("button").elements()).toHaveLength(1);
+});
+
+describe("in the Mac app", () => {
+  /** As the app's window has it: the page may show notifications, whatever macOS decides. */
+  beforeEach(() => {
+    host.state = "granted";
+  });
+
+  /** The line beside Send a test. */
+  const testLine = (screen: Awaited<ReturnType<typeof render>>) =>
+    notifications(screen).element().querySelector('[data-part="test"]') as HTMLElement;
+
+  test("the card speaks of macOS and this app, never of a browser or a tab, and says the app's setting is its own", async () => {
+    const screen = await render(<SettingsView inApp />);
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
+    const words = notifications(screen).element().textContent ?? "";
+
+    expect(words).toContain(
+      "This setting is the app's own. Turning notifications on in a browser does not turn them on here.",
+    );
+    expect(words).toContain(
+      "They also arrive while this window is closed, for as long as Agent Lookout keeps running, and those stay until you clear them.",
+    );
+    expect(words).toContain(
+      "macOS hides their banners while the display is shared or mirrored, unless Allow notifications when mirroring or sharing the display is on, in System Settings under Notifications.",
+    );
+    expect(words).not.toMatch(/browser's|your browser|dashboard tab/i);
+    expect(
+      notifications(screen)
+        .getByRole("button")
+        .elements()
+        .map((button) => button.textContent),
+    ).toEqual(["Turn on notifications", "Send a test"]);
+    // It reads once whether macOS refused the last one, and sends nothing.
+    await vi.waitFor(() => expect(asked).toContain("/api/app/notifications"));
+    expect(macTests).toEqual([]);
+  });
+
+  test("in a browser the card is as it was: no Send a test, and nothing asks the app about notifications", async () => {
+    const screen = await render(<SettingsView inApp={false} />);
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off.");
+    expect(notifications(screen).getByRole("button", { name: "Send a test" }).elements()).toEqual(
+      [],
+    );
+    expect(notifications(screen).element().textContent).not.toContain("the app's own");
+    expect(asked.some((path) => path.startsWith("/api/app/notifications"))).toBe(false);
+  });
+
+  test("Turn on notifications stores on, asks the browser nothing, and sends a test so macOS asks then, saying what it answered", async () => {
+    const screen = await render(<SettingsView inApp />);
+    await notifications(screen).getByRole("button", { name: "Turn on notifications" }).click();
+
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+    expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+    expect(host.asked).toBe(0);
+    await vi.waitFor(() => expect(macTests).toHaveLength(1));
+    const [{ init }] = macTests as [{ init: RequestInit | undefined }];
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe("{}");
+    expect(new Headers(init?.headers).get("X-Agent-Lookout-Action")).toBe("notification-test");
+    await vi.waitFor(() =>
+      expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+    );
+
+    // Turning them off sends nothing.
+    await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
+    expect(macTests).toHaveLength(1);
+  });
+
+  test("Send a test says it is sending, then what macOS made of it, and keeps its focus", async () => {
+    let release = () => {};
+    macTest = {
+      status: 200,
+      body: { outcome: "shown" },
+      held: new Promise((resolve) => {
+        release = resolve;
+      }),
+    };
+    const screen = await render(<SettingsView inApp />);
+    const button = notifications(screen).getByRole("button", { name: "Send a test" });
+    await button.click();
+
+    const line = testLine(screen);
+    expect(line.getAttribute("role")).toBe("status");
+    await vi.waitFor(() => expect(line.textContent).toBe("Sending a test…"));
+    expect(button.element().getAttribute("aria-disabled")).toBe("true");
+    // A second press while one is under way sends nothing.
+    (button.element() as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(macTests).toHaveLength(1);
+
+    release();
+    await vi.waitFor(() =>
+      expect(line.textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+    );
+    expect(button.element().getAttribute("aria-disabled")).toBeNull();
+    expect(document.activeElement).toBe(button.element());
+    expect(notifications(screen).element().querySelector('[data-slot="callout"]')).toBeNull();
+    // Testing changes nothing of the choice.
+    expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBeNull();
+  });
+
+  test.each(["dark", "light"] as const)(
+    "in the %s theme, when macOS refuses, a quiet note says so with what to do and macOS's words, and the state says they are not shown",
+    async (theme) => {
+      document.documentElement.setAttribute("data-theme", theme);
+      notificationsOn();
+      macTest = {
+        status: 200,
+        body: {
+          outcome: "refused",
+          reason: "Notifications are not allowed for this application",
+        },
+      };
+      const screen = await render(<SettingsView inApp />);
+      await notifications(screen).getByRole("button", { name: "Send a test" }).click();
+
+      const note = notifications(screen)
+        .getByRole("status")
+        .filter({ hasText: "macOS did not allow it" })
+        .last();
+      await expect.element(note).toBeVisible();
+      expect(note.element().getAttribute("data-slot")).toBe("callout");
+      await expect
+        .element(note)
+        .toHaveTextContent(
+          "Open System Settings, choose Notifications, then Agent Lookout, and turn on Allow notifications. Then send a test again.",
+        );
+      await expect
+        .element(note)
+        .toHaveTextContent("macOS said: Notifications are not allowed for this application");
+      // What a developer's copy does is for the guide, not for everyone who uses the app.
+      expect(notifications(screen).element().textContent).not.toMatch(/npm run|Electron/);
+      expect(note.element().querySelector("code")).toBeNull();
+      // The quiet note, not the error.
+      expect(getComputedStyle(note.element()).backgroundColor).toBe(rgbOf("var(--fill-quiet)"));
+      // The line, there from the start, says it and what to do for a screen reader alone.
+      expect(testLine(screen).textContent).toBe(
+        "macOS did not allow it. Open System Settings, choose Notifications, then Agent Lookout, and turn on Allow notifications. Then send a test again.",
+      );
+      // On, but not claimed to work.
+      await expect
+        .element(stateOf(screen))
+        .toHaveTextContent("Notifications are on in this app, but macOS is not showing them.");
+      await pointAway();
+      expect(warmPaint(screen.container)).toEqual([]);
+    },
+  );
+
+  test("when macOS has not answered yet, as while it asks, the line says what to do", async () => {
+    macTest = { status: 200, body: { outcome: "no-answer" } };
+    const screen = await render(<SettingsView inApp />);
+    await notifications(screen).getByRole("button", { name: "Send a test" }).click();
+    await vi.waitFor(() =>
+      expect(testLine(screen).textContent).toBe(
+        "macOS has not answered yet. If it asks whether Agent Lookout may show notifications, allow them, then send a test again.",
+      ),
+    );
+    expect(notifications(screen).element().querySelector('[data-slot="callout"]')).toBeNull();
+  });
+
+  test.each<[string, { status: number; body: unknown }, string, string, string]>([
+    [
+      "the app could not show one",
+      { status: 200, body: { outcome: "unsupported" } },
+      "Agent Lookout could not show a notification",
+      "Quit Agent Lookout, open it again, and send another test.",
+      "Agent Lookout could not show a notification. Quit Agent Lookout, open it again, and send another test.",
+    ],
+    [
+      "the app does not answer",
+      { status: 500, body: { error: "The app ran into an unexpected problem." } },
+      "The test was not sent",
+      "Agent Lookout did not answer. Try again in a moment.",
+      "The test was not sent. Agent Lookout did not answer. Try again in a moment.",
+    ],
+  ])(
+    "when %s, a note says so and what to do, and the line says both for a screen reader",
+    async (_what, answer, title, body, line) => {
+      macTest = answer;
+      const screen = await render(<SettingsView inApp />);
+      await notifications(screen).getByRole("button", { name: "Send a test" }).click();
+      const note = notifications(screen).getByRole("status").filter({ hasText: title }).last();
+      await expect.element(note).toBeVisible();
+      expect(note.element().getAttribute("data-slot")).toBe("callout");
+      // A title says what happened, and the words under it what to do.
+      const words = [...note.element().querySelectorAll("p")].map((p) => p.textContent);
+      expect(words).toEqual([title, body]);
+      expect(testLine(screen).textContent).toBe(line);
+      // Not this Mac's fault when Electron could not make it: no word blames it.
+      expect(notifications(screen).element().textContent).not.toContain("This Mac cannot");
+    },
+  );
+
+  test("a refusal macOS gave before is said when the card is drawn, and goes once a test is shown", async () => {
+    notificationsOn();
+    lastRefusal = "Notifications are not allowed for this application";
+    const screen = await render(<SettingsView inApp />);
+    const note = notifications(screen)
+      .getByRole("status")
+      .filter({ hasText: "macOS did not show the last notification" })
+      .last();
+    await expect.element(note).toBeVisible();
+    await expect
+      .element(note)
+      .toHaveTextContent("macOS said: Notifications are not allowed for this application");
+    await expect
+      .element(stateOf(screen))
+      .toHaveTextContent("Notifications are on in this app, but macOS is not showing them.");
+
+    await notifications(screen).getByRole("button", { name: "Send a test" }).click();
+    await vi.waitFor(() =>
+      expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+    );
+    expect(notifications(screen).element().querySelector('[data-slot="callout"]')).toBeNull();
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+  });
+
+  test("a refusal macOS gave before is still said while a test is under way, and after one the app did not answer", async () => {
+    notificationsOn();
+    lastRefusal = "Notifications are not allowed for this application";
+    let release = () => {};
+    macTest = {
+      status: 500,
+      body: { error: "The app ran into an unexpected problem." },
+      held: new Promise((resolve) => {
+        release = resolve;
+      }),
+    };
+    const screen = await render(<SettingsView inApp />);
+    const earlier = notifications(screen)
+      .getByRole("status")
+      .filter({ hasText: "macOS did not show the last notification" })
+      .last();
+    await expect.element(earlier).toBeVisible();
+    const refusedState = "Notifications are on in this app, but macOS is not showing them.";
+
+    await notifications(screen).getByRole("button", { name: "Send a test" }).click();
+    await vi.waitFor(() => expect(testLine(screen).textContent).toBe("Sending a test…"));
+    await expect.element(stateOf(screen)).toHaveTextContent(refusedState);
+    await expect.element(earlier).toBeVisible();
+
+    release();
+    await expect
+      .element(
+        notifications(screen)
+          .getByRole("status")
+          .filter({ hasText: "The test was not sent" })
+          .last(),
+      )
+      .toBeVisible();
+    await expect.element(stateOf(screen)).toHaveTextContent(refusedState);
+    await expect.element(earlier).toBeVisible();
+  });
+
+  describe("a second press", () => {
+    const REASON = "Notifications are not allowed for this application";
+    const REFUSED_STATE = "Notifications are on in this app, but macOS is not showing them.";
+    const LAST = "macOS did not show the last notification";
+    /** The note on the last refusal, or null while it is not drawn. */
+    const lastNote = (screen: Awaited<ReturnType<typeof render>>) =>
+      [...notifications(screen).element().querySelectorAll('[data-slot="callout"]')].find((note) =>
+        note.textContent?.includes(LAST),
+      ) ?? null;
+    /** A test answer held back until the returned function lets it go. */
+    const held = (status: number, body: unknown) => {
+      let release = () => {};
+      macTest = {
+        status,
+        body,
+        held: new Promise((resolve) => {
+          release = resolve;
+        }),
+      };
+      return () => release();
+    };
+
+    test("after a test macOS refused, the next says that refusal while it is under way, and goes once one is shown", async () => {
+      notificationsOn();
+      // Nothing was refused when the card was drawn.
+      macTest = { status: 200, body: { outcome: "refused", reason: REASON } };
+      const screen = await render(<SettingsView inApp />);
+      await vi.waitFor(() => expect(asked).toContain("/api/app/notifications"));
+      const button = notifications(screen).getByRole("button", { name: "Send a test" });
+      await button.click();
+      await vi.waitFor(() =>
+        expect(testLine(screen).textContent).toMatch(
+          /^macOS did not allow it\. Open System Settings/,
+        ),
+      );
+
+      const release = held(200, { outcome: "shown" });
+      await button.click();
+      await vi.waitFor(() => expect(testLine(screen).textContent).toBe("Sending a test…"));
+      await vi.waitFor(() =>
+        expect(lastNote(screen)?.textContent).toContain(`macOS said: ${REASON}`),
+      );
+      await expect.element(stateOf(screen)).toHaveTextContent(REFUSED_STATE);
+
+      release();
+      await vi.waitFor(() =>
+        expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+      );
+      expect(notifications(screen).element().querySelector('[data-slot="callout"]')).toBeNull();
+      await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+    });
+
+    test("after a test macOS showed, a refusal said when the card was drawn does not come back, while the next is under way or after the app did not answer", async () => {
+      notificationsOn();
+      lastRefusal = REASON;
+      const screen = await render(<SettingsView inApp />);
+      await vi.waitFor(() => expect(lastNote(screen)).not.toBeNull());
+      const button = notifications(screen).getByRole("button", { name: "Send a test" });
+      await button.click();
+      await vi.waitFor(() =>
+        expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+      );
+      expect(lastNote(screen)).toBeNull();
+
+      const release = held(500, { error: "The app ran into an unexpected problem." });
+      await button.click();
+      await vi.waitFor(() => expect(testLine(screen).textContent).toBe("Sending a test…"));
+      expect(lastNote(screen)).toBeNull();
+      await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+
+      release();
+      await expect
+        .element(
+          notifications(screen)
+            .getByRole("status")
+            .filter({ hasText: "The test was not sent" })
+            .last(),
+        )
+        .toBeVisible();
+      expect(lastNote(screen)).toBeNull();
+      await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+    });
+
+    test("a read of the last refusal that answers after a test has said is older than the test, and is left out", async () => {
+      notificationsOn();
+      lastRefusal = REASON;
+      let releaseRead = () => {};
+      refusalRead = new Promise((resolve) => {
+        releaseRead = resolve;
+      });
+      const screen = await render(<SettingsView inApp />);
+      const button = notifications(screen).getByRole("button", { name: "Send a test" });
+      await button.click();
+      await vi.waitFor(() =>
+        expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+      );
+      releaseRead();
+      // Give the late read time to land.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const release = held(200, { outcome: "shown" });
+      await button.click();
+      await vi.waitFor(() => expect(testLine(screen).textContent).toBe("Sending a test…"));
+      expect(lastNote(screen)).toBeNull();
+      await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+      release();
+      await vi.waitFor(() =>
+        expect(testLine(screen).textContent).toMatch(/^macOS took the test at \d{2}:\d{2}\.$/),
+      );
+    });
+  });
+
+  test.each<["denied" | "unsupported", string]>([
+    ["denied", "This window is not allowed to show notifications"],
+    ["unsupported", "This window cannot show notifications"],
+  ])(
+    "when the window's permission is %s, the note speaks of this window, never of a browser, and says what to do",
+    async (state, title) => {
+      host.state = state;
+      const screen = await render(<SettingsView inApp />);
+      await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
+      const note = notifications(screen).getByRole("status").filter({ hasText: title }).last();
+      await expect.element(note).toBeVisible();
+      expect(note.element().getAttribute("data-slot")).toBe("callout");
+      // A title says what happened, and the words under it what to do, not the title again.
+      const words = [...note.element().querySelectorAll("p")].map((p) => p.textContent);
+      expect(words).toEqual([title, "Quit Agent Lookout, open it again, and turn them on here."]);
+      expect(notifications(screen).element().textContent).not.toMatch(
+        /your browser|this browser|browser's|in a browser that can/i,
+      );
+    },
+  );
 });
 
 /**

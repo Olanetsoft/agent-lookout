@@ -7,6 +7,12 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Added
 
 - A Codex session's details give the token counts of its newest reply, as Codex recorded them: the input, with how much of it came from a cache, and the output, such as `182,431 in, 9,120 out`. The input is how much of the session's context is in use. Sessions read over SSH from another machine have them too. A session with none shows a dash and why. What each agent can report, in Sources, has a Tokens column: Yes for Codex, and No for Claude Code, the Antigravity CLI and status files, with the reason. `GET /api/sessions` gives the counts as `tokens`. Nothing else is kept of the line Codex writes them on, and no event, history, email, post, push, `agent-lookout mcp` answer or `agent-lookout status` holds them.
+- The Mac app asks on the Overview, until you answer, whether to turn notifications on: "Get a notification when a session needs you?", with Turn on and Not now. Turn on turns them on and sends one test notification, so macOS asks then whether Agent Lookout may show notifications. If macOS does not show it, or has not answered yet, a note in the question's place says so and points to Settings, until you dismiss it or next open the Overview. Not now leaves them off. Once you choose, there or in Settings, it never asks again, and a browser tab never asks.
+- In the Mac app, the Notifications card in Settings has Send a test, which shows one notification that says only that it is a test and says what macOS made of it: taken, not answered yet, or refused with macOS's reason and what to do in System Settings. Turning notifications on there sends one too. When macOS refused a test, or a notification the app showed itself while its window was closed, and has shown none since, the card says so. `GET /api/app/notifications` and `POST /api/app/notifications/test` are the app's own, and a test sends nothing off this Mac.
+
+### Changed
+
+- In the Mac app, the Notifications card speaks of macOS and this app instead of your browser and a dashboard tab, says the app's setting is its own, so turning notifications on in a browser does not turn them on in the app, and says that macOS hides banners while the display is shared or mirrored unless that is allowed in System Settings. It no longer says notifications are on as if that meant you see them: while macOS refuses them, it says so. In a browser the card is unchanged.
 
 ## 0.2.9 - 2026-10-08
 
