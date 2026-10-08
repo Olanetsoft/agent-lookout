@@ -99,6 +99,19 @@ describe("a line of agy's log", () => {
     });
   });
 
+  test("reads the answer line as agy 1.3.1 writes it, from its input loop, with more after approved", () => {
+    const seen = `I1008 09:29:12.851795     172 input_loop.go:706] Responding to tool confirmation: convID=${FIRST}, stepIdx=2, approved=true, sandboxOverride=false, persistGrants=[]`;
+    expect(readAgyLogLine(seen)).toEqual({ kind: "answered", conversation: FIRST, step: 2 });
+    // Without the fields after it too, and never from the file that asks.
+    const bare = `Responding to tool confirmation: convID=${FIRST}, stepIdx=2, approved=false`;
+    expect(readAgyLogLine(logLine(NOW, bare, "input_loop.go:706").trimEnd())).toMatchObject({
+      kind: "answered",
+    });
+    expect(
+      readAgyLogLine(logLine(NOW, bare, "tool_confirmation_manager.go:240").trimEnd()),
+    ).toBeNull();
+  });
+
   test("says an approval was answered, either way", () => {
     for (const approved of [true, false]) {
       expect(readAgyLogLine(answeredLine(NOW, FIRST, 2, approved).trimEnd())).toEqual({

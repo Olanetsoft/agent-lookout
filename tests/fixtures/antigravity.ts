@@ -215,11 +215,11 @@ export function askingLine(ms: number, step: number, tool = "RunCommand"): strin
   );
 }
 
-/** The line agy logs once the person answers the approval asked at `step`. */
+/** The line agy logs once the person answers the approval asked at `step`, as agy 1.3.1 was seen to write it. */
 export function answeredLine(ms: number, id: string, step: number, approved = true): string {
   return logLine(
     ms,
-    `Responding to tool confirmation: convID=${id}, stepIdx=${step}, approved=${approved}`,
-    "tool_confirmation_manager.go:240",
+    `Responding to tool confirmation: convID=${id}, stepIdx=${step}, approved=${approved}, sandboxOverride=false, persistGrants=[]`,
+    "input_loop.go:706",
   );
 }

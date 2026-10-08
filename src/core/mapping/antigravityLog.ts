@@ -13,10 +13,10 @@
 //   Created conversation <id>
 //   Streaming conversation <id>
 //   Surfacing tool confirmation: "RunCommand" at step 2
+//   Responding to tool confirmation: convID=<id>, stepIdx=2, approved=true, sandboxOverride=false, persistGrants=[]
 //
-// and, as its program holds it, once the person answers:
-//
-//   Responding to tool confirmation: convID=<id>, stepIdx=2, approved=true
+// the last once the person answers, from another source file than the one
+// that asks, and with more after `approved` that is passed over.
 //
 // Every other line is passed over, and nothing of one is kept.
 //
@@ -36,7 +36,8 @@ const SOURCE = {
   backend: "server.go",
   created: "server.go",
   streaming: "conversation_manager.go",
-  confirmation: "tool_confirmation_manager.go",
+  asking: "tool_confirmation_manager.go",
+  answered: "input_loop.go",
 } as const;
 
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -49,7 +50,7 @@ const BACKEND = /^Creating CLI server backend: (?:.* )?workspaceDirs=\[([^\]\s]+
 const ASKING = /^Surfacing tool confirmation: "([A-Za-z]{1,64})" at step (\d{1,9})$/;
 
 const ANSWERED = new RegExp(
-  `^Responding to tool confirmation: convID=(${UUID}), stepIdx=(\\d{1,9}), approved=(?:true|false)$`,
+  `^Responding to tool confirmation: convID=(${UUID}), stepIdx=(\\d{1,9}), approved=(?:true|false)(?:, .*)?$`,
 );
 
 /** An absolute path, on macOS and Linux or on Windows. */
@@ -94,7 +95,13 @@ export function readAgyLogLine(line: string): AgyLogLine | null {
       ? { kind: "folder", folder: backend[1] }
       : null;
   }
-  if (source !== SOURCE.confirmation) return null;
+  if (source === SOURCE.answered) {
+    const answered = ANSWERED.exec(message);
+    return answered === null
+      ? null
+      : { kind: "answered", conversation: answered[1].toLowerCase(), step: Number(answered[2]) };
+  }
+  if (source !== SOURCE.asking) return null;
 
   const asking = ASKING.exec(message);
   if (asking !== null) {
@@ -114,10 +121,6 @@ export function readAgyLogLine(line: string): AgyLogLine | null {
     };
   }
 
-  const answered = ANSWERED.exec(message);
-  if (answered !== null) {
-    return { kind: "answered", conversation: answered[1].toLowerCase(), step: Number(answered[2]) };
-  }
   return null;
 }
 
