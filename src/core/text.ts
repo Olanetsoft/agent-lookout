@@ -39,6 +39,21 @@ export const MAX_WAITING_TEXT_LENGTH = 200;
  */
 export const MAX_NOTICE_TEXT_LENGTH = 240;
 
+/** The most kept of what a session last said, in characters: its end. */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+/**
+ * How far into what is kept of a long message a line break may be and still
+ * be where it starts, in characters. Past that, it starts where it was cut.
+ */
+const MESSAGE_START_REACH = 200;
+
+/** Control characters other than a line break, which `messageText` makes a space. */
+const CONTROL_BUT_LINE_BREAK = /[^\P{Cc}\n]/gu;
+
+/** The marks that reorder text, which `messageText` takes out. */
+const REORDERING = new RegExp(`[${REORDERING_MARKS}]`, "gu");
+
 /** The text with the unwanted characters made spaces, trimmed. Empty is none. */
 export function clean(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -83,4 +98,44 @@ export function oneLine(text: string, max = MAX_LINE_LENGTH): string {
     .slice(0, max - 1)
     .join("")
     .trimEnd()}…`;
+}
+
+/**
+ * Any text made fit to show as what a session last said, kept on as many
+ * lines as it was written on.
+ *
+ * - `\r\n`, `\r` and the line and paragraph separators become `\n`, a tab
+ *   two spaces, and any other control character a space. The marks that
+ *   reorder text are taken out.
+ * - Spaces at the end of a line are trimmed, three or more line breaks in a
+ *   row become two, and the whole is trimmed.
+ * - Over 2,000 characters, the last 2,000 are kept and `cut` is true. When a
+ *   line break falls within the first 200 of those, it starts after it, and
+ *   what is kept is trimmed at its start too. It is cut between code points,
+ *   so no letter is broken in two.
+ *
+ * Empty, or not text, is none.
+ */
+export function messageText(value: unknown): { text: string; cut: boolean } | undefined {
+  if (typeof value !== "string") return undefined;
+  const lines = value
+    .replace(/\r\n?|[\u2028\u2029]/g, "\n")
+    .replace(/\t/g, "  ")
+    .replace(CONTROL_BUT_LINE_BREAK, " ")
+    .replace(REORDERING, "")
+    .split("\n");
+  // Each line is trimmed on its own, not by a pattern anchored at line ends,
+  // which takes time that grows with the square of a long run of spaces.
+  const text = lines
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (text === "") return undefined;
+  const characters = Array.from(text);
+  if (characters.length <= MAX_MESSAGE_LENGTH) return { text, cut: false };
+  const kept = characters.slice(-MAX_MESSAGE_LENGTH);
+  const lineBreak = kept.indexOf("\n");
+  const start = lineBreak !== -1 && lineBreak < MESSAGE_START_REACH ? lineBreak + 1 : 0;
+  return { text: kept.slice(start).join("").trimStart(), cut: true };
 }

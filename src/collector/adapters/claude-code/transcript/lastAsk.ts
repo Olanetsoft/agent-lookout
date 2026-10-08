@@ -1,4 +1,5 @@
 import { waitingText } from "../../../../core/text.ts";
+import { blocksOf, isRecord, linesOf, nonEmpty } from "./transcriptLines.ts";
 
 /**
  * What a waiting Claude Code session is asking, worked out from the end of its
@@ -32,42 +33,6 @@ interface ToolUse {
   input: Record<string, unknown>;
   /** The `message.id` of the assistant message it is part of, when the line gives one. */
   messageId: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function nonEmpty(value: unknown): string | null {
-  return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** The blocks of a line's message, or none. */
-function blocksOf(line: Record<string, unknown>): Record<string, unknown>[] {
-  const message = line.message;
-  if (!isRecord(message) || !Array.isArray(message.content)) return [];
-  return message.content.filter(isRecord);
-}
-
-/**
- * The lines of a tail of the transcript, parsed. The first line is cut short
- * unless the tail is the whole file, so it is dropped then. A line that does
- * not parse as a JSON object is skipped.
- */
-function linesOf(tail: string, fromStart: boolean): Record<string, unknown>[] {
-  const pieces = tail.split("\n");
-  if (!fromStart) pieces.shift();
-  const lines: Record<string, unknown>[] = [];
-  for (const piece of pieces) {
-    if (piece.trim() === "") continue;
-    try {
-      const value: unknown = JSON.parse(piece);
-      if (isRecord(value)) lines.push(value);
-    } catch {
-      // Not a line Agent Lookout can read. The next one may be.
-    }
-  }
-  return lines;
 }
 
 /** Whether a `user` line is something the person said, rather than a tool's result or a note of Claude Code's own. */

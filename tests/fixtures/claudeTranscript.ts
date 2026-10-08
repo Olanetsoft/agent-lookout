@@ -1,7 +1,7 @@
 // Test fixtures only. Lines of a Claude Code transcript, in the shapes seen in
 // `~/.claude/projects/<folder>/<sessionId>.jsonl` and described in
 // `src/collector/adapters/claude-code/transcript/lastAsk.ts`. Every id, path,
-// command and question is invented. Product code never imports this file.
+// command, question and reply is invented. Product code never imports this file.
 
 /** One line of a transcript, as an object. */
 export type TranscriptLine = Record<string, unknown>;
@@ -54,14 +54,50 @@ export function toolResult(id: string, { sidechain = false }: LineOptions = {}):
 }
 
 /** An assistant line of words. */
-export function said(text: string, { messageId = "msg_words" }: LineOptions = {}): TranscriptLine {
+export function said(
+  text: string,
+  { messageId = "msg_words", sidechain = false }: LineOptions = {},
+): TranscriptLine {
   return {
     type: "assistant",
-    isSidechain: false,
+    isSidechain: sidechain,
     message: {
       ...(messageId === null ? {} : { id: messageId }),
       role: "assistant",
       content: [{ type: "text", text }],
+    },
+  };
+}
+
+/** The lines of one assistant message said in several blocks: a line of words for each, sharing its id. */
+export function saidInParts(
+  texts: readonly string[],
+  { messageId = "msg_parts", sidechain = false }: LineOptions = {},
+): TranscriptLine[] {
+  return texts.map((text) => said(text, { messageId, sidechain }));
+}
+
+interface ThoughtOptions extends LineOptions {
+  /** Gives a `redacted_thinking` block, which holds its thinking as data, in place of a `thinking` one. */
+  redacted?: boolean;
+}
+
+/** An assistant line holding what the model thought, which is never what it said. */
+export function thought(
+  text: string,
+  { messageId = "msg_words", sidechain = false, redacted = false }: ThoughtOptions = {},
+): TranscriptLine {
+  return {
+    type: "assistant",
+    isSidechain: sidechain,
+    message: {
+      ...(messageId === null ? {} : { id: messageId }),
+      role: "assistant",
+      content: [
+        redacted
+          ? { type: "redacted_thinking", data: text }
+          : { type: "thinking", thinking: text, signature: "c2lnbmF0dXJl" },
+      ],
     },
   };
 }
