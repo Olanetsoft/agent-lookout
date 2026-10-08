@@ -1338,12 +1338,18 @@ test.each([
     // are hidden while it is read, so nothing but the window's own colour is
     // behind, and any difference is light. Window heights stay short enough that
     // the page is shown at its real size.
-    // A change waits two frames to be drawn.
-    const drawn = () =>
-      new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-    await vi.waitFor(() =>
-      expect(document.getAnimations().filter((a) => a.playState === "running")).toHaveLength(0),
-    );
+    // A change is drawn once the transitions it starts have finished, and two
+    // frames have passed. Under reduced motion each still takes 0.01ms, even
+    // to hidden, and a hidden rail hides what is in it one level a frame, which
+    // on a busy machine can take more than a second.
+    const drawn = async () => {
+      await vi.waitFor(
+        () =>
+          expect(document.getAnimations().filter((a) => a.playState === "running")).toHaveLength(0),
+        { timeout: 5_000 },
+      );
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    };
     const probe = document.createElement("div");
     probe.style.cssText = "position: fixed; z-index: 100; pointer-events: none;";
     document.body.append(probe);
@@ -1351,10 +1357,6 @@ test.each([
 
     for (const width of [1200, 1000, 760, 375]) {
       await page.viewport(width, 700);
-      // A narrower window can start a transition of its own, which is let finish.
-      await vi.waitFor(() =>
-        expect(document.getAnimations().filter((a) => a.playState === "running")).toHaveLength(0),
-      );
       await drawn();
       const railBox = rail().getBoundingClientRect();
       const lightBox = light.getBoundingClientRect();
