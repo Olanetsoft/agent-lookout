@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+## 0.2.9 - 2026-10-08
+
+The Mac app no longer looks frozen, a Claude Code session's details show what it last said, and Night is darker and crisper everywhere.
+
 ### Added
 
 - A Claude Code session's details show what it last said, under Last message: the text of its newest reply, up to its last 2,000 characters, as plain text, with its line breaks kept and Markdown as it was written. The page asks for it only while the details are open and the page is in sight, and again every two seconds while they stay open, until an answer says it is off or not read. Agent Lookout reads it from the end of the session's transcript only when it is asked for. Agent Lookout's server keeps it in memory for at most 15 seconds after the last ask, and forgets it sooner on the first poll of Claude Code that does not list the session. The page lets it go as soon as the details close or the session leaves the list. A Codex, Antigravity CLI or status-file session, or one on another machine, says it is not read. It is on by default, and `AGENT_LOOKOUT_LAST_MESSAGE=off` turns it off. `GET /api/sessions/last-message?id=<id>` gives the same answer to any program on this computer, as [PRIVACY.md](PRIVACY.md#a-sessions-last-message) says, and [docs/API.md](docs/API.md#get-apisessionslast-messageidid) has its answers.
@@ -12,6 +16,11 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Night is darker and crisper: a deeper ground, denser smoked glass and finer, brighter edges, on the dashboard, in the Mac app's window and on the landing page. Day is unchanged.
 - No program Agent Lookout starts is given its own settings any more. `claude`, `tmux`, `ssh`, `osascript`, the program that opens your browser and the Mac app's check of a downloaded update were handed every `AGENT_LOOKOUT_` setting in their environment, the mail server's password, the webhook's address and the push tokens among them, as only `gh` was not. None of them used them.
+
+### Fixed
+
+- The Mac app looked frozen: a click or a scroll on most of its window, such as on List, Repos or Board, moved the window instead and never reached the page. The fields of light in the thin strip above the header were taken as part of the strip that moves the window, as Electron 44 has every child of that strip inherit it. Only the strip, the header and the rail's top cell move the window now.
+- An Antigravity CLI session that waits for your approval stops needing you as soon as you answer in agy, not only once agy writes its next step: agy 1.3.1 logs the answer from another part of its program, with more after it, than Agent Lookout expected.
 
 ## 0.2.8 - 2026-10-07
 
