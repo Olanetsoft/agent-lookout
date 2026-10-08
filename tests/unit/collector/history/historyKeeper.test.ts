@@ -187,6 +187,49 @@ describe("writing", () => {
     expect(fs.text(file("v1-2026-10-06.jsonl"))).not.toContain(`${T0 + 4_000}`);
   });
 
+  test("stopping while a write is under way writes that write's lines at once too, and should it land after all, they are read back once", async () => {
+    const { fs, keeper, copy } = setUp();
+    await keeper.restore(LIMITS);
+    // The beat's write waits until it is let go, as on a slow disk.
+    const append = fs.append;
+    let called = () => {};
+    const underWay = new Promise<void>((resolve) => {
+      called = resolve;
+    });
+    let letGo = () => {};
+    const held = new Promise<void>((resolve) => {
+      letGo = resolve;
+    });
+    let landed: Promise<void> = Promise.resolve();
+    fs.append = (path, text) => {
+      called();
+      landed = held.then(() => append(path, text));
+      return landed;
+    };
+    keeper.start();
+    keeper.addPoint(point(T0 + 2_000));
+    await underWay;
+    keeper.addPoint(point(T0 + 4_000));
+    keeper.stop();
+    // All of it is in the file once the stop returns, in the order it was added.
+    expect(fs.text(file("v1-2026-10-06.jsonl"))).toBe(
+      lines(
+        { kind: "start", at: T0 },
+        { kind: "point", point: point(T0 + 2_000) },
+        { kind: "point", point: point(T0 + 4_000) },
+      ),
+    );
+
+    letGo();
+    await landed;
+    fs.append = append;
+    // The write under way landed, and nothing was written after it.
+    expect(fs.changes.filter((change) => change.startsWith("append"))).toHaveLength(2);
+    const restored = await copy(300).restore(LIMITS);
+    expect(restored.points.map((kept) => kept.at)).toEqual([T0 + 2_000, T0 + 4_000]);
+    expect(restored.restarts).toEqual([]);
+  });
+
   test("a write that fails is said once, and the next that works says it is fine again", async () => {
     const { fs, keeper, warnings } = setUp();
     await keeper.restore(LIMITS);

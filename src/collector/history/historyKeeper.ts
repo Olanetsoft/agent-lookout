@@ -240,6 +240,12 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   const touched = new Set<string>();
   /** Lines waiting to be written, in the order they were added. */
   let queue: string[] = [];
+  /**
+   * The write under way, with the lines it has taken that are not written
+   * yet, so that a stop meanwhile writes them at once instead of leaving them
+   * to a write the process may end before.
+   */
+  let writing: { lines: string[] } | null = null;
   /** When watching started, to be written first by the copy that writes. */
   let startedAt: number | null = null;
   /** The day and part being written to. */
@@ -461,7 +467,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
    */
   function* chunks(
     lines: readonly string[],
-  ): Generator<{ name: string; text: string }, void, "written" | "blocked"> {
+  ): Generator<{ name: string; text: string; count: number }, void, "written" | "blocked"> {
     const day = dayOf(now());
     let part = target?.day === day ? target.part : 1;
     let index = 0;
@@ -486,7 +492,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         bytes += lineBytes;
         end += 1;
       }
-      const outcome = yield { name, text };
+      const outcome = yield { name, text, count: end - index };
       if (outcome === "blocked") {
         blocked.add(name);
         part += 1;
@@ -520,11 +526,16 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
 
   async function writeLines(lines: readonly string[]): Promise<boolean> {
     if (lines.length === 0) return true;
+    const job = { lines: [...lines] };
+    writing = job;
     const steps = chunks(lines);
     let step = steps.next("written");
     while (!step.done) {
-      const { name, text } = step.value;
+      // Stopped meanwhile: the stop wrote what was left.
+      if (writing !== job) return false;
+      const { name, text, count } = step.value;
       await prune(name, byteLength(text));
+      if (writing !== job) return false;
       try {
         await fs.append(full(name), text);
       } catch (error) {
@@ -532,11 +543,14 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
           step = steps.next("blocked");
           continue;
         }
+        writing = null;
         writeFailed();
         return false;
       }
+      job.lines = job.lines.slice(count);
       step = steps.next("written");
     }
+    writing = null;
     wrote();
     return true;
   }
@@ -691,10 +705,15 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       running = false;
       if (timer) clearInterval(timer);
       timer = null;
+      // What a write under way has not written yet goes now as well, before
+      // what waits. Should that write land after all, its lines are in the
+      // files twice, and are read back once.
+      const left = [...(writing?.lines ?? []), ...takeQueued()];
+      writing = null;
       // Written only while the lock is still this copy's: another copy that
       // took it over meanwhile writes what it sees itself.
       if (writer === true && unusable === null && lock.stillHeldNow()) {
-        writeLinesNow(takeQueued());
+        writeLinesNow(left);
       }
       queue = [];
       startedAt = null;
