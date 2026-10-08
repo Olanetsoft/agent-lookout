@@ -231,6 +231,7 @@ Yes. The app opens no port, so `status` and `mcp` need the npx copy. Turn notifi
 | See every file it reads and all it can send    | [PRIVACY.md](PRIVACY.md)                                             |
 | Know what it guards, or report a vulnerability | [SECURITY.md](SECURITY.md)                                           |
 | Call its local HTTP API                        | [docs/API.md](docs/API.md)                                           |
+| Learn what each part of the code does, and why | [docs/TOUR.md](docs/TOUR.md)                                         |
 | See how the parts fit together                 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                         |
 | Write tests                                    | [tests/README.md](tests/README.md)                                   |
 | Install or remove the Claude Code plugin       | [plugins/agent-lookout/README.md](plugins/agent-lookout/README.md)   |
