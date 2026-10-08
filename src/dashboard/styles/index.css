@@ -1054,6 +1054,15 @@
     :is([data-slot="header"], [data-slot="rail-buttons"], [data-slot="ground-above"]) {
     -webkit-app-region: drag;
   }
+  /*
+   * The strip's three fields of light are far larger than the strip, which only
+   * clips them. app-region is inherited, and the window takes each box's whole
+   * rectangle as its region, clipped or not, so without this most of the page
+   * would move the window and take no clicks or scrolling. Only the strip may.
+   */
+  [data-host="app"] [data-slot="ground-above"] > i {
+    -webkit-app-region: none;
+  }
   [data-host="app"]
     :is([data-slot="header"], [data-slot="rail"])
     :is(a, button, input, select, textarea, summary, [role="button"], [tabindex]),

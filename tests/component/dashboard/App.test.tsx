@@ -1091,6 +1091,20 @@ test.each([1180, 1000, 760, 620, 375])(
       expect(controls.length, view).toBeGreaterThan(4);
       for (const control of controls) expect(region(control), view).toBe("no-drag");
       expect(region(main()), view).not.toBe("drag");
+
+      // Nothing else moves the window: every box that does stays within the
+      // band of the strip, the header and the rail's top cell. A drag area over
+      // the page would swallow its clicks and its scrolling.
+      const bottom = header().getBoundingClientRect().bottom;
+      const reach = [...document.body.querySelectorAll("*")]
+        .filter((element) => region(element) === "drag")
+        .map((element) => ({ element, box: element.getBoundingClientRect() }))
+        .filter(({ box }) => box.top < 0 || box.bottom > bottom || box.left < 0)
+        .map(
+          ({ element, box }) =>
+            `${element.className || element.tagName} ${Math.round(box.top)}..${Math.round(box.bottom)}`,
+        );
+      expect(reach, view).toEqual([]);
     }
   },
 );
