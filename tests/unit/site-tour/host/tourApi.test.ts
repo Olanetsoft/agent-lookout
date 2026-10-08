@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { ACTION_HEADER, PERMISSION_RULES_PATH, SETTINGS_PATH, TIME_RULES_PATH } from "@core/api";
+import {
+  ACTION_HEADER,
+  LAST_MESSAGE_PATH,
+  PERMISSION_RULES_PATH,
+  SETTINGS_PATH,
+  TIME_RULES_PATH,
+} from "@core/api";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   readEmailStatus,
   readHistory,
+  readLastMessage,
   readNtfyStatus,
   readPullRequestsStatus,
   readPushoverStatus,
@@ -18,7 +25,7 @@ import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { fetchSettings, requestTimeRules } from "@dashboard/lib/time-rules/timeRulesApi";
 import { requestRulesChange } from "@dashboard/lib/permission-rules/permissionRulesApi";
 import { createFeed } from "@site-tour/feed/derive";
-import { RESUMED_AT, WAITING_SESSION } from "@site-tour/feed/hour";
+import { MACHINE, RESUMED_AT, SESSIONS, WAITING_SESSION } from "@site-tour/feed/hour";
 import { createTourApi } from "@site-tour/host/tourApi";
 import { createTourStore, type TourStore } from "@site-tour/host/tourStore";
 
@@ -45,6 +52,9 @@ const json = async (path: string, init?: RequestInit) => {
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 };
 
+const lastMessage = (sessionId: string) =>
+  `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(sessionId)}`;
+
 const jump = (sessionId: string) =>
   json("/api/jump", {
     method: "POST",
@@ -65,6 +75,9 @@ test("every route the dashboard reads is answered, in a shape it reads", async (
   expect(readPullRequestsStatus((await json("/api/pull-requests")).body)).toMatchObject({
     on: true,
     gh: "ready",
+  });
+  expect(readLastMessage((await json(lastMessage(WAITING_SESSION))).body)).toMatchObject({
+    message: { cut: false },
   });
   expect(readSettings((await json(SETTINGS_PATH)).body)).toEqual({
     timeRules: DEFAULT_TIME_RULES,
@@ -247,6 +260,38 @@ test("clearing the history empties the store's copy, until the tour moves on", a
   expect(store.getState().events.length).toBeGreaterThan(0);
 });
 
+test("what a session last said is answered as the collector answers it", async () => {
+  const waiting = SESSIONS.find((session) => session.id === WAITING_SESSION)!;
+  expect(await json(lastMessage(WAITING_SESSION))).toEqual({
+    status: 200,
+    body: { message: { text: waiting.said, cut: false } },
+  });
+  // Another agent, and another machine, are not read.
+  const codex = SESSIONS.find((session) => session.source === "codex")!;
+  const there = SESSIONS.find((session) => session.machine === MACHINE.name)!;
+  for (const session of [codex, there]) {
+    expect(await json(lastMessage(session.id))).toEqual({
+      status: 200,
+      body: { message: null, reason: "not-read" },
+    });
+  }
+  // A session that is not listed, or not one id and nothing else, as the collector refuses them.
+  expect((await json(lastMessage("claude-code:nobody"))).status).toBe(404);
+  expect((await json(LAST_MESSAGE_PATH)).status).toBe(400);
+  expect((await json(`${LAST_MESSAGE_PATH}?id=`)).status).toBe(400);
+  expect((await json(`${lastMessage(WAITING_SESSION)}&more=1`)).status).toBe(400);
+  expect((await json(`${LAST_MESSAGE_PATH}?session=${WAITING_SESSION}`)).status).toBe(400);
+});
+
+test("a session stopped from the dashboard is not found, until the tour moves on", async () => {
+  const { status } = await json("/api/sessions/stop", {
+    method: "POST",
+    body: JSON.stringify({ sessionId: WAITING_SESSION }),
+  });
+  expect(status).toBe(200);
+  expect((await json(lastMessage(WAITING_SESSION))).status).toBe(404);
+});
+
 test("anything else is not found, and the Mac app's own route is not here", async () => {
   expect((await json("/api/app/update")).status).toBe(404);
   expect((await json("/api/elsewhere")).status).toBe(404);
@@ -256,6 +301,7 @@ test("anything else is not found, and the Mac app's own route is not here", asyn
 test("nothing is fetched: every answer is made in the page", async () => {
   await json("/api/sessions");
   await json("/api/history?windowMs=900000");
+  await json(lastMessage(WAITING_SESSION));
   await jump("claude-code:nobody");
   expect(fetched).not.toHaveBeenCalled();
 });

@@ -4,6 +4,8 @@ import {
   type RuleAnswer,
   type SettingsResponse,
   HISTORY_BEGINNINGS,
+  LAST_MESSAGE_REASONS,
+  LAST_MESSAGE_SETTINGS,
   isWebhookHost,
   type CheckResult,
   type EmailStatusResponse,
@@ -11,6 +13,7 @@ import {
   type HistoryResponse,
   type HistoryRestart,
   type HistorySince,
+  type LastMessageResponse,
   type NtfyStatusResponse,
   type PullRequestsStatusResponse,
   type PushoverStatusResponse,
@@ -59,7 +62,7 @@ import {
   type SourceId,
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
-import { MAX_NAME_LENGTH } from "@core/text";
+import { MAX_NAME_LENGTH, messageText } from "@core/text";
 import { readPermissionRules, ruleWordsIn } from "@core/permission-rules/permissionRules";
 import { readTimeRules } from "@core/time-rules/timeRules";
 
@@ -909,4 +912,28 @@ export function readRuleAnswer(value: unknown): RuleAnswer | null {
     decision,
     rule: rule.words,
   };
+}
+
+/**
+ * The answer of `GET /api/sessions/last-message`, or null when it is not one.
+ * The text is made fit to show again, by the rule the collector made it by, so
+ * nothing in it reorders what is around it, and it is still at most 2,000
+ * characters: when this cuts it, the start is left out, as `cut` then says.
+ * `cut` must be true or false, and a reason or a setting this page does not
+ * know makes the whole answer one it cannot read.
+ */
+export function readLastMessage(data: unknown): LastMessageResponse | null {
+  if (!isRecord(data)) return null;
+  const { message } = data;
+  if (isRecord(message)) {
+    const shown = messageText(message.text);
+    if (shown === undefined || typeof message.cut !== "boolean") return null;
+    return { message: { text: shown.text, cut: message.cut || shown.cut } };
+  }
+  if (message !== null) return null;
+  const reason = oneOf(LAST_MESSAGE_REASONS, data.reason);
+  if (reason === null) return null;
+  if (data.setting === undefined) return { message: null, reason };
+  const setting = oneOf(LAST_MESSAGE_SETTINGS, data.setting);
+  return setting === null ? null : { message: null, reason, setting };
 }

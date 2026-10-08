@@ -1,12 +1,18 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { NOTIFICATIONS_HEADER, type HistoryKept, type HistorySince } from "@core/api";
+import {
+  LAST_MESSAGE_PATH,
+  NOTIFICATIONS_HEADER,
+  type HistoryKept,
+  type HistorySince,
+} from "@core/api";
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { Beat } from "@dashboard/lib/api/beat";
 import {
   createCollectorStore,
   fetchHistory,
+  fetchLastMessage,
   HISTORY_KEPT_MS,
   HISTORY_WINDOW_MS,
   MAX_EVENTS,
@@ -516,6 +522,66 @@ test("a longer window of history is asked for by its length, and read like any o
 
   collector.up = false;
   await expect(fetchHistory(3_600_000)).rejects.toThrow("The local server did not answer.");
+});
+
+describe("what one session last said", () => {
+  const ID = "claude-code:00000000-0000-4000-8000-000000000001";
+
+  /** Answers the one route with what is given, and keeps what was asked. */
+  function answering(respond: () => Response | Promise<Response>) {
+    const asked: { path: string; init?: RequestInit }[] = [];
+    setApiHost(async (path, init) => {
+      asked.push({ path, init });
+      return respond();
+    });
+    return asked;
+  }
+
+  test("is asked for by the session's id, written for an address, and read as it was sent", async () => {
+    const sent = { message: { text: "Done.\n\nTwo files changed.", cut: false } };
+    const asked = answering(() => json(sent));
+
+    expect(await fetchLastMessage(ID)).toEqual(sent);
+    expect(asked.map(({ path }) => path)).toEqual([
+      `${LAST_MESSAGE_PATH}?id=claude-code%3A00000000-0000-4000-8000-000000000001`,
+    ]);
+    // Asked as every route is: for JSON, said of this page's notifications, and bounded in time.
+    const headers = new Headers(asked[0]?.init?.headers);
+    expect(headers.get("accept")).toBe("application/json");
+    expect(headers.get(NOTIFICATIONS_HEADER)).toBe("off");
+    expect(asked[0]?.init?.signal).toBeInstanceOf(AbortSignal);
+    expect(asked[0]?.init?.method).toBeUndefined();
+  });
+
+  test("why there is none is read too, with the setting that turned it off", async () => {
+    answering(() => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_WAITING_TEXT" }));
+    expect(await fetchLastMessage(ID)).toEqual({
+      message: null,
+      reason: "off",
+      setting: "AGENT_LOOKOUT_WAITING_TEXT",
+    });
+  });
+
+  test("a server that has read as many transcripts as it will this second is busy, not a failure", async () => {
+    answering(() => json({ error: "Too many." }, 429));
+    expect(await fetchLastMessage(ID)).toBe("busy");
+  });
+
+  test.each([
+    ["with error 404", () => json({ error: "No session with that id is listed." }, 404)],
+    ["with error 500", () => json({ error: "Something went wrong." }, 500)],
+    ["with something that is not data", () => new Response("<!doctype html>", { status: 200 })],
+    ["a last message in a shape this page cannot read", () => json({ message: "Done." })],
+    [
+      "The local server did not answer.",
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+    ],
+  ])("any other answer is a failure that says what went wrong: %s", async (words, respond) => {
+    answering(respond);
+    await expect(fetchLastMessage(ID)).rejects.toThrow(words);
+  });
 });
 
 test("when the collector stops answering, the last data stays and is called stale", async () => {

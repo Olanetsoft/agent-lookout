@@ -7,6 +7,7 @@ import { needsYou } from "@core/waits/answeredWaits";
 import { OwnEvents } from "@dashboard/components/events/EventsCard";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
+import { LastMessage } from "@dashboard/components/panels/LastMessage";
 import { PullRequestFact } from "@dashboard/components/panels/PullRequestFact";
 import { ResumeBlock, ResumeButton } from "@dashboard/components/resume/Resume";
 import { StopButton, StopNote } from "@dashboard/components/stop/StopSession";
@@ -21,6 +22,8 @@ import { Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/actions/useJump";
 import { useResume } from "@dashboard/hooks/actions/useResume";
 import { useStop } from "@dashboard/hooks/actions/useStop";
+import { useLastMessage, type LastMessageReading } from "@dashboard/hooks/data/useLastMessage";
+import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
 import { MAX_EVENTS, type CollectorState } from "@dashboard/lib/api/collectorStore";
 import { buildTimeline } from "@dashboard/lib/charts/timeline";
 import {
@@ -234,12 +237,14 @@ function Details({
   state,
   now,
   asOf,
+  lastMessage,
 }: {
   session: Session;
   gone: boolean;
   state: CollectorState;
   now: number;
   asOf: number;
+  lastMessage: LastMessageReading;
 }) {
   const sources = state.snapshot?.sources ?? [];
   const sessions = state.snapshot?.sessions ?? NO_SESSIONS;
@@ -349,6 +354,17 @@ function Details({
         <WaitsFact session={session} state={state} now={now} asOf={asOf} />
       </FactList>
 
+      {/* What it last said is asked for while it is listed, and is not kept once it has gone. */}
+      {!gone && (
+        <Part data-part='last-message' title='Last message'>
+          <LastMessage
+            reading={lastMessage}
+            remote={session.machine !== undefined}
+            agent={agentLabel(session, sources)}
+          />
+        </Part>
+      )}
+
       <Part
         data-part='events'
         title='Events'
@@ -421,6 +437,14 @@ function SessionDialog({
   }
   const session = listed ?? kept?.session ?? null;
   const gone = listed === null && kept !== null;
+  const hidden = useDocumentHidden();
+  // Asked for while the details are open and the session is listed here, at each new read
+  // of the sessions while the page is in sight, and let go of the moment that ends.
+  const lastMessage = useLastMessage(sessionId, {
+    active: open && listed !== null && listed.machine === undefined,
+    hidden,
+    beat: state.lastOkAt,
+  });
   // Before the session is known it has no way to be reached, and its Jump is not drawn.
   const jump = useJump(
     session ?? { id: sessionId, source: "status-files", surface: "unknown", links: {} },
@@ -467,7 +491,14 @@ function SessionDialog({
         {stopSaying && <StopNote session={session} stop={stop} className='mt-3' />}
         {!gone && <AnswerAsk session={session} onAnswered={onAnswered} className='mt-3' />}
         <ResumeBlock resume={resume} className='mt-3' />
-        <Details session={session} gone={gone} state={state} now={now} asOf={asOf} />
+        <Details
+          session={session}
+          gone={gone}
+          state={state}
+          now={now}
+          asOf={asOf}
+          lastMessage={lastMessage}
+        />
       </>
     );
   } else if (state.snapshot === null) {
@@ -556,9 +587,11 @@ interface SessionPanelProps {
  * the other machine it runs on, when it runs on one, its app when known, its
  * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the
  * branch's pull request and its checks, when it started, its process, and how
- * often and how long it waited over the period the page holds. Then its own
- * events, newest first, as the Events log draws
- * them, and its row of the Timeline across the whole width.
+ * often and how long it waited over the period the page holds. Then what it
+ * last said, as plain text, asked for while the details are open and the
+ * page is in sight, or one line that says why there is none, then its own
+ * events, newest first, as the Events log draws them, and its row of the
+ * Timeline across the whole width.
  *
  * The only warm things are the needs-you signals the rest of the page has for
  * the same wait: the lamp of its status, the lit lamp of the event that began
@@ -567,7 +600,8 @@ interface SessionPanelProps {
  *
  * A session that leaves the list while it is open keeps what was last known,
  * under one calm line that says so, and has no Jump and no Stop, though Resume
- * stays for one that Stop ended or that was over. An address that names no
+ * stays for one that Stop ended or that was over. What it last said is not
+ * kept: that part goes with it. An address that names no
  * session says so and offers the Overview.
  */
 export function SessionPanel({

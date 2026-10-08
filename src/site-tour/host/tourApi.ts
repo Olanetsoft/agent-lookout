@@ -1,4 +1,5 @@
 import {
+  LAST_MESSAGE_PATH,
   PERMISSION_RULES_PATH,
   SETTINGS_PATH,
   TIME_RULES_PATH,
@@ -13,6 +14,7 @@ import {
   type HealthResponse,
   type JumpRefusal,
   type JumpResponse,
+  type LastMessageResponse,
   type NtfyStatusResponse,
   type PermissionRulesFailure,
   type PermissionRulesRefusal,
@@ -38,13 +40,13 @@ import type { TourStore } from "@site-tour/host/tourStore";
  * The transport the landing page's dashboard is given with `setApiHost`.
  *
  * Every route the dashboard asks for is answered here, inside the page, from
- * the tour's store. Nothing is sent anywhere: there is no `fetch` in it. The
- * routes that act in the app only say what they would have come to. A Jump
- * says where it went, a Stop or an end of the sessions left running takes them
- * out of the store's list, Allow or Deny answers the wait in the store, a
- * change of the time rules puts them in force there, a change of the
- * permission rules is kept there, and clearing the history empties the
- * store's copy, each until the tour moves on.
+ * the tour's store, what a session last said among them. Nothing is sent
+ * anywhere: there is no `fetch` in it. The routes that act in the app only
+ * say what they would have come to. A Jump says where it went, a Stop or an
+ * end of the sessions left running takes them out of the store's list, Allow
+ * or Deny answers the wait in the store, a change of the time rules puts them
+ * in force there, a change of the permission rules is kept there, and
+ * clearing the history empties the store's copy, each until the tour moves on.
  */
 
 /** Where the settings file is, as the collector says it. */
@@ -255,6 +257,20 @@ export function createTourApi(store: TourStore, now: () => number): ApiHost {
       }
       case "/api/waits":
         return answer(200, store.feed.waits(shown, at, store.clearedAt()) satisfies WaitsResponse);
+      case LAST_MESSAGE_PATH: {
+        // One id and nothing else, as the collector asks.
+        const query = [...url.searchParams];
+        const [name, id] = query[0] ?? ["", ""];
+        if (query.length !== 1 || name !== "id" || id === "") {
+          return answer(400, {
+            error: "Name one session as id, and nothing else.",
+          } satisfies ErrorResponse);
+        }
+        const read = store.feed.lastMessage(id, shown, at);
+        return read
+          ? answer(200, read satisfies LastMessageResponse)
+          : answer(404, { error: "No session with that id is listed." } satisfies ErrorResponse);
+      }
       case SETTINGS_PATH:
         return answer(200, {
           timeRules: store.timeRules(),

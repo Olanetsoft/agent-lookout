@@ -4,6 +4,7 @@ import {
   readEmailStatus,
   readEvents,
   readHistory,
+  readLastMessage,
   readNtfyStatus,
   readPullRequestsStatus,
   readPushoverStatus,
@@ -1267,3 +1268,62 @@ test.each([null, {}, { timeRules: DEFAULT_TIME_RULES }, { file: "~/x", timeRules
     expect(readSettings(data)).toBeNull();
   },
 );
+
+describe("what a session last said", () => {
+  test("a message is read as it was sent, line breaks and Markdown and all", () => {
+    const sent = { message: { text: "Done.\n\n- **one** <b>two</b>\n- `three`", cut: false } };
+    expect(readLastMessage(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+    const cut = { message: { text: "the end of a long reply", cut: true } };
+    expect(readLastMessage(cut)).toEqual(cut);
+  });
+
+  test("its text is made fit to show again, by the rule the collector made it by", () => {
+    expect(
+      readLastMessage({
+        message: { text: " One\u202e\r\nTwo\tthree\u0007  \n\n\n\nFour ", cut: false },
+      }),
+    ).toEqual({ message: { text: "One\nTwo  three\n\nFour", cut: false } });
+  });
+
+  test("a text longer than the collector sends is cut to its last 2,000 characters, and says so", () => {
+    const read = readLastMessage({ message: { text: `${"a".repeat(3_000)}z`, cut: false } });
+    expect(read).toEqual({ message: { text: `${"a".repeat(1_999)}z`, cut: true } });
+  });
+
+  test("each reason is read, with the setting that turned it off", () => {
+    for (const reason of [
+      "not-read",
+      "not-found",
+      "unreadable",
+      "nothing-yet",
+      "too-far-back",
+    ] as const) {
+      expect(readLastMessage({ message: null, reason })).toEqual({ message: null, reason });
+    }
+    for (const setting of ["AGENT_LOOKOUT_LAST_MESSAGE", "AGENT_LOOKOUT_WAITING_TEXT"] as const) {
+      expect(readLastMessage({ message: null, reason: "off", setting })).toEqual({
+        message: null,
+        reason: "off",
+        setting,
+      });
+    }
+  });
+
+  test.each([
+    null,
+    "Done.",
+    {},
+    { message: "Done." },
+    { message: { text: "Done." } },
+    { message: { text: "Done.", cut: "no" } },
+    { message: { text: 42, cut: false } },
+    { message: { text: " \n\t ", cut: false } },
+    { message: null },
+    { message: null, reason: "ended" },
+    { message: null, reason: "off", setting: "AGENT_LOOKOUT_SOMETHING" },
+    { message: null, reason: "off", setting: null },
+    { reason: "not-read" },
+  ])("%j is not an answer the page can read", (data) => {
+    expect(readLastMessage(data)).toBeNull();
+  });
+});

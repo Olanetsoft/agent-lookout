@@ -1,11 +1,19 @@
 import { describe, expect, test } from "vitest";
 
 import { historyPointFor } from "@core/history";
-import { readEvents, readHistory, readSnapshot, readWaits } from "@dashboard/lib/api/readApi";
+import {
+  readEvents,
+  readHistory,
+  readLastMessage,
+  readSnapshot,
+  readWaits,
+} from "@dashboard/lib/api/readApi";
 import { countState } from "@dashboard/lib/sessions/sessions";
+import { messageText } from "@core/text";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { createFeed, HOLD_MS, POLL_MS, type Shown } from "@site-tour/feed/derive";
 import {
+  FINISHED_JOB,
   MACHINE,
   RESUMED_AT,
   SESSIONS,
@@ -400,4 +408,89 @@ test("a session stopped from the dashboard leaves the list, and the log says Age
   const [ended, stopped] = feed.events(shown);
   expect(ended).toMatchObject({ kind: "ended", sessionId: WAITING_SESSION, at });
   expect(stopped).toMatchObject({ kind: "stopped", by: "agent-lookout", from: "working", at });
+});
+
+describe("what a session last said", () => {
+  const feed = createFeed(T0);
+  const claude = SESSIONS.filter(
+    (session) => session.source === "claude-code" && session.machine === undefined,
+  );
+
+  test("each local Claude Code session says what it last said, read by the dashboard as it was sent", () => {
+    for (const [, shown] of SHOWN) {
+      for (const session of claude) {
+        const answer = feed.lastMessage(session.id, shown, NOW);
+        expect(answer).toEqual(
+          session.said === undefined
+            ? { message: null, reason: "nothing-yet" }
+            : { message: { text: session.said, cut: false } },
+        );
+        expect(readLastMessage(JSON.parse(JSON.stringify(answer)))).toEqual(answer);
+      }
+    }
+  });
+
+  test("what each said is shown whole, as the collector would make it", () => {
+    for (const session of claude) {
+      if (session.said !== undefined) {
+        expect(messageText(session.said)).toEqual({ text: session.said, cut: false });
+      }
+    }
+  });
+
+  test("the waiting session and the finished job have said something, and one session left idle for days has said nothing yet", () => {
+    const said = claude
+      .filter((session) => session.said !== undefined)
+      .map((session) => session.id);
+    expect(said).toContain(WAITING_SESSION);
+    expect(said).toContain(FINISHED_JOB);
+    expect(
+      feed.lastMessage(
+        "claude-code:e81c4f6a-0b93-4e27-bd58-3a6f2c9e0d15",
+        { moment: "quiet" },
+        NOW,
+      ),
+    ).toEqual({ message: null, reason: "nothing-yet" });
+  });
+
+  test("a Codex session, a session from a status file and one on another machine are not read", () => {
+    const others = SESSIONS.filter((session) => !claude.includes(session));
+    expect(others.map((session) => session.source).sort()).toEqual([
+      "codex",
+      "codex",
+      `remote:${MACHINE.name}`,
+      "status-files",
+    ]);
+    for (const session of others) {
+      expect(session.said).toBeUndefined();
+      expect(feed.lastMessage(session.id, { moment: "waiting" }, NOW)).toEqual({
+        message: null,
+        reason: "not-read",
+      });
+    }
+  });
+
+  test("a session that is not listed, or was stopped from the dashboard, is not found", () => {
+    expect(feed.lastMessage("claude-code:nobody", { moment: "waiting" }, NOW)).toBeNull();
+    const stopped: Shown = {
+      moment: "waiting",
+      stopped: [{ id: WAITING_SESSION, name: "checkout-flow", status: "needs-you", at: NOW }],
+    };
+    expect(feed.lastMessage(WAITING_SESSION, stopped, NOW)).toBeNull();
+  });
+
+  test("what a session last said is in no other answer", () => {
+    const shown: Shown = { moment: "waiting" };
+    const answers = JSON.stringify([
+      feed.snapshot(shown, NOW),
+      feed.events(shown),
+      feed.history(shown, NOW, HOUR),
+      feed.waits(shown, NOW),
+    ]);
+    for (const session of claude) {
+      if (session.said !== undefined) {
+        expect(answers).not.toContain(session.said.slice(0, 40));
+      }
+    }
+  });
 });

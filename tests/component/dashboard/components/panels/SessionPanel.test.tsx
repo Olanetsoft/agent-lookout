@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { LAST_MESSAGE_PATH, type LastMessageResponse } from "@core/api";
 import type {
   HistoryPoint,
   PullRequest,
@@ -169,13 +170,42 @@ function warmBeyondTheSignals(root: Element): Element[] {
   );
 }
 
+/** An answer of the API. */
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const NOTHING_YET: LastMessageResponse = { message: null, reason: "nothing-yet" };
+
+/** The page's own transport, which the tests that ask nothing else leave in place. */
+const sameOrigin: ApiHost = (path, init) => fetch(path, init);
+
+/**
+ * A transport that answers what the open details ask of a session's last
+ * message, with nothing said yet unless the test says otherwise, and passes
+ * every other request on to `rest`.
+ */
+function lastMessageHost(
+  answer: (path: string) => Response | Promise<Response> = () => json(NOTHING_YET),
+  rest: ApiHost = sameOrigin,
+): ApiHost {
+  return (path, init) =>
+    path.startsWith(`${LAST_MESSAGE_PATH}?`) ? Promise.resolve(answer(path)) : rest(path, init);
+}
+
 beforeEach(async () => {
   await page.viewport(1440, 900);
+  // The details of a session here ask what it last said while they are open.
+  setApiHost(lastMessageHost());
 });
 
 afterEach(() => {
   document.documentElement.removeAttribute("data-theme");
   setApiHost();
+  delete (document as { hidden?: boolean }).hidden;
 });
 
 test("nothing is open without a session's address", async () => {
@@ -811,13 +841,16 @@ test.each([375, 1440])(
 test("Stop session asks the app to stop it, by its id alone, and the page reads the sessions again", async () => {
   const asked: [string, RequestInit | undefined][] = [];
   setApiHost(
-    vi.fn<ApiHost>(async (path, init) => {
-      asked.push([path, init]);
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }),
+    lastMessageHost(
+      undefined,
+      vi.fn<ApiHost>(async (path, init) => {
+        asked.push([path, init]);
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    ),
   );
   const stopped = vi.fn();
   await render(
@@ -956,12 +989,15 @@ test("a finished Codex session has no Resume", async () => {
 test("a session Stop has ended is offered Resume at once, and keeps it once it has left the list", async () => {
   const written = clipboard();
   setApiHost(
-    vi.fn<ApiHost>(
-      async () =>
-        new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+    lastMessageHost(
+      undefined,
+      vi.fn<ApiHost>(
+        async () =>
+          new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
     ),
   );
   const listed = withClaude({ surface: "terminal", links: {}, stop: { how: "signal" } });
@@ -1002,12 +1038,15 @@ test("a session Stop has ended is offered Resume at once, and keeps it once it h
 
 test("a session Stop has ended loses Resume once a list read after the stop has it running again", async () => {
   setApiHost(
-    vi.fn<ApiHost>(
-      async () =>
-        new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+    lastMessageHost(
+      undefined,
+      vi.fn<ApiHost>(
+        async () =>
+          new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
     ),
   );
   const job = {
@@ -1124,11 +1163,14 @@ test("closing the details puts Stop back, so opening them again asks nothing and
 test("what Stop came to is not said again once the details have closed and opened", async () => {
   let answer: (response: Response) => void = () => {};
   setApiHost(
-    vi.fn<ApiHost>(
-      () =>
-        new Promise<Response>((resolve) => {
-          answer = resolve;
-        }),
+    lastMessageHost(
+      undefined,
+      vi.fn<ApiHost>(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      ),
     ),
   );
   const value = withClaude({ stop: { how: "signal" } });
@@ -1254,3 +1296,305 @@ test("a session on another machine waiting for permission, as the page reads it,
   // What it asks is still said, as the other machine sent it.
   await expect.element(panel).toHaveTextContent("Run: npm test");
 });
+
+/** Answers each ask of a last message with what `respond` gives, and keeps what was asked. */
+function saying(respond: (path: string) => Response | Promise<Response>): string[] {
+  const asked: string[] = [];
+  setApiHost(
+    lastMessageHost((path) => {
+      asked.push(path);
+      return respond(path);
+    }),
+  );
+  return asked;
+}
+
+const said = (text: string, cut = false) => json({ message: { text, cut } });
+const askFor = (id: string) => `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(id)}`;
+const lastMessage = () => page.getByRole("region", { name: "Last message" });
+const messageText = () => document.querySelector('[data-part="last-message-text"]');
+const stateLine = () => document.querySelector('[data-part="last-message-state"]')?.textContent;
+
+/** The page goes out of sight, as far as it can tell, or comes back. */
+function pageHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+/** A Claude Code session on devbox, read over SSH, listed beside the others. */
+function onDevbox(): CollectorState {
+  const there = makeSession({
+    id: "remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa",
+    source: "remote:devbox",
+    agent: "Claude Code",
+    machine: "devbox",
+    name: "demo-there",
+    status: "working",
+    statusSince: ago(3),
+  });
+  const devbox = {
+    id: "remote:devbox",
+    label: "devbox",
+    machine: "devbox",
+    state: "ok",
+    checkedAt: NOW,
+  } as const;
+  return state({
+    snapshot: { generatedAt: NOW, sources: [...SOURCES, devbox], sessions: [...sessions(), there] },
+  });
+}
+
+test("what a Claude Code session last said is a part of its own, between the facts and the Events, shown exactly as it was written", async () => {
+  const written =
+    "Both fixed: <b>x</b> stays as typed, and so does **x**.\n\nNext:\n- run `npm run build`\n- open https://example.com/demo";
+  const asked = saying(() => said(written));
+  await renderPanel(CLAUDE_ID);
+  const root = dialog("checkout-flow").element();
+  await expect.element(lastMessage()).toBeVisible();
+  await expect.poll(() => messageText()?.textContent).toBe(written);
+
+  // Asked for by the session's id, once, as the details opened.
+  expect(asked).toEqual([askFor(CLAUDE_ID)]);
+  const part = lastMessage().element();
+  expect(part.querySelector("h3")?.textContent).toBe("Last message");
+  // Under the facts and above the Events.
+  const facts = root.querySelector('[data-slot="fact-list"]') as Element;
+  const events = root.querySelector('[data-part="events"]') as Element;
+  expect(facts.compareDocumentPosition(part) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(part.compareDocumentPosition(events) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  // Markup and Markdown are characters, nothing is a link, and every line is kept.
+  expect(part.querySelector("b, strong, em, a, code, li")).toBeNull();
+  expect((messageText() as HTMLElement).innerText.split("\n")).toEqual([
+    "Both fixed: <b>x</b> stays as typed, and so does **x**.",
+    "",
+    "Next:",
+    "- run `npm run build`",
+    "- open https://example.com/demo",
+  ]);
+  expect(part.querySelector('[data-part="last-message-cut"]')).toBeNull();
+});
+
+test("a message whose start was left out says so", async () => {
+  saying(() => said("the end of a long reply.", true));
+  await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("the end of a long reply.");
+  expect(document.querySelector('[data-part="last-message-cut"]')?.textContent).toBe(
+    "The start of a longer message is left out.",
+  );
+});
+
+test.each([
+  [
+    () => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" }),
+    "Last messages are off: AGENT_LOOKOUT_LAST_MESSAGE is off.",
+  ],
+  [
+    () => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_WAITING_TEXT" }),
+    "Last messages are off: AGENT_LOOKOUT_WAITING_TEXT is off.",
+  ],
+  [() => json({ message: null, reason: "not-found" }), "Its transcript was not found."],
+  [() => json({ message: null, reason: "unreadable" }), "Its transcript could not be read."],
+  [() => json({ message: null, reason: "nothing-yet" }), "It has not said anything yet."],
+  [
+    () => json({ message: null, reason: "too-far-back" }),
+    "Its last message is further back than the end of its transcript that Agent Lookout reads.",
+  ],
+  [
+    () => json({ error: "Something went wrong." }, 500),
+    "Its last message could not be read. The page asks again every two seconds.",
+  ],
+  [
+    () => new Response("<!doctype html>", { status: 200 }),
+    "Its last message could not be read. The page asks again every two seconds.",
+  ],
+])("with no message to show, one calm line says why: %#", async (respond, words) => {
+  saying(respond);
+  await renderPanel(CLAUDE_ID);
+  await expect.element(lastMessage()).toBeVisible();
+  await expect.poll(stateLine).toBe(words);
+  expect(messageText()).toBeNull();
+});
+
+test("until the first answer, the part says it is reading", async () => {
+  saying(() => new Promise<Response>(() => {}));
+  await renderPanel(CLAUDE_ID);
+  await expect.element(lastMessage()).toBeVisible();
+  await expect
+    .element(lastMessage().getByRole("status"))
+    .toHaveTextContent("Reading its last message");
+});
+
+test.each([
+  [CODEX_ID, "api-rate-limits", "Agent Lookout does not read what Codex sessions say."],
+  [FILE_ID, "billing-webhooks", "Agent Lookout does not read what night-shift sessions say."],
+])(
+  "a session whose agent is not read is asked about once, and the answer names its agent",
+  async (id, name, words) => {
+    const asked = saying(() => json({ message: null, reason: "not-read" }));
+    const screen = await renderPanel(id);
+    await expect.element(dialog(name)).toBeVisible();
+    await expect.poll(stateLine).toBe(words);
+    expect(asked).toEqual([askFor(id)]);
+
+    // Later reads of the sessions do not ask again.
+    for (const at of [NOW + 2_000, NOW + 4_000]) {
+      await screen.rerender(
+        <SessionPanel sessionId={id} onClose={vi.fn()} state={state({ lastOkAt: at })} now={at} />,
+      );
+    }
+    expect(asked).toHaveLength(1);
+  },
+);
+
+test("a session on another machine is never asked about, and the part says why", async () => {
+  const asked = saying(() => said("Never shown."));
+  await renderPanel("remote:devbox:claude-code:00000000-0000-4000-8000-0000000000aa", onDevbox());
+  await expect.element(dialog("demo-there")).toBeVisible();
+  await expect.element(lastMessage()).toBeVisible();
+  expect(stateLine()).toBe("Last messages are not read from another machine.");
+  expect(asked).toEqual([]);
+});
+
+test("while the page is hidden nothing is asked, and once it is back in sight it is", async () => {
+  pageHidden(true);
+  const asked = saying(() => said("Back in sight."));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.element(lastMessage()).toBeVisible();
+  await screen.rerender(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={state({ lastOkAt: NOW + 2_000 })}
+      now={NOW + 2_000}
+    />,
+  );
+  expect(asked).toEqual([]);
+  expect(messageText()).toBeNull();
+
+  pageHidden(false);
+  await expect.poll(() => messageText()?.textContent).toBe("Back in sight.");
+  expect(asked).toEqual([askFor(CLAUDE_ID)]);
+});
+
+test("each new read of the sessions asks once more, and the part shows the newest answer", async () => {
+  let reply = "First.";
+  const asked = saying(() => said(reply));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("First.");
+
+  reply = "Second.";
+  await screen.rerender(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={state({ lastOkAt: NOW + 2_000 })}
+      now={NOW + 2_000}
+    />,
+  );
+  await expect.poll(() => messageText()?.textContent).toBe("Second.");
+  expect(asked).toHaveLength(2);
+});
+
+test("closing the details lets go of the text at once and asks nothing more", async () => {
+  const asked = saying(() => said("Kept only while open."));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("Kept only while open.");
+
+  await screen.rerender(
+    <SessionPanel sessionId={null} onClose={vi.fn()} state={state()} now={NOW} />,
+  );
+  expect(document.body.textContent).not.toContain("Kept only while open.");
+  for (const at of [NOW + 2_000, NOW + 4_000]) {
+    await screen.rerender(
+      <SessionPanel sessionId={null} onClose={vi.fn()} state={state({ lastOkAt: at })} now={at} />,
+    );
+  }
+  await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
+  expect(asked).toHaveLength(1);
+});
+
+test("once the session has left the list, the part is gone with its text, and nothing more is asked", async () => {
+  const asked = saying(() => said("Gone with it."));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("Gone with it.");
+
+  for (const at of [NOW + MINUTE, NOW + MINUTE + 2_000]) {
+    const left = state({
+      snapshot: {
+        generatedAt: at,
+        sources: SOURCES,
+        sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+      },
+      lastOkAt: at,
+    });
+    await screen.rerender(
+      <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={at} />,
+    );
+  }
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(document.querySelector('[data-part="last-message"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Gone with it.");
+  expect(asked).toHaveLength(1);
+});
+
+test("a short message is no Tab stop, a long one scrolls inside its block, which is, and nothing in the part is announced", async () => {
+  let reply = "One short line.";
+  saying(() => said(reply));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("One short line.");
+  const part = lastMessage().element();
+  const block = part.querySelector('[data-part="last-message-scroll"]') as HTMLElement;
+  expect(block.hasAttribute("tabindex")).toBe(false);
+  expect(block.hasAttribute("aria-label")).toBe(false);
+
+  reply = Array.from({ length: 40 }, (_, index) => `Line ${index + 1} of the reply.`).join("\n");
+  await screen.rerender(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={state({ lastOkAt: NOW + 2_000 })}
+      now={NOW + 2_000}
+    />,
+  );
+  await expect.poll(() => block.getAttribute("tabindex")).toBe("0");
+  expect(block.getAttribute("aria-label")).toBe("Its last message");
+  expect(block.getBoundingClientRect().height).toBeLessThanOrEqual(240);
+  expect(block.scrollHeight).toBeGreaterThan(block.clientHeight);
+  // It never speaks up: the text is there to be read when the person looks.
+  expect(part.hasAttribute("aria-live")).toBe(false);
+  expect(
+    part.querySelector('[aria-live], [role="status"], [role="alert"], [role="log"]'),
+  ).toBeNull();
+});
+
+test.each([
+  ["dark", 375],
+  ["light", 375],
+  ["dark", 1440],
+] as const)(
+  "in the %s theme at %i pixels a long message stays inside the dialog, and nothing of it is warm",
+  async (theme, width) => {
+    document.documentElement.setAttribute("data-theme", theme);
+    await page.viewport(width, 900);
+    const word = `${"a".repeat(40)}/${"b".repeat(80)}`;
+    saying(() => said(`Read ${word} first.\n\n${"A long line of the reply, ".repeat(20)}`, true));
+    await renderPanel(CLAUDE_ID);
+    const root = dialog("checkout-flow").element();
+    await expect.poll(() => messageText()?.textContent).toContain(word);
+    await pointAway();
+
+    const part = lastMessage().element();
+    const block = part.querySelector('[data-part="last-message-scroll"]') as HTMLElement;
+    expect(block.scrollWidth).toBeLessThanOrEqual(block.clientWidth);
+    expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(
+      root.getBoundingClientRect().right,
+    );
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    expect(warmPaint(part)).toEqual([]);
+    expect(warmBeyondTheSignals(root)).toEqual([]);
+  },
+);

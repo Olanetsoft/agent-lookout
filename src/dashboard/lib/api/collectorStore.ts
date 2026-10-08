@@ -1,10 +1,15 @@
-import { MAX_EVENTS_PER_RESPONSE, type HistoryResponse } from "@core/api";
+import {
+  LAST_MESSAGE_PATH,
+  MAX_EVENTS_PER_RESPONSE,
+  type HistoryResponse,
+  type LastMessageResponse,
+} from "@core/api";
 import { DEFAULT_HISTORY_WINDOW_MS } from "@core/history";
 import type { SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { timerBeat, type Beat } from "@dashboard/lib/api/beat";
 import { clearedSince, mergeHistory } from "@dashboard/lib/charts/historyChart";
-import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
+import { readEvents, readHistory, readLastMessage, readSnapshot } from "@dashboard/lib/api/readApi";
 
 /**
  * The dashboard's copy of what the collector knows.
@@ -104,10 +109,13 @@ const INITIAL_STATE: CollectorState = {
 /** A failure with a message that is fit to show to a person. */
 class ApiProblem extends Error {
   readonly kind: ProblemKind;
+  /** The error status the server answered with, for an `error-status`. */
+  readonly status: number | null;
 
-  constructor(kind: ProblemKind, message: string) {
+  constructor(kind: ProblemKind, message: string, status: number | null = null) {
     super(message);
     this.kind = kind;
+    this.status = status;
   }
 }
 
@@ -130,6 +138,7 @@ async function getJson(path: string): Promise<unknown> {
     throw new ApiProblem(
       "error-status",
       `The local server answered ${path} with error ${response.status}.`,
+      response.status,
     );
   }
   try {
@@ -184,6 +193,31 @@ function parseHistory(data: unknown): CollectorHistory {
  */
 export function fetchHistory(windowMs: number): Promise<CollectorHistory> {
   return getJson(`/api/history?windowMs=${Math.round(windowMs)}`).then(parseHistory);
+}
+
+/**
+ * What one session last said, or why there is none, for its details. It is
+ * asked for while they are open, not on every beat, and only through the one
+ * route that reads it. `busy` is the server saying it has read as many
+ * transcripts as it will this second: nothing is wrong, and it can be asked
+ * again on the next beat. Any other failure throws, as every request here does.
+ */
+export async function fetchLastMessage(sessionId: string): Promise<LastMessageResponse | "busy"> {
+  let data: unknown;
+  try {
+    data = await getJson(`${LAST_MESSAGE_PATH}?id=${encodeURIComponent(sessionId)}`);
+  } catch (error) {
+    if (error instanceof ApiProblem && error.status === 429) return "busy";
+    throw error;
+  }
+  const answer = readLastMessage(data);
+  if (!answer) {
+    throw new ApiProblem(
+      "not-data",
+      "The local server sent a last message in a shape this page cannot read.",
+    );
+  }
+  return answer;
 }
 
 /** Adds events the page has not seen yet. Keeps newest first and a bounded length. */

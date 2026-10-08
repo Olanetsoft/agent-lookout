@@ -26,6 +26,7 @@ test("nothing a visitor can read in the hour says it is made up: names, folders,
       feed.snapshot(at, NOW),
       feed.events(at),
       feed.history(at, NOW, 60 * 60 * 1000),
+      SESSIONS.map((session) => feed.lastMessage(session.id, at, NOW)),
     ]),
   ]);
   const said = ASKED_WHOLE.reduce((text, words) => text.replaceAll(words, ""), read);

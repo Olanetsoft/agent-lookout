@@ -1,4 +1,10 @@
-import type { HistoryKept, HistoryResponse, HistorySince, WaitsResponse } from "@core/api";
+import type {
+  HistoryKept,
+  HistoryResponse,
+  HistorySince,
+  LastMessageResponse,
+  WaitsResponse,
+} from "@core/api";
 import { historyPointFor } from "@core/history";
 import { diffSessions } from "@core/sessions/diff";
 import type {
@@ -10,6 +16,7 @@ import type {
   SessionsSnapshot,
 } from "@core/sessions/session";
 import { isStale } from "@core/sessions/staleness";
+import { messageText } from "@core/text";
 import { isQuietAt } from "@core/time-rules/quietHours";
 import { DEFAULT_TIME_RULES, staleAfterMs, type TimeRules } from "@core/time-rules/timeRules";
 import type { Span } from "@core/waits/measured";
@@ -106,6 +113,12 @@ export interface Feed {
   history(shown: Shown, now: number, windowMs: number, clearedAt?: number | null): HistoryResponse;
   /** `/api/waits` at a moment, with the present `now`: today and the last seven days. */
   waits(shown: Shown, now: number, clearedAt?: number | null): WaitsResponse;
+  /**
+   * `/api/sessions/last-message` for one session at a moment, with the present
+   * `now`, or null for a session that is not listed then, which the collector
+   * answers 404. Only a Claude Code session on this computer is read.
+   */
+  lastMessage(id: string, shown: Shown, now: number): LastMessageResponse | null;
 }
 
 /** A moment as an offset from `t0`, and when the wait was answered, from `t0` too, or null. */
@@ -404,6 +417,15 @@ export function createFeed(t0: number): Feed {
         now,
       });
       return { at: now, ...totals, since, where: "disk" };
+    },
+
+    lastMessage(id, shown, now) {
+      const session = feed.snapshot(shown, now).sessions.find((listed) => listed.id === id);
+      if (!session) return null;
+      // As the collector answers: another agent, or another machine, is not read.
+      if (session.source !== "claude-code") return { message: null, reason: "not-read" };
+      const said = messageText(SESSIONS.find((hour) => hour.id === id)?.said);
+      return said ? { message: said } : { message: null, reason: "nothing-yet" };
     },
   };
   return feed;
