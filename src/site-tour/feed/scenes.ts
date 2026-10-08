@@ -58,7 +58,7 @@ const LIST_AT_TOP: SceneStep = { layout: "list", look: "top" };
 export const SCENES: readonly Scene[] = [
   {
     name: "One screen",
-    line: "Every Claude Code and Codex session on this computer, and any agent that writes a status file, on one page.",
+    line: "Every Claude Code, Codex and Antigravity CLI session on this computer, and your own agents, on one page.",
     moment: "quiet",
     view: "overview",
     steps: [LIST_AT_TOP, { layout: "list", look: "Sessions" }],
@@ -142,7 +142,7 @@ export const SCENES: readonly Scene[] = [
   },
   {
     name: "Settings",
-    line: "Time and permission rules, notifications, email, the webhook and pull requests stay off until you set them up.",
+    line: "Time and permission rules, notifications, every channel and pull requests stay off until you set them up.",
     moment: "answered",
     view: "settings",
     steps: [LIST_AT_TOP, { layout: "list", look: "Time rules" }],

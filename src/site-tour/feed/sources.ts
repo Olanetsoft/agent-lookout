@@ -4,8 +4,9 @@ import { MACHINE } from "@site-tour/feed/hour";
 /**
  * The sources of the landing page's hour, as each adapter reports itself
  * when it reads its sessions with nothing wrong: what it reads, how often, and
- * what its agent can report. The three agent tools on this computer come
- * first, then the other machine, connected over SSH.
+ * what its agent can report. This computer's sources come first, in the
+ * collector's order: Claude Code, Codex, the Antigravity CLI, which is not
+ * installed here, and status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -99,6 +100,45 @@ export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "yes" },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While agy asks you to approve a tool, from its own log. A question it asks you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once ps shows no agy program running that could have the conversation open. Not on Windows.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "Only when agy records an error of its own or a failed reply. A tool that fails shows as working.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title agy gives a conversation once it has one, and the folder its program's log names. Until then, its conversation ID.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "The transcripts name no terminal, and agy documents no link that opens a conversation.",
+  },
+  "quiet-for": { level: "yes" },
+  stop: {
+    level: "no",
+    reason:
+      "No agy program is tied to one conversation surely enough for Agent Lookout to confirm it and stop it.",
+  },
+  answer: {
+    level: "no",
+    reason: "Its approval prompt takes an answer only in the terminal agy runs in.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -177,6 +217,22 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when agy is not installed: its folder is looked for, and nothing more.
+      id: "antigravity-cli",
+      label: "Antigravity CLI",
+      state: "unavailable",
+      detail:
+        "The Antigravity CLI was not found: there is no ~/.gemini/antigravity-cli folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Conversations folder", value: "~/.gemini/antigravity-cli/brain" },
+        { label: "Read", value: "not found" },
+        { label: "Command", value: "ps -A -o pid=,ppid=,lstart=,comm=" },
+        { label: "Command run", value: "every 10 seconds at most" },
+      ],
+      capabilities: ANTIGRAVITY_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -205,6 +261,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Agent Lookout there", value: version },
         { label: "Claude Code there", value: "Watching" },
         { label: "Codex there", value: "Not found" },
+        { label: "Antigravity CLI there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

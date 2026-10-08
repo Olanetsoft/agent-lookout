@@ -59,6 +59,7 @@ function begin(section) {
 
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const phone = matchMedia("(width < 761px)");
+  const strip = matchMedia("(width < 1024px), (height < 520px)");
   const say = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
   const now = () => performance.now();
 
@@ -70,6 +71,7 @@ function begin(section) {
   let lampLit = null;
   let frame = null;
   let live = false;
+  let appWidth = 1280;
   let scale = 1;
   let handedAt = 0;
   let frameScrolledAt = -Infinity;
@@ -111,15 +113,15 @@ function begin(section) {
     if (live) frame?.contentWindow?.postMessage(message, location.origin);
   };
 
-  /** The dashboard at the app's size, scaled to the screen; as the Mac app, between its bars. */
+  /** Drawn 390px wide on a phone, else at 85% scale, 820 to 1280px wide. */
   const fit = () => {
-    const width = phone.matches ? 390 : 1280;
     const w = screen.clientWidth;
     const h = screen.clientHeight;
     if (w === 0) return;
-    scale = w / width;
+    appWidth = phone.matches ? 390 : Math.min(1280, Math.max(820, Math.round(w / 0.85)));
+    scale = w / appWidth;
     const share = Math.max(0.5, (h - 34 - 92) / h);
-    screen.style.setProperty("--tour-width", `${width}px`);
+    screen.style.setProperty("--tour-width", `${appWidth}px`);
     screen.style.setProperty("--tour-height", `${Math.ceil(h / scale)}px`);
     screen.style.setProperty("--tour-scale", String(scale));
     screen.style.setProperty("--dock-scale", String(scale * share));
@@ -257,7 +259,7 @@ function begin(section) {
     const at = stamp.offsetParent.getBoundingClientRect();
     const chip = items[index].getBoundingClientRect();
     const x =
-      phone.matches && now() > heldUntil
+      strip.matches && now() > heldUntil
         ? list.getBoundingClientRect().left + items[index].offsetLeft - goal(index) + chip.width / 2
         : chip.left + chip.width / 2;
     put(stamp, "f", [
@@ -341,7 +343,6 @@ function begin(section) {
     flip(words);
   };
 
-  /** Puts the thumb under the scene's chip. */
   const thumb = () => {
     const li = items[index];
     if (li) {
@@ -349,7 +350,8 @@ function begin(section) {
       put(nav, "", [list.offsetLeft + x, list.offsetTop + y, w, h]);
     }
   };
-  new ResizeObserver(thumb).observe(nav);
+  const sized = new ResizeObserver(thumb);
+  for (const el of [nav, ...items]) sized.observe(el);
 
   /** Marks the chip, Tab's stop unless the keyboard is among them, and names its neighbours. */
   const mark = (at) => {
@@ -374,9 +376,8 @@ function begin(section) {
     items[index].querySelectorAll(".tour-dots i")[part]?.classList.add("is-on");
   };
 
-  /** On a phone the scene's chip comes to the strip's middle, unless a hand moved it just now. */
   const centre = (i) => {
-    if (phone.matches && now() > heldUntil) {
+    if (strip.matches && now() > heldUntil) {
       list.scrollTo({ left: goal(i), behavior: reduced.matches ? "instant" : "smooth" });
     }
   };
@@ -411,7 +412,7 @@ function begin(section) {
     }
   };
 
-  /** The computer's word on a Jump: for a moment, or, with motion reduced, while the scene shows. */
+  /** The computer's word on a Jump: for a moment, or, with motion reduced, while the part shows. */
   const switched = (on) => {
     clearTimeout(switchedTimer);
     section.classList.toggle("is-switched", on);
@@ -445,8 +446,9 @@ function begin(section) {
     };
   };
 
-  /** The dashboard is given the scene and part, and a new scene is said. */
+  /** The dashboard is given the scene and part, and a new scene is said. A Jump's word goes. */
   const land = (way) => {
+    switched(false);
     const entering = landed !== index;
     landed = index;
     given = `${index}.${part}`;
@@ -582,7 +584,7 @@ function begin(section) {
     if (!frame) return load();
     if (!live) return;
     const box = frame.getBoundingClientRect();
-    const scale = box.width / (phone.matches ? 390 : 1280);
+    const scale = box.width / appWidth;
     takeOver();
     post({
       type: "tap",

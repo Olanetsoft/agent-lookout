@@ -1321,9 +1321,9 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
  * The chips: the twelve scenes, numbered, each with its icon, in a recessed
  * well with a thumb under the one on show. They are one stop for the
  * keyboard: the arrow keys move between them, and each takes the page to its
- * scene. Wide, they are one row of twelve; narrower, two rows of six; on a
- * phone, a strip that keeps the scene's chip in its middle, between Previous
- * and Next.
+ * scene. Wide, they are one row of twelve, each as wide as its name needs and
+ * the rest shared out; narrower or short, a strip that keeps the scene's chip
+ * in its middle, between Previous and Next.
  */
 .tour-chapters {
   --chip-radius: 14px;
@@ -1352,14 +1352,15 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(var(--scenes), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--scenes), minmax(max-content, 1fr));
   gap: 4px;
   counter-reset: scene;
 }
+/* The icon, then the number and, close after it, the part dots; the name under them. */
 .tour-chapters li {
   position: relative;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 24px auto minmax(0, 1fr);
   grid-template-rows: 24px auto;
   align-items: center;
   column-gap: 4px;
@@ -1437,7 +1438,7 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   font-weight: 500;
   line-height: 1.05;
   text-align: left;
-  text-wrap: balance;
+  white-space: nowrap;
   cursor: pointer;
 }
 .tour-chapters li:has(> [aria-current]) button {
@@ -1478,11 +1479,21 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
   transform: none;
 }
 
-/* A scene of more than one part has a dot for each, and the part on show is the long one. */
+/*
+ * A scene of more than one part has a dot for each, and the part on show is
+ * the long one. The long one's room is kept while none is on, so a chip keeps
+ * its width as the scenes change.
+ */
 .tour-dots {
   grid-area: 1 / 3;
+  justify-self: start;
   display: flex;
   gap: 2px;
+  width: 24px;
+  margin-left: 4px;
+}
+.tour-dots:has(> :nth-child(3)) {
+  width: 32px;
 }
 .tour-dots i {
   width: 6px;
@@ -1757,7 +1768,8 @@ html:not(.js) :is(.tour-title, .tour-line, .tour-controls, .tour-skip, .tour-cha
 .tour.is-live .screen iframe {
   opacity: 1;
 }
-.tour.is-live .screen picture {
+/* On each picture itself, so the lamp's rules above cannot show one again, nor a reader hear it. */
+.tour.is-live .shot {
   visibility: hidden;
   transition: visibility 0s 200ms;
 }
@@ -3332,54 +3344,115 @@ body:has(> .lost) {
   }
 }
 
-/*
- * Under 1128px, where the chips' well is under 1080px, the twelve chips are
- * two rows of six, each its icon, number and name in a line.
- */
+/* Under 1128px a little less again, so the twelve names keep to one row down to 1024px. */
 @media (width < 1128px) {
-  .tour {
-    --nav-height: 116px;
-  }
-  .tour-chapters {
-    align-items: stretch;
-  }
-  .tour-chapters ol {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
   .tour-chapters li {
-    grid-template-columns: 24px auto minmax(0, 1fr) auto;
-    grid-template-rows: auto;
-    column-gap: 8px;
-    height: 52px;
-    padding: 0 10px;
-  }
-  .tour-chapters ol button {
-    grid-area: 1 / 3;
-    align-self: center;
-  }
-  .tour-chapters .tour-dots {
-    grid-area: 1 / 4;
+    padding-inline: 4px;
   }
 }
 
-/* Under 1000px the chips of two rows of six are too narrow for that line, and the name goes under the icon. */
-@media (width < 1000px) {
+/*
+ * Under 1024px, or in a short window, the chips are one strip between
+ * Previous and Next, which keeps the scene's chip in its middle; a finger can
+ * swipe it too. Each chip is its icon, number, name and dots in a line.
+ */
+@media (width < 1024px), (height < 520px) {
+  .tour {
+    --nav-height: 44px;
+  }
+  .tour-chapters {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .tour-prev,
+  .tour-next {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background-color: var(--fill-quiet);
+    box-shadow:
+      inset 0 0 0 1px var(--control-rim),
+      inset 0 1px 0 var(--control-top);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .tour-prev svg,
+  .tour-next svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .tour-prev[aria-disabled="true"],
+  .tour-next[aria-disabled="true"] {
+    color: var(--ink-muted);
+    opacity: 0.5;
+    cursor: default;
+  }
+  .tour-thumb {
+    display: none;
+  }
+  .tour-chapters ol {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+  }
+  .tour-chapters ol::-webkit-scrollbar {
+    display: none;
+  }
   .tour-chapters li {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    grid-template-rows: 24px auto;
-    column-gap: 4px;
-    row-gap: 2px;
-    padding: 5px 8px 0;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 44px;
+    padding: 0 12px 0 10px;
+    scroll-snap-align: center;
+  }
+  .tour-chapters li .tour-icon {
+    order: -1;
+    width: 22px;
+    height: 22px;
   }
   .tour-chapters ol button {
-    grid-area: 2 / 1 / 3 / 4;
-    align-self: start;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    align-self: center;
+    font-size: 13px;
+    line-height: 1.2;
   }
   .tour-chapters .tour-dots {
-    grid-area: 1 / 3;
+    margin-left: 0;
+  }
+  /* The chip on show is drawn as the thumb would be. */
+  .tour-chapters li:has(> [aria-current]) {
+    background-color: var(--thumb);
+    box-shadow:
+      inset 0 0 0 var(--ring-width, 1px) var(--thumb-edge),
+      inset 0 1px 0 var(--control-top);
   }
 }
 
@@ -3426,6 +3499,21 @@ body:has(> .lost) {
   .tour-line {
     align-self: start;
     max-width: none;
+  }
+}
+
+/*
+ * A tablet held upright. Its width holds the frame, so the screen is drawn
+ * down to the chips and the dashboard shows that much more of itself. The
+ * picture shown before the dashboard arrives keeps its own shape, at the top.
+ */
+@media (761px <= width < 1101px) and (orientation: portrait) {
+  .js .screen {
+    aspect-ratio: auto;
+    height: calc(var(--frame-room) - 2 * var(--bezel));
+  }
+  .js .shot {
+    object-fit: contain;
   }
 }
 
@@ -3675,9 +3763,7 @@ body:has(> .lost) {
 
   /*
    * On a phone the switch and Skip sit over the frame, and the number and
-   * name, the line and the chips under it, all as wide as the frame. The
-   * chips are a strip between Previous and Next, which keeps the scene's chip
-   * in its middle; a finger can swipe it too.
+   * name, the line and the chips' strip under it, all as wide as the frame.
    */
   .tour {
     --stretch: 52svh;
@@ -3686,7 +3772,6 @@ body:has(> .lost) {
     --line-size: 15px;
     --line-lines: 3;
     --line-height: calc(var(--line-size) * 1.42 * var(--line-lines));
-    --nav-height: 44px;
     --row-gap: 8px;
     --frame-room: calc(
       var(--stage-height) - var(--controls-height) - var(--head-height) - var(--line-height) -
@@ -3736,99 +3821,6 @@ body:has(> .lost) {
   .tour-line {
     align-self: start;
     line-height: 1.42;
-  }
-
-  .tour-chapters {
-    padding: 0;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-  }
-  .tour-prev,
-  .tour-next {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background-color: var(--fill-quiet);
-    box-shadow:
-      inset 0 0 0 1px var(--control-rim),
-      inset 0 1px 0 var(--control-top);
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .tour-prev svg,
-  .tour-next svg {
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .tour-prev[aria-disabled="true"],
-  .tour-next[aria-disabled="true"] {
-    color: var(--ink-muted);
-    opacity: 0.5;
-    cursor: default;
-  }
-  .tour-thumb {
-    display: none;
-  }
-  .tour-chapters ol {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 24px,
-      #000 calc(100% - 24px),
-      transparent
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 24px,
-      #000 calc(100% - 24px),
-      transparent
-    );
-  }
-  .tour-chapters ol::-webkit-scrollbar {
-    display: none;
-  }
-  .tour-chapters li {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 44px;
-    padding: 0 12px 0 10px;
-    scroll-snap-align: center;
-  }
-  .tour-chapters li .tour-icon {
-    order: -1;
-    width: 22px;
-    height: 22px;
-  }
-  .tour-chapters ol button {
-    align-self: center;
-    font-size: 13px;
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  /* The chip on show is drawn as the thumb would be. */
-  .tour-chapters li:has(> [aria-current]) {
-    background-color: var(--thumb);
-    box-shadow:
-      inset 0 0 0 var(--ring-width, 1px) var(--thumb-edge),
-      inset 0 1px 0 var(--control-top);
   }
 
   .tour-banner {
@@ -3959,6 +3951,80 @@ body:has(> .lost) {
   }
   .tour-line {
     line-height: 1.36;
+  }
+}
+
+/*
+ * A short window, as a phone held on its side. The switch, the number and
+ * name, the line and Skip are a column beside the frame, and the chips' strip
+ * runs under the frame. So the frame takes the stage's whole height but that
+ * one row, and the chips are always in view.
+ */
+@media (height < 520px) {
+  .tour {
+    --side-width: 250px;
+    --line-size: 14px;
+    --row-gap: 8px;
+    --frame-room: calc(var(--stage-height) - var(--nav-height) - var(--row-gap));
+  }
+  .tour-stage {
+    grid-template-columns: fit-content(var(--side-width)) minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr) var(--nav-height);
+    grid-template-areas:
+      "controls stage"
+      "title stage"
+      "line stage"
+      "back stage"
+      "skip nav";
+    align-content: stretch;
+    width: auto;
+    margin-inline: 0;
+    column-gap: 16px;
+  }
+  .tour-controls,
+  .tour-title,
+  .tour-line {
+    align-self: start;
+  }
+  .tour-back {
+    align-self: end;
+    justify-self: start;
+  }
+  .tour-skip {
+    align-self: center;
+    justify-self: start;
+  }
+  .tour-name {
+    font-size: 20px;
+  }
+  .tour-line {
+    line-height: 1.36;
+  }
+  .screen {
+    max-height: calc(var(--frame-room) - 2 * var(--bezel));
+  }
+}
+
+/*
+ * A phone on its side has the chips under its frame, so the app's icon and
+ * count sit in the frame's corner.
+ */
+@media (width < 761px) and (height < 520px) {
+  .tour-dock,
+  .tour-menubar {
+    top: auto;
+    bottom: calc(var(--bezel) + 8px);
+  }
+  .tour-dock {
+    --tile: 36px;
+    right: calc(var(--bezel) + 10px);
+  }
+  .tour-menubar {
+    right: calc(var(--bezel) + 64px);
+    height: 36px;
+  }
+  .tour.is-docked .tour-title {
+    padding-right: 0;
   }
 }
 
