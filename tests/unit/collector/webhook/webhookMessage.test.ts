@@ -466,3 +466,29 @@ describe("summaryPost", () => {
     expect(post).not.toHaveProperty("more");
   });
 });
+
+test("no post holds a session's token counts, which only its details show", () => {
+  const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+  const session = makeSession({ name: "checkout-flow", project: "storefront", tokens });
+  const wait = facts({ tokens });
+  const now = BEGUN + 10 * 60_000;
+  const sent = [
+    waitPost(wait),
+    waitPost({ ...wait, asking: "Run: npm test" }),
+    reminderPost({ ...wait, now, thresholdMs: 10 * 60_000, everyMs: null, repeat: 0 }),
+    overPost({ event: "finished", session, agent: "Codex", seenAt: now, now }),
+    summaryPost({
+      from: BEGUN,
+      to: now,
+      now,
+      items: [
+        { event: "needs-you", session, at: BEGUN, waitedMs: 60_000, times: 1, agent: "Codex" },
+        { event: "finished", session, at: BEGUN + 60_000, agent: "Codex" },
+      ],
+    }),
+  ];
+  const said = JSON.stringify(sent);
+  for (const count of ["873215", "873,215", "641331", "52717", "tokens"]) {
+    expect(said).not.toContain(count);
+  }
+});

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
+import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import {
   MAX_REMOTE_SESSIONS,
@@ -271,6 +272,79 @@ describe("readRemoteSnapshot", () => {
     expect(agent?.capabilities.stop.level).toBe("no");
     expect(agent?.capabilities.answer.level).toBe("no");
     expect(agent?.capabilities.names).toEqual(CLAUDE_CODE_CAPABILITIES.names);
+  });
+
+  test("an agent there whose Agent Lookout is from before token counts keeps its row, with Tokens as no, naming the machine", () => {
+    const sources = sourcesThere().map((source) => ({ ...source, state: "ok" as const }));
+    for (const source of sources) {
+      if (!source.capabilities) throw new Error("expected capabilities");
+      const { tokens: _tokens, ...older } = source.capabilities;
+      source.capabilities = older as typeof source.capabilities;
+    }
+    const { agents } = read({ generatedAt: NOW, sources, sessions: [] });
+    expect(agents.map((agent) => agent.label)).toEqual(["Claude Code", "Codex", "Status files"]);
+    for (const agent of agents) {
+      expect(agent.capabilities.tokens, agent.label).toEqual({
+        level: "no",
+        reason: "The Agent Lookout on devbox does not send token counts.",
+      });
+    }
+    expect(agents[1]?.capabilities.names).toEqual(CODEX_CAPABILITIES.names);
+  });
+
+  test("a Tokens cell that is sent is taken as it was sent, and one that cannot be read loses the row", () => {
+    const sources = sourcesThere().map((source) => ({ ...source, state: "ok" as const }));
+    const { agents } = read({ generatedAt: NOW, sources, sessions: [] });
+    expect(agents.map((agent) => [agent.label, agent.capabilities.tokens])).toEqual([
+      ["Claude Code", CLAUDE_CODE_CAPABILITIES.tokens],
+      ["Codex", { level: "yes" }],
+      ["Status files", STATUS_FILE_CAPABILITIES.tokens],
+    ]);
+
+    const [claude] = sources;
+    if (!claude?.capabilities) throw new Error("expected capabilities");
+    claude.capabilities = {
+      ...claude.capabilities,
+      tokens: { level: "partly" } as unknown as typeof claude.capabilities.tokens,
+    };
+    expect(read({ generatedAt: NOW, sources, sessions: [] }).agents.map((a) => a.label)).toEqual([
+      "Codex",
+      "Status files",
+    ]);
+  });
+
+  test("a session there keeps the token counts it was sent, through the same check as this machine's", () => {
+    const counted = (tokens: unknown) =>
+      read(snapshotThere([workingThere({ tokens } as never)])).sessions[0];
+
+    expect(counted({ input: 182_431, cached: 141_002, output: 9_120 })?.tokens).toEqual({
+      input: 182_431,
+      cached: 141_002,
+      output: 9_120,
+    });
+    expect(counted({ input: 2_048, output: 64 })?.tokens).toEqual({ input: 2_048, output: 64 });
+    // Only the three counts are copied.
+    expect(
+      Object.keys(
+        counted({ input: 2_048, cached: 0, output: 64, costUSD: 1, plan_type: "pro" })?.tokens ??
+          {},
+      ),
+    ).toEqual(["input", "cached", "output"]);
+    for (const bad of [
+      { input: 0, output: 0 },
+      { input: -1, output: 10 },
+      { input: 10, cached: 11, output: 1 },
+      { input: 10.5, output: 1 },
+      { input: "10", output: 1 },
+      { input: Number.MAX_SAFE_INTEGER + 1, output: 1 },
+      "182431 in",
+      null,
+      undefined,
+    ]) {
+      const session = counted(bad);
+      expect(session?.status, JSON.stringify(bad)).toBe("working");
+      expect(session, JSON.stringify(bad)).not.toHaveProperty("tokens");
+    }
   });
 
   test("an agent whose cells cannot all be read has no row", () => {

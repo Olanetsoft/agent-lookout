@@ -70,6 +70,8 @@ export const OLDER_CODEX_NOTE =
  * - No Jump: the files name no process, and the desktop app's link is
  *   undocumented (`toSession.ts`).
  * - Quiet for is the file's own modified time, moved on by every line.
+ * - Tokens are the counts of the newest reply, from the newest `token_count`
+ *   line (`rolloutFile.ts`).
  * - No Stop: with no process named, there is nothing to confirm and stop.
  * - No Answer: Codex records no approval waits to answer.
  */
@@ -94,6 +96,7 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
     reason: "Codex's files name no process to find, and Codex documents no link to a session.",
   },
   "quiet-for": { level: "yes" },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "Codex's files name no process that Agent Lookout could confirm and stop.",

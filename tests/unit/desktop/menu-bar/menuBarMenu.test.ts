@@ -602,3 +602,22 @@ describe("a session whose permission request is held", () => {
     });
   });
 });
+
+test("a session's token counts are never in the menu bar, and new counts do not change its menu", () => {
+  const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+  const base = waiting("checkout-flow", MINUTE);
+  const counted = snapshot([{ ...base, tokens }, makeSession({ status: "working", tokens })]);
+  const said = JSON.stringify([
+    menuBarTemplate(counted, NOW, actions()),
+    menuBarTitle(counted),
+    menuBarHeadline(counted),
+    menuBarToolTip(counted),
+    menuBarKey(counted),
+  ]);
+  for (const count of ["873215", "873,215", "641331", "52717", "tokens"]) {
+    expect(said).not.toContain(count);
+  }
+  expect(menuBarKey(counted)).toBe(
+    menuBarKey(snapshot([base, makeSession({ status: "working" })])),
+  );
+});

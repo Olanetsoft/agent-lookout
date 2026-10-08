@@ -274,6 +274,45 @@ test("when the agent last wrote is read as it was sent, and is none when it is n
   }
 });
 
+test("a session's newest reply's token counts are read as they were sent, each count checked", () => {
+  const sent = makeSession({
+    id: "codex:1",
+    source: "codex",
+    status: "working",
+    tokens: { input: 182_431, cached: 141_002, output: 9_120 },
+  });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  const uncached = makeSession({ status: "idle", tokens: { input: 2_048, output: 64 } });
+  expect(readSession(JSON.parse(JSON.stringify(uncached)))?.tokens).toEqual({
+    input: 2_048,
+    output: 64,
+  });
+  // Only the three counts are kept.
+  expect(
+    readSession({
+      ...makeSession({ status: "idle" }),
+      tokens: { input: 2_048, cached: 0, output: 64, total: 2_112, price: 1 },
+    })?.tokens,
+  ).toEqual({ input: 2_048, cached: 0, output: 64 });
+
+  for (const tokens of [
+    undefined,
+    null,
+    "182,431 in",
+    { input: 0, output: 0 },
+    { input: -1, output: 1 },
+    { input: 10, cached: 11, output: 1 },
+    { input: 10, cached: "2", output: 1 },
+    { input: 1.5, output: 1 },
+    { input: Number.NaN, output: 1 },
+    { input: 10 },
+  ]) {
+    const read = readSession({ ...makeSession({ status: "working" }), tokens });
+    expect(read?.status, JSON.stringify(tokens)).toBe("working");
+    expect(read && "tokens" in read, JSON.stringify(tokens)).toBe(false);
+  }
+});
+
 test("a surface or status the page does not know is read as unknown, not dropped", () => {
   const read = readSession({ ...makeSession(), surface: "tmux", status: "paused" });
 
@@ -476,6 +515,7 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
     names: { level: "yes" },
     jump: { level: "no", reason: "The tool names no place to go." },
     "quiet-for": { level: "yes" },
+    tokens: { level: "no", reason: "The tool records no token counts." },
     stop: { level: "no", reason: "The tool names no process to stop." },
     answer: { level: "no", reason: "The tool records no waits to answer." },
   };
@@ -492,8 +532,11 @@ test("what a source can report is kept whole, or not at all, so no cell is a gue
   // A cell missing, of a level this page does not know, or a no without its
   // reason, and the source has no row at all rather than a row with a hole.
   const { jump: _jump, ...missing } = capabilities;
+  // The page and the collector ship together, so a missing Tokens cell is a hole too.
+  const { tokens: _tokens, ...noTokens } = capabilities;
   for (const odd of [
     missing,
+    noTokens,
     { ...capabilities, jump: { level: "maybe", reason: "Who knows." } },
     { ...capabilities, jump: { level: "no" } },
     { ...capabilities, jump: { level: "partly", reason: "   " } },
@@ -563,6 +606,7 @@ test("another machine's source keeps its name and a row for each agent there tha
     names: { level: "yes" },
     jump: { level: "no", reason: "Jump acts on this computer only, not on devbox." },
     "quiet-for": { level: "no", reason: "The file read is not rewritten." },
+    tokens: { level: "no", reason: "Its transcripts are not read for them." },
     stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
     answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
   };

@@ -159,3 +159,19 @@ describe("a summary", () => {
     expect(summaryLine([there])).toBe("docs-site waited 25 minutes");
   });
 });
+
+test("no reminder or summary notification holds a session's token counts, which only its details show", () => {
+  const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+  const session = named("checkout-flow", { tokens });
+  const said = JSON.stringify([
+    reminderNotice(session, 10 * MINUTE),
+    reminderNotice({ ...session, waitingText: "Run: npm test" }, 10 * MINUTE),
+    summaryNotice([
+      { event: "needs-you", session, at: 0, waitedMs: 25 * MINUTE, times: 1 },
+      { event: "finished", session, at: 30 * MINUTE },
+    ]),
+  ]);
+  for (const count of ["873215", "873,215", "641331", "52717", "tokens"]) {
+    expect(said).not.toContain(count);
+  }
+});

@@ -130,6 +130,75 @@ export function eventLine(time: number, type: string): string {
   return JSON.stringify({ timestamp: at(time), type: "event_msg", payload: { type } });
 }
 
+/**
+ * One `TokenUsage` as Codex writes it: input with the cached part inside it,
+ * output with reasoning inside it, and a total the provider gave.
+ */
+export function usage(
+  input: number,
+  cached: number,
+  output: number,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    input_tokens: input,
+    cached_input_tokens: cached,
+    output_tokens: output,
+    reasoning_output_tokens: Math.floor(output / 2),
+    total_tokens: input + output,
+    ...more,
+  };
+}
+
+/**
+ * Rate limits as a `token_count` line carries them, with an invented plan and
+ * balance, so a test can check that none of it is kept.
+ */
+export const RATE_LIMITS = {
+  limit_id: "codex",
+  limit_name: null,
+  primary: { used_percent: 12.5, window_minutes: 300, resets_at: 1_790_000_000 },
+  secondary: { used_percent: 3.25, window_minutes: 10_080, resets_at: 1_790_500_000 },
+  credits: { has_credits: true, unlimited: false, balance: "987.65" },
+  individual_limit: null,
+  spend_control_reached: false,
+  plan_type: "example-plan",
+  rate_limit_reached_type: null,
+};
+
+/** The running total a `token_count` line carries beside the newest reply's, which is never kept. */
+export const TOTAL_USAGE = usage(4_210_330, 3_900_000, 61_200);
+
+/**
+ * A `token_count` line, as Codex writes one after each reply
+ * (codex-rs/protocol/src/protocol.rs, `TokenCountEvent`): the newest reply's
+ * usage in `info.last_token_usage`, with the running total and the model's
+ * context window beside it, and the rate limits after. With `last` null,
+ * `info` is null, as Codex writes it before the first reply.
+ */
+export function tokenCountLine(
+  time: number,
+  last: Record<string, unknown> | null,
+  rateLimits: Record<string, unknown> | null = RATE_LIMITS,
+): string {
+  return JSON.stringify({
+    timestamp: at(time),
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info:
+        last === null
+          ? null
+          : {
+              total_token_usage: TOTAL_USAGE,
+              last_token_usage: last,
+              model_context_window: 258_400,
+            },
+      rate_limits: rateLimits,
+    },
+  });
+}
+
 /** A rollout file's content: one line each, every line ended. */
 export const rollout = (...lines: string[]) => lines.map((line) => `${line}\n`).join("");
 
@@ -162,6 +231,8 @@ export const fixtureSessions = [
     status: "idle",
     startedAt: Date.parse("2026-10-01T10:00:00.000Z"),
     statusSince: Date.parse("2026-10-01T11:30:00.000Z"),
+    // From the token count line just before its `task_complete`: the newest reply's counts alone.
+    tokens: { input: 52_480, cached: 44_032, output: 1_206 },
   },
   {
     id: `codex:${ids.finished}`,

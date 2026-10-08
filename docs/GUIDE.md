@@ -101,6 +101,7 @@ The details show everything Agent Lookout knows about the session:
 - its [repository](#repositories), and its [branch](#branches) or the commit when no branch is checked out
 - with pull requests on, its branch's [pull request](#pull-requests): its number and title, a link that opens it on github.com in your browser, whether it is open, a draft, merged or closed, and how many of its checks are failing, pending and passing
 - when it started and its process ID, when its agent reports them
+- the token counts of its newest reply, as in `182,431 in, 9,120 out`, and under them how much of the input came from a cache. In is the whole prompt the reply was given, cached tokens included, which is how much of the session's context is in use. Out is what the reply wrote, its reasoning included. Agent Lookout reads them only for Codex sessions so far. A session with none has a dash and, under it, why: its agent's reason in [What each agent can report](#what-each-agent-can-report), that its machine sent none, or that none are recorded yet
 - how many times it waited for you and how long in all, over the same time as the bars in the Needs you panel
 - what a Claude Code session last said, under Last message
 - its own events, newest first, as the Events log shows them
@@ -218,14 +219,14 @@ Each [other machine](#another-machine-over-ssh) named in `AGENT_LOOKOUT_REMOTES`
 
 #### What each agent can report
 
-Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session) and [Answer](#answer-a-permission-prompt), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. The [branch](#branches) is not in the table, because it is read the same way for every agent.
+Under the cards, What each agent can report has a row for each agent and a column for each thing Agent Lookout can show of its sessions, and for [Stop](#stop-a-session) and [Answer](#answer-a-permission-prompt), what it can do to one, with Yes, No or Partly in each. Point at No or Partly, or move to it with Tab, to read why. In a narrow window each agent has a block of its own, with the reason under each No and Partly. A No means Agent Lookout cannot show it for that agent's sessions, so not seeing it is not good news. Tokens is whether a session's [details](#a-sessions-details) can give the token counts of its newest reply. The [branch](#branches) is not in the table, because it is read the same way for every agent.
 
-| Agent           | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for | Stop   | Answer |
-| --------------- | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- | ------ | ------ |
-| Claude Code     | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        | Partly | Partly |
-| Codex           | Yes              | No        | Partly   | No     | Partly | No     | Yes       | No     | No     |
-| Antigravity CLI | Yes              | Partly    | Partly   | Partly | Partly | No     | Yes       | No     | No     |
-| Status files    | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    | No     | No     |
+| Agent           | Working and idle | Needs you | Finished | Failed | Names  | Jump   | Quiet for | Tokens | Stop   | Answer |
+| --------------- | ---------------- | --------- | -------- | ------ | ------ | ------ | --------- | ------ | ------ | ------ |
+| Claude Code     | Yes              | Yes       | Partly   | Partly | Yes    | Partly | No        | No     | Partly | Partly |
+| Codex           | Yes              | No        | Partly   | No     | Partly | No     | Yes       | Yes    | No     | No     |
+| Antigravity CLI | Yes              | Partly    | Partly   | Partly | Partly | No     | Yes       | No     | No     | No     |
+| Status files    | Partly           | Partly    | Partly   | Partly | Partly | No     | Partly    | No     | No     | No     |
 
 Why, for each No and Partly:
 
@@ -233,6 +234,7 @@ Why, for each No and Partly:
 - Claude Code, Failed: Only background jobs. Any other session leaves the list without saying how it ended.
 - Claude Code, Jump: In VS Code, in tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in the desktop app or another terminal.
 - Claude Code, Quiet for: The file Agent Lookout reads is not rewritten as a session works.
+- Claude Code, Tokens: Agent Lookout does not read the token counts in its transcripts yet.
 - Claude Code, Stop: In a terminal, in VS Code and for background jobs. Not in the desktop app.
 - Claude Code, Answer: With the Agent Lookout plugin, by Allow, Deny or a permission rule. Allow only if all is shown: never edits, plans or questions.
 - Codex, Needs you: Codex does not record approval waits, so a session waiting for you shows as working.
@@ -247,6 +249,7 @@ Why, for each No and Partly:
 - Antigravity CLI, Failed: Only when agy records an error of its own or a failed reply. A tool that fails shows as working.
 - Antigravity CLI, Names: The title agy gives a conversation once it has one, and the folder its program's log names. Until then, its conversation ID.
 - Antigravity CLI, Jump: The transcripts name no terminal, and agy documents no link that opens a conversation.
+- Antigravity CLI, Tokens: Agent Lookout does not read token counts from agy's transcripts yet.
 - Antigravity CLI, Stop: No agy program is tied to one conversation surely enough for Agent Lookout to confirm it and stop it.
 - Antigravity CLI, Answer: Its approval prompt takes an answer only in the terminal agy runs in.
 - Status files, Working and idle: If the agent writes working and idle.
@@ -256,10 +259,11 @@ Why, for each No and Partly:
 - Status files, Names: If the agent writes a name. Otherwise the folder's or the file's name is used.
 - Status files, Jump: Nothing in a status file is used to reach a session.
 - Status files, Quiet for: If the agent writes its file again as it works.
+- Status files, Tokens: A status file has no field for token counts.
 - Status files, Stop: Any program can write a status file, so nothing in one is used to stop a session.
 - Status files, Answer: A status file only says a session waits, and holds nothing to answer it through, by hand or by a permission rule.
 
-Each [other machine](#another-machine-over-ssh) adds a row for each agent found there, such as Claude Code on devbox, with what that machine's Agent Lookout says its agent can report, and No for Jump, Stop and Answer, which act on this computer only.
+Each [other machine](#another-machine-over-ssh) adds a row for each agent found there, such as Claude Code on devbox, with what that machine's Agent Lookout says its agent can report, and No for Jump, Stop and Answer, which act on this computer only. Under an older Agent Lookout there, which sends nothing for Tokens, each agent has No for Tokens.
 
 ### Settings
 
@@ -1633,7 +1637,7 @@ The program serving the page has stopped. The page keeps the last thing it saw, 
 
 For Claude Code, Agent Lookout reads the small file Claude Code keeps for each running session in `~/.claude/sessions/`, every 2 seconds, whether the session runs in a terminal, in VS Code or in the desktop app. That starts no program and uses no network. When it starts, and every 30 seconds after that, it also runs `claude agents --json --all`, the command Claude Code [documents](https://code.claude.com/docs/en/agent-view) for listing its sessions. That answer decides which sessions exist, and it adds background jobs that have finished or failed. If the command cannot be found or fails, Agent Lookout uses the files alone. While a session is waiting for you, Agent Lookout also reads the end of its transcript, in `~/.claude/projects/`, to say what it is asking, and forgets it when the wait ends. It also reads that end when a session's last message is asked for, as [PRIVACY.md](../PRIVACY.md#a-sessions-last-message) says. Claude Code does not document its transcripts, so a new version can change them, and then the reason shows alone.
 
-For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended and a few details, such as the session's folder, and when each file was last changed, which says how long a working session has been [quiet](#quiet-for). Codex documents none of these files, so a new Codex version can change them.
+For Codex it runs nothing. Every 2 seconds it reads what Codex has added to the session files under `~/.codex/sessions/` and finds the last line that says a turn started or ended, and the newest line that counts a reply's tokens: a session with a turn under way is working, and one whose last turn ended is idle. A session that no Codex program has open is finished. Those files hold your conversations with Codex. Agent Lookout keeps only when each turn started and ended, the token counts of the newest reply and a few details, such as the session's folder, and when each file was last changed, which says how long a working session has been [quiet](#quiet-for). Codex documents none of these files, so a new Codex version can change them.
 
 For the Antigravity CLI, `agy`, it runs no agy program either. Every 2 seconds it looks at the names of the folders in `~/.gemini/antigravity-cli/brain` and `~/.gemini/antigravity-cli/conversations` and when each conversation's files were last changed, and reads the end of the transcript agy keeps for each conversation written in the last day, `brain/<conversation ID>/.system_generated/logs/transcript.jsonl`, for its last step: a prompt, a tool or a reply that asks for a tool is working, a reply that asks for none is idle, and an error agy reports itself is failed. To tell an open conversation from one that has ended, it asks `ps`, at most every 10 seconds, which agy programs are running and when each started, and reads the command lines of those programs alone. A conversation no agy program running could have open is finished. It reads the log each running agy program keeps in `~/.gemini/antigravity-cli/log`, only for the lines that say which folder it works in, which conversation it has open and whether it waits for your approval of a tool, and the title agy gives each conversation, in `annotations/`. Those transcripts and logs hold your conversations with agy and what agy does. Agent Lookout keeps only each last step's kind, status and time, and those few lines' facts. agy documents the transcript's format for its own agents, and not its log, so a new agy version can change either. This was built from agy 1.3.1's documentation and program, and checked against one conversation.
 

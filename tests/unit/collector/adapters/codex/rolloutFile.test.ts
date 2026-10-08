@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { FileInfo } from "@collector/files/readOnlyIo";
 import {
@@ -6,6 +6,7 @@ import {
   HEAD_LIMIT_BYTES,
   parseCodexTime,
   readMetaLine,
+  readTokenLine,
   readTurnLine,
   TAIL_LIMIT_BYTES,
 } from "@collector/adapters/codex/rolloutFile";
@@ -18,9 +19,13 @@ import {
   metaLine,
   MINUTE,
   NOW,
+  RATE_LIMITS,
   rollout,
   rolloutPath,
+  tokenCountLine,
+  TOTAL_USAGE,
   turnLine,
+  usage,
 } from "@tests/fixtures/codex";
 import { memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
@@ -227,6 +232,7 @@ describe("createRolloutReader", () => {
       lastTurnAt: START + 30 * MINUTE,
       lastTurnImported: false,
       lastLineAt: START + 31 * MINUTE,
+      tokens: null,
     });
     expect(files.openHandles()).toBe(0);
   });
@@ -271,6 +277,7 @@ describe("createRolloutReader", () => {
       lastTurnAt: null,
       lastTurnImported: false,
       lastLineAt: null,
+      tokens: null,
     });
 
     const meta = metaLine(START);
@@ -581,5 +588,334 @@ describe("createRolloutReader", () => {
     );
     const state = await readNow(createRolloutReader(files.io), files);
     expect(JSON.stringify(state)).not.toContain("private");
+  });
+});
+
+/** Every value of the running total and the rate limits, as the line writes them, none of which is ever kept. */
+const NEVER_KEPT = [
+  "total_token_usage",
+  "rate_limits",
+  "model_context_window",
+  "258400",
+  "reasoning",
+  "plan_type",
+  "example-plan",
+  "credits",
+  "balance",
+  "987.65",
+  "used_percent",
+  String(TOTAL_USAGE.input_tokens),
+  String(TOTAL_USAGE.output_tokens),
+  String(RATE_LIMITS.primary.resets_at),
+];
+
+describe("readTokenLine", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("keeps the newest reply's input, cached part and output, and nothing else from the line", () => {
+    const read = readTokenLine(tokenCountLine(NOW, usage(182_431, 141_002, 9_120)));
+    expect(read).toEqual({ tokens: { input: 182_431, cached: 141_002, output: 9_120 } });
+    const kept = JSON.stringify(read);
+    for (const dropped of NEVER_KEPT) expect(kept, dropped).not.toContain(dropped);
+  });
+
+  test("a line whose info is null, as Codex writes before the first reply, says nothing", () => {
+    expect(readTokenLine(tokenCountLine(NOW, null))).toBeNull();
+    expect(readTokenLine(tokenCountLine(NOW, null, null))).toBeNull();
+  });
+
+  test("the zeros Codex writes after it compacts or fills the context window give a dash", () => {
+    // After a compaction, the newest usage is all zeros.
+    expect(readTokenLine(tokenCountLine(NOW, usage(0, 0, 0)))).toEqual({ tokens: null });
+    // When it fills the window, only the total is set (`fill_to_context_window`).
+    expect(readTokenLine(tokenCountLine(NOW, usage(0, 0, 0, { total_tokens: 12_000 })))).toEqual({
+      tokens: null,
+    });
+  });
+
+  test("a total that is not input plus output, as some providers give, still counts", () => {
+    expect(
+      readTokenLine(tokenCountLine(NOW, usage(2_048, 1_024, 64, { total_tokens: 99 }))),
+    ).toEqual({ tokens: { input: 2_048, cached: 1_024, output: 64 } });
+  });
+
+  test("a line with no info, or counts of the wrong kind, gives a dash and not an older reply's counts", () => {
+    expect(readTokenLine(eventLine(NOW, "token_count"))).toEqual({ tokens: null });
+    const odd = (info: unknown) =>
+      JSON.stringify({
+        timestamp: at(NOW),
+        type: "event_msg",
+        payload: { type: "token_count", info, rate_limits: null },
+      });
+    expect(readTokenLine(odd({}))).toEqual({ tokens: null });
+    expect(readTokenLine(odd([1, 2]))).toEqual({ tokens: null });
+    expect(readTokenLine(odd({ last_token_usage: "lots" }))).toEqual({ tokens: null });
+    expect(readTokenLine(tokenCountLine(NOW, usage(-1, 0, 10))), "a negative input").toEqual({
+      tokens: null,
+    });
+    expect(
+      readTokenLine(tokenCountLine(NOW, usage(100, 101, 10))),
+      "more cached than input",
+    ).toEqual({ tokens: null });
+    expect(
+      readTokenLine(tokenCountLine(NOW, { ...usage(100, 0, 10), output_tokens: "10" })),
+      "a count as text",
+    ).toEqual({ tokens: null });
+  });
+
+  test("with no cached part recorded, cached is left out", () => {
+    const { cached_input_tokens: _gone, ...last } = usage(2_048, 0, 64);
+    expect(readTokenLine(tokenCountLine(NOW, last))).toEqual({
+      tokens: { input: 2_048, output: 64 },
+    });
+  });
+
+  test("a token count written inside a message, escaped, is never parsed", () => {
+    const parse = vi.spyOn(JSON, "parse");
+    const inner = tokenCountLine(NOW, usage(182_431, 141_002, 9_120));
+    for (const line of [
+      messageLine(NOW, inner),
+      JSON.stringify({
+        timestamp: at(NOW),
+        type: "event_msg",
+        payload: { type: "agent_message", message: inner },
+      }),
+    ]) {
+      expect(readTokenLine(line)).toBeNull();
+    }
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["a turn line", turnLine(NOW, "task_complete")],
+    ["a session_meta line", metaLine(NOW)],
+    [
+      "the type outside an event",
+      JSON.stringify({
+        timestamp: at(NOW),
+        type: "response_item",
+        payload: { type: "token_count" },
+      }),
+    ],
+    [
+      "another event that holds the type further in",
+      JSON.stringify({
+        timestamp: at(NOW),
+        type: "event_msg",
+        payload: { type: "agent_message", item: { type: "token_count" } },
+      }),
+    ],
+    ["a cut-off token line", tokenCountLine(NOW, usage(10, 0, 1)).slice(0, -2)],
+  ])("%s is not a token line", (_what, line) => {
+    expect(readTokenLine(line)).toBeNull();
+  });
+
+  test("a token line is not a turn line", () => {
+    expect(readTurnLine(tokenCountLine(NOW, usage(10, 0, 1)))).toBeNull();
+  });
+});
+
+describe("the newest reply's token counts", () => {
+  const A = usage(40_000, 32_000, 900);
+  const B = usage(52_480, 44_032, 1_206);
+  const C = usage(61_000, 50_000, 2_400);
+  const counts = (last: Record<string, unknown>) => ({
+    input: last.input_tokens,
+    cached: last.cached_input_tokens,
+    output: last.output_tokens,
+  });
+
+  test("the newest token line wins, on the first read and on each read onward", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+        messageLine(START + 3 * MINUTE, "A reply.", "assistant"),
+        tokenCountLine(START + 4 * MINUTE, B),
+      ),
+    );
+    const reader = createRolloutReader(files.io);
+    expect((await readNow(reader, files)).tokens).toEqual(counts(B));
+
+    files.forget();
+    files.append(
+      FILE,
+      rollout(tokenCountLine(START + 5 * MINUTE, C), turnLine(START + 6 * MINUTE, "task_complete")),
+    );
+    const state = await readNow(reader, files);
+    expect(state.tokens).toEqual(counts(C));
+    expect(state.lastTurn).toBe("task_complete");
+    expect(files.reads.some((read) => read.position === 0)).toBe(false);
+  });
+
+  test("a token line whose info is null leaves the counts as they were", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+        tokenCountLine(START + 3 * MINUTE, null),
+      ),
+    );
+    const reader = createRolloutReader(files.io);
+    expect((await readNow(reader, files)).tokens).toEqual(counts(A));
+
+    files.append(FILE, rollout(tokenCountLine(START + 4 * MINUTE, null)));
+    expect((await readNow(reader, files)).tokens).toEqual(counts(A));
+  });
+
+  test("after a compaction the counts are a dash until the next reply, and never an older reply's", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+      ),
+    );
+    const reader = createRolloutReader(files.io);
+    expect((await readNow(reader, files)).tokens).toEqual(counts(A));
+
+    files.append(FILE, rollout(tokenCountLine(START + 3 * MINUTE, usage(0, 0, 0))));
+    expect((await readNow(reader, files)).tokens).toBeNull();
+
+    files.append(FILE, rollout(tokenCountLine(START + 4 * MINUTE, B)));
+    expect((await readNow(reader, files)).tokens).toEqual(counts(B));
+
+    // Read afresh, the newest says the same: a dash, not the reply before it.
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+        tokenCountLine(START + 3 * MINUTE, usage(0, 0, 0, { total_tokens: 12_000 })),
+      ),
+      { mtimeMs: NOW + 1 },
+    );
+    expect((await readNow(createRolloutReader(files.io), files)).tokens).toBeNull();
+  });
+
+  test("an idle session's counts are the token line just before its task_complete", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        messageLine(START + 2 * MINUTE, "A reply.", "assistant"),
+        tokenCountLine(START + 3 * MINUTE, B),
+        turnLine(START + 3 * MINUTE, "task_complete"),
+      ),
+    );
+    expect(await readNow(createRolloutReader(files.io), files)).toMatchObject({
+      lastTurn: "task_complete",
+      tokens: counts(B),
+    });
+  });
+
+  test("a turn just begun, with no reply yet, has the counts of the reply before it", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+        turnLine(START + 2 * MINUTE, "task_complete"),
+        messageLine(START + 10 * MINUTE),
+        turnLine(START + 10 * MINUTE, "task_started"),
+      ),
+    );
+    expect(await readNow(createRolloutReader(files.io), files)).toMatchObject({
+      lastTurn: "task_started",
+      lastTurnAt: START + 10 * MINUTE,
+      tokens: counts(A),
+    });
+  });
+
+  /** A file whose only token line is `before` bytes of messages before its last turn line. */
+  function withTokenLineBefore(before: number): string {
+    const filler = messageLine(START + 2 * MINUTE, "y".repeat(16 * 1024));
+    const lines = [metaLine(START), tokenCountLine(START + MINUTE, A)];
+    for (let size = 0; size < before; size += filler.length + 1) lines.push(filler);
+    lines.push(turnLine(START + 3 * MINUTE, "task_complete"), messageLine(START + 4 * MINUTE));
+    return rollout(...lines);
+  }
+
+  /** How much of the file's end a fresh read took, beside its head. */
+  function tailRead(files: MemoryFiles): number {
+    return files.reads
+      .filter((read) => read.position > 0)
+      .reduce((sum, read) => sum + read.length, 0);
+  }
+
+  test("past the turn line, the token line is looked for in one more piece of 256 KiB, and no further", async () => {
+    const PIECE = 256 * 1024;
+
+    // In the next piece: found.
+    const near = memoryFiles();
+    near.write(FILE, withTokenLineBefore(320 * 1024));
+    expect((await readNow(createRolloutReader(near.io), near)).tokens).toEqual(counts(A));
+
+    // Further back: not looked for, so a file with no token lines near its end
+    // costs one piece more than its turn line did, not the whole tail limit.
+    const far = memoryFiles();
+    far.write(FILE, withTokenLineBefore(2 * 1024 * 1024));
+    const state = await readNow(createRolloutReader(far.io), far);
+    expect(state.lastTurn).toBe("task_complete");
+    expect(state.tokens).toBeNull();
+    expect(tailRead(far)).toBe(2 * PIECE);
+  });
+
+  test("a file with no token lines at all still finds its turn line, and no counts", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(metaLine(START), turnLine(START + MINUTE, "task_started"), messageLine(START)),
+    );
+    expect(await readNow(createRolloutReader(files.io), files)).toMatchObject({
+      lastTurn: "task_started",
+      tokens: null,
+    });
+  });
+
+  test("a token line is found while no turn line is, as far as the tail limit", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(metaLine(START), tokenCountLine(START + MINUTE, A), messageLine(START + MINUTE)),
+    );
+    expect(await readNow(createRolloutReader(files.io), files)).toMatchObject({
+      lastTurn: null,
+      tokens: counts(A),
+    });
+  });
+
+  test("nothing of the running total, the context window or the rate limits is kept", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      rollout(
+        metaLine(START),
+        turnLine(START + MINUTE, "task_started"),
+        tokenCountLine(START + 2 * MINUTE, A),
+      ),
+    );
+    const reader = createRolloutReader(files.io);
+    const first = JSON.stringify(await readNow(reader, files));
+    files.append(FILE, rollout(tokenCountLine(START + 3 * MINUTE, B)));
+    const onward = JSON.stringify(await readNow(reader, files));
+    for (const kept of [first, onward]) {
+      for (const dropped of NEVER_KEPT) expect(kept, dropped).not.toContain(dropped);
+    }
   });
 });

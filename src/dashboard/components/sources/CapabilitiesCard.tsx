@@ -160,7 +160,7 @@ function sameAsHere(row: Row, rows: readonly Row[]): Row | null {
  *
  * An agent on another machine that reports what the same agent here does, all
  * but Jump, Stop and Answer, is one line, so a phone is not made to read the
- * same nine rows again: "As Claude Code on this computer, but Jump: No, Stop:
+ * same ten rows again: "As Claude Code on this computer, but Jump: No, Stop:
  * No and Answer: No, which act on this computer only."
  */
 function Blocks({ rows }: { rows: readonly Row[] }) {
@@ -224,8 +224,8 @@ function Blocks({ rows }: { rows: readonly Row[] }) {
 
 /**
  * What each agent can report at all, so a signal that never shows is not read
- * as good news: working and idle, needs you, finished, failed, names, Jump and
- * quiet for, each yes, no or partly. Every word and every reason is what the
+ * as good news: working and idle, needs you, finished, failed, names, Jump,
+ * quiet for and tokens, each yes, no or partly. Every word and every reason is what the
  * agent's adapter declared, carried on its source's health. The page knows
  * none of them itself, and draws no row for a source that declared nothing.
  * Another machine has a row for each agent there, as that machine's Agent

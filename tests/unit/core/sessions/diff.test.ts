@@ -6,7 +6,7 @@ import {
   withoutRepeats,
   type ReportedStatuses,
 } from "@core/sessions/diff";
-import type { SessionStatus } from "@core/sessions/session";
+import type { Session, SessionStatus } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
 const at = 1_700_000_060_000;
@@ -128,6 +128,26 @@ describe("diffSessions", () => {
       stale: true,
     });
     expect(diffSessions([before], [after], at)).toEqual([]);
+  });
+
+  test("new token counts are not an event, and no event carries them", () => {
+    const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+    const before = makeSession({ id: "codex:a", source: "codex", status: "working" });
+    const counted: Session = { ...before, tokens };
+    const later: Session = { ...counted, tokens: { ...tokens, output: 60_001 } };
+    expect(diffSessions([before], [counted], at)).toEqual([]);
+    expect(diffSessions([counted], [later], at)).toEqual([]);
+
+    const events = [
+      ...diffSessions([], [counted], at),
+      ...diffSessions([counted], [{ ...counted, status: "idle" }], at),
+      ...diffSessions([counted], [], at),
+    ];
+    expect(events.map((event) => event.kind)).toEqual(["appeared", "status-changed", "ended"]);
+    const said = JSON.stringify(events);
+    for (const count of ["873215", "641331", "52717", "tokens"]) {
+      expect(said).not.toContain(count);
+    }
   });
 
   test("several changes in one poll each get their own event with a unique id", () => {

@@ -251,6 +251,23 @@ describe("writing", () => {
     expect(written(fs)).not.toContain("waitingText");
     expect(written(fs)).not.toContain("npm run deploy");
   });
+
+  test("the files never hold a session's token counts, whatever an event is handed with", async () => {
+    const { fs, keeper } = setUp();
+    await keeper.restore(LIMITS);
+    keeper.start();
+    const carrying = {
+      ...event(T0 + 2_000),
+      tokens: { input: 873_215, cached: 641_331, output: 52_717 },
+    };
+    keeper.addEvents([carrying as SessionEvent]);
+    await keeper.flush();
+    keeper.stop();
+    expect(written(fs)).toContain('"sessionName":"demo-project"');
+    for (const count of ["tokens", "873215", "641331", "52717"]) {
+      expect(written(fs)).not.toContain(count);
+    }
+  });
 });
 
 describe("reading back", () => {

@@ -106,12 +106,12 @@ Claude Code, Codex and the Antigravity CLI need no setup. Any other agent writes
 
 <!-- Checked against the adapters by tests/integration/collector/adapters/adapter.test.ts -->
 
-| Agent           | Needs you | Jump   | Quiet for | Stop   | Answer |
-| --------------- | --------- | ------ | --------- | ------ | ------ |
-| Claude Code     | Yes       | Partly | No        | Partly | Partly |
-| Codex           | No        | No     | Yes       | No     | No     |
-| Antigravity CLI | Partly    | No     | Yes       | No     | No     |
-| Status files    | Partly    | No     | Partly    | No     | No     |
+| Agent           | Needs you | Jump   | Quiet for | Tokens | Stop   | Answer |
+| --------------- | --------- | ------ | --------- | ------ | ------ | ------ |
+| Claude Code     | Yes       | Partly | No        | No     | Partly | Partly |
+| Codex           | No        | No     | Yes       | Yes    | No     | No     |
+| Antigravity CLI | Partly    | No     | Yes       | No     | No     | No     |
+| Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
 A Codex session waiting for approval shows as working, and so does an Antigravity CLI session waiting for an answer to a question. After 5 minutes its row says how long it has been quiet. An Antigravity CLI session needs you while agy asks you to approve a tool. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and checked against one conversation. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
 

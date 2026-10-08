@@ -91,6 +91,8 @@ const LABEL = "Claude Code";
  *   session, and no other terminal is found.
  * - Quiet for needs a file the agent rewrites as it works, and the registry
  *   file is not one: see `registry.ts`.
+ * - Tokens are not read: its transcripts record them, but Agent Lookout does
+ *   not read them there yet.
  * - Stop is SIGTERM to the process of a session in a terminal or in VS Code,
  *   and `claude stop` for a background job (`stopOffers.ts`). The desktop app
  *   looks after its own process, so its sessions are not stopped from here.
@@ -121,6 +123,10 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "quiet-for": {
     level: "no",
     reason: "The file Agent Lookout reads is not rewritten as a session works.",
+  },
+  tokens: {
+    level: "no",
+    reason: "Agent Lookout does not read the token counts in its transcripts yet.",
   },
   stop: {
     level: "partly",

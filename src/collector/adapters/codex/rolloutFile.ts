@@ -1,4 +1,6 @@
 import { isImportedCodexTurn } from "../../../core/mapping/codexMapping.ts";
+import type { TokenCounts } from "../../../core/sessions/session.ts";
+import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
 import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
 
 /**
@@ -17,10 +19,18 @@ import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
  *   `task_started`, `task_complete` or `turn_aborted` (or another name that
  *   starts with `task_` or `turn_`), with its time and whether its `turn_id`
  *   marks a turn imported from another agent, and the time of the last line.
+ * - From the tail too, the newest token count line, an `event_msg` whose
+ *   `payload.type` is `token_count` and whose `info` is not null, and from it
+ *   only `info.last_token_usage`'s `input_tokens`, `cached_input_tokens` and
+ *   `output_tokens`: the counts of the newest reply. The same line also
+ *   carries the session's running totals (`total_token_usage`), the account's
+ *   rate limits, plan and credits (`rate_limits`) and the model's context
+ *   window, which are dropped (codex-rs/protocol/src/protocol.rs,
+ *   `TokenCountEvent`).
  *
  * Nothing else is kept: no prompt, reply, command or file content. `JSON.parse`
  * runs only on a line that names `session_meta`, or names `event_msg` and looks
- * like a turn line, so message lines are never parsed.
+ * like a turn line or a token count line, so message lines are never parsed.
  *
  * Every read is bounded: 2 MiB for the head and 8 MiB for the tail. After the
  * first read, only what was appended since is read. A last line that is still
@@ -80,6 +90,13 @@ export interface RolloutState {
   lastTurnImported: boolean;
   /** Epoch milliseconds of the last complete line that has a time. */
   lastLineAt: number | null;
+  /**
+   * The counts of the session's newest reply, from the newest token count line
+   * that says anything. Null when none was found, or when the newest gives
+   * counts that could not be right, such as the zeros Codex writes after it
+   * compacts a conversation.
+   */
+  tokens: TokenCounts | null;
 }
 
 /** Codex writes times as `YYYY-MM-DDTHH:MM:SS.mmmZ`. Anything else is not read as a time. */
@@ -100,6 +117,9 @@ const TURN_HINT = /"type":"(?:task|turn)_/;
 
 /** A turn line's `payload.type`. */
 const TURN_TYPE = /^(?:task|turn)_/;
+
+/** A hint that a line may be a token count line, checked before it is parsed. */
+const TOKEN_HINT = '"type":"token_count"';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -177,6 +197,39 @@ export function readTurnLine(line: string): TurnLine | null {
   };
 }
 
+/** What a token count line says of the newest reply. */
+export interface TokenLine {
+  /** Null when the line gives counts that could not be right: the details show a dash. */
+  tokens: TokenCounts | null;
+}
+
+/**
+ * The counts of the newest reply a token count line gives, from its
+ * `info.last_token_usage`, through the one check every reader makes
+ * (`tokenCountsOf`). Null when the line is not a token count line, or is one
+ * whose `info` is null, which Codex writes before the session's first reply
+ * and which says nothing. A line whose `info` is anything else always says
+ * something, even when it is only that its counts cannot be used.
+ *
+ * Nothing else on the line is taken out of it or kept: not `total_token_usage`,
+ * not `rate_limits` and not `model_context_window`.
+ */
+export function readTokenLine(line: string): TokenLine | null {
+  if (!line.includes('"event_msg"') || !line.includes(TOKEN_HINT)) return null;
+  const value = parse(line);
+  if (!value || value.type !== "event_msg" || !isRecord(value.payload)) return null;
+  if (value.payload.type !== "token_count" || value.payload.info === null) return null;
+  const last = isRecord(value.payload.info) ? value.payload.info.last_token_usage : undefined;
+  if (!isRecord(last)) return { tokens: null };
+  return {
+    tokens: tokenCountsOf({
+      input: last.input_tokens,
+      cached: last.cached_input_tokens,
+      output: last.output_tokens,
+    }),
+  };
+}
+
 /** A line's time, or null. */
 function lineTime(line: string): number | null {
   const match = LINE_TIME.exec(line);
@@ -221,6 +274,7 @@ interface Tail {
   lastTurnAt: number | null;
   lastTurnImported: boolean;
   lastLineAt: number | null;
+  tokens: TokenCounts | null;
   /** Where the complete lines end. Null when no line end was found within the limit. */
   end: number | null;
 }
@@ -229,6 +283,13 @@ interface Tail {
  * Reads backwards from the end until it finds a turn line, reaches the start
  * of the file, or has read the tail limit. The bytes after the last newline are
  * a line still being written, and are left alone.
+ *
+ * On the way it notes the newest token count line that says anything. A
+ * working session writes its token lines after its turn line, and an idle one
+ * writes one just before its `task_complete`. So when none has been seen by
+ * the turn line, the rest of that piece is looked through, then at most one
+ * piece more, within the same limit: a file with no token lines costs one
+ * piece more, not the whole limit.
  */
 async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   let position = size;
@@ -237,23 +298,37 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   let fragment: Buffer = Buffer.alloc(0);
   let end: number | null = null;
   let lastLineAt: number | null = null;
+  let turn: TurnLine | null = null;
+  let counted: TokenLine | null = null;
+  /** Whether the one piece read past the turn line, for a token line, has been read. */
+  let lookedBack = false;
 
-  /** Takes one complete line. Returns the turn line when this is one. */
-  const take = (line: string) => {
-    if (line.trim() === "") return null;
-    const turn = readTurnLine(line);
-    lastLineAt ??= lineTime(line) ?? turn?.at ?? null;
-    return turn;
+  /** Takes one complete line, the newest first. True once nothing older is wanted. */
+  const take = (line: string): boolean => {
+    if (line.trim() === "") return false;
+    if (turn === null) {
+      turn = readTurnLine(line);
+      lastLineAt ??= lineTime(line) ?? turn?.at ?? null;
+    }
+    counted ??= readTokenLine(line);
+    return turn !== null && counted !== null;
   };
-  const found = (turn: TurnLine): Tail => ({
-    lastTurn: turn.turn,
-    lastTurnAt: turn.at,
-    lastTurnImported: turn.imported,
+  /** What was found. `whole` is true once every line of the file has been taken. */
+  const found = (whole: boolean): Tail => ({
+    lastTurn: turn !== null ? turn.turn : whole ? null : undefined,
+    lastTurnAt: turn?.at ?? null,
+    lastTurnImported: turn?.imported ?? false,
     lastLineAt,
+    tokens: counted?.tokens ?? null,
     end,
   });
 
   while (position > 0 && budget > 0) {
+    if (turn !== null) {
+      // Past the turn line, one more piece is read for a token line, and no more.
+      if (lookedBack) break;
+      lookedBack = true;
+    }
     const length = Math.min(TAIL_CHUNK_BYTES, position, budget);
     const start = position - length;
     const chunk = await readExactly(file, start, length);
@@ -274,26 +349,23 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
 
     let newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
     while (newline !== -1) {
-      const turn = take(buffer.toString("utf8", newline + 1, cut));
-      if (turn) return found(turn);
+      if (take(buffer.toString("utf8", newline + 1, cut))) return found(false);
       cut = newline;
       newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
     }
 
     if (start === 0) {
-      const turn = take(buffer.toString("utf8", 0, cut));
-      if (turn) return found(turn);
-      // The whole file has been read and holds no turn line.
-      return { lastTurn: null, lastTurnAt: null, lastTurnImported: false, lastLineAt, end };
+      take(buffer.toString("utf8", 0, cut));
+      // The whole file has been read.
+      return found(true);
     }
     fragment = buffer.subarray(0, cut);
   }
 
-  // The start was reached with no complete line at all, or the limit with no turn line.
-  if (position === 0) {
-    return { lastTurn: null, lastTurnAt: null, lastTurnImported: false, lastLineAt, end: end ?? 0 };
-  }
-  return { lastTurn: undefined, lastTurnAt: null, lastTurnImported: false, lastLineAt, end };
+  // The start was reached with no complete line at all.
+  if (position === 0) return { ...found(true), end: end ?? 0 };
+  // The limit was reached with no turn line, or the piece past the turn line was read.
+  return found(false);
 }
 
 /** What is cached for one file between polls. */
@@ -312,6 +384,7 @@ function stateOf(cached: Cached): RolloutState {
     lastTurnAt: cached.lastTurnAt,
     lastTurnImported: cached.lastTurnImported,
     lastLineAt: cached.lastLineAt,
+    tokens: cached.tokens,
   };
 }
 
@@ -341,6 +414,7 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
         lastTurnAt: tail.lastTurnAt,
         lastTurnImported: tail.lastTurnImported,
         lastLineAt: tail.lastLineAt,
+        tokens: tail.tokens,
         ino: info.ino,
         size: info.size,
         mtimeMs: info.mtimeMs,
@@ -392,6 +466,9 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
             next.lastTurnAt = turn.at;
             next.lastTurnImported = turn.imported;
           }
+          // A newer token count line replaces the counts, even with a dash.
+          const counted = turn ? null : readTokenLine(line);
+          if (counted) next.tokens = counted.tokens;
         }
         start = newline + 1;
         newline = added.indexOf(NEWLINE, start);

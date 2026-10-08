@@ -154,3 +154,25 @@ test("a notification of a session on another machine names the machine after the
   });
   expect(noticeTitle(makeSession({ name: "billing-webhooks" }))).toBe("billing-webhooks");
 });
+
+test("no notification holds a session's token counts, which only its details show", () => {
+  const tokens = { input: 873_215, cached: 641_331, output: 52_717 };
+  const session = makeSession({
+    name: "checkout-flow",
+    project: "storefront",
+    status: "needs-you",
+    waitingReason: "permission",
+    tokens,
+  });
+  const said = JSON.stringify([
+    waitNotice(session),
+    waitNotice({ ...session, waitingText: "Run: npm test" }),
+    changeNotice({ event: "needs-you", session }),
+    changeNotice({ event: "finished", session }),
+    changeNotice({ event: "failed", session }),
+    changeNotice({ event: "ended", session }),
+  ]);
+  for (const count of ["873215", "873,215", "641331", "52717", "tokens"]) {
+    expect(said).not.toContain(count);
+  }
+});

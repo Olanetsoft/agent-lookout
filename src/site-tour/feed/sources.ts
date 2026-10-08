@@ -35,6 +35,10 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     level: "no",
     reason: "The file Agent Lookout reads is not rewritten as a session works.",
   },
+  tokens: {
+    level: "no",
+    reason: "Agent Lookout does not read the token counts in its transcripts yet.",
+  },
   stop: {
     level: "partly",
     reason: "In a terminal, in VS Code and for background jobs. Not in the desktop app.",
@@ -67,6 +71,7 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
     reason: "Codex's files name no process to find, and Codex documents no link to a session.",
   },
   "quiet-for": { level: "yes" },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "Codex's files name no process that Agent Lookout could confirm and stop.",
@@ -89,6 +94,7 @@ export const STATUS_FILE_CAPABILITIES: SourceCapabilities = {
   },
   jump: { level: "no", reason: "Nothing in a status file is used to reach a session." },
   "quiet-for": { level: "partly", reason: "If the agent writes its file again as it works." },
+  tokens: { level: "no", reason: "A status file has no field for token counts." },
   stop: {
     level: "no",
     reason: "Any program can write a status file, so nothing in one is used to stop a session.",
@@ -128,6 +134,10 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
       "The transcripts name no terminal, and agy documents no link that opens a conversation.",
   },
   "quiet-for": { level: "yes" },
+  tokens: {
+    level: "no",
+    reason: "Agent Lookout does not read token counts from agy's transcripts yet.",
+  },
   stop: {
     level: "no",
     reason:
