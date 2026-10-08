@@ -108,7 +108,7 @@ Claude Code, Codex and the Antigravity CLI need no setup. Any other agent writes
 
 | Agent           | Needs you | Jump   | Quiet for | Tokens | Stop   | Answer |
 | --------------- | --------- | ------ | --------- | ------ | ------ | ------ |
-| Claude Code     | Yes       | Partly | No        | No     | Partly | Partly |
+| Claude Code     | Yes       | Partly | No        | Partly | Partly | Partly |
 | Codex           | No        | No     | Yes       | Yes    | No     | No     |
 | Antigravity CLI | Partly    | No     | Yes       | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |

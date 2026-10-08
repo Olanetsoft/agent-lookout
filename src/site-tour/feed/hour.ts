@@ -123,9 +123,17 @@ export interface HourSession {
    */
   said?: string;
   /**
+   * The token counts of the reply `said` is the text of, as Claude Code
+   * records them and the collector reads them with what it last said: the
+   * whole prompt, the part of it read from a cache, which is most of it, and
+   * what the reply wrote. They come only in the answer for what it last said.
+   */
+  saidTokens?: Required<TokenCounts>;
+  /**
    * For a Codex session, the token counts of its newest reply, and of each
    * newer reply from when it came. The first can be older than the hour. Left
-   * out for the others, whose agents record none that Agent Lookout reads.
+   * out for the others: a Claude Code session's come with what it last said,
+   * and the other agents record none that Agent Lookout reads.
    */
   tokens?: readonly TokenStep[];
 }
@@ -180,6 +188,7 @@ export const SESSIONS: readonly HourSession[] = [
       "The checkout form is in three steps now: address, delivery and payment. Going back a step keeps what was typed, and the order summary stays beside every step.",
       "Next I'll run the whole suite, to make sure the old one-page form still works.",
     ].join("\n\n"),
+    saidTokens: { input: 87_412, cached: 85_903, output: 618 },
     pullRequest: {
       number: 214,
       title: "Split the checkout form into steps",
@@ -207,6 +216,7 @@ export const SESSIONS: readonly HourSession[] = [
       "A webhook delivery that fails is retried after 1, 5 and 30 minutes, and then marked failed.",
       "Each delivery keeps its retry count and its last error now, so the admin page can show both. I'm adding them to that page next.",
     ].join("\n\n"),
+    saidTokens: { input: 142_806, cached: 139_512, output: 1_038 },
   },
   {
     id: "claude-code:c2e85b19-7d40-4a6f-8e23-91f0a6d4c357",
@@ -237,6 +247,7 @@ export const SESSIONS: readonly HourSession[] = [
       "The indexer now updates only the products that changed since its last run, rather than building the whole index again. On the full catalogue a run goes from about 9 minutes to under 40 seconds.",
       "I'm looking at products that were deleted between runs next: they still turn up in search until the nightly rebuild.",
     ].join("\n\n"),
+    saidTokens: { input: 118_240, cached: 116_977, output: 2_145 },
   },
   {
     id: "codex:019a6c42-3b7e-7d10-9f45-2e8c1a0b6d73",
@@ -296,6 +307,7 @@ export const SESSIONS: readonly HourSession[] = [
       "The getting started page is four short steps now, and every command on it can be copied with one click.",
       "Shall I move the old install notes to a page of their own, or leave them out?",
     ].join("\n\n"),
+    saidTokens: { input: 54_371, cached: 53_690, output: 688 },
   },
   {
     id: "claude-code:e81c4f6a-0b93-4e27-bd58-3a6f2c9e0d15",
@@ -330,6 +342,7 @@ export const SESSIONS: readonly HourSession[] = [
       "- confirmation, shipped and delivered\n- refund, cancelled and the receipt",
       "Each one reads well in light and dark mail apps, and its plain-text version matches. The old templates stay in use until the branch is merged.",
     ].join("\n\n"),
+    saidTokens: { input: 76_930, cached: 75_412, output: 1_563 },
   },
   {
     id: "status-files:release-notes.json",

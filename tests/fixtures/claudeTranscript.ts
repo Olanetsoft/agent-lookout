@@ -1,7 +1,8 @@
 // Test fixtures only. Lines of a Claude Code transcript, in the shapes seen in
 // `~/.claude/projects/<folder>/<sessionId>.jsonl` and described in
-// `src/collector/adapters/claude-code/transcript/lastAsk.ts`. Every id, path,
-// command, question and reply is invented. Product code never imports this file.
+// `src/collector/adapters/claude-code/transcript/lastAsk.ts` and `lastUsage.ts`.
+// Every id, path, command, question, reply and token count is invented.
+// Product code never imports this file.
 
 /** One line of a transcript, as an object. */
 export type TranscriptLine = Record<string, unknown>;
@@ -19,6 +20,56 @@ interface LineOptions {
   messageId?: string | null;
   /** Marks a subagent's line. */
   sidechain?: boolean;
+  /**
+   * The message's `usage`, which every line of an assistant message carries,
+   * such as `usage(...)` gives. Left out, the line has none.
+   */
+  usage?: unknown;
+  /** The model the message names. Left out, it names none. */
+  model?: string;
+}
+
+/** The parts of a reply's token counts, as Claude Code writes them in `message.usage`. */
+export interface UsageCounts {
+  /** `input_tokens`: the part of the prompt neither read from a cache nor written to one. */
+  uncached: number;
+  /** `cache_creation_input_tokens`: the part written to a cache. */
+  written: number;
+  /** `cache_read_input_tokens`: the part read from a cache. */
+  read: number;
+  /** `output_tokens`, thinking included. */
+  output: number;
+}
+
+/**
+ * A `message.usage` in the shape Claude Code 2.1.2xx writes: the four counts,
+ * with the nested objects and the service tier that sit beside them, which
+ * Agent Lookout never reads. Every number is invented.
+ */
+export function usage({ uncached, written, read, output }: UsageCounts): Record<string, unknown> {
+  return {
+    input_tokens: uncached,
+    cache_creation_input_tokens: written,
+    cache_read_input_tokens: read,
+    cache_creation: { ephemeral_1h_input_tokens: written, ephemeral_5m_input_tokens: 0 },
+    output_tokens: output,
+    output_tokens_details: { thinking_tokens: Math.floor(output / 3) },
+    server_tool_use: { web_fetch_requests: 0, web_search_requests: 0 },
+    service_tier: "standard",
+  };
+}
+
+/** The fields of an assistant message that every line of it repeats: its id, its model and its usage. */
+function messageFields({
+  messageId,
+  model,
+  usage: counted,
+}: Pick<LineOptions, "messageId" | "model" | "usage">) {
+  return {
+    ...(messageId === null || messageId === undefined ? {} : { id: messageId }),
+    ...(model === undefined ? {} : { model }),
+    ...(counted === undefined ? {} : { usage: counted }),
+  };
 }
 
 /** An assistant line holding one tool use. */
@@ -26,14 +77,14 @@ export function toolUse(
   id: string,
   name: string,
   input: Record<string, unknown>,
-  { messageId = `msg_${id}`, sidechain = false }: LineOptions = {},
+  { messageId = `msg_${id}`, sidechain = false, usage: counted, model }: LineOptions = {},
 ): TranscriptLine {
   return {
     type: "assistant",
     isSidechain: sidechain,
     uuid: `line-${id}`,
     message: {
-      ...(messageId === null ? {} : { id: messageId }),
+      ...messageFields({ messageId, model, usage: counted }),
       role: "assistant",
       type: "message",
       content: [{ type: "tool_use", id, name, input }],
@@ -56,13 +107,13 @@ export function toolResult(id: string, { sidechain = false }: LineOptions = {}):
 /** An assistant line of words. */
 export function said(
   text: string,
-  { messageId = "msg_words", sidechain = false }: LineOptions = {},
+  { messageId = "msg_words", sidechain = false, usage: counted, model }: LineOptions = {},
 ): TranscriptLine {
   return {
     type: "assistant",
     isSidechain: sidechain,
     message: {
-      ...(messageId === null ? {} : { id: messageId }),
+      ...messageFields({ messageId, model, usage: counted }),
       role: "assistant",
       content: [{ type: "text", text }],
     },
@@ -72,9 +123,9 @@ export function said(
 /** The lines of one assistant message said in several blocks: a line of words for each, sharing its id. */
 export function saidInParts(
   texts: readonly string[],
-  { messageId = "msg_parts", sidechain = false }: LineOptions = {},
+  { messageId = "msg_parts", ...rest }: LineOptions = {},
 ): TranscriptLine[] {
-  return texts.map((text) => said(text, { messageId, sidechain }));
+  return texts.map((text) => said(text, { messageId, ...rest }));
 }
 
 interface ThoughtOptions extends LineOptions {
@@ -85,13 +136,19 @@ interface ThoughtOptions extends LineOptions {
 /** An assistant line holding what the model thought, which is never what it said. */
 export function thought(
   text: string,
-  { messageId = "msg_words", sidechain = false, redacted = false }: ThoughtOptions = {},
+  {
+    messageId = "msg_words",
+    sidechain = false,
+    redacted = false,
+    usage: counted,
+    model,
+  }: ThoughtOptions = {},
 ): TranscriptLine {
   return {
     type: "assistant",
     isSidechain: sidechain,
     message: {
-      ...(messageId === null ? {} : { id: messageId }),
+      ...messageFields({ messageId, model, usage: counted }),
       role: "assistant",
       content: [
         redacted
@@ -105,6 +162,19 @@ export function thought(
 /** What the person typed. */
 export function prompt(text: string): TranscriptLine {
   return { type: "user", isSidechain: false, message: { role: "user", content: text } };
+}
+
+/** The summary Claude Code writes as a user line when it compacts the conversation. */
+export function compactSummary(
+  text: string,
+  { sidechain = false }: LineOptions = {},
+): TranscriptLine {
+  return {
+    type: "user",
+    isSidechain: sidechain,
+    isCompactSummary: true,
+    message: { role: "user", content: [{ type: "text", text }] },
+  };
 }
 
 /** Lines Claude Code writes that hold no message, which are read past. */

@@ -248,6 +248,8 @@ test("a Claude Code session waiting in VS Code: its name, the lamp's Jump, every
   expect(jump.element().getAttribute("data-variant")).toBe("needs-you");
   expect(root.querySelector("header")?.contains(jump.element())).toBe(true);
 
+  // Its token counts come with what it last said, which has nothing yet here.
+  await expect.poll(stateLine).toBe("It has not said anything yet.");
   expect(facts(root)).toEqual({
     Status:
       "Needs you for 4 minutes4m 00sWaiting for permission, since 14:28:30 | Bash(npm run deploy)",
@@ -258,7 +260,7 @@ test("a Claude Code session waiting in VS Code: its name, the lamp's Jump, every
     Branch: "checkout-flow",
     Started: "13:52:30",
     Process: "4242",
-    Tokens: "–Not recordedAgent Lookout does not read the token counts in its transcripts yet.",
+    Tokens: "–Not recordedNone recorded yet",
     Waits: "2 times, 6m 00s in allsince 13:47",
   });
   // The folder is the whole path in the mono, and can be selected to copy.
@@ -1593,6 +1595,214 @@ test("once the session has left the list, the part is gone with its text, and no
   expect(document.querySelector('[data-part="last-message"]')).toBeNull();
   expect(document.body.textContent).not.toContain("Gone with it.");
   expect(asked).toHaveLength(1);
+});
+
+/** The Tokens fact of the open details, as the page reads it. */
+const tokensFact = () => facts(dialog("checkout-flow").element()).Tokens;
+
+/** The counts of a Claude Code session's newest reply, as its last-message answer gives them. */
+const COUNTS = { input: 63_478, cached: 61_090, output: 1_244 };
+
+test("a Claude Code session's token counts come with what it last said, from the same answer, and from no other", async () => {
+  const asked = saying(() => json({ message: { text: "Done.", cut: false }, tokens: COUNTS }));
+  await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("Done.");
+  expect(tokensFact()).toBe(
+    "63,478 in, 1,244 out63,478 tokens in, 1,244 tokens outNewest reply · 61,090 of the input from a cache",
+  );
+  // One ask gave both, and the session in the list has no counts of its own.
+  expect(asked).toEqual([askFor(CLAUDE_ID)]);
+  expect(sessions().find((session) => session.id === CLAUDE_ID)).not.toHaveProperty("tokens");
+});
+
+test.each([
+  ["no answer yet", () => new Promise<Response>(() => {})],
+  ["the asking failed", () => json({ error: "Something went wrong." }, 500)],
+])(
+  "until a Claude Code session's first answer, its counts are not read yet: %s",
+  async (_what, respond) => {
+    saying(respond);
+    await renderPanel(CLAUDE_ID);
+    await expect.element(lastMessage()).toBeVisible();
+    await expect.poll(tokensFact).toBe("–Not recordedNot read yet");
+  },
+);
+
+test.each([
+  ["not-found", "Its transcript was not found"],
+  ["unreadable", "Its transcript could not be read"],
+  ["too-far-back", "Further back in its transcript than Agent Lookout reads"],
+])(
+  "an answer that could not read a Claude Code session's counts says why, never that none are recorded: %s",
+  async (reason, words) => {
+    saying(() => json({ message: null, reason }));
+    await renderPanel(CLAUDE_ID);
+    await expect.poll(stateLine).toMatch(/\.$/);
+    expect(tokensFact()).toBe(`–Not recorded${words}`);
+  },
+);
+
+test("an answer that read the whole transcript and found no reply has none recorded yet", async () => {
+  saying(() => json({ message: null, reason: "nothing-yet" }));
+  await renderPanel(CLAUDE_ID);
+  await expect.poll(stateLine).toBe("It has not said anything yet.");
+  expect(tokensFact()).toBe("–Not recordedNone recorded yet");
+});
+
+test("once a Claude Code session has left the list, why its answer gave no counts stays", async () => {
+  saying(() => json({ message: null, reason: "not-found" }));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(tokensFact).toBe("–Not recordedIts transcript was not found");
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+    lastOkAt: NOW + MINUTE,
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(tokensFact()).toBe("–Not recordedIts transcript was not found");
+});
+
+test("a Claude Code session that leaves the list before its first answer says its counts are read only while it is there", async () => {
+  saying(() => new Promise<Response>(() => {}));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(tokensFact).toBe("–Not recordedNot read yet");
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+    lastOkAt: NOW + MINUTE,
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(tokensFact()).toBe("–Not recordedRead only while it is in the list");
+});
+
+test("a newer answer with no counts has a dash, never the older answer's counts", async () => {
+  let answer: unknown = { message: { text: "First.", cut: false }, tokens: COUNTS };
+  saying(() => json(answer));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(tokensFact).toMatch(/^63,478 in, 1,244 out/);
+
+  answer = { message: { text: "Second.", cut: false } };
+  await screen.rerender(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={state({ lastOkAt: NOW + 2_000 })}
+      now={NOW + 2_000}
+    />,
+  );
+  await expect.poll(() => messageText()?.textContent).toBe("Second.");
+  expect(tokensFact()).toBe("–Not recordedNone recorded yet");
+});
+
+test("once a Claude Code session has left the list, the counts that came with its last message stay, and its text does not", async () => {
+  const asked = saying(() =>
+    json({ message: { text: "Gone with it.", cut: false }, tokens: COUNTS }),
+  );
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe("Gone with it.");
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+    lastOkAt: NOW + MINUTE,
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(document.body.textContent).not.toContain("Gone with it.");
+  expect(tokensFact()).toMatch(/^63,478 in, 1,244 out/);
+  expect(asked).toHaveLength(1);
+});
+
+test("while the details fade out once closed, the counts that came with the last message stay put", async () => {
+  // The exit takes 150ms. It is slowed here so the test can look at it part-way.
+  const slow = document.createElement("style");
+  slow.textContent = "* { animation-duration: 800ms !important; }";
+  document.head.append(slow);
+  onTestFinished(() => slow.remove());
+
+  saying(() => json({ message: { text: "Done.", cut: false }, tokens: COUNTS }));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(tokensFact).toMatch(/^63,478 in, 1,244 out/);
+  const panel = dialog("checkout-flow").element();
+
+  await screen.rerender(
+    <SessionPanel sessionId={null} onClose={vi.fn()} state={state()} now={NOW} />,
+  );
+  expect(panel.isConnected).toBe(true);
+  expect(panel.getAttribute("data-state")).toBe("closed");
+  expect(facts(panel).Tokens).toMatch(/^63,478 in, 1,244 out/);
+  await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
+});
+
+test("the counts are let go once the details close, and opening them again after the session has left the list shows none", async () => {
+  const asked = saying(() => json({ message: { text: "Done.", cut: false }, tokens: COUNTS }));
+  const screen = await renderPanel(CLAUDE_ID);
+  await expect.poll(tokensFact).toMatch(/^63,478 in, 1,244 out/);
+
+  await screen.rerender(
+    <SessionPanel sessionId={null} onClose={vi.fn()} state={state()} now={NOW} />,
+  );
+  await expect.element(dialog("checkout-flow")).not.toBeInTheDocument();
+
+  const left = state({
+    snapshot: {
+      generatedAt: NOW + MINUTE,
+      sources: SOURCES,
+      sessions: sessions().filter((session) => session.id !== CLAUDE_ID),
+    },
+    lastOkAt: NOW + MINUTE,
+  });
+  await screen.rerender(
+    <SessionPanel sessionId={null} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await screen.rerender(
+    <SessionPanel sessionId={CLAUDE_ID} onClose={vi.fn()} state={left} now={NOW + MINUTE} />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(tokensFact()).toBe("–Not recordedRead only while it is in the list");
+  expect(document.body.textContent).not.toContain("63,478");
+  expect(asked).toHaveLength(1);
+});
+
+test("only a Claude Code session's counts are not read yet while its first answer is to come", async () => {
+  saying(() => new Promise<Response>(() => {}));
+  const uncounted = state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map(({ tokens: _tokens, ...session }) => session),
+    },
+  });
+  await renderPanel(CODEX_ID, uncounted);
+  await expect.element(lastMessage()).toBeVisible();
+  expect(facts(dialog("api-rate-limits").element()).Tokens).toBe("–Not recordedNone recorded yet");
 });
 
 test("a short message is no Tab stop, a long one scrolls inside its block, which is, and nothing in the part is announced", async () => {

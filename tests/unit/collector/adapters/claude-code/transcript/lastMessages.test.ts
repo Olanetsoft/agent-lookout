@@ -20,6 +20,7 @@ import {
   toolUse,
   toolUseId,
   transcript,
+  usage,
 } from "@tests/fixtures/claudeTranscript";
 import { makeSession } from "@tests/fixtures/session";
 import { handClock, memoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -193,6 +194,96 @@ describe("what a session last said", () => {
     files.failAll("EIO");
     clock.advance(LOOK_AGAIN_MS);
     await expect(reader.read(id)).resolves.toMatchObject({ message: null });
+  });
+});
+
+describe("the token counts of its newest reply", () => {
+  const FIRST = usage({ uncached: 7, written: 1_531, read: 48_210, output: 702 });
+  const FIRST_COUNTS = { input: 49_748, cached: 48_210, output: 702 };
+  const NEXT = usage({ uncached: 5, written: 843, read: 50_118, output: 1_391 });
+  const NEXT_COUNTS = { input: 50_966, cached: 50_118, output: 1_391 };
+
+  test("come in the same answer, from the same one read of the end of its transcript", async () => {
+    const { files, reader } = setUp();
+    files.write(
+      FILE,
+      transcript([prompt("Tidy the docs"), said("I tidied them.", { usage: FIRST })]),
+    );
+    reader.keep([working()]);
+    expect(files.calls).toEqual([]);
+
+    await expect(reader.read(id)).resolves.toEqual({
+      message: { text: "I tidied them.", cut: false },
+      tokens: FIRST_COUNTS,
+    });
+    expect(files.opened()).toEqual([FILE]);
+    expect(files.reads).toHaveLength(1);
+  });
+
+  test("come too when there is no text to show, and are left out when there are none", async () => {
+    const { clock, files, reader } = setUp();
+    const use = toolUseId();
+    files.write(
+      FILE,
+      transcript([
+        prompt("Run the tests"),
+        toolUse(use, "Bash", { command: "npm test" }, { usage: FIRST }),
+      ]),
+    );
+    reader.keep([working()]);
+    await expect(reader.read(id)).resolves.toEqual({
+      message: null,
+      reason: "nothing-yet",
+      tokens: FIRST_COUNTS,
+    });
+
+    clock.advance(ANSWER_AGAIN_MS);
+    files.write(FILE, transcript([prompt("Tidy the docs"), said("I tidied them.")]));
+    const answer = await reader.read(id);
+    expect(answer).toEqual({ message: { text: "I tidied them.", cut: false } });
+    expect(answer).not.toHaveProperty("tokens");
+  });
+
+  test("come too when what the reply said is made only of what cannot be shown", async () => {
+    const { files, reader } = setUp();
+    files.write(FILE, transcript([said("\u202e\u2066", { usage: FIRST })]));
+    reader.keep([working()]);
+    await expect(reader.read(id)).resolves.toEqual({
+      message: null,
+      reason: "nothing-yet",
+      tokens: FIRST_COUNTS,
+    });
+  });
+
+  test("are given again with no read while the transcript is unchanged, and are the newer reply's once it changes", async () => {
+    const { clock, files, reader } = setUp();
+    files.write(FILE, transcript([said("Done.", { usage: FIRST })]));
+    reader.keep([working()]);
+    const first = await reader.read(id);
+    files.forget();
+
+    clock.advance(ANSWER_AGAIN_MS);
+    await expect(reader.read(id)).resolves.toEqual(first);
+    expect(first).toMatchObject({ tokens: FIRST_COUNTS });
+    expect(files.reads).toEqual([]);
+
+    clock.advance(ANSWER_AGAIN_MS);
+    files.append(FILE, transcript([prompt("And the tests?"), said("They pass.", { usage: NEXT })]));
+    await expect(reader.read(id)).resolves.toEqual({
+      message: { text: "They pass.", cut: false },
+      tokens: NEXT_COUNTS,
+    });
+    expect(files.reads).toHaveLength(1);
+
+    // A newer reply whose counts could not be right has none, never the older reply's.
+    clock.advance(ANSWER_AGAIN_MS);
+    files.append(
+      FILE,
+      transcript([said("Once more.", { messageId: "msg_more", usage: { input_tokens: "3" } })]),
+    );
+    const malformed = await reader.read(id);
+    expect(malformed).toEqual({ message: { text: "Once more.", cut: false } });
+    expect(malformed).not.toHaveProperty("tokens");
   });
 });
 

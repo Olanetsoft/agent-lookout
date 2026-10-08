@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import { TRANSCRIPT_TAIL_BYTES } from "@collector/adapters/claude-code/transcript/transcriptFile";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
-import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
+import { prompt, said, transcript, usage } from "@tests/fixtures/claudeTranscript";
 import {
   adapterFor,
   BIN,
@@ -144,7 +144,7 @@ describe("what a Claude Code session last said", () => {
     expect(adapter.lastMessagesKept).toBe(0);
   });
 
-  test("is read from the last 256 KB of a transcript of many megabytes, and no more", async () => {
+  test("is read from the last 256 KB of a transcript of many megabytes, and no more, with the counts of its newest reply", async () => {
     expect(TRANSCRIPT_TAIL_BYTES).toBe(256 * 1024);
     const { home, run } = await quietHome();
     const early = transcript(
@@ -152,20 +152,25 @@ describe("what a Claude Code session last said", () => {
         prompt(`An early prompt, number ${index}, ${"padded ".repeat(100)}`),
       ),
     );
-    const content = early + transcript([said("The build is green.")]);
+    const counts = usage({ uncached: 5, written: 3_068, read: 88_406, output: 645 });
+    const content = early + transcript([said("The build is green.", { usage: counts })]);
     expect(content.length).toBeGreaterThan(2 * 1024 * 1024);
     const file = await writeTranscript(home, ids.busy, content);
-    const { io, reads } = watchedIo();
+    const { io, touched, reads } = watchedIo();
     const adapter = adapterFor(home, { run, transcriptIo: io });
     await adapter.poll();
+    expect(touched).toEqual([]);
 
     await expect(adapter.lastMessage(BUSY)).resolves.toEqual({
       message: { text: "The build is green.", cut: false },
+      tokens: { input: 91_479, cached: 88_406, output: 645 },
     });
+    // The counts cost no open and no byte the text did not.
     const size = Buffer.byteLength(content);
     expect(reads).toEqual([
       { path: file, position: size - TRANSCRIPT_TAIL_BYTES, length: TRANSCRIPT_TAIL_BYTES },
     ]);
+    expect(touched.filter((call) => call.method === "openRegular")).toHaveLength(1);
   });
 
   test("is not read through a link, found there or put in the transcript's place later", async () => {
@@ -242,10 +247,18 @@ describe("what a Claude Code session last said", () => {
     ["AGENT_LOOKOUT_WAITING_TEXT", "Off"],
     ["AGENT_LOOKOUT_LAST_MESSAGE", "last message of a waiting session"],
   ])(
-    "is never read with %s=off, which the answer names, and the source says so",
+    "is never read with %s=off, which the answer names with no counts, and the source says so",
     async (setting, transcriptRead) => {
       const { home, run } = await quietHome();
-      await writeTranscript(home, ids.busy, transcript([said("PRIVATE-REPLY")]));
+      await writeTranscript(
+        home,
+        ids.busy,
+        transcript([
+          said("PRIVATE-REPLY", {
+            usage: usage({ uncached: 4, written: 517, read: 20_480, output: 96 }),
+          }),
+        ]),
+      );
       const { io, touched } = watchedIo();
       const adapter = adapterFor(home, {
         env: { AGENT_LOOKOUT_CLAUDE_HOME: home, AGENT_LOOKOUT_CLAUDE_BIN: BIN, [setting]: " off " },

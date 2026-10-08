@@ -425,7 +425,7 @@ describe("what a session last said", () => {
         expect(answer).toEqual(
           session.said === undefined
             ? { message: null, reason: "nothing-yet" }
-            : { message: { text: session.said, cut: false } },
+            : { message: { text: session.said, cut: false }, tokens: session.saidTokens },
         );
         expect(readLastMessage(JSON.parse(JSON.stringify(answer)))).toEqual(answer);
       }
@@ -536,18 +536,29 @@ describe("token counts", () => {
     expect([...statuses].sort()).toEqual(["idle", "working"]);
   });
 
-  test("a Codex session's details show its counts, and every other session's say why it has none", () => {
-    const snapshot = feed.snapshot({ moment: "answered", answeredAt: LEFT }, NOW);
+  test("a session's details show its counts, from the list for Codex and from what it last said for Claude Code, and every other session's say why it has none", () => {
+    const shown: Shown = { moment: "answered", answeredAt: LEFT };
+    const snapshot = feed.snapshot(shown, NOW);
+    const counted = new Set<string>();
     for (const session of snapshot.sessions) {
-      if (session.source === "codex") {
-        expect(tokenCountsLine(session.tokens!)).toMatch(/^[\d,]+ in, [\d,]+ out$/);
+      const answer = feed.lastMessage(session.id, shown, NOW);
+      const read = answer !== null && "tokens" in answer ? answer.tokens : undefined;
+      const tokens = session.tokens ?? read;
+      if (tokens) {
+        counted.add(session.source);
+        expect(tokenCountsLine(tokens)).toMatch(/^[\d,]+ in, [\d,]+ out$/);
+      } else if (session.source === "claude-code") {
+        // A session idle for days, which has said nothing yet, has no reply to count.
+        expect(answer).toEqual({ message: null, reason: "nothing-yet" });
+        expect(noTokensReason(session, snapshot.sources)).toBe(NONE_YET);
       } else {
         expect(noTokensReason(session, snapshot.sources)).not.toBe(NONE_YET);
       }
     }
+    expect([...counted].sort()).toEqual(["claude-code", "codex"]);
   });
 
-  test("the counts are in the snapshot alone, never in the log, the history or the Waits card", () => {
+  test("Codex counts are in the snapshot alone, and Claude Code counts in the answer for what it last said alone", () => {
     const shown: Shown = { moment: "waiting" };
     const counts = feed
       .snapshot(shown, NOW)
@@ -557,9 +568,22 @@ describe("token counts", () => {
       feed.events(shown),
       feed.history(shown, NOW, HOUR),
       feed.waits(shown, NOW),
-      SESSIONS.map((session) => feed.lastMessage(session.id, shown, NOW)),
     ]);
     expect(answers).not.toContain('"tokens"');
     for (const one of counts) expect(answers).not.toContain(one.slice(1, -1));
+
+    const claude = SESSIONS.filter((session) => session.saidTokens !== undefined);
+    expect(claude.length).toBeGreaterThan(0);
+    const said = JSON.stringify(
+      SESSIONS.map((session) => feed.lastMessage(session.id, shown, NOW)),
+    );
+    const listed = JSON.stringify(feed.snapshot(shown, NOW));
+    for (const session of claude) {
+      expect(session.source).toBe("claude-code");
+      const one = JSON.stringify(session.saidTokens).slice(1, -1);
+      expect(said).toContain(one);
+      expect(listed + answers).not.toContain(one);
+    }
+    for (const one of counts) expect(said).not.toContain(one.slice(1, -1));
   });
 });

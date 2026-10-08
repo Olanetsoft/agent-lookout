@@ -1353,6 +1353,52 @@ describe("what a session last said", () => {
     }
   });
 
+  test("the token counts of the newest reply are read with either kind of answer, through the one check", () => {
+    const tokens = { input: 63_478, cached: 61_090, output: 1_244 };
+    expect(readLastMessage({ message: { text: "Done.", cut: false }, tokens })).toEqual({
+      message: { text: "Done.", cut: false },
+      tokens,
+    });
+    expect(readLastMessage({ message: null, reason: "too-far-back", tokens })).toEqual({
+      message: null,
+      reason: "too-far-back",
+      tokens,
+    });
+    expect(
+      readLastMessage({
+        message: null,
+        reason: "nothing-yet",
+        tokens: { input: 9_416, output: 96 },
+      }),
+    ).toEqual({ message: null, reason: "nothing-yet", tokens: { input: 9_416, output: 96 } });
+    // Only the three counts are copied.
+    const read = readLastMessage({
+      message: null,
+      reason: "nothing-yet",
+      tokens: { ...tokens, costUSD: 0.42, service_tier: "standard" },
+    });
+    expect(Object.keys(read && "tokens" in read ? (read.tokens ?? {}) : {})).toEqual([
+      "input",
+      "cached",
+      "output",
+    ]);
+  });
+
+  test.each([
+    { input: 0, output: 0 },
+    { input: 10, cached: 11, output: 1 },
+    { input: -1, output: 1 },
+    { input: 10.5, output: 1 },
+    { input: "10", output: 1 },
+    { input: Number.MAX_SAFE_INTEGER + 1, output: 1 },
+    "63,478 in",
+    null,
+  ])("counts of %j that could not be right are left out, and the answer stands", (tokens) => {
+    const answer = readLastMessage({ message: { text: "Done.", cut: false }, tokens });
+    expect(answer).toEqual({ message: { text: "Done.", cut: false } });
+    expect(answer).not.toHaveProperty("tokens");
+  });
+
   test.each([
     null,
     "Done.",

@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
+  CLAUDE_CODE_CAPABILITIES,
   CLAUDE_CODE_WINDOWS_CAPABILITIES,
   createClaudeCodeAdapter,
   FEED_FALLBACK_INTERVAL_MS,
@@ -402,6 +403,78 @@ describe("Stop", () => {
     expect(asked).toBe(false);
     expect(adapter.capabilities).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
     expect(adapter.capabilities?.stop.level).toBe("no");
+  });
+});
+
+describe("what Tokens says", () => {
+  const tokensWith = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform = "darwin") =>
+    createClaudeCodeAdapter({
+      env: { AGENT_LOOKOUT_CLAUDE_FEED: "off", ...env },
+      homeDir: platform === "win32" ? "C:\\Users\\example" : HOME,
+      platform,
+    }).capabilities;
+  const PARTLY = {
+    level: "partly",
+    reason: "On the computer it runs on, from its newest reply, read while its details are open.",
+  };
+  const NO_TRANSCRIPTS = {
+    level: "no",
+    reason: "AGENT_LOOKOUT_WAITING_TEXT is off, so no transcript is read.",
+  };
+  const NO_LAST_MESSAGES = {
+    level: "no",
+    reason:
+      "AGENT_LOOKOUT_LAST_MESSAGE is off, and the counts are read only with a session's last message.",
+  };
+
+  test("is partly by default: on the computer it runs on, while its details are open", () => {
+    expect(CLAUDE_CODE_CAPABILITIES.tokens).toEqual(PARTLY);
+    expect(CLAUDE_CODE_WINDOWS_CAPABILITIES.tokens).toEqual(PARTLY);
+    expect(tokensWith({})).toBe(CLAUDE_CODE_CAPABILITIES);
+    expect(tokensWith({}, "win32")).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
+  });
+
+  test.each(["darwin", "linux", "win32"] as const)(
+    "on %s, is no by the first setting that stops the read, naming it, and nothing else changes",
+    (platform) => {
+      const declared =
+        platform === "win32" ? CLAUDE_CODE_WINDOWS_CAPABILITIES : CLAUDE_CODE_CAPABILITIES;
+      expect(tokensWith({ AGENT_LOOKOUT_WAITING_TEXT: " Off " }, platform)).toEqual({
+        ...declared,
+        tokens: NO_TRANSCRIPTS,
+      });
+      expect(
+        tokensWith(
+          { AGENT_LOOKOUT_WAITING_TEXT: "off", AGENT_LOOKOUT_LAST_MESSAGE: "off" },
+          platform,
+        )?.tokens,
+      ).toEqual(NO_TRANSCRIPTS);
+      expect(tokensWith({ AGENT_LOOKOUT_LAST_MESSAGE: "OFF" }, platform)).toEqual({
+        ...declared,
+        tokens: NO_LAST_MESSAGES,
+      });
+      for (const on of ["", "on", "no"]) {
+        expect(
+          tokensWith({ AGENT_LOOKOUT_WAITING_TEXT: on, AGENT_LOOKOUT_LAST_MESSAGE: on }, platform)
+            ?.tokens,
+        ).toEqual(PARTLY);
+      }
+    },
+  );
+
+  test("says so beside Stop and Answer turned off", () => {
+    expect(
+      tokensWith({
+        AGENT_LOOKOUT_STOP: "off",
+        AGENT_LOOKOUT_ANSWER: "off",
+        AGENT_LOOKOUT_LAST_MESSAGE: "off",
+      }),
+    ).toMatchObject({
+      stop: { level: "no" },
+      answer: { level: "no" },
+      tokens: NO_LAST_MESSAGES,
+      names: CLAUDE_CODE_CAPABILITIES.names,
+    });
   });
 });
 

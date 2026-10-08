@@ -194,14 +194,28 @@ function readCell(value: unknown): CapabilityCell | null {
 const ACTS_HERE = ["jump", "stop", "answer"] as const satisfies readonly Capability[];
 
 /**
+ * The source there whose token counts are read only while a session's details
+ * are open on that machine, with what it last said, which is never asked of
+ * another machine. So none of its counts come here.
+ */
+const COUNTS_READ_THERE_ONLY = "claude-code";
+
+/**
  * What an agent on the other machine can report, as seen from here: what that
  * machine says, every cell of it, with Jump, Stop and Answer as no, since each
  * acts on this machine only. Those three are not read, so an older Agent
  * Lookout there that has not heard of one still has its row. For the same
  * reason Tokens, which an Agent Lookout from before token counts does not
- * send, is no when it is not sent. Null unless every other cell can be read.
+ * send, is no when it is not sent. Claude Code's Tokens is no too, since its
+ * counts are read only on that machine: with that machine's reason when it
+ * says no itself, and otherwise with that one, even when its cell cannot be
+ * read. Null unless every other cell can be read.
  */
-function readCapabilities(value: unknown, machine: string): SourceCapabilities | null {
+function readCapabilities(
+  value: unknown,
+  machine: string,
+  sourceId: string,
+): SourceCapabilities | null {
   if (!isRecord(value)) return null;
   const read: Partial<Record<Capability, CapabilityCell>> = {};
   for (const capability of CAPABILITIES) {
@@ -214,6 +228,13 @@ function readCapabilities(value: unknown, machine: string): SourceCapabilities |
       continue;
     }
     const cell = readCell(value[capability]);
+    if (capability === "tokens" && sourceId === COUNTS_READ_THERE_ONLY && cell?.level !== "no") {
+      read.tokens = {
+        level: "no",
+        reason: `Read only on ${machine}, while a session's details are open there.`,
+      };
+      continue;
+    }
     if (!cell) return null;
     read[capability] = cell;
   }
@@ -267,7 +288,7 @@ export function readRemoteSnapshot(
     named.set(id, label);
     sources.push({ label, state });
     if (state === "unavailable" || state === "not-set-up") continue;
-    const capabilities = readCapabilities(item.capabilities, machine);
+    const capabilities = readCapabilities(item.capabilities, machine, id);
     if (capabilities) agents.push({ label, capabilities });
   }
 

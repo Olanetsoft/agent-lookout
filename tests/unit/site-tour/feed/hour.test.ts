@@ -84,3 +84,20 @@ test("a Codex session's counts are each one reply's, in the order they came, as 
     }
   }
 });
+
+test("each local Claude Code session that has said something has the counts of that reply, most of its prompt from a cache", () => {
+  for (const session of SESSIONS) {
+    const local = session.source === "claude-code" && session.machine === undefined;
+    if (!local || session.said === undefined) {
+      expect(session.saidTokens, session.name).toBeUndefined();
+      continue;
+    }
+    const counts = session.saidTokens!;
+    // The one check every reader makes keeps them as they are, cached part and all.
+    expect(tokenCountsOf(counts), session.name).toEqual(counts);
+    // Claude Code reads almost the whole prompt from its cache, and a reply writes a few thousand at most.
+    expect(counts.cached / counts.input, session.name).toBeGreaterThan(0.95);
+    expect(counts.output, session.name).toBeLessThanOrEqual(5_000);
+    expect(counts.input, session.name).toBeLessThan(200_000);
+  }
+});

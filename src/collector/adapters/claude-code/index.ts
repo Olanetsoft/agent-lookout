@@ -91,8 +91,9 @@ const LABEL = "Claude Code";
  *   session, and no other terminal is found.
  * - Quiet for needs a file the agent rewrites as it works, and the registry
  *   file is not one: see `registry.ts`.
- * - Tokens are not read: its transcripts record them, but Agent Lookout does
- *   not read them there yet.
+ * - Tokens are the counts of its newest reply, read with what it last said
+ *   from the same end of its transcript (`transcript/lastUsage.ts`): only
+ *   while a page has its details open, and only on the computer it runs on.
  * - Stop is SIGTERM to the process of a session in a terminal or in VS Code,
  *   and `claude stop` for a background job (`stopOffers.ts`). The desktop app
  *   looks after its own process, so its sessions are not stopped from here.
@@ -102,6 +103,8 @@ const LABEL = "Claude Code";
  *   answered only in the session.
  *
  * On Windows three of these are less: `CLAUDE_CODE_WINDOWS_CAPABILITIES`.
+ * With `AGENT_LOOKOUT_WAITING_TEXT` or `AGENT_LOOKOUT_LAST_MESSAGE` off, on
+ * any system, Tokens is no, since nothing reads them.
  */
 export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -125,8 +128,8 @@ export const CLAUDE_CODE_CAPABILITIES: SourceCapabilities = {
     reason: "The file Agent Lookout reads is not rewritten as a session works.",
   },
   tokens: {
-    level: "no",
-    reason: "Agent Lookout does not read the token counts in its transcripts yet.",
+    level: "partly",
+    reason: "On the computer it runs on, from its newest reply, read while its details are open.",
   },
   stop: {
     level: "partly",
@@ -181,6 +184,18 @@ const STOP_TURNED_OFF = {
 const ANSWER_TURNED_OFF = {
   level: "no",
   reason: "AGENT_LOOKOUT_ANSWER is off, so no permission prompt is answered from Agent Lookout.",
+} as const;
+
+/** What the adapter declares of Tokens while `AGENT_LOOKOUT_WAITING_TEXT` is off. */
+const TOKENS_WITHOUT_TRANSCRIPTS = {
+  level: "no",
+  reason: `${WAITING_TEXT_ENV} is off, so no transcript is read.`,
+} as const;
+
+/** What the adapter declares of Tokens while `AGENT_LOOKOUT_LAST_MESSAGE` is off. */
+const TOKENS_WITHOUT_LAST_MESSAGES = {
+  level: "no",
+  reason: `${LAST_MESSAGE_ENV} is off, and the counts are read only with a session's last message.`,
 } as const;
 
 /** What is said of a run that ended in a way `runProgram` promises it never will. */
@@ -345,8 +360,10 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * What a session last said is read from the end of its transcript too, but
  * only when `lastMessage` is asked for it, which the route does while a page
  * has the session's details open, and only for a session the last poll
- * listed. No poll opens a transcript for it. `AGENT_LOOKOUT_LAST_MESSAGE=off`
- * stops it, and so does `AGENT_LOOKOUT_WAITING_TEXT=off`.
+ * listed. No poll opens a transcript for it. The token counts of its newest
+ * reply come in the same answer, from the same bytes, and are never put on a
+ * session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops both, and so does
+ * `AGENT_LOOKOUT_WAITING_TEXT=off`.
  */
 export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): ClaudeCodeAdapter {
   const env = options.env ?? process.env;
@@ -374,8 +391,9 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   // whatever the collector passed.
   const stops = stopOff(env) || onWindows ? undefined : options.stops;
   const answersOff = env.AGENT_LOOKOUT_ANSWER?.trim().toLowerCase() === "off";
+  const lastMessagesOff = lastMessageOff(env);
   // On Windows what cannot be done there is said whatever the settings are.
-  const capabilities: SourceCapabilities = onWindows
+  const declared: SourceCapabilities = onWindows
     ? CLAUDE_CODE_WINDOWS_CAPABILITIES
     : stopOff(env) || answersOff
       ? {
@@ -384,6 +402,15 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           ...(answersOff && { answer: ANSWER_TURNED_OFF }),
         }
       : CLAUDE_CODE_CAPABILITIES;
+  // Token counts are read with the last message, so the first setting that stops it says why.
+  const tokensOff = transcriptsOff
+    ? TOKENS_WITHOUT_TRANSCRIPTS
+    : lastMessagesOff
+      ? TOKENS_WITHOUT_LAST_MESSAGES
+      : null;
+  const capabilities: SourceCapabilities = tokensOff
+    ? { ...declared, tokens: tokensOff }
+    : declared;
 
   const claudeHome = paths.resolve(homeOverride ?? paths.join(homeDir, ".claude"));
   const sessionsDir = paths.join(claudeHome, "sessions");
@@ -395,9 +422,8 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const waitingTexts = transcriptsOff
     ? null
     : createWaitingTextReader({ claudeHome, io: options.transcriptIo, now });
-  // What a session last said, read only when it is asked for. With either
-  // setting off, no transcript is opened for it.
-  const lastMessagesOff = lastMessageOff(env);
+  // What a session last said, and the counts of its newest reply, read only
+  // when it is asked for. With either setting off, no transcript is opened for it.
   const lastMessages =
     transcriptsOff || lastMessagesOff
       ? null

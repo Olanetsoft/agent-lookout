@@ -78,6 +78,7 @@ test("every route the dashboard reads is answered, in a shape it reads", async (
   });
   expect(readLastMessage((await json(lastMessage(WAITING_SESSION))).body)).toMatchObject({
     message: { cut: false },
+    tokens: { input: expect.any(Number), cached: expect.any(Number), output: expect.any(Number) },
   });
   expect(readSettings((await json(SETTINGS_PATH)).body)).toEqual({
     timeRules: DEFAULT_TIME_RULES,
@@ -264,7 +265,7 @@ test("what a session last said is answered as the collector answers it", async (
   const waiting = SESSIONS.find((session) => session.id === WAITING_SESSION)!;
   expect(await json(lastMessage(WAITING_SESSION))).toEqual({
     status: 200,
-    body: { message: { text: waiting.said, cut: false } },
+    body: { message: { text: waiting.said, cut: false }, tokens: waiting.saidTokens },
   });
   // Another agent, and another machine, are not read.
   const codex = SESSIONS.find((session) => session.source === "codex")!;

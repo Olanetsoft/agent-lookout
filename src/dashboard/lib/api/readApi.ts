@@ -918,16 +918,8 @@ export function readRuleAnswer(value: unknown): RuleAnswer | null {
   };
 }
 
-/**
- * The answer of `GET /api/sessions/last-message`, or null when it is not one.
- * The text is made fit to show again, by the rule the collector made it by, so
- * nothing in it reorders what is around it, and it is still at most 2,000
- * characters: when this cuts it, the start is left out, as `cut` then says.
- * `cut` must be true or false, and a reason or a setting this page does not
- * know makes the whole answer one it cannot read.
- */
-export function readLastMessage(data: unknown): LastMessageResponse | null {
-  if (!isRecord(data)) return null;
+/** The text of an answer of `GET /api/sessions/last-message`, or why there is none, or null. */
+function readSaid(data: Record<string, unknown>): LastMessageResponse | null {
   const { message } = data;
   if (isRecord(message)) {
     const shown = messageText(message.text);
@@ -940,4 +932,24 @@ export function readLastMessage(data: unknown): LastMessageResponse | null {
   if (data.setting === undefined) return { message: null, reason };
   const setting = oneOf(LAST_MESSAGE_SETTINGS, data.setting);
   return setting === null ? null : { message: null, reason, setting };
+}
+
+/**
+ * The answer of `GET /api/sessions/last-message`, or null when it is not one.
+ * The text is made fit to show again, by the rule the collector made it by, so
+ * nothing in it reorders what is around it, and it is still at most 2,000
+ * characters: when this cuts it, the start is left out, as `cut` then says.
+ * `cut` must be true or false, and a reason or a setting this page does not
+ * know makes the whole answer one it cannot read.
+ *
+ * The token counts of the newest reply go through the check every reader of
+ * them makes (`tokenCountsOf`). Counts that could not be right are left out,
+ * and the rest of the answer stands.
+ */
+export function readLastMessage(data: unknown): LastMessageResponse | null {
+  if (!isRecord(data)) return null;
+  const answer = readSaid(data);
+  if (answer === null) return null;
+  const tokens = tokenCountsOf(data.tokens);
+  return tokens ? { ...answer, tokens } : answer;
 }

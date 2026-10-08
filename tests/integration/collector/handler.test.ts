@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -22,8 +23,17 @@ import {
 } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
-import { feedJson, registryFiles } from "@tests/fixtures/claudeCode";
+import {
+  feedEntries,
+  feedJson,
+  ids,
+  pids,
+  registryFile,
+  registryFiles,
+} from "@tests/fixtures/claudeCode";
+import { prompt, said, transcript, usage } from "@tests/fixtures/claudeTranscript";
 import { makeSession } from "@tests/fixtures/session";
+import { adapterFor, prints } from "@tests/support/adapters/claudeCodeAdapter";
 import { listen, request } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
@@ -681,6 +691,59 @@ describe("the last message route", () => {
   test("a handler built without it has no such route", async () => {
     const port = await handlerWith();
     expect((await request(port, target)).status).toBe(404);
+  });
+
+  test("holds the token counts of a Claude Code session's newest reply, which the session list never does", async () => {
+    // A working Claude Code session whose transcript, in a folder of the test's, has counted replies.
+    const home = await makeClaudeHome({ [`${pids.busy}.json`]: registryFile() });
+    const folder = path.join(home, "projects", "-Users-example-code-demo");
+    await mkdir(folder, { recursive: true });
+    await writeFile(
+      path.join(folder, `${ids.busy}.jsonl`),
+      transcript([
+        prompt("Tidy the docs"),
+        said("I tidied them.", {
+          messageId: "msg_older",
+          usage: usage({ uncached: 5, written: 1_202, read: 40_312, output: 517 }),
+        }),
+        prompt("And the tests"),
+        said("They pass.", {
+          messageId: "msg_newer",
+          usage: usage({ uncached: 6, written: 2_382, read: 61_090, output: 1_244 }),
+        }),
+      ]),
+    );
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [
+        adapterFor(home, {
+          run: prints(JSON.stringify(feedEntries.filter((entry) => entry.pid === pids.busy))),
+        }),
+      ],
+      env: { AGENT_LOOKOUT_HISTORY: "off", AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
+      notifier: fakeSystemNotifier(),
+      now: () => T0,
+    });
+    const port = await listen(createServer(collector.handler));
+    await collector.poller.pollOnce();
+
+    const asked = `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(`claude-code:${ids.busy}`)}`;
+    const answer = await request(port, asked);
+    expect([answer.status, answer.json()]).toEqual([
+      200,
+      {
+        message: { text: "They pass.", cut: false },
+        tokens: { input: 63_478, cached: 61_090, output: 1_244 },
+      },
+    ]);
+
+    const list = await request(port, "/api/sessions");
+    const { sessions } = list.json<SessionsSnapshot>();
+    expect(sessions.map((session) => session.id)).toEqual([`claude-code:${ids.busy}`]);
+    expect(sessions[0]).not.toHaveProperty("tokens");
+    // The source says what Tokens can be, and no session in the list carries any.
+    expect(JSON.stringify(sessions)).not.toContain('"tokens"');
+    expect(list.body).not.toMatch(/63478|61090|1244\b/);
   });
 });
 
