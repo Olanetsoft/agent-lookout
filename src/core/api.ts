@@ -200,6 +200,57 @@ export interface ErrorResponse {
 }
 
 /**
+ * `GET /api/sessions/last-message?id=<session id>`: what one session this
+ * computer lists last said, read from the end of its transcript when it is
+ * asked for, and only then. It only reads.
+ */
+export const LAST_MESSAGE_PATH = "/api/sessions/last-message";
+
+/**
+ * Why there is no last message to show, in an answer of 200:
+ *
+ * off           a setting turns it off, and `setting` names it
+ * not-read      Agent Lookout does not read what this session's agent says, or the session is on another machine
+ * not-found     its transcript was not found, or its id names none, as a background job's job id does.
+ *               A link or a pipe where it should be is not taken for it
+ * unreadable    its transcript could not be read, as when a link or a pipe took its place after it was found
+ * nothing-yet   the whole transcript was read, and the session has said nothing yet
+ * too-far-back  only the end of the transcript was read, and it said nothing there
+ */
+export const LAST_MESSAGE_REASONS = [
+  "off",
+  "not-read",
+  "not-found",
+  "unreadable",
+  "nothing-yet",
+  "too-far-back",
+] as const;
+
+export type LastMessageReason = (typeof LAST_MESSAGE_REASONS)[number];
+
+/** The settings that turn last messages off: their own, or the one that stops any transcript being read. */
+export const LAST_MESSAGE_SETTINGS = [
+  "AGENT_LOOKOUT_LAST_MESSAGE",
+  "AGENT_LOOKOUT_WAITING_TEXT",
+] as const;
+
+export type LastMessageSetting = (typeof LAST_MESSAGE_SETTINGS)[number];
+
+/**
+ * `GET /api/sessions/last-message`, for a session the collector lists: the
+ * text it last said, at most its last 2,000 characters, with `cut` true when
+ * the start of a longer message is left out, or why there is none.
+ *
+ * Other answers carry an `ErrorResponse`: 400 for a query that is not one
+ * `id` and nothing else, 403 for a request a browser did not mark
+ * `same-origin`, 404 for a session that is not listed, and 429, with
+ * `Retry-After: 1`, while more transcripts are asked for than are read in a second.
+ */
+export type LastMessageResponse =
+  | { message: { text: string; cut: boolean } }
+  | { message: null; reason: LastMessageReason; setting?: LastMessageSetting };
+
+/**
  * The body of `POST /api/jump`: the id of the session to go to, and nothing
  * else. The collector looks the session up in its own list and acts on what it
  * found there, so nothing in the request can choose what is run.

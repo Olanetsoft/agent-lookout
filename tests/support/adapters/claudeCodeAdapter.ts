@@ -67,8 +67,9 @@ export function adapterFor(claudeHome: string, options: ClaudeCodeAdapterOptions
   });
 }
 
-/** What the last fact says while transcripts are read. */
-export const TRANSCRIPT_READ = "last message of a waiting session";
+/** What the last fact says while transcripts are read, and last messages with them. */
+export const TRANSCRIPT_READ =
+  "last message of a waiting session, and of one whose details are open";
 
 /** The five facts, in the order the adapter gives them. */
 export const watching = (

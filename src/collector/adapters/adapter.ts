@@ -1,3 +1,4 @@
+import type { LastMessageResponse } from "../../core/api.ts";
 import type {
   Session,
   SourceCapabilities,
@@ -58,4 +59,12 @@ export interface Adapter {
    */
   readonly capabilities?: SourceCapabilities;
   poll(): Promise<AdapterResult>;
+  /**
+   * What a session this adapter listed on its last poll last said, read when
+   * the route asks, by the session's id in the session model. Null when the
+   * adapter did not list that id, and `busy` while it reads no more for a
+   * moment. It never rejects. Left out by an adapter that does not read what
+   * its sessions say, whose sessions are then answered `not-read`.
+   */
+  lastMessage?(sessionId: string): Promise<LastMessageResponse | "busy" | null>;
 }

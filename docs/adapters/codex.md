@@ -128,6 +128,7 @@ A Codex session is never shown as needing you. The status time is the turn line'
 - Errors are not shown: Codex does not write them to the file.
 - Sessions the Codex desktop app imported from another agent are not listed until Codex runs a turn in one. See below.
 - The Codex desktop app writes no `session_index.jsonl`, so its sessions are named after their folder, and several can share a name. See below.
+- What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for a Codex session.
 
 ## The desktop apps
 

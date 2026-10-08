@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   ACTION_HEADER,
+  LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
   PERMISSION_RULES_PATH,
   PHONE_TEST_PATH,
@@ -140,6 +141,12 @@ export interface ApiHandlerOptions {
    * there is no such route.
    */
   answer?: (req: IncomingMessage) => Promise<ApiAnswer>;
+  /**
+   * Answers `GET /api/sessions/last-message`, with checks of its own:
+   * `createLastMessageRoute` in `messages/lastMessageRoute.ts`. Left out,
+   * there is no such route.
+   */
+  lastMessage?: (req: IncomingMessage, url: URL) => Promise<ApiAnswer>;
   /**
    * What `GET /api/sessions` makes of the poller's snapshot before it is sent:
    * the collector adds each held permission request here, and nowhere else.
@@ -377,6 +384,22 @@ function fail(res: ServerResponse, status: number, error: string, headers = {}):
 }
 
 /**
+ * Sends an answer a route is still working out. A route that fails is a plain
+ * 500, so no request is left without an answer.
+ */
+function sendWhenReady(res: ServerResponse, answer: Promise<ApiAnswer>): void {
+  answer
+    .then((ready) => send(res, ready.status, ready.body, ready.headers))
+    .catch(() => {
+      if (res.headersSent) res.end();
+      else fail(res, 500, "The collector ran into an unexpected problem.");
+    })
+    .catch(() => {
+      // The connection has gone, and there is nobody left to tell.
+    });
+}
+
+/**
  * What a page said about its notifications, the events it shows them of, or
  * null when the request carries no such header or one that cannot be read.
  * Node gives header names in lower case.
@@ -428,15 +451,7 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
     // included, after the ones above, which every request has passed by now.
     const action = url === null ? undefined : actions.get(url.pathname);
     if (action) {
-      action(req)
-        .then((answer) => send(res, answer.status, answer.body, answer.headers))
-        .catch(() => {
-          if (res.headersSent) res.end();
-          else fail(res, 500, "The collector ran into an unexpected problem.");
-        })
-        .catch(() => {
-          // The connection has gone, and there is nobody left to tell.
-        });
+      sendWhenReady(res, action(req));
       return;
     }
 
@@ -461,6 +476,16 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
       }
       case "/api/sessions": {
         send(res, 200, serveSnapshot(poller.getSnapshot()) satisfies SessionsSnapshot);
+        return;
+      }
+      case LAST_MESSAGE_PATH: {
+        if (options.lastMessage) {
+          // The one read that waits on a file, so it is answered as the
+          // routes that act are.
+          sendWhenReady(res, options.lastMessage(req, url));
+          return;
+        }
+        fail(res, 404, "There is nothing at that address.");
         return;
       }
       case "/api/events": {

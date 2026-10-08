@@ -21,6 +21,7 @@ import { createPushoverSender } from "@collector/pushover/pushoverSender";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
 import {
+  LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
   SENDS_PER_HOUR,
   type EmailStatusResponse,
@@ -36,6 +37,8 @@ import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
+import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
+import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
 import {
   fixtureSessions,
   messageLine,
@@ -55,6 +58,7 @@ import {
   type SmtpBehaviour,
 } from "@tests/support/channels/smtp";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
+import { adapterFor, prints } from "@tests/support/adapters/claudeCodeAdapter";
 import {
   CODEX_FIXTURE_HOME,
   makeClaudeHome,
@@ -1941,6 +1945,87 @@ describe("history kept on disk", () => {
     for (const answer of answers.slice(3)) {
       expect(JSON.parse(answer)).toMatchObject({ on: true, asking: true });
     }
+  });
+
+  test("what a session last said is in the last message route's answer alone, and goes with the session", async () => {
+    // A working Claude Code session with a transcript of its own, in a folder of the test's.
+    const home = await makeClaudeHome({ [`${pids.busy}.json`]: registryFile() });
+    const folder = path.join(home, "projects", "-Users-example-code-demo");
+    await mkdir(folder, { recursive: true });
+    const marker = "LAST-MESSAGE-MARKER";
+    await writeFile(
+      path.join(folder, `${ids.busy}.jsonl`),
+      transcript([prompt("Tidy the docs"), said(`I tidied them. ${marker}`)]),
+    );
+    const ended = new Set<number>();
+    let at = T0;
+    const adapter = adapterFor(home, {
+      run: prints(JSON.stringify(feedEntries.filter((entry) => entry.pid === pids.busy))),
+      isAlive: (pid) => !ended.has(pid),
+      now: () => at,
+    });
+    const dir = await tempDir();
+    const warnings: string[] = [];
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [adapter],
+      env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
+      notifier: fakeSystemNotifier(),
+      now: () => at,
+      intervalMs: 1_000_000_000,
+      warn: (line) => warnings.push(line),
+    });
+    const port = await listen(createServer(collector.handler));
+    collector.start();
+    onTestFinished(() => collector.stop());
+    await collector.whenStarted();
+    await collector.poller.pollOnce();
+    at += 2_000;
+    await collector.poller.pollOnce();
+
+    const asked = `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(`claude-code:${ids.busy}`)}`;
+    const answer = await request(port, asked);
+    expect([answer.status, answer.json()]).toEqual([
+      200,
+      { message: { text: `I tidied them. ${marker}`, cut: false } },
+    ]);
+    expect(adapter.lastMessagesKept).toBe(1);
+    // A poll runs while the session is listed and its last message is kept.
+    at += 2_000;
+    await collector.poller.pollOnce();
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    const answers = await Promise.all(
+      [
+        "/api/sessions",
+        "/api/events?since=0",
+        "/api/history",
+        "/api/waits",
+        "/api/email",
+        "/api/webhook",
+        "/api/ntfy",
+        "/api/pushover",
+      ].map(async (target) => {
+        const response = await request(port, target);
+        expect([target, response.status]).toEqual([target, 200]);
+        return response.body;
+      }),
+    );
+    expect(answers[0]).toContain("demo-project");
+    for (const body of answers) expect(body).not.toContain(marker);
+
+    // The session ends, and leaves the list: nothing of it is kept or answered.
+    ended.add(pids.busy);
+    at += 2_000;
+    await collector.poller.pollOnce();
+    expect((await request(port, asked)).status).toBe(404);
+    expect(adapter.lastMessagesKept).toBe(0);
+
+    collector.stop();
+    const kept = await files(dir);
+    expect(kept).toContain("demo-project");
+    expect(kept).not.toContain(marker);
+    expect(warnings.join("\n")).not.toContain(marker);
   });
 
   test("with AGENT_LOOKOUT_HISTORY=off nothing is written, and the history starts empty each time", async () => {

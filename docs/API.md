@@ -31,37 +31,38 @@ curl -s http://127.0.0.1:4777/api/sessions
 
 Every answer has `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Every answer that is not a 200 has the body `{ "error": "<one sentence>" }`.
 
-| Status | When                                                                                                    |
-| ------ | ------------------------------------------------------------------------------------------------------- |
-| 400    | The address, `since` or `windowMs` could not be read                                                    |
-| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                      |
-| 404    | There is no route at that path                                                                          |
-| 405    | Any method but `GET`, with `Allow: GET`. The eight routes that act take only `POST`, with `Allow: POST` |
-| 500    | Something went wrong that the server did not expect                                                     |
+| Status | When                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------- |
+| 400    | The address, `since`, `windowMs` or the `id` of `GET /api/sessions/last-message` could not be read            |
+| 403    | The `Host`, the `Origin` or `Sec-Fetch-Site` above                                                            |
+| 404    | There is no route at that path, or no session listed with the `id` `GET /api/sessions/last-message` was given |
+| 405    | Any method but `GET`, with `Allow: GET`. The eight routes that act take only `POST`, with `Allow: POST`       |
+| 500    | Something went wrong that the server did not expect                                                           |
 
 ## Routes
 
-| Route                                 | Answers                                                                                                                                                                                              |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                     | `{ ok: true, version }`                                                                                                                                                                              |
-| `GET /api/sessions`                   | The latest snapshot: `{ generatedAt, sources, sessions, answering, timeRules, quiet }`                                                                                                               |
-| `GET /api/events?since=<epoch ms>`    | `{ events }`, newest first, at most 200                                                                                                                                                              |
-| `GET /api/history?windowMs=<ms>`      | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first                                                                                                                |
-| `GET /api/email`                      | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                   |
-| `GET /api/webhook`                    | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                 |
-| `GET /api/ntfy`                       | `{ on, host, tokenSet, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                       |
-| `GET /api/pushover`                   | `{ on, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                       |
-| `GET /api/pull-requests`              | `{ on, problem, gh, last }`: whether each branch's pull request is shown                                                                                                                             |
-| `GET /api/waits`                      | `{ at, today, sevenDays, since, where }`: how long sessions waited on you                                                                                                                            |
-| `GET /api/settings`                   | `{ timeRules, file, problem, permissionRules, permissionRulesProblem, ruleAnswers, ruleAnswersSince }`: the time rules, the permission rules, the file they are kept in, and what the rules answered |
-| `POST /api/jump`                      | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of eight routes that act                                                                                                             |
-| `POST /api/history/clear`             | `{ ok: true, clearedAt }`. A route that acts                                                                                                                                                         |
-| `POST /api/sessions/stop`             | `{ ok: true }` once the session's process has ended. A route that acts                                                                                                                               |
-| `POST /api/sessions/clean-up`         | `{ results }`, what became of each session left running. A route that acts                                                                                                                           |
-| `POST /api/permission/answer`         | `{ ok: true, decision }` once a permission prompt was answered. A route that acts                                                                                                                    |
-| `POST /api/settings/time-rules`       | `{ ok: true, timeRules }` once the time rules are saved. A route that acts                                                                                                                           |
-| `POST /api/settings/permission-rules` | `{ ok: true, permissionRules }` once one change to the permission rules is saved. A route that acts                                                                                                  |
-| `POST /api/phone/test`                | `{ ok: true, channel, sentAt }` once a test push went through ntfy or Pushover. A route that acts                                                                                                    |
+| Route                                    | Answers                                                                                                                                                                                              |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                        | `{ ok: true, version }`                                                                                                                                                                              |
+| `GET /api/sessions`                      | The latest snapshot: `{ generatedAt, sources, sessions, answering, timeRules, quiet }`                                                                                                               |
+| `GET /api/sessions/last-message?id=<id>` | `{ message: { text, cut } }`, what one session last said, or `{ message: null, reason }`                                                                                                             |
+| `GET /api/events?since=<epoch ms>`       | `{ events }`, newest first, at most 200                                                                                                                                                              |
+| `GET /api/history?windowMs=<ms>`         | `{ points, startedAt, since, kept, restarts }`, one point for each poll, oldest first                                                                                                                |
+| `GET /api/email`                         | `{ on, to, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                   |
+| `GET /api/webhook`                       | `{ on, host, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                 |
+| `GET /api/ntfy`                          | `{ on, host, tokenSet, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                       |
+| `GET /api/pushover`                      | `{ on, events, afterMs, asking, problem, last, limitedUntil }`                                                                                                                                       |
+| `GET /api/pull-requests`                 | `{ on, problem, gh, last }`: whether each branch's pull request is shown                                                                                                                             |
+| `GET /api/waits`                         | `{ at, today, sevenDays, since, where }`: how long sessions waited on you                                                                                                                            |
+| `GET /api/settings`                      | `{ timeRules, file, problem, permissionRules, permissionRulesProblem, ruleAnswers, ruleAnswersSince }`: the time rules, the permission rules, the file they are kept in, and what the rules answered |
+| `POST /api/jump`                         | `{ ok: true, kind, place }`, with `app` for a terminal tab. One of eight routes that act                                                                                                             |
+| `POST /api/history/clear`                | `{ ok: true, clearedAt }`. A route that acts                                                                                                                                                         |
+| `POST /api/sessions/stop`                | `{ ok: true }` once the session's process has ended. A route that acts                                                                                                                               |
+| `POST /api/sessions/clean-up`            | `{ results }`, what became of each session left running. A route that acts                                                                                                                           |
+| `POST /api/permission/answer`            | `{ ok: true, decision }` once a permission prompt was answered. A route that acts                                                                                                                    |
+| `POST /api/settings/time-rules`          | `{ ok: true, timeRules }` once the time rules are saved. A route that acts                                                                                                                           |
+| `POST /api/settings/permission-rules`    | `{ ok: true, permissionRules }` once one change to the permission rules is saved. A route that acts                                                                                                  |
+| `POST /api/phone/test`                   | `{ ok: true, channel, sentAt }` once a test push went through ntfy or Pushover. A route that acts                                                                                                    |
 
 Times are milliseconds since 1970, and lengths of time are milliseconds.
 
@@ -199,6 +200,32 @@ With `AGENT_LOOKOUT_PULL_REQUESTS=on`, a session on a branch that has a pull req
 
 It is what `gh` last said, asked at most once every 2 minutes for each repository and branch, so it can be up to about 2 minutes old. [Pull requests](GUIDE.md#pull-requests) in the guide says when it is asked for.
 `answering` says whether permission prompts can be answered from the dashboard: `{ state, plugin, holdMs, problem }`. `state` is `on` while Agent Lookout listens for the plugin's requests, `off` with `AGENT_LOOKOUT_ANSWER=off`, and `unavailable` when it could not listen or does not, as on Windows, which has no Unix socket for the plugin's hook, with `problem` saying why in one sentence. `plugin` is `seen` once a request has arrived since the last permission prompt it missed, `missed` when a Claude Code session waited for permission and no request arrived, as for a session without the plugin, and `unknown` before either. `holdMs` is how long a request is held.
+
+### `GET /api/sessions/last-message?id=<id>`
+
+What one session on this computer last said, read from the end of its transcript when it is asked for. The dashboard asks for it only while that session's details are open. Only Claude Code sessions are read for now. It only reads.
+
+```json
+{ "message": { "text": "The tests pass now.\n\nI changed two files in src/app.", "cut": false } }
+```
+
+| Field          | Holds                                                                                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `message.text` | The text of the session's newest reply, its parts joined with a blank line between. Line breaks are kept, a tab is two spaces, any other control character is a space, and the characters that change the direction of text are taken out. At most its last 2,000 characters. Plain text, with Markdown left as it was written |
+| `message.cut`  | `true` when the start of a longer message is left out                                                                                                                                                                                                                                                                          |
+
+When there is nothing to show, `message` is `null` and `reason` says why:
+
+| `reason`       | When                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off`          | `AGENT_LOOKOUT_LAST_MESSAGE=off`, or `AGENT_LOOKOUT_WAITING_TEXT=off` for a Claude Code session. `setting` names the one that is off                 |
+| `not-read`     | The session is not a Claude Code session on this computer: a Codex, Antigravity CLI or status-file session, or one on another machine                |
+| `not-found`    | Its transcript was not found. A link or a pipe where it should be does not count, and a background job known only by its job ID has none to look for |
+| `unreadable`   | Its transcript could not be read, as when a link or a pipe has taken its place since it was found                                                    |
+| `nothing-yet`  | The whole transcript was read, and the session has said nothing yet                                                                                  |
+| `too-far-back` | Its last message is further back than the last 256 KB of the transcript, which is all that is read                                                   |
+
+The query is one `id` of 1 to 300 characters, a session's `id` from `GET /api/sessions` written with `encodeURIComponent`, and nothing else, or the answer is 400. A request a browser marks with any `Sec-Fetch-Site` but `same-origin` gets 403, so a page at another port of this computer, or a link opened from anywhere, reads nothing. A session that is not listed gets 404. At most four transcripts are read in a second, for every session together, and above that the answer is 429 with `Retry-After: 1`. An answer is given again from memory for a second. With `AGENT_LOOKOUT_LAST_MESSAGE=off` every `id` is answered `off`, and nothing is looked up. [A session's last message](../PRIVACY.md#a-sessions-last-message) in PRIVACY.md says what is read and kept.
 
 ### `GET /api/events?since=<epoch ms>`
 
@@ -629,7 +656,7 @@ A program that only reads should not send it. `agent-lookout status` and `agent-
 
 ## For this computer only
 
-The API has no token or password. The `Host` and `Origin` rules keep websites, and other computers on the network, away from it: it listens on loopback, and a browser cannot be made to read it from another site. What they do not stop is another program on this computer, which can read it as `curl` does, and on a shared computer that includes other user accounts. Such a program can also send the headers a route that acts asks for, since no browser is involved, so another account can ask the server to stop your Claude Code sessions, which it could not do itself. [SECURITY.md](../SECURITY.md) lists that as a known limit. The Mac app opens no port, and `AGENT_LOOKOUT_STOP=off` takes stopping away.
+The API has no token or password. The `Host` and `Origin` rules keep websites, and other computers on the network, away from it: it listens on loopback, and a browser cannot be made to read it from another site. What they do not stop is another program on this computer, which can read it as `curl` does, and on a shared computer that includes other user accounts. Such a program can also send the headers a route that acts asks for, since no browser is involved, so another account can ask the server to stop your Claude Code sessions, which it could not do itself. It can also read up to 2,000 characters of what a listed Claude Code session last said, from `GET /api/sessions/last-message`. [SECURITY.md](../SECURITY.md) lists that as a known limit. The Mac app opens no port, `AGENT_LOOKOUT_STOP=off` takes stopping away, and `AGENT_LOOKOUT_LAST_MESSAGE=off` takes last messages away.
 
 A token would not keep out programs running as you, which could read it as easily as the API. It could keep out other accounts on a shared computer, stopping your sessions included, the known limit above, and is left for a later version. The MCP server changes none of this: it opens no port of its own, speaks to the app that started it over stdin and stdout, and reads the same loopback API the dashboard and `agent-lookout status` read without one. A token is also for an API that can be reached some other way, such as from another computer, and Agent Lookout has none.
 

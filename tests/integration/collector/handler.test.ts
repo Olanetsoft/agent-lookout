@@ -9,7 +9,9 @@ import { createCollector } from "@collector/collector";
 import { createEventStore } from "@collector/eventStore";
 import { createApiHandler, MAX_HISTORY_WINDOW_MS, type ApiAnswer } from "@collector/handler";
 import { createHistoryStore } from "@collector/historyStore";
+import { createLastMessageRoute } from "@collector/messages/lastMessageRoute";
 import {
+  LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
   type EventsResponse,
   type HistoryResponse,
@@ -148,7 +150,10 @@ describe("routes", () => {
       { label: "Registry read", value: "every 2 seconds" },
       { label: "Command", value: "claude agents --json --all" },
       { label: "Command run", value: "every 30 seconds" },
-      { label: "Transcript read", value: "last message of a waiting session" },
+      {
+        label: "Transcript read",
+        value: "last message of a waiting session, and of one whose details are open",
+      },
     ]);
     expect(sources[0]?.detail).not.toMatch(/surface/i);
     expect("advice" in (sources[0] ?? {})).toBe(false);
@@ -576,6 +581,106 @@ describe("the route that acts", () => {
     const posted = await post(port);
     expect([posted.status, posted.headers.allow]).toEqual([405, "GET"]);
     expect((await request(port, "/api/jump")).status).toBe(404);
+  });
+});
+
+describe("the last message route", () => {
+  const listed = makeSession({ id: "claude-code:00000000-0000-4000-8000-000000000001" });
+  const SAID = { message: { text: "The tests pass.", cut: false } };
+  const target = `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(listed.id)}`;
+
+  /** The handler alone, with the real route over a Claude Code adapter that reads as it is told. */
+  async function handlerWith(lastMessage?: Adapter["lastMessage"]) {
+    const poller = {
+      getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [listed] }),
+      startedAt: T0,
+    };
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller,
+      events: createEventStore(),
+      history: createHistoryStore(),
+      lastMessage:
+        lastMessage &&
+        createLastMessageRoute({
+          env: {},
+          poller,
+          adapters: [{ id: "claude-code", lastMessage }],
+        }),
+    });
+    return listen(createServer(handler));
+  }
+
+  test("is a GET that answers what the session's adapter read, as every answer is sent", async () => {
+    let asked = 0;
+    const port = await handlerWith(async () => {
+      asked += 1;
+      return SAID;
+    });
+    const response = await request(port, target, {
+      headers: { "Sec-Fetch-Site": "same-origin", Origin: `http://localhost:${port}` },
+    });
+    expect([response.status, response.json()]).toEqual([200, SAID]);
+    expect(response.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["cross-origin-resource-policy"]).toBe("same-origin");
+    expect(
+      Object.keys(response.headers).filter((name) => name.startsWith("access-control-")),
+    ).toEqual([]);
+    expect(asked).toBe(1);
+
+    // It only reads.
+    for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) {
+      const sent = await request(port, target, { method, body: "{}" });
+      expect([method, sent.status, sent.headers.allow]).toEqual([method, 405, "GET"]);
+    }
+    expect(asked).toBe(1);
+  });
+
+  test("is refused to a foreign Host, a foreign Origin and a page another site made, before it reads", async () => {
+    let asked = 0;
+    const port = await handlerWith(async () => {
+      asked += 1;
+      return SAID;
+    });
+    const refused: Record<string, string>[] = [
+      { Host: "evil.example" },
+      { Host: "rebind.evil.example:4777" },
+      { Origin: "https://evil.example" },
+      { Origin: "null" },
+      { "Sec-Fetch-Site": "cross-site" },
+      { "Sec-Fetch-Site": "same-site" },
+    ];
+    for (const headers of refused) {
+      const response = await request(port, target, { headers });
+      expect([headers, response.status]).toEqual([headers, 403]);
+      expect(response.body).not.toContain("The tests pass");
+      expect(response.headers["cache-control"]).toBe("no-store");
+    }
+    expect(asked).toBe(0);
+  });
+
+  test("a reader that fails is a plain 500, and the next request is still answered", async () => {
+    const rejects = await handlerWith(async () => {
+      throw new Error("The stand-in was told to throw.");
+    });
+    const response = await request(rejects, target);
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({ error: "The collector ran into an unexpected problem." });
+    expect(response.body).not.toContain("stand-in");
+    expect((await request(rejects, "/api/health")).status).toBe(200);
+
+    const throws = await handlerWith(() => {
+      throw new Error("The stand-in was told to throw at once.");
+    });
+    const atOnce = await request(throws, target);
+    expect([atOnce.status, atOnce.body.includes("stand-in")]).toEqual([500, false]);
+  });
+
+  test("a handler built without it has no such route", async () => {
+    const port = await handlerWith();
+    expect((await request(port, target)).status).toBe(404);
   });
 });
 

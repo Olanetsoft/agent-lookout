@@ -5,6 +5,7 @@ import {
   isSessionId,
   projectFolderName,
   readTranscriptTail,
+  sessionIdOf,
   TRANSCRIPT_TAIL_BYTES,
 } from "@collector/adapters/claude-code/transcript/transcriptFile";
 import { ids } from "@tests/fixtures/claudeCode";
@@ -36,6 +37,18 @@ describe("isSessionId", () => {
     ]) {
       expect(isSessionId(value), String(value)).toBe(false);
     }
+  });
+});
+
+describe("sessionIdOf", () => {
+  test("is a Claude Code session's own id, and nothing for any other session", () => {
+    expect(sessionIdOf({ id: `claude-code:${ID}`, source: "claude-code" })).toBe(ID);
+    expect(sessionIdOf({ id: "claude-code:job-0001", source: "claude-code" })).toBeNull();
+    expect(sessionIdOf({ id: `claude-code:../${ID}`, source: "claude-code" })).toBeNull();
+    expect(sessionIdOf({ id: ID, source: "claude-code" })).toBeNull();
+    expect(sessionIdOf({ id: `codex:${ID}`, source: "codex" })).toBeNull();
+    expect(sessionIdOf({ id: `claude-code:${ID}`, source: "status-files" })).toBeNull();
+    expect(sessionIdOf({ id: `claude-code:${ID}`, source: "remote:devbox" })).toBeNull();
   });
 });
 

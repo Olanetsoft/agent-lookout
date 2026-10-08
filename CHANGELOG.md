@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- `GET /api/sessions/last-message?id=<id>` gives what a Claude Code session on this computer last said: the text of its newest reply, up to its last 2,000 characters, read from the end of its transcript only when it is asked for. It is kept in memory for at most 15 seconds after the last ask, and is forgotten sooner on the first poll of Claude Code that does not list the session. It is on by default, and `AGENT_LOOKOUT_LAST_MESSAGE=off` turns it off. Any program on this computer can ask for it, as [PRIVACY.md](PRIVACY.md#a-sessions-last-message) says. A Codex, Antigravity CLI or status-file session, or one on another machine, is answered `not-read`. [docs/API.md](docs/API.md#get-apisessionslast-messageidid) has the answers.
+
 ### Changed
 
 - No program Agent Lookout starts is given its own settings any more. `claude`, `tmux`, `ssh`, `osascript`, the program that opens your browser and the Mac app's check of a downloaded update were handed every `AGENT_LOOKOUT_` setting in their environment, the mail server's password, the webhook's address and the push tokens among them, as only `gh` was not. None of them used them.

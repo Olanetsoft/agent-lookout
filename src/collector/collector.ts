@@ -41,6 +41,7 @@ import { memoryOnlyStatus } from "./history/historyLimits.ts";
 import { readHistorySetup } from "./history/historySettings.ts";
 import { createHistoryStore, HISTORY_CAPACITY } from "./historyStore.ts";
 import { createJumpRoute } from "./jumpRoute.ts";
+import { createLastMessageRoute } from "./messages/lastMessageRoute.ts";
 import {
   createServerNotifications,
   notificationsAtStartLine,
@@ -283,7 +284,8 @@ export interface Collector {
  * `AGENT_LOOKOUT_PULL_REQUESTS=on` what asks gh for each branch's pull request,
  * the other machines `AGENT_LOOKOUT_REMOTES` names, each read through an ssh
  * tunnel of its own, the time rules and the permission rules kept in its
- * settings file, and the request handler. Every host builds it the same way: the dev server, the
+ * settings file, the route that gives a session's last message, read by this
+ * computer's own adapters when it is asked for, and the request handler. Every host builds it the same way: the dev server, the
  * standalone server, and later a desktop app.
  */
 export function createCollector(options: CollectorOptions): Collector {
@@ -559,6 +561,10 @@ export function createCollector(options: CollectorOptions): Collector {
     }),
     pullRequests: () => pullRequests?.status() ?? pullRequestsOff,
     jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
+    // Only this computer's own adapters read what a session last said. A
+    // session on another machine is answered as not read, and nothing is
+    // asked of that machine.
+    lastMessage: createLastMessageRoute({ env, poller, adapters: localAdapters }),
     stop: stopRoutes && createStopRoute(stopRoutes),
     cleanUp: stopRoutes && createCleanUpRoute(stopRoutes),
     settings: () => ({

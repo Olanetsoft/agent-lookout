@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import type { Session } from "../../../../core/sessions/session.ts";
 import type { FileInfo, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
@@ -27,6 +28,20 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /** Whether a value is a session id that may name a transcript. */
 export function isSessionId(value: unknown): value is string {
   return typeof value === "string" && SESSION_ID.test(value);
+}
+
+/** The id a Claude Code session is given in the session model, before its own. */
+const ID_PREFIX = "claude-code:";
+
+/**
+ * A Claude Code session's own id, from its id in the session model, when it
+ * has one that may name a transcript. Null for any other session, and for a
+ * background job known only by its job id.
+ */
+export function sessionIdOf(session: Pick<Session, "id" | "source">): string | null {
+  if (session.source !== "claude-code" || !session.id.startsWith(ID_PREFIX)) return null;
+  const id = session.id.slice(ID_PREFIX.length);
+  return isSessionId(id) ? id : null;
 }
 
 /**

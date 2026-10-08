@@ -24,8 +24,8 @@ export const MAX_JUMP_BODY_BYTES = 1024;
 /** What `ACTION_HEADER` says on a request to this route. */
 const ACTION = "jump";
 
-/** The longest session id that is looked up. */
-const MAX_SESSION_ID_LENGTH = 300;
+/** The longest session id that is looked up, here and by the last message route. */
+export const MAX_SESSION_ID_LENGTH = 300;
 
 export interface JumpRouteOptions {
   /** The collector's own latest list of sessions. */

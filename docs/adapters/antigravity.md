@@ -159,6 +159,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - A tool that fails shows as working. Only an error agy reports as its own step, or a failed reply, shows as failed.
 - The Antigravity desktop app, which runs many conversations in one process, and the Antigravity IDE are not read. The hooks documentation puts their transcripts at the same place under their own folders, so the transcript reader would serve them, but the process check would not.
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
+- What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for an Antigravity CLI session.
 
 ## Not yet checked
 

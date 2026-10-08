@@ -197,7 +197,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Registry read", value: "every 2 seconds" },
         { label: "Command", value: "claude agents --json --all" },
         { label: "Command run", value: "every 30 seconds" },
-        { label: "Transcript read", value: "last message of a waiting session" },
+        {
+          label: "Transcript read",
+          value: "last message of a waiting session, and of one whose details are open",
+        },
       ],
       capabilities: CLAUDE_CODE_CAPABILITIES,
       checkedAt,

@@ -14,6 +14,7 @@ import { plausibleTime } from "../../../core/time.ts";
 import { STOP_ENV, stopOff, type StopTargets } from "../../actions/stopTargets.ts";
 import { pathsOf, tildify } from "../../files/paths.ts";
 import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { LAST_MESSAGE_ENV, lastMessageOff } from "../../messages/lastMessageSettings.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
@@ -46,7 +47,12 @@ import {
   uniqueById,
   type SessionContext,
 } from "./toSession.ts";
-import { createWaitingTextReader, waitingTextOff } from "./transcript/waitingTexts.ts";
+import { createLastMessageReader } from "./transcript/lastMessages.ts";
+import {
+  createWaitingTextReader,
+  WAITING_TEXT_ENV,
+  waitingTextOff,
+} from "./transcript/waitingTexts.ts";
 
 /** The variable that replaces `~/.claude`. */
 export const CLAUDE_HOME_ENV = "AGENT_LOOKOUT_CLAUDE_HOME";
@@ -184,9 +190,10 @@ export interface ClaudeCodeAdapterOptions {
   isExecutable?: (candidate: string) => Promise<boolean>;
   registryIo?: RegistryIo;
   /**
-   * Reads the end of a waiting session's transcript, to say what it is asking.
-   * Defaults to the file system. Not used at all when
-   * `AGENT_LOOKOUT_WAITING_TEXT` is `off`.
+   * Reads the end of a waiting session's transcript, to say what it is asking,
+   * and of a session whose last message is asked for. Defaults to the file
+   * system. Not used at all when `AGENT_LOOKOUT_WAITING_TEXT` is `off`, nor
+   * for last messages when `AGENT_LOOKOUT_LAST_MESSAGE` is.
    */
   transcriptIo?: ReadOnlyIo;
   /** Reads when processes started. Defaults to asking `ps`. */
@@ -228,6 +235,16 @@ export interface ClaudeCodeAdapterOptions {
    * `watching`. Defaults to the poller's interval.
    */
   pollIntervalMs?: number;
+}
+
+/** The Claude Code adapter, which reads what its sessions last said when asked. */
+export interface ClaudeCodeAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** What the last run of the command came back with. */
@@ -318,8 +335,14 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * file, and only again when the file has changed. Nothing of it is kept once
  * the wait ends. `AGENT_LOOKOUT_WAITING_TEXT=off` stops any transcript being
  * opened. `transcript/` has the rest.
+ *
+ * What a session last said is read from the end of its transcript too, but
+ * only when `lastMessage` is asked for it, which the route does while a page
+ * has the session's details open, and only for a session the last poll
+ * listed. No poll opens a transcript for it. `AGENT_LOOKOUT_LAST_MESSAGE=off`
+ * stops it, and so does `AGENT_LOOKOUT_WAITING_TEXT=off`.
  */
-export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Adapter {
+export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): ClaudeCodeAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -366,6 +389,13 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const waitingTexts = transcriptsOff
     ? null
     : createWaitingTextReader({ claudeHome, io: options.transcriptIo, now });
+  // What a session last said, read only when it is asked for. With either
+  // setting off, no transcript is opened for it.
+  const lastMessagesOff = lastMessageOff(env);
+  const lastMessages =
+    transcriptsOff || lastMessagesOff
+      ? null
+      : createLastMessageReader({ claudeHome, io: options.transcriptIo, now });
 
   /** The moment the last run of the command was due. Null until the first run. */
   let lastDue: number | null = null;
@@ -398,7 +428,11 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       { label: "Command run", value: commandRun },
       {
         label: "Transcript read",
-        value: transcriptsOff ? "Off" : "last message of a waiting session",
+        value: transcriptsOff
+          ? "Off"
+          : lastMessagesOff
+            ? "last message of a waiting session"
+            : "last message of a waiting session, and of one whose details are open",
       },
     ];
   }
@@ -740,12 +774,17 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       : `Looking for sessions in ${registryName} and with claude ${FEED_ARGS.join(" ")}.`,
     async poll() {
       try {
-        return await withWaitingText(await poll());
+        const result = await withWaitingText(await poll());
+        // The sessions whose last message may be asked for until the next poll.
+        lastMessages?.keep(result.sessions);
+        return result;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
         // answer, and the person sees a sentence, not a stack trace. It lists no
-        // session, so no wait is remembered either, and none can be stopped.
+        // session, so no wait or last message is remembered either, and none can
+        // be stopped.
         await waitingTexts?.annotate([]);
+        lastMessages?.forget();
         stops?.set(new Map());
         return {
           health: {
@@ -763,6 +802,19 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           sessions: [],
         };
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessages === null) {
+        return {
+          message: null,
+          reason: "off",
+          setting: transcriptsOff ? WAITING_TEXT_ENV : LAST_MESSAGE_ENV,
+        };
+      }
+      return lastMessages.read(sessionId);
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

@@ -5,8 +5,8 @@ import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts
 import { askedInTail } from "./lastAsk.ts";
 import {
   findTranscript,
-  isSessionId,
   readTranscriptTail,
+  sessionIdOf,
   type TranscriptStamp,
 } from "./transcriptFile.ts";
 
@@ -24,9 +24,6 @@ export function waitingTextOff(env: NodeJS.ProcessEnv): boolean {
  * `projects` folder, which can hold a folder for every project ever opened.
  */
 export const LOOK_AGAIN_MS = 10_000;
-
-/** The id a Claude Code session is given in the session model, before its own. */
-const ID_PREFIX = "claude-code:";
 
 /** What is remembered of one wait, until it ends. */
 interface Kept {
@@ -63,13 +60,6 @@ export interface WaitingTextReaderOptions {
   /** Defaults to the file system. Tests pass a stand-in. */
   io?: ReadOnlyIo;
   now?: () => number;
-}
-
-/** The session's own id, when it has one that may name a transcript. */
-function sessionIdOf(session: Session): string | null {
-  if (session.source !== "claude-code" || !session.id.startsWith(ID_PREFIX)) return null;
-  const id = session.id.slice(ID_PREFIX.length);
-  return isSessionId(id) ? id : null;
 }
 
 /**
