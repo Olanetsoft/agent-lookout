@@ -14,6 +14,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - In the Mac app, the Notifications card speaks of macOS and this app instead of your browser and a dashboard tab, says the app's setting is its own, so turning notifications on in a browser does not turn them on in the app, and says that macOS hides banners while the display is shared or mirrored unless that is allowed in System Settings. It no longer says notifications are on as if that meant you see them: while macOS refuses them, it says so. In a browser the card is unchanged.
 
+### Fixed
+
+- Stopping Agent Lookout, or quitting the Mac app, while it was writing its history to disk could lose the last few seconds of the Events log and the charts. What that write held is now written as it stops.
+
 ## 0.2.9 - 2026-10-08
 
 The Mac app no longer looks frozen, a Claude Code session's details show what it last said, and Night is darker and crisper everywhere.
