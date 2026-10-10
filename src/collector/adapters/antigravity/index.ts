@@ -38,6 +38,7 @@ import {
   type ConversationFiles,
 } from "./conversations.ts";
 import { createTitleReader } from "./annotations.ts";
+import { createOtherFolderCheck } from "./otherFolders.ts";
 import { antigravitySession, SOURCE_ID } from "./toSession.ts";
 import { createTranscriptReader, type TranscriptState } from "./transcriptFile.ts";
 
@@ -177,7 +178,11 @@ export interface AntigravityAdapterOptions {
    * The adapter keeps no timer of its own: this is only stated in `watching`.
    */
   pollIntervalMs?: number;
-  /** How long a missing folder is believed missing before one more look. Defaults to a minute. */
+  /**
+   * How long a missing folder is believed missing before one more look, and
+   * how long the answer about the Antigravity IDE's and Antigravity 2.0's
+   * folders stands. Defaults to a minute.
+   */
   recheckMs?: number;
   /** How often, at most, `ps` is asked. Defaults to 10 seconds. */
   processCheckMs?: number;
@@ -238,6 +243,10 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  * adapter says so and looks again only once a minute, with a single `stat`,
  * and runs no `ps`.
  *
+ * It also looks, once a minute at most, with one `lstat` each, whether the
+ * Antigravity IDE's folder or Antigravity 2.0's is beside the CLI's, and the
+ * card says so, since it reads neither yet. See `otherFolders.ts`.
+ *
  * The folder is `AGENT_LOOKOUT_ANTIGRAVITY_HOME` if set, otherwise
  * `~/.gemini/antigravity-cli`. Someone who sets the variable means that
  * folder: if it holds no conversations, that is an answer, not a missing agy.
@@ -264,6 +273,13 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   const reader = createTranscriptReader(io);
   const logs = createAgyLogReader({ home, io, now });
   const titles = createTitleReader({ home, io });
+  const others = createOtherFolderCheck({
+    home,
+    io,
+    recheckMs,
+    platform,
+    name: (target) => tildify(target, homeDir),
+  });
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -274,6 +290,8 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   let processesAt: number | null = null;
   /** The conversations an agy program may have open, as last worked out. */
   let lastHolding: Holding | null = null;
+  /** What the card says of the Antigravity IDE's and Antigravity 2.0's folders, as last looked at. Null while neither is there. */
+  let othersNote: string | null = null;
 
   const commandRun =
     platform === "win32" ? "not run on Windows" : `${every(processCheckMs)} at most`;
@@ -298,7 +316,8 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       id: SOURCE_ID,
       label: LABEL,
       state,
-      detail,
+      // Last, so it reads after what is said of the CLI, whatever that is.
+      detail: othersNote === null ? detail : `${detail} ${othersNote}`,
       watching: watching(read),
       checkedAt,
     };
@@ -363,19 +382,20 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
 
     // A missing folder is believed missing for a while, so a machine without
     // agy pays nothing on most polls. A clock set back counts as time enough.
-    if (homeFrom !== "agent-lookout") {
-      if (absentAt !== null) {
-        const since = checkedAt - absentAt;
-        if (since >= 0 && since < recheckMs) return notFound(checkedAt);
+    if (homeFrom !== "agent-lookout" && absentAt !== null) {
+      const since = checkedAt - absentAt;
+      if (since >= 0 && since < recheckMs) return notFound(checkedAt);
+    }
+    // After that, so that while the folder is missing the other two are
+    // looked at only on a poll that looks for it too.
+    othersNote = await others.note(checkedAt);
+    if (homeFrom !== "agent-lookout" && !homeSeen) {
+      if (!(await homeIsThere())) {
+        absentAt = checkedAt;
+        return notFound(checkedAt);
       }
-      if (!homeSeen) {
-        if (!(await homeIsThere())) {
-          absentAt = checkedAt;
-          return notFound(checkedAt);
-        }
-        absentAt = null;
-        homeSeen = true;
-      }
+      absentAt = null;
+      homeSeen = true;
     }
 
     const listing = await finder.list(checkedAt, (id) => lastHolding?.held.has(id) ?? false);

@@ -8,6 +8,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - A Claude Code session's details give the token counts of its newest reply too, such as `63,478 in, 1,244 out`, with how much of the input came from a cache. Agent Lookout reads them with its last message, from the same end of its transcript, while its details are open, and opens or reads nothing more for them. Until the first answer comes, the Tokens fact says they are not read yet, and when they cannot be read, it says why, such as that its transcript was not found. What each agent can report, in Sources, says Partly for Claude Code's Tokens, and No with `AGENT_LOOKOUT_WAITING_TEXT=off` or `AGENT_LOOKOUT_LAST_MESSAGE=off`, or for Claude Code on another machine. `GET /api/sessions/last-message` gives them as `tokens`, and `GET /api/sessions` never does.
 
+### Changed
+
+- The Antigravity CLI's card in Sources says when the Antigravity IDE's folder, `~/.gemini/antigravity-ide`, or Antigravity 2.0's, `~/.gemini/antigravity`, is on this computer, and that Agent Lookout does not read it yet, so it is plain why none of their sessions appear. Agent Lookout only checks whether each folder is there, at most once a minute, and opens nothing in them.
+
 ## 0.2.10 - 2026-10-08
 
 A Codex session's details show how many tokens its newest reply took, and the Mac app asks once whether to turn notifications on, then sends a test that says what macOS did with it.

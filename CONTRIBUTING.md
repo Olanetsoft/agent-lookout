@@ -33,7 +33,7 @@ To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
-AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_ANTIGRAVITY_HOME=/tmp/lookout-empty AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
+AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_ANTIGRAVITY_HOME=/tmp/lookout-empty/antigravity-cli AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
 ```
 
 With all five set, Agent Lookout reads only that folder, does not run the `claude` command, reads none of `~/.codex`, `~/.gemini/antigravity-cli` and `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.

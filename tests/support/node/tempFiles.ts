@@ -35,10 +35,16 @@ export const NO_SETTINGS_FILE = path.join(
  * An empty folder for the Antigravity CLI adapter to read in place of
  * `~/.gemini/antigravity-cli`, so that a collector a test builds from
  * `process.env` finds no conversations and runs no `ps`: `nodeSetup.ts` makes
- * it and names it there. Nothing is ever written in it. A test that builds an
+ * it and names it there. Nothing is ever written in it. It sits in a folder of
+ * its own, where the adapter also looks for the Antigravity IDE's and
+ * Antigravity 2.0's folders, so neither is ever there. A test that builds an
  * environment of its own names a `tempDir` there.
  */
-export const EMPTY_ANTIGRAVITY_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-antigravity");
+export const EMPTY_ANTIGRAVITY_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-antigravity",
+  "antigravity-cli",
+);
 
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
