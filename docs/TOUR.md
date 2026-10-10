@@ -225,6 +225,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `antigravityLiveness.ts` holds a conversation open while any running agy program could have it: one the program names with `--conversation`, one written since the program started, or one written since `ps` was last asked. Only a conversation no program could have open is finished. This errs towards open: one agy left open all day holds every conversation it wrote to.
 - `agyLogs.ts` ties each running program to its own log in `log/`, by the start time in the log's name. `antigravityLog.ts` keeps only the folder, the conversation opened, and an approval asked for and not yet answered. The transcript never records an approval wait, but the log does. So a session needs you while the log says agy asked, and the transcript has no step yet after the one that waits (`waitsForApproval`).
 - `annotations.ts` reads the title agy gives a conversation, from `annotations/<id>.pbtxt`.
+- `otherFolders.ts` checks whether the Antigravity IDE's folder or Antigravity 2.0's is beside the CLI's, with one `lstat` each, at most once a minute, so the card can say it is there and not read yet (#100). It opens nothing in them.
 
 **Bases.** `files` is the usual one. `files-without-processes` is used when `ps` cannot be asked, as on Windows. `files-unmatched` is used while an agy program runs that could have any conversation open. In both of the last two, no conversation is shown as finished, so the poller keeps them apart.
 

@@ -204,7 +204,7 @@ A session's id is `codex:<thread id>`. A Codex session has no process ID and no 
 
 ## The Antigravity CLI adapter
 
-The adapter lives in `src/collector/adapters/antigravity/`. [adapters/antigravity.md](adapters/antigravity.md) is its reference: every file it reads and how often, the full status table, the agy version it was written from, what is not yet checked against a running conversation and what breaks when agy changes. It covers the Antigravity CLI, `agy`, and not the Antigravity desktop app.
+The adapter lives in `src/collector/adapters/antigravity/`. [adapters/antigravity.md](adapters/antigravity.md) is its reference: every file it reads and how often, the full status table, the agy version it was written from, what is not yet checked against a running conversation and what breaks when agy changes. It covers the Antigravity CLI, `agy`, and not the Antigravity IDE or Antigravity 2.0: it only checks whether their folders are there.
 
 agy documents where it keeps each conversation's transcript and what a line of it holds, for its own agents and hooks, but no listing for another program. Its hooks and its status line each need a change to its settings. So the adapter reads files alone, and runs no agy program.
 

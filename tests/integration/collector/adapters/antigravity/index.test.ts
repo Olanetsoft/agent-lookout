@@ -274,3 +274,120 @@ describe("finding the Antigravity CLI's folder", () => {
     expect(await snapshotOf(empty)).toEqual(before);
   });
 });
+
+describe("the Antigravity IDE's and Antigravity 2.0's folders, beside the CLI's", () => {
+  const IDE_NOTE =
+    "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide. Agent Lookout reads only the Antigravity CLI so far, not the IDE.";
+  const APP_NOTE =
+    "A folder of Antigravity 2.0, or of an older Antigravity IDE, is here, ~/.gemini/antigravity. Agent Lookout does not read it yet.";
+  const BOTH_NOTE =
+    "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide, and so is one of Antigravity 2.0, or of an older Antigravity IDE, ~/.gemini/antigravity. Agent Lookout reads only the Antigravity CLI so far, not either of them.";
+  const NOT_FOUND =
+    "The Antigravity CLI was not found: there is no ~/.gemini/antigravity-cli folder. Agent Lookout looks again every minute.";
+
+  /** A home folder of the test's own, with these folders in its `.gemini`, and with the CLI's holding one conversation when `cli` is true. */
+  async function homeWith(names: string[], cli = false): Promise<string> {
+    const userHome = await tempDir();
+    await mkdir(path.join(userHome, ".gemini"), { recursive: true });
+    for (const name of names) await mkdir(path.join(userHome, ".gemini", name));
+    if (cli) {
+      await put(
+        transcriptPath(path.join(userHome, ".gemini", "antigravity-cli"), IDLE),
+        finishedTurn(0, NOW - MINUTE).join(""),
+        NOW - MINUTE,
+      );
+    }
+    return userHome;
+  }
+
+  /** The adapter with nothing naming another folder, on this home folder. */
+  function adapterIn(userHome: string, options: AntigravityAdapterOptions = {}) {
+    return createAntigravityAdapter({
+      env: {},
+      homeDir: userHome,
+      now: () => NOW,
+      platform: "darwin",
+      processes: standInProcesses().reader,
+      ...options,
+    });
+  }
+
+  test("with neither there, nothing is said of them, whether the CLI is found or not", async () => {
+    const without = await adapterIn(await homeWith([])).poll();
+    expect(without.health.detail).toBe(NOT_FOUND);
+    const found = await adapterIn(await homeWith([], true)).poll();
+    expect(found.health.state).toBe("ok");
+    expect(found.health.detail).not.toMatch(/Antigravity IDE|Antigravity 2\.0/);
+  });
+
+  test("with the IDE's folder alone and no CLI, the not-found text says it is there and not read", async () => {
+    const result = await adapterIn(await homeWith(["antigravity-ide"])).poll();
+    expect(result.health).toMatchObject({
+      state: "unavailable",
+      detail: `${NOT_FOUND} ${IDE_NOTE}`,
+    });
+  });
+
+  test("with Antigravity 2.0's folder alone and the CLI found, its sessions are listed and the note comes last", async () => {
+    const result = await adapterIn(await homeWith(["antigravity"], true)).poll();
+    expect(result.health.state).toBe("ok");
+    expect(result.health.detail?.endsWith(` ${APP_NOTE}`)).toBe(true);
+    expect(statuses(result.sessions)).toEqual({ [IDLE]: "finished" });
+  });
+
+  test("with both there, both are named, and each is only looked at: nothing in them is opened, listed or changed", async () => {
+    const userHome = await homeWith(["antigravity-ide", "antigravity"], true);
+    const ide = path.join(userHome, ".gemini", "antigravity-ide");
+    const app = path.join(userHome, ".gemini", "antigravity");
+    await put(transcriptPath(ide, WORKING), workingTurn(0, NOW - MINUTE).join(""), NOW - SECOND);
+    await put(path.join(app, "settings.json"), "{}", NOW);
+    const before = await snapshotOf(path.join(userHome, ".gemini"));
+    const { io, calls } = recordingIo();
+    const result = await adapterIn(userHome, { io }).poll();
+    expect(result.health.detail?.endsWith(` ${BOTH_NOTE}`)).toBe(true);
+    expect(statuses(result.sessions)).toEqual({ [IDLE]: "finished" });
+    const inEither = (target: string) =>
+      [ide, app].some((folder) => target === folder || target.startsWith(folder + path.sep));
+    expect(calls.filter((call) => inEither(call.path))).toEqual([
+      { method: "lstat", path: ide },
+      { method: "lstat", path: app },
+    ]);
+    expect(await snapshotOf(path.join(userHome, ".gemini"))).toEqual(before);
+  });
+
+  test("a link in either's place counts as there and is not followed, even one that leads nowhere", async () => {
+    const userHome = await homeWith([]);
+    const outside = await tempDir();
+    await put(path.join(outside, "settings.json"), "{}", NOW);
+    const ide = path.join(userHome, ".gemini", "antigravity-ide");
+    const app = path.join(userHome, ".gemini", "antigravity");
+    // A junction on Windows, which needs no special right there, and a link anywhere else.
+    await symlink(outside, ide, "junction");
+    await symlink(path.join(userHome, "nowhere"), app);
+    const { io, calls } = recordingIo();
+    const result = await adapterIn(userHome, { io }).poll();
+    expect(result.health.detail).toBe(`${NOT_FOUND} ${BOTH_NOTE}`);
+    expect(calls.filter((call) => call.path.startsWith(outside))).toEqual([]);
+    expect(
+      calls.filter((call) => call.path === ide || call.path.startsWith(ide + path.sep)),
+    ).toEqual([{ method: "lstat", path: ide }]);
+  });
+
+  test("with AGENT_LOOKOUT_ANTIGRAVITY_HOME set, they are looked for beside that folder, never under the home folder", async () => {
+    const userHome = await homeWith(["antigravity-ide", "antigravity"]);
+    const elsewhere = await tempDir();
+    const cli = path.join(elsewhere, "agy");
+    const { io, calls } = recordingIo();
+    const options = { homeDir: userHome, io };
+    const none = await adapterFor(cli, options).poll();
+    expect(none.health.state).toBe("ok");
+    expect(none.health.detail).not.toMatch(/Antigravity IDE|Antigravity 2\.0/);
+
+    await mkdir(path.join(elsewhere, "antigravity-ide"));
+    const beside = await adapterFor(cli, options).poll();
+    expect(beside.health.detail).toContain(
+      `The Antigravity IDE's folder is here, ${path.join(elsewhere, "antigravity-ide")}. Agent Lookout reads only the Antigravity CLI so far, not the IDE.`,
+    );
+    expect(calls.filter((call) => call.path.startsWith(userHome))).toEqual([]);
+  });
+});

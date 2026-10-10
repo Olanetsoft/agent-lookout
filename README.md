@@ -113,7 +113,7 @@ Claude Code, Codex and the Antigravity CLI need no setup. Any other agent writes
 | Antigravity CLI | Partly    | No     | Yes       | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
-A Codex session waiting for approval shows as working, and so does an Antigravity CLI session waiting for an answer to a question. After 5 minutes its row says how long it has been quiet. An Antigravity CLI session needs you while agy asks you to approve a tool. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and checked against one conversation. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
+A Codex session waiting for approval shows as working, and so does an Antigravity CLI session waiting for an answer to a question. After 5 minutes its row says how long it has been quiet. An Antigravity CLI session needs you while agy asks you to approve a tool. Antigravity CLI support is new: it is built from what agy 1.3.1 documents and its program holds, and checked against one conversation. The Antigravity IDE and Antigravity 2.0 are not read yet, and Sources says when their folders are there. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) gives the reason for every Partly and No.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
@@ -190,7 +190,7 @@ It listens on a loopback address only, 127.0.0.1 unless you set another, turns a
 ## What it does not do yet
 
 - It cannot send a session a message, and Resume only copies the command.
-- Cloud sessions, Codex cloud tasks, browser chats and the Antigravity desktop app's conversations do not appear.
+- Cloud sessions, Codex cloud tasks, browser chats and the Antigravity IDE's and Antigravity 2.0's conversations do not appear.
 - Claude Code's and Codex's files are undocumented, and the Antigravity CLI's are documented only for its own agents, so an update can hide sessions. [What breaks when Codex changes](docs/adapters/codex.md#what-breaks-when-codex-changes), [and when Antigravity changes](docs/adapters/antigravity.md#what-breaks-when-antigravity-changes)
 - The Mac app is not signed with an Apple Developer ID yet, and there is no Linux or Windows app.
 

@@ -32,6 +32,7 @@ agy documents several things another program could use, and none of them can be 
 | `annotations/<id>.pbtxt`                             | `lstat`, then opened read-only when it is an ordinary file of at most 4 KiB, for its `title`                               | `lstat` every poll for each conversation shown; read when it changes                                                                                  |
 | `log/`                                               | Listed                                                                                                                     | While `ps` shows an agy program, on each poll until every such program's log is found                                                                 |
 | `log/cli-YYYYMMDD_HHMMSS.log`                        | `lstat`, then opened read-only: at most the last 4 MiB, then only what is appended                                         | Every poll, for the log of each agy program `ps` shows; read when its size or modified time changes                                                   |
+| `antigravity-ide` and `antigravity`, beside it       | One `lstat` each, for whether it is there. Nothing in them is opened, listed or watched                                    | On the first poll, then at most once a minute                                                                                                         |
 
 A transcript is opened with `O_NOFOLLOW` and `O_NONBLOCK` and read only if the open file is an ordinary file, so a link, a pipe or a device named like a transcript is never read and cannot stall a poll.
 
@@ -39,9 +40,23 @@ It never reads `~/.gemini/oauth_creds.json`, `google_accounts.json`, `settings.j
 
 ### The agy folder
 
-`AGENT_LOOKOUT_ANTIGRAVITY_HOME` if set, otherwise `~/.gemini/antigravity-cli`. The hooks documentation names the app data folders: `~/.gemini/antigravity-cli` for the CLI, `~/.gemini/antigravity` for the desktop app and `~/.gemini/antigravity-ide` for the IDE.
+`AGENT_LOOKOUT_ANTIGRAVITY_HOME` if set, otherwise `~/.gemini/antigravity-cli`. The [hooks documentation](https://antigravity.google/docs/hooks/) gives each product an app data folder of its own, `<app_data_dir>`:
+
+| Product                                                 | Folder                      | Read                                 |
+| ------------------------------------------------------- | --------------------------- | ------------------------------------ |
+| The Antigravity CLI, `agy`                              | `~/.gemini/antigravity-cli` | Yes                                  |
+| The Antigravity IDE, the editor                         | `~/.gemini/antigravity-ide` | No. Only whether the folder is there |
+| Antigravity 2.0, the desktop app with the Agent Manager | `~/.gemini/antigravity`     | No. Only whether the folder is there |
+
+A 1.x Antigravity IDE kept its files in `~/.gemini/antigravity` too, so that folder may be 2.0's or left from an older IDE. On Windows the folders are in `%USERPROFILE%\.gemini`.
 
 When the folder is missing, the Antigravity CLI is reported as not found, with no advice, and the folder is looked for again once a minute. Polls in between touch nothing, and no `ps` is run. A folder named by `AGENT_LOOKOUT_ANTIGRAVITY_HOME` with no `brain/` in it is an answer, not a missing agy: the source is watched and lists no sessions.
+
+### The IDE's and Antigravity 2.0's folders
+
+Agent Lookout does not read the Antigravity IDE or Antigravity 2.0 yet. So that Sources can say why their sessions do not appear, `otherFolders.ts` looks for `antigravity-ide` and `antigravity` beside the agy folder, with one `lstat` each, on the first poll and then at most once a minute. While the agy folder is missing, they are looked at only on a poll that looks for it too. A link in a folder's place counts as there and is not followed. A file of that name, or a path that cannot be looked at, counts as not there. Nothing in either is opened, listed or watched, and only whether each is there is kept.
+
+When one is there, the card's note ends with a sentence that says so, whether the CLI is found or not: "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide. Agent Lookout reads only the Antigravity CLI so far, not the IDE." It says the folder is there, not that the product is used, since a folder can be there and hold nothing. With `AGENT_LOOKOUT_ANTIGRAVITY_HOME` set, it looks beside the folder that names instead.
 
 On a machine where agy 1.3.1 was installed and had run no conversation, the folder held empty `conversations/`, `brain/` and `crashes/` folders, `conversation_summaries.db`, `installation_id`, `last_check.timestamp`, `jetski_state.pbtxt`, `cli.log` (a link to `log/cli-YYYYMMDD_HHMMSS.log`, one log for each process), `updater/`, `cache/`, `bin/` and `builtin/`.
 
@@ -157,7 +172,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - On Windows no conversation is shown as finished.
 - `ps` is asked only while some conversation was written in the last day, so a conversation agy has kept open, unwritten, for more than a day is listed only while another one is recent.
 - A tool that fails shows as working. Only an error agy reports as its own step, or a failed reply, shows as failed.
-- The Antigravity desktop app, which runs many conversations in one process, and the Antigravity IDE are not read. The hooks documentation puts their transcripts at the same place under their own folders, so the transcript reader would serve them, but the process check would not.
+- Antigravity 2.0, the desktop app, which runs many conversations in one process, and the Antigravity IDE are not read. Only whether their folders are there is checked, as [The IDE's and Antigravity 2.0's folders](#the-ides-and-antigravity-20s-folders) says. The hooks documentation puts their transcripts at the same place under their own folders, so the transcript reader would serve them, but the process check would not.
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
 - What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for an Antigravity CLI session.
 
@@ -213,6 +228,7 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 | A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                | `agyProcesses.ts`                        |
 | `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                      | `agyProcesses.ts`                        |
 | `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                   | `index.ts`                               |
+| The IDE's or Antigravity 2.0's folder is renamed or moved        | The card no longer says that folder is there                                       | `otherFolders.ts`                        |
 | The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `agyLogs.ts`        |
 | The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `annotations.ts`                         |
 

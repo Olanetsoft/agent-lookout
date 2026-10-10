@@ -356,6 +356,110 @@ describe(ANTIGRAVITY_HOME_ENV, () => {
   });
 });
 
+describe("the Antigravity IDE's and Antigravity 2.0's folders", () => {
+  const IDE = `${HOME}/.gemini/antigravity-ide`;
+  const APP = `${HOME}/.gemini/antigravity`;
+  const IDE_NOTE =
+    "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide. Agent Lookout reads only the Antigravity CLI so far, not the IDE.";
+  const APP_NOTE =
+    "A folder of Antigravity 2.0, or of an older Antigravity IDE, is here, ~/.gemini/antigravity. Agent Lookout does not read it yet.";
+  /** Whether a path is one of the two folders or inside one. */
+  const inEither = (target: string) =>
+    [IDE, APP].some((folder) => target === folder || target.startsWith(`${folder}/`));
+
+  test("with the CLI not found, the not-found text says the IDE's folder is there, and polls between looks touch nothing", async () => {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    files.mkdir(IDE);
+    const processes = standInProcesses();
+    const adapter = antigravityAdapterFor(files, processes, { now: clock.now });
+    const notFound =
+      "The Antigravity CLI was not found: there is no ~/.gemini/antigravity-cli folder. Agent Lookout looks again every minute.";
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail: `${notFound} ${IDE_NOTE}`,
+    });
+    files.forget();
+    clock.advance(RECHECK_MS - SECOND);
+    expect((await adapter.poll()).health.detail).toBe(`${notFound} ${IDE_NOTE}`);
+    expect(files.calls).toEqual([]);
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(files.count("lstat", inEither)).toBe(2);
+    expect(processes.asked()).toBe(0);
+  });
+
+  test("with the CLI watched, the note comes last, and the folders are looked at once a minute, not on every poll", async () => {
+    const { adapter, clock, files } = setUp();
+    files.mkdir(APP);
+    const first = await adapter.poll();
+    expect(first.health.detail).toBe(
+      `Sessions are read from the transcripts the Antigravity CLI keeps in ~/.gemini/antigravity-cli/brain. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE} ${APP_NOTE}`,
+    );
+    expect(statuses(first.sessions)).toMatchObject({ [WORKING]: "finished" });
+    files.forget();
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).health.detail).toBe(first.health.detail);
+    expect(files.count(undefined, inEither)).toBe(0);
+    clock.advance(RECHECK_MS);
+    files.remove(APP);
+    expect((await adapter.poll()).health.detail).not.toContain("Antigravity 2.0");
+    expect(files.count(undefined, inEither)).toBe(2);
+  });
+
+  test("when the CLI's folder goes, they are looked at only with it, so polls between its looks touch nothing", async () => {
+    const { adapter, clock, files, processes } = setUp();
+    files.mkdir(IDE);
+    await adapter.poll();
+    clock.advance(30 * SECOND);
+    files.remove(AGY_HOME);
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail: expect.stringContaining(IDE_NOTE),
+    });
+    files.forget();
+    const asked = processes.asked();
+    clock.advance(30 * SECOND);
+    expect((await adapter.poll()).health.detail).toContain(IDE_NOTE);
+    clock.advance(RECHECK_MS - 30 * SECOND - SECOND);
+    await adapter.poll();
+    expect(files.calls).toEqual([]);
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(files.calls).toEqual([
+      { method: "lstat", path: IDE },
+      { method: "lstat", path: APP },
+      { method: "stat", path: AGY_HOME },
+    ]);
+    expect(processes.asked()).toBe(asked);
+  });
+
+  test("nothing in them is opened or listed", async () => {
+    const { adapter, files } = setUp();
+    files.write(`${IDE}/brain/${WORKING}/.system_generated/logs/transcript.jsonl`, "{}\n");
+    files.write(`${APP}/settings.json`, "{}");
+    await adapter.poll();
+    expect(files.calls.filter((call) => inEither(call.path))).toEqual([
+      { method: "lstat", path: IDE },
+      { method: "lstat", path: APP },
+    ]);
+  });
+
+  test(`with ${ANTIGRAVITY_HOME_ENV} set, they are looked for beside it, never under the home folder`, async () => {
+    const files = memoryFiles(() => NOW);
+    files.mkdir(IDE);
+    files.mkdir(APP);
+    files.mkdir(`${HOME}/code/demo/antigravity-ide`);
+    const adapter = antigravityAdapterFor(files, standInProcesses(), {
+      env: { [ANTIGRAVITY_HOME_ENV]: `${HOME}/code/demo/agy` },
+    });
+    expect((await adapter.poll()).health.detail).toBe(
+      `${ANTIGRAVITY_HOME_ENV} is set to ~/code/demo/agy, which has no brain folder, so no Antigravity CLI sessions are listed. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE} The Antigravity IDE's folder is here, ~/code/demo/antigravity-ide. Agent Lookout reads only the Antigravity CLI so far, not the IDE.`,
+    );
+    expect(files.calls.filter((call) => call.path.startsWith(`${HOME}/.gemini`))).toEqual([]);
+  });
+});
+
 test("carries its own declaration of what it can report", () => {
   const adapter = antigravityAdapterFor(
     memoryFiles(() => NOW),
