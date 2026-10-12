@@ -6,8 +6,8 @@ import {
   stepStatusName,
   stepTypeName,
   type AntigravityStep,
-} from "../../../core/mapping/antigravityMapping.ts";
-import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+} from "../../../../core/mapping/antigravityMapping.ts";
+import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
  * Reading one Antigravity CLI transcript for the little this adapter needs.

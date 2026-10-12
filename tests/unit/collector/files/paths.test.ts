@@ -5,6 +5,7 @@ import {
   pathCandidates,
   pathFolders,
   programNames,
+  sameFolder,
   tildify,
   variable,
 } from "@collector/files/paths";
@@ -38,6 +39,19 @@ describe("tildify", () => {
     expect(tildify("C:\\Users", home, "win32")).toBe("C:\\Users");
     // A home folder that is a drive's root would make every path on it short.
     expect(tildify("C:\\tools\\claude.exe", "C:\\", "win32")).toBe("C:\\tools\\claude.exe");
+  });
+});
+
+describe("sameFolder", () => {
+  test("ignores case on macOS and Windows, and not on Linux", () => {
+    const folder = "/Users/example/.gemini/antigravity";
+    expect(sameFolder(folder, "/Users/example/.gemini/Antigravity", "darwin")).toBe(true);
+    expect(sameFolder("C:\\Users\\example\\.gemini", "c:\\users\\EXAMPLE\\.gemini", "win32")).toBe(
+      true,
+    );
+    expect(sameFolder(folder, "/Users/example/.gemini/Antigravity", "linux")).toBe(false);
+    expect(sameFolder(folder, folder, "linux")).toBe(true);
+    expect(sameFolder(folder, "/Users/example/.gemini/antigravity-cli", "darwin")).toBe(false);
   });
 });
 

@@ -14,7 +14,11 @@
 
 import { mkdirSync } from "node:fs";
 
-import { EMPTY_ANTIGRAVITY_HOME, NO_SETTINGS_FILE } from "@tests/support/node/tempFiles";
+import {
+  EMPTY_ANTIGRAVITY_APP_HOME,
+  EMPTY_ANTIGRAVITY_HOME,
+  NO_SETTINGS_FILE,
+} from "@tests/support/node/tempFiles";
 
 process.env.AGENT_LOOKOUT_HISTORY = "off";
 process.env.AGENT_LOOKOUT_PULL_REQUESTS = "off";
@@ -33,7 +37,10 @@ delete process.env.AGENT_LOOKOUT_PUSHOVER_TOKEN;
 delete process.env.AGENT_LOOKOUT_PUSHOVER_USER;
 
 // Nor does one read the Antigravity CLI's own folder, `~/.gemini/antigravity-cli`,
-// or run `ps` for it: the adapter is pointed at an empty folder. A test of the
-// adapter names a folder of its own.
+// or Antigravity 2.0's, `~/.gemini/antigravity`, or run `ps` or `sqlite3` for
+// them: each adapter is pointed at an empty folder. A test of an adapter names
+// a folder of its own.
 mkdirSync(EMPTY_ANTIGRAVITY_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_ANTIGRAVITY_HOME = EMPTY_ANTIGRAVITY_HOME;
+mkdirSync(EMPTY_ANTIGRAVITY_APP_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME = EMPTY_ANTIGRAVITY_APP_HOME;

@@ -7,7 +7,7 @@ import {
   logStartOf,
   matchLogs,
   RELIST_MS,
-} from "@collector/adapters/antigravity/agyLogs";
+} from "@collector/adapters/antigravity/cli/agyLogs";
 import {
   AGY_HOME,
   answeredLine,

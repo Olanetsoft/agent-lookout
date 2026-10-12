@@ -121,6 +121,16 @@ export function pathCandidates(
 }
 
 /**
+ * Whether two resolved paths name one folder, by their letters alone. On
+ * macOS and Windows a folder's name ignores case, so `Antigravity` there is
+ * `antigravity`. A link to a folder is not followed, so it is another path.
+ */
+export function sameFolder(a: string, b: string, platform: NodeJS.Platform): boolean {
+  const ignoresCase = platform === "darwin" || platform === "win32";
+  return ignoresCase ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/**
  * Shortens a path under the home directory to `~/...` for display. On Windows
  * the rest of the path is written with `/` too, so a folder reads the same on
  * every system, `~/.claude/sessions`, and a path is under the home folder

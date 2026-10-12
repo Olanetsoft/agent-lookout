@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/index";
+import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
+import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
@@ -11,7 +12,9 @@ import { MACHINE } from "@site-tour/feed/hour";
 import * as tour from "@site-tour/feed/sources";
 import {
   antigravityAdapterFor,
+  antigravityAppAdapterFor,
   memoryFiles,
+  standInHub,
   standInProcesses,
 } from "@tests/support/adapters/antigravityAdapter";
 
@@ -22,6 +25,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.CLAUDE_CODE_CAPABILITIES).toEqual(CLAUDE_CODE_CAPABILITIES);
   expect(tour.CODEX_CAPABILITIES).toEqual(CODEX_CAPABILITIES);
   expect(tour.ANTIGRAVITY_CAPABILITIES).toEqual(ANTIGRAVITY_CAPABILITIES);
+  expect(tour.ANTIGRAVITY_APP_CAPABILITIES).toEqual(ANTIGRAVITY_APP_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -31,6 +35,7 @@ test("this computer's sources come in the collector's order", () => {
     "claude-code",
     "codex",
     "antigravity-cli",
+    "antigravity-app",
     "status-files",
   ]);
 });
@@ -54,6 +59,18 @@ test("the Antigravity CLI's card is the one its adapter shows on a computer with
   expect(sessions).toEqual([]);
 });
 
+test("Antigravity's card is the one its adapter shows on a computer without the app", async () => {
+  const adapter = antigravityAppAdapterFor(memoryFiles(), standInHub());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "antigravity-app")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -70,6 +87,12 @@ test("the other machine's agents and its row for each source are what this compu
           label: "Antigravity CLI",
           state: "unavailable",
           capabilities: ANTIGRAVITY_CAPABILITIES,
+        },
+        {
+          id: "antigravity-app",
+          label: "Antigravity",
+          state: "unavailable",
+          capabilities: ANTIGRAVITY_APP_CAPABILITIES,
         },
         {
           id: "status-files",

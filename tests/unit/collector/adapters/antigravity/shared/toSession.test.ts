@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { antigravitySession } from "@collector/adapters/antigravity/toSession";
-import type { TranscriptState } from "@collector/adapters/antigravity/transcriptFile";
+import {
+  antigravitySession,
+  APP_PROFILE,
+  CLI_PROFILE,
+} from "@collector/adapters/antigravity/shared/toSession";
+import type { TranscriptState } from "@collector/adapters/antigravity/shared/transcriptFile";
 import { conversationId, MINUTE, NOW, SECOND } from "@tests/fixtures/antigravity";
 
 const ID = conversationId("a1");
@@ -25,6 +29,7 @@ describe("antigravitySession", () => {
   test("is a terminal session named by its conversation id, with no folder, process or link", () => {
     expect(
       antigravitySession({
+        profile: CLI_PROFILE,
         conversationId: ID,
         state: idle,
         live: true,
@@ -49,6 +54,7 @@ describe("antigravitySession", () => {
 
   test("a conversation no agy program has open is finished since its last step", () => {
     const session = antigravitySession({
+      profile: CLI_PROFILE,
       conversationId: ID,
       state: idle,
       live: false,
@@ -73,6 +79,7 @@ describe("antigravitySession", () => {
     };
     expect(
       antigravitySession({
+        profile: CLI_PROFILE,
         conversationId: ID,
         state: working,
         live: "unknown",
@@ -86,6 +93,7 @@ describe("antigravitySession", () => {
     const unknown: TranscriptState = { ...idle, last: undefined };
     expect(
       antigravitySession({
+        profile: CLI_PROFILE,
         conversationId: ID,
         state: unknown,
         live: true,
@@ -104,6 +112,7 @@ describe("antigravitySession", () => {
       lastIndex: 3,
     };
     const session = antigravitySession({
+      profile: CLI_PROFILE,
       conversationId: ID,
       state: wrong,
       live: true,
@@ -117,6 +126,7 @@ describe("antigravitySession", () => {
   test("neither a status nor a write can come before the conversation began", () => {
     const early: TranscriptState = { ...idle, since: START - 10 * MINUTE };
     const session = antigravitySession({
+      profile: CLI_PROFILE,
       conversationId: ID,
       state: early,
       live: true,
@@ -129,7 +139,14 @@ describe("antigravitySession", () => {
 });
 
 describe("antigravitySession, with what its program's log and its title say", () => {
-  const base = { conversationId: ID, state: idle, live: true, writtenAt: NOW - MINUTE, now: NOW };
+  const base = {
+    profile: CLI_PROFILE,
+    conversationId: ID,
+    state: idle,
+    live: true,
+    writtenAt: NOW - MINUTE,
+    now: NOW,
+  };
 
   test("needs you for permission while its program waits for approval, since agy began to ask", () => {
     expect(
@@ -168,5 +185,46 @@ describe("antigravitySession, with what its program's log and its title say", ()
     });
     expect(antigravitySession({ ...base, title: null, folder }).name).toBe("demo-project");
     expect(antigravitySession({ ...base, title: null, folder: null }).name).toBe(ID);
+  });
+});
+
+describe("antigravitySession, for Antigravity 2.0", () => {
+  const base = {
+    profile: APP_PROFILE,
+    conversationId: ID,
+    state: idle,
+    live: true,
+    writtenAt: NOW - MINUTE,
+    now: NOW,
+  };
+
+  test("is a desktop app session of its own source, with its folder from the app's list of chats", () => {
+    const folder = "/Users/example/code/demo-project";
+    expect(antigravitySession({ ...base, title: "Count the files", folder })).toEqual({
+      id: `antigravity-app:${ID}`,
+      source: "antigravity-app",
+      surface: "desktop",
+      name: "Count the files",
+      cwd: folder,
+      project: "demo-project",
+      status: "idle",
+      startedAt: START,
+      statusSince: NOW - 2 * MINUTE,
+      lastWriteAt: NOW - MINUTE,
+      links: {},
+      stale: false,
+    });
+  });
+
+  test("a chat whose last step is a done reply is working while its files are written, since that reply", () => {
+    expect(antigravitySession({ ...base, writtenAt: NOW - SECOND, writing: true })).toMatchObject({
+      status: "working",
+      statusSince: NOW - 2 * MINUTE,
+      lastWriteAt: NOW - SECOND,
+    });
+  });
+
+  test("once the app is closed it is finished, written to or not", () => {
+    expect(antigravitySession({ ...base, live: false, writing: true }).status).toBe("finished");
   });
 });

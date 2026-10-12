@@ -223,3 +223,64 @@ export function answeredLine(ms: number, id: string, step: number, approved = tr
     "input_loop.go:706",
   );
 }
+
+// Antigravity 2.0, the desktop app, keeps its chats in its own folder laid out
+// as the CLI's, as written up in docs/adapters/antigravity.md. Its transcript
+// lines carry token counts on the model's replies, and hold only the steps
+// that are done. Every value below is invented, as above.
+
+/** Where the app's adapter looks when nothing names another folder. */
+export const APP_HOME = `${HOME}/.gemini/antigravity`;
+
+/** Where the app's list of chats is, under its folder. */
+export function summariesPath(home: string): string {
+  return `${home}/conversation_summaries.db`;
+}
+
+/** The app's hub, as `ps -o comm=` names it on macOS. */
+export const HUB = "/Applications/Antigravity.app/Contents/Resources/bin/language_server";
+
+/** The Antigravity IDE's language server, as `ps -o comm=` names it, which is not the app's hub. */
+export const IDE_SERVER =
+  "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm";
+
+/** What `ps -A -o comm=` prints for these programs, one a line. */
+export function programTable(programs: string[]): string {
+  return programs.map((program) => `${program}\n`).join("");
+}
+
+/** One line of the app's transcript: a step as `step` writes it, with token counts on a reply. */
+export function appStep(fields: StepFields): string {
+  const line = JSON.parse(step(fields)) as Record<string, unknown>;
+  if (fields.type === "PLANNER_RESPONSE") {
+    line.input_tokens = 1200;
+    line.cache_read_tokens = 800;
+    line.output_tokens = 64;
+  }
+  return `${JSON.stringify(line)}\n`;
+}
+
+/** A turn the app has finished: the prompt and the model's reply, which asked for no tool. */
+export function appTurn(firstIndex: number, start: number): string[] {
+  return [
+    appStep({ index: firstIndex, type: "USER_INPUT", at: start }),
+    appStep({ index: firstIndex + 1, type: "PLANNER_RESPONSE", at: start + 2 * SECOND }),
+  ];
+}
+
+/** One row of the app's list of chats, as `sqlite3 -json` prints the two columns asked for. */
+export interface SummaryRow {
+  conversation_id: string;
+  workspace_uris: string;
+}
+
+/** What `sqlite3 -json` prints for these rows: nothing for none, else one JSON array, a row a line. */
+export function sqliteJson(rows: SummaryRow[]): string {
+  if (rows.length === 0) return "";
+  return `[${rows.map((row) => JSON.stringify(row)).join(",\n")}]\n`;
+}
+
+/** `workspace_uris` as the app writes it: a JSON array of `file:` addresses. */
+export function workspaceUris(...folders: string[]): string {
+  return JSON.stringify(folders.map((folder) => `file://${encodeURI(folder)}`));
+}

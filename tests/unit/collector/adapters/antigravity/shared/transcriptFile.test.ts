@@ -5,7 +5,7 @@ import {
   parseStepTime,
   readStepLine,
   TAIL_LIMIT_BYTES,
-} from "@collector/adapters/antigravity/transcriptFile";
+} from "@collector/adapters/antigravity/shared/transcriptFile";
 import {
   AGY_HOME,
   conversationId,

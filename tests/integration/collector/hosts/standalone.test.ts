@@ -75,18 +75,21 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
   const codexHome = await tempDir();
   const antigravityHome = await tempDir();
+  const antigravityAppHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
     claudeHome,
     codexHome,
     antigravityHome,
+    antigravityAppHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,
       AGENT_LOOKOUT_ANTIGRAVITY_HOME: antigravityHome,
+      AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: antigravityAppHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -146,7 +149,8 @@ describe("the standalone host", () => {
   });
 
   test("with a page it serves the page and the API on loopback, refuses a foreign Host and stops cleanly", async () => {
-    const { env, claudeHome, codexHome, antigravityHome, statusDir } = await isolatedEnv();
+    const { env, claudeHome, codexHome, antigravityHome, antigravityAppHome, statusDir } =
+      await isolatedEnv();
     const host = await start(await distFolder(true), env);
 
     const address = host.address as AddressInfo;
@@ -203,6 +207,13 @@ describe("the standalone host", () => {
             state: "ok",
             watching: expect.arrayContaining([
               { label: "Conversations folder", value: path.join(antigravityHome, "brain") },
+            ]),
+          },
+          {
+            id: "antigravity-app",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Conversations folder", value: path.join(antigravityAppHome, "brain") },
             ]),
           },
           {

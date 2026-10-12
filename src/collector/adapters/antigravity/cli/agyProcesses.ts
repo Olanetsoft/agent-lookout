@@ -1,6 +1,6 @@
-import type { AgySessionProcess } from "../../../core/mapping/antigravityLiveness.ts";
-import { processStartTime } from "../../processes/processStart.ts";
-import { runPs, type PsAnswer } from "../../processes/ps.ts";
+import type { AgySessionProcess } from "../../../../core/mapping/antigravityLiveness.ts";
+import { processStartTime } from "../../../processes/processStart.ts";
+import { runPs, type PsAnswer } from "../../../processes/ps.ts";
 
 /**
  * Which agy programs run, from `ps`, for which Antigravity CLI conversations

@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 
 /**
- * The one way the collector runs `ps`, for the three things it asks: when a
- * session's process started, every process's parent for tmux, and every
- * process's parent, terminal and program for Terminal and iTerm2.
+ * The one way the collector runs `ps`, for what it asks: when a session's
+ * process started, every process's parent for tmux, every process's parent,
+ * terminal and program for Terminal and iTerm2, which agy programs run, and
+ * whether Antigravity's own program runs.
  */
 
 /** How long `ps` gets. It normally answers in a few milliseconds. */
@@ -23,9 +24,9 @@ const NOT_RUN: PsAnswer = { ok: false, stdout: "" };
 
 /**
  * Runs `ps` once with these arguments. It is run directly, never through a
- * shell, found on a fixed `PATH`, in the C locale, and, with `utc`, in UTC, as
- * Claude Code itself runs it. It is never run on Windows. It never rejects: a
- * failure is an answer.
+ * shell, with stdin closed, found on a fixed `PATH`, in the C locale, and, with
+ * `utc`, in UTC, as Claude Code itself runs it. It is never run on Windows. It
+ * never rejects: a failure is an answer.
  */
 export function runPs(args: readonly string[], options: { utc?: boolean } = {}): Promise<PsAnswer> {
   return new Promise((resolve) => {
@@ -34,7 +35,7 @@ export function runPs(args: readonly string[], options: { utc?: boolean } = {}):
       return;
     }
     try {
-      execFile(
+      const child = execFile(
         "ps",
         [...args],
         {
@@ -46,6 +47,7 @@ export function runPs(args: readonly string[], options: { utc?: boolean } = {}):
         },
         (error, stdout) => resolve({ ok: !error, stdout: String(stdout ?? "") }),
       );
+      child.stdin?.end();
     } catch {
       resolve(NOT_RUN);
     }

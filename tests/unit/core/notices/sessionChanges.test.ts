@@ -621,6 +621,7 @@ describe("over a long run of snapshots", () => {
     codex: [D, E],
     // Not in this run, which keeps to the three sources it has always drawn on.
     "antigravity-cli": [],
+    "antigravity-app": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

@@ -67,6 +67,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
       AGENT_LOOKOUT_CLAUDE_FEED: "off",
       AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
       AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
+      AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
     },
