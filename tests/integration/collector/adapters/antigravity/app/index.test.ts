@@ -211,7 +211,10 @@ describe("the Antigravity adapter, on a folder laid out as Antigravity 2.0 lays 
     expect(opened.filter((file) => file.endsWith("transcript.jsonl")).sort()).toEqual(
       [WORKING, IDLE, FAILED].map((id) => path.normalize(transcriptPath(home, id))).sort(),
     );
-    expect(calls).toContainEqual({ method: "lstat", path: path.normalize(summariesPath(home)) });
+    const summaries = { method: "lstat", path: path.normalize(summariesPath(home)) };
+    // sqlite3 is never run on Windows, so the folders file is not looked at there.
+    if (process.platform === "win32") expect(calls).not.toContainEqual(summaries);
+    else expect(calls).toContainEqual(summaries);
     for (const call of calls) {
       expect(call.path).not.toMatch(
         /transcript_full|chunks|messages|steps|agyhub|antigravity_state|installation_id/,

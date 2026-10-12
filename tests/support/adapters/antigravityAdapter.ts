@@ -25,6 +25,7 @@ import type {
 } from "@collector/adapters/antigravity/cli/agyProcesses";
 import type { AgySessionProcess } from "@core/mapping/antigravityLiveness";
 import { APP_HOME, HOME, NOW, sqliteJson, type SummaryRow } from "@tests/fixtures/antigravity";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
 export { handClock, memoryFiles, type MemoryFiles };
@@ -155,4 +156,18 @@ export function antigravityAppAdapterFor(
     }),
     ...options,
   });
+}
+
+/**
+ * The files as a disk that ignores case sees them, as macOS and Windows format
+ * one by default: each path named in `same` leads to the path it names.
+ */
+export function caseBlind(io: ReadOnlyIo, same: Readonly<Record<string, string>>): ReadOnlyIo {
+  const to = (target: string) => same[target] ?? target;
+  return {
+    ...io,
+    readdir: (target) => io.readdir(to(target)),
+    stat: (target) => io.stat(to(target)),
+    lstat: (target) => io.lstat(to(target)),
+  };
 }

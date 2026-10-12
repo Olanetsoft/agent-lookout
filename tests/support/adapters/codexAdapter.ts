@@ -62,6 +62,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
   const failing = new Map<string, string>();
   let failEverything: string | null = null;
   const calls: IoCall[] = [];
+  /** Each folder's identity, given the first time it is looked at. */
+  const folderInos = new Map<string, number>();
   const reads: { path: string; position: number; length: number }[] = [];
   let nextIno = 1;
   let openHandles = 0;
@@ -93,7 +95,11 @@ export function memoryFiles(clock: () => number = () => NOW) {
   function info(target: string): FileInfo {
     const entry = entries.get(target);
     if (entry) return infoOf(entry);
-    if (folders.has(target)) return { kind: "directory", size: 0, mtimeMs: 0, ino: 0 };
+    if (folders.has(target)) {
+      // Each folder has an identity of its own, as on a disk, kept while it is there.
+      if (!folderInos.has(target)) folderInos.set(target, nextIno++);
+      return { kind: "directory", size: 0, mtimeMs: 0, ino: folderInos.get(target) ?? 0 };
+    }
     throw errno("ENOENT", target);
   }
 

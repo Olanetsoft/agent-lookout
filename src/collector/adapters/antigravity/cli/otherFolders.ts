@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { sameFolder } from "../../../files/paths.ts";
+import { sameFolderOnDisk } from "../../../files/paths.ts";
 import type { ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
@@ -52,8 +52,7 @@ export function createOtherFolderCheck(options: OtherFolderCheckOptions) {
   const { io, recheckMs } = options;
   const home = path.resolve(options.home);
   // The folder the adapter reads as the CLI's is never taken for the IDE's.
-  const target = path.join(path.dirname(home), IDE_FOLDER);
-  const ide = sameFolder(target, home, options.platform) ? null : target;
+  const ide = path.join(path.dirname(home), IDE_FOLDER);
 
   let ideThere = false;
   /** When the folder was last looked at. Null before the first look. */
@@ -63,8 +62,7 @@ export function createOtherFolderCheck(options: OtherFolderCheckOptions) {
    * Whether something is at the path: a folder, or a link or anything else that
    * is not an ordinary file. A path that cannot be looked at is not said to be there.
    */
-  async function isThere(folder: string | null): Promise<boolean> {
-    if (folder === null) return false;
+  async function isThere(folder: string): Promise<boolean> {
     try {
       return (await io.lstat(folder)).kind !== "file";
     } catch {
@@ -80,10 +78,11 @@ export function createOtherFolderCheck(options: OtherFolderCheckOptions) {
     async note(at: number): Promise<string | null> {
       const since = checkedAt === null ? Infinity : at - checkedAt;
       if (since < 0 || since >= recheckMs) {
-        ideThere = await isThere(ide);
+        ideThere =
+          !(await sameFolderOnDisk(ide, home, options.platform, io)) && (await isThere(ide));
         checkedAt = at;
       }
-      return otherFoldersNote(ideThere && ide !== null ? options.name(ide) : null);
+      return otherFoldersNote(ideThere ? options.name(ide) : null);
     },
   };
 }

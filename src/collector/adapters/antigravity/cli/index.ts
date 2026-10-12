@@ -19,7 +19,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../../core/sessions/session.ts";
-import { sameFolder, tildify } from "../../../files/paths.ts";
+import { sameFolderOnDisk, tildify } from "../../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../../poller.ts";
 import type { Adapter, AdapterResult } from "../../adapter.ts";
@@ -279,7 +279,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   const brainDir = path.join(home, BRAIN_DIR);
   const homeName = tildify(home, homeDir);
   const brainName = tildify(brainDir, homeDir);
-  const readForApp = sameFolder(home, appHomeFor(env, homeDir), platform);
+  const appHome = appHomeFor(env, homeDir);
 
   const finder = createConversationFinder({ home, io, oldRefreshMs: options.oldRefreshMs });
   const reader = createTranscriptReader(io);
@@ -393,7 +393,9 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     const checkedAt = now();
 
     // Each chat is listed once: a folder also read for Antigravity 2.0 is left to it.
-    if (readForApp) return result("ok", readForAppNote(homeName), "not read here", checkedAt);
+    if (await sameFolderOnDisk(home, appHome, platform, io)) {
+      return result("ok", readForAppNote(homeName), "not read here", checkedAt);
+    }
 
     // A missing folder is believed missing for a while, so a machine without
     // agy pays nothing on most polls. A clock set back counts as time enough.

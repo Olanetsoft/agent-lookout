@@ -41,6 +41,7 @@ import {
 import {
   antigravityAdapterFor,
   antigravityAppAdapterFor,
+  caseBlind,
   handClock,
   memoryFiles,
   standInHub,
@@ -359,7 +360,7 @@ describe(ANTIGRAVITY_HOME_ENV, () => {
     expect((await adapter.poll()).health.state).toBe("unavailable");
   });
 
-  test("set to Antigravity 2.0's folder, whatever its case on a Mac, it leaves the folder to Antigravity, so each chat is listed once", async () => {
+  test("set to Antigravity 2.0's folder, it leaves the folder to Antigravity, so each chat is listed once, and on a Mac named in another case too when the disk says they are one folder", async () => {
     const files = memoryFiles(() => NOW);
     files.write(transcriptPath(APP_HOME, IDLE), finishedTurn(0, NOW - 20 * MINUTE).join(""), {
       mtimeMs: NOW - 19 * MINUTE,
@@ -367,28 +368,61 @@ describe(ANTIGRAVITY_HOME_ENV, () => {
     const app = await antigravityAppAdapterFor(files, standInHub()).poll();
     expect(app.sessions.map((session) => session.id)).toEqual([`antigravity-app:${IDLE}`]);
 
-    for (const [folder, name] of [
-      [APP_HOME, "~/.gemini/antigravity"],
-      [`${HOME}/.gemini/Antigravity`, "~/.gemini/Antigravity"],
-    ] as const) {
-      const before = files.calls.length;
-      const processes = standInProcesses();
-      const adapter = antigravityAdapterFor(files, processes, {
-        env: { [ANTIGRAVITY_HOME_ENV]: folder },
-      });
-      const result = await adapter.poll();
-      expect(result.sessions, folder).toEqual([]);
-      expect(result.health, folder).toMatchObject({ state: "ok", detail: readForAppNote(name) });
-      expect(files.calls.length, folder).toBe(before);
-      expect(processes.asked(), folder).toBe(0);
-    }
+    // The same path: nothing is asked of the disk or of ps.
+    let before = files.calls.length;
+    let processes = standInProcesses();
+    let result = await antigravityAdapterFor(files, processes, {
+      env: { [ANTIGRAVITY_HOME_ENV]: APP_HOME },
+    }).poll();
+    expect(result.sessions).toEqual([]);
+    expect(result.health).toMatchObject({
+      state: "ok",
+      detail: readForAppNote("~/.gemini/antigravity"),
+    });
+    expect(files.calls.length).toBe(before);
+    expect(processes.asked()).toBe(0);
     expect(readForAppNote("~/.gemini/antigravity")).toBe(
       "Agent Lookout reads ~/.gemini/antigravity for Antigravity too, so what is in it is listed under Antigravity alone.",
     );
 
-    // On Linux a folder's name keeps its case, so that is another folder.
+    // Another case on a disk that ignores case, as they are formatted by default:
+    // the disk is asked, and says the two names are one folder.
+    const named = `${HOME}/.gemini/Antigravity`;
+    before = files.calls.length;
+    processes = standInProcesses();
+    result = await antigravityAdapterFor(files, processes, {
+      env: { [ANTIGRAVITY_HOME_ENV]: named },
+      io: caseBlind(files.io, { [named]: APP_HOME }),
+    }).poll();
+    expect(result.sessions).toEqual([]);
+    expect(result.health).toMatchObject({
+      state: "ok",
+      detail: readForAppNote("~/.gemini/Antigravity"),
+    });
+    expect(files.calls.slice(before).map((call) => call.method)).toEqual(["stat", "stat"]);
+    expect(processes.asked()).toBe(0);
+  });
+
+  test("on a disk that tells case apart, a CLI folder named like Antigravity 2.0's in another case is its own, and is read", async () => {
+    const files = memoryFiles(() => NOW);
+    files.write(transcriptPath(APP_HOME, IDLE), finishedTurn(0, NOW - 20 * MINUTE).join(""), {
+      mtimeMs: NOW - 19 * MINUTE,
+    });
+    const named = `${HOME}/.gemini/Antigravity`;
+    files.mkdir(named);
+    const detail = (
+      await antigravityAdapterFor(files, standInProcesses(), {
+        env: { [ANTIGRAVITY_HOME_ENV]: named },
+      }).poll()
+    ).health.detail;
+    expect(detail).not.toBe(readForAppNote("~/.gemini/Antigravity"));
+    expect(detail).toContain(
+      `${ANTIGRAVITY_HOME_ENV} is set to ~/.gemini/Antigravity, which has no brain folder`,
+    );
+
+    // On Linux a folder's name keeps its case, so that is another folder, and the disk is not asked.
     const linux = antigravityAdapterFor(files, standInProcesses(), {
-      env: { [ANTIGRAVITY_HOME_ENV]: `${HOME}/.gemini/Antigravity` },
+      env: { [ANTIGRAVITY_HOME_ENV]: named },
       platform: "linux",
     });
     expect((await linux.poll()).health.detail).toContain(

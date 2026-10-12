@@ -2,6 +2,8 @@ import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { ReadOnlyIo } from "./readOnlyIo.ts";
+
 /**
  * Paths, as more than one part of the collector needs them: where a program of
  * a name would be on `PATH`, whether a file can be run, and a path under the
@@ -128,6 +130,28 @@ export function pathCandidates(
 export function sameFolder(a: string, b: string, platform: NodeJS.Platform): boolean {
   const ignoresCase = platform === "darwin" || platform === "win32";
   return ignoresCase ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/**
+ * Whether two paths are one folder: the same path, or, on macOS and Windows,
+ * paths that differ only in case and lead to one folder, as the disk says by
+ * its identity. A Mac's disk can be set to tell case apart, so the case alone
+ * does not settle it. A folder that is not there is one only with its exact path.
+ */
+export async function sameFolderOnDisk(
+  a: string,
+  b: string,
+  platform: NodeJS.Platform,
+  io: Pick<ReadOnlyIo, "stat">,
+): Promise<boolean> {
+  if (a === b) return true;
+  if (!sameFolder(a, b, platform)) return false;
+  try {
+    const [first, second] = await Promise.all([io.stat(a), io.stat(b)]);
+    return first.kind === "directory" && second.kind === "directory" && first.ino === second.ino;
+  } catch {
+    return false;
+  }
 }
 
 /**

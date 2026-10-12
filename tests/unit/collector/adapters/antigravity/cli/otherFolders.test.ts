@@ -5,8 +5,9 @@ import {
   otherFoldersNote,
 } from "@collector/adapters/antigravity/cli/otherFolders";
 import { tildify } from "@collector/files/paths";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { AGY_HOME, HOME, MINUTE, NOW, SECOND } from "@tests/fixtures/antigravity";
-import { memoryFiles } from "@tests/support/adapters/antigravityAdapter";
+import { caseBlind, memoryFiles } from "@tests/support/adapters/antigravityAdapter";
 
 const IDE = `${HOME}/.gemini/antigravity-ide`;
 const APP = `${HOME}/.gemini/antigravity`;
@@ -19,10 +20,11 @@ function checkFor(
   files: ReturnType<typeof memoryFiles>,
   home = AGY_HOME,
   platform: NodeJS.Platform = "darwin",
+  io: ReadOnlyIo = files.io,
 ) {
   return createOtherFolderCheck({
     home,
-    io: files.io,
+    io,
     recheckMs: MINUTE,
     platform,
     name: (target) => tildify(target, HOME),
@@ -104,20 +106,27 @@ describe("createOtherFolderCheck", () => {
     expect(files.calls).toEqual([]);
   });
 
-  test("on macOS and Windows, the CLI's folder named in another case is still not taken for the IDE's", async () => {
+  test("on macOS and Windows, the CLI's folder named in another case is not taken for the IDE's when the disk says they are one folder", async () => {
+    const home = `${HOME}/.gemini/Antigravity-IDE`;
     for (const platform of ["darwin", "win32"] as const) {
       const files = memoryFiles(() => NOW);
       files.mkdir(IDE);
-      expect(
-        await checkFor(files, `${HOME}/.gemini/Antigravity-IDE`, platform).note(NOW),
-      ).toBeNull();
-      expect(files.calls).toEqual([]);
+      // A disk that ignores case, as they are formatted by default: the two names are one folder.
+      const io = caseBlind(files.io, { [home]: IDE });
+      expect(await checkFor(files, home, platform, io).note(NOW), platform).toBeNull();
     }
-    // On Linux a name keeps its case, so `Antigravity-IDE` is another folder.
+  });
+
+  test("a disk that tells case apart can hold the IDE's folder beside a CLI folder named like it, and the IDE's is reported", async () => {
+    const home = `${HOME}/.gemini/Antigravity-IDE`;
     const files = memoryFiles(() => NOW);
     files.mkdir(IDE);
-    expect(await checkFor(files, `${HOME}/.gemini/Antigravity-IDE`, "linux").note(NOW)).toBe(
-      IDE_NOTE,
-    );
+    files.mkdir(home);
+    expect(await checkFor(files, home, "darwin").note(NOW)).toBe(IDE_NOTE);
+    // On Linux a name keeps its case, so `Antigravity-IDE` is another folder, and the disk is not asked.
+    const linux = memoryFiles(() => NOW);
+    linux.mkdir(IDE);
+    expect(await checkFor(linux, home, "linux").note(NOW)).toBe(IDE_NOTE);
+    expect(linux.calls.filter((call) => call.method === "stat")).toEqual([]);
   });
 });

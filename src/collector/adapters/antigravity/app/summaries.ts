@@ -214,7 +214,8 @@ export function createSummariesReader(options: {
   const { io, platform } = options;
   const run = options.run ?? runSqlite;
   const find = options.find ?? (() => findSqlite());
-  const file = path.join(options.home, SUMMARIES_FILE);
+  // Read only on macOS and Linux, so the path is joined as there, whatever runs the code.
+  const file = path.posix.join(options.home, SUMMARIES_FILE);
   /** The last read, with the file as it was then and when it was made. */
   let last: (Summaries & { info: FileInfo; at: number }) | null = null;
 

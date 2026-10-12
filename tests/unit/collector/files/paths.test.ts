@@ -6,10 +6,13 @@ import {
   pathFolders,
   programNames,
   sameFolder,
+  sameFolderOnDisk,
   tildify,
   variable,
 } from "@collector/files/paths";
 import { HOME } from "@tests/fixtures/claudeCode";
+import { memoryFiles } from "@tests/support/adapters/codexAdapter";
+import { caseBlind } from "@tests/support/adapters/antigravityAdapter";
 
 describe("tildify", () => {
   test("shortens paths under the home directory and leaves others alone", () => {
@@ -52,6 +55,44 @@ describe("sameFolder", () => {
     expect(sameFolder(folder, "/Users/example/.gemini/Antigravity", "linux")).toBe(false);
     expect(sameFolder(folder, folder, "linux")).toBe(true);
     expect(sameFolder(folder, "/Users/example/.gemini/antigravity-cli", "darwin")).toBe(false);
+  });
+});
+
+describe("sameFolderOnDisk", () => {
+  const lower = "/Users/example/.gemini/antigravity";
+  const upper = "/Users/example/.gemini/Antigravity";
+
+  test("the same path is one folder, without asking the disk", async () => {
+    const files = memoryFiles();
+    expect(await sameFolderOnDisk(lower, lower, "darwin", files.io)).toBe(true);
+    expect(files.calls).toEqual([]);
+  });
+
+  test("paths that differ by more than case are two folders, without asking the disk", async () => {
+    const files = memoryFiles();
+    expect(await sameFolderOnDisk(lower, `${lower}-cli`, "darwin", files.io)).toBe(false);
+    expect(await sameFolderOnDisk(lower, upper, "linux", files.io)).toBe(false);
+    expect(files.calls).toEqual([]);
+  });
+
+  test("on macOS and Windows, names in another case are one folder only when the disk says so", async () => {
+    for (const platform of ["darwin", "win32"] as const) {
+      // A disk that ignores case: both names lead to one folder.
+      const blind = memoryFiles();
+      blind.mkdir(lower);
+      expect(
+        await sameFolderOnDisk(lower, upper, platform, caseBlind(blind.io, { [upper]: lower })),
+      ).toBe(true);
+      // A disk that tells case apart: two folders.
+      const apart = memoryFiles();
+      apart.mkdir(lower);
+      apart.mkdir(upper);
+      expect(await sameFolderOnDisk(lower, upper, platform, apart.io)).toBe(false);
+      // A folder that is not there is one only with its exact path.
+      const missing = memoryFiles();
+      missing.mkdir(lower);
+      expect(await sameFolderOnDisk(lower, upper, platform, missing.io)).toBe(false);
+    }
   });
 });
 
