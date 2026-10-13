@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 
 import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
@@ -242,8 +242,9 @@ beforeEach(async () => {
   atView(null);
   testBegan = Date.now();
   collectorStartedAt = Date.now() - 10 * MINUTE;
-  // The app of the test before was still on the page while that test tidied up,
-  // and may have read the notification setting again after it was cleared.
+  // The app of the test before is gone by now, but something it left running, a
+  // request or a turn-on still waiting for the browser, may have read the
+  // notification setting again after it was cleared.
   resetNotificationSettingForTests();
   // The app tells its server when the notification setting changes, and the
   // Waits card asks it for its totals. No test here has a server, so these go
@@ -255,7 +256,10 @@ beforeEach(async () => {
   );
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Unmounted first: an app still up after the reset can draw again, read the
+  // storage just cleared and keep that for the next test.
+  await cleanup();
   setApiHost();
   setNotificationHost();
   localStorage.clear();
