@@ -58,7 +58,7 @@ const LIST_AT_TOP: SceneStep = { layout: "list", look: "top" };
 export const SCENES: readonly Scene[] = [
   {
     name: "One screen",
-    line: "Every Claude Code, Codex and Antigravity CLI session on this computer, and your own agents, on one page.",
+    line: "Every Claude Code, Codex and Antigravity session on this computer, and your own agents, on one page.",
     moment: "quiet",
     view: "overview",
     steps: [LIST_AT_TOP, { layout: "list", look: "Sessions" }],
