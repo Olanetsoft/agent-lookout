@@ -90,6 +90,8 @@ export interface AntigravitySessionInput {
  *   since the time an idle one would have.
  * - The last write is the newest modified time of its transcript, its
  *   database and its database's log.
+ * - Its token counts are those of the newest reply that names them, from the
+ *   end of its transcript (`transcriptFile.ts`), as a Codex session's are.
  * - There is no pid, no `alive`, no link and no Stop: no program is tied to
  *   one conversation surely enough, and Antigravity 2.0 runs all its chats in
  *   one.
@@ -146,5 +148,6 @@ export function antigravitySession(input: AntigravitySessionInput): Session {
   const beforeStart =
     writtenAt !== null && startedAt !== null && writtenAt < startedAt - WRITE_ORDER_SLACK_MS;
   if (writtenAt !== null && !beforeStart) session.lastWriteAt = writtenAt;
+  if (state.tokens) session.tokens = { ...state.tokens };
   return session;
 }

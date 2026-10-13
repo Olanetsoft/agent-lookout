@@ -7,6 +7,8 @@ import {
   stepTypeName,
   type AntigravityStep,
 } from "../../../../core/mapping/antigravityMapping.ts";
+import type { TokenCounts } from "../../../../core/sessions/session.ts";
+import { tokenCountsOf } from "../../../../core/tokens/tokenCounts.ts";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
@@ -25,11 +27,17 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.t
  *   `type`, its `status` and whether it has any `tool_calls`, when the run of
  *   steps that say the same began, when the last step was made, and the
  *   last step's `step_index`.
+ * - From the end too, the token counts of the newest reply, a
+ *   `PLANNER_RESPONSE` step, from its `input_tokens`, `cache_read_tokens` and
+ *   `output_tokens`, which both the CLI and Antigravity 2.0 write on a reply's
+ *   line and on no other step's. They are held apart from the last step, so
+ *   a tool step after the reply keeps the reply's counts.
  *
  * `content`, `thinking`, `media`, `source` and the tool calls themselves are
- * never kept: each line is parsed, those four fields are read and the rest is
- * dropped at once. A line that does not parse is passed over, since agy can
- * leave one broken when it rewrites the file as it compacts a conversation.
+ * never kept: each line is parsed, those fields and the three counts are
+ * read and the rest is dropped at once. A line that does not parse is passed
+ * over, since agy can leave one broken when it rewrites the file as it
+ * compacts a conversation.
  *
  * Every read is bounded: the first line within 256 KiB, and at most the last
  * 2 MiB. After the first read, only what was added since is read. The file is
@@ -46,17 +54,30 @@ export const TAIL_LIMIT_BYTES = 2 * 1024 * 1024;
 /** The tail is read backwards in pieces of this size. */
 const TAIL_CHUNK_BYTES = 64 * 1024;
 
+/**
+ * The most read past the start of the run of steps that say the same, within
+ * the tail limit, for the newest reply's counts. A reply's line holds its
+ * content and thinking, so it can be longer than a piece.
+ */
+const LOOK_BACK_BYTES = 256 * 1024;
+
 /** How much of the start is hashed, to notice the file rewritten with more in it than before. */
 const HEAD_HASH_BYTES = 4 * 1024;
 
 const NEWLINE = 0x0a;
 
-/** One step as it is kept: what `AntigravityStep` holds, its index and its time. */
+/** One step as it is kept: what `AntigravityStep` holds, its index, its time and a reply's counts. */
 export interface TranscriptStep extends AntigravityStep {
   /** `step_index`. Null when it is not a whole number. */
   index: number | null;
   /** `created_at`, in epoch milliseconds. Null when it is not an ISO 8601 time. */
   at: number | null;
+  /**
+   * A reply's token counts (`replyCountsOf`): only on a `PLANNER_RESPONSE`
+   * step that names any of the three, and null when they could not be right.
+   * Left out on every other step, and on a reply that names none of them.
+   */
+  tokens?: TokenCounts | null;
 }
 
 /** What is known about one transcript. */
@@ -83,6 +104,13 @@ export interface TranscriptState {
    * from where it went on. Null when none had one.
    */
   lastIndex: number | null;
+  /**
+   * The token counts of the newest reply that names any, as its line gave
+   * them. Null when none was found within the part read, or when that reply's
+   * counts could not be right: an older reply's are never taken in their
+   * place. A reply agy cleared or marked invalid is passed over.
+   */
+  tokens: TokenCounts | null;
 }
 
 /** ISO 8601, as agy writes `created_at`: a date, a time, a fraction of a second and a zone. */
@@ -97,6 +125,32 @@ export function parseStepTime(value: unknown): number | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A whole number of tokens: zero or more, and small enough to be exact. */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * The token counts a reply's line gives, through the one check every reader
+ * of token counts makes (`tokenCountsOf`). Seen from the Antigravity CLI 1.3.1
+ * and Antigravity 2.0 in October 2026, and not promised by either:
+ * `input_tokens` is only the part of the prompt that was not read from a
+ * cache, so the whole prompt is it and `cache_read_tokens` together, the part
+ * read from a cache is `cache_read_tokens`, and the output is `output_tokens`.
+ *
+ * Undefined when the line names none of the three, which says nothing. A
+ * `cache_read_tokens` that is left out counts as 0 and leaves the cached part
+ * out. Null when the counts could not be right, such as one that is there but
+ * is not a whole number. Nothing is summed across replies.
+ */
+function replyCountsOf(line: Record<string, unknown>): TokenCounts | null | undefined {
+  const { input_tokens: uncached, cache_read_tokens: read, output_tokens: output } = line;
+  if (uncached === undefined && read === undefined && output === undefined) return undefined;
+  if (!isCount(uncached)) return null;
+  if (read !== undefined && !isCount(read)) return null;
+  return tokenCountsOf({ input: uncached + (read ?? 0), cached: read, output });
 }
 
 /**
@@ -115,18 +169,30 @@ export function readStepLine(line: string): TranscriptStep | null {
   const status = stepStatusName(value.status);
   if (type === null && status === null) return null;
   const index = value.step_index;
-  return {
+  const step: TranscriptStep = {
     index: Number.isSafeInteger(index) && (index as number) >= 0 ? (index as number) : null,
     type,
     status,
     toolCalls: Array.isArray(value.tool_calls) && value.tool_calls.length > 0,
     at: parseStepTime(value.created_at),
   };
+  if (type === "PLANNER_RESPONSE") {
+    const tokens = replyCountsOf(value);
+    if (tokens !== undefined) step.tokens = tokens;
+  }
+  return step;
 }
 
 /** The state of a file with no steps read yet. */
 function emptyState(): TranscriptState {
-  return { firstAt: null, last: undefined, since: null, lastAt: null, lastIndex: null };
+  return {
+    firstAt: null,
+    last: undefined,
+    since: null,
+    lastAt: null,
+    lastIndex: null,
+    tokens: null,
+  };
 }
 
 /** Whether a step's `step_index` counts as the last: not one agy cleared or marked invalid. */
@@ -139,6 +205,8 @@ function addStep(state: TranscriptState, step: TranscriptStep): void {
   if (step.at !== null) state.lastAt = step.at;
   if (countsForIndex(step)) state.lastIndex = step.index;
   if (isAsideStep(step)) return;
+  // A newer reply replaces the counts, even with none that could be right.
+  if (step.tokens !== undefined) state.tokens = step.tokens;
   const was = state.last ? openStatusOf(state.last) : null;
   if (was !== openStatusOf(step)) state.since = step.at;
   state.last = step;
@@ -181,6 +249,11 @@ interface Tail {
  * over and the start of the run of steps that say the same, reaches the start
  * of the file, or has read the tail limit. The bytes after the last newline are
  * a line still being written, and are used only if they are already a whole step.
+ *
+ * On the way it notes the newest reply that names its token counts. When none
+ * has been seen by the run's start, the rest of that piece is looked through,
+ * then at most 256 KiB more, within the same limit: a file with no counts
+ * costs 256 KiB more, not the whole limit.
  */
 async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   const state = emptyState();
@@ -191,26 +264,46 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   let end: number | null = null;
   /** Whether the run the last step belongs to has been followed back to its start. */
   let settled = false;
+  /** Whether the newest reply that names its counts has been found. */
+  let counted = false;
+  /** How much more may be read past the run's start, for a reply's counts. */
+  let lookBack = LOOK_BACK_BYTES;
 
-  /** Takes one step, newest first. Returns true once nothing older is needed. */
-  const take = (step: TranscriptStep | null): boolean => {
-    if (step === null) return false;
-    if (state.lastAt === null && step.at !== null) state.lastAt = step.at;
-    if (state.lastIndex === null && countsForIndex(step)) state.lastIndex = step.index;
-    if (isAsideStep(step)) return false;
+  /** Takes one step, newest first. */
+  const take = (step: TranscriptStep | null): void => {
+    if (step === null) return;
+    if (!settled) {
+      if (state.lastAt === null && step.at !== null) state.lastAt = step.at;
+      if (state.lastIndex === null && countsForIndex(step)) state.lastIndex = step.index;
+    }
+    if (isAsideStep(step)) return;
+    if (!counted && step.tokens !== undefined) {
+      state.tokens = step.tokens;
+      counted = true;
+    }
+    // Past the run's start, only a reply's counts are looked for.
+    if (settled) return;
     if (state.last === undefined || state.last === null) {
       state.last = step;
       state.since = step.at;
-      return false;
+    } else if (openStatusOf(step) !== openStatusOf(state.last)) {
+      settled = true;
+    } else if (step.at !== null) {
+      // The same run goes back further. A step with no time leaves the start as it was.
+      state.since = step.at;
     }
-    if (openStatusOf(step) !== openStatusOf(state.last)) return true;
-    // The same run goes back further. A step with no time leaves the start as it was.
-    if (step.at !== null) state.since = step.at;
-    return false;
   };
+  /** Whether nothing older is needed. */
+  const done = () => settled && counted;
 
-  while (position > 0 && budget > 0 && !settled) {
-    const length = Math.min(TAIL_CHUNK_BYTES, position, budget);
+  while (position > 0 && budget > 0 && !done()) {
+    let length = Math.min(TAIL_CHUNK_BYTES, position, budget);
+    if (settled) {
+      // Past the run's start, only so much more is read for a reply's counts.
+      if (lookBack === 0) break;
+      length = Math.min(length, lookBack);
+      lookBack -= length;
+    }
     const start = position - length;
     const chunk = await readExactly(file, start, length);
     budget -= length;
@@ -228,17 +321,17 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
       cut = last;
       // What follows the last newline counts only once it is a whole step.
       if (last + 1 < buffer.byteLength) {
-        settled = take(readStepLine(buffer.toString("utf8", last + 1)));
+        take(readStepLine(buffer.toString("utf8", last + 1)));
       }
     }
 
     let newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
-    while (newline !== -1 && !settled) {
-      settled = take(readStepLine(buffer.toString("utf8", newline + 1, cut)));
+    while (newline !== -1 && !done()) {
+      take(readStepLine(buffer.toString("utf8", newline + 1, cut)));
       cut = newline;
       newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
     }
-    if (settled) break;
+    if (done()) break;
 
     if (start === 0) {
       take(readStepLine(buffer.toString("utf8", 0, cut)));
@@ -280,6 +373,7 @@ function stateOf(cached: Cached): TranscriptState {
     since: cached.since,
     lastAt: cached.lastAt,
     lastIndex: cached.lastIndex,
+    tokens: cached.tokens,
   };
 }
 

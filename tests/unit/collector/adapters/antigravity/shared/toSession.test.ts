@@ -23,7 +23,11 @@ const idle: TranscriptState = {
   since: NOW - 2 * MINUTE,
   lastAt: NOW - MINUTE,
   lastIndex: 3,
+  tokens: null,
 };
+
+/** Invented counts of a newest reply, as the transcript reader gives them. */
+const COUNTED = { input: 48_210, cached: 40_960, output: 1_204 };
 
 describe("antigravitySession", () => {
   test("is a terminal session named by its conversation id, with no folder, process or link", () => {
@@ -110,6 +114,7 @@ describe("antigravitySession", () => {
       since: Date.UTC(2001, 0, 1),
       lastAt: null,
       lastIndex: 3,
+      tokens: null,
     };
     const session = antigravitySession({
       profile: CLI_PROFILE,
@@ -135,6 +140,41 @@ describe("antigravitySession", () => {
     });
     expect(session).toMatchObject({ startedAt: START, statusSince: null });
     expect(session).not.toHaveProperty("lastWriteAt");
+  });
+
+  test("carries the newest reply's token counts, a copy of them, and none when the reader found none", () => {
+    const state: TranscriptState = { ...idle, tokens: COUNTED };
+    const session = antigravitySession({
+      profile: CLI_PROFILE,
+      conversationId: ID,
+      state,
+      live: true,
+      writtenAt: NOW - MINUTE,
+      now: NOW,
+    });
+    expect(session.tokens).toEqual(COUNTED);
+    expect(session.tokens).not.toBe(COUNTED);
+    // A closed conversation keeps the counts of its last reply.
+    expect(
+      antigravitySession({
+        profile: CLI_PROFILE,
+        conversationId: ID,
+        state,
+        live: false,
+        writtenAt: NOW - MINUTE,
+        now: NOW,
+      }).tokens,
+    ).toEqual(COUNTED);
+    expect(
+      antigravitySession({
+        profile: CLI_PROFILE,
+        conversationId: ID,
+        state: idle,
+        live: true,
+        writtenAt: NOW - MINUTE,
+        now: NOW,
+      }),
+    ).not.toHaveProperty("tokens");
   });
 });
 
@@ -226,5 +266,10 @@ describe("antigravitySession, for Antigravity 2.0", () => {
 
   test("once the app is closed it is finished, written to or not", () => {
     expect(antigravitySession({ ...base, live: false, writing: true }).status).toBe("finished");
+  });
+
+  test("a chat carries its newest reply's token counts as a CLI session does", () => {
+    const session = antigravitySession({ ...base, state: { ...idle, tokens: COUNTED } });
+    expect(session.tokens).toEqual(COUNTED);
   });
 });

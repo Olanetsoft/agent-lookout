@@ -28,7 +28,9 @@ import {
   finishedTurn,
   MINUTE,
   NOW,
+  PRIVATE_WORDS,
   SECOND,
+  step,
   transcriptPath,
   workingTurn,
 } from "@tests/fixtures/antigravity";
@@ -230,6 +232,58 @@ describe("the Antigravity CLI adapter, on a folder laid out as agy lays it out",
     await writeFile(transcriptPath(home, IDLE), finishedTurn(0, NOW + 3 * SECOND).join(""));
     at += 8 * SECOND;
     expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [IDLE]: "idle" });
+  });
+
+  test("gives a session the counts of its newest reply, which a tool step after it keeps, and nothing else of the line", async () => {
+    const home = await makeAgyHome();
+    const counted = conversationId("e5");
+    const file = transcriptPath(home, counted);
+    await put(
+      file,
+      [
+        step({ index: 0, type: "USER_INPUT", at: NOW - 2 * MINUTE }),
+        step({
+          index: 1,
+          type: "PLANNER_RESPONSE",
+          at: NOW - 2 * MINUTE + SECOND,
+          tools: ["run_command"],
+          counts: { input_tokens: 2_816, cache_read_tokens: 9_216, output_tokens: 140 },
+        }),
+        step({ index: 2, type: "RUN_COMMAND", status: "RUNNING", at: NOW - MINUTE }),
+      ].join(""),
+      NOW - MINUTE,
+    );
+    let at = NOW;
+    const adapter = adapterFor(home, { now: () => at });
+    const sessionOf = async () =>
+      (await adapter.poll()).sessions.find((session) => session.id.endsWith(counted));
+
+    const { sessions } = await adapter.poll();
+    const working = sessions.find((session) => session.id.endsWith(counted));
+    expect(working).toMatchObject({
+      status: "working",
+      tokens: { input: 12_032, cached: 9_216, output: 140 },
+    });
+    expect(JSON.stringify(working)).not.toContain(PRIVATE_WORDS);
+    // A conversation whose replies name no counts has none.
+    const others = sessions.filter((session) => session !== working);
+    expect(others).toHaveLength(3);
+    for (const other of others) expect(other, other.id).not.toHaveProperty("tokens");
+
+    await appendFile(
+      file,
+      step({
+        index: 3,
+        type: "PLANNER_RESPONSE",
+        at: NOW + SECOND,
+        counts: { input_tokens: 512, cache_read_tokens: 12_032, output_tokens: 66 },
+      }),
+    );
+    at += 2 * SECOND;
+    expect(await sessionOf()).toMatchObject({
+      status: "idle",
+      tokens: { input: 12_544, cached: 12_032, output: 66 },
+    });
   });
 });
 

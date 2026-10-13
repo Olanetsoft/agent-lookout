@@ -222,7 +222,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 **The pieces.**
 
 - `conversations.ts` lists `brain/` and `conversations/` and looks up three modified times for each conversation. It never opens a database.
-- `transcriptFile.ts` reads the end of `brain/<id>/.system_generated/logs/transcript.jsonl`. It keeps four fields of a step and drops the content at once. agy rewrites the file when it compacts a conversation. That is noticed, and the file is read afresh.
+- `transcriptFile.ts` reads the end of `brain/<id>/.system_generated/logs/transcript.jsonl`. It keeps four fields of a step, and three token counts of the newest reply, and drops the content at once. agy rewrites the file when it compacts a conversation. That is noticed, and the file is read afresh.
 - `antigravityMapping.ts` turns the last step into a status. A prompt, a tool, or a reply that asks for a tool is working. A reply that asks for none is idle. An error step agy writes, or a failed reply, is failed.
 - `agyProcesses.ts` asks `ps` which agy programs run, at most every 10 seconds (`PROCESS_CHECK_MS`). It asks sooner, after 2 seconds (`PROMPT_PROCESS_CHECK_MS`), when a conversation is written that no known agy program could have open. It reads the command line only of an agy program it has not seen before.
 - `antigravityLiveness.ts` holds a conversation open while any running agy program could have it: one the program names with `--conversation`, one written since the program started, or one written since `ps` was last asked. Only a conversation no program could have open is finished. This errs towards open: one agy left open all day holds every conversation it wrote to.
@@ -266,8 +266,8 @@ In short:
 
 - **Claude Code** reports working, idle, needs you and names. Finished and failed only for background jobs. No Quiet for, because its registry file is not rewritten as a session works. Jump, Stop and Answer only in some places, and fewer on Windows. Tokens only on this computer, from its newest reply, while its details are open.
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
-- **The Antigravity CLI** reports working and idle and Quiet for. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
-- **Antigravity** reports working and idle and Quiet for. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Never needs you yet. No Jump, Stop, Answer or tokens.
+- **The Antigravity CLI** reports working and idle, Quiet for and tokens. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
+- **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Never needs you yet. No Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
@@ -460,12 +460,13 @@ It is the one read that waits on a file, so the handler answers it the way it an
 
 **Why.** #55: a session that has used most of its context is about to need you. The agents already write these counts to their own files, so showing them keeps to what was measured. No price is shown, and there are no totals: one figure, the newest reply's.
 
-**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only, released in 0.2.10. The second slice gives a Claude Code session's counts with its last message, from the same end of its transcript, while its details are open. They are never put on the session, so `GET /api/sessions` does not have them. The Antigravity CLI is to follow in its own pull request, so #55 stays open. Until then its row in Sources says No for Tokens, with the reason.
+**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only, released in 0.2.10. The second slice gives a Claude Code session's counts with its last message, from the same end of its transcript, while its details are open. They are never put on the session, so `GET /api/sessions` does not have them. The third slice gives the Antigravity CLI's and Antigravity's, from the end of the transcript each poll already reads, on the session as Codex's are.
 
 **Where it is.**
 
-- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the Claude Code adapter's reader of last messages, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
+- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the Antigravity transcript reader, the Claude Code adapter's reader of last messages, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
 - `src/collector/adapters/codex/rolloutFile.ts` finds the newest `token_count` line and keeps only the three numbers in `info.last_token_usage`. It drops `total_token_usage`, the model's context window and `rate_limits`, which holds your plan and credits.
+- `src/collector/adapters/antigravity/shared/transcriptFile.ts` keeps only `input_tokens`, `cache_read_tokens` and `output_tokens` from the newest reply's line, for both Antigravity sources. [adapters/antigravity.md](adapters/antigravity.md#token-counts) has how they map.
 - `src/collector/adapters/claude-code/transcript/lastUsage.ts` takes the counts of a Claude Code session's newest reply from the bytes read for its last message. [adapters/claude-code.md](adapters/claude-code.md) has the fields.
 - `src/collector/remotes/remoteSessions.ts` passes on the counts another machine sends.
 - On the page: `src/dashboard/components/panels/TokensFact.tsx` and `src/dashboard/lib/tokens/tokenWords.ts`.

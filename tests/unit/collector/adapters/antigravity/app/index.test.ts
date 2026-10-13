@@ -484,14 +484,14 @@ describe("writtenJustNow", () => {
   });
 });
 
-test("carries its own declaration of what it can report, with No for Needs you and Tokens", () => {
+test("carries its own declaration of what it can report, with No for Needs you and Yes for Tokens", () => {
   const adapter = antigravityAppAdapterFor(
     memoryFiles(() => NOW),
     standInHub(),
   );
   expect(adapter.capabilities).toBe(ANTIGRAVITY_APP_CAPABILITIES);
   expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("no");
-  expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("no");
+  expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("yes");
   expect(adapter.lookingIn).toBe(
     "Looking for Antigravity sessions in ~/.gemini/antigravity/brain.",
   );
