@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import { sessionName } from "../../../core/text.ts";
-import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { sessionName } from "../../../../core/text.ts";
+import type { ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
  * Reading the title agy gives a conversation, from

@@ -196,4 +196,38 @@ describe("mapAntigravityStatus", () => {
       ).toEqual(expected);
     },
   );
+
+  test.each([
+    [done("USER_INPUT"), ["working", "working", "finished"]],
+    [done("PLANNER_RESPONSE"), ["working", "working", "finished"]],
+    [null, ["working", "working", "finished"]],
+    [
+      { type: "RUN_COMMAND", status: "CANCELED", toolCalls: false },
+      ["working", "working", "finished"],
+    ],
+    [done("ERROR_MESSAGE"), ["failed", "failed", "failed"]],
+    [done("A_TYPE_FROM_LATER"), ["unknown", "unknown", "unknown"]],
+    [undefined, ["unknown", "unknown", "unknown"]],
+  ] as const)(
+    "%o, while an Antigravity 2.0 chat's files are written: open, not known, closed",
+    (last, expected) => {
+      expect(
+        live.map((value) => mapAntigravityStatus({ last, live: value, writing: true })),
+      ).toEqual(expected);
+    },
+  );
+
+  test("writing changes nothing for the CLI's own rule: an approval asked for still needs you", () => {
+    expect(
+      mapAntigravityStatus({
+        last: done("PLANNER_RESPONSE"),
+        live: true,
+        asking: true,
+        writing: true,
+      }),
+    ).toBe("needs-you");
+    expect(
+      mapAntigravityStatus({ last: done("PLANNER_RESPONSE"), live: true, writing: false }),
+    ).toBe("idle");
+  });
 });

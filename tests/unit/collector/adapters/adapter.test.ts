@@ -1,10 +1,18 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  ANTIGRAVITY_APP_CAPABILITIES,
+  createAntigravityAppAdapter,
+} from "@collector/adapters/antigravity/app/index";
+import {
   ANTIGRAVITY_CAPABILITIES,
   createAntigravityAdapter,
-} from "@collector/adapters/antigravity/index";
-import { antigravitySession } from "@collector/adapters/antigravity/toSession";
+} from "@collector/adapters/antigravity/cli/index";
+import {
+  antigravitySession,
+  APP_PROFILE,
+  CLI_PROFILE,
+} from "@collector/adapters/antigravity/shared/toSession";
 import {
   CLAUDE_CODE_CAPABILITIES,
   CLAUDE_CODE_WINDOWS_CAPABILITIES,
@@ -36,6 +44,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Claude Code on Windows", CLAUDE_CODE_WINDOWS_CAPABILITIES],
   ["Codex", CODEX_CAPABILITIES],
   ["Antigravity CLI", ANTIGRAVITY_CAPABILITIES],
+  ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -89,6 +98,11 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     createAntigravityAdapter({ env: {}, homeDir: home, io: files.io, platform: "win32" })
       .capabilities,
   ).toBe(ANTIGRAVITY_CAPABILITIES);
+  for (const platform of ["darwin", "linux", "win32"] as const) {
+    expect(
+      createAntigravityAppAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(ANTIGRAVITY_APP_CAPABILITIES);
+  }
 });
 
 test("on Windows Claude Code reports all it does elsewhere, but Jump in VS Code alone, and no Stop or Answer", () => {
@@ -223,6 +237,7 @@ describe("each declaration agrees with what its adapter does", () => {
 
   test("Antigravity CLI: a session has the time of its last write, no jump or stop, and with no title or log, no name or folder", () => {
     const session = antigravitySession({
+      profile: CLI_PROFILE,
       conversationId: "00000000-0000-4000-8000-0000000000a1",
       state: {
         firstAt: NOW - 60_000,
@@ -253,6 +268,60 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(ANTIGRAVITY_CAPABILITIES.jump.level).toBe("no");
     expect(ANTIGRAVITY_CAPABILITIES.stop.level).toBe("no");
     expect(ANTIGRAVITY_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Antigravity: no step, write or process makes a chat need you, and only an error of its own fails", () => {
+    const steps = ANTIGRAVITY_STEP_TYPES.flatMap((type) =>
+      ANTIGRAVITY_STEP_STATUSES.flatMap((status) =>
+        [true, false].map((toolCalls) => ({ type, status, toolCalls })),
+      ),
+    );
+    // The app's adapter never says a chat is asking: it reads no approvals.
+    const mapped = statuses(
+      [...steps, null, undefined].flatMap((last) =>
+        ([true, false, "unknown"] as const).flatMap((live) =>
+          [true, false].map((writing) => mapAntigravityStatus({ last, live, writing })),
+        ),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
+    expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.answer.level).toBe("no");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.failed.level).toBe("partly");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Antigravity: a chat has the time of its last write and no token counts, jump or stop", () => {
+    const session = antigravitySession({
+      profile: APP_PROFILE,
+      conversationId: "00000000-0000-4000-8000-0000000000a1",
+      state: {
+        firstAt: NOW - 60_000,
+        last: {
+          index: 1,
+          type: "PLANNER_RESPONSE",
+          status: "DONE",
+          toolCalls: false,
+          at: NOW - 30_000,
+        },
+        since: NOW - 30_000,
+        lastAt: NOW - 30_000,
+        lastIndex: 1,
+      },
+      live: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.lastWriteAt).toBe(NOW - 10_000);
+    expect(session).not.toHaveProperty("tokens");
+    expect(session).not.toHaveProperty("jump");
+    expect(session).not.toHaveProperty("stop");
+    expect(session).not.toHaveProperty("pid");
+    expect(session.links).toEqual({});
+    expect(ANTIGRAVITY_APP_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("no");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.jump.level).toBe("no");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.stop.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {

@@ -8,7 +8,8 @@ import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
 import { createAnswering, type Answering, type AnsweringOptions } from "./answers/answering.ts";
 import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
-import { createAntigravityAdapter } from "./adapters/antigravity/index.ts";
+import { createAntigravityAppAdapter } from "./adapters/antigravity/app/index.ts";
+import { createAntigravityAdapter } from "./adapters/antigravity/cli/index.ts";
 import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
@@ -96,12 +97,13 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
    * `AGENT_LOOKOUT_CLAUDE_HOME`, `AGENT_LOOKOUT_CODEX_HOME`,
-   * `AGENT_LOOKOUT_ANTIGRAVITY_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
+   * `AGENT_LOOKOUT_ANTIGRAVITY_HOME`, `AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME` and
+   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
    */
@@ -466,6 +468,7 @@ export function createCollector(options: CollectorOptions): Collector {
     }),
     createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     createAntigravityAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    createAntigravityAppAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

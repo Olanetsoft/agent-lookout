@@ -6,24 +6,25 @@ import {
   holdConversations,
   type AgySessionProcess,
   type Holding,
-} from "../../../core/mapping/antigravityLiveness.ts";
+} from "../../../../core/mapping/antigravityLiveness.ts";
 import {
   agyLogTimeAt,
   waitsForApproval,
   type AgyLogState,
-} from "../../../core/mapping/antigravityLog.ts";
+} from "../../../../core/mapping/antigravityLog.ts";
 import type {
   Session,
   SourceCapabilities,
   SourceFact,
   SourceHealth,
   SourceState,
-} from "../../../core/sessions/session.ts";
-import { tildify } from "../../files/paths.ts";
-import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
-import { POLL_INTERVAL_MS } from "../../poller.ts";
-import type { Adapter, AdapterResult } from "../adapter.ts";
-import { every } from "../words.ts";
+} from "../../../../core/sessions/session.ts";
+import { sameFolderOnDisk, tildify } from "../../../files/paths.ts";
+import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
+import { POLL_INTERVAL_MS } from "../../../poller.ts";
+import type { Adapter, AdapterResult } from "../../adapter.ts";
+import { every } from "../../words.ts";
+import { appHomeFor } from "../app/index.ts";
 import { createAgyLogReader } from "./agyLogs.ts";
 import {
   AGY_TABLE_ARGS,
@@ -36,11 +37,11 @@ import {
   createConversationFinder,
   writtenRecently,
   type ConversationFiles,
-} from "./conversations.ts";
-import { createTitleReader } from "./annotations.ts";
+} from "../shared/conversations.ts";
+import { createTitleReader } from "../shared/annotations.ts";
 import { createOtherFolderCheck } from "./otherFolders.ts";
-import { antigravitySession, SOURCE_ID } from "./toSession.ts";
-import { createTranscriptReader, type TranscriptState } from "./transcriptFile.ts";
+import { antigravitySession, CLI_PROFILE } from "../shared/toSession.ts";
+import { createTranscriptReader, type TranscriptState } from "../shared/transcriptFile.ts";
 
 /** The variable that replaces the Antigravity CLI's folder, for Agent Lookout alone. */
 export const ANTIGRAVITY_HOME_ENV = "AGENT_LOOKOUT_ANTIGRAVITY_HOME";
@@ -79,7 +80,8 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
  */
 export const BASIS_UNMATCHED = "files-unmatched";
 
-const LABEL = "Antigravity CLI";
+const SOURCE_ID = CLI_PROFILE.sourceId;
+const LABEL = CLI_PROFILE.label;
 
 /** Said whenever the Antigravity CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
@@ -95,6 +97,11 @@ const ALWAYS_NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 /** Said when a conversation's last step is one this adapter does not know, or none could be read. */
 export const UNKNOWN_STEP_NOTE =
   "Some conversations end with a step Agent Lookout does not know, perhaps from a newer agy, so they show as unknown.";
+
+/** Said when the folder is the one read for Antigravity 2.0 too, whose source alone lists what is in it. */
+export function readForAppNote(folder: string): string {
+  return `Agent Lookout reads ${folder} for Antigravity too, so what is in it is listed under Antigravity alone.`;
+}
 
 /** Said while an agy program runs that has written to no conversation since it started. */
 export const UNMATCHED_NOTE =
@@ -180,8 +187,8 @@ export interface AntigravityAdapterOptions {
   pollIntervalMs?: number;
   /**
    * How long a missing folder is believed missing before one more look, and
-   * how long the answer about the Antigravity IDE's and Antigravity 2.0's
-   * folders stands. Defaults to a minute.
+   * how long the answer about the Antigravity IDE's folder stands. Defaults
+   * to a minute.
    */
   recheckMs?: number;
   /** How often, at most, `ps` is asked. Defaults to 10 seconds. */
@@ -243,9 +250,13 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  * adapter says so and looks again only once a minute, with a single `stat`,
  * and runs no `ps`.
  *
- * It also looks, once a minute at most, with one `lstat` each, whether the
- * Antigravity IDE's folder or Antigravity 2.0's is beside the CLI's, and the
- * card says so, since it reads neither yet. See `otherFolders.ts`.
+ * It also looks, once a minute at most, with one `lstat`, whether the
+ * Antigravity IDE's folder is beside the CLI's, and the card says so, since
+ * it does not read the IDE yet. See `otherFolders.ts`. Antigravity 2.0's
+ * folder is read by a source of its own (`../app/index.ts`). When this folder
+ * is that one too, as when `AGENT_LOOKOUT_ANTIGRAVITY_HOME` names
+ * `~/.gemini/antigravity`, it is left to that source, so each chat is listed
+ * once, and nothing in it is read or run here.
  *
  * The folder is `AGENT_LOOKOUT_ANTIGRAVITY_HOME` if set, otherwise
  * `~/.gemini/antigravity-cli`. Someone who sets the variable means that
@@ -268,6 +279,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   const brainDir = path.join(home, BRAIN_DIR);
   const homeName = tildify(home, homeDir);
   const brainName = tildify(brainDir, homeDir);
+  const appHome = appHomeFor(env, homeDir);
 
   const finder = createConversationFinder({ home, io, oldRefreshMs: options.oldRefreshMs });
   const reader = createTranscriptReader(io);
@@ -290,7 +302,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   let processesAt: number | null = null;
   /** The conversations an agy program may have open, as last worked out. */
   let lastHolding: Holding | null = null;
-  /** What the card says of the Antigravity IDE's and Antigravity 2.0's folders, as last looked at. Null while neither is there. */
+  /** What the card says of the Antigravity IDE's folder, as last looked at. Null while it is not there. */
   let othersNote: string | null = null;
 
   const commandRun =
@@ -380,6 +392,11 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
 
+    // Each chat is listed once: a folder also read for Antigravity 2.0 is left to it.
+    if (await sameFolderOnDisk(home, appHome, platform, io)) {
+      return result("ok", readForAppNote(homeName), "not read here", checkedAt);
+    }
+
     // A missing folder is believed missing for a while, so a machine without
     // agy pays nothing on most polls. A clock set back counts as time enough.
     if (homeFrom !== "agent-lookout" && absentAt !== null) {
@@ -466,6 +483,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
           ? { tool: ask.tool, since: agyLogTimeAt(ask.at, checkedAt) }
           : null;
       const session = antigravitySession({
+        profile: CLI_PROFILE,
         conversationId: files.id,
         state,
         live: antigravityLiveness(files.id, holding),

@@ -5,7 +5,7 @@ import {
   conversationIdOfFolder,
   createConversationFinder,
   OLD_REFRESH_MS,
-} from "@collector/adapters/antigravity/conversations";
+} from "@collector/adapters/antigravity/shared/conversations";
 import {
   AGY_HOME,
   conversationId,

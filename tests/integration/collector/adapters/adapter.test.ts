@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 
-import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/index";
+import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
+import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
@@ -25,6 +26,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Claude Code", CLAUDE_CODE_CAPABILITIES],
   ["Codex", CODEX_CAPABILITIES],
   ["Antigravity CLI", ANTIGRAVITY_CAPABILITIES],
+  ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 

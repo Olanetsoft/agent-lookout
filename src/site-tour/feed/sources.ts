@@ -5,8 +5,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * The sources of the landing page's hour, as each adapter reports itself
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
- * collector's order: Claude Code, Codex, the Antigravity CLI, which is not
- * installed here, and status files. Then the other machine, connected over SSH.
+ * collector's order: Claude Code, Codex, the Antigravity CLI and Antigravity,
+ * neither installed here, and status files. Then the other machine, connected
+ * over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -149,6 +150,46 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "yes" },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Antigravity's waits for approval are not read yet, so a chat that waits does not show as needing you.",
+  },
+  finished: {
+    level: "partly",
+    reason: "Once ps shows the app is closed, on macOS. Not on Linux or Windows yet.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "Only when Antigravity records an error of its own or a failed reply. A tool that fails shows as working.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title Antigravity gives a chat, and the folder its list of chats names, read with sqlite3. Until then, its ID.",
+  },
+  jump: {
+    level: "no",
+    reason: "Antigravity documents no link that opens one of its chats.",
+  },
+  "quiet-for": { level: "yes" },
+  tokens: {
+    level: "no",
+    reason: "Agent Lookout does not read token counts from Antigravity's transcripts yet.",
+  },
+  stop: {
+    level: "no",
+    reason: "The app runs every chat in one program, so no chat can be stopped alone.",
+  },
+  answer: {
+    level: "no",
+    reason: "Antigravity's waits for approval are not read yet, so there is none to answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -251,6 +292,24 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Antigravity 2.0 is not installed: its folder is looked for, and nothing more.
+      id: "antigravity-app",
+      label: "Antigravity",
+      state: "unavailable",
+      detail:
+        "Antigravity was not found: there is no ~/.gemini/antigravity folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Conversations folder", value: "~/.gemini/antigravity/brain" },
+        { label: "Read", value: "not found" },
+        { label: "Command", value: "ps -A -o comm=" },
+        { label: "Command run", value: "every 10 seconds at most" },
+        { label: "Folders file", value: "~/.gemini/antigravity/conversation_summaries.db" },
+        { label: "Folders read", value: "with sqlite3, when the file changes" },
+      ],
+      capabilities: ANTIGRAVITY_APP_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -280,6 +339,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Claude Code there", value: "Watching" },
         { label: "Codex there", value: "Not found" },
         { label: "Antigravity CLI there", value: "Not found" },
+        { label: "Antigravity there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

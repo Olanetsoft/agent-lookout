@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
-import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../../core/sessions/retention.ts";
+import { isMissing, type FileInfo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
  * Finding the Antigravity CLI's conversations, by the names of two folders and

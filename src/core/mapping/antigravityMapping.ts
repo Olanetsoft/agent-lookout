@@ -296,6 +296,14 @@ export interface AntigravityStatusFields {
    * person's approval of a tool, from its own log (`antigravityLog.ts`).
    */
   asking?: boolean;
+  /**
+   * Antigravity 2.0 only: whether the chat's files were written in the last
+   * few seconds. Its transcript holds only the steps that are done, so a chat
+   * whose last step reads as idle may still be at work on a step not written
+   * yet, and is taken to be while its files are written. The CLI's adapter
+   * never sets it.
+   */
+  writing?: boolean;
 }
 
 /**
@@ -312,7 +320,8 @@ export interface AntigravityStatusFields {
  *
  * A conversation that ended on an error stays failed once agy has closed it.
  * One that would be working or idle needs you while its program's log says
- * it waits for approval, unless agy is known to have closed it.
+ * it waits for approval, unless agy is known to have closed it. An Antigravity
+ * 2.0 chat that would be idle is working while its files are being written.
  */
 export function mapAntigravityStatus(fields: AntigravityStatusFields): SessionStatus {
   const { last, live } = fields;
@@ -320,5 +329,6 @@ export function mapAntigravityStatus(fields: AntigravityStatusFields): SessionSt
   const open: OpenStatus = last === null ? "idle" : openStatusOf(last);
   if (open === "failed" || open === "unknown") return open;
   if (live === false) return "finished";
-  return fields.asking === true ? "needs-you" : open;
+  if (fields.asking === true) return "needs-you";
+  return open === "idle" && fields.writing === true ? "working" : open;
 }

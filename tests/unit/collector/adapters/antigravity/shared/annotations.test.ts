@@ -5,7 +5,7 @@ import {
   createTitleReader,
   readTitle,
   unescapeTextFormat,
-} from "@collector/adapters/antigravity/annotations";
+} from "@collector/adapters/antigravity/shared/annotations";
 import { AGY_HOME, annotationPath, conversationId, NOW } from "@tests/fixtures/antigravity";
 import { memoryFiles } from "@tests/support/adapters/antigravityAdapter";
 

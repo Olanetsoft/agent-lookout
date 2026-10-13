@@ -5,9 +5,9 @@ import {
   emptyAgyLogState,
   readAgyLogLine,
   type AgyLogState,
-} from "../../../core/mapping/antigravityLog.ts";
-import type { AgySessionProcess } from "../../../core/mapping/antigravityLiveness.ts";
-import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+} from "../../../../core/mapping/antigravityLog.ts";
+import type { AgySessionProcess } from "../../../../core/mapping/antigravityLiveness.ts";
+import type { FileInfo, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
  * Reading each running agy program's own log, for the few lines that say what

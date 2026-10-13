@@ -1,10 +1,10 @@
-# Antigravity CLI adapter notes
+# Antigravity adapter notes
 
-These notes record what Agent Lookout reads from the Antigravity CLI, `agy`, where each value comes from, and what breaks when agy changes. Start here when the adapter stops working.
+These notes record what Agent Lookout reads from the Antigravity CLI, `agy`, and from Antigravity 2.0, Google's desktop app, where each value comes from, and what breaks when either changes. Start here when an adapter stops working. [Antigravity 2.0](#antigravity-20) has the desktop app's own part.
 
 Written on 2026-10-07 from agy 1.3.1: its `agy --version` and `agy --help`, the text and protocol buffer descriptors inside its program, the documentation it bundles under `builtin/skills/` in its folder, its changelog ([google-antigravity/antigravity-cli](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md), also inside the program up to 1.3.0), and Google's documentation of [hooks](https://antigravity.google/docs/hooks/) and of the [status line](https://antigravity.google/docs/cli/statusline). When the adapter was first written no conversation had been run on that machine, so the files below are as agy documents them and its program describes them, and the tests use hand-written files laid out the same way. On 2026-10-07 one conversation was run there with agy 1.3.1, asked to run a command, and looked at while it waited for approval: by the names, sizes and modified times of its files, by which files its agy program had open (`lsof`), by the fields of each transcript step other than its content, and by the lines of the program's log that say what it does with conversations and approvals. What that showed is marked as seen below. [Not yet checked](#not-yet-checked) lists what is still to be shown, and how to check it.
 
-The code is in `src/collector/adapters/antigravity/`. The status mapping is in `src/core/mapping/antigravityMapping.ts`, which conversations are open in `src/core/mapping/antigravityLiveness.ts`, and what a program's log says in `src/core/mapping/antigravityLog.ts`.
+The code is in `src/collector/adapters/antigravity/`: what both products share in `shared/` (the conversation finder, the transcript reader, the title reader and the session it makes), the CLI's adapter in `cli/` and Antigravity 2.0's in `app/`. The status mapping is in `src/core/mapping/antigravityMapping.ts`, which conversations are open in `src/core/mapping/antigravityLiveness.ts`, and what a program's log says in `src/core/mapping/antigravityLog.ts`.
 
 ## How it reads agy, and why
 
@@ -12,13 +12,13 @@ The adapter needs nothing installed and changes nothing: no hooks, no settings, 
 
 agy documents several things another program could use, and none of them can be used that way:
 
-| Interface                               | Why it is not used                                                                                                                                                                                                                                                                                                                                                                                       |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hooks, in `~/.gemini/config/hooks.json` | Need the person to edit that file, which the CLI and its backend share (changelog 1.0.8). The events are `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation` and `Stop`. No hook fires when an approval prompt is shown, and Esc fires no `Stop`.                                                                                                                                             |
-| The status line command                 | Needs a change to the person's `settings.json`. Its `agent_state` is `idle`, `thinking`, `working`, `tool_use` or `initializing`, with no waiting value. Its `transcript_path` points into `~/.gemini/antigravity/` instead of `antigravity-cli/` (google-antigravity/antigravity-cli#744, open).                                                                                                        |
-| `conversation_summaries.db`             | SQLite, with a row for each conversation: its `title`, `workspace_uris`, `status`, `not_fully_idle`, `killed` and more. It also holds `preview` and `raw_summary`, which hold prompt text. Agent Lookout uses no SQLite, `node:sqlite` needs a flag on Node 22.12, and opening the database without read-only mode creates its `-shm` and `-wal` files. Left for later, read-only and only safe columns. |
-| `conversations/<id>.db`                 | The conversation's own SQLite database, in WAL mode, described for agy 1.0.16 as holding a `steps` table with each step's payload, which holds the content. The same reasons apply. Only its modified time is used.                                                                                                                                                                                      |
-| `agy` itself                            | Has no command that lists conversations, and running it signs in to Google.                                                                                                                                                                                                                                                                                                                              |
+| Interface                               | Why it is not used                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hooks, in `~/.gemini/config/hooks.json` | Need the person to edit that file, which the CLI and its backend share (changelog 1.0.8). The events are `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation` and `Stop`. No hook fires when an approval prompt is shown, and Esc fires no `Stop`.                                                                                    |
+| The status line command                 | Needs a change to the person's `settings.json`. Its `agent_state` is `idle`, `thinking`, `working`, `tool_use` or `initializing`, with no waiting value. Its `transcript_path` points into `~/.gemini/antigravity/` instead of `antigravity-cli/` (google-antigravity/antigravity-cli#744, open).                                               |
+| `conversation_summaries.db`             | SQLite, with a row for each conversation: its `title`, `workspace_uris`, `status`, `not_fully_idle`, `killed` and more. It also holds `preview` and `raw_summary`, which hold prompt text. `node:sqlite` needs a flag on Node 22.12. The CLI's is not read; Antigravity 2.0's is, for two columns, with `sqlite3`, as [Folders](#folders) says. |
+| `conversations/<id>.db`                 | The conversation's own SQLite database, in WAL mode, described for agy 1.0.16 as holding a `steps` table with each step's payload, which holds the content. The same reasons apply. Only its modified time is used.                                                                                                                             |
+| `agy` itself                            | Has no command that lists conversations, and running it signs in to Google.                                                                                                                                                                                                                                                                     |
 
 ## What it reads
 
@@ -32,7 +32,7 @@ agy documents several things another program could use, and none of them can be 
 | `annotations/<id>.pbtxt`                             | `lstat`, then opened read-only when it is an ordinary file of at most 4 KiB, for its `title`                               | `lstat` every poll for each conversation shown; read when it changes                                                                                  |
 | `log/`                                               | Listed                                                                                                                     | While `ps` shows an agy program, on each poll until every such program's log is found                                                                 |
 | `log/cli-YYYYMMDD_HHMMSS.log`                        | `lstat`, then opened read-only: at most the last 4 MiB, then only what is appended                                         | Every poll, for the log of each agy program `ps` shows; read when its size or modified time changes                                                   |
-| `antigravity-ide` and `antigravity`, beside it       | One `lstat` each, for whether it is there. Nothing in them is opened, listed or watched                                    | On the first poll, then at most once a minute                                                                                                         |
+| `antigravity-ide`, beside it                         | One `lstat`, for whether it is there. Nothing in it is opened, listed or watched                                           | On the first poll, then at most once a minute                                                                                                         |
 
 A transcript is opened with `O_NOFOLLOW` and `O_NONBLOCK` and read only if the open file is an ordinary file, so a link, a pipe or a device named like a transcript is never read and cannot stall a poll.
 
@@ -46,17 +46,19 @@ It never reads `~/.gemini/oauth_creds.json`, `google_accounts.json`, `settings.j
 | ------------------------------------------------------- | --------------------------- | ------------------------------------ |
 | The Antigravity CLI, `agy`                              | `~/.gemini/antigravity-cli` | Yes                                  |
 | The Antigravity IDE, the editor                         | `~/.gemini/antigravity-ide` | No. Only whether the folder is there |
-| Antigravity 2.0, the desktop app with the Agent Manager | `~/.gemini/antigravity`     | No. Only whether the folder is there |
+| Antigravity 2.0, the desktop app with the Agent Manager | `~/.gemini/antigravity`     | Yes, by a source of its own          |
 
 A 1.x Antigravity IDE kept its files in `~/.gemini/antigravity` too, so that folder may be 2.0's or left from an older IDE. On Windows the folders are in `%USERPROFILE%\.gemini`.
 
 When the folder is missing, the Antigravity CLI is reported as not found, with no advice, and the folder is looked for again once a minute. Polls in between touch nothing, and no `ps` is run. A folder named by `AGENT_LOOKOUT_ANTIGRAVITY_HOME` with no `brain/` in it is an answer, not a missing agy: the source is watched and lists no sessions.
 
-### The IDE's and Antigravity 2.0's folders
+When the agy folder is the one read for Antigravity 2.0, as when `AGENT_LOOKOUT_ANTIGRAVITY_HOME` names `~/.gemini/antigravity`, its case aside on macOS and Windows, the CLI's source reads nothing and runs no `ps`, so each chat is listed once, under Antigravity. Its card says: "Agent Lookout reads ~/.gemini/antigravity for Antigravity too, so what is in it is listed under Antigravity alone."
 
-Agent Lookout does not read the Antigravity IDE or Antigravity 2.0 yet. So that Sources can say why their sessions do not appear, `otherFolders.ts` looks for `antigravity-ide` and `antigravity` beside the agy folder, with one `lstat` each, on the first poll and then at most once a minute. While the agy folder is missing, they are looked at only on a poll that looks for it too. A link in a folder's place counts as there and is not followed. A file of that name, or a path that cannot be looked at, counts as not there. Nothing in either is opened, listed or watched, and only whether each is there is kept.
+### The IDE's folder
 
-When one is there, the card's note ends with a sentence that says so, whether the CLI is found or not: "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide. Agent Lookout reads only the Antigravity CLI so far, not the IDE." It says the folder is there, not that the product is used, since a folder can be there and hold nothing. With `AGENT_LOOKOUT_ANTIGRAVITY_HOME` set, it looks beside the folder that names instead.
+Agent Lookout does not read the Antigravity IDE yet. So that Sources can say why its sessions do not appear, `cli/otherFolders.ts` looks for `antigravity-ide` beside the agy folder, with one `lstat`, on the first poll and then at most once a minute. While the agy folder is missing, it is looked at only on a poll that looks for that too. A link in the folder's place counts as there and is not followed. A file of that name, or a path that cannot be looked at, counts as not there. Nothing in it is opened, listed or watched, and only whether it is there is kept. Antigravity 2.0's folder is no longer looked at here: its own source reads it.
+
+When it is there, the CLI card's note ends with a sentence that says so, whether the CLI is found or not: "The Antigravity IDE's folder is here, ~/.gemini/antigravity-ide. Agent Lookout does not read the IDE yet." It says the folder is there, not that the product is used, since a folder can be there and hold nothing. With `AGENT_LOOKOUT_ANTIGRAVITY_HOME` set, it looks beside the folder that names instead.
 
 On a machine where agy 1.3.1 was installed and had run no conversation, the folder held empty `conversations/`, `brain/` and `crashes/` folders, `conversation_summaries.db`, `installation_id`, `last_check.timestamp`, `jetski_state.pbtxt`, `cli.log` (a link to `log/cli-YYYYMMDD_HHMMSS.log`, one log for each process), `updater/`, `cache/`, `bin/` and `builtin/`.
 
@@ -172,7 +174,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - On Windows no conversation is shown as finished.
 - `ps` is asked only while some conversation was written in the last day, so a conversation agy has kept open, unwritten, for more than a day is listed only while another one is recent.
 - A tool that fails shows as working. Only an error agy reports as its own step, or a failed reply, shows as failed.
-- Antigravity 2.0, the desktop app, which runs many conversations in one process, and the Antigravity IDE are not read. Only whether their folders are there is checked, as [The IDE's and Antigravity 2.0's folders](#the-ides-and-antigravity-20s-folders) says. The hooks documentation puts their transcripts at the same place under their own folders, so the transcript reader would serve them, but the process check would not.
+- The Antigravity IDE is not read. Only whether its folder is there is checked, as [The IDE's folder](#the-ides-folder) says. Antigravity 2.0 is read by a source of its own, [below](#antigravity-20).
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
 - What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for an Antigravity CLI session.
 
@@ -218,18 +220,75 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 
 ## What breaks when Antigravity changes
 
-| Change in agy                                                    | What the dashboard shows                                                           | Where to fix it                          |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------- |
-| A step type or status is added or renamed                        | Conversations whose last step has it show as Unknown, and the Sources card says so | `src/core/mapping/antigravityMapping.ts` |
-| The transcript moves, or `brain/` is renamed                     | No conversations are found                                                         | `conversations.ts`                       |
-| The transcript's fields are renamed                              | Conversations show as Unknown                                                      | `transcriptFile.ts`                      |
-| Transcripts are written only to SQLite                           | No conversations are found                                                         | `conversations.ts`, `transcriptFile.ts`  |
-| The program is no longer named `agy`, or its commands change     | Every conversation shows as finished, or a daemon holds conversations open         | `agyProcesses.ts`                        |
-| A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                | `agyProcesses.ts`                        |
-| `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                      | `agyProcesses.ts`                        |
-| `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                   | `index.ts`                               |
-| The IDE's or Antigravity 2.0's folder is renamed or moved        | The card no longer says that folder is there                                       | `otherFolders.ts`                        |
-| The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `agyLogs.ts`        |
-| The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `annotations.ts`                         |
+| Change in agy                                                    | What the dashboard shows                                                           | Where to fix it                                       |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| A step type or status is added or renamed                        | Conversations whose last step has it show as Unknown, and the Sources card says so | `src/core/mapping/antigravityMapping.ts`              |
+| The transcript moves, or `brain/` is renamed                     | No conversations are found                                                         | `shared/conversations.ts`                             |
+| The transcript's fields are renamed                              | Conversations show as Unknown                                                      | `shared/transcriptFile.ts`                            |
+| Transcripts are written only to SQLite                           | No conversations are found                                                         | `shared/conversations.ts`, `shared/transcriptFile.ts` |
+| The program is no longer named `agy`, or its commands change     | Every conversation shows as finished, or a daemon holds conversations open         | `cli/agyProcesses.ts`                                 |
+| A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                | `cli/agyProcesses.ts`                                 |
+| `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                      | `cli/agyProcesses.ts`                                 |
+| `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                   | `cli/index.ts`                                        |
+| The IDE's folder is renamed or moved                             | The card no longer says that folder is there                                       | `cli/otherFolders.ts`                                 |
+| The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `cli/agyLogs.ts`                 |
+| The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `shared/annotations.ts`                               |
 
 To check a new agy version, read its changelog for the transcript, compaction, `/resume` and the process, run `agy --help` for its commands, and make the check above.
+
+## Antigravity 2.0
+
+Antigravity 2.0 is Google's desktop app with the Agent Manager, shown in Agent Lookout as Antigravity, source `antigravity-app`. Written on 2026-10-12 from a check of one Mac with Antigravity 2.0 installed beside Antigravity IDE 2.5.5: the names of the app's files and folders, the names of the fields and tables in them, the values of a few kinds, such as a step's `type` and `status`, and the program names of its processes. No prompt, reply, title, path or ID was looked at, and none is in this repository: the tests use hand-written files laid out the same way. A chat that ran there was in Antigravity 2.0, not the IDE, whose own folder held no conversation. The code is in `src/collector/adapters/antigravity/app/`.
+
+### Its folder
+
+`AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME` if set, otherwise `~/.gemini/antigravity`. Seen at its top level: `agyhub_summaries_proto.pb`, `annotations/`, `antigravity_state.pbtxt`, `bin/`, `brain/`, `builtin/`, `cache/`, `conversation_summaries.db`, `conversations/`, `crashes/`, `installation_id`, `lib/` and `scratch/`. Each chat has the CLI's layout: `brain/<id>/.system_generated/logs/transcript.jsonl`, with `transcript_full.jsonl` and `chunks/` beside it and `messages/`, `steps/` and `tasks/` near it, `conversations/<id>.db`, a SQLite database, and `annotations/<id>.pbtxt`, whose top-level `title` is the chat's title. So the CLI's readers in `shared/` serve it: the folder listing, the 24-hour rule and the 30-second look at older chats, the transcript's bounded reads, the title, and the times of `<id>.db` and `<id>.db-wal` for Quiet for. When the folder is missing, Antigravity is reported as not found and looked for again once a minute, as the CLI is.
+
+### Transcripts
+
+Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are not read yet. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done.
+
+### Status
+
+The CLI's table applies, from `antigravityMapping.ts`, with three differences, each in `mapAntigravityStatus` or `app/index.ts`:
+
+- A chat whose last step says idle is working while any of its transcript, its database and the database's log was written in the last 10 seconds (`WRITING_MS`), since the step under way is not in the transcript yet. That the app writes the database while a step runs has not been seen yet. So a chat that has just answered shows as working for up to 10 seconds more, and a chat whose files are written while it waits can show as working. If the app also writes the database later, as agy has been seen to half a minute after the transcript, an idle chat shows as working for 10 seconds then too.
+- Needs you is never shown. The program's step states include `WAITING`, which may be its wait for approval, but no wait has been seen yet. A chat that waits shows as working, or as idle once its files are quiet if its last step is a reply that names no tool.
+- Open and closed come from the app's one program, not from one program for each conversation, as [Liveness](#liveness) says.
+
+### Liveness
+
+The app runs every chat's agent in one program, its hub: on macOS `Contents/Resources/bin/language_server` inside `Antigravity.app`, seen in `/Applications`. The Antigravity IDE runs its own language server from `Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/`, which is another program. The hub's arguments hold a secret, so they are never read: `app/hubProcess.ts` runs `ps -A -o comm=`, which prints only the name each process gives its program, on macOS its first argument, and takes a line for the hub when it is a full path ending in `/Antigravity.app/Contents/Resources/bin/language_server`. So the hub is found wherever the app is: in `/Applications`, `~/Applications`, another folder or disk, or the folder macOS runs an app opened from Downloads in (App Translocation). Only `/Applications` has been seen. While the hub runs every chat is open; once it is not, every chat is finished, or failed. A chat written after `ps` last said the app was closed counts as open until `ps` is asked again, at most every 10 seconds, and sooner, though not within 2 seconds of the last run, after such a write. Closing the app finishes every chat at once, and opening it again shows them all as open, so a poll made while `ps` says the app is closed is named `files-app-closed` and compared only with the last poll made while it was closed. So closing the app sends no Finished for each chat of the last day, however often it is opened and closed. On Linux and Windows the hub's place is not known yet, so `ps` is not run and no chat is shown as finished; the poll is named `files-without-processes`.
+
+### Folders
+
+`conversation_summaries.db` is the app's own list of chats, a SQLite database whose table `conversation_summaries` has `conversation_id`, `title`, `preview`, `step_count`, `last_modified_time`, `workspace_uris`, `status`, `source`, `project_id`, `agent_name`, `parent_conversation_id`, `nesting_depth`, `battle_id`, `winning_conversation_id`, `not_fully_idle`, `killed`, `last_user_input_time`, `last_user_input_step_index`, `app_data_dir`, `raw_summary` and `group_id`, beside text search tables, `conversations_fts`, which hold the chats' text. Seen: `workspace_uris` a JSON list of `file:///` addresses, or empty, and `status` `CASCADE_RUN_STATUS_IDLE`, one of five the program names.
+
+`app/summaries.ts` reads `conversation_id` and `workspace_uris` alone, with the system's `sqlite3`, from fixed places, `/usr/bin/sqlite3` first, never `PATH`, and never on Windows:
+
+```sh
+sqlite3 -init /dev/null -batch -json 'file:<folder>/conversation_summaries.db?mode=ro&immutable=1' \
+  'SELECT conversation_id, workspace_uris FROM conversation_summaries'
+```
+
+Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly` with `?mode=ro` did not, with "unable to open database file (14)", while no `-wal` or `-shm` file was beside it, since a reader of a database in WAL mode otherwise makes its `-shm`. `immutable=1` takes no lock and makes no file. `mode=ro` is added so a database that is not there is never made: with `immutable=1` alone, `sqlite3` makes an empty one. `?mode=ro&immutable=1` was checked on a database in WAL mode with no side files, made for the tests, not on the app's own. `immutable=1` also means the app's `-wal` file is not read, so a chat begun a moment ago may have no folder until the app moves its writes into the database, and a read made while it does can fail. The folder is the first address in `workspace_uris` that is a local absolute path. The database is looked at with `lstat` on each poll that shows a chat, and read again only when its size or modified time changes after a read that worked, or a minute after a read that did not work, whether it changed or not, so a `sqlite3` that cannot read it, such as one too old to know `-json`, is not run on every change. With no `sqlite3`, or when it fails, chats show without a folder, and the card says so.
+
+### Its gaps
+
+- No Needs you, no token counts, no Jump, no Stop and no Answer.
+- No chat is shown as finished on Linux or Windows, and on Windows none has a folder.
+- A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own. None was seen.
+- A 1.x Antigravity IDE's chats left in the same folder are listed as the app's, if their transcript was written in the last day.
+- The app's logs, in `~/Library/Logs/Antigravity`, are not read. `language_server.log` was seen to hold none of the lines the CLI's log has about conversations, folders and approvals.
+
+### What breaks when Antigravity 2.0 changes
+
+| Change in the app                                           | What the dashboard shows                                                 | Where to fix it                          |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
+| `~/.gemini/antigravity` stops being its folder              | Antigravity is not found, or found empty                                 | `app/index.ts`                           |
+| The layout under `brain/` or the transcript's fields change | As for the CLI: no chats, or chats shown as Unknown                      | `shared/`                                |
+| The hub is renamed or moves inside the app                  | Every chat shows as finished                                             | `app/hubProcess.ts`                      |
+| `conversation_summaries` or its two columns are renamed     | Chats show without a folder, and the card says sqlite3 could not read it | `app/summaries.ts`                       |
+| A wait for approval is written as a step in `WAITING`       | It shows as working, not as needing you                                  | `src/core/mapping/antigravityMapping.ts` |
+
+To check a new version, with the app open, start a chat that asks to run a command, and note, never the content: `ls -la` of `brain/<id>/.system_generated/logs/` and `steps/`, the `type` and `status` of the transcript's last lines, and `ps -A -o comm=` for the hub's path. Then compare Agent Lookout's card and the chat's status with what was noted.

@@ -8,7 +8,7 @@ import {
   parseAgyTable,
   readAgyCommandLine,
   type RunPs,
-} from "@collector/adapters/antigravity/agyProcesses";
+} from "@collector/adapters/antigravity/cli/agyProcesses";
 import { conversationId, lstart, MINUTE, NOW } from "@tests/fixtures/antigravity";
 
 const A = conversationId("a1");

@@ -4,7 +4,7 @@ This tour walks through the whole project in plain language: what each part does
 
 ## What Agent Lookout is
 
-Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex and Antigravity CLI sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
+Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI and Antigravity sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
 
 It starts no agent and installs nothing into one. By default it sends nothing off the computer. The one exception is the Mac app's daily check on GitHub for a newer version, which Settings turns off. It can act on a session, but only when you ask: bring its tab forward, stop it, or answer its permission prompt.
 
@@ -32,6 +32,7 @@ flowchart LR
     cc["Claude Code<br/>~/.claude/sessions<br/>claude agents --json --all"]
     cx["Codex<br/>~/.codex session files"]
     ag["Antigravity CLI<br/>~/.gemini/antigravity-cli, ps"]
+    aa["Antigravity<br/>~/.gemini/antigravity, ps, sqlite3"]
     sf["Your own agents<br/>~/.agent-lookout/sessions"]
   end
   remote["Agent Lookout on another machine<br/>over your ssh"]
@@ -46,6 +47,7 @@ flowchart LR
   cc --> adapters
   cx --> adapters
   ag --> adapters
+  aa --> adapters
   sf --> adapters
   remote --> adapters
   plugin -->|"Unix socket"| held
@@ -66,7 +68,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 
 ### The poller
 
-**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the four local adapters (Claude Code, Codex, the Antigravity CLI and status files), adds one adapter for each other machine, and hands them all to the poller.
+**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the five local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity and status files), adds one adapter for each other machine, and hands them all to the poller.
 
 **Where it came from.** It was in the first commit, 042ec3e, on 4 October 2026. Later work added reading history back after a restart (#21), an idle time you can set (#12), marking a wait Agent Lookout answered (#9, #11) and other machines over SSH (#57).
 
@@ -92,7 +94,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 **A session** has:
 
-- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
+- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
 - its `source`, the app it runs in (`surface`) and a `name`
 - its folder, `cwd`, and `project`, the folder's last part (`projectOf` in `src/core/sessions/project.ts`)
 - a `status`, and when it started and last changed status (`startedAt`, `statusSince`)
@@ -128,6 +130,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 - Codex counts from the session file's last line.
 - Status files count from the file's status time, or its last write.
 - The Antigravity CLI lists a conversation whose transcript was written in the last day, or that an agy program may still have open.
+- Antigravity lists a chat whose transcript was written in the last day.
 
 ### Branches and pull requests
 
@@ -210,7 +213,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 ### The Antigravity CLI
 
-**Where.** `src/collector/adapters/antigravity/`. Three files in `src/core/mapping/` hold its rules: `antigravityMapping.ts` (the status from the last step), `antigravityLiveness.ts` (which conversations may be open) and `antigravityLog.ts` (what a program's log says). [adapters/antigravity.md](adapters/antigravity.md) is the full reference. It covers the CLI, `agy`, and not the Antigravity desktop app or IDE.
+**Where.** `src/collector/adapters/antigravity/cli/`, with the readers it shares with Antigravity in `shared/`. Three files in `src/core/mapping/` hold its rules: `antigravityMapping.ts` (the status from the last step), `antigravityLiveness.ts` (which conversations may be open) and `antigravityLog.ts` (what a program's log says). [adapters/antigravity.md](adapters/antigravity.md) is the full reference. It covers the CLI, `agy`, and in a part of its own Antigravity 2.0, the desktop app, but not the Antigravity IDE.
 
 **Where it came from.** Someone asked whether Agent Lookout works with Antigravity (#69). The research for #45 found that `agy` is the Antigravity CLI's command. Transcripts came in 915992d, and needs-you, titles and folders in ce2337e, both on 7 October. Reading the line agy 1.3.1 writes when you answer came in 5f8496e on 8 October. It first shipped in 0.2.8.
 
@@ -225,7 +228,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `antigravityLiveness.ts` holds a conversation open while any running agy program could have it: one the program names with `--conversation`, one written since the program started, or one written since `ps` was last asked. Only a conversation no program could have open is finished. This errs towards open: one agy left open all day holds every conversation it wrote to.
 - `agyLogs.ts` ties each running program to its own log in `log/`, by the start time in the log's name. `antigravityLog.ts` keeps only the folder, the conversation opened, and an approval asked for and not yet answered. The transcript never records an approval wait, but the log does. So a session needs you while the log says agy asked, and the transcript has no step yet after the one that waits (`waitsForApproval`).
 - `annotations.ts` reads the title agy gives a conversation, from `annotations/<id>.pbtxt`.
-- `otherFolders.ts` checks whether the Antigravity IDE's folder or Antigravity 2.0's is beside the CLI's, with one `lstat` each, at most once a minute, so the card can say it is there and not read yet (#100). It opens nothing in them.
+- `cli/otherFolders.ts` checks whether the Antigravity IDE's folder is beside the CLI's, with one `lstat`, at most once a minute, so the card can say it is there and not read yet (#100). It opens nothing in it. Antigravity 2.0's folder has a source of its own, in `app/`, which shares the CLI's readers in `shared/`.
 
 **Bases.** `files` is the usual one. `files-without-processes` is used when `ps` cannot be asked, as on Windows. `files-unmatched` is used while an agy program runs that could have any conversation open. In both of the last two, no conversation is shown as finished, so the poller keeps them apart.
 
@@ -255,7 +258,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Why.** Each tool records different things. Unless that is said, a missing signal reads as good news: a Codex session waiting for approval just looks busy (#50).
 
-**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
+**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES`, `ANTIGRAVITY_APP_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
 
 The guide has the same table in [What each agent can report](GUIDE.md#what-each-agent-can-report). `tests/integration/collector/adapters/adapter.test.ts` fails if the guide's table says anything other than what the adapters declare, cell by cell and reason by reason, or if the README's agent table does, in each column it has. Change the constant and the docs together.
 
@@ -264,6 +267,7 @@ In short:
 - **Claude Code** reports working, idle, needs you and names. Finished and failed only for background jobs. No Quiet for, because its registry file is not rewritten as a session works. Jump, Stop and Answer only in some places, and fewer on Windows. Tokens only on this computer, from its newest reply, while its details are open.
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle and Quiet for. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
+- **Antigravity** reports working and idle and Quiet for. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Never needs you yet. No Jump, Stop, Answer or tokens.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
@@ -1281,7 +1285,7 @@ A test ends in `.test.tsx` only when its module is a `.tsx` file. A module may h
 **Why no test touches your machine.** Tests run on a contributor's own computer, next to their real sessions, so two safeguards keep them apart:
 
 - The test config leaves out the collector's Vite plugin.
-- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI at an empty folder and the settings at `NO_SETTINGS_FILE`.
+- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI and Antigravity at empty folders and the settings at `NO_SETTINGS_FILE`.
 
 A test that builds its own environment does the same itself. One block of tests, the check against the real `claude`, runs only with `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1`. [tests/README.md](../tests/README.md) has the command, says what goes in each group and describes every helper in `tests/support/`.
 
@@ -1425,15 +1429,15 @@ Both ship inside the npm package.
 
 **Why they matter here.** They are promises, and the project treats them as part of the code. PRIVACY.md ends with a rule: a change that adds a command or a file read, stores anything on disk, or talks to a network updates PRIVACY.md in the same pull request. The pull request template asks for the same. Most of the promises have a test that would fail if the code broke them:
 
-| Promise                                                                                                                                                 | Test that holds it                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                 | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
-| `npm start` listens on loopback only                                                                                                                    | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
-| The page loads nothing from another site                                                                                                                | The same file: "the page may load and call nothing but this server"                                                                                  |
-| What a waiting session is asking is never written to disk or given to an MCP client                                                                     | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
-| A session's last message is kept only within the stated limits                                                                                          | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
-| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                        | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
-| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
+| Promise                                                                                                                                                                | Test that holds it                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
+| `npm start` listens on loopback only                                                                                                                                   | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
+| The page loads nothing from another site                                                                                                                               | The same file: "the page may load and call nothing but this server"                                                                                  |
+| What a waiting session is asking is never written to disk or given to an MCP client                                                                                    | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
+| A session's last message is kept only within the stated limits                                                                                                         | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
+| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                       | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
+| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI or Antigravity folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
 
 The docs are held to the code in the same way:
 

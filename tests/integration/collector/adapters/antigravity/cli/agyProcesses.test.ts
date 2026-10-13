@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { createAgyProcessReader } from "@collector/adapters/antigravity/agyProcesses";
+import { createAgyProcessReader } from "@collector/adapters/antigravity/cli/agyProcesses";
 import { conversationId } from "@tests/fixtures/antigravity";
 import { tempDir } from "@tests/support/node/tempFiles";
 
