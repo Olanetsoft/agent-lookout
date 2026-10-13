@@ -60,6 +60,7 @@ describe("listing conversations", () => {
     const written = listing.conversations.map((files) => ({
       ...files,
       transcript: asWritten(files.transcript),
+      database: asWritten(files.database),
     }));
     expect({ state: listing.state, conversations: written }).toEqual({
       state: "ok",
@@ -69,6 +70,9 @@ describe("listing conversations", () => {
           transcript: transcriptPath(AGY_HOME, A),
           transcriptInfo: expect.objectContaining({ kind: "file" }),
           writtenAt: NOW - 3 * MINUTE,
+          database: databasePath(AGY_HOME, A),
+          databaseInfo: expect.objectContaining({ kind: "file", mtimeMs: NOW - 5 * MINUTE }),
+          logThere: true,
           lastWriteAt: NOW - MINUTE,
         },
         {
@@ -76,6 +80,9 @@ describe("listing conversations", () => {
           transcript: transcriptPath(AGY_HOME, B),
           transcriptInfo: null,
           writtenAt: null,
+          database: databasePath(AGY_HOME, B),
+          databaseInfo: expect.objectContaining({ kind: "file" }),
+          logThere: false,
           lastWriteAt: NOW - 2 * MINUTE,
         },
       ],

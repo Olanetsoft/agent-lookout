@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does, so it is in the Needs you panel and sends a notification for the wait. Agent Lookout reads two numbers from the chat's own database with `sqlite3`: the place and the status of its newest step, never what the step asks, so the chat does not say what it asks. What each agent can report, in Sources, says Partly for its Needs you. Not on Windows.
+
 ## 0.2.11 - 2026-10-13
 
 Antigravity's desktop app shows up as its own source, a Codex session shows what it last said, and Claude Code and Antigravity sessions show the token counts of their newest reply, as Codex sessions do.

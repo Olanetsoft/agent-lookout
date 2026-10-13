@@ -58,10 +58,10 @@ Any other agent can show up by writing one small file per session. [Your own age
 | Claude Code     | Yes       | Partly | No        | Partly | Partly | Partly |
 | Codex           | No        | No     | Yes       | Yes    | No     | No     |
 | Antigravity CLI | Partly    | No     | Yes       | Yes    | No     | No     |
-| Antigravity     | No        | No     | Yes       | Yes    | No     | No     |
+| Antigravity     | Partly    | No     | Yes       | Yes    | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
-Codex and the Antigravity app don't record when they wait for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI shows as needing you while it asks to approve a tool. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
+Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

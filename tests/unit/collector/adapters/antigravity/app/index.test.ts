@@ -16,6 +16,7 @@ import {
   writtenJustNow,
 } from "@collector/adapters/antigravity/app/index";
 import { sqliteArguments } from "@collector/adapters/antigravity/app/summaries";
+import { NEWEST_STEP_QUERY, WAITING_STATUS } from "@collector/adapters/antigravity/app/waits";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
   AGY_HOME,
@@ -94,6 +95,7 @@ describe("with Antigravity 2.0's folder there", () => {
         { label: "Command run", value: "every 10 seconds at most" },
         { label: "Folders file", value: "~/.gemini/antigravity/conversation_summaries.db" },
         { label: "Folders read", value: "with sqlite3, when the file changes" },
+        { label: "Waits read", value: "with sqlite3, when a chat's database changes" },
       ],
     });
     expect(statuses(result.sessions)).toEqual({
@@ -363,7 +365,7 @@ describe("names and folders", () => {
     missing.sqlite.there(false);
     const without = await missing.adapter.poll();
     expect(without.health.detail).toBe(
-      `${DETAIL} No sqlite3 program was found to read each chat's folder from ~/.gemini/antigravity/conversation_summaries.db, so chats show without one.`,
+      `${DETAIL} No sqlite3 program was found to read each chat's folder from ~/.gemini/antigravity/conversation_summaries.db, or whether it waits for you, so chats show without one and never as needing you.`,
     );
     expect(without.sessions.every((session) => session.cwd === null)).toBe(true);
 
@@ -490,7 +492,7 @@ test("carries its own declaration of what it can report, with No for Needs you a
     standInHub(),
   );
   expect(adapter.capabilities).toBe(ANTIGRAVITY_APP_CAPABILITIES);
-  expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("no");
+  expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("partly");
   expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("yes");
   expect(adapter.lookingIn).toBe(
     "Looking for Antigravity sessions in ~/.gemini/antigravity/brain.",
@@ -514,5 +516,72 @@ test("never throws: anything unexpected is a sentence", async () => {
   expect((await adapter.poll()).health).toMatchObject({
     state: "error",
     detail: "Something unexpected went wrong while reading Antigravity sessions.",
+  });
+});
+
+describe("a chat that waits for approval", () => {
+  /** The idle chat's database, written when its newest step began to wait, with that step in it. */
+  function waiting(running = true) {
+    const context = setUp(running);
+    const writtenAt = NOW - 3 * MINUTE;
+    context.files.write(databasePath(APP_HOME, IDLE), "SQLite format 3\u0000", {
+      mtimeMs: writtenAt,
+    });
+    context.sqlite.step(IDLE, { idx: 2, status: WAITING_STATUS });
+    return { ...context, writtenAt };
+  }
+
+  test("needs you, for permission, since its database was written, with nothing said of what it asks", async () => {
+    const { adapter, sqlite, writtenAt } = waiting();
+    const { sessions } = await adapter.poll();
+    const chat = sessions.find((session) => session.id.endsWith(IDLE));
+    expect(chat).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: writtenAt,
+    });
+    expect(chat).not.toHaveProperty("waitingDetail");
+    expect(chat).not.toHaveProperty("waitingText");
+    // Only the chat with a database is asked about, with the one question.
+    expect(sqlite.stepRuns()).toHaveLength(1);
+    expect(sqlite.stepRuns()[0]?.args.at(-1)).toBe(NEWEST_STEP_QUERY);
+    expect(String(sqlite.stepRuns()[0]?.args.at(-2))).toMatch(
+      // Joined with the test machine's own separator, which the address escapes on Windows.
+      new RegExp(`(?:/|%5C)conversations(?:/|%5C)${IDLE}\\.db\\?mode=ro&immutable=1$`),
+    );
+  });
+
+  test("is idle again once the step is answered and the database written", async () => {
+    const { adapter, clock, files, sqlite } = waiting();
+    await adapter.poll();
+    sqlite.step(IDLE, { idx: 2, status: 3 });
+    files.rewrite(databasePath(APP_HOME, IDLE), "SQLite format 3\u0000 more", {
+      mtimeMs: clock.now() - 30 * SECOND,
+    });
+    clock.advance(2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)[IDLE]).toBe("idle");
+  });
+
+  test("is finished once the app is closed, and its database is not read", async () => {
+    const { adapter, sqlite } = waiting(false);
+    expect(statuses((await adapter.poll()).sessions)[IDLE]).toBe("finished");
+    expect(sqlite.stepRuns()).toEqual([]);
+  });
+
+  test("is not read while its database's -wal file is there, and shows as it would without it", async () => {
+    const { adapter, files, sqlite } = waiting();
+    files.write(databasePath(APP_HOME, IDLE, true), "", { mtimeMs: NOW - 3 * MINUTE });
+    expect(statuses((await adapter.poll()).sessions)[IDLE]).toBe("idle");
+    expect(sqlite.stepRuns()).toEqual([]);
+  });
+
+  test("when sqlite3 cannot read it, the chat shows as it would without it and the card says so", async () => {
+    const { adapter, sqlite } = waiting();
+    sqlite.fail();
+    const result = await adapter.poll();
+    expect(statuses(result.sessions)[IDLE]).toBe("idle");
+    expect(result.health.detail).toContain(
+      "sqlite3 could not read whether some chats wait for you, so they show as working or idle.",
+    );
   });
 });

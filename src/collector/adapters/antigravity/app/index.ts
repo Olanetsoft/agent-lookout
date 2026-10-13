@@ -35,6 +35,7 @@ import {
   type SummariesReader,
   type SummariesState,
 } from "./summaries.ts";
+import { createWaitReader, type Wait, type WaitReader } from "./waits.ts";
 
 /** The variable that replaces Antigravity 2.0's folder, for Agent Lookout alone. */
 export const ANTIGRAVITY_APP_HOME_ENV = "AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME";
@@ -92,11 +93,11 @@ const LABEL = APP_PROFILE.label;
 
 /** Said whenever Antigravity is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "A chat that waits for you to approve a step does not show as needing you: Agent Lookout does not read Antigravity's approvals yet.";
+  "A chat that waits for you to approve a step shows as needing you, but not what it asks: answer it in Antigravity.";
 
 /** Said whenever Antigravity is watched, until the adapter has been checked against more of it. */
 export const UNCHECKED_NOTE =
-  "This was built from the layout of Antigravity 2.0's files on one Mac, and not yet checked against a chat that runs a tool or fails, so a status can be wrong.";
+  "This was built from the layout of Antigravity 2.0's files on one Mac, and not yet checked against a chat that fails, so a status can be wrong.";
 
 /** What the card always says, after how it reads. */
 const ALWAYS_NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
@@ -112,8 +113,8 @@ export const UNKNOWN_STEP_NOTE =
  * - Working and idle are the transcript's last step, as for the CLI
  *   (`antigravityMapping.ts`), and a chat stays working while its files are
  *   written, since its transcript holds only the steps that are done.
- * - Needs you is not read: where the app records a wait for approval has not
- *   been seen yet. A chat that waits shows as working or idle.
+ * - Needs you is a chat whose newest step waits for approval, from its
+ *   database, read with `sqlite3` (`waits.ts`). What it asks is not read.
  * - Finished is every chat once the app's hub is not running, which needs
  *   `ps` and is known only on macOS.
  * - Failed is an error Antigravity records as a step of its own, or a reply
@@ -128,9 +129,9 @@ export const UNKNOWN_STEP_NOTE =
 export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "Antigravity's waits for approval are not read yet, so a chat that waits does not show as needing you.",
+      "While a chat waits for you to approve a step, read from its database with sqlite3, on macOS and Linux. What it asks is not shown.",
   },
   finished: {
     level: "partly",
@@ -158,7 +159,7 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Antigravity's waits for approval are not read yet, so there is none to answer.",
+    reason: "Antigravity documents no way to answer one of its approvals from outside the app.",
   },
 };
 
@@ -172,6 +173,8 @@ export interface AntigravityAppAdapterOptions {
   hub?: HubProcessReader;
   /** What reads each chat's folder from the app's list of chats. Defaults to `sqlite3`. */
   summaries?: SummariesReader;
+  /** What reads whether each chat waits for the person from its database. Defaults to `sqlite3`. */
+  waits?: WaitReader;
   /** The system, which says whether `ps` and `sqlite3` are asked. Defaults to this one. */
   platform?: NodeJS.Platform;
   /**
@@ -209,11 +212,14 @@ export function writtenJustNow(lastWriteAt: number | null, now: number): boolean
  * - Each listed chat's title, from `annotations/<id>.pbtxt`.
  * - Each chat's folder, from `conversation_summaries.db`, with `sqlite3`
  *   (`summaries.ts`).
+ * - Whether each listed chat waits for the person, from the number and status
+ *   of the newest step in its `conversations/<id>.db`, with `sqlite3`
+ *   (`waits.ts`).
  * - `ps`, on macOS, for whether the app's hub runs (`hubProcess.ts`).
  *
  * Where it differs from the CLI's: the app runs every chat in one program, so
- * every chat is open while it runs and finished once it does not; nothing is
- * read for Needs you; and a chat whose last step reads as idle is working
+ * every chat is open while it runs and finished once it does not; Needs you
+ * comes from the chat's database, not a log; and a chat whose last step reads as idle is working
  * while its files are written, since steps not done are not in its
  * transcript yet.
  *
@@ -247,6 +253,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
   const reader = createTranscriptReader(io);
   const titles = createTitleReader({ home, io });
   const summaries = options.summaries ?? createSummariesReader({ home, io, platform });
+  const waits = options.waits ?? createWaitReader({ platform });
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -261,6 +268,8 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     platform === "darwin" ? `${every(processCheckMs)} at most` : `not run on ${system}`;
   const foldersRead =
     platform === "win32" ? "not on Windows" : "with sqlite3, when the file changes";
+  const waitsRead =
+    platform === "win32" ? "not on Windows" : "with sqlite3, when a chat's database changes";
 
   function watching(read: string): SourceFact[] {
     return [
@@ -270,6 +279,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       { label: "Command run", value: commandRun },
       { label: "Folders file", value: summariesName },
       { label: "Folders read", value: foldersRead },
+      { label: "Waits read", value: waitsRead },
     ];
   }
 
@@ -339,12 +349,19 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
   /** What the card adds when the folders could not be read, or nothing. */
   function foldersNote(state: SummariesState | null): string {
     if (state === "no-sqlite") {
-      return ` No sqlite3 program was found to read each chat's folder from ${summariesName}, so chats show without one.`;
+      return ` No sqlite3 program was found to read each chat's folder from ${summariesName}, or whether it waits for you, so chats show without one and never as needing you.`;
     }
     if (state === "failed") {
       return ` sqlite3 could not read each chat's folder from ${summariesName}, so chats show without one.`;
     }
     return "";
+  }
+
+  /** What the card adds when whether a chat waits could not be read, or nothing. */
+  function waitsNote(failed: boolean): string {
+    return failed
+      ? " sqlite3 could not read whether some chats wait for you, so they show as working or idle."
+      : "";
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -412,6 +429,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     const kept = new Set<string>();
     const sessions: Session[] = [];
     let unknownStep = false;
+    let waitFailed = false;
     for (const files of shown) {
       if (files.transcriptInfo === null) continue;
       let state: TranscriptState;
@@ -423,11 +441,25 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
         continue;
       }
       kept.add(files.transcript);
+      const live = hubLiveness(answer, hubAt, files.writtenAt);
+      // A chat of an app that is closed is finished, so its database is not read.
+      const wait: Wait =
+        live === false
+          ? { state: "not-read" }
+          : await waits.read(
+              files.id,
+              files.database,
+              files.databaseInfo,
+              files.logThere,
+              checkedAt,
+            );
+      if (wait.state === "failed") waitFailed = true;
       const session = antigravitySession({
         profile: APP_PROFILE,
         conversationId: files.id,
         state,
-        live: hubLiveness(answer, hubAt, files.writtenAt),
+        live,
+        waiting: wait.state === "waiting" ? { tool: null, since: wait.since } : null,
         title: await titles.read(files.id),
         folder: read?.folders.get(files.id) ?? null,
         writtenAt: files.lastWriteAt,
@@ -438,7 +470,9 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       sessions.push(session);
     }
     reader.keepOnly(kept);
-    titles.keepOnly(new Set(sessions.map((session) => session.id.slice(SOURCE_ID.length + 1))));
+    const shownIds = new Set(sessions.map((session) => session.id.slice(SOURCE_ID.length + 1)));
+    titles.keepOnly(shownIds);
+    waits.keepOnly(shownIds);
 
     let detail = `Sessions are read from the transcripts Antigravity keeps in ${brainName}. ${ALWAYS_NOTES}`;
     let basis = BASIS;
@@ -452,6 +486,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       basis = BASIS_APP_CLOSED;
     }
     detail += foldersNote(read?.state ?? null);
+    detail += waitsNote(waitFailed);
     if (unknownStep) detail += ` ${UNKNOWN_STEP_NOTE}`;
     const answered = result("ok", detail, every(pollIntervalMs), checkedAt, basis);
     return { ...answered, sessions };

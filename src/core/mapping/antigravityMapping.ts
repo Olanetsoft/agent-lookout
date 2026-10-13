@@ -292,8 +292,9 @@ export interface AntigravityStatusFields {
   last: AntigravityStep | null | undefined;
   live: AntigravityLiveness;
   /**
-   * Whether the program that has the conversation open waits for the
-   * person's approval of a tool, from its own log (`antigravityLog.ts`).
+   * Whether the conversation waits for the person's approval: for the CLI
+   * from its program's own log (`antigravityLog.ts`), for Antigravity 2.0
+   * from the chat's database.
    */
   asking?: boolean;
   /**
@@ -319,8 +320,8 @@ export interface AntigravityStatusFields {
  * | none read       | unknown            | unknown  |
  *
  * A conversation that ended on an error stays failed once agy has closed it.
- * One that would be working or idle needs you while its program's log says
- * it waits for approval, unless agy is known to have closed it. An Antigravity
+ * One that would be working or idle needs you while it waits for approval,
+ * unless agy is known to have closed it. An Antigravity
  * 2.0 chat that would be idle is working while its files are being written.
  */
 export function mapAntigravityStatus(fields: AntigravityStatusFields): SessionStatus {
