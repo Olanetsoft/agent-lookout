@@ -26,6 +26,7 @@ import type {
 import type { AgySessionProcess } from "@core/mapping/antigravityLiveness";
 import { APP_HOME, HOME, NOW, sqliteJson, type SummaryRow } from "@tests/fixtures/antigravity";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { asWritten } from "@tests/support/paths";
 import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
 export { handClock, memoryFiles, type MemoryFiles };
@@ -163,7 +164,8 @@ export function antigravityAppAdapterFor(
  * one by default: each path named in `same` leads to the path it names.
  */
 export function caseBlind(io: ReadOnlyIo, same: Readonly<Record<string, string>>): ReadOnlyIo {
-  const to = (target: string) => same[target] ?? target;
+  // Matched as the tests write paths, since on Windows the code under test hands them over in its own form.
+  const to = (target: string) => same[asWritten(target)] ?? target;
   return {
     ...io,
     readdir: (target) => io.readdir(to(target)),
