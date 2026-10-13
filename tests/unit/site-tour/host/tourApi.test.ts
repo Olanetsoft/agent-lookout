@@ -267,10 +267,16 @@ test("what a session last said is answered as the collector answers it", async (
     status: 200,
     body: { message: { text: waiting.said, cut: false }, tokens: waiting.saidTokens },
   });
-  // Another agent, and another machine, are not read.
+  // A Codex session's answer has no counts, which are on the session.
   const codex = SESSIONS.find((session) => session.source === "codex")!;
+  expect(await json(lastMessage(codex.id))).toEqual({
+    status: 200,
+    body: { message: { text: codex.said, cut: false } },
+  });
+  // Another agent, and another machine, are not read.
+  const file = SESSIONS.find((session) => session.source === "status-files")!;
   const there = SESSIONS.find((session) => session.machine === MACHINE.name)!;
-  for (const session of [codex, there]) {
+  for (const session of [file, there]) {
     expect(await json(lastMessage(session.id))).toEqual({
       status: 200,
       body: { message: null, reason: "not-read" },

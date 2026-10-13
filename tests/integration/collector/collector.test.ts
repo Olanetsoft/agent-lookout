@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
 import path from "node:path";
@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import type { Adapter } from "@collector/adapters/adapter";
-import { NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
+import { createCodexAdapter, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { createCollector } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
@@ -40,11 +40,13 @@ import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
 import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
 import {
+  agentMessageLine,
   fixtureSessions,
   messageLine,
   metaLine,
   MINUTE,
   NOW,
+  replyLine,
   rollout,
   rolloutPath,
   turnLine,
@@ -2029,6 +2031,91 @@ describe("history kept on disk", () => {
     collector.stop();
     const kept = await files(dir);
     expect(kept).toContain("demo-project");
+    expect(kept).not.toContain(marker);
+    expect(warnings.join("\n")).not.toContain(marker);
+  });
+
+  test("what a Codex session last said is in the last message route's answer alone, and goes with the session", async () => {
+    // A working Codex session, open in Codex, whose newest reply carries a marker.
+    const thread = "00000000-0000-4000-8000-0000000000e7";
+    const marker = "CODEX-LAST-MESSAGE-MARKER";
+    const home = await makeCodexHome({ [`thread-writer-locks/${thread}.lock`]: "" });
+    const file = rolloutPath(home, "2026-10-01T09-00-00", thread);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      rollout(
+        metaLine(NOW - 30 * MINUTE, { id: thread, cwd: "/Users/example/code/demo-api" }),
+        messageLine(NOW - 20 * MINUTE, "Tidy the docs"),
+        turnLine(NOW - 20 * MINUTE, "task_started"),
+        agentMessageLine(NOW - 19 * MINUTE, `I tidied them. ${marker}`),
+        replyLine(NOW - 19 * MINUTE, `I tidied them. ${marker}`),
+      ),
+    );
+    let at = NOW;
+    const adapter = createCodexAdapter({
+      env: { AGENT_LOOKOUT_CODEX_HOME: home },
+      now: () => at,
+    });
+    const dir = await tempDir();
+    const warnings: string[] = [];
+    const collector = createCollector({
+      version: "9.9.9-test",
+      adapters: [adapter],
+      env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE },
+      notifier: fakeSystemNotifier(),
+      now: () => at,
+      intervalMs: 1_000_000_000,
+      warn: (line) => warnings.push(line),
+    });
+    const port = await listen(createServer(collector.handler));
+    collector.start();
+    onTestFinished(() => collector.stop());
+    await collector.whenStarted();
+    await collector.poller.pollOnce();
+    at += 2_000;
+    await collector.poller.pollOnce();
+
+    const asked = `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(`codex:${thread}`)}`;
+    const answer = await request(port, asked);
+    expect([answer.status, answer.json()]).toEqual([
+      200,
+      { message: { text: `I tidied them. ${marker}`, cut: false } },
+    ]);
+    expect(adapter.lastMessagesKept).toBe(1);
+    at += 2_000;
+    await collector.poller.pollOnce();
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    const answers = await Promise.all(
+      [
+        "/api/sessions",
+        "/api/events?since=0",
+        "/api/history",
+        "/api/waits",
+        "/api/email",
+        "/api/webhook",
+        "/api/ntfy",
+        "/api/pushover",
+      ].map(async (target) => {
+        const response = await request(port, target);
+        expect([target, response.status]).toEqual([target, 200]);
+        return response.body;
+      }),
+    );
+    expect(answers[0]).toContain("demo-api");
+    for (const body of answers) expect(body).not.toContain(marker);
+
+    // Codex closes the session and its file is put away: it leaves the list, and nothing of it is kept or answered.
+    await rm(file);
+    at += 2_000;
+    await collector.poller.pollOnce();
+    expect((await request(port, asked)).status).toBe(404);
+    expect(adapter.lastMessagesKept).toBe(0);
+
+    collector.stop();
+    const kept = await files(dir);
+    expect(kept).toContain("demo-api");
     expect(kept).not.toContain(marker);
     expect(warnings.join("\n")).not.toContain(marker);
   });

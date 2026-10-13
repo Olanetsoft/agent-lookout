@@ -2,9 +2,9 @@ import { blocksOf, isRecord, linesOf, nonEmpty } from "./transcriptLines.ts";
 
 /**
  * What a Claude Code session last said, worked out from the end of its
- * transcript. Pure: the bytes are read elsewhere (`transcriptFile.ts`), and
- * the text is made fit to show elsewhere (`messageText` in
- * `src/core/text.ts`).
+ * transcript. Pure: the bytes are read elsewhere
+ * (`src/collector/files/transcriptTail.ts`), and the text is made fit to show
+ * elsewhere (`messageText` in `src/core/text.ts`).
  *
  * The transcript is undocumented, and `lastAsk.ts` has the notes on its
  * format. What is said is the `text` blocks of the session's own assistant

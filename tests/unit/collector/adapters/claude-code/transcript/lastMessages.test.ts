@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
+import { createLastMessageReader } from "@collector/adapters/claude-code/transcript/lastMessages";
+import { LOOK_AGAIN_MS } from "@collector/adapters/claude-code/transcript/waitingTexts";
 import {
   ANSWER_AGAIN_MS,
-  createLastMessageReader,
   KEEP_MS,
   MAX_KEPT,
   READS_PER_SECOND,
-} from "@collector/adapters/claude-code/transcript/lastMessages";
-import { LOOK_AGAIN_MS } from "@collector/adapters/claude-code/transcript/waitingTexts";
+} from "@collector/messages/tailReader";
 import type { Session } from "@core/sessions/session";
 import { MAX_MESSAGE_LENGTH } from "@core/text";
 import { ids } from "@tests/fixtures/claudeCode";

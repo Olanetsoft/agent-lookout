@@ -16,6 +16,7 @@ import { INDEX_PROMPT_REFRESH_MS, INDEX_REFRESH_MS } from "@collector/adapters/c
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
+  agentMessageLine,
   CODEX_HOME,
   DAY,
   eventLine,
@@ -26,6 +27,7 @@ import {
   metaLine,
   MINUTE,
   NOW,
+  replyLine,
   revertedRolloutId,
   rollout,
   rolloutName,
@@ -1287,5 +1289,206 @@ describe("what a poll costs", () => {
     expect(files.calls.map((call) => call.path)).toContain(SESSIONS);
     expect(files.calls.map((call) => call.path)).toContain(LOCKS);
     expect(files.calls.map((call) => call.path)).toContain(INDEX);
+  });
+});
+
+describe("what a session last said", () => {
+  /** A working session whose newest reply is this, open in Codex. */
+  function sayingOne(files: MemoryFiles, reply: string): string {
+    return addSession(files, {
+      thread: ids.working,
+      lines: [
+        ...linesFor("demo", ids.working, [[NOW - 30 * MINUTE, "task_started"]]),
+        agentMessageLine(NOW - 29 * MINUTE, reply),
+        replyLine(NOW - 29 * MINUTE, reply),
+      ],
+      lock: true,
+    });
+  }
+
+  test("is read from the session's own file only when it is asked for, and a poll reads the same with or without it", async () => {
+    const polled = async (env: NodeJS.ProcessEnv) => {
+      const files = emptyCodex();
+      sayingOne(files, "I tidied the docs.");
+      const adapter = codexAdapterFor(files, { env });
+      const result = await adapter.poll();
+      return { files, adapter, result, calls: [...files.calls], reads: [...files.reads] };
+    };
+    const on = await polled({});
+    const off = await polled({ AGENT_LOOKOUT_LAST_MESSAGE: "off" });
+    expect(on.calls).toEqual(off.calls);
+    expect(on.reads).toEqual(off.reads);
+    expect(on.adapter.lastMessagesKept).toBe(0);
+    // It is never put on a session.
+    expect(JSON.stringify(on.result)).not.toContain("tidied");
+
+    on.files.forget();
+    await expect(on.adapter.lastMessage(`codex:${ids.working}`)).resolves.toEqual({
+      message: { text: "I tidied the docs.", cut: false },
+    });
+    expect(on.files.opened()).toEqual([
+      rolloutPath(CODEX_HOME, "2026-10-01T09-00-00", ids.working),
+    ]);
+    expect(on.adapter.lastMessagesKept).toBe(1);
+  });
+
+  test("is read only for a session the last poll listed: any other id touches no file", async () => {
+    const files = emptyCodex();
+    sayingOne(files, "Done.");
+    const adapter = codexAdapterFor(files);
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toBeNull();
+    await adapter.poll();
+    files.forget();
+    for (const other of [
+      `codex:${ids.idle}`,
+      `codex:../${ids.working}`,
+      ids.working,
+      `claude-code:${ids.working}`,
+    ]) {
+      await expect(adapter.lastMessage(other), other).resolves.toBeNull();
+    }
+    expect(files.calls).toEqual([]);
+  });
+
+  test("of a session waiting on a subagent is its own, never the subagent's, whose file is not read", async () => {
+    const files = emptyCodex();
+    const own = sayingOne(files, "I started a helper for the tests.");
+    addSession(files, {
+      thread: ids.subagent,
+      created: "2026-10-01T10-00-00",
+      lines: [
+        metaLine(NOW - 25 * MINUTE, {
+          id: ids.subagent,
+          source: { subagent: { thread_spawn: { parent_thread_id: ids.working, depth: 1 } } },
+          thread_source: "subagent",
+          parent_thread_id: ids.working,
+        }),
+        turnLine(NOW - 25 * MINUTE, "task_started"),
+        agentMessageLine(NOW - 10_000, "The subagent's newer reply."),
+      ],
+      lock: true,
+      mtimeMs: NOW - 10_000,
+    });
+    const adapter = codexAdapterFor(files);
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toEqual({
+      message: { text: "I started a helper for the tests.", cut: false },
+    });
+    await expect(adapter.lastMessage(`codex:${ids.subagent}`)).resolves.toBeNull();
+    expect(files.opened()).toEqual([own]);
+  });
+
+  test("of a reverted session comes from the file written to last", async () => {
+    const files = emptyCodex();
+    addSession(files, {
+      thread: ids.reverted,
+      created: "2026-10-01T07-00-00",
+      lines: [
+        ...linesFor("demo-jobs", ids.reverted, [[NOW - 50 * MINUTE, "task_started"]]),
+        agentMessageLine(NOW - 49 * MINUTE, "From the first file."),
+      ],
+      lock: true,
+    });
+    const revert = addSession(files, {
+      thread: ids.reverted,
+      created: "2026-10-01T10-30-00",
+      rolloutId: revertedRolloutId,
+      lines: [
+        ...linesFor("demo-jobs", ids.reverted, [[NOW - MINUTE, "task_started"]]),
+        agentMessageLine(NOW - 30_000, "From the file written to last."),
+      ],
+    });
+    const adapter = codexAdapterFor(files);
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(`codex:${ids.reverted}`)).resolves.toEqual({
+      message: { text: "From the file written to last.", cut: false },
+    });
+    expect(files.opened()).toEqual([revert]);
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: " Off " }, "AGENT_LOOKOUT_WAITING_TEXT"],
+    [
+      { AGENT_LOOKOUT_LAST_MESSAGE: "off", AGENT_LOOKOUT_WAITING_TEXT: "off" },
+      "AGENT_LOOKOUT_WAITING_TEXT",
+    ],
+  ])("is off with %o, naming the setting, and opens nothing for it", async (env, setting) => {
+    const files = emptyCodex();
+    sayingOne(files, "Done.");
+    const adapter = codexAdapterFor(files, { env });
+    // Sources says so.
+    expect((await adapter.poll()).health.watching).toEqual(
+      watching("~/.codex", "every 2 seconds", "Off"),
+    );
+    files.forget();
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toEqual({
+      message: null,
+      reason: "off",
+      setting,
+    });
+    expect(files.calls).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("is dropped with its session at the first poll that does not list it, or that fails", async () => {
+    const files = emptyCodex();
+    const file = sayingOne(files, "Done.");
+    const clock = handClock();
+    const adapter = codexAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    await adapter.lastMessage(`codex:${ids.working}`);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    files.remove(file);
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    // A poll that goes wrong lists no session, and nothing may be read until the next one.
+    sayingOne(files, "Done again.");
+    clock.advance(2_000);
+    await adapter.poll();
+    await adapter.lastMessage(`codex:${ids.working}`);
+    expect(adapter.lastMessagesKept).toBe(1);
+    files.failAll("EIO");
+    clock.advance(2_000);
+    await adapter.poll();
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toBeNull();
+  });
+
+  test("is dropped, and nothing may be read, after a poll that throws", async () => {
+    const files = emptyCodex();
+    sayingOne(files, "Done.");
+    const clock = handClock();
+    let broken = false;
+    // Once broken, the folder of locks lists as nonsense, which nothing above the adapter's own catch expects.
+    const io: ReadOnlyIo = {
+      ...files.io,
+      readdir: async (dir) =>
+        broken && dir.endsWith("thread-writer-locks")
+          ? (null as unknown as string[])
+          : files.io.readdir(dir),
+    };
+    const adapter = codexAdapterFor(files, { io, now: clock.now });
+    await adapter.poll();
+    await adapter.lastMessage(`codex:${ids.working}`);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    broken = true;
+    clock.advance(2_000);
+    expect((await adapter.poll()).health.detail).toBe(
+      "Something unexpected went wrong while reading Codex sessions.",
+    );
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(`codex:${ids.working}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
   });
 });

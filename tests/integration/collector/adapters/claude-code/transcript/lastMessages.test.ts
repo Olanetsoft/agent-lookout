@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { TRANSCRIPT_TAIL_BYTES } from "@collector/adapters/claude-code/transcript/transcriptFile";
+import { TRANSCRIPT_TAIL_BYTES } from "@collector/files/transcriptTail";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
 import { prompt, said, transcript, usage } from "@tests/fixtures/claudeTranscript";

@@ -1482,8 +1482,19 @@ test("until the first answer, the part says it is reading", async () => {
     .toHaveTextContent("Reading its last message");
 });
 
+test("what a Codex session last said is shown in its details as a Claude Code session's is, and its token counts stay its own", async () => {
+  const asked = saying(() => said("The rate limits are in place for every route."));
+  await renderPanel(CODEX_ID);
+  await expect.element(dialog("api-rate-limits")).toBeVisible();
+  await expect
+    .poll(() => messageText()?.textContent)
+    .toBe("The rate limits are in place for every route.");
+  expect(asked).toEqual([askFor(CODEX_ID)]);
+  // Its counts are the session's, from the list, and the answer carries none.
+  expect(facts(dialog("api-rate-limits").element()).Tokens).toMatch(/^182,431 in, 9,120 out/);
+});
+
 test.each([
-  [CODEX_ID, "api-rate-limits", "Agent Lookout does not read what Codex sessions say."],
   [FILE_ID, "billing-webhooks", "Agent Lookout does not read what night-shift sessions say."],
 ])(
   "a session whose agent is not read is asked about once, and the answer names its agent",

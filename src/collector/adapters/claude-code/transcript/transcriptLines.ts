@@ -2,7 +2,7 @@
  * The lines of the end of a Claude Code transcript, taken apart with the same
  * care by every reader of it: what the session is asking (`lastAsk.ts`) and
  * what it last said (`lastSaid.ts`). Pure: the bytes are read elsewhere
- * (`transcriptFile.ts`).
+ * (`src/collector/files/transcriptTail.ts`).
  *
  * The transcript is undocumented, and `lastAsk.ts` has the notes on its
  * format. A line that does not parse is skipped, and a field of the wrong kind

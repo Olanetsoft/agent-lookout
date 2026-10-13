@@ -16,7 +16,7 @@ async function show(reading: LastMessageReading, remote = false, width = 712) {
   const screen = await render(
     <div data-testid='part' style={{ width }}>
       <button type='button'>Before</button>
-      <LastMessage reading={reading} remote={remote} agent='Codex' />
+      <LastMessage reading={reading} remote={remote} agent='Antigravity CLI' />
     </div>,
   );
   return { screen, part: page.getByTestId("part").element() as HTMLElement };
@@ -76,7 +76,10 @@ test.each([
     { message: null, reason: "off", setting: "AGENT_LOOKOUT_WAITING_TEXT" },
     "Last messages are off: AGENT_LOOKOUT_WAITING_TEXT is off.",
   ],
-  [{ message: null, reason: "not-read" }, "Agent Lookout does not read what Codex sessions say."],
+  [
+    { message: null, reason: "not-read" },
+    "Agent Lookout does not read what Antigravity CLI sessions say.",
+  ],
   [{ message: null, reason: "not-found" }, "Its transcript was not found."],
   [{ message: null, reason: "unreadable" }, "Its transcript could not be read."],
   [{ message: null, reason: "nothing-yet" }, "It has not said anything yet."],
@@ -136,7 +139,7 @@ test("a short message is no Tab stop, and a long one scrolls in its block, which
   await screen.rerender(
     <div data-testid='part' style={{ width: 712 }}>
       <button type='button'>Before</button>
-      <LastMessage reading={said(long)} remote={false} agent='Codex' />
+      <LastMessage reading={said(long)} remote={false} agent='Antigravity CLI' />
     </div>,
   );
   await expect.poll(() => scroll(part).getAttribute("tabindex")).toBe("0");
@@ -163,7 +166,7 @@ test("past the first reading, nothing in it is announced as it changes: a messag
     screen.rerender(
       <div data-testid='part' style={{ width: 712 }}>
         <button type='button'>Before</button>
-        <LastMessage reading={reading} remote={false} agent='Codex' />
+        <LastMessage reading={reading} remote={false} agent='Antigravity CLI' />
       </div>,
     );
   await again(said("Second."));
@@ -190,7 +193,7 @@ test.each(["dark", "light"])(
         <LastMessage
           reading={ready({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" })}
           remote={false}
-          agent='Codex'
+          agent='Antigravity CLI'
         />
       </div>,
     );

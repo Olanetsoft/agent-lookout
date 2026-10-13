@@ -15,6 +15,7 @@ import { STOP_ENV, stopOff, type StopTargets } from "../../actions/stopTargets.t
 import { pathsOf, tildify } from "../../files/paths.ts";
 import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { LAST_MESSAGE_ENV, lastMessageOff } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
@@ -244,6 +245,11 @@ export interface ClaudeCodeAdapterOptions {
    * Defaults to this machine's. Tests pass another.
    */
   platform?: NodeJS.Platform;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
   /** How long `claude agents --json` gets. Defaults to 5 seconds. */
   feedTimeoutMs?: number;
   /** How often the command is run. Defaults to 30 seconds. */
@@ -427,7 +433,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const lastMessages =
     transcriptsOff || lastMessagesOff
       ? null
-      : createLastMessageReader({ claudeHome, io: options.transcriptIo, now });
+      : createLastMessageReader({
+          claudeHome,
+          io: options.transcriptIo,
+          now,
+          limits: options.lastMessageLimits,
+        });
 
   /** The moment the last run of the command was due. Null until the first run. */
   let lastDue: number | null = null;

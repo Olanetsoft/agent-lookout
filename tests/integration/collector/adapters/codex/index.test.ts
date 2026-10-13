@@ -19,10 +19,12 @@ import { createCodexAdapter, type CodexAdapterOptions } from "@collector/adapter
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import type { Session } from "@core/sessions/session";
 import {
+  agentMessageLine,
   fixtureSessions,
   HOME,
   ids,
   lockPath,
+  messageLine,
   metaLine,
   MINUTE,
   NOW,
@@ -170,6 +172,65 @@ describe("the Codex adapter, on a folder laid out as Codex lays it out", () => {
     expect(calls.filter((call) => call.method === "openRegular")).toEqual([]);
   });
 
+  test("reads what a session last said from the end of its own file when asked, and writes nothing", async () => {
+    const before = await snapshotOf(CODEX_FIXTURE_HOME);
+    const { io, calls } = recordingIo();
+    const clock = handClock();
+    const adapter = adapterFor(CODEX_FIXTURE_HOME, { io, now: clock.now });
+    const { sessions } = await adapter.poll();
+    calls.length = 0;
+
+    // One a second, so none is turned away for asking too often.
+    const answers: Record<string, unknown> = {};
+    for (const session of sessions) {
+      answers[session.id] = await adapter.lastMessage(session.id);
+      clock.advance(1_000);
+    }
+    // The working session's newest reply is its response_item alone. The others have said nothing yet.
+    expect(answers).toEqual(
+      Object.fromEntries(
+        expectedSessions.map((session) => [
+          session.id,
+          session.id === `codex:${ids.working}`
+            ? { message: { text: "A placeholder reply.", cut: false } }
+            : { message: null, reason: "nothing-yet" },
+        ]),
+      ),
+    );
+    // Each one opened its own session file, once, and nothing else was looked at.
+    expect(calls.every((call) => call.method === "openRegular")).toBe(true);
+    expect(calls).toHaveLength(sessions.length);
+    expect(new Set(calls.map((call) => path.basename(call.path)))).toHaveLength(sessions.length);
+    expect(await snapshotOf(CODEX_FIXTURE_HOME)).toEqual(before);
+  });
+
+  test("reads only the last 256 KB of a session file, so a reply further back is too far back", async () => {
+    const thread = threadId("e5");
+    const file = path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-05", thread));
+    const home = await makeCodexHome({
+      [file]: rollout(
+        metaLine(NOW - MINUTE, { id: thread, cwd: "/Users/example/code/demo-long" }),
+        turnLine(NOW - MINUTE, "task_started"),
+        agentMessageLine(NOW - MINUTE, "Further back than what is read."),
+        messageLine(NOW - 30_000, "o".repeat(300 * 1024)),
+      ),
+      [`thread-writer-locks/${thread}.lock`]: "",
+    });
+    const adapter = adapterFor(home);
+    await adapter.poll();
+    await expect(adapter.lastMessage(`codex:${thread}`)).resolves.toEqual({
+      message: null,
+      reason: "too-far-back",
+    });
+
+    await appendFile(path.join(home, file), rollout(agentMessageLine(NOW, "Now it is read.")));
+    const later = adapterFor(home, { now: () => NOW + 2_000 });
+    await later.poll();
+    await expect(later.lastMessage(`codex:${thread}`)).resolves.toEqual({
+      message: { text: "Now it is read.", cut: false },
+    });
+  });
+
   test("a turn that ends shows as idle, and once Codex closes the session it is finished", async () => {
     const home = await makeCodexHome({}, { copyFixture: true });
     const clock = handClock();
@@ -302,6 +363,10 @@ describe("finding Codex's folder", () => {
           { label: "Read", value: "not found" },
           { label: "Open-sessions folder", value: "~/.codex/thread-writer-locks" },
           { label: "Names file", value: "~/.codex/session_index.jsonl" },
+          {
+            label: "Last message read",
+            value: "end of a session's file, while its details are open",
+          },
         ],
         checkedAt: NOW,
       },
