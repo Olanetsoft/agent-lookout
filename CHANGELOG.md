@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.11 - 2026-10-13
+
+Antigravity's desktop app shows up as its own source, a Codex session shows what it last said, and Claude Code and Antigravity sessions show the token counts of their newest reply, as Codex sessions do.
 
 ### Added
 
