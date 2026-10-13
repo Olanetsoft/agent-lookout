@@ -43,6 +43,7 @@ import { readHistorySetup } from "./history/historySettings.ts";
 import { createHistoryStore, HISTORY_CAPACITY } from "./historyStore.ts";
 import { createJumpRoute } from "./jumpRoute.ts";
 import { createLastMessageRoute } from "./messages/lastMessageRoute.ts";
+import { createTailLimits } from "./messages/tailReader.ts";
 import {
   createServerNotifications,
   notificationsAtStartLine,
@@ -455,6 +456,8 @@ export function createCollector(options: CollectorOptions): Collector {
     ...options.remotes,
   });
   if (remotes.problem !== null) warn(remotesProblemLine(remotes.problem));
+  // One set of limits for every agent's last messages: four reads a second, eight kept.
+  const lastMessageLimits = createTailLimits();
   const localAdapters = options.adapters ?? [
     createClaudeCodeAdapter({
       env: options.env,
@@ -465,8 +468,9 @@ export function createCollector(options: CollectorOptions): Collector {
       readProcessStarts: options.readProcessStarts,
       stops: stopTargets,
       platform,
+      lastMessageLimits,
     }),
-    createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs, lastMessageLimits }),
     createAntigravityAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createAntigravityAppAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),

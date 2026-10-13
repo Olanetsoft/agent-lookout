@@ -12,9 +12,12 @@ import type {
 import { plausibleTime } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
+import { createCodexLastMessages } from "./lastMessages.ts";
 import { createRolloutReader, type RolloutState } from "./rolloutFile.ts";
 import { createRolloutFinder, type RolloutRef } from "./rollouts.ts";
 import { createSessionIndexReader, SESSION_INDEX_FILE } from "./sessionIndex.ts";
@@ -126,6 +129,21 @@ export interface CodexAdapterOptions {
   indexRefreshMs?: number;
   /** How soon a newly opened session may cause that listing. Defaults to 5 seconds. */
   indexPromptRefreshMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Codex adapter, which reads what its sessions last said when asked. */
+export interface CodexAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** Where the Codex folder was named. */
@@ -152,6 +170,13 @@ type HomeFrom = "agent-lookout" | "codex" | "default";
  * not write approval waits to these files. A session the Codex desktop app
  * imported from another agent is left out until Codex runs a turn in it.
  *
+ * What a session last said is read from the end of the file the last poll
+ * read it from, but only when `lastMessage` is asked for it, which the route
+ * does while a page has the session's details open, and only for a session
+ * that poll listed (`lastMessages.ts`). No poll reads it, and it is never put
+ * on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so does
+ * `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * Codex not being installed costs nothing: when its folder is missing, the
  * adapter says so and looks again only once a minute, with a single `stat`.
  *
@@ -160,7 +185,7 @@ type HomeFrom = "agent-lookout" | "codex" | "default";
  * means that folder: if it holds no sessions, that is an answer, not a
  * missing Codex.
  */
-export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
+export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -189,6 +214,13 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
   });
   const reader = createRolloutReader(io);
   const sessionIndex = createSessionIndexReader(indexFile, io);
+  // What a session last said, read only when it is asked for. With either
+  // setting off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createCodexLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
 
   /** When the Codex folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -196,6 +228,11 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
   let homeSeen = false;
   /** Session files found through a lock in an older day folder, kept while they matter. By path. */
   const tracked = new Map<string, RolloutRef>();
+  /** What Sources says of the last-message read: when it reads the end of a session's file, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null ? "end of a session's file, while its details are open" : "Off";
+  /** The file each session the last poll listed was read from, by its id: the only file its last message is read from. */
+  let listedFiles: ReadonlyMap<string, string> = new Map();
 
   function watching(read: string): SourceFact[] {
     return [
@@ -203,6 +240,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
       { label: "Read", value: read },
       { label: "Open-sessions folder", value: locksName },
       { label: "Names file", value: indexName },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -248,6 +286,9 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
+    // A poll that returns early lists no session. Until this poll ends, the
+    // last poll's list stands.
+    listedFiles = new Map();
 
     // A missing Codex is believed missing for a while, so a machine without it
     // pays nothing on most polls. A clock set back counts as time enough.
@@ -322,7 +363,10 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
     /** The files read this poll, whose cache is worth keeping. */
     const read = new Set<string>();
     /** The file to show for each thread, with its modified time: a reverted session has more than one. */
-    const chosen = new Map<string, { state: RolloutState; at: number | null; writtenAt: number }>();
+    const chosen = new Map<
+      string,
+      { file: string; state: RolloutState; at: number | null; writtenAt: number }
+    >();
     /** When each session's subagents last wrote to their own files, by the session's thread. */
     const subagentWrites = new Map<string, number>();
 
@@ -377,21 +421,23 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
       }
       const kept = chosen.get(ref.threadId);
       if (!kept || (at ?? -Infinity) > (kept.at ?? -Infinity)) {
-        chosen.set(ref.threadId, { state, at, writtenAt: info.mtimeMs });
+        chosen.set(ref.threadId, { file: ref.path, state, at, writtenAt: info.mtimeMs });
       }
     }
     reader.keepOnly(read);
 
     /** Whether a session made by a Codex that keeps no locks is listed beside ones that do. */
     let olderCodex = false;
-    const sessions = [...chosen.entries()].map(([threadId, { state, writtenAt }]) => {
+    /** The file each session was read from, by its id, for its last message. */
+    const files = new Map<string, string>();
+    const sessions = [...chosen.entries()].map(([threadId, { file, state, writtenAt }]) => {
       const live = codexLiveness({
         lockFolder: locks.supported,
         locked: locked(threadId),
         cliVersion: state.meta?.cliVersion,
       });
       if (locks.supported && live === "unknown") olderCodex = true;
-      return codexSession({
+      const session = codexSession({
         threadId,
         state,
         name: names.get(threadId),
@@ -399,6 +445,8 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
         writtenAt: Math.max(writtenAt, subagentWrites.get(threadId) ?? -Infinity),
         now: checkedAt,
       });
+      files.set(session.id, file);
+      return session;
     });
 
     let detail = `Sessions are read from the files Codex saves in ${sessionsName}. ${NEEDS_YOU_NOTE}`;
@@ -410,6 +458,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
     } else if (olderCodex) {
       detail += ` ${OLDER_CODEX_NOTE}`;
     }
+    listedFiles = files;
     const answer = result("ok", detail, every(pollIntervalMs), checkedAt);
     return { ...answer, sessions, basis: locks.supported ? BASIS : BASIS_WITHOUT_LOCKS };
   }
@@ -421,10 +470,15 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
     lookingIn: `Looking for Codex sessions in ${sessionsName}.`,
     async poll() {
       try {
-        return await poll();
+        const answer = await poll();
+        // The sessions whose last message may be asked for until the next poll.
+        lastMessages?.keep(listedFiles);
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Codex sessions.",
@@ -432,6 +486,15 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): Adapter {
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

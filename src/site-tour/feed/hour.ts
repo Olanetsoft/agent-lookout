@@ -118,8 +118,8 @@ export interface HourSession {
   /** Its branch's pull request on github.com, shown while pull requests are on. */
   pullRequest?: PullRequest;
   /**
-   * What it last said, as its details show it, for a Claude Code session on
-   * this computer. Left out, it has said nothing yet.
+   * What it last said, as its details show it, for a Claude Code or Codex
+   * session on this computer. Left out, it has said nothing yet.
    */
   said?: string;
   /**
@@ -265,6 +265,10 @@ export const SESSIONS: readonly HourSession[] = [
       { at: -12 * MINUTE, status: "working" },
     ],
     writes: true,
+    said: [
+      "Every API key now gets 600 requests a minute for each group of routes. A key over its limit gets a 429 with a Retry-After header, and the counts are kept in Redis, so every instance of the API shares them.",
+      "I'm adding the new headers to the API reference next.",
+    ].join("\n\n"),
     tokens: [
       { at: -57 * MINUTE, input: 58_904, cached: 57_472, output: 1_118 },
       { at: -20 * MINUTE, input: 117_633, cached: 115_840, output: 2_374 },
@@ -284,6 +288,10 @@ export const SESSIONS: readonly HourSession[] = [
     startedAt: -3 * HOUR,
     steps: [{ at: -65 * MINUTE, status: "idle" }],
     writes: true,
+    said: [
+      "The three onboarding screens are in: welcome, notifications and sign-in. Skip goes straight to sign-in from any of them, and the dots at the bottom follow the swipe.",
+      "Should the notifications screen ask for permission at once, or only after a tap on Turn on?",
+    ].join("\n\n"),
     tokens: [{ at: -65 * MINUTE, input: 96_212, cached: 94_592, output: 1_846 }],
   },
   {

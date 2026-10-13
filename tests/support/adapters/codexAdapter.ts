@@ -276,13 +276,17 @@ export function codexAdapterFor(files: MemoryFiles, options: CodexAdapterOptions
 const shownIn = (home: string, name: string) =>
   home.startsWith("~") ? `${home}/${name}` : nativePath.join(home, name);
 
-/** The four facts, in the order the adapter gives them, for a Codex folder written as people see it. */
-export function watching(home: string, read: string) {
+/** What the Sources card says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ = "end of a session's file, while its details are open";
+
+/** The five facts, in the order the adapter gives them, for a Codex folder written as people see it. */
+export function watching(home: string, read: string, lastMessageRead = LAST_MESSAGE_READ) {
   return [
     { label: "Sessions folder", value: shownIn(home, "sessions") },
     { label: "Read", value: read },
     { label: "Open-sessions folder", value: shownIn(home, "thread-writer-locks") },
     { label: "Names file", value: shownIn(home, "session_index.jsonl") },
+    { label: "Last message read", value: lastMessageRead },
   ];
 }
 

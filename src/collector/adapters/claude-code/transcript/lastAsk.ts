@@ -3,7 +3,8 @@ import { blocksOf, isRecord, linesOf, nonEmpty } from "./transcriptLines.ts";
 
 /**
  * What a waiting Claude Code session is asking, worked out from the end of its
- * transcript. Pure: the bytes are read elsewhere (`transcriptFile.ts`).
+ * transcript. Pure: the bytes are read elsewhere
+ * (`src/collector/files/transcriptTail.ts`).
  *
  * The transcript is undocumented. These notes are from Claude Code 2.1.28x, and
  * none of them is promised:

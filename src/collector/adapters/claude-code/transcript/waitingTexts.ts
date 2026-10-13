@@ -2,13 +2,9 @@ import path from "node:path";
 
 import type { Session } from "../../../../core/sessions/session.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
+import { readTranscriptTail, type TranscriptStamp } from "../../../files/transcriptTail.ts";
 import { askedInTail } from "./lastAsk.ts";
-import {
-  findTranscript,
-  readTranscriptTail,
-  sessionIdOf,
-  type TranscriptStamp,
-} from "./transcriptFile.ts";
+import { findTranscript, sessionIdOf } from "./transcriptFile.ts";
 
 /** The setting that, set to `off`, stops any transcript being opened. */
 export const WAITING_TEXT_ENV = "AGENT_LOOKOUT_WAITING_TEXT";

@@ -6,7 +6,7 @@ import type { Adapter } from "@collector/adapters/adapter";
 import { MAX_SESSION_ID_LENGTH } from "@collector/jumpRoute";
 import { createLastMessageRoute, idIn } from "@collector/messages/lastMessageRoute";
 import { LAST_MESSAGE_PATH, type LastMessageResponse } from "@core/api";
-import type { Session } from "@core/sessions/session";
+import type { Session, SourceId } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -25,23 +25,28 @@ const listed: Session[] = [claude, codex, agy, statusFile, remote];
 const SAID: LastMessageResponse = { message: { text: "The tests pass.", cut: false } };
 
 /**
- * The route over a list of sessions, with a Claude Code adapter that answers
- * as it is told and writes down every id it is asked for, and adapters for
- * the other sources that read nothing.
+ * The route over a list of sessions, with a Claude Code and a Codex adapter
+ * that answer as they are told and write down every id they are asked for,
+ * and adapters for the other sources that read nothing.
  */
 function setUp(env: NodeJS.ProcessEnv = {}, said: LastMessageResponse | "busy" | null = SAID) {
   const asked: string[] = [];
-  const reading: Pick<Adapter, "id" | "lastMessage"> = {
-    id: "claude-code",
+  const reading = (id: SourceId): Pick<Adapter, "id" | "lastMessage"> => ({
+    id,
     lastMessage: async (sessionId) => {
       asked.push(sessionId);
       return said;
     },
-  };
+  });
   const route = createLastMessageRoute({
     env,
     poller: { getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: listed }) },
-    adapters: [reading, { id: "codex" }, { id: "antigravity-cli" }, { id: "status-files" }],
+    adapters: [
+      reading("claude-code"),
+      reading("codex"),
+      { id: "antigravity-cli" },
+      { id: "status-files" },
+    ],
   });
   const ask = (query: string, headers: IncomingMessage["headers"] = {}) =>
     route({ headers }, new URL(`http://localhost${LAST_MESSAGE_PATH}${query}`));
@@ -78,7 +83,8 @@ describe("GET /api/sessions/last-message", () => {
     await expect(
       ask(forId(claude.id), { "sec-fetch-site": "same-origin", origin: "http://localhost:4777" }),
     ).resolves.toEqual({ status: 200, body: SAID });
-    expect(asked).toEqual([claude.id, claude.id]);
+    await expect(ask(forId(codex.id))).resolves.toEqual({ status: 200, body: SAID });
+    expect(asked).toEqual([claude.id, claude.id, codex.id]);
   });
 
   test("a request a browser marks as anything but same-origin is refused before anything is looked up", async () => {
@@ -123,7 +129,7 @@ describe("GET /api/sessions/last-message", () => {
 
   test("a session on another machine, or of an agent whose adapter reads no messages, is not read", async () => {
     const { ask, asked } = setUp();
-    for (const session of [remote, codex, agy, statusFile]) {
+    for (const session of [remote, agy, statusFile]) {
       await expect(ask(forId(session.id)), session.id).resolves.toEqual({
         status: 200,
         body: { message: null, reason: "not-read" },

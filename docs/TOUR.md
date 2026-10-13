@@ -194,7 +194,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **Why it reads files alone.** Codex documents no listing a passive reader can use. Its app server writes to Codex's folder when it starts, and its hooks need the person to edit Codex's config. So the adapter runs no program. It reads three undocumented things under `~/.codex`, or `CODEX_HOME`, or `AGENT_LOOKOUT_CODEX_HOME`:
 
-- **The session files**, which Codex calls rollouts: `sessions/YYYY/MM/DD/rollout-*.jsonl`. On each poll, `rollouts.ts` lists only today's and yesterday's folders. It lists every folder only while a session Codex has open is not found, and then at most every 30 seconds (`INDEX_REFRESH_MS`), or after 5 seconds for a session Codex has only just opened (`INDEX_PROMPT_REFRESH_MS`). `rolloutFile.ts` reads the first `session_meta` line, the last line that says a turn started or ended, and the newest `token_count` line. It reads within 2 MiB of the start and 8 MiB of the end, and after that only what was added.
+- **The session files**, which Codex calls rollouts: `sessions/YYYY/MM/DD/rollout-*.jsonl`. On each poll, `rollouts.ts` lists only today's and yesterday's folders. It lists every folder only while a session Codex has open is not found, and then at most every 30 seconds (`INDEX_REFRESH_MS`), or after 5 seconds for a session Codex has only just opened (`INDEX_PROMPT_REFRESH_MS`). `rolloutFile.ts` reads the first `session_meta` line, the last line that says a turn started or ended, and the newest `token_count` line. It reads within 2 MiB of the start and 8 MiB of the end, and after that only what was added. What a session last said is read from the end of the same file only when it is asked for (`lastMessages.ts`), as [A session's last message](#a-sessions-last-message) says.
 - **The lock folder** `thread-writer-locks/`, listed and never opened, for which sessions a Codex program has open (`writerLocks.ts`).
 - **`session_index.jsonl`**, for the names people give sessions (`sessionIndex.ts`).
 
@@ -430,13 +430,15 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 
 **Why.** #10: a name and a status do not say what a session was doing. Its last words let you decide whether it needs you without switching to it.
 
-**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9. Only Claude Code sessions are read so far, and every other session answers `not-read`, so #10 is still open.
+**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9, for Claude Code. Codex sessions came next, read from the session file the adapter already reads. Every other agent's session answers `not-read`, so #10 is still open.
 
 **Where it is.**
 
 - The route: `createLastMessageRoute` and `idIn` in `src/collector/messages/lastMessageRoute.ts`.
 - The off switch: `AGENT_LOOKOUT_LAST_MESSAGE`, read in `src/collector/messages/lastMessageSettings.ts`.
-- The reader: `createLastMessageReader` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`, and `lastSaidInTail` in `lastSaid.ts` beside it, with `lastUsageInTail` in `lastUsage.ts` for the token counts.
+- The limits every reader keeps: `createTailReader` in `src/collector/messages/tailReader.ts`, which reads the end of a file with `readTranscriptTail` in `src/collector/files/transcriptTail.ts`.
+- Claude Code's reader: `createLastMessageReader` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`, and `lastSaidInTail` in `lastSaid.ts` beside it, with `lastUsageInTail` in `lastUsage.ts` for the token counts.
+- Codex's reader: `createCodexLastMessages` and `lastSaidInRollout` in `src/collector/adapters/codex/lastMessages.ts`. [adapters/codex.md](adapters/codex.md#what-a-session-last-said) has the lines it reads.
 - The hook an adapter may offer: the optional `lastMessage` in `src/collector/adapters/adapter.ts`. `collector.ts` hands the route this computer's own adapters only.
 - The page: `src/dashboard/hooks/data/useLastMessage.ts` and `src/dashboard/components/panels/LastMessage.tsx`.
 
@@ -448,7 +450,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 - The query is exactly one `id` of 1 to 300 characters, or the answer is 400.
 - The session must be in the adapter's list from its last poll, or the answer is 404. The adapter builds the transcript's path from what it read itself, so nothing in a request names a file.
 - Only the last 256 KB of a transcript is read.
-- At most four transcripts are read in a second, for all sessions together (`READS_PER_SECOND`). Above that the answer is 429 with `Retry-After: 1`.
+- At most four transcripts are read in a second, for all sessions of every agent together (`READS_PER_SECOND`, through the one `createTailLimits` the collector gives every reader). Above that the answer is 429 with `Retry-After: 1`.
 - An answer is given again from memory for one second (`ANSWER_AGAIN_MS`), since an open details panel asks every two seconds.
 - `AGENT_LOOKOUT_LAST_MESSAGE=off`, or `AGENT_LOOKOUT_WAITING_TEXT=off`, turns it off.
 

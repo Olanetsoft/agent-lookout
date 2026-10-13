@@ -131,6 +131,36 @@ export function eventLine(time: number, type: string): string {
 }
 
 /**
+ * One reply of the model as the session's own event says it: an `event_msg`
+ * of type `agent_message`, as Codex 0.160.0 writes one beside each reply.
+ */
+export function agentMessageLine(time: number, message: string): string {
+  return JSON.stringify({
+    timestamp: at(time),
+    type: "event_msg",
+    payload: { type: "agent_message", message, phase: null, memory_citation: null },
+  });
+}
+
+/** The same reply as the model gave it: an assistant message `response_item`, in `output_text` parts. */
+export function replyLine(time: number, ...texts: string[]): string {
+  return JSON.stringify({
+    timestamp: at(time),
+    type: "response_item",
+    payload: {
+      type: "message",
+      role: "assistant",
+      content: texts.map((text) => ({ type: "output_text", text })),
+    },
+  });
+}
+
+/** A `response_item` that is no message: the model's reasoning, a tool's call or its output. */
+export function itemLine(time: number, payload: Record<string, unknown>): string {
+  return JSON.stringify({ timestamp: at(time), type: "response_item", payload });
+}
+
+/**
  * One `TokenUsage` as Codex writes it: input with the cached part inside it,
  * output with reasoning inside it, and a total the provider gave.
  */

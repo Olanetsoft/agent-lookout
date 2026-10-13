@@ -2,7 +2,7 @@
 
 These notes record what Agent Lookout reads from Codex, where each value comes from, and what breaks when Codex changes. The files Codex writes are undocumented and change often, so when the adapter stops working, start here.
 
-Checked on 2026-10-04 against Codex `rust-v0.160.0`, released 2026-10-01 (commit `79b1b66` of [openai/codex](https://github.com/openai/codex)), and the Codex documentation at learn.chatgpt.com. Codex was not installed on the machine where the adapter was written. Everything below comes from Codex's source and documentation and from hand-written files laid out the same way, except the section on the Codex desktop app, which was installed on that machine later the same day and checked against the adapter. **The adapter has not been checked against the Codex CLI or the IDE extension, and the dashboard has not yet been compared with Codex's own list of sessions.**
+Checked on 2026-10-04 against Codex `rust-v0.160.0`, released 2026-10-01 (commit `79b1b66` of [openai/codex](https://github.com/openai/codex)), and the Codex documentation at learn.chatgpt.com. Codex was not installed on the machine where the adapter was written. Everything below comes from Codex's source and documentation and from hand-written files laid out the same way, except the section on the Codex desktop app, which was installed on that machine later the same day and checked against the adapter, and the section on what a session last said, checked on 2026-10-13 against the names and counts of lines in 53 real session files. **The adapter has not been checked against the Codex CLI or the IDE extension, and the dashboard has not yet been compared with Codex's own list of sessions.**
 
 The code is in `src/collector/adapters/codex/`, and the status mapping is in `src/core/mapping/codexMapping.ts`.
 
@@ -33,6 +33,7 @@ Codex documents several interfaces, and none of them can be used that way:
 | `sessions/YYYY/MM/DD/` for today and yesterday | Listed                                                                                                                                                           | Every poll                                                                                                                    |
 | Every other `sessions/YYYY/MM/DD/`             | Listed, never opened, to find an open session in an older folder                                                                                                 | Only while an open session is not found: at once, but not within 5 seconds of the last listing, then at most every 30 seconds |
 | `sessions/**/rollout-*.jsonl`                  | Opened read-only. The first 2 MiB for the `session_meta` line, the last 8 MiB for the last turn line and the newest token count line, then only what is appended | When the file's size or modified time changes                                                                                 |
+| The same file, for what its session last said  | Opened read-only, the last 256 KB, by position                                                                                                                   | Only when `GET /api/sessions/last-message` asks, at most four files a second, and not again while the file is unchanged       |
 | `thread-writer-locks/`                         | Listed. Its files are never opened                                                                                                                               | Every poll                                                                                                                    |
 | `session_index.jsonl`                          | Opened read-only, the last 4 MiB at most                                                                                                                         | When its size or modified time changes                                                                                        |
 
@@ -60,7 +61,7 @@ Path: `sessions/YYYY/MM/DD/rollout-YYYY-MM-DDThh-mm-ss-<thread id>.jsonl`. The f
 
 Each line is `{"timestamp":"YYYY-MM-DDTHH:MM:SS.mmmZ","ordinal"?:n,"type":"<item>","payload":{...}}`, with the time in UTC (`codex-rs/history/src/lib.rs`, `RolloutLine`; `codex-rs/history/src/rollout_payload.rs`).
 
-The adapter uses three kinds of line and parses no other.
+On a poll, the adapter uses three kinds of line and parses no other.
 
 The first `session_meta` line. Kept: `id`, `timestamp` (when the session was created), `cwd`, `source`, `thread_source`, `parent_thread_id`, `originator` (the program that created the session: `codex_cli_rs` for the Codex CLI, `Codex Desktop` for the desktop app) and `cli_version` (the Codex version that created it). `originator` and `cli_version` are kept only when they are at most 64 characters. Dropped: everything else, including `base_instructions`, `dynamic_tools`, `git`, `creator_user_id`, `creator_account_id`, `model_provider` and `session_id`. The session's id in Agent Lookout is `codex:<thread id>`, with the thread id taken from the file name, which is also how Codex names the lock file and the names file.
 
@@ -70,7 +71,7 @@ Turn lines: `"type":"event_msg"` with `payload.type` of
 - `task_complete`, also read as `turn_complete`, when it ends,
 - `turn_aborted`, with `reason` `interrupted`, `replaced`, `review_ended` or `budget_limited`, when it is stopped.
 
-Only the type, the line's time, and whether `payload.turn_id` has the form `external-import-turn-<n>` are kept. A turn Codex runs has a UUID for its turn id; the other form marks a turn copied in from another agent (see "Sessions imported from another agent" below). Message lines, tool calls, commands and their output are never parsed and nothing from them is kept.
+Only the type, the line's time, and whether `payload.turn_id` has the form `external-import-turn-<n>` are kept. A turn Codex runs has a UUID for its turn id; the other form marks a turn copied in from another agent (see "Sessions imported from another agent" below). On a poll, message lines, tool calls, commands and their output are never parsed and nothing from them is kept. What a session last said is read apart from the polls, as [What a session last said](#what-a-session-last-said) says.
 
 Token count lines: `"type":"event_msg"` with `payload.type` of `token_count`, which Codex writes after each reply from the model (`codex-rs/protocol/src/protocol.rs`, `TokenCountEvent` and `TokenUsageInfo`, checked at `rust-v0.160.0`). The payload is `{"type":"token_count","info":{"total_token_usage":{…},"last_token_usage":{…},"model_context_window":n},"rate_limits":{…}}`, and each usage holds `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens` and `total_tokens`.
 
@@ -81,6 +82,25 @@ Kept: `input_tokens`, `cached_input_tokens` and `output_tokens` of `info.last_to
 - `total_tokens` is not checked against the input and the output: Codex copies it from the provider, which can count it its own way.
 - The newest token line is noted as the tail is read for the last turn line. A working session's token lines come after its `task_started`, and an idle session's just before its `task_complete`. When none has been found by the turn line, at most one more 256 KiB of the file is read for one, within the 8 MiB.
 - A subagent's counts are never shown as those of the session that started it.
+
+### What a session last said
+
+Read only when `GET /api/sessions/last-message` asks for a session the last poll listed, from the end of the file that poll read it from: for a reverted session, the file written to last, and never a subagent's file. The code is in `lastMessages.ts`, with the limits every reader of last messages keeps, in `src/collector/messages/tailReader.ts`: the last 256 KB, by position, an answer given again for a second, the file not read again while its size, modified time and identity are unchanged, at most four files a second, with Claude Code's transcripts, and what is kept dropped 15 seconds after the last ask or at the first poll that does not list the session. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and no file is opened for it.
+
+Checked on 2026-10-13 against 53 session files written by Codex 0.160.0. Only the names of lines and fields, and how many of each, were looked at. No message was read. Each reply of the model is written twice:
+
+- `{"type":"event_msg","payload":{"type":"agent_message","message":"<text>","phase":null,"memory_citation":…}}`
+- `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"<text>"},…]}}`
+
+Codex writes the `agent_message` just before the assistant message, with the markup it hides taken out (`codex-rs/core/src/stream_events_utils.rs`, `handle_output_item_done` and `finalize_turn_item`). A turn that ends writes `{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"<text>","turn_id":…,"started_at":…,"completed_at":…}}`, a third copy of its newest reply. `phase` was null on all 1,171 `agent_message` lines, so a note written while working cannot be told from a final answer.
+
+Read backwards from the end, the text is the newest reply's:
+
+- its `agent_message`'s `message`,
+- or, when that line is not in what was read, the `output_text` parts of its assistant message, joined with nothing between, as Codex joins them,
+- or, when neither is, the `last_agent_message` of the `task_complete` that ended its turn.
+
+With the lines in the order Codex 0.160.0 writes them, an older reply is never taken in place of a newer one: an `agent_message` before another item of the conversation, such as a tool's call, is older than the assistant message after it. Were a reply's two lines written the other way round, an `agent_message` with the same text as the assistant message just before it would be that reply's copy, and older too. One whose markup was taken out differs from that assistant message, cannot be told from the newest reply's own, and would be taken. A prompt typed after the reply does not hide it. A user message, the model's reasoning, a tool's call and its output are never taken. Only a line that names `"event_msg"` or `"response_item"` is parsed, and it is taken by its own `type` and `payload`, so a line quoted inside a prompt or a reply is never taken for one. A line that does not parse is read past. The text is made fit to show by `messageText` in `src/core/text.ts`, at most its last 2,000 characters. The answer has no `tokens`: a Codex session's are on the session already.
 
 `codex-rs/rollout/src/policy.rs` lists what is written. `exec_approval_request`, `apply_patch_approval_request`, `request_permissions`, `request_user_input`, `elicitation_request`, `error` and `shutdown_complete` are transient and never written. So the files hold no sign that a session is waiting for approval, and no line that says a session has ended.
 
@@ -138,7 +158,8 @@ A Codex session is never shown as needing you. The status time is the turn line'
 - Errors are not shown: Codex does not write them to the file.
 - Sessions the Codex desktop app imported from another agent are not listed until Codex runs a turn in one. See below.
 - The Codex desktop app writes no `session_index.jsonl`, so its sessions are named after their folder, and several can share a name. See below.
-- What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for a Codex session.
+- What a session last said is its newest reply, whether it is a note written while working or a final answer: Codex's files do not tell them apart.
+- A reply further back than the last 256 KB of the file, as after a long command's output, is not shown. Last message says it is further back than Agent Lookout reads.
 
 ## The desktop apps
 
@@ -187,5 +208,6 @@ The adapter uses the first of these. A session whose last turn line has an impor
 | `token_count` or its `last_token_usage` changes              | Tokens is a dash in every Codex session's details                                   | `rolloutFile.ts`                   |
 | `input_tokens` no longer counts cached tokens                | Tokens shows less input than the context in use                                     | `rolloutFile.ts`                   |
 | `cli_version` is no longer written, or changes form          | No session is finished, and the Sources view says they come from an older Codex     | `src/core/mapping/codexMapping.ts` |
+| `agent_message` and assistant replies change shape           | Last message says nothing yet, or further back than Agent Lookout reads             | `lastMessages.ts`                  |
 
 To check a new Codex version, read `codex-rs/rollout/src/policy.rs`, `writer_lock.rs`, `rollout_file_name.rs`, `session_index.rs` and `recorder.rs`, `codex-rs/protocol/src/protocol.rs` for `TokenCountEvent`, and `codex-rs/external-agent-migration/src/sessions/export.rs`, at its tag, then compare the dashboard with the sessions in Codex's own `/resume` list.

@@ -265,6 +265,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "every 2 seconds" },
         { label: "Open-sessions folder", value: "~/.codex/thread-writer-locks" },
         { label: "Names file", value: "~/.codex/session_index.jsonl" },
+        {
+          label: "Last message read",
+          value: "end of a session's file, while its details are open",
+        },
       ],
       capabilities: CODEX_CAPABILITIES,
       checkedAt,

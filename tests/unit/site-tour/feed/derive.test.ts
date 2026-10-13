@@ -455,11 +455,25 @@ describe("what a session last said", () => {
     ).toEqual({ message: null, reason: "nothing-yet" });
   });
 
-  test("a Codex session, a session from a status file and one on another machine are not read", () => {
-    const others = SESSIONS.filter((session) => !claude.includes(session));
+  test("each Codex session says what it last said too, with no counts, which are on the session", () => {
+    const codex = SESSIONS.filter((session) => session.source === "codex");
+    expect(codex).toHaveLength(2);
+    for (const [, shown] of SHOWN) {
+      for (const session of codex) {
+        expect(session.said, session.name).toBeDefined();
+        const answer = feed.lastMessage(session.id, shown, NOW);
+        expect(answer).toEqual({ message: { text: session.said, cut: false } });
+        expect(messageText(session.said)).toEqual({ text: session.said, cut: false });
+        expect(readLastMessage(JSON.parse(JSON.stringify(answer)))).toEqual(answer);
+      }
+    }
+  });
+
+  test("a session from a status file and one on another machine are not read", () => {
+    const others = SESSIONS.filter(
+      (session) => !claude.includes(session) && session.source !== "codex",
+    );
     expect(others.map((session) => session.source).sort()).toEqual([
-      "codex",
-      "codex",
       `remote:${MACHINE.name}`,
       "status-files",
     ]);
@@ -489,7 +503,7 @@ describe("what a session last said", () => {
       feed.history(shown, NOW, HOUR),
       feed.waits(shown, NOW),
     ]);
-    for (const session of claude) {
+    for (const session of SESSIONS) {
       if (session.said !== undefined) {
         expect(answers).not.toContain(session.said.slice(0, 40));
       }
