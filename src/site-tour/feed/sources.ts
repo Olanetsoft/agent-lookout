@@ -135,10 +135,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
       "The transcripts name no terminal, and agy documents no link that opens a conversation.",
   },
   "quiet-for": { level: "yes" },
-  tokens: {
-    level: "no",
-    reason: "Agent Lookout does not read token counts from agy's transcripts yet.",
-  },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason:
@@ -176,10 +173,7 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
     reason: "Antigravity documents no link that opens one of its chats.",
   },
   "quiet-for": { level: "yes" },
-  tokens: {
-    level: "no",
-    reason: "Agent Lookout does not read token counts from Antigravity's transcripts yet.",
-  },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "The app runs every chat in one program, so no chat can be stopped alone.",

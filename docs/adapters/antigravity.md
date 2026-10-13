@@ -82,12 +82,32 @@ Values are written without the `CORTEX_STEP_TYPE_` and `CORTEX_STEP_STATUS_` pre
 
 The program defines 118 step types (`CortexStepType`) and twelve statuses (`CortexStepStatus`): `UNSPECIFIED`, `PENDING`, `RUNNING`, `DONE`, `INVALID`, `CLEARED`, `CANCELED`, `ERROR`, `GENERATING`, `WAITING`, `QUEUED` and `INTERRUPTED`. Its own text says a step whose status is `WAITING` is waiting for the person's approval. Both lists are in `antigravityMapping.ts`.
 
-The adapter parses each line it reads and keeps `type`, `status`, `step_index`, `created_at` and whether `tool_calls` is empty. It drops the rest at once. It never keeps `content`, `thinking`, `media`, `source` or a tool call's arguments.
+The adapter parses each line it reads and keeps `type`, `status`, `step_index`, `created_at` and whether `tool_calls` is empty, and from a reply its [token counts](#token-counts). It drops the rest at once. It never keeps `content`, `thinking`, `media`, `source` or a tool call's arguments.
 
 - The file is not only appended to. agy rewrites it when it compacts a conversation (changelog 1.1.13). A file that shrank, is a new file, or whose first 4 KiB changed is read afresh.
 - A line can be broken: 1.1.13 fixed a compaction that left malformed JSON in the saved transcript, and 1.2.14 fixed resuming a conversation with a step missing after a crash or an interrupted write. A line that does not parse is passed over.
 - A last line with no newline is used only if it is already a whole step.
 - Before 1.2.4, a step that ended in `ERROR` could be left out of the file.
+
+### Token counts
+
+Seen on 2026-10-13 in one transcript of agy 1.3.1 and two of the Antigravity 2.0 app of October 2026, ten replies in all, by a check of the numbers alone: a reply's step, `PLANNER_RESPONSE`, carries three whole numbers, `input_tokens`, `cache_read_tokens` and `output_tokens`, and no other step carries a token count. `input_tokens` is only the part of the prompt not read from a cache: one reply's `cache_read_tokens` was larger than its `input_tokens`. Neither product documents these keys.
+
+So a session's Tokens are its newest reply's, as for Codex:
+
+| Shown  | From                                            |
+| ------ | ----------------------------------------------- |
+| In     | `input_tokens` and `cache_read_tokens` together |
+| Cached | `cache_read_tokens`                             |
+| Out    | `output_tokens`                                 |
+
+`readStepLine` in `shared/transcriptFile.ts` keeps these three numbers from a reply's line and nothing more, and `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` checks them.
+
+- A tool step after a reply keeps the reply's counts: they are held apart from the last step.
+- A reply that names none of the three changes nothing, and a reply agy cleared or marked invalid is passed over.
+- Counts that could not be right give a dash, never an older reply's: a count that is negative or not a whole number, a missing `input_tokens` or `output_tokens`, or a whole prompt of 0, with `input_tokens` 0 and `cache_read_tokens` 0 or left out. A `cache_read_tokens` that is left out counts as 0, and the cached part is left out.
+- Nothing is summed: there are no totals.
+- The newest reply is noted as the tail is read for the last step. When none has been found by the start of the run of steps that say the same, at most 256 KiB more of the file is read for one, within the 2 MiB.
 
 ### A program's log
 
@@ -177,6 +197,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - The Antigravity IDE is not read. Only whether its folder is there is checked, as [The IDE's folder](#the-ides-folder) says. Antigravity 2.0 is read by a source of its own, [below](#antigravity-20).
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
 - What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for an Antigravity CLI session.
+- Tokens show a dash while the newest reply is further back than the part read for it, until the next reply.
 
 ## Not yet checked
 
@@ -192,6 +213,7 @@ Each of these needs a real conversation, and each says what changes if it turns 
 8. Whether `/resume` changes any file of other conversations: their `.db`, a `-wal` or `-shm` beside it, or their transcript, while its picker is open. If it does, and it is the transcript, every conversation it shows is held open while that program runs.
 9. What `ps` shows for the `remote-control` service, and whether a turn started from a Remote Control companion runs in that program or in an agy program it starts.
 10. Whether an error agy retries by itself, such as a `503` from the model, writes an `ERROR_MESSAGE` step before agy goes on. If it does, a session shows as failed for a moment, which can send a Failed notification.
+11. Whether `output_tokens` counts the reply's `thinking`. If it does not, Out leaves the reply's thinking out.
 
 To check, in a scratch folder, with agy's default permission mode, run `agy`. After each step below, from another terminal, note these, and only these fields, never the content:
 
@@ -233,6 +255,8 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 | The IDE's folder is renamed or moved                             | The card no longer says that folder is there                                       | `cli/otherFolders.ts`                                 |
 | The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `cli/agyLogs.ts`                 |
 | The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `shared/annotations.ts`                               |
+| A reply's token keys are renamed                                 | Tokens is a dash in every session's details                                        | `shared/transcriptFile.ts`                            |
+| `input_tokens` starts to count the part read from a cache        | Tokens shows more input than the context in use                                    | `shared/transcriptFile.ts`                            |
 
 To check a new agy version, read its changelog for the transcript, compaction, `/resume` and the process, run `agy --help` for its commands, and make the check above.
 
@@ -246,7 +270,7 @@ Antigravity 2.0 is Google's desktop app with the Agent Manager, shown in Agent L
 
 ### Transcripts
 
-Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are not read yet. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done.
+Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are read as the CLI's are, as [Token counts](#token-counts) says. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done.
 
 ### Status
 
@@ -275,7 +299,7 @@ Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly`
 
 ### Its gaps
 
-- No Needs you, no token counts, no Jump, no Stop and no Answer.
+- No Needs you, no Jump, no Stop and no Answer.
 - No chat is shown as finished on Linux or Windows, and on Windows none has a folder.
 - A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own. None was seen.
 - A 1.x Antigravity IDE's chats left in the same folder are listed as the app's, if their transcript was written in the last day.

@@ -100,14 +100,14 @@ describe("the counts in words", () => {
 describe("why there are none", () => {
   test("is the reason the session's agent gives in Sources when it cannot report them", () => {
     const reason = (source: SourceHealth["id"]) => noTokensReason(makeSession({ source }), SOURCES);
-    expect(reason("antigravity-cli")).toBe(
-      "Agent Lookout does not read token counts from agy's transcripts yet.",
-    );
     expect(reason("status-files")).toBe("A status file has no field for token counts.");
   });
 
   test("for an agent that can report them, is that none are recorded yet", () => {
     expect(noTokensReason(makeSession({ source: "codex" }), SOURCES)).toBe("None recorded yet");
+    expect(noTokensReason(makeSession({ source: "antigravity-cli" }), SOURCES)).toBe(
+      "None recorded yet",
+    );
     expect(noTokensReason(makeSession({ source: "claude-code" }), SOURCES)).toBe(
       "None recorded yet",
     );

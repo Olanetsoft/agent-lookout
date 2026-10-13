@@ -17,6 +17,7 @@ import {
   step,
   transcriptPath,
   workingTurn,
+  type ReplyCounts,
 } from "@tests/fixtures/antigravity";
 import { memoryFiles } from "@tests/support/adapters/antigravityAdapter";
 
@@ -75,6 +76,85 @@ describe("readStepLine", () => {
     }
   });
 
+  test("keeps a reply's token counts: the whole prompt is the part not read from a cache and the part read from one", () => {
+    const line = step({
+      index: 3,
+      type: "PLANNER_RESPONSE",
+      at: START,
+      counts: { input_tokens: 3_120, cache_read_tokens: 12_288, output_tokens: 412 },
+    });
+    expect(line).toContain(PRIVATE_WORDS);
+    const kept = readStepLine(line);
+    expect(kept).toEqual({
+      index: 3,
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      toolCalls: false,
+      at: START,
+      tokens: { input: 15_408, cached: 12_288, output: 412 },
+    });
+    expect(JSON.stringify(kept)).not.toContain("rename");
+    expect(JSON.stringify(kept)).not.toContain("thinking");
+  });
+
+  test("a reply with no cache count counts it as 0 and leaves the cached part out", () => {
+    const kept = readStepLine(
+      step({
+        index: 1,
+        type: "PLANNER_RESPONSE",
+        at: START,
+        counts: { input_tokens: 900, output_tokens: 40 },
+      }),
+    );
+    expect(kept?.tokens).toEqual({ input: 900, output: 40 });
+    expect(kept?.tokens).not.toHaveProperty("cached");
+  });
+
+  test("a reply all read from a cache still has its whole prompt as its input", () => {
+    const counts = { input_tokens: 0, cache_read_tokens: 6_144, output_tokens: 18 };
+    expect(readStepLine(step({ index: 1, type: "PLANNER_RESPONSE", at: START, counts }))).toEqual(
+      expect.objectContaining({ tokens: { input: 6_144, cached: 6_144, output: 18 } }),
+    );
+  });
+
+  test.each<[string, ReplyCounts]>([
+    ["an input that is text", { input_tokens: "900", cache_read_tokens: 0, output_tokens: 40 }],
+    ["no input", { cache_read_tokens: 100, output_tokens: 40 }],
+    ["a negative input", { input_tokens: -1, cache_read_tokens: 100, output_tokens: 40 }],
+    [
+      "a cache count that is not whole",
+      { input_tokens: 900, cache_read_tokens: 1.5, output_tokens: 40 },
+    ],
+    [
+      "a cache count that is null",
+      { input_tokens: 900, cache_read_tokens: null, output_tokens: 40 },
+    ],
+    ["a negative cache count", { input_tokens: 900, cache_read_tokens: -5, output_tokens: 40 }],
+    ["no output", { input_tokens: 900, cache_read_tokens: 100 }],
+    ["an output that is text", { input_tokens: 900, cache_read_tokens: 100, output_tokens: "40" }],
+    ["no prompt at all", { input_tokens: 0, cache_read_tokens: 0, output_tokens: 0 }],
+    [
+      "a prompt too large to be exact",
+      { input_tokens: Number.MAX_SAFE_INTEGER, cache_read_tokens: 1, output_tokens: 40 },
+    ],
+  ])("a reply with %s says its counts could not be right", (_what, counts) => {
+    const kept = readStepLine(step({ index: 1, type: "PLANNER_RESPONSE", at: START, counts }));
+    expect(kept).toMatchObject({ type: "PLANNER_RESPONSE", status: "DONE" });
+    expect(kept?.tokens).toBeNull();
+  });
+
+  test("only a reply's line has counts: a reply that names none, and any other step, has none", () => {
+    expect(
+      readStepLine(step({ index: 1, type: "PLANNER_RESPONSE", at: START })),
+    ).not.toHaveProperty("tokens");
+    const counts = { input_tokens: 900, cache_read_tokens: 100, output_tokens: 40 };
+    for (const type of ["USER_INPUT", "RUN_COMMAND", "ERROR_MESSAGE"]) {
+      expect(readStepLine(step({ index: 1, type, at: START, counts })), type).not.toHaveProperty(
+        "tokens",
+      );
+    }
+  });
+
   test("times are ISO 8601, in UTC or with an offset, to the nanosecond", () => {
     expect(parseStepTime("2026-10-01T12:00:00Z")).toBe(NOW);
     expect(parseStepTime("2026-10-01T12:00:00.123456789Z")).toBe(NOW + 123);
@@ -106,6 +186,7 @@ describe("a transcript", () => {
       since: START + 4 * SECOND,
       lastAt: START + 4 * SECOND,
       lastIndex: 3,
+      tokens: null,
     });
   });
 
@@ -323,5 +404,200 @@ describe("a transcript", () => {
     files.append(FILE, step({ index: 4, type: "USER_INPUT", at: START + 9 * SECOND }));
     await read();
     expect(files.openHandles()).toBe(0);
+  });
+});
+
+describe("the newest reply's token counts", () => {
+  const A = { input_tokens: 2_048, cache_read_tokens: 10_240, output_tokens: 96 };
+  const B = { input_tokens: 1_536, cache_read_tokens: 14_336, output_tokens: 288 };
+  const C = { input_tokens: 4_096, cache_read_tokens: 16_384, output_tokens: 512 };
+  const counts = (reply: ReplyCounts) => ({
+    input: (reply.input_tokens as number) + (reply.cache_read_tokens as number),
+    cached: reply.cache_read_tokens,
+    output: reply.output_tokens,
+  });
+  const reply = (index: number, at: number, given: ReplyCounts, tools?: string[]) =>
+    step({ index, type: "PLANNER_RESPONSE", at, counts: given, tools });
+
+  test("are the newest reply's, which a tool step after it keeps, on the first read and on each read onward", async () => {
+    const { files, read } = setUp(
+      [
+        step({ index: 0, type: "USER_INPUT", at: START }),
+        reply(1, START + SECOND, A, ["run_command"]),
+        step({ index: 2, type: "RUN_COMMAND", at: START + 2 * SECOND }),
+        reply(3, START + 3 * SECOND, B, ["view_file"]),
+        step({ index: 4, type: "VIEW_FILE", status: "RUNNING", at: START + 4 * SECOND }),
+      ].join(""),
+    );
+    const first = await read();
+    expect(first.tokens).toEqual(counts(B));
+    // The last step is still the tool step, and the counts did not move it.
+    expect(first.last).toMatchObject({ index: 4, type: "VIEW_FILE" });
+    expect(first.since).toBe(START);
+
+    const size = (await files.io.lstat(FILE)).size;
+    files.forget();
+    files.append(FILE, step({ index: 5, type: "VIEW_FILE", at: START + 5 * SECOND }));
+    expect((await read()).tokens).toEqual(counts(B));
+
+    files.append(FILE, reply(6, START + 6 * SECOND, C));
+    const state = await read();
+    expect(state.tokens).toEqual(counts(C));
+    expect(state.last).toMatchObject({ index: 6, type: "PLANNER_RESPONSE", toolCalls: false });
+    // Both were read onward: past the hashed start, only from the end of what was read before.
+    expect(files.reads.every((range) => range.position === 0 || range.position >= size - 1)).toBe(
+      true,
+    );
+  });
+
+  test("a newest reply whose counts could not be right gives none, never an older reply's", async () => {
+    const broken = { input_tokens: 900, cache_read_tokens: "lots", output_tokens: 40 };
+    const fresh = setUp(
+      [
+        step({ index: 0, type: "USER_INPUT", at: START }),
+        reply(1, START + SECOND, A, ["run_command"]),
+        step({ index: 2, type: "RUN_COMMAND", at: START + 2 * SECOND }),
+        reply(3, START + 3 * SECOND, broken),
+      ].join(""),
+    );
+    expect((await fresh.read()).tokens).toBeNull();
+
+    const onward = setUp(finishedTurn(0, START).join("") + reply(4, START + 5 * SECOND, A));
+    expect((await onward.read()).tokens).toEqual(counts(A));
+    onward.files.append(FILE, reply(5, START + 6 * SECOND, broken));
+    expect((await onward.read()).tokens).toBeNull();
+    onward.files.append(FILE, reply(6, START + 7 * SECOND, B));
+    expect((await onward.read()).tokens).toEqual(counts(B));
+  });
+
+  test("a reply that names no counts says nothing of them, and one agy cleared is passed over", async () => {
+    const lines = [
+      step({ index: 0, type: "USER_INPUT", at: START }),
+      reply(1, START + SECOND, A),
+      step({ index: 2, type: "USER_INPUT", at: START + 10 * SECOND }),
+      step({ index: 3, type: "PLANNER_RESPONSE", status: "GENERATING", at: START + 11 * SECOND }),
+      step({
+        index: 9,
+        type: "PLANNER_RESPONSE",
+        status: "CLEARED",
+        at: START + 12 * SECOND,
+        counts: B,
+      }),
+    ];
+    const fresh = setUp(lines.join(""));
+    expect((await fresh.read()).tokens).toEqual(counts(A));
+
+    const onward = setUp(lines.slice(0, 2).join(""));
+    await onward.read();
+    onward.files.append(FILE, lines.slice(2).join(""));
+    const state = await onward.read();
+    expect(state.tokens).toEqual(counts(A));
+    expect(state.last).toMatchObject({ index: 3, status: "GENERATING" });
+  });
+
+  test("a turn just begun has the counts of the reply that ended the one before, even past an error", async () => {
+    const { read } = setUp(
+      [
+        step({ index: 0, type: "USER_INPUT", at: START }),
+        reply(1, START + SECOND, A),
+        step({ index: 2, type: "USER_INPUT", at: START + 10 * SECOND }),
+        reply(3, START + 11 * SECOND, B, ["run_command"]),
+        step({ index: 4, type: "RUN_COMMAND", at: START + 12 * SECOND }),
+        step({ index: 5, type: "ERROR_MESSAGE", source: "SYSTEM", at: START + 13 * SECOND }),
+        step({ index: 6, type: "CHECKPOINT", at: START + 14 * SECOND }),
+        step({ index: 7, type: "USER_INPUT", at: START + 20 * SECOND }),
+      ].join(""),
+    );
+    const state = await read();
+    expect(state.tokens).toEqual(counts(B));
+    // Looking past the run's start for the counts changes nothing else the read says.
+    expect(state).toMatchObject({
+      last: { index: 7, type: "USER_INPUT" },
+      since: START + 20 * SECOND,
+      lastAt: START + 20 * SECOND,
+      lastIndex: 7,
+    });
+  });
+
+  test("a transcript with no counts at all has none", async () => {
+    const { read } = setUp(
+      [...finishedTurn(0, START), ...workingTurn(4, START + 60 * SECOND)].join(""),
+    );
+    expect((await read()).tokens).toBeNull();
+  });
+
+  /** A transcript whose only counted reply is `before` bytes of tool steps before the steps that end it. */
+  function withReplyBefore(before: number): string {
+    const filler = step({ index: 2, type: "VIEW_FILE", at: START + 2 * SECOND });
+    const lines = [step({ index: 0, type: "USER_INPUT", at: START }), reply(1, START + SECOND, A)];
+    for (let size = 0; size < before; size += filler.length) lines.push(filler);
+    lines.push(
+      step({ index: 3, type: "ERROR_MESSAGE", source: "SYSTEM", at: START + 3 * SECOND }),
+      step({ index: 4, type: "USER_INPUT", at: START + 4 * SECOND }),
+    );
+    return lines.join("");
+  }
+
+  /** How much of the file's end a fresh read took, beside its start. */
+  function tailRead(files: ReturnType<typeof setUp>["files"]): number {
+    return files.reads
+      .filter((range) => range.position > 0)
+      .reduce((sum, range) => sum + range.length, 0);
+  }
+
+  test("past the run's start, the counts are looked for in 256 KiB more, and no further", async () => {
+    const PIECE = 64 * 1024;
+    const LOOK_BACK = 256 * 1024;
+
+    // Within 256 KiB: found.
+    const near = setUp(withReplyBefore(200 * 1024));
+    expect((await near.read()).tokens).toEqual(counts(A));
+
+    // A reply's line holds its content and thinking, so it can be longer than
+    // a piece. One just before the run's start is found too.
+    const longReply = JSON.parse(reply(1, START + SECOND, A, ["run_command"])) as object;
+    const long = setUp(
+      [
+        step({ index: 0, type: "USER_INPUT", at: START }),
+        `${JSON.stringify({ ...longReply, content: "word ".repeat(32 * 1024) })}\n`,
+        step({ index: 2, type: "RUN_COMMAND", at: START + 2 * SECOND }),
+        step({ index: 3, type: "ERROR_MESSAGE", source: "SYSTEM", at: START + 3 * SECOND }),
+      ].join(""),
+    );
+    const failed = await long.read();
+    expect(failed.last).toMatchObject({ index: 3, type: "ERROR_MESSAGE" });
+    expect(failed.tokens).toEqual(counts(A));
+
+    // Further back: not looked for, so a transcript with no counts near its end
+    // costs 256 KiB more than its last steps did, not the whole tail limit.
+    const far = setUp(withReplyBefore(1024 * 1024));
+    const state = await far.read();
+    expect(state.last).toMatchObject({ index: 4, type: "USER_INPUT" });
+    expect(state.since).toBe(START + 4 * SECOND);
+    expect(state.tokens).toBeNull();
+    expect(tailRead(far.files)).toBe(PIECE + LOOK_BACK);
+  });
+
+  test("the steps read past the run's start, only for a reply's counts, give no time and no index", async () => {
+    // The steps up to the one that settles the run have no `created_at` and no
+    // `step_index`; the reply further back has both.
+    const untimed = (fields: Record<string, unknown>) =>
+      `${JSON.stringify({ ...fields, content: PRIVATE_WORDS })}\n`;
+    const { read } = setUp(
+      [
+        step({ index: 0, type: "USER_INPUT", at: START }),
+        reply(1, START + SECOND, A, ["run_command"]),
+        untimed({ type: "ERROR_MESSAGE", status: "DONE", source: "SYSTEM" }),
+        untimed({ type: "USER_INPUT", status: "DONE", source: "USER_EXPLICIT" }),
+      ].join(""),
+    );
+    const state = await read();
+    expect(state.tokens).toEqual(counts(A));
+    expect(state).toMatchObject({
+      last: { index: null, type: "USER_INPUT" },
+      since: null,
+      lastAt: null,
+      lastIndex: null,
+    });
   });
 });

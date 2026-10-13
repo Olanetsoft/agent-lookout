@@ -251,6 +251,7 @@ describe("each declaration agrees with what its adapter does", () => {
         since: NOW - 60_000,
         lastAt: NOW - 30_000,
         lastIndex: 2,
+        tokens: null,
       },
       live: true,
       writtenAt: NOW - 10_000,
@@ -264,6 +265,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(session).not.toHaveProperty("pid");
     expect(session.links).toEqual({});
     expect(ANTIGRAVITY_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(ANTIGRAVITY_CAPABILITIES.tokens.level).toBe("yes");
     expect(ANTIGRAVITY_CAPABILITIES.names.level).toBe("partly");
     expect(ANTIGRAVITY_CAPABILITIES.jump.level).toBe("no");
     expect(ANTIGRAVITY_CAPABILITIES.stop.level).toBe("no");
@@ -291,7 +293,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(ANTIGRAVITY_APP_CAPABILITIES.finished.level).toBe("partly");
   });
 
-  test("Antigravity: a chat has the time of its last write and no token counts, jump or stop", () => {
+  test("Antigravity: a chat has the time of its last write and its newest reply's token counts, and no jump or stop", () => {
     const session = antigravitySession({
       profile: APP_PROFILE,
       conversationId: "00000000-0000-4000-8000-0000000000a1",
@@ -307,19 +309,20 @@ describe("each declaration agrees with what its adapter does", () => {
         since: NOW - 30_000,
         lastAt: NOW - 30_000,
         lastIndex: 1,
+        tokens: { input: 2_000, cached: 800, output: 64 },
       },
       live: true,
       writtenAt: NOW - 10_000,
       now: NOW,
     });
     expect(session.lastWriteAt).toBe(NOW - 10_000);
-    expect(session).not.toHaveProperty("tokens");
+    expect(session.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
     expect(session).not.toHaveProperty("jump");
     expect(session).not.toHaveProperty("stop");
     expect(session).not.toHaveProperty("pid");
     expect(session.links).toEqual({});
     expect(ANTIGRAVITY_APP_CAPABILITIES["quiet-for"].level).toBe("yes");
-    expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("no");
+    expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("yes");
     expect(ANTIGRAVITY_APP_CAPABILITIES.jump.level).toBe("no");
     expect(ANTIGRAVITY_APP_CAPABILITIES.stop.level).toBe("no");
   });

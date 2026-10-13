@@ -178,13 +178,14 @@ describe("the Antigravity adapter, on a folder laid out as Antigravity 2.0 lays 
       [IDLE]: "idle",
       [FAILED]: "failed",
     });
-    expect(result.sessions.find((session) => session.id.endsWith(WORKING))).toMatchObject({
-      surface: "desktop",
-      lastWriteAt: NOW - 20 * SECOND,
-    });
+    const working = result.sessions.find((session) => session.id.endsWith(WORKING));
+    expect(working).toMatchObject({ surface: "desktop", lastWriteAt: NOW - 20 * SECOND });
+    // A chat with no reply yet has no counts. One with a reply has that reply's.
+    expect(working).not.toHaveProperty("tokens");
     expect(result.sessions.find((session) => session.id.endsWith(IDLE))).toMatchObject({
       name: "Count the files",
       cwd: sqlite === null ? null : FOLDER,
+      tokens: { input: 2_000, cached: 800, output: 64 },
     });
   });
 

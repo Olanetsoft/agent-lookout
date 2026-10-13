@@ -122,7 +122,8 @@ export const UNKNOWN_STEP_NOTE =
  *   list of chats names, read with `sqlite3`.
  * - No Jump, Stop or Answer.
  * - Quiet for is the newest modified time of the chat's files.
- * - Tokens are not read yet, though the transcript records them.
+ * - Tokens are the counts of the newest reply, from the transcript, as for
+ *   the CLI (`transcriptFile.ts`).
  */
 export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
@@ -150,10 +151,7 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
     reason: "Antigravity documents no link that opens one of its chats.",
   },
   "quiet-for": { level: "yes" },
-  tokens: {
-    level: "no",
-    reason: "Agent Lookout does not read token counts from Antigravity's transcripts yet.",
-  },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "The app runs every chat in one program, so no chat can be stopped alone.",

@@ -46,6 +46,15 @@ export interface StepFields {
   source?: string;
   /** Tool calls the step asks for, by tool name. */
   tools?: string[];
+  /** Token counts on the line, under the keys agy writes them by on a reply. */
+  counts?: ReplyCounts;
+}
+
+/** A reply's token counts as agy writes them: any value, so a count that could not be right can be written too. */
+export interface ReplyCounts {
+  input_tokens?: unknown;
+  cache_read_tokens?: unknown;
+  output_tokens?: unknown;
 }
 
 /** One transcript line, with its newline, carrying text in every field the adapter must drop. */
@@ -66,6 +75,7 @@ export function step(fields: StepFields): string {
     }));
   }
   if (fields.type === "USER_INPUT") line.media = [];
+  if (fields.counts) Object.assign(line, fields.counts);
   return `${JSON.stringify(line)}\n`;
 }
 
@@ -249,15 +259,13 @@ export function programTable(programs: string[]): string {
   return programs.map((program) => `${program}\n`).join("");
 }
 
+/** The counts `appStep` writes on a reply when no others are given. */
+export const APP_COUNTS = { input_tokens: 1200, cache_read_tokens: 800, output_tokens: 64 };
+
 /** One line of the app's transcript: a step as `step` writes it, with token counts on a reply. */
 export function appStep(fields: StepFields): string {
-  const line = JSON.parse(step(fields)) as Record<string, unknown>;
-  if (fields.type === "PLANNER_RESPONSE") {
-    line.input_tokens = 1200;
-    line.cache_read_tokens = 800;
-    line.output_tokens = 64;
-  }
-  return `${JSON.stringify(line)}\n`;
+  if (fields.type !== "PLANNER_RESPONSE") return step(fields);
+  return step({ ...fields, counts: fields.counts ?? APP_COUNTS });
 }
 
 /** A turn the app has finished: the prompt and the model's reply, which asked for no tool. */
