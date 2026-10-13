@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 
 import type {
   EmailStatusResponse,
@@ -178,7 +178,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Unmounted first: a view still up after the reset can draw again, read the
+  // storage just cleared and keep that for the next test.
+  await cleanup();
   localStorage.clear();
   resetThemeForTests();
   resetNotificationSettingForTests();
@@ -1372,11 +1375,16 @@ test.each([1000, 375])(
   },
 );
 
+/**
+ * Not possible comes just before on. Its case ends before the view's reads are
+ * answered, so a view left up past `afterEach` would draw again, keep the
+ * storage just cleared, and on would fail every time, not once in a while.
+ */
 const NOTIFICATION_STATES = [
   ["off", "default", null],
+  ["not possible", "unsupported", null],
   ["on", "granted", "on"],
   ["blocked", "denied", null],
-  ["not possible", "unsupported", null],
 ] as const;
 
 test.each(
@@ -1392,11 +1400,9 @@ test.each(
 
     const screen = await render(<SettingsView />);
     await expect.element(notifications(screen)).toBeVisible();
-    // The state is drawn once the stored choice and the permission are read.
-    await vi.waitFor(() =>
-      expect(stateOf(screen).textContent).toBe(
-        stored ? "Notifications are on." : "Notifications are off.",
-      ),
+    // The stored choice and the permission are read as the view is first drawn.
+    expect(stateOf(screen).textContent).toBe(
+      stored ? "Notifications are on." : "Notifications are off.",
     );
 
     expect(warmPaint(screen.container)).toEqual([]);
