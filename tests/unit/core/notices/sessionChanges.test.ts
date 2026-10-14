@@ -624,6 +624,7 @@ describe("over a long run of snapshots", () => {
     "antigravity-app": [],
     "mistral-vibe": [],
     "gemini-cli": [],
+    opencode: [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

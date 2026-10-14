@@ -18,6 +18,7 @@ import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_GEMINI_CLI_HOME,
+  EMPTY_OPENCODE_HOME,
   EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
 } from "@tests/support/node/tempFiles";
@@ -60,3 +61,10 @@ process.env.AGENT_LOOKOUT_VIBE_SESSION_DIR = EMPTY_VIBE_SESSION_DIR;
 mkdirSync(EMPTY_GEMINI_CLI_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_GEMINI_CLI_HOME = EMPTY_GEMINI_CLI_HOME;
 delete process.env.GEMINI_CLI_HOME;
+
+// Nor does one read OpenCode's database, in `~/.local/share/opencode`, or run
+// `sqlite3` for it, whatever the shell running the tests has set: the adapter
+// is pointed at an empty folder, which also sets OpenCode's own `OPENCODE_DB`
+// and `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_OPENCODE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_OPENCODE_HOME = EMPTY_OPENCODE_HOME;

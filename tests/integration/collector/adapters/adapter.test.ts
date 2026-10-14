@@ -9,6 +9,7 @@ import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index"
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
+import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import {
   CAPABILITIES,
@@ -31,6 +32,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
   ["Mistral Vibe", MISTRAL_VIBE_CAPABILITIES],
   ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
+  ["OpenCode", OPENCODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 

@@ -85,6 +85,20 @@ export const EMPTY_GEMINI_CLI_HOME = path.join(
   ".gemini",
 );
 
+/**
+ * An empty folder for the OpenCode adapter to read in place of
+ * `~/.local/share/opencode`, so that a collector a test builds from
+ * `process.env` finds no database and runs no `sqlite3`: `nodeSetup.ts` makes
+ * it and names it there. It holds no `opencode.db`, and nothing is ever
+ * written in it. A test that builds an environment of its own names a
+ * `tempDir` there.
+ */
+export const EMPTY_OPENCODE_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-opencode",
+  "opencode",
+);
+
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));

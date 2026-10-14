@@ -6,8 +6,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe and Gemini CLI, none of the four installed here, and status
- * files. Then the other machine, connected over SSH.
+ * Mistral Vibe, Gemini CLI and OpenCode, none of the five installed here, and
+ * status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -268,6 +268,50 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const OPENCODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Read with sqlite3 on macOS and Linux. Agent Lookout reads nothing of OpenCode's on Windows.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "OpenCode keeps approval waits and questions in memory, so a session waiting for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once no OpenCode program has its database open. After a crash, sessions look open until OpenCode next quits.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When a reply ends on an error OpenCode records. One that fails before a reply begins shows as working.",
+  },
+  names: { level: "yes" },
+  jump: {
+    level: "no",
+    reason:
+      "OpenCode's database names no process or terminal, and OpenCode documents no link to a session.",
+  },
+  "quiet-for": {
+    level: "no",
+    reason:
+      "OpenCode keeps every session in one database, so no file shows when one session was last written.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout does not read OpenCode's token counts yet." },
+  stop: {
+    level: "no",
+    reason: "OpenCode's database names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "OpenCode keeps its approvals and questions in memory, so there is nothing to answer from here.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -424,6 +468,26 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when OpenCode is not installed: its folder is looked for, and nothing more.
+      id: "opencode",
+      label: "OpenCode",
+      state: "unavailable",
+      detail:
+        "OpenCode was not found: there is no ~/.local/share/opencode folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Data folder", value: "~/.local/share/opencode" },
+        { label: "Database", value: "~/.local/share/opencode/opencode.db" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Command",
+          value: "sqlite3 -init /dev/null -batch -json <database> <fixed query>",
+        },
+        { label: "Command run", value: "when the database changes" },
+      ],
+      capabilities: OPENCODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -456,6 +520,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Antigravity there", value: "Not found" },
         { label: "Mistral Vibe there", value: "Not found" },
         { label: "Gemini CLI there", value: "Not found" },
+        { label: "OpenCode there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

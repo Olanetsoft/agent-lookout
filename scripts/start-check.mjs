@@ -83,6 +83,7 @@ const CODEX_OPEN = [
   ["00000000-0000-4000-8000-0000000000c9", "working"],
 ];
 
+/** Each source, by its id and label, and the state it is in on Windows when that is not `ok`. */
 const SOURCES = [
   ["claude-code", "Claude Code"],
   ["codex", "Codex"],
@@ -90,6 +91,8 @@ const SOURCES = [
   ["antigravity-app", "Antigravity"],
   ["mistral-vibe", "Mistral Vibe"],
   ["gemini-cli", "Gemini CLI"],
+  // Nothing of OpenCode's is read on Windows.
+  ["opencode", "OpenCode", "unavailable"],
   ["status-files", "Status files"],
 ];
 
@@ -308,6 +311,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const antigravityAppHome = path.join(dir, "antigravity");
   const vibeSessionDir = path.join(dir, "vibe");
   const geminiCliHome = path.join(dir, "gemini");
+  const opencodeHome = path.join(dir, "opencode");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   const work = path.join(dir, "work");
@@ -316,6 +320,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(antigravityAppHome, { recursive: true });
   await mkdir(vibeSessionDir, { recursive: true });
   await mkdir(path.join(geminiCliHome, "tmp"), { recursive: true });
+  await mkdir(opencodeHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -377,6 +382,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     antigravityAppHome,
     vibeSessionDir,
     geminiCliHome,
+    opencodeHome,
     statusDir,
     historyDir,
     procStart,
@@ -410,6 +416,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: folders.antigravityAppHome,
     AGENT_LOOKOUT_VIBE_SESSION_DIR: folders.vibeSessionDir,
     AGENT_LOOKOUT_GEMINI_CLI_HOME: folders.geminiCliHome,
+    AGENT_LOOKOUT_OPENCODE_HOME: folders.opencodeHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_TMUX: "off",
@@ -490,9 +497,11 @@ async function readSessions(address) {
 }
 
 function check(snapshot, procStart) {
-  for (const [id, label] of SOURCES) {
+  for (const [id, label, onWindowsState] of SOURCES) {
     const source = snapshot.sources.find((item) => item.id === id);
-    if (source?.state === "ok") pass(`${label} is read`);
+    const wanted = onWindows && onWindowsState ? onWindowsState : "ok";
+    if (source?.state === wanted)
+      pass(wanted === "ok" ? `${label} is read` : `${label} is ${wanted}`);
     else fail(`${label} is ${source ? `${source.state}: ${source.detail ?? ""}` : "not listed"}`);
   }
 

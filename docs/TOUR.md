@@ -4,7 +4,7 @@ This tour walks through the whole project in plain language: what each part does
 
 ## What Agent Lookout is
 
-Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI, Antigravity, Mistral Vibe and Gemini CLI sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
+Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI and OpenCode sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
 
 It starts no agent and installs nothing into one. By default it sends nothing off the computer. The one exception is the Mac app's daily check on GitHub for a newer version, which Settings turns off. It can act on a session, but only when you ask: bring its tab forward, stop it, or answer its permission prompt.
 
@@ -35,6 +35,7 @@ flowchart LR
     aa["Antigravity<br/>~/.gemini/antigravity, ps, sqlite3"]
     mv["Mistral Vibe<br/>~/.vibe/logs/session"]
     gc["Gemini CLI<br/>~/.gemini/tmp session files"]
+    oc["OpenCode<br/>~/.local/share/opencode, sqlite3"]
     sf["Your own agents<br/>~/.agent-lookout/sessions"]
   end
   remote["Agent Lookout on another machine<br/>over your ssh"]
@@ -52,6 +53,7 @@ flowchart LR
   aa --> adapters
   mv --> adapters
   gc --> adapters
+  oc --> adapters
   sf --> adapters
   remote --> adapters
   plugin -->|"Unix socket"| held
@@ -72,7 +74,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 
 ### The poller
 
-**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the seven local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI and status files), adds one adapter for each other machine, and hands them all to the poller.
+**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the eight local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and status files), adds one adapter for each other machine, and hands them all to the poller.
 
 **Where it came from.** It was in the first commit, 042ec3e, on 4 October 2026. Later work added reading history back after a restart (#21), an idle time you can set (#12), marking a wait Agent Lookout answered (#9, #11) and other machines over SSH (#57).
 
@@ -98,7 +100,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 **A session** has:
 
-- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
+- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, `opencode:<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
 - its `source`, the app it runs in (`surface`) and a `name`
 - its folder, `cwd`, and `project`, the folder's last part (`projectOf` in `src/core/sessions/project.ts`)
 - a `status`, and when it started and last changed status (`startedAt`, `statusSince`)
@@ -108,7 +110,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 One rule matters more than it looks: `statusSince` must not move while a session keeps needing you. A later time on a session that is still waiting reads as a new wait, which means a second notification.
 
-**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`), `mistralVibeMapping.ts`, `geminiCliMapping.ts` and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
+**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`), `mistralVibeMapping.ts`, `geminiCliMapping.ts`, `opencode/opencodeMapping.ts` and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
 
 **Times from other tools.** Every time read from another tool goes through `plausibleTime` in `src/core/time.ts`. A time before 2020, or more than a minute ahead of the clock, is taken as unknown, so nothing shows as idle since 1970.
 
@@ -137,6 +139,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 - Antigravity lists a chat whose transcript was written in the last day.
 - Mistral Vibe lists a session Vibe wrote to in the last day, or one a Vibe program has held for 30 seconds.
 - Gemini CLI lists a session last active in the last day, by the times inside its file.
+- OpenCode lists a root session anything of which was written in the last day, by the times in its rows.
 
 ### Branches and pull requests
 
@@ -276,6 +279,25 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **How sure it is.** It was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The card says so (`UNCHECKED_NOTE`).
 
+### OpenCode
+
+**Where.** `src/collector/adapters/opencode/`, with the mapping in `src/core/mapping/opencode/opencodeMapping.ts`. [adapters/opencode.md](adapters/opencode.md) is the full reference.
+
+**Where it came from.** Issue #18 asked for OpenCode. It reads OpenCode 1.x's sessions. It was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running OpenCode. The card says so (`UNCHECKED_NOTE`).
+
+**Why `sqlite3`.** OpenCode keeps every session, message and part in one SQLite database, `opencode.db`. Starting `opencode` makes OpenCode's folders, and `opencode session list`, the command checked, also opens that database to write. A plugin needs a change to OpenCode's config. So the adapter reads the database alone, with the system's `sqlite3`, started as for Antigravity, and never on Windows.
+
+**The pieces.**
+
+- `database.ts` looks at `opencode.db`, `opencode.db-wal` and `opencode.db-shm` with `lstat` on every poll, and runs `sqlite3` only when they changed, or 10 seconds after a read that did not work. With no `-wal`, or an empty one, it opens the database with `immutable=1`. With a `-wal` that holds something and the `-shm` it uses `readonly_shm=1`, which reads OpenCode's newest work in the `-wal` and writes to neither file. A test with the real `sqlite3` holds the database open from a second `sqlite3` and checks that nothing changes on disk.
+- `sessionRows.ts` holds the two fixed questions, a probe of the tables and the query of root sessions that are not archived, and checks each answer field by field. No text of a message is asked for.
+- `opencodeMapping.ts` turns each session's newest message into a status. A prompt or a step under way is working. A step that asked for tools is working for 10 seconds after it ended (`STEP_GAP_MS`), since OpenCode starts the next step at once. A reply that ended is idle, and one that ended on an error OpenCode records is failed.
+- `toSession.ts` names a session by its title, unless it is still OpenCode's placeholder, and lists it for a day after anything of it was written.
+
+**Bases.** `database` is the usual one. `database-closed` is used while the `-wal` is missing or empty, when no OpenCode program has the database open and every session is finished, unless it failed or cannot be read.
+
+**How sure it is.** Not checked against OpenCode yet. Approval waits and questions are kept in OpenCode's memory, so a session that waits shows as working. OpenCode 2's sessions, in `session_v2`, are not read yet, and the card says so when it finds them.
+
 ### Status files: your own agents
 
 **Where.** `src/collector/adapters/status-files/`, with the mapping in `src/core/mapping/statusFileMapping.ts`. The file format is Agent Lookout's own, and [Your own agents](GUIDE.md#your-own-agents) in the guide is its reference.
@@ -300,7 +322,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Why.** Each tool records different things. Unless that is said, a missing signal reads as good news: a Codex session waiting for approval just looks busy (#50).
 
-**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES`, `ANTIGRAVITY_APP_CAPABILITIES`, `MISTRAL_VIBE_CAPABILITIES`, `GEMINI_CLI_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
+**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES`, `ANTIGRAVITY_APP_CAPABILITIES`, `MISTRAL_VIBE_CAPABILITIES`, `GEMINI_CLI_CAPABILITIES`, `OPENCODE_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
 
 The guide has the same table in [What each agent can report](GUIDE.md#what-each-agent-can-report). `tests/integration/collector/adapters/adapter.test.ts` fails if the guide's table says anything other than what the adapters declare, cell by cell and reason by reason, or if the README's agent table does, in each column it has. Change the constant and the docs together.
 
@@ -312,6 +334,7 @@ In short:
 - **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
 - **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Gemini CLI** reports Quiet for, and working and idle in part, since a reply with text whose tool waits or runs shows as idle. Names only once Gemini CLI saves a title. Never needs you, finished or failed. No Jump, tokens, Stop or Answer.
+- **OpenCode** reports working and idle, finished once no OpenCode program has its database open, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Never needs you, and no Quiet for, Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
@@ -1332,7 +1355,7 @@ A test ends in `.test.tsx` only when its module is a `.tsx` file. A module may h
 **Why no test touches your machine.** Tests run on a contributor's own computer, next to their real sessions, so two safeguards keep them apart:
 
 - The test config leaves out the collector's Vite plugin.
-- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe and Gemini CLI at empty folders and the settings at `NO_SETTINGS_FILE`.
+- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI and OpenCode at empty folders and the settings at `NO_SETTINGS_FILE`.
 
 A test that builds its own environment does the same itself. One block of tests, the check against the real `claude`, runs only with `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1`. [tests/README.md](../tests/README.md) has the command, says what goes in each group and describes every helper in `tests/support/`.
 
@@ -1476,15 +1499,15 @@ Both ship inside the npm package.
 
 **Why they matter here.** They are promises, and the project treats them as part of the code. PRIVACY.md ends with a rule: a change that adds a command or a file read, stores anything on disk, or talks to a network updates PRIVACY.md in the same pull request. The pull request template asks for the same. Most of the promises have a test that would fail if the code broke them:
 
-| Promise                                                                                                                                                                                          | Test that holds it                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                                          | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
-| `npm start` listens on loopback only                                                                                                                                                             | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
-| The page loads nothing from another site                                                                                                                                                         | The same file: "the page may load and call nothing but this server"                                                                                  |
-| What a waiting session is asking is never written to disk or given to an MCP client                                                                                                              | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
-| A session's last message is kept only within the stated limits                                                                                                                                   | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
-| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                                 | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
-| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe or Gemini CLI folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
+| Promise                                                                                                                                                                                                    | Test that holds it                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                                                    | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
+| `npm start` listens on loopback only                                                                                                                                                                       | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
+| The page loads nothing from another site                                                                                                                                                                   | The same file: "the page may load and call nothing but this server"                                                                                  |
+| What a waiting session is asking is never written to disk or given to an MCP client                                                                                                                        | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
+| A session's last message is kept only within the stated limits                                                                                                                                             | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
+| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                                           | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
+| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI or OpenCode folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
 
 The docs are held to the code in the same way:
 
