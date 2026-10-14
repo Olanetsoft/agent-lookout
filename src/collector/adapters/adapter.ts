@@ -34,6 +34,9 @@ export interface AdapterResult {
    * - `files-without-leases`: the same while the folder of leases is missing
    *   or cannot be listed, when no session can be shown as finished.
    *
+   * The Gemini CLI adapter has one, `files`: its session files and each
+   * project's `.project_root`.
+   *
    * The status-file adapter has one, `files`: the folder of status files.
    */
   basis?: string;

@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import type { FileInfo } from "@collector/files/readOnlyIo";
 import type { GitIo } from "@collector/git/branchFinder";
 import {
   BRANCH_READ_MS,
@@ -140,6 +141,41 @@ describe("finding the repository", () => {
     ]);
     // The home folder itself is in no repository either.
     expect(await find(files, HOME)).toBeNull();
+  });
+
+  test("on Windows the walk stops at the home folder whatever the case of its letters", async () => {
+    // Gemini CLI writes a session's folder in lower case there. The home folder holds a repository.
+    const entries = new Map<string, FileInfo["kind"]>([
+      ["c:\\users\\example", "directory"],
+      ["c:\\users\\example\\notes", "directory"],
+      ["c:\\users\\example\\.git", "directory"],
+      ["c:\\users\\example\\.git\\head", "file"],
+    ]);
+    const looked: string[] = [];
+    // Windows' disks do not tell case apart.
+    const kindOf = (target: string) => {
+      looked.push(target);
+      const kind = entries.get(target.toLowerCase());
+      if (kind === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return kind;
+    };
+    const io: GitIo = {
+      stat: async (target) => ({ kind: kindOf(target), size: 0, mtimeMs: 0, ino: 1 }),
+      lstat: async (target) => ({ kind: kindOf(target), size: 0, mtimeMs: 0, ino: 1 }),
+      openRegular: async (target) => {
+        kindOf(target);
+        const data = new TextEncoder().encode("ref: refs/heads/main\n");
+        return {
+          info: { kind: "file", size: data.byteLength, mtimeMs: 0, ino: 1 },
+          read: async () => data,
+          close: async () => {},
+        };
+      },
+    };
+    const where = { io, homeDir: "C:\\Users\\Example", platform: "win32" as const };
+    expect(await findGitHead("c:\\users\\example\\notes", where)).toBeNull();
+    expect(looked).toEqual(["c:\\users\\example\\notes", "c:\\users\\example\\notes\\.git"]);
+    expect(await findGitHead("c:\\users\\example", where)).toBeNull();
   });
 
   test("outside the home folder the walk stops short of the root", async () => {

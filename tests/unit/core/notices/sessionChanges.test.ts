@@ -623,6 +623,7 @@ describe("over a long run of snapshots", () => {
     "antigravity-cli": [],
     "antigravity-app": [],
     "mistral-vibe": [],
+    "gemini-cli": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

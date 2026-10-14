@@ -6,12 +6,13 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 
 - macOS, Linux or Windows. Agent Lookout is developed and used on macOS. On Linux and Windows, CI runs the tests and starts it, and no one has used it on those desktops yet. [On Linux](GUIDE.md#on-linux) and [On Windows](GUIDE.md#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#mac-app) needs no Node.js, and macOS 13 Ventura or later.
-- Claude Code, Codex, Antigravity, the Antigravity CLI, `agy`, or Mistral Vibe. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
+- Claude Code, Codex, Antigravity, the Antigravity CLI, `agy`, Mistral Vibe or Gemini CLI. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 - For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity IDE's conversations do not appear yet, and Sources says when its folder is there.
 - For Antigravity, the desktop app Google calls Antigravity 2.0, Agent Lookout was written from the layout of its files on one Mac. Its chats show as working, idle or failed, as needing you while the app asks you to approve a step, except on Windows, and on a Mac as finished once the app is closed. Each chat's folder, and whether it waits for you, are read with the system's `sqlite3`, which macOS has.
 - For Mistral Vibe, Agent Lookout was built from the source of Vibe 2.26.1 and has not yet been checked on a computer running Vibe. Its sessions show as working, idle, finished or failed. Whether one waits for you is not read yet, and sessions Vibe ran on its older engine, the default before 2.26.0, do not appear.
+- For Gemini CLI, version 0.39 or later, which saves sessions in the format Agent Lookout reads. Agent Lookout was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. Its sessions show as working, idle or unknown, never as needing you, finished or failed.
 
 Check what you have:
 
@@ -21,9 +22,10 @@ claude --version
 claude agents --help
 codex --version
 agy --version
+gemini --version
 ```
 
-`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, and `agy --version` a version number such as `1.3.1`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex` or `agy`, so the Codex desktop app needs no CLI.
+`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, `agy --version` a version number such as `1.3.1`, and `gemini --version` a version number such as `0.64.0`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, `agy` or `gemini`, so the Codex desktop app needs no CLI.
 
 ## With npx
 

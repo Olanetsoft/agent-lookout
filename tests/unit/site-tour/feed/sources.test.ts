@@ -4,6 +4,7 @@ import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/ap
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
+import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
@@ -18,6 +19,7 @@ import {
   standInHub,
   standInProcesses,
 } from "@tests/support/adapters/antigravityAdapter";
+import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 
 // The landing page's dashboard cannot run the adapters, so it says their words
@@ -29,6 +31,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.ANTIGRAVITY_CAPABILITIES).toEqual(ANTIGRAVITY_CAPABILITIES);
   expect(tour.ANTIGRAVITY_APP_CAPABILITIES).toEqual(ANTIGRAVITY_APP_CAPABILITIES);
   expect(tour.MISTRAL_VIBE_CAPABILITIES).toEqual(MISTRAL_VIBE_CAPABILITIES);
+  expect(tour.GEMINI_CLI_CAPABILITIES).toEqual(GEMINI_CLI_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -40,6 +43,7 @@ test("this computer's sources come in the collector's order", () => {
     "antigravity-cli",
     "antigravity-app",
     "mistral-vibe",
+    "gemini-cli",
     "status-files",
   ]);
 });
@@ -87,6 +91,18 @@ test("Mistral Vibe's card is the one its adapter shows on a computer without Vib
   expect(sessions).toEqual([]);
 });
 
+test("Gemini CLI's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = geminiCliAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "gemini-cli")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -115,6 +131,12 @@ test("the other machine's agents and its row for each source are what this compu
           label: "Mistral Vibe",
           state: "unavailable",
           capabilities: MISTRAL_VIBE_CAPABILITIES,
+        },
+        {
+          id: "gemini-cli",
+          label: "Gemini CLI",
+          state: "unavailable",
+          capabilities: GEMINI_CLI_CAPABILITIES,
         },
         {
           id: "status-files",

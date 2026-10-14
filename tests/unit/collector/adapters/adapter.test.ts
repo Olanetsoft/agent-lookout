@@ -22,6 +22,11 @@ import { sessionFromRegistry } from "@collector/adapters/claude-code/toSession";
 import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/codex/index";
 import { codexSession } from "@collector/adapters/codex/toSession";
 import {
+  createGeminiCliAdapter,
+  GEMINI_CLI_CAPABILITIES,
+} from "@collector/adapters/gemini-cli/index";
+import { geminiCliSession } from "@collector/adapters/gemini-cli/toSession";
+import {
   createMistralVibeAdapter,
   MISTRAL_VIBE_CAPABILITIES,
 } from "@collector/adapters/mistral-vibe/index";
@@ -38,6 +43,13 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
+import {
+  ENVIRONMENT_CONTEXT_ID,
+  GEMINI_CLI_MESSAGE_TYPES,
+  mapGeminiCliStatus,
+  replayGeminiCliRecords,
+  type GeminiCliRecord,
+} from "@core/mapping/gemini-cli/geminiCliMapping";
 import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
@@ -52,6 +64,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Antigravity CLI", ANTIGRAVITY_CAPABILITIES],
   ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
   ["Mistral Vibe", MISTRAL_VIBE_CAPABILITIES],
+  ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -112,6 +125,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
+  );
+  expect(createGeminiCliAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
+    GEMINI_CLI_CAPABILITIES,
   );
 });
 
@@ -391,6 +407,106 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(MISTRAL_VIBE_CAPABILITIES.jump.level).toBe("no");
     expect(MISTRAL_VIBE_CAPABILITIES.stop.level).toBe("no");
     expect(MISTRAL_VIBE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Gemini CLI: no line ever makes a session need you, finish or fail", () => {
+    const shapes = [false, true].flatMap((empty) =>
+      [false, true].flatMap((functionCall) =>
+        [false, true].flatMap((functionResponse) =>
+          [false, true].flatMap((thoughtOnly) =>
+            [false, true].map((note) => ({
+              empty,
+              functionCall,
+              functionResponse,
+              thoughtOnly,
+              note,
+            })),
+          ),
+        ),
+      ),
+    );
+    const toolCalls = [
+      null,
+      { allCancelled: false, lastAt: NOW },
+      { allCancelled: true, lastAt: NOW },
+    ];
+    const messages = [...GEMINI_CLI_MESSAGE_TYPES, "other" as const].flatMap((type) =>
+      [...shapes, null].flatMap((content) =>
+        toolCalls.map((calls) => ({ id: "m2", type, at: NOW, content, toolCalls: calls })),
+      ),
+    );
+    const before: GeminiCliRecord[] = [
+      { kind: "header", startedAt: NOW - 60_000, updatedAt: NOW - 60_000 },
+      {
+        kind: "message",
+        message: {
+          id: ENVIRONMENT_CONTEXT_ID,
+          type: "user",
+          at: NOW - 60_000,
+          content: null,
+          toolCalls: null,
+        },
+      },
+    ];
+    const endings: GeminiCliRecord[][] = [
+      [],
+      [{ kind: "rewind", id: "m2" }],
+      [{ kind: "set", reattach: true }],
+    ];
+    const mapped = statuses(
+      messages.flatMap((message) =>
+        endings.flatMap((ending) =>
+          [true, false].map(
+            (fromStart) =>
+              mapGeminiCliStatus(
+                replayGeminiCliRecords(
+                  [...before, { kind: "message", message }, ...ending],
+                  fromStart,
+                ),
+              ).status,
+          ),
+        ),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "unknown"]));
+    expect(GEMINI_CLI_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.finished.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.failed.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES["working-and-idle"].level).toBe("partly");
+  });
+
+  test("Gemini CLI: a session has the time of its last write, and no tokens, jump, stop or link", () => {
+    const session = geminiCliSession({
+      state: {
+        header: {
+          sessionId: "00000000-0000-4000-8000-0000000000e1",
+          kind: "main",
+          startedAt: NOW - 60_000,
+          updatedAt: NOW - 60_000,
+        },
+        status: { status: "working", since: NOW - 30_000 },
+        updatedAt: NOW - 30_000,
+        messageAt: NOW - 30_000,
+        toolAt: null,
+        skipped: 0,
+      },
+      slug: "demo",
+      cwd: "/Users/example/code/demo",
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session?.lastWriteAt).toBe(NOW - 10_000);
+    expect(session).not.toHaveProperty("tokens");
+    expect(session).not.toHaveProperty("jump");
+    expect(session).not.toHaveProperty("stop");
+    expect(session).not.toHaveProperty("pid");
+    expect(session?.links).toEqual({});
+    expect(GEMINI_CLI_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(GEMINI_CLI_CAPABILITIES.tokens.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.names.level).toBe("partly");
+    expect(GEMINI_CLI_CAPABILITIES.jump.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.stop.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {

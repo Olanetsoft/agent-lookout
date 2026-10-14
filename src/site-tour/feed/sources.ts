@@ -5,9 +5,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * The sources of the landing page's hour, as each adapter reports itself
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
- * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity and
- * Mistral Vibe, none of the three installed here, and status files. Then the
- * other machine, connected over SSH.
+ * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
+ * Mistral Vibe and Gemini CLI, none of the four installed here, and status
+ * files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -224,6 +224,50 @@ export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Gemini CLI writes a tool call only once it ends, so a reply with text whose tool still waits or runs shows as idle.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Gemini CLI does not write approval waits to its files, so a session waiting for you shows as working or idle.",
+  },
+  finished: {
+    level: "no",
+    reason:
+      "Gemini CLI writes no end mark, so a closed session keeps its last status, idle or working, until a day after its last update.",
+  },
+  failed: {
+    level: "no",
+    reason:
+      "Agent Lookout does not read Gemini CLI's errors yet, so a session whose request failed shows as idle.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title Gemini CLI saves once a later start in the same folder sums the session up. Until then, the folder's name.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "Gemini CLI's files name no process or terminal, and it documents no link that opens a session.",
+  },
+  "quiet-for": { level: "yes" },
+  tokens: { level: "no", reason: "Agent Lookout does not read Gemini CLI's token counts yet." },
+  stop: {
+    level: "no",
+    reason: "Gemini CLI's files name no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Gemini CLI records no approval waits, so there is nothing to answer from here, by hand or by a permission rule.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -364,6 +408,22 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Gemini CLI is not installed: its folder is looked for, and nothing more.
+      id: "gemini-cli",
+      label: "Gemini CLI",
+      state: "unavailable",
+      detail:
+        "Gemini CLI was not found: there is no ~/.gemini/tmp folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.gemini/tmp" },
+        { label: "Read", value: "not found" },
+        { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
+        { label: "Programs run", value: "None" },
+      ],
+      capabilities: GEMINI_CLI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -395,6 +455,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Antigravity CLI there", value: "Not found" },
         { label: "Antigravity there", value: "Not found" },
         { label: "Mistral Vibe there", value: "Not found" },
+        { label: "Gemini CLI there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

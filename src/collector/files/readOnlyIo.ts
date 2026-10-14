@@ -1,5 +1,5 @@
 import { constants, type Stats } from "node:fs";
-import { lstat, readdir, stat } from "node:fs/promises";
+import { lstat, readdir, realpath, stat } from "node:fs/promises";
 
 import { openWithoutFollowing } from "./noFollow.ts";
 
@@ -24,8 +24,9 @@ export interface OpenFile {
 
 /**
  * Everything Agent Lookout does to the file system where another program keeps
- * its files: the Codex adapter in `~/.codex`, the status-file adapter in the
- * folder of status files, and the branch finder in each session's repository.
+ * its files: the Codex adapter in `~/.codex`, the Gemini CLI adapter in
+ * `~/.gemini/tmp`, the status-file adapter in the folder of status files, and
+ * the branch finder in each session's repository.
  * Every method reads: there is none that writes, creates, renames, locks or
  * deletes. Tests replace it with a stand-in that counts the calls.
  */
@@ -38,6 +39,12 @@ export interface ReadOnlyIo {
   lstat(target: string): Promise<FileInfo>;
   /** Opens an ordinary file to read. Rejects for a link, a pipe, a device or a folder. */
   openRegular(file: string): Promise<OpenFile>;
+  /**
+   * The path with every link followed and each name in the case the disk
+   * gives it, asked of the system, which reads nothing in the folder. Used for
+   * the case of a Gemini CLI project's folder on Windows. A stand-in may leave it out.
+   */
+  realpath?(target: string): Promise<string>;
 }
 
 function infoOf(stats: Stats): FileInfo {
@@ -94,6 +101,7 @@ export const nodeIo: ReadOnlyIo = {
   stat: async (target) => infoOf(await stat(target)),
   lstat: async (target) => infoOf(await lstat(target)),
   openRegular: openRegularFile,
+  realpath: (target) => realpath(target),
 };
 
 /** Whether a file-system error means the thing is not there at all. */

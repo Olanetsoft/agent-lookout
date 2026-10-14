@@ -72,6 +72,19 @@ export const EMPTY_VIBE_SESSION_DIR = path.join(
   "session",
 );
 
+/**
+ * An empty folder for the Gemini CLI adapter to read in place of `~/.gemini`,
+ * so that a collector a test builds from `process.env` finds no sessions:
+ * `nodeSetup.ts` makes it and names it there. It holds no `tmp/`, and nothing
+ * is ever written in it. A test that builds an environment of its own names a
+ * `tempDir` there.
+ */
+export const EMPTY_GEMINI_CLI_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-gemini-cli",
+  ".gemini",
+);
+
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));
