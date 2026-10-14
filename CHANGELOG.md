@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.12 - 2026-10-14
+
+An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does.
 
 ### Added
 
