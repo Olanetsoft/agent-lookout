@@ -33,11 +33,17 @@ import { gunzipSync } from "node:zlib";
  * ships, the guide, PRIVACY.md, the API, SECURITY.md and the CHANGELOG, and
  * the rest the dashboard and the command, as phone pushes, other machines,
  * the Antigravity CLI and permission rules came.
+ *
+ * Unpacked was raised from 3.25 MB to 3.60 MB, and installed from 5.00 MB to
+ * 5.50 MB, once four sources came at once, Mistral Vibe, Gemini CLI, OpenCode
+ * and Qwen Code, and unpacked reached 3.26 MB and installed 4.93 MB. The
+ * documents the package ships grew by about 66 KB with them, and the rest is
+ * their code in the command.
  */
 const LIMITS = {
   tarball: 1_000_000,
-  unpacked: 3_250_000,
-  installed: 5_000_000,
+  unpacked: 3_600_000,
+  installed: 5_500_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */
