@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "pid": 41002,
+  "procStart": null,
+  "pidNs": null,
+  "sessionId": "00000000-0000-4000-8000-000000000002",
+  "cwd": "/Users/example/code/demo-project",
+  "name": "demo-project-a1",
+  "startedAt": 1790854800000,
+  "qwenVersion": "0.25.1",
+  "kind": "headless",
+  "ipcPath": "/tmp/qwen-socks/41002.sock",
+  "ipcToken": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+}

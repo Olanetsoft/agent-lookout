@@ -18,6 +18,7 @@ export type RemoteSourceId = `remote:${string}`;
  * `mistral-vibe` is Mistral Vibe, in its terminal, an editor or its desktop app.
  * `gemini-cli` is Google's Gemini CLI, `gemini`. `opencode` is OpenCode, whose
  * sessions are read from its database.
+ * `qwen-code` is Qwen Code in a terminal.
  */
 export type SourceId =
   | "claude-code"
@@ -27,6 +28,7 @@ export type SourceId =
   | "mistral-vibe"
   | "gemini-cli"
   | "opencode"
+  | "qwen-code"
   | "status-files"
   | RemoteSourceId;
 

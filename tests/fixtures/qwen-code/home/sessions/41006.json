@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "pid": 41006,
+  "procStart": null,
+  "pidNs": null,
+  "sessionId": "00000000-0000-4000-8000-000000000006",
+  "cwd": "/Users/example/code/demo-api",
+  "name": "demo-project-a1",
+  "startedAt": 1790855700000,
+  "qwenVersion": "0.25.1",
+  "kind": "tui",
+  "ipcPath": "/tmp/qwen-socks/41006.sock",
+  "ipcToken": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+}

@@ -92,6 +92,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
       AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+      AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -107,7 +108,7 @@ async function serve(settings: Record<string, string>) {
 const OPENCODE_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI and OpenCode, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -118,6 +119,7 @@ describe("createCollector", () => {
       ["mistral-vibe", "Mistral Vibe", "ok"],
       ["gemini-cli", "Gemini CLI", "ok"],
       ["opencode", "OpenCode", OPENCODE_STATE],
+      ["qwen-code", "Qwen Code", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -152,6 +154,7 @@ describe("createCollector", () => {
       { id: "mistral-vibe", state: "ok" },
       { id: "gemini-cli", state: "ok" },
       { id: "opencode", state: OPENCODE_STATE },
+      { id: "qwen-code", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -275,6 +278,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
         AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -346,6 +350,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
         AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2344,6 +2349,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
         AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -2573,6 +2579,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "mistral-vibe",
       "gemini-cli",
       "opencode",
+      "qwen-code",
       "status-files",
       "remote:",
     ]);
