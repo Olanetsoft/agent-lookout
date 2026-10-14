@@ -29,7 +29,7 @@ test.each([375, 1280] as const)(
     expect(part("plugin")?.textContent).toBe(
       "A Claude Code session asked for permission, but its request did not reach Agent Lookout. The plugin may not be installed for it.",
     );
-    const commands = [...document.querySelectorAll<HTMLElement>('[data-part="install-command"]')];
+    const commands = [...document.querySelectorAll<HTMLElement>('[data-part="command"]')];
     expect(commands.map((command) => command.textContent)).toEqual([
       "/plugin marketplace add Olanetsoft/agent-lookout",
       "/plugin install agent-lookout@agent-lookout",
@@ -59,7 +59,7 @@ test("once the plugin's requests arrive, it says how long one is held", async ()
 test("before any permission prompt, it says what answering needs", async () => {
   await renderAt(1280, ON);
   expect(part("plugin")?.textContent).toContain("Answering needs the Agent Lookout plugin");
-  expect(document.querySelectorAll('[data-part="install-command"]')).toHaveLength(2);
+  expect(document.querySelectorAll('[data-part="command"]')).toHaveLength(2);
 });
 
 test("off, and not working, are said plainly", async () => {

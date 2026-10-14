@@ -872,14 +872,18 @@ A notification that offers Allow shows the whole command, and one that offers De
 
 ### Install the plugin
 
-The plugin is one hook that Claude Code runs as it is about to ask you for permission. It hands the request to Agent Lookout on this computer, over a socket only you can open, and prints the answer when you press Allow or Deny. It is in this repository, in `plugins/agent-lookout/`. In Claude Code, run:
+The plugin is one hook that Claude Code runs as it is about to ask you for permission. It hands the request to Agent Lookout on this computer, over a socket only you can open, and prints the answer when you press Allow or Deny. It is in this repository, in `plugins/agent-lookout/`.
+
+The [Mac app](#desktop-app) installs it for you the first time it opens, when it finds Claude Code and the plugin is not installed. In the background, it runs Claude Code's own `claude plugin list`, keeping only whether the plugin is there, and only when it is not, `claude plugin marketplace add` and `claude plugin install`, once and never again, so a plugin you remove stays removed. If you removed it before this version, the app installs it once. Claude Code fetches it from GitHub with git. The Overview then says it was installed, with the command that removes it, or that it could not, with the two commands to run. A new Claude Code session picks it up. To keep it from happening, open the app the first time with `AGENT_LOOKOUT_PLUGIN_INSTALL=off`, as `open -a "Agent Lookout" --env AGENT_LOOKOUT_PLUGIN_INSTALL=off` does. A copy downloaded from a release first opens through Open Anyway, which passes no setting, so there remove the plugin afterwards if you do not want it. [Installed by the Mac app](../PRIVACY.md#installed-by-the-mac-app) says what it runs.
+
+With `npx agent-lookout`, or to do it yourself, in Claude Code, run:
 
 ```text
 /plugin marketplace add Olanetsoft/agent-lookout
 /plugin install agent-lookout@agent-lookout
 ```
 
-From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. Claude Code records the plugin in its own settings, and runs its hook wherever Claude Code runs: in a terminal, in VS Code and in the desktop app. Agent Lookout itself writes nothing under `~/.claude`. To take it away, run `/plugin uninstall agent-lookout@agent-lookout`. The hook needs `curl`, which macOS has, and most Linux systems do. On Windows the plugin does nothing, and Claude Code asks as usual: [On Windows](#on-windows) says why.
+From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. Claude Code records the plugin in its own settings, and runs its hook wherever Claude Code runs: in a terminal, in VS Code and in the desktop app. Agent Lookout's own code writes nothing under `~/.claude`. To take it away, run `/plugin uninstall agent-lookout@agent-lookout` in Claude Code, or `claude plugin uninstall agent-lookout@agent-lookout` from a shell. The hook needs `curl`, which macOS has, and most Linux systems do. On Windows the plugin does nothing, and Claude Code asks as usual: [On Windows](#on-windows) says why.
 
 Settings, under Permission prompts, says whether the plugin's requests reach Agent Lookout. When a Claude Code session waits for permission and no request comes, it says the plugin may not be installed.
 
@@ -1522,6 +1526,7 @@ AGENT_LOOKOUT_CLAUDE_FEED=off npx agent-lookout
 | `AGENT_LOOKOUT_STOP`                 | Set to `off` and Agent Lookout never stops a session: no session has a Stop button, Left running has no End all…, and the server answers no request to stop one.                                                                                                                                                                                                                                                        |
 | `AGENT_LOOKOUT_ANSWER`               | Set to `off` and Agent Lookout never answers a permission prompt: it opens no socket for the plugin, no session shows Allow or Deny, no [permission rule](#permission-rules) answers one, and the server answers no request to answer one.                                                                                                                                                                              |
 | `AGENT_LOOKOUT_ANSWER_SOCKET`        | The socket the [plugin](#install-the-plugin) sends permission requests to, in place of `~/.agent-lookout/answer.sock`. Set the same in the environment Claude Code starts with, so its hook finds it. With `AGENT_LOOKOUT_CLAUDE_HOME` set, nothing is answered unless this is set too.                                                                                                                                 |
+| `AGENT_LOOKOUT_PLUGIN_INSTALL`       | Mac app only. Set to `off` before the app first opens, and it never installs the [Claude Code plugin](#install-the-plugin).                                                                                                                                                                                                                                                                                             |
 | `AGENT_LOOKOUT_ANSWER_WAIT`          | How many seconds a permission request waits for Allow or Deny before the prompt in the session is left to decide, from 5 to 540. The default is 300.                                                                                                                                                                                                                                                                    |
 | `AGENT_LOOKOUT_EMAIL_TO`             | The one address emails go to. With `AGENT_LOOKOUT_SMTP_URL` set too, it turns [email](#email) on.                                                                                                                                                                                                                                                                                                                       |
 | `AGENT_LOOKOUT_SMTP_URL`             | The mail server emails go through, with the user name and password: `smtps://name:password@server:port`.                                                                                                                                                                                                                                                                                                                |
@@ -1572,6 +1577,7 @@ To install it, download it from the [latest release](https://github.com/Olanetso
 
 It behaves as a Mac app does:
 
+- The first time it opens, it installs Agent Lookout's Claude Code plugin, so Allow and Deny work from here: [Install the plugin](#install-the-plugin) says when, and how to remove it.
 - One copy runs at a time. Opening it again brings its window forward.
 - Closing the window leaves it running, still watching your sessions and, once notifications are on in the app, showing them. Click its icon in the Dock to open the window again. Cmd+Q quits it.
 - With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window. They are off until you turn them on, and the app's setting is apart from a browser's: until they are on, the Overview asks whether to turn them on, and again a while after Not now. [Notifications in the Mac app](#notifications-in-the-mac-app) says more. A wait's notification that the app shows itself, with the window closed, or a reminder of one, opens the session's details, and can have Deny and Allow: [In the Mac app](#in-the-mac-app) says when.
@@ -1606,7 +1612,7 @@ The app can replace itself only from a folder it can change, so keep it in Appli
 
 What the app cannot show you it writes in its log, `~/Library/Logs/Agent Lookout/main.log`: an error, and the lines `npm start` would print, such as the one that says an email, webhook or push setting is wrong. If the app cannot start at all, it says so in a message and quits. The log stays on this computer.
 
-It reads the same [settings](#settings-you-can-change) as `npm start`, from its environment, except the port and address, which it has no use for. An app opened from the Finder or the Dock gets none of your shell's variables, so to give it one, quit it and open it from a terminal:
+It reads the same [settings](#settings-you-can-change) as `npm start`, from its environment, except the port and address, which it has no use for. It also reads one of its own, `AGENT_LOOKOUT_PLUGIN_INSTALL`, which [Install the plugin](#install-the-plugin) describes. An app opened from the Finder or the Dock gets none of your shell's variables, so to give it one, quit it and open it from a terminal:
 
 ```sh
 open -a "Agent Lookout" --env AGENT_LOOKOUT_NOTIFICATIONS=on
@@ -1763,7 +1769,7 @@ While a Claude Code session is running, Agent Lookout also asks tmux, if it is i
 
 For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. Which [repository](#repositories) the folder belongs to it works out from where those files are and, for a worktree, from the `commondir` file beside its `HEAD`, which names the repository's own git folder. It reads nothing else in the repository.
 
-Agent Lookout never writes to `~/.claude`, `~/.codex`, `~/.gemini`, `~/.vibe`, `~/.local/share/opencode`, `~/.qwen`, the folder of status files (`~/.agent-lookout/sessions`) or any git repository. In `~/.agent-lookout` it writes only its own history, `settings.json` and the socket `answer.sock`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
+Agent Lookout's own code never writes to `~/.claude`, `~/.codex`, `~/.gemini`, `~/.vibe`, `~/.local/share/opencode`, `~/.qwen`, the folder of status files (`~/.agent-lookout/sessions`) or any git repository. The one change under `~/.claude` is the Mac app's one-time install of its plugin, which Claude Code's own command makes. In `~/.agent-lookout` it writes only its own history, `settings.json` and the socket `answer.sock`. [PRIVACY.md](../PRIVACY.md) lists every file it reads and every command it runs, and what it keeps from each. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the files and the command are checked against each other.
 
 ## For contributors
 

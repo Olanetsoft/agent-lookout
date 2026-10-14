@@ -1,6 +1,7 @@
 import { staleAfterMs } from "@core/time-rules/timeRules";
 import { StaleNotice, Unreachable } from "@dashboard/components/dashboard/ConnectionNotices";
 import { NotificationPrompt } from "@dashboard/components/dashboard/NotificationPrompt";
+import { PluginNotice } from "@dashboard/components/dashboard/PluginNotice";
 import { EventsCard } from "@dashboard/components/events/EventsCard";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
 import { LastHourCard } from "@dashboard/components/last-hour/LastHourCard";
@@ -31,7 +32,12 @@ interface DashboardViewProps {
   newSince?: number | null;
   /** Told whether that line is in view. */
   onNewLineInView?: (inView: boolean) => void;
-  /** Whether the page is in the Mac app's window, which words the question about notifications uses and whether its Turn on sends a test. Tests say which it is. */
+  /**
+   * Whether the page is in the Mac app's window, which words the question
+   * about notifications uses, whether its Turn on sends a test, and whether
+   * the page says what came of installing the Claude Code plugin. Tests say
+   * which it is.
+   */
   inApp?: boolean;
 }
 
@@ -66,7 +72,8 @@ const PLACE = {
  *
  * Until notifications are on, and while the browser does not block them, a
  * question over the cards asks whether to turn them on, and again after Not
- * now, after a day, 3 days and a week.
+ * now, after a day, 3 days and a week. In the Mac app, once, a note over the
+ * cards says what came of installing its Claude Code plugin.
  *
  * Focus held in a session's row follows the session when its row is drawn
  * somewhere else: to another group of the table, or up into the hero when the
@@ -107,6 +114,9 @@ export function DashboardView({
 
       {/* Until notifications are on: whether to turn them on. */}
       <NotificationPrompt inApp={inApp} />
+
+      {/* In the Mac app, until it is dismissed: what came of installing its Claude Code plugin. */}
+      <PluginNotice inApp={inApp} />
 
       <div
         ref={grid}

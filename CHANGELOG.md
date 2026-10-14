@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- The Mac app installs its Claude Code plugin the first time it opens, so Allow and Deny work from the first day, when it finds Claude Code and the plugin is not installed. It checks with Claude Code's own `claude plugin list`, and only when the plugin is not there runs Claude Code's own two commands, once and never again, so a plugin you remove stays removed; if you removed it before this version, it installs it once. The Overview says so once, with how to remove it, or says plainly that it could not, with the two commands to run. `AGENT_LOOKOUT_PLUGIN_INSTALL=off` before the first launch keeps it from happening. The browser version and `npx agent-lookout` never install anything (#120).
+
 ### Changed
 
 - The Overview asks "Get a notification when a session needs you?" in a browser too, not only in the Mac app, and asks again after Not now: about a day later, then 3 days later, then a week later, each counted from the last Not now, and after the fourth not again. It never asks while notifications are on, or while the browser blocks them, when Settings says how to allow them, and it stops for good once you turn notifications off in Settings. In a browser Turn on asks the browser, as Turn on notifications in Settings does; in the Mac app it also sends the test notification, as before. Not now no longer turns notifications off: it leaves them as they were. How many times you pressed Not now and when you last did are kept in the page's local storage, under `agent-lookout-notification-ask`, for each browser and address, and apart in the Mac app. If notifications were left off in an earlier version, with Not now or in Settings, the Overview asks the next time you open it, and then as above (#121).

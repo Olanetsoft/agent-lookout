@@ -121,6 +121,8 @@ macOS remembers the choice.
 
 Notifications are off until you turn them on in the app, and the app's setting is apart from a browser's. Until they are on, the Overview asks "Get a notification when a session needs you?" Press Turn on, and allow Agent Lookout to show notifications if macOS asks. After Not now it asks again about a day later, then 3 days later, then a week later. You can also turn them on later under Notifications in the app's Settings, where Send a test says whether macOS shows them. [Notifications in the Mac app](GUIDE.md#notifications-in-the-mac-app) has more.
 
+The first time it opens, it installs Agent Lookout's Claude Code plugin, so Allow and Deny work from the page: [Claude Code plugin](#claude-code-plugin) says how to stop it, or undo it.
+
 [Desktop app](GUIDE.md#desktop-app) says how the app behaves, [Menu bar](GUIDE.md#menu-bar) what its icon in the menu bar lists, and [Updates](GUIDE.md#updates) how it checks for a newer version and installs it.
 
 ### Build it yourself
@@ -140,14 +142,18 @@ The app opens no port, so `agent-lookout status`, `agent-lookout mcp` and a [tmu
 
 ## Claude Code plugin
 
-With Agent Lookout running, the plugin lets you answer a Claude Code permission prompt from the page, with Allow or Deny. In Claude Code, run:
+With Agent Lookout running, the plugin lets you answer a Claude Code permission prompt from the page, with Allow or Deny.
+
+The [Mac app](#mac-app) installs it the first time it opens, when it finds Claude Code and the plugin is not installed, once and never again. It checks with Claude Code's own `claude plugin list`, and only when the plugin is not there runs the two commands below. The Overview says so, or gives the commands when it could not. A new Claude Code session picks it up. To keep it from happening, open the app the first time with `open -a "Agent Lookout" --env AGENT_LOOKOUT_PLUGIN_INSTALL=off`. A downloaded copy first opens through Open Anyway, which passes no setting, so there remove the plugin afterwards: run `claude plugin uninstall agent-lookout@agent-lookout`, and it stays removed.
+
+With `npx agent-lookout`, or to do it yourself, in Claude Code, run:
 
 ```text
 /plugin marketplace add Olanetsoft/agent-lookout
 /plugin install agent-lookout@agent-lookout
 ```
 
-From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. To remove it, run `/plugin uninstall agent-lookout@agent-lookout`. The hook needs `curl`, which macOS has, and most Linux systems do. On Windows the plugin does nothing, and Claude Code asks as usual. [plugins/agent-lookout/README.md](../plugins/agent-lookout/README.md) says what the hook does, and [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt) what the page shows.
+From a shell, `claude plugin marketplace add Olanetsoft/agent-lookout` and `claude plugin install agent-lookout@agent-lookout` do the same. To remove it, run `/plugin uninstall agent-lookout@agent-lookout`, or `claude plugin uninstall agent-lookout@agent-lookout` from a shell. The hook needs `curl`, which macOS has, and most Linux systems do. On Windows the plugin does nothing, and Claude Code asks as usual. [plugins/agent-lookout/README.md](../plugins/agent-lookout/README.md) says what the hook does, and [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt) what the page shows.
 
 ## From the repository
 
