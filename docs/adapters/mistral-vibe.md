@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from Mistral Vibe, where each value 
 
 Built on 2026-10-14 from the source of Mistral Vibe 2.26.1, released 2026-10-09 (tag `v2.26.1`, commit `4ae5c59` of [mistralai/mistral-vibe](https://github.com/mistralai/mistral-vibe)), with its store at format `mistral.vibe.unified-session-store/v1`, minor 8. **Vibe was not installed on the machine where the adapter was written, and nothing here has been checked on a computer running Vibe.** Everything below comes from Vibe's source and from hand-written files laid out the same way. A citation is a path in that repository at `v2.26.1`. `harness/…/vibe/` stands for `harness/runtimes/python/python/mistralai_vibe_local_harness/vibe/`.
 
-The code is in `src/collector/adapters/mistral-vibe/`, and the status mapping is in `src/core/mapping/mistralVibeMapping.ts`.
+The code is in `src/collector/adapters/mistral-vibe/`, and the status mapping is in `src/core/mapping/mistral-vibe/mistralVibeMapping.ts`.
 
 This version reads working, idle, finished and failed, the name, the folder and Quiet for. It does not read Needs you, token counts or what a session last said yet, and it does not list sessions Vibe ran on its older engine.
 

@@ -239,7 +239,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 ### Mistral Vibe
 
-**Where.** `src/collector/adapters/mistral-vibe/`, with its rules in `src/core/mapping/mistralVibeMapping.ts`. [adapters/mistral-vibe.md](adapters/mistral-vibe.md) is its reference.
+**Where.** `src/collector/adapters/mistral-vibe/`, with its rules in `src/core/mapping/mistral-vibe/mistralVibeMapping.ts`. [adapters/mistral-vibe.md](adapters/mistral-vibe.md) is its reference.
 
 **Where it came from.** #70 asked for Mistral Vibe. Vibe 2.26.0 made its unified engine the default, which keeps each session as a store of its own under `~/.vibe/logs/session/unified/`.
 

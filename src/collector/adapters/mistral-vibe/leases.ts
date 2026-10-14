@@ -1,6 +1,9 @@
 import path from "node:path";
 
-import { SUBAGENT_ID_PREFIX, VIBE_SESSION_ID } from "../../../core/mapping/mistralVibeMapping.ts";
+import {
+  SUBAGENT_ID_PREFIX,
+  VIBE_SESSION_ID,
+} from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { validPid } from "../../processes/pids.ts";
 import { isRecord } from "./envelope.ts";

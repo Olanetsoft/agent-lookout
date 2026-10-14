@@ -5,7 +5,7 @@ import {
   mapMistralVibeStatus,
   vibeLeaseHeld,
   type VibeHeld,
-} from "@core/mapping/mistralVibeMapping";
+} from "@core/mapping/mistral-vibe/mistralVibeMapping";
 
 const HELD: VibeHeld[] = [true, false, "unknown"];
 

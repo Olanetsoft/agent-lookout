@@ -8,7 +8,7 @@
 // mapping reads only what those say, and was worked out from Vibe 2.26.1's
 // source, not checked on a machine running it. See docs/adapters/mistral-vibe.md.
 
-import type { SessionStatus } from "../sessions/session.ts";
+import type { SessionStatus } from "../../sessions/session.ts";
 
 /**
  * Whether a Vibe program holds the session's lease: true or false when its

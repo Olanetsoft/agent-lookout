@@ -1,4 +1,7 @@
-import { mapMistralVibeStatus, type VibeHeld } from "../../../core/mapping/mistralVibeMapping.ts";
+import {
+  mapMistralVibeStatus,
+  type VibeHeld,
+} from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";

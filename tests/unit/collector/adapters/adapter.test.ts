@@ -38,7 +38,7 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
-import { mapMistralVibeStatus } from "@core/mapping/mistralVibeMapping";
+import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";

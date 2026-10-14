@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   isMistralVibeUserSession,
   vibeLeaseHeld,
-} from "../../../core/mapping/mistralVibeMapping.ts";
+} from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
 import type {
   Session,
