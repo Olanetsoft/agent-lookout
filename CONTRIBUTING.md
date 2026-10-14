@@ -108,13 +108,23 @@ npm run capture:images
 
 Run it again after a release that changes the dashboard, once `npm run build:tour` has built that release's tour, as part of the release or after it. Look at each picture before you commit it, and bring its alt text in the README or the guide, and the line under the README's picture, up to what it shows.
 
+## The pictures on the landing page
+
+The landing page's pictures, in `site/assets/`, are taken from the same tour:
+
+```sh
+npm run capture:site
+```
+
+`scripts/site-tour/capture-pictures.mjs` writes the frame's pictures, `dashboard-*.webp` and `phone-*.webp`, and two pictures for each feature in `site/assets/features/`, one from the wide window and one from a phone's, each in Night and Day and at each width the page asks for, as WebP that it encodes in Playwright's own Chromium. It writes all 68 or none: it stops with none written if a picture's view is missing what it should show, a picture stays over its size at a lower quality, or the page logs an error or asks for anything outside its own address. The sizes are fixed in the script, and the tests hold the pictures in `site/assets/` to them. Like the pictures in the docs, the same tour gives the same pictures byte for byte. Add `-- --out <folder>` to write them somewhere else and compare first, or `-- --from-source` to build the tour from your working tree into a temporary folder and take them from there, leaving `site/tour/` as it is. Look at each picture before you commit it, and bring its alt text in `site/index.html` up to what it shows.
+
 ## Publishing
 
 The maintainer publishes. A version tag starts `.github/workflows/release-npm.yml`, which publishes the package to npm from GitHub Actions once he approves it, with provenance: the package's page on npmjs.com shows the commit and the workflow run each version was built from. No npm token exists for it, in the repository or anywhere else. The tag is `v` and the version, such as `v0.2.3`, and the version only ever changes in its last number.
 
 The README, `docs/INSTALL.md`, `docs/GUIDE.md` and `CHANGELOG.md` go into the package, and npm shows the package's README on its page. A published version's files can never be changed, so what they say about that version is committed before the tag is pushed.
 
-1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Then run `npm run build:tour`, which builds the landing page's dashboard in `site/tour/` and `site/vendor/` from this version, and bring what `site/index.html` says up to what the version ships. CI checks that a change with a new version has the tour that version builds. When the version changes the dashboard, take [the pictures in the docs](#the-pictures-in-the-docs) again too. Commit, push, and wait for CI to pass for that commit.
+1. Set the version in `package.json`, and turn the heading `Unreleased` in `CHANGELOG.md` into that version and the day's date. Then run `npm run build:tour`, which builds the landing page's dashboard in `site/tour/` from this version, then `npm run capture:site`, when the version changes the dashboard, and bring what `site/index.html` says up to what the version ships. CI checks that a change with a new version has the tour that version builds. When the version changes the dashboard, take [the pictures in the docs](#the-pictures-in-the-docs) again too. Commit, push, and wait for CI to pass for that commit.
 2. Tag the commit and push the tag:
 
    ```sh
