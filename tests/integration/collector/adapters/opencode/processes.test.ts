@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, realpath, symlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, chmod, copyFile, mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -14,20 +15,44 @@ import { runPs } from "@collector/processes/ps";
 import { tempDir } from "@tests/support/node/tempFiles";
 
 // `ps` only reads, so the real one is asked, for the name each process gives
-// its program and nothing else. OpenCode is a stand-in that only waits: this
-// Node, started through a link named `opencode` in a folder of the test's
-// own. On macOS `ps` prints the full path a program was started by, so only
-// the lines under that folder are looked at, since this machine may run
-// OpenCode itself. On Linux it prints the name alone, which any OpenCode
-// running here would share.
+// its program and nothing else. OpenCode is a stand-in that only waits, named
+// `opencode`, in a folder of the test's own. On macOS it is this Node, started
+// through a link: macOS kills a copy of a system program such as `sleep`
+// started from elsewhere. On Linux it is a copy of the system's `sleep`: Node
+// 24 names its own main thread, which on Linux is the name `ps` prints. On
+// macOS `ps` prints the full path a program was started by, so only the lines
+// under that folder are looked at, since this machine may run OpenCode
+// itself. On Linux it prints the name alone, which any OpenCode running here
+// would share.
+
+/** The system's own `sleep`, which on Linux keeps the name of the file it was started from. */
+async function sleepProgram(): Promise<string> {
+  for (const candidate of ["/bin/sleep", "/usr/bin/sleep"]) {
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Not there: the next place.
+    }
+  }
+  throw new Error("No sleep program was found at /bin/sleep or /usr/bin/sleep.");
+}
 
 /** Starts the stand-in under a folder of the test's own, and stops it when the test ends. */
 async function startStandIn(): Promise<{ dir: string; stop: () => Promise<void> }> {
   const dir = await realpath(await tempDir());
   const program = path.join(dir, "bin", "opencode");
   await mkdir(path.dirname(program), { recursive: true });
-  await symlink(process.execPath, program);
-  const child = spawn(program, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
+  let args: string[];
+  if (process.platform === "linux") {
+    await copyFile(await sleepProgram(), program);
+    await chmod(program, 0o755);
+    args = ["60"];
+  } else {
+    await symlink(process.execPath, program);
+    args = ["-e", "setTimeout(() => {}, 60_000)"];
+  }
+  const child = spawn(program, args, { stdio: "ignore" });
   const ended = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   const stop = async () => {
     child.kill();
