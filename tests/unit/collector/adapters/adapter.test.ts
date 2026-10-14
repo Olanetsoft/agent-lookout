@@ -535,7 +535,9 @@ describe("each declaration agrees with what its adapter does", () => {
         [null, NOW - 1_000, NOW - 60_000, "soon"].flatMap((completedAt) =>
           [null, "MessageAbortedError", "APIError", "SomeNewError"].flatMap((error) =>
             [null, "stop", "tool-calls", "unknown"].flatMap((finish) =>
-              [0, 1].map((tools) => ({ role, completedAt, error, finish, tools })),
+              [0, 1].flatMap((tools) =>
+                [0, 1].map((shell) => ({ role, completedAt, error, finish, tools, shell })),
+              ),
             ),
           ),
         ),
@@ -547,7 +549,7 @@ describe("each declaration agrees with what its adapter does", () => {
       ),
     );
     expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
-    // With the database closed, nothing is working or idle.
+    // With OpenCode closed, nothing is working or idle.
     const closed = statuses(
       messages.map((message) => mapOpencodeStatus({ message, open: false, now: NOW })),
     );
@@ -574,6 +576,7 @@ describe("each declaration agrees with what its adapter does", () => {
           error: null,
           finish: null,
           tools: 1,
+          shell: 0,
           partsUpdatedAt: NOW - 10_000,
         },
         userCreatedAt: NOW - 40_000,

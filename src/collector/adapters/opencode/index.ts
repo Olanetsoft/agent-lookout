@@ -14,8 +14,15 @@ import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createDatabaseReader, type DatabaseReader } from "./database.ts";
-import { DATABASE_FILE } from "./sessionRows.ts";
-import { opencodeSession, SOURCE_ID } from "./toSession.ts";
+import {
+  createOpencodeProcessReader,
+  OPENCODE_TABLE_ARGS,
+  opencodeLiveness,
+  type OpencodeProcessReader,
+  type ProcessAnswer,
+} from "./processes.ts";
+import { DATABASE_FILE, type SessionRow } from "./sessionRows.ts";
+import { isListed, lastActivity, opencodeSession, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that replaces OpenCode's data folder, for Agent Lookout alone. */
 export const OPENCODE_HOME_ENV = "AGENT_LOOKOUT_OPENCODE_HOME";
@@ -58,16 +65,33 @@ export function opencodeDatabaseFor(env: NodeJS.ProcessEnv, homeDir: string): st
 /** How long a data folder that was not there is taken to be still missing before it is looked for again. */
 export const RECHECK_MS = 60_000;
 
-/** The usual way this adapter reads, named for the poller: the database while OpenCode has it open. */
+/** How often, at most, `ps` is asked whether an OpenCode program runs, while there are sessions to show. */
+export const PROCESS_CHECK_MS = 10_000;
+
+/**
+ * How soon `ps` is asked again when a session is written after it said no
+ * OpenCode program runs, since OpenCode may have been started since.
+ */
+export const PROMPT_PROCESS_CHECK_MS = 2_000;
+
+/** The usual way this adapter reads, named for the poller: the database while an OpenCode program runs. */
 export const BASIS = "database";
 
 /**
- * The way it reads while no OpenCode program has the database open, when
- * every session is finished. Closing OpenCode finishes every session at once,
- * and opening it again shows them all as open, so such a poll is named apart
- * and compared only with the last time OpenCode was closed.
+ * The way it reads while `ps` says no OpenCode program runs, when every
+ * session is finished. Closing OpenCode finishes every session at once, and
+ * opening it again shows them all as open, so such a poll is named apart and
+ * compared only with the last time OpenCode was closed.
  */
 export const BASIS_CLOSED = "database-closed";
+
+/**
+ * The way it reads while `ps` cannot say whether OpenCode runs, when no
+ * session is shown as finished, so one that had finished shows as idle. Named
+ * apart, so every finished session does not seem to start again and then
+ * finish.
+ */
+export const BASIS_WITHOUT_PROCESSES = "database-without-processes";
 
 const LABEL = "OpenCode";
 
@@ -86,6 +110,9 @@ export const OPENCODE_2_NOTE = "OpenCode 2's sessions are not read yet.";
 export const UNKNOWN_MESSAGE_NOTE =
   "Some sessions end with a message Agent Lookout does not know, perhaps from a newer OpenCode, so they show as unknown.";
 
+/** Said on Linux when no sqlite3 was found, which Ubuntu and Debian do not install. */
+export const NO_SQLITE_ADVICE = "On Ubuntu or Debian, install it with sudo apt install sqlite3.";
+
 /** Said on Windows, where nothing of OpenCode's is read. */
 export const WINDOWS_DETAIL =
   "Agent Lookout does not read OpenCode's sessions on Windows: they are read with sqlite3, which it does not run there.";
@@ -97,8 +124,8 @@ export const WINDOWS_DETAIL =
  * - Working and idle are the newest message of each root session
  *   (`opencodeMapping.ts`), on macOS and Linux only.
  * - Needs you never: OpenCode keeps its approval waits and questions in memory.
- * - Finished is every session while no OpenCode program has the database
- *   open, which a crash hides until OpenCode next quits.
+ * - Finished is every session while `ps` shows no program named `opencode`
+ *   (`processes.ts`), on macOS and Linux.
  * - Failed is a reply that ends on an error OpenCode records.
  * - The name is OpenCode's title, or the folder's name while the title is a
  *   placeholder.
@@ -121,7 +148,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once no OpenCode program has its database open. After a crash, sessions look open until OpenCode next quits.",
+      "Once ps shows no program named opencode, on macOS and Linux. While only the desktop app runs, its sessions show as finished.",
   },
   failed: {
     level: "partly",
@@ -164,6 +191,10 @@ export interface OpencodeAdapterOptions {
   platform?: NodeJS.Platform;
   /** What reads the database. Defaults to one that runs `sqlite3`. */
   reader?: DatabaseReader;
+  /** What asks whether an OpenCode program runs. Defaults to one that runs `ps`. */
+  processes?: OpencodeProcessReader;
+  /** How often, at most, `ps` is asked. Defaults to 10 seconds. */
+  processCheckMs?: number;
   /**
    * How often the poller calls `poll()`, which is how often the files are
    * looked at. The adapter keeps no timer of its own: this is only stated in
@@ -186,8 +217,11 @@ type HomeFrom = "agent-lookout" | "default";
  * it can use without starting OpenCode, which writes to that folder. So the
  * adapter looks at the database and the two files SQLite keeps beside it with
  * `lstat` on every poll, and asks the system's `sqlite3` two fixed questions
- * when they change (`database.ts`, `sessionRows.ts`). Nothing is read on
- * Windows.
+ * when the database or its `-wal` changes (`database.ts`, `sessionRows.ts`).
+ * While there are sessions to show, it asks `ps` whether an OpenCode program
+ * runs, at most every 10 seconds, and sooner, though not within 2 seconds of
+ * the last ask, when a session is written after `ps` said none runs
+ * (`processes.ts`). Nothing is read on Windows.
  *
  * Each root session that is not archived is listed for 24 hours after
  * anything of it was last written. Its status is working, idle, failed,
@@ -196,7 +230,7 @@ type HomeFrom = "agent-lookout" | "default";
  *
  * OpenCode not being installed costs nothing: when its data folder is
  * missing, the adapter says so and looks again only once a minute, with a
- * single `stat`, and runs no `sqlite3`.
+ * single `stat`, and runs neither `sqlite3` nor `ps`.
  *
  * The data folder is `AGENT_LOOKOUT_OPENCODE_HOME` if set, otherwise
  * `$XDG_DATA_HOME/opencode` or `~/.local/share/opencode`. Someone who sets the
@@ -214,6 +248,8 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
   const platform = options.platform ?? process.platform;
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
+  const processCheckMs = options.processCheckMs ?? PROCESS_CHECK_MS;
+  const processes = options.processes ?? createOpencodeProcessReader({ platform });
 
   const homeFrom: HomeFrom = env[OPENCODE_HOME_ENV]?.trim() ? "agent-lookout" : "default";
   const home = opencodeHomeFor(env, homeDir);
@@ -228,8 +264,19 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
   let absentAt: number | null = null;
   /** True once the data folder has been seen, until the database goes missing. */
   let homeSeen = false;
+  /** What `ps` last said, null before it was first asked, and when it was asked. */
+  let lastProcesses: ProcessAnswer | null = null;
+  let processesAt = 0;
 
+  const psRuns = platform === "darwin" || platform === "linux";
   const commandRun = platform === "win32" ? "not run on Windows" : "when the database changes";
+  const sooner =
+    processCheckMs > PROMPT_PROCESS_CHECK_MS
+      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no OpenCode`
+      : "";
+  const processCheckRun = psRuns
+    ? `${every(processCheckMs)} at most${sooner}`
+    : `not run on ${platform === "win32" ? "Windows" : "this system"}`;
 
   function watching(read: string): SourceFact[] {
     return [
@@ -238,6 +285,8 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
       { label: "Read", value: read },
       { label: "Command", value: COMMAND_SHOWN },
       { label: "Command run", value: commandRun },
+      { label: "Process check", value: `ps ${OPENCODE_TABLE_ARGS.join(" ")}` },
+      { label: "Process check run", value: processCheckRun },
     ];
   }
 
@@ -247,6 +296,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
     read: string,
     checkedAt: number,
     basis: string = BASIS,
+    advice?: string,
   ): AdapterResult {
     const health: SourceHealth = {
       id: SOURCE_ID,
@@ -256,7 +306,32 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
       watching: watching(read),
       checkedAt,
     };
+    if (advice !== undefined) health.advice = advice;
     return state === "ok" ? { health, sessions: [], basis } : { health, sessions: [] };
+  }
+
+  /**
+   * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
+   * though not within 2 seconds of the last ask, when a session was written
+   * after it said no OpenCode program runs, since OpenCode may have been
+   * started since. Until it is asked again, such a session is not held open,
+   * so one a program `ps` does not see writes stays finished. A clock set
+   * back counts as time enough.
+   */
+  async function processesFor(
+    listed: readonly SessionRow[],
+    checkedAt: number,
+  ): Promise<ProcessAnswer> {
+    const since = checkedAt - processesAt;
+    let due = lastProcesses === null || since < 0 || since >= processCheckMs;
+    if (!due && since >= PROMPT_PROCESS_CHECK_MS && lastProcesses?.ok && !lastProcesses.running) {
+      due = listed.some((row) => (lastActivity(row, checkedAt) ?? -Infinity) > processesAt);
+    }
+    if (lastProcesses === null || due) {
+      lastProcesses = await processes.read();
+      processesAt = checkedAt;
+    }
+    return lastProcesses;
   }
 
   /** OpenCode is not on this machine. Said calmly, with no advice. */
@@ -353,6 +428,8 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
           `No sqlite3 program was found to read OpenCode's database, ${databaseName}, so no OpenCode sessions are listed.`,
           looked,
           checkedAt,
+          BASIS,
+          platform === "linux" ? NO_SQLITE_ADVICE : undefined,
         );
       case "failed":
         return result(
@@ -372,22 +449,33 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
         break;
     }
 
+    // `ps` is asked only while there is a session to show.
+    const listed: SessionRow[] = read.rows.filter((row) => isListed(row, checkedAt));
+    const asked = listed.length > 0 ? await processesFor(listed, checkedAt) : null;
+    const open = asked === null || opencodeLiveness(asked) !== false;
     const sessions: Session[] = [];
     let unknown = false;
-    for (const row of read.rows) {
-      const session = opencodeSession({ row, open: read.open, now: checkedAt });
+    for (const row of listed) {
+      const session = opencodeSession({ row, open, now: checkedAt });
       if (session === null) continue;
       if (session.status === "unknown") unknown = true;
       sessions.push(session);
     }
     let detail = `Sessions are read from OpenCode's database, ${databaseName}, with sqlite3. ${alwaysNotes}`;
-    if (!read.open) {
+    let basis = BASIS;
+    if (asked !== null && !asked.ok) {
+      detail += psRuns
+        ? " ps could not be run to tell whether OpenCode runs, so no session is shown as finished."
+        : " Agent Lookout cannot tell on this system whether OpenCode runs, so no session is shown as finished.";
+      basis = BASIS_WITHOUT_PROCESSES;
+    } else if (asked?.ok && !asked.running) {
       detail +=
-        " No OpenCode program has the database open, so each session shows as finished, unless it failed or cannot be read.";
+        " No OpenCode program runs, so each session shows as finished, unless it failed or cannot be read.";
+      basis = BASIS_CLOSED;
     }
     if (read.opencode2) detail += ` ${OPENCODE_2_NOTE}`;
     if (unknown) detail += ` ${UNKNOWN_MESSAGE_NOTE}`;
-    const answer = result("ok", detail, looked, checkedAt, read.open ? BASIS : BASIS_CLOSED);
+    const answer = result("ok", detail, looked, checkedAt, basis);
     return { ...answer, sessions };
   }
 

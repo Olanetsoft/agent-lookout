@@ -6,13 +6,17 @@ import type { DatabaseReader } from "@collector/adapters/opencode/database";
 import {
   BASIS,
   BASIS_CLOSED,
+  BASIS_WITHOUT_PROCESSES,
   COMMAND_SHOWN,
   createOpencodeAdapter,
   NEEDS_YOU_NOTE,
+  NO_SQLITE_ADVICE,
   OPENCODE_2_NOTE,
   OPENCODE_CAPABILITIES,
   opencodeDatabaseFor,
   opencodeHomeFor,
+  PROCESS_CHECK_MS,
+  PROMPT_PROCESS_CHECK_MS,
   RECHECK_MS,
   UNCHECKED_NOTE,
   UNKNOWN_MESSAGE_NOTE,
@@ -32,6 +36,7 @@ import {
   handClock,
   memoryFiles,
   opencodeAdapterFor,
+  standInProcesses,
   standInSqlite,
   type MemoryFiles,
 } from "@tests/support/adapters/opencodeAdapter";
@@ -44,17 +49,23 @@ const SHM = `${DATABASE}-shm`;
 const NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
 /** The rows Sources shows, for the default folder. */
-function watching(read: string, commandRun = "when the database changes") {
+function watching(
+  read: string,
+  commandRun = "when the database changes",
+  processCheckRun = "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no OpenCode",
+) {
   return [
     { label: "Data folder", value: "~/.local/share/opencode" },
     { label: "Database", value: "~/.local/share/opencode/opencode.db" },
     { label: "Read", value: read },
     { label: "Command", value: COMMAND_SHOWN },
     { label: "Command run", value: commandRun },
+    { label: "Process check", value: "ps -A -o comm=" },
+    { label: "Process check run", value: processCheckRun },
   ];
 }
 
-/** OpenCode's folder with its database, open, as a running OpenCode keeps it. */
+/** OpenCode's folder with its database, and the -wal and -shm OpenCode keeps beside it, running or not. */
 function openOpencode(rows: Record<string, unknown>[] = [answerRow({ id: A })]) {
   const files = memoryFiles();
   files.write(DATABASE, "database");
@@ -173,6 +184,9 @@ describe("on Windows", () => {
     expect(health.watching?.find((fact) => fact.label === "Command run")?.value).toBe(
       "not run on Windows",
     );
+    expect(health.watching?.find((fact) => fact.label === "Process check run")?.value).toBe(
+      "not run on Windows",
+    );
     expect(sessions).toEqual([]);
     expect(files.calls).toEqual([]);
     expect(sqlite.runs).toEqual([]);
@@ -206,20 +220,115 @@ describe("reading the sessions", () => {
     );
   });
 
-  test("with no OpenCode program holding the database open, each session is finished, unless it failed or cannot be read", async () => {
+  test("with no OpenCode program running, each session is finished, unless it failed or cannot be read, though OpenCode left its -wal full", async () => {
     const { files, sqlite } = openOpencode([
-      answerRow({ id: A }),
+      answerRow({ id: A, m_completed: null, m_finish: null }),
       answerRow({ id: B, m_error: "ContextOverflowError" }),
       answerRow({ id: sessionId("c3"), m_role: "system" }),
     ]);
-    files.remove(WAL);
-    files.remove(SHM);
-    const { health, sessions, basis } = await opencodeAdapterFor(files, sqlite).poll();
+    const processes = standInProcesses({ ok: true, running: false });
+    const { health, sessions, basis } = await opencodeAdapterFor(files, sqlite, {
+      processes,
+    }).poll();
     expect(basis).toBe(BASIS_CLOSED);
     expect(health.detail).toBe(
-      `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} No OpenCode program has the database open, so each session shows as finished, unless it failed or cannot be read. ${UNKNOWN_MESSAGE_NOTE}`,
+      `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} No OpenCode program runs, so each session shows as finished, unless it failed or cannot be read. ${UNKNOWN_MESSAGE_NOTE}`,
     );
     expect(sessions.map((session) => session.status)).toEqual(["finished", "failed", "unknown"]);
+    // The -wal holds what OpenCode saved, so it was read with it.
+    expect(sqlite.queries()[0]?.args.at(-2)).toContain("readonly_shm=1");
+  });
+
+  test("while ps cannot say whether OpenCode runs, no session is shown as finished, and the poll is named apart", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A })]);
+    files.remove(WAL);
+    files.remove(SHM);
+    for (const platform of ["darwin", "linux"] as const) {
+      const processes = standInProcesses({ ok: false });
+      const { health, sessions, basis } = await opencodeAdapterFor(files, sqlite, {
+        platform,
+        processes,
+      }).poll();
+      expect(basis, platform).toBe(BASIS_WITHOUT_PROCESSES);
+      expect(health.detail, platform).toBe(
+        `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} ps could not be run to tell whether OpenCode runs, so no session is shown as finished.`,
+      );
+      expect(sessions.map((session) => session.status)).toEqual(["idle"]);
+    }
+  });
+
+  test("ps is asked only while there is a session to show, at most every 10 seconds", async () => {
+    const { files, sqlite } = openOpencode([]);
+    const clock = handClock();
+    const processes = standInProcesses();
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, processes });
+    await adapter.poll();
+    expect(processes.asked()).toBe(0);
+    sqlite.set([answerRow({ id: A })]);
+    files.append(WAL, "more");
+    clock.advance(2_000);
+    await adapter.poll();
+    expect(processes.asked()).toBe(1);
+    clock.advance(PROCESS_CHECK_MS - 1);
+    await adapter.poll();
+    expect(processes.asked()).toBe(1);
+    clock.advance(1);
+    await adapter.poll();
+    expect(processes.asked()).toBe(2);
+    // A clock set back counts as time enough.
+    clock.advance(-5_000);
+    await adapter.poll();
+    expect(processes.asked()).toBe(3);
+    expect(PROCESS_CHECK_MS).toBe(10_000);
+  });
+
+  test("a session written after ps said no OpenCode runs stays finished, and ps is asked again soon, to see an OpenCode started since", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A }), answerRow({ id: B })]);
+    const clock = handClock();
+    const processes = standInProcesses({ ok: true, running: false });
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, processes });
+    const polled = async () => {
+      const { basis, sessions } = await adapter.poll();
+      return [basis, ...sessions.map((session) => session.status)];
+    };
+    /** B's newest step begins now, as OpenCode writes it. */
+    const writeB = () => {
+      sqlite.set([
+        answerRow({ id: A }),
+        answerRow({ id: B, m_completed: null, m_finish: null, m_updated: clock.now() }),
+      ]);
+      files.append(WAL, "more");
+    };
+    expect(await polled()).toEqual([BASIS_CLOSED, "finished", "finished"]);
+    expect(processes.asked()).toBe(1);
+
+    // A program ps does not take for OpenCode, as OpenCode's desktop app, writes B
+    // a second later. B is not held open for it, so it does not flip to working
+    // and back, with a Finished notice each time.
+    clock.advance(1_000);
+    writeB();
+    expect(await polled()).toEqual([BASIS_CLOSED, "finished", "finished"]);
+    expect(processes.asked()).toBe(1);
+    // Two seconds after the last ask, ps is asked again, and still shows none.
+    clock.advance(PROMPT_PROCESS_CHECK_MS - 1_000);
+    expect(await polled()).toEqual([BASIS_CLOSED, "finished", "finished"]);
+    expect(processes.asked()).toBe(2);
+    // With nothing written since, it is not asked again before the 10 seconds.
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    expect(await polled()).toEqual([BASIS_CLOSED, "finished", "finished"]);
+    expect(processes.asked()).toBe(2);
+
+    // OpenCode is started, and B's newest step begins: ps, asked again at once, sees it.
+    processes.set({ ok: true, running: true });
+    writeB();
+    expect(await polled()).toEqual([BASIS, "idle", "working"]);
+    expect(processes.asked()).toBe(3);
+    // While OpenCode runs, a write does not ask ps sooner than every 10 seconds.
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    writeB();
+    await adapter.poll();
+    expect(processes.asked()).toBe(3);
+    expect(PROMPT_PROCESS_CHECK_MS).toBe(2_000);
   });
 
   test("says so when OpenCode 2's table is there, and when a session ends in a way it does not know", async () => {
@@ -317,14 +426,25 @@ describe("when the database cannot be read", () => {
   test.each(cases)("with %s, it says so plainly and lists nothing", async (_what, make, detail) => {
     const { files, sqlite } = openOpencode();
     make(files, sqlite);
-    const result = await opencodeAdapterFor(files, sqlite).poll();
+    const processes = standInProcesses();
+    const result = await opencodeAdapterFor(files, sqlite, { processes }).poll();
     expect(result.health).toMatchObject({
       state: "error",
       detail,
       watching: watching("every 2 seconds"),
     });
+    expect(result.health).not.toHaveProperty("advice");
     expect(result.sessions).toEqual([]);
     expect(result).not.toHaveProperty("basis");
+    expect(processes.asked()).toBe(0);
+  });
+
+  test("with no sqlite3 on Linux, it says how Ubuntu and Debian install it", async () => {
+    const { files, sqlite } = openOpencode();
+    sqlite.there(false);
+    const { health } = await opencodeAdapterFor(files, sqlite, { platform: "linux" }).poll();
+    expect(health).toMatchObject({ state: "error", advice: NO_SQLITE_ADVICE });
+    expect(NO_SQLITE_ADVICE).toBe("On Ubuntu or Debian, install it with sudo apt install sqlite3.");
   });
 
   test("poll() never throws", async () => {

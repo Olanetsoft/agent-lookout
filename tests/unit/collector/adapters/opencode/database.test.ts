@@ -35,7 +35,7 @@ function readerFor(
   });
 }
 
-/** A database with one session in it, and the -wal and -shm a running OpenCode keeps beside it. */
+/** A database with one session in it, and a -wal that holds something and the -shm beside it, as OpenCode leaves them. */
 function openDatabase() {
   const files = memoryFiles();
   files.write(DATABASE, "database");
@@ -49,12 +49,12 @@ function openDatabase() {
 const addresses = (sqlite: StandInSqlite) => sqlite.runs.map((run) => run.args.at(-2));
 
 describe("which way the database is opened", () => {
-  test("with no -wal beside it, as a file nothing changes, and OpenCode does not have it open", async () => {
+  test("with no -wal beside it, as a file nothing changes", async () => {
     const files = memoryFiles();
     files.write(DATABASE, "database");
     const sqlite = standInSqlite([answerRow({ id: A })]);
     const read = await readerFor(files, sqlite).read(NOW);
-    expect(read).toMatchObject({ state: "read", open: false, opencode2: false });
+    expect(read).toMatchObject({ state: "read", opencode2: false });
     expect(read.rows.map((row) => row.id)).toEqual([A]);
     expect(addresses(sqlite)).toEqual([
       `file:${DATABASE}?mode=ro&immutable=1`,
@@ -67,19 +67,19 @@ describe("which way the database is opened", () => {
     expect(sqlite.runs.map((run) => run.args.at(-1))).toEqual([PROBE_QUERY, SESSIONS_QUERY]);
   });
 
-  test("with its -wal and -shm, with the -shm read-only, and OpenCode has it open", async () => {
+  test("with a -wal that holds something and the -shm, with the -wal read and the -shm read-only", async () => {
     const { sqlite, reader } = openDatabase();
-    expect(await reader.read(NOW)).toMatchObject({ state: "read", open: true });
+    expect(await reader.read(NOW)).toMatchObject({ state: "read" });
     expect(addresses(sqlite)).toEqual([
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
     ]);
   });
 
-  test("an empty -wal, which the SQLite of macOS leaves when the last program closes it, is closed, and read as a file nothing changes", async () => {
+  test("an empty -wal, which the SQLite of macOS leaves when the last program closes it, is read as a file nothing changes", async () => {
     const { files, sqlite, reader } = openDatabase();
     files.write(WAL, "");
-    expect(await reader.read(NOW)).toMatchObject({ state: "read", open: false });
+    expect(await reader.read(NOW)).toMatchObject({ state: "read" });
     // An empty -wal holds nothing to read, so neither it nor the -shm is opened.
     expect(addresses(sqlite)).toEqual([
       `file:${DATABASE}?mode=ro&immutable=1`,
@@ -87,12 +87,12 @@ describe("which way the database is opened", () => {
     ]);
   });
 
-  test("an empty -wal without its -shm, as a read that met OpenCode's quit can leave, is closed and read", async () => {
+  test("an empty -wal without its -shm, as a read that met a close of the database can leave, is read", async () => {
     const { files, sqlite, reader } = openDatabase();
     files.write(WAL, "");
     files.remove(SHM);
     const read = await reader.read(NOW);
-    expect(read).toMatchObject({ state: "read", open: false });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([A]);
     expect(addresses(sqlite).at(-1)).toBe(`file:${DATABASE}?mode=ro&immutable=1`);
   });
@@ -100,7 +100,7 @@ describe("which way the database is opened", () => {
   test("a -wal that holds something, without its -shm, is not read, since reading it would make one", async () => {
     const { files, sqlite, reader } = openDatabase();
     files.remove(SHM);
-    expect(await reader.read(NOW)).toMatchObject({ state: "not-safe", open: true, rows: [] });
+    expect(await reader.read(NOW)).toMatchObject({ state: "not-safe", rows: [] });
     expect(sqlite.runs).toEqual([]);
   });
 
@@ -124,7 +124,6 @@ describe("which way the database is opened", () => {
     files.write(DATABASE, "");
     expect(await reader.read(NOW)).toEqual({
       state: "missing",
-      open: false,
       rows: [],
       opencode2: false,
     });
@@ -138,7 +137,6 @@ describe("which way the database is opened", () => {
     const reader = readerFor(files, sqlite);
     expect(await reader.read(NOW)).toEqual({
       state: "missing",
-      open: false,
       rows: [],
       opencode2: false,
     });
@@ -153,7 +151,7 @@ describe("which way the database is opened", () => {
     const { files, sqlite } = openDatabase();
     files.forget();
     const read = await readerFor(files, sqlite, "win32").read(NOW);
-    expect(read).toEqual({ state: "not-on-windows", open: false, rows: [], opencode2: false });
+    expect(read).toEqual({ state: "not-on-windows", rows: [], opencode2: false });
     expect(files.calls).toEqual([]);
     expect(sqlite.runs).toEqual([]);
   });
@@ -220,12 +218,11 @@ describe("when the sessions are asked for again", () => {
     files.write(DATABASE, "database");
     const sqlite = standInSqlite([answerRow({ id: A })]);
     const reader = readerFor(files, sqlite);
-    expect((await reader.read(NOW)).open).toBe(false);
+    expect((await reader.read(NOW)).state).toBe("read");
     files.write(WAL, "frames");
     files.write(SHM, "index");
     sqlite.set([answerRow({ id: A, m_completed: null })]);
     const read = await reader.read(NOW + 2 * SECOND);
-    expect(read.open).toBe(true);
     expect(read.rows[0]?.message?.completedAt).toBeNull();
     expect(sqlite.queries().map((run) => run.args.at(-2))).toEqual([
       `file:${DATABASE}?mode=ro&immutable=1`,
@@ -313,7 +310,6 @@ describe("the probe", () => {
     sqlite.probe(probeJson("v2-only"));
     expect(await reader.read(NOW)).toEqual({
       state: "read",
-      open: true,
       rows: [],
       opencode2: true,
     });
@@ -345,7 +341,6 @@ test("a reader that throws inside answers a failed read, and reads afresh after"
   sqlite.throw();
   expect(await reader.read(NOW)).toEqual({
     state: "failed",
-    open: false,
     rows: [],
     opencode2: false,
   });

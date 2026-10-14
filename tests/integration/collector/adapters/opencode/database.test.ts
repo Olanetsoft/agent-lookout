@@ -15,6 +15,8 @@ import {
 import { nodeIo } from "@collector/files/readOnlyIo";
 import {
   assistantData,
+  compactionData,
+  continueData,
   messageId,
   messageRow,
   MINUTE,
@@ -33,13 +35,15 @@ import {
 import { tempDir } from "@tests/support/node/tempFiles";
 
 // The real sqlite3 is run, as the adapter runs it, on a database this test
-// writes with that same sqlite3, laid out as OpenCode 1.19.0's is. While
-// OpenCode runs, what it saves lies in the database's -wal file, and a second
-// sqlite3, kept open as OpenCode keeps its database open, stands in for it
-// here. This is the test that says Agent Lookout may read the database at
-// all: it must see the newest commit, and leave every byte, size and modified
-// time of the database, its -wal and its -shm as they were. Where there is no
-// sqlite3, as on Windows, there is nothing to run.
+// writes with that same sqlite3, laid out as OpenCode 1.19.0's is. What
+// OpenCode saves lies in the database's -wal file, and a second sqlite3, kept
+// open as OpenCode keeps its database open, stands in for it here. OpenCode
+// never closes its database, so when it quits it leaves the -wal full, as
+// this stand-in does when it is killed. This is the test that says Agent
+// Lookout may read the database at all: it must see the newest commit, and
+// leave every byte, size and modified time of the database, its -wal and its
+// -shm as they were. Where there is no sqlite3, as on Windows, there is
+// nothing to run.
 
 const sqlite = process.platform === "win32" ? null : await findSqlite();
 
@@ -147,13 +151,19 @@ function holdOpen(file: string, marks: string) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
     },
-    /** Ends it cleanly, as OpenCode quitting does, so it moves its -wal into the database as it closes it. */
-    async quit(): Promise<void> {
+    /**
+     * Ends it cleanly, so it moves its -wal into the database as it closes it,
+     * as a program that closes the database does. OpenCode 1.19.0 never does.
+     */
+    async close(): Promise<void> {
       const gone = new Promise((resolve) => child.once("exit", resolve));
       child.stdin?.end();
       await gone;
     },
-    /** Ends it with SIGKILL, as a crash would, so its -wal and -shm are left with no writer. */
+    /**
+     * Ends it with SIGKILL, so its -wal and -shm are left full with no
+     * writer, as OpenCode leaves them when it quits under Bun, and as a crash does.
+     */
     async kill(): Promise<void> {
       const gone = new Promise((resolve) => child.once("exit", resolve));
       child.kill("SIGKILL");
@@ -169,7 +179,7 @@ async function readNow(file: string, at = Date.now()) {
 }
 
 /** What sqlite3 prints for both questions, opened this way. */
-async function answers(file: string, mode: "closed" | "open"): Promise<string> {
+async function answers(file: string, mode: "whole" | "with-wal"): Promise<string> {
   let printed = "";
   for (const query of [PROBE_QUERY, SESSIONS_QUERY]) {
     const answer = await runSqlite(sqlite as string, sqliteArguments(file, mode, query));
@@ -179,9 +189,10 @@ async function answers(file: string, mode: "closed" | "open"): Promise<string> {
   return printed;
 }
 
-// This test decides whether the database may be read at all, so on macOS and
-// Linux it must not be skipped for want of a sqlite3.
-test.skipIf(process.platform === "win32")(
+// This test decides whether the database may be read at all, so in CI, on
+// macOS and Linux, it must not be skipped for want of a sqlite3. Elsewhere,
+// as on a machine with sqlite3 in none of its fixed places, it is skipped.
+test.runIf(Boolean(process.env.CI) && process.platform !== "win32")(
   "sqlite3 is at one of its fixed places, so the tests below run",
   () => {
     expect(sqlite).not.toBeNull();
@@ -189,7 +200,7 @@ test.skipIf(process.platform === "win32")(
 );
 
 describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqlite3", () => {
-  test("closed, with no -wal beside it: every session is read, and no file is made or changed", async () => {
+  test("with no -wal beside it: every session is read, and no file is made or changed", async () => {
     const now = Date.now();
     const { dir, file } = await makeDatabase([
       ...idleSession(A, "1", now - 5 * MINUTE),
@@ -199,17 +210,17 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect(Object.keys(before)).toEqual(["opencode.db"]);
 
     const read = await readNow(file, now);
-    expect(read).toMatchObject({ state: "read", open: false, opencode2: false });
+    expect(read).toMatchObject({ state: "read", opencode2: false });
     expect(read.rows.map((row) => row.id)).toEqual([B, A]);
     expect(await snapshotOf(dir)).toEqual(before);
 
-    const printed = await answers(file, "closed");
+    const printed = await answers(file, "whole");
     expect(printed).not.toContain(PRIVATE_WORDS);
     expect(printed).not.toContain(SECRET_WORDS);
     expect(await snapshotOf(dir)).toEqual(before);
   });
 
-  test("open, with commits only in the -wal: the newest is seen, and nothing is written", async () => {
+  test("held open, with commits only in the -wal: the newest is seen, and nothing is written", async () => {
     const now = Date.now();
     const { dir, file } = await makeDatabase(idleSession(A, "1", now - 5 * MINUTE));
     const writer = holdOpen(file, await tempDir());
@@ -231,7 +242,7 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     // Read as a file nothing changes, the database is as it was before the writer began.
     const immutable = await runSqlite(
       sqlite as string,
-      sqliteArguments(file, "closed", SESSIONS_QUERY),
+      sqliteArguments(file, "whole", SESSIONS_QUERY),
     );
     expect(immutable.ok).toBe(true);
     if (immutable.ok) {
@@ -243,7 +254,7 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     // Read as the adapter reads it, every commit is seen: the first session,
     // written last, now comes first.
     const read = await readNow(file, now);
-    expect(read).toMatchObject({ state: "read", open: true });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([A, B]);
     const newest = read.rows.find((row) => row.id === A)?.message;
     expect(newest).toMatchObject({ role: "assistant", completedAt: null, createdAt: now - MINUTE });
@@ -261,13 +272,13 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     });
     expect(await snapshotOf(dir)).toEqual(after);
 
-    const printed = await answers(file, "open");
+    const printed = await answers(file, "with-wal");
     expect(printed).not.toContain(PRIVATE_WORDS);
     expect(printed).not.toContain(SECRET_WORDS);
     expect(await snapshotOf(dir)).toEqual(after);
   });
 
-  test("after a crash, with the -wal and -shm left and no writer: the newest is seen, and nothing is written", async () => {
+  test("after OpenCode quits, or crashes, with the -wal and -shm left full and no writer: the newest is seen, and nothing is written", async () => {
     const now = Date.now();
     const { dir, file } = await makeDatabase(idleSession(A, "1", now - 5 * MINUTE));
     const writer = holdOpen(file, await tempDir());
@@ -276,19 +287,21 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     const before = await snapshotOf(dir);
     expect(Object.keys(before)).toEqual(["opencode.db", "opencode.db-shm", "opencode.db-wal"]);
 
+    expect((await lstat(`${file}-wal`)).size).toBeGreaterThan(0);
+
+    // The -wal holds the commits no one moved into the database, so it is read with them.
     const read = await readNow(file, now);
-    // The -wal holds the commits no one moved into the database, so it still reads as open.
-    expect(read).toMatchObject({ state: "read", open: true });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([B, A]);
     expect(await snapshotOf(dir)).toEqual(before);
 
-    const printed = await answers(file, "open");
+    const printed = await answers(file, "with-wal");
     expect(printed).not.toContain(PRIVATE_WORDS);
     expect(printed).not.toContain(SECRET_WORDS);
     expect(await snapshotOf(dir)).toEqual(before);
   });
 
-  test("closed, with an empty -wal and the -shm kept, as the SQLite of macOS leaves them: closed, and nothing is written", async () => {
+  test("with an empty -wal and the -shm kept, as the SQLite of macOS leaves them after a close: read, and nothing is written", async () => {
     const now = Date.now();
     const dir = path.join(await tempDir(), "opencode");
     const file = path.join(dir, "opencode.db");
@@ -308,36 +321,36 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect((await lstat(`${file}-wal`)).size).toBe(0);
 
     const read = await readNow(file, now);
-    expect(read).toMatchObject({ state: "read", open: false });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([A]);
     expect(await snapshotOf(dir)).toEqual(before);
   });
 
-  test("OpenCode quitting between the look and the read leaves at most an empty -wal, which then reads as closed", async () => {
+  test("a program closing the database between the look and the read leaves at most an empty -wal, and the next read works", async () => {
     const now = Date.now();
     const { dir, file } = await makeDatabase(idleSession(A, "1", now - 5 * MINUTE));
     const writer = holdOpen(file, await tempDir());
     await writer.write(idleSession(B, "2", now - 2 * MINUTE));
     expect((await lstat(`${file}-wal`)).size).toBeGreaterThan(0);
-    let quitting = true;
+    let closing = true;
     const reader = createDatabaseReader({
       file,
       io: nodeIo,
       platform: process.platform,
       async run(binary, args) {
-        if (quitting) {
-          // OpenCode quits once the files are looked at, before sqlite3 opens
-          // the database: it moves its -wal into the database and removes it
-          // and the -shm, which the SQLite of macOS would keep.
-          quitting = false;
-          await writer.quit();
+        if (closing) {
+          // The writer closes the database once the files are looked at, before
+          // sqlite3 opens it: it moves its -wal into the database and removes
+          // it and the -shm, which the SQLite of macOS would keep.
+          closing = false;
+          await writer.close();
           await rm(`${file}-wal`, { force: true });
           await rm(`${file}-shm`, { force: true });
         }
         return runSqlite(binary, args);
       },
     });
-    expect((await reader.read(now)).open).toBe(true);
+    await reader.read(now);
     // A sqlite3 built from SQLite's own source, as on Linux, makes an empty
     // -wal as it opens the database. The SQLite of macOS makes none.
     const left = await readdir(dir);
@@ -346,7 +359,7 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
 
     const before = await snapshotOf(dir);
     const read = await reader.read(now + 2_000);
-    expect(read).toMatchObject({ state: "read", open: false });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([B, A]);
     expect(await snapshotOf(dir)).toEqual(before);
   });
@@ -393,6 +406,133 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect(read.state).toBe("read");
     const tools = Object.fromEntries(read.rows.map((row) => [row.id, row.message?.tools]));
     expect(tools).toEqual({ [A]: 1, [B]: 0, [C]: 0 });
+  });
+
+  test("the person's newest prompt is read, passing over those OpenCode writes itself when it compacts a session on its own", async () => {
+    const now = Date.now();
+    const C = sessionId("c3");
+    const D = sessionId("d4");
+    const at = (minutes: number) => now - minutes * MINUTE;
+    /** A message of a session, with one part of this data. */
+    const message = (
+      id: string,
+      suffix: string,
+      minutes: number,
+      data: Record<string, unknown>,
+      part: Record<string, unknown>,
+    ) => [
+      messageRow({ id: messageId(suffix), sessionId: id, createdAt: at(minutes), data }),
+      partRow({
+        id: partId(suffix),
+        messageId: messageId(suffix),
+        sessionId: id,
+        createdAt: at(minutes),
+        data: part,
+      }),
+    ];
+    const step = (minutes: number, ended: boolean) =>
+      assistantData({
+        createdAt: at(minutes),
+        ...(ended ? { completedAt: at(minutes), finish: "stop" } : {}),
+      });
+    const { file } = await makeDatabase([
+      // Two prompts, each with its reply: the newest is a minute old.
+      sessionRow({ id: A, updatedAt: at(0.5) }),
+      ...message(A, "a1u", 10, userData(at(10)), textData()),
+      ...message(A, "a1a", 9, step(9, true), textData()),
+      ...message(A, "a2u", 1, userData(at(1)), textData()),
+      ...message(A, "a2a", 0.5, step(0.5, false), textData()),
+      // A prompt five minutes ago, then OpenCode compacts the session on its
+      // own and writes a prompt of its own to go on.
+      sessionRow({ id: B, updatedAt: at(0.5) }),
+      ...message(B, "b1u", 5, userData(at(5)), textData()),
+      ...message(B, "b2u", 3, userData(at(3)), compactionData(true)),
+      ...message(B, "b2a", 2.5, step(2.5, true), textData()),
+      ...message(B, "b3u", 2, userData(at(2)), continueData()),
+      ...message(B, "b3a", 0.5, step(0.5, false), textData()),
+      // The person asks OpenCode to compact the session: that is a prompt of theirs.
+      sessionRow({ id: C, updatedAt: at(1) }),
+      ...message(C, "c1u", 5, userData(at(5)), textData()),
+      ...message(C, "c2u", 2, userData(at(2)), compactionData(false)),
+      ...message(C, "c2a", 1, step(1, false), textData()),
+      // A prompt with a part of the person's beside one OpenCode writes itself is theirs.
+      sessionRow({ id: D, updatedAt: at(1) }),
+      ...message(D, "d1u", 5, userData(at(5)), textData()),
+      ...message(D, "d2u", 2, userData(at(2)), compactionData(true)),
+      partRow({
+        id: partId("d2t"),
+        messageId: messageId("d2u"),
+        sessionId: D,
+        createdAt: at(2),
+        data: textData(),
+      }),
+      ...message(D, "d2a", 1, step(1, false), textData()),
+    ]);
+    const read = await readNow(file, now);
+    expect(read.state).toBe("read");
+    const prompts = Object.fromEntries(read.rows.map((row) => [row.id, row.userCreatedAt]));
+    expect(prompts).toEqual({ [A]: at(1), [B]: at(5), [C]: at(2), [D]: at(2) });
+  });
+
+  test("of two messages written in the same millisecond, the newest is the one OpenCode orders last, by id", async () => {
+    const now = Date.now();
+    const { file } = await makeDatabase([
+      sessionRow({ id: A, updatedAt: now - MINUTE }),
+      messageRow({
+        id: messageId("a1"),
+        sessionId: A,
+        createdAt: now - MINUTE,
+        data: userData(now - MINUTE),
+      }),
+      messageRow({
+        id: messageId("a2"),
+        sessionId: A,
+        createdAt: now - MINUTE,
+        data: assistantData({ createdAt: now - MINUTE }),
+      }),
+    ]);
+    const read = await readNow(file, now);
+    expect(read.rows[0]?.message).toMatchObject({ role: "assistant", completedAt: null });
+  });
+
+  test("a step whose one tool part is the shell's is marked, as OpenCode writes a command the person runs with !", async () => {
+    const now = Date.now();
+    const C = sessionId("c3");
+    /** A session whose newest step ended with no reason given, with these parts. */
+    function shellStep(id: string, suffix: string, parts: Record<string, unknown>[]): string[] {
+      const reply = messageId(`a${suffix}`);
+      return [
+        sessionRow({ id, updatedAt: now - MINUTE }),
+        messageRow({
+          id: reply,
+          sessionId: id,
+          createdAt: now - 2 * MINUTE,
+          updatedAt: now - MINUTE,
+          data: assistantData({ createdAt: now - 2 * MINUTE, completedAt: now - MINUTE }),
+        }),
+        ...parts.map((data, index) =>
+          partRow({
+            id: partId(`${suffix}${index}`),
+            messageId: reply,
+            sessionId: id,
+            createdAt: now - MINUTE,
+            data,
+          }),
+        ),
+      ];
+    }
+    const { file } = await makeDatabase([
+      ...shellStep(A, "1", [toolData({ status: "completed", tool: "bash" })]),
+      ...shellStep(B, "2", [
+        toolData({ status: "completed", tool: "bash" }),
+        toolData({ status: "completed", tool: "read" }),
+      ]),
+      ...shellStep(C, "3", [toolData({ status: "completed", tool: "read" }), textData()]),
+    ]);
+    const read = await readNow(file, now);
+    expect(read.state).toBe("read");
+    const shell = Object.fromEntries(read.rows.map((row) => [row.id, row.message?.shell]));
+    expect(shell).toEqual({ [A]: 1, [B]: 0, [C]: 0 });
   });
 
   test("a message or a part whose data is not JSON gives empty fields, and every other session is still read", async () => {
@@ -465,7 +605,7 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect((await readNow(missing)).state).toBe("missing");
     const answer = await runSqlite(
       sqlite as string,
-      sqliteArguments(missing, "closed", PROBE_QUERY),
+      sqliteArguments(missing, "whole", PROBE_QUERY),
     );
     expect(answer.ok).toBe(false);
     expect(await readdir(dir)).toEqual([]);

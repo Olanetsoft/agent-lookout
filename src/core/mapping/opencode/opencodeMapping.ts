@@ -11,13 +11,14 @@
 // comes from.
 
 import type { SessionStatus } from "../../sessions/session.ts";
-import { plausibleTime } from "../../time.ts";
+import { CLOCK_SLACK_MS, plausibleTime } from "../../time.ts";
 
 /**
  * How long after a step ends that asked for tools, or gave no reason it
  * ended, the session is still taken to be working. OpenCode writes the next
  * step's message in the same pass, a moment later. A turn that ends there, as
- * one does when an approval is turned down, is idle once this has passed.
+ * one does when an approval is turned down or a subtask is cancelled, is idle
+ * once this has passed.
  */
 export const STEP_GAP_MS = 10_000;
 
@@ -54,15 +55,17 @@ export interface OpencodeMessageFields {
   finish: unknown;
   /** How many of its tool parts OpenCode would wait on before it ends the turn. */
   tools: unknown;
+  /** 1 when its one tool part is the shell's, as for a command the person runs with `!`, else 0. Null when not known. */
+  shell: unknown;
 }
 
 export interface OpencodeStatusFields {
   /** The newest message, or null when the session has none. */
   message: OpencodeMessageFields | null;
   /**
-   * Whether an OpenCode program has the database open: its `opencode.db-wal`
-   * file holds something. While none does, every session is finished, unless
-   * it ended on an error or cannot be read.
+   * Whether OpenCode may have the session open: an OpenCode program runs, or
+   * whether one does is not known. While it is not, every session is
+   * finished, unless it ended on an error or cannot be read.
    */
   open: boolean;
   now: number;
@@ -73,26 +76,32 @@ const isTime = (value: unknown) => typeof value === "number" && Number.isSafeInt
 /** What the newest message says while the database is open, or `unknown`. */
 function openStatus(message: OpencodeMessageFields | null, now: number): SessionStatus {
   if (message === null) return "idle";
-  const { role, completedAt, error, finish, tools } = message;
+  const { role, completedAt, error, finish, tools, shell } = message;
   if (role === "user") return "working";
   if (role !== "assistant") return "unknown";
   if (completedAt !== null && !isTime(completedAt)) return "unknown";
   if (error !== null && typeof error !== "string") return "unknown";
   if (finish !== null && typeof finish !== "string") return "unknown";
   if (tools !== null && !(isTime(tools) && (tools as number) >= 0)) return "unknown";
+  if (shell !== null && shell !== 0 && shell !== 1) return "unknown";
   if (error === ABORTED_ERROR) return "idle";
   if (typeof error === "string") return FAILED_ERRORS.includes(error) ? "failed" : "unknown";
   if (completedAt === null) return "working";
+  // A command the person ran with `!` is a step with no reason it ended and
+  // one tool part, the shell's, which no next step follows.
+  if (finish === null && shell === 1) return "idle";
   const goesOn = finish === null || NOT_FINISHED.has(finish as string) || (tools as number) > 0;
   if (!goesOn) return "idle";
-  // A clock set back counts as time enough.
+  // A step that ended up to CLOCK_SLACK_MS after the poll noted its time ended
+  // while the poll read. One further ahead is from a clock set back, which
+  // counts as time enough.
   const since = now - (completedAt as number);
-  return since >= 0 && since < STEP_GAP_MS ? "working" : "idle";
+  return since >= -CLOCK_SLACK_MS && since < STEP_GAP_MS ? "working" : "idle";
 }
 
 /**
- * Maps a root session's newest message, and whether OpenCode has the
- * database open, to a status.
+ * Maps a root session's newest message, and whether OpenCode may have it
+ * open, to a status.
  *
  * | Newest message                                                      | Open    | Closed   |
  * | ------------------------------------------------------------------- | ------- | -------- |
@@ -102,13 +111,14 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
  * | `assistant`, error `MessageAbortedError`                            | idle    | finished |
  * | `assistant`, error that is one of the other seven names             | failed  | failed   |
  * | `assistant`, error with any other name                              | unknown | unknown  |
+ * | `assistant`, ended, no `finish`, and its one tool part the shell's   | idle    | finished |
  * | `assistant`, ended, `finish` is `tool-calls`, `unknown` or missing, or a tool to wait on: under `STEP_GAP_MS` ago | working | finished |
  * | the same, `STEP_GAP_MS` or more ago                                 | idle    | finished |
  * | `assistant`, ended, any other `finish`                              | idle    | finished |
  * | any other role, or a field of the wrong type                        | unknown | unknown  |
  *
  * An error OpenCode records ends the step, so it is read first. A session
- * that failed, or cannot be read, stays so once the database is closed. It
+ * that failed, or cannot be read, stays so once OpenCode is closed. It
  * never returns "needs-you": OpenCode keeps its approval waits and its
  * questions in memory, so a session waiting for the person shows as working.
  */
@@ -123,7 +133,11 @@ export interface OpencodeTimes {
   sessionCreatedAt: unknown;
   /** `time_created` of the newest message. */
   messageCreatedAt: unknown;
-  /** `time_created` of the newest message from the person. */
+  /**
+   * `time_created` of the newest user message, passing over the two prompts
+   * OpenCode writes after it compacts a session on its own. Three others it
+   * writes itself are not passed over (`docs/adapters/opencode.md`).
+   */
   userCreatedAt: unknown;
   /** `$.time.completed` of the newest message. */
   completedAt: unknown;
@@ -135,8 +149,10 @@ export interface OpencodeTimes {
  * When the session's status began, as far as its rows say. A time that could
  * not be right is not known.
  *
- * - working: when the person last wrote, which starts the turn; else the
- *   newest message's start; else the session's.
+ * - working: the newest user message, which is mostly the person's prompt
+ *   that starts the turn, but for the three OpenCode writes itself that
+ *   `userCreatedAt` does not pass over; else the newest message's start;
+ *   else the session's.
  * - idle, failed and finished: when the newest step ended; else the newest
  *   time anything of the session was written.
  * - unknown: not known.

@@ -1,5 +1,7 @@
 import {
+  readWays,
   withoutWaitingText,
+  type ReadWays,
   type Session,
   type SessionsSnapshot,
   type SourceId,
@@ -183,9 +185,11 @@ export interface ChangeMemory {
   waits: WaitMemory;
   /**
    * For each source that has answered, and each way it has been read (its
-   * `basis`), every session at the last answer read that way, by id. A source,
-   * or a way of reading, that has never answered so is absent. Each is kept
-   * without what it was asking, which belongs to its wait alone.
+   * `basis`, or for another machine's, the way that machine read each of its
+   * sources, as `readWays` keys them), every session at the last answer read
+   * that way, by id. A source, or a way of reading, that has never answered
+   * so is absent. Each is kept without what it was asking, which belongs to
+   * its wait alone.
    */
   seen: ReadonlyMap<SourceId, ReadonlyMap<string, ReadonlyMap<string, Session>>>;
   /**
@@ -259,6 +263,11 @@ function toldAlready(event: OverEvent, known: OverEvent | undefined): boolean {
  *   and the background jobs only the command knows are missing from that
  *   answer without having ended. Its first answer read so is a baseline, and
  *   when the command answers again it is compared with its own last answer.
+ * - Another machine's source is compared in parts, one for each of that
+ *   machine's sources it says the way of (`readWays`). So when one source
+ *   there switches, as OpenCode's does when OpenCode quits there, only its
+ *   own sessions start a baseline, and a finish of another's in that answer
+ *   is told.
  * - After that, a session remembered in another status that is now finished
  *   has finished, and one that is now failed has failed. A session first seen
  *   already over says nothing: nobody saw it change, and a source that lists
@@ -281,46 +290,58 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
   const waits = waitChanges(memory.waits, snapshot);
   const startedWaiting = new Set(waits.started);
 
-  /** Each source that could be read, with the way it was read and its sessions by id. */
-  const answers = new Map<SourceId, { basis: string; sessions: Map<string, Session> }>();
+  /**
+   * Each source that could be read, with the ways it was read and, for each
+   * way, the sessions read so, by id.
+   */
+  const answers = new Map<SourceId, { ways: ReadWays; read: Map<string, Map<string, Session>> }>();
   for (const source of snapshot.sources) {
     if (source.state === "ok" || source.state === "not-set-up") {
-      answers.set(source.id, { basis: source.basis ?? "", sessions: new Map() });
+      const ways = readWays(source);
+      answers.set(source.id, { ways, read: new Map(ways.keys.map((key) => [key, new Map()])) });
     }
   }
 
   const found: SessionChange[] = [];
   for (const session of snapshot.sessions) {
     const answer = answers.get(session.source);
-    // No answer means the source did not answer. An id already in it was counted.
-    if (!answer || answer.sessions.has(session.id)) continue;
+    // No answer means the source did not answer.
+    if (!answer) continue;
+    const way = answer.ways.keyOf(session.id);
+    const sessions = answer.read.get(way) as Map<string, Session>;
+    // An id already in it was counted.
+    if (sessions.has(session.id)) continue;
     // What a waiting session is asking belongs to its wait, and is not remembered.
-    answer.sessions.set(session.id, withoutWaitingText(session));
+    sessions.set(session.id, withoutWaitingText(session));
 
     if (startedWaiting.has(session)) {
       found.push({ event: "needs-you", session });
       continue;
     }
-    const before = memory.seen.get(session.source)?.get(answer.basis)?.get(session.id);
+    const before = memory.seen.get(session.source)?.get(way)?.get(session.id);
     if (before && before.status !== session.status && isOverStatus(session.status)) {
       found.push({ event: session.status, session });
     }
   }
 
-  for (const [source, { basis, sessions }] of answers) {
-    for (const [id, before] of memory.seen.get(source)?.get(basis) ?? []) {
-      if (!sessions.has(id) && !isOverStatus(before.status)) {
-        found.push({ event: "ended", session: before });
+  for (const [source, { read }] of answers) {
+    for (const [way, sessions] of read) {
+      for (const [id, before] of memory.seen.get(source)?.get(way) ?? []) {
+        if (!sessions.has(id) && !isOverStatus(before.status)) {
+          found.push({ event: "ended", session: before });
+        }
       }
     }
   }
 
   // What is known to be over, less the sessions listed running again.
   const overNow = new Map<SourceId, Map<string, OverEvent>>();
-  for (const [source, { sessions }] of answers) {
+  for (const [source, { read }] of answers) {
     const over = new Map(memory.over.get(source));
-    for (const [id, session] of sessions) {
-      if (!isOverStatus(session.status)) over.delete(id);
+    for (const sessions of read.values()) {
+      for (const [id, session] of sessions) {
+        if (!isOverStatus(session.status)) over.delete(id);
+      }
     }
     overNow.set(source, over);
   }
@@ -335,14 +356,16 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
 
   const seen = new Map(memory.seen);
   const over = new Map(memory.over);
-  for (const [source, { basis, sessions }] of answers) {
+  for (const [source, { read }] of answers) {
     const ways = new Map(memory.seen.get(source));
-    ways.set(basis, sessions);
+    for (const [way, sessions] of read) ways.set(way, sessions);
     seen.set(source, ways);
 
     const known = overNow.get(source) as Map<string, OverEvent>;
-    for (const [id, session] of sessions) {
-      if (isOverStatus(session.status) && !known.has(id)) known.set(id, session.status);
+    for (const sessions of read.values()) {
+      for (const [id, session] of sessions) {
+        if (isOverStatus(session.status) && !known.has(id)) known.set(id, session.status);
+      }
     }
     // Only a session some way of reading still lists can be told of again.
     for (const id of known.keys()) {

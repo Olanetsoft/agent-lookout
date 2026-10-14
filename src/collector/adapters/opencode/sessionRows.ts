@@ -15,7 +15,9 @@ import path from "node:path";
  * written in the last 48 hours, for its id, folder, title and two times, and
  * for a few short fields of its newest message: its times, its role, when it
  * ended, the name of its error and why it ended, how many of its tool parts
- * OpenCode would wait on, and when the person last wrote. Never the text of a
+ * OpenCode would wait on, whether its one tool part is the shell's, and when
+ * the newest user message began, passing over the two prompts OpenCode
+ * writes after it compacts a session on its own. Never the text of a
  * message or a part, a tool's input or output, `SELECT *` or a whole `data`
  * value. Each answer is checked field by field, and a row whose id is not one
  * OpenCode makes is dropped.
@@ -46,11 +48,29 @@ export const QUERY_WINDOW_MS = 48 * 60 * 60 * 1000;
 export const MAX_SESSIONS = 200;
 
 /**
+ * Whether a part `q` of a user message is one OpenCode writes itself when it
+ * compacts a session on its own: a compaction it made on its own, or the text
+ * it adds to go on after one (`packages/opencode/src/session/compaction.ts`).
+ * Always 0 or 1.
+ */
+const OPENCODE_OWN_PART = [
+  "CASE WHEN json_valid(q.data) THEN (json_extract(q.data, '$.type') IS 'compaction'",
+  "AND json_type(q.data, '$.auto') IS 'true')",
+  "OR json_type(q.data, '$.metadata.compaction_continue') IS 'true' ELSE 0 END",
+].join(" ");
+
+/**
  * Each root session of OpenCode 1.x that is not archived, written in the last
  * 48 hours, with the fields of its newest message. A tool part is counted as
  * OpenCode counts the ones it waits on: not one its model's provider ran
  * itself, and not one OpenCode marked as cut off when it cleaned up a step.
- * Those two marks are only tested inside SQLite: nothing of them is printed.
+ * `m_shell` is 1 when the message's one tool part is the shell's, `bash`, as
+ * OpenCode writes for a command the person runs with `!`. The newest user
+ * message, `u_created`, passes over the two OpenCode writes itself when it
+ * compacts a session on its own: one whose parts are all a compaction it made
+ * on its own, or the text it adds to go on after one. A user message with a
+ * part of the person's beside such a part is kept. Those marks, and the
+ * tool's name, are only tested inside SQLite: nothing of them is printed.
  *
  * Each `data` is read only once `json_valid` says it is JSON, so one row that
  * is not gives null fields rather than failing the whole answer. A title and
@@ -71,9 +91,14 @@ export const SESSIONS_QUERY = [
   "AND json_type(p.data, '$.metadata.providerExecuted') IS NOT 'true'",
   "AND NOT (json_extract(p.data, '$.state.status') IS 'error'",
   "AND json_type(p.data, '$.state.metadata.interrupted') IS 'true') END) AS m_tools,",
+  "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IS 'bash') = 1 FROM part p",
+  "WHERE p.message_id = m.id",
+  "AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool' END) AS m_shell,",
   "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
   "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
   "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
+  `AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND ${OPENCODE_OWN_PART})`,
+  `AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT ${OPENCODE_OWN_PART}))`,
   "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created",
   "FROM session s",
   "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id",
@@ -83,21 +108,21 @@ export const SESSIONS_QUERY = [
   `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
 ].join(" ");
 
-/** How the database is opened: as a file nothing changes, or as one OpenCode has open. */
-export type DatabaseMode = "closed" | "open";
+/** How the database is opened: as a whole file nothing changes, or with what its `-wal` holds. */
+export type DatabaseMode = "whole" | "with-wal";
 
 /**
  * The database as SQLite names it, read-only both ways:
  *
- * - closed, with no `-wal` beside it, or an empty one: `mode=ro&immutable=1`,
+ * - whole, with no `-wal` beside it, or an empty one: `mode=ro&immutable=1`,
  *   which takes no lock and makes no file.
- * - open, with a `-wal` that holds something and the `-shm` there:
+ * - with the `-wal`, when it holds something and the `-shm` is there:
  *   `mode=ro&readonly_shm=1`, which reads what OpenCode has written to the
  *   `-wal` and opens the `-shm` read-only, so that nothing is written to either.
  */
 export function sqliteUri(file: string, mode: DatabaseMode): string {
   const encoded = file.split("/").map(encodeURIComponent).join("/");
-  return `file:${encoded}?mode=ro&${mode === "closed" ? "immutable=1" : "readonly_shm=1"}`;
+  return `file:${encoded}?mode=ro&${mode === "whole" ? "immutable=1" : "readonly_shm=1"}`;
 }
 
 /** The arguments `sqlite3` is given for one question, each as it is. */
@@ -230,6 +255,8 @@ export interface MessageRow {
   error: unknown;
   finish: unknown;
   tools: unknown;
+  /** 1 when the message's one tool part is the shell's, else 0. */
+  shell: unknown;
   /** The newest `time_updated` of the message's parts. */
   partsUpdatedAt: number | null;
 }
@@ -245,7 +272,12 @@ export interface SessionRow {
   updatedAt: number | null;
   /** The newest message, or null when it has none. */
   message: MessageRow | null;
-  /** When the person last wrote in it. */
+  /**
+   * When its newest user message began, passing over the two prompts OpenCode
+   * writes after it compacts a session on its own. Mostly the person's prompt,
+   * but three others OpenCode writes itself are not told apart: a subtask's
+   * summary, a prompt sent again after an overflow, and a plan's approval.
+   */
   userCreatedAt: number | null;
 }
 
@@ -272,6 +304,7 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
             error: shortField(row.m_error),
             finish: shortField(row.m_finish),
             tools: shortField(row.m_tools),
+            shell: shortField(row.m_shell),
             partsUpdatedAt: wholeNumber(row.p_updated),
           }
         : null;

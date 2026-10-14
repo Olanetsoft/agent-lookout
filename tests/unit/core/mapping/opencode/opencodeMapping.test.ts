@@ -9,6 +9,7 @@ import {
   type OpencodeMessageFields,
 } from "@core/mapping/opencode/opencodeMapping";
 import type { SessionStatus } from "@core/sessions/session";
+import { CLOCK_SLACK_MS } from "@core/time";
 
 /** Midday UTC on 1 October 2026. */
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
@@ -22,6 +23,7 @@ function assistant(fields: Partial<OpencodeMessageFields> = {}): OpencodeMessage
     error: null,
     finish: "stop",
     tools: 0,
+    shell: 0,
     ...fields,
   };
 }
@@ -32,6 +34,7 @@ const user: OpencodeMessageFields = {
   error: null,
   finish: null,
   tools: 0,
+  shell: 0,
 };
 
 const both = (message: OpencodeMessageFields | null, now = NOW) =>
@@ -65,6 +68,18 @@ describe("mapOpencodeStatus", () => {
       "finished",
     ],
     ["a step that ended the turn", assistant(), "idle", "finished"],
+    [
+      "a command the person ran with !, which has ended",
+      assistant({ finish: null, tools: 1, shell: 1, completedAt: NOW - 1_000 }),
+      "idle",
+      "finished",
+    ],
+    [
+      "a command the person ran with !, still running",
+      assistant({ finish: null, tools: 1, shell: 1, completedAt: null }),
+      "working",
+      "finished",
+    ],
     ["another role", { ...user, role: "system" }, "unknown", "unknown"],
     ["a role that is not text", { ...user, role: 7 }, "unknown", "unknown"],
   ])("the newest message is %s", (_what, message, open, closed) => {
@@ -104,11 +119,32 @@ describe("mapOpencodeStatus", () => {
     expect(STEP_GAP_MS).toBe(10_000);
   });
 
-  test("a clock set back counts as time enough", () => {
-    expect(both(assistant({ finish: "tool-calls", completedAt: NOW + 5_000 }))).toEqual([
-      "idle",
-      "finished",
-    ]);
+  test("a step that ended while the poll read, a little after it noted its time, is still working", () => {
+    for (const ahead of [1, 5_000, CLOCK_SLACK_MS]) {
+      expect(
+        both(assistant({ finish: "tool-calls", completedAt: NOW + ahead })),
+        `${ahead}`,
+      ).toEqual(["working", "finished"]);
+    }
+  });
+
+  test("a clock set back further than the slack counts as time enough", () => {
+    expect(
+      both(assistant({ finish: "tool-calls", completedAt: NOW + CLOCK_SLACK_MS + 1 })),
+    ).toEqual(["idle", "finished"]);
+  });
+
+  test("only a step with no reason it ended and the shell's one tool part is a command the person ran", () => {
+    // A step that asked for tools, or ended the turn, goes as it would.
+    expect(
+      both(assistant({ finish: "tool-calls", tools: 1, shell: 1, completedAt: NOW - 1_000 })),
+    ).toEqual(["working", "finished"]);
+    expect(both(assistant({ finish: null, tools: 2, shell: 0, completedAt: NOW - 1_000 }))).toEqual(
+      ["working", "finished"],
+    );
+    expect(
+      both(assistant({ finish: null, tools: 1, shell: null, completedAt: NOW - 1_000 })),
+    ).toEqual(["working", "finished"]);
   });
 
   test("a field of the wrong type is unknown, open or closed", () => {
@@ -121,6 +157,9 @@ describe("mapOpencodeStatus", () => {
       { finish: undefined },
       { tools: -1 },
       { tools: "2" },
+      { shell: 2 },
+      { shell: "1" },
+      { shell: undefined },
       { role: undefined },
     ]) {
       expect(both(assistant(wrong)), JSON.stringify(wrong)).toEqual(["unknown", "unknown"]);
@@ -134,7 +173,9 @@ describe("mapOpencodeStatus", () => {
       ...[null, NOW - 1_000, NOW - MINUTE].flatMap((completedAt) =>
         [null, ABORTED_ERROR, "APIError", "Other"].flatMap((error) =>
           [null, "stop", "tool-calls", "unknown"].flatMap((finish) =>
-            [0, 1].map((tools) => assistant({ completedAt, error, finish, tools })),
+            [0, 1].flatMap((tools) =>
+              [0, 1].map((shell) => assistant({ completedAt, error, finish, tools, shell })),
+            ),
           ),
         ),
       ),
@@ -154,7 +195,7 @@ describe("opencodeStatusSince", () => {
     activityAt: NOW - 40_000,
   };
 
-  test("working is when the person last wrote, else the newest message's start, else the session's", () => {
+  test("working is the person's newest prompt, else the newest message's start, else the session's", () => {
     expect(opencodeStatusSince("working", times, NOW)).toBe(NOW - 5 * MINUTE);
     expect(opencodeStatusSince("working", { ...times, userCreatedAt: null }, NOW)).toBe(
       NOW - 2 * MINUTE,

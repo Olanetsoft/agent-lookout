@@ -37,11 +37,13 @@ export interface AdapterResult {
    * The Gemini CLI adapter has one, `files`: its session files and each
    * project's `.project_root`.
    *
-   * The OpenCode adapter has two:
-   * - `database`: OpenCode's database, read while an OpenCode program has it
-   *   open. The usual one.
-   * - `database-closed`: the same while no OpenCode program has it open, when
-   *   every session is finished, unless it failed or cannot be read.
+   * The OpenCode adapter has three:
+   * - `database`: OpenCode's database, read while `ps` shows an OpenCode
+   *   program running. The usual one.
+   * - `database-closed`: the same while `ps` shows none, when every session
+   *   is finished, unless it failed or cannot be read.
+   * - `database-without-processes`: the same while `ps` cannot say, when no
+   *   session can be shown as finished.
    *
    * The status-file adapter has one, `files`: the folder of status files.
    *

@@ -204,6 +204,21 @@ export function textData(): Record<string, unknown> {
   return { type: "text", text: PRIVATE_WORDS, time: { start: NOW - MINUTE } };
 }
 
+/** The part of the prompt OpenCode writes itself to compact a session, on its own or when the person asks. */
+export function compactionData(auto: boolean): Record<string, unknown> {
+  return { type: "compaction", auto };
+}
+
+/** The text OpenCode adds as a prompt of its own to go on after it compacted a session on its own. */
+export function continueData(): Record<string, unknown> {
+  return {
+    type: "text",
+    text: PRIVATE_WORDS,
+    synthetic: true,
+    metadata: { compaction_continue: true },
+  };
+}
+
 export interface ToolFields {
   status: "pending" | "running" | "completed" | "error";
   tool?: string;
@@ -287,6 +302,7 @@ export interface AnswerRow {
   m_error?: unknown;
   m_finish?: unknown;
   m_tools?: unknown;
+  m_shell?: unknown;
   p_updated?: unknown;
   u_created?: unknown;
 }
@@ -306,6 +322,7 @@ export function answerRow(fields: AnswerRow): Record<string, unknown> {
     m_error: null,
     m_finish: "stop",
     m_tools: 0,
+    m_shell: 0,
     p_updated: NOW - MINUTE,
     u_created: NOW - 3 * MINUTE,
     ...fields,

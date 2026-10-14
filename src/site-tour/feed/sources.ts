@@ -282,7 +282,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once no OpenCode program has its database open. After a crash, sessions look open until OpenCode next quits.",
+      "Once ps shows no program named opencode, on macOS and Linux. While only the desktop app runs, its sessions show as finished.",
   },
   failed: {
     level: "partly",
@@ -528,6 +528,12 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           value: "sqlite3 -init /dev/null -batch -json <database> <fixed query>",
         },
         { label: "Command run", value: "when the database changes" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no OpenCode",
+        },
       ],
       capabilities: OPENCODE_CAPABILITIES,
       checkedAt,

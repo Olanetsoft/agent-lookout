@@ -967,6 +967,57 @@ describe("sessionChanges: what happened to each session", () => {
     });
   });
 
+  describe("another machine's source, whose sources there are each read their own way", () => {
+    const JOB = "remote:devbox:codex:019a0000-0000-7000-8000-000000000001";
+    const SES = "remote:devbox:opencode:ses_000000000000000000000000a1";
+    /** One answer of the machine: Codex there read as files, OpenCode there read this way. */
+    function machine(opencode: string, sessions: Session[]): SessionsSnapshot {
+      const there: SourceHealth = {
+        ...source("remote:devbox"),
+        basis: "api",
+        parts: { "remote:devbox:codex:": "files", "remote:devbox:opencode:": opencode },
+      };
+      return snapshot(
+        sessions.map((session) => ({ ...session, source: "remote:devbox" })),
+        [there],
+      );
+    }
+
+    test("one switching there starts a baseline of its own sessions alone, so another's finish in that answer is told", () => {
+      let memory = EMPTY_CHANGE_MEMORY;
+      const told: [string, string][] = [];
+      for (const each of [
+        machine("database", [working(JOB), working(SES)]),
+        machine("database", [working(JOB), working(SES)]),
+        // OpenCode quits there, as a Codex job there finishes.
+        machine("database-closed", [withStatus(JOB, "finished"), withStatus(SES, "finished")]),
+        machine("database-closed", [withStatus(JOB, "finished"), withStatus(SES, "finished")]),
+        machine("database", [withStatus(JOB, "finished"), withStatus(SES, "idle")]),
+      ]) {
+        const result = sessionChanges(memory, each);
+        memory = result.memory;
+        told.push(...said(result.changes));
+      }
+      expect(told).toEqual([["finished", JOB]]);
+    });
+
+    test("a session of one that leaves the list there has ended, and one whose source there stops naming its way has not", () => {
+      const first = sessionChanges(
+        EMPTY_CHANGE_MEMORY,
+        machine("database", [working(JOB), working(SES)]),
+      ).memory;
+      expect(said(sessionChanges(first, machine("database", [working(SES)])).changes)).toEqual([
+        ["ended", JOB],
+      ]);
+      // OpenCode there is no longer read, so its part is not in the answer.
+      const without = snapshot(
+        [{ ...working(JOB), source: "remote:devbox" }],
+        [{ ...source("remote:devbox"), basis: "api", parts: { "remote:devbox:codex:": "files" } }],
+      );
+      expect(said(sessionChanges(first, without).changes)).toEqual([]);
+    });
+  });
+
   describe("a source read in more than one way", () => {
     /** An answer of Claude Code read one way, as the poller names it. */
     function readAs(basis: string, sessions: Session[]): SessionsSnapshot {

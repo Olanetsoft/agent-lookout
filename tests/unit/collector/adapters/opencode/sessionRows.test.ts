@@ -60,10 +60,10 @@ describe("the two questions", () => {
     expect(uses.length).toBeGreaterThan(0);
     for (const use of uses) {
       expect(use, use).toMatch(
-        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|metadata\.providerExecuted|state\.status|state\.metadata\.interrupted)'$/,
+        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|tool|auto|metadata\.providerExecuted|metadata\.compaction_continue|state\.status|state\.metadata\.interrupted)'$/,
       );
     }
-    for (const alias of ["m", "p", "u"]) {
+    for (const alias of ["m", "p", "u", "q"]) {
       expect(SESSIONS_QUERY, alias).toContain(`CASE WHEN json_valid(${alias}.data) THEN`);
     }
     // A title and a folder are cut inside SQLite, so long ones cannot fill the answer.
@@ -83,23 +83,23 @@ describe("the two questions", () => {
 });
 
 describe("sqliteUri", () => {
-  test("opens a closed database as a file nothing changes, and an open one with its -shm read-only", () => {
-    expect(sqliteUri("/Users/example/.local/share/opencode/opencode.db", "closed")).toBe(
+  test("opens a database with nothing in its -wal as a file nothing changes, and one with something there with its -shm read-only", () => {
+    expect(sqliteUri("/Users/example/.local/share/opencode/opencode.db", "whole")).toBe(
       "file:/Users/example/.local/share/opencode/opencode.db?mode=ro&immutable=1",
     );
-    expect(sqliteUri("/Users/example/.local/share/opencode/opencode.db", "open")).toBe(
+    expect(sqliteUri("/Users/example/.local/share/opencode/opencode.db", "with-wal")).toBe(
       "file:/Users/example/.local/share/opencode/opencode.db?mode=ro&readonly_shm=1",
     );
   });
 
   test("never lets a folder's name add to the address", () => {
-    expect(sqliteUri("/Users/example/a b?c#d%e&mode=rw/opencode.db", "open")).toBe(
+    expect(sqliteUri("/Users/example/a b?c#d%e&mode=rw/opencode.db", "with-wal")).toBe(
       "file:/Users/example/a%20b%3Fc%23d%25e%26mode%3Drw/opencode.db?mode=ro&readonly_shm=1",
     );
   });
 
   test("the arguments are sqlite3's settings off, JSON out, the address and the fixed question", () => {
-    expect(sqliteArguments("/data/opencode.db", "closed", PROBE_QUERY)).toEqual([
+    expect(sqliteArguments("/data/opencode.db", "whole", PROBE_QUERY)).toEqual([
       "-init",
       "/dev/null",
       "-batch",
@@ -166,6 +166,7 @@ describe("readSessionRows", () => {
           error: null,
           finish: "stop",
           tools: 0,
+          shell: 0,
           partsUpdatedAt: NOW - MINUTE,
         },
         userCreatedAt: NOW - 3 * MINUTE,
@@ -254,21 +255,24 @@ describe("readSessionRows", () => {
       error: "APIError",
       finish: "length",
     });
-    expect(fieldsOf({ m_completed: "soon", m_tools: 2 })).toMatchObject({
+    expect(fieldsOf({ m_completed: "soon", m_tools: 2, m_shell: 1 })).toMatchObject({
       completedAt: "soon",
       tools: 2,
+      shell: 1,
     });
     const wrong = fieldsOf({
       m_role: "x".repeat(65),
       m_error: "API\u0000Error",
       m_finish: '{"why":"text"}'.repeat(10),
       m_tools: true,
+      m_shell: false,
     });
     expect(wrong).toMatchObject({
       role: undefined,
       error: undefined,
       finish: undefined,
       tools: undefined,
+      shell: undefined,
     });
     expect(fieldsOf({ m_id: messageId("b1") })?.role).toBe("assistant");
   });

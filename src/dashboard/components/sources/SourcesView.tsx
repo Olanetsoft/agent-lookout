@@ -219,8 +219,9 @@ export function SourcesView({ state, now }: SourcesViewProps) {
         <div className='flex flex-col gap-2 px-6 pb-6 text-body text-ink-secondary'>
           <p>
             A source is an agent tool Agent Lookout finds sessions in. It reads its files and never
-            writes to them. Agent Lookout stops a Claude Code session only when you press Stop and
-            confirm.
+            writes to them, except that the sqlite3 it runs for OpenCode can leave an empty -wal
+            file beside OpenCode&apos;s database. Agent Lookout stops a Claude Code session only
+            when you press Stop and confirm.
           </p>
           <p>
             Status files are how any other agent appears: it writes a small file for each of its

@@ -20,7 +20,15 @@ import type { Remote } from "./remoteSettings.ts";
 import { SSH_BIN_ENV } from "./sshProgram.ts";
 import type { Tunnel, TunnelEnd } from "./tunnel.ts";
 
-/** The one way a machine is read, named for the poller. */
+/**
+ * The way a machine is read, named for the poller: `api`. Its health gives
+ * as `parts` the way that machine read each of its sources (`remoteSessions.ts`),
+ * and each of those is compared apart (`readWays`). So when a source there
+ * is read another way, as when OpenCode or Antigravity is closed there and
+ * every session of it finishes at once, its sessions here are compared only
+ * with an answer read the same way, as they are there, and send no notice
+ * for each, while the other sources there are compared as before.
+ */
 export const BASIS = "api";
 
 /**
@@ -191,6 +199,9 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
     if (found.advice) health.advice = found.advice;
     if (agents.length > 0) health.agents = agents;
     const sessions: Session[] = state === "ok" && snapshot ? snapshot.sessions : [];
+    if (state === "ok" && snapshot && Object.keys(snapshot.parts).length > 0) {
+      health.parts = snapshot.parts;
+    }
     return state === "ok" ? { health, sessions, basis: BASIS } : { health, sessions };
   }
 
