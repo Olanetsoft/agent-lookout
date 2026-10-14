@@ -119,7 +119,7 @@ The app is not yet signed with an Apple Developer ID, so the first time a downlo
 
 macOS remembers the choice.
 
-Notifications are off until you turn them on in the app, and the app's setting is apart from a browser's. The first time it opens, the Overview asks "Get a notification when a session needs you?" Press Turn on, and allow Agent Lookout to show notifications if macOS asks. You can also turn them on later under Notifications in the app's Settings, where Send a test says whether macOS shows them. [Notifications in the Mac app](GUIDE.md#notifications-in-the-mac-app) has more.
+Notifications are off until you turn them on in the app, and the app's setting is apart from a browser's. Until they are on, the Overview asks "Get a notification when a session needs you?" Press Turn on, and allow Agent Lookout to show notifications if macOS asks. After Not now it asks again about a day later, then 3 days later, then a week later. You can also turn them on later under Notifications in the app's Settings, where Send a test says whether macOS shows them. [Notifications in the Mac app](GUIDE.md#notifications-in-the-mac-app) has more.
 
 [Desktop app](GUIDE.md#desktop-app) says how the app behaves, [Menu bar](GUIDE.md#menu-bar) what its icon in the menu bar lists, and [Updates](GUIDE.md#updates) how it checks for a newer version and installs it.
 

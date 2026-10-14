@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } f
 import type { NotificationTestOutcome } from "@core/notices/appNotifications";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Callout } from "@dashboard/components/ui/feedback/Callout";
-import { useNotificationSetting } from "@dashboard/hooks/notifications/useNotificationSetting";
+import { useNotificationAsk } from "@dashboard/hooks/notifications/useNotificationAsk";
 import { requestNotificationTest } from "@dashboard/lib/notifications/appNotifications";
 import {
   getNotificationSetting,
@@ -12,43 +12,48 @@ import {
 import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 
 interface NotificationPromptProps {
-  /** Whether the page is in the Mac app's window. Tests say which it is. */
+  /**
+   * Whether the page is in the Mac app's window: the question then speaks of
+   * macOS and this window, and Turn on sends a test. Tests say which it is.
+   */
   inApp?: boolean;
-  /** What sends the test notification. Defaults to asking the app. For tests. */
+  /** What sends the test notification in the app. Defaults to asking the app. For tests. */
   sendTest?: () => Promise<NotificationTestOutcome | null>;
 }
 
 /**
- * The question the Overview asks once, in the Mac app only: whether to turn
- * notifications on. It is there while no choice about them has ever been
- * stored in the app, and goes for good once either answer is chosen, here or
- * on the Notifications card in Settings.
+ * The question the Overview asks, in a browser and in the Mac app: whether to
+ * turn notifications on. It is there while they are not on and the browser
+ * neither blocks them nor has no way to show them. After Not now it comes back
+ * about a day later, then 3 days, then a week, each counted from the last Not
+ * now, and after the fourth not again (`useNotificationAsk`). It never comes
+ * back once they are turned off on the Notifications card in Settings.
  *
- * Turn on turns them on and sends one test notification, so macOS asks whether
- * Agent Lookout may show notifications then, while the person is looking,
- * rather than at the first wait. What macOS made of it is said in the
- * question's place. Not now stores off. Notifications stay off until the
- * person turns them on, as everywhere else.
- *
- * In a browser it is never drawn: a tab's notifications are turned on in
- * Settings, where the browser asks its own question.
+ * Turn on does what the card's Turn on notifications does. In a browser that
+ * is the browser's own question, and if the browser blocks them, a note in the
+ * question's place says so and points to Settings. In the app it also sends one
+ * test notification, so macOS asks whether Agent Lookout may show
+ * notifications then, while the person is looking, rather than at the first
+ * wait, and what macOS made of it is said in the question's place. Not now
+ * leaves them as they were.
  */
 export function NotificationPrompt({
   inApp = inAppWindow(),
   sendTest = requestNotificationTest,
 }: NotificationPromptProps = {}) {
-  return inApp ? <Question sendTest={sendTest} /> : null;
+  return <Question inApp={inApp} sendTest={sendTest} />;
 }
 
 /**
  * Where the question is:
  *
  * asking     the question, with Turn on and Not now
- * sending    Turn on was pressed and the test is out: the question, with a
- *            line in place of its buttons
- * shown      macOS took the test, so nothing is drawn
- * noted      the test was not shown, or macOS has not answered yet: a note in
- *            the question's place
+ * sending    in the app, Turn on was pressed and the test is out: the
+ *            question, with a line in place of its buttons
+ * shown      notifications are on, and in the app macOS took the test, so
+ *            nothing is drawn
+ * noted      in the app, the test was not shown, or macOS has not answered
+ *            yet; in a browser, it blocks them: a note in the question's place
  * dismissed  the note was dismissed
  */
 type Step =
@@ -66,7 +71,9 @@ interface Note {
 }
 
 const SENDING = "Sending a test…";
-const TURNED_ON = "Notifications are on in this app.";
+const TURNED_ON_IN_APP = "Notifications are on in this app.";
+/** The card's own words, in a browser. */
+const TURNED_ON = "Notifications are on.";
 
 /** The link to Settings, in a sentence, as the other links in the page's words are. */
 function SettingsLink() {
@@ -122,11 +129,34 @@ function noteFor(answer: NotificationTestOutcome | null): Note {
 }
 
 /**
+ * What the Overview says in a browser when Turn on ended with the browser
+ * blocking them. The Notifications card in Settings says how to allow them, so
+ * this only points there.
+ */
+function blockedNote(): Note {
+  return {
+    title: "Notifications are blocked",
+    body: (
+      <>
+        Your browser is blocking them for this address. <SettingsLink /> says how to allow them,
+        under Notifications.
+      </>
+    ),
+    said: "Your browser is blocking them for this address. Settings says how to allow them, under Notifications.",
+  };
+}
+
+/** The view a press was made in, which holds the focus once the question is answered. */
+function viewOf(event: MouseEvent<HTMLElement>): HTMLElement | null {
+  return event.currentTarget.closest<HTMLElement>("main");
+}
+
+/**
  * Its focus goes to the view once it is answered or dismissed, so the keyboard
  * stays where the eye is and is not dropped to the top of the page.
  */
 function keepFocusInView(event: MouseEvent<HTMLElement>): void {
-  event.currentTarget.closest<HTMLElement>("main")?.focus({ preventScroll: true });
+  viewOf(event)?.focus({ preventScroll: true });
 }
 
 /** A row under the words, as tall as its buttons, so the note keeps its height as they go. */
@@ -139,19 +169,22 @@ const ROW = "mt-3 flex min-h-button flex-wrap items-center gap-2";
  * is narrow, in a group named by the question.
  *
  * Under it, in a polite live region that is in the page before there is
- * anything to say, a screen reader is told what Turn on came to: that a test
- * is being sent, then once that notifications are on, or the note. That line
- * is the only one that speaks: the question and the note are not live regions,
- * since each step changes the same box in place, and its words would be said
- * again.
+ * anything to say, a screen reader is told what Turn on came to: in the app
+ * that a test is being sent, then once that notifications are on, or the note.
+ * That line is the only one that speaks: the question and the note are not
+ * live regions, since each step changes the same box in place, and its words
+ * would be said again.
  *
  * The note can be dismissed. It is never stored, so it is gone the next time
- * the Overview is drawn, and a question answered once never comes back.
+ * the Overview is drawn. Once Turn on has moved past the question, the line
+ * and the note stay whatever the setting says, until the Overview is drawn
+ * again.
  */
-function Question({ sendTest }: Required<Pick<NotificationPromptProps, "sendTest">>) {
-  const { chosen, turnOff } = useNotificationSetting();
-  // Asked only when nothing was stored as the Overview was drawn.
-  const [asked] = useState(!chosen);
+function Question({ inApp, sendTest }: Required<NotificationPromptProps>) {
+  const { asking, putOff } = useNotificationAsk();
+  // Whether the question has been drawn on this Overview: until it has, there
+  // is nothing to say, and nothing is drawn at all.
+  const [seen, setSeen] = useState(asking);
   const [step, setStep] = useState<Step>({ kind: "asking" });
   const [said, setSaid] = useState("");
   const titleId = useId();
@@ -164,13 +197,15 @@ function Question({ sendTest }: Required<Pick<NotificationPromptProps, "sendTest
     };
   }, []);
 
-  if (!asked) return null;
+  // Kept as the page draws: once the question is drawn, the line under it stays.
+  if (asking && !seen) setSeen(true);
+  if (!asking && !seen) return null;
 
-  const turnOn = (event: MouseEvent<HTMLElement>) => {
+  const turnOnInApp = (event: MouseEvent<HTMLElement>) => {
     keepFocusInView(event);
     setStep({ kind: "sending" });
     setSaid(SENDING);
-    // Called inside the click, so a browser that asks sees it come from the press.
+    // Called inside the click, so a window that asks sees it come from the press.
     const turningOn = turnOnNotifications();
     void (async () => {
       await turningOn;
@@ -185,7 +220,7 @@ function Question({ sendTest }: Required<Pick<NotificationPromptProps, "sendTest
       if (!mounted.current) return;
       if (answer?.outcome === "shown") {
         setStep({ kind: "shown" });
-        setSaid(TURNED_ON);
+        setSaid(TURNED_ON_IN_APP);
         return;
       }
       const note = noteFor(answer);
@@ -193,9 +228,34 @@ function Question({ sendTest }: Required<Pick<NotificationPromptProps, "sendTest
       setSaid(`${note.title}. ${note.said}`);
     })();
   };
+  // As the card's button does: the browser's own question, and no test.
+  const turnOnInBrowser = (event: MouseEvent<HTMLElement>) => {
+    const view = viewOf(event);
+    // Called inside the click, so the browser sees it come from the press.
+    const turningOn = turnOnNotifications();
+    void (async () => {
+      await turningOn;
+      if (!mounted.current) return;
+      const { on, permission } = getNotificationSetting();
+      if (on) {
+        setStep({ kind: "shown" });
+        setSaid(TURNED_ON);
+        view?.focus({ preventScroll: true });
+        return;
+      }
+      if (permission === "denied") {
+        const note = blockedNote();
+        setStep({ kind: "noted", note });
+        setSaid(`${note.title}. ${note.said}`);
+        view?.focus({ preventScroll: true });
+      }
+      // Otherwise the browser's question was closed unanswered: the question
+      // stays as it was, with the focus on Turn on.
+    })();
+  };
   const notNow = (event: MouseEvent<HTMLElement>) => {
     keepFocusInView(event);
-    turnOff();
+    putOff();
   };
   const dismiss = (event: MouseEvent<HTMLElement>) => {
     keepFocusInView(event);
@@ -206,18 +266,19 @@ function Question({ sendTest }: Required<Pick<NotificationPromptProps, "sendTest
   const question = (row: ReactNode) => (
     <Callout title='Get a notification when a session needs you?' titleId={titleId} live={false}>
       <p>
-        macOS shows one from Agent Lookout each time a session starts waiting for you, with this
-        window open or closed. You can change this in Settings.
+        {inApp
+          ? "macOS shows one from Agent Lookout each time a session starts waiting for you, with this window open or closed. You can change this in Settings."
+          : "Your browser shows one each time a session starts waiting for you, while a dashboard tab is open. You can change this in Settings."}
       </p>
       {row}
     </Callout>
   );
 
   let drawn: ReactNode = null;
-  if (step.kind === "asking" && !chosen) {
+  if (step.kind === "asking" && asking) {
     drawn = question(
       <div role='group' aria-labelledby={titleId} className={ROW}>
-        <Button size='sm' onClick={turnOn}>
+        <Button size='sm' onClick={inApp ? turnOnInApp : turnOnInBrowser}>
           Turn on
         </Button>
         <Button size='sm' onClick={notNow}>

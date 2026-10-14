@@ -15,8 +15,8 @@ import { apiRequest } from "@dashboard/lib/api/apiHost";
  * whatever macOS decides, so only these say whether macOS shows them.
  *
  * Only the Mac app answers these addresses, so only a page in the app's window
- * asks them: the Notifications card and the Overview's one-time question do so
- * only there. Like every other request, each goes through `apiRequest`, on the
+ * asks them: the Notifications card and the Overview's question do so only
+ * there. Like every other request, each goes through `apiRequest`, on the
  * page's own origin.
  */
 

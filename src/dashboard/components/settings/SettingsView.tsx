@@ -28,6 +28,7 @@ import {
 } from "@dashboard/hooks/notifications/useOutboundStatus";
 import { useTheme } from "@dashboard/hooks/shell/useTheme";
 import { clockAt } from "@dashboard/lib/format";
+import { stopNotificationAsk } from "@dashboard/lib/notifications/ask/notificationAskStore";
 import { emailWords, fetchEmailStatus } from "@dashboard/lib/notifications/emailStatus";
 import type { SendingWords } from "@dashboard/lib/notifications/sendingWords";
 import { fetchWebhookStatus, webhookWords } from "@dashboard/lib/notifications/webhookStatus";
@@ -204,9 +205,11 @@ function refusedByMacOS({ step, lastRefusal }: NotificationTest): boolean {
 
 /**
  * Whether notifications are sent, and for which events. They are off until
- * the person turns them on, with the button here or, in the Mac app, with Turn
- * on in the Overview's question (`dashboard/NotificationPrompt.tsx`), and
- * those two are the only things in the app that ask for permission.
+ * the person turns them on, with the button here or with Turn on in the
+ * Overview's question (`dashboard/NotificationPrompt.tsx`), in a browser or the
+ * app, and those two are the only things in the app that ask for permission.
+ * Turning them off here stops that question for good: only someone who had
+ * them on can press it.
  *
  * The state is said in words beside a button that changes it. It is not the
  * switch the theme uses, because that chooses as soon as it has focus, and the
@@ -235,6 +238,10 @@ function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
     // The app's first notification is when macOS asks whether it may show them.
     if (inApp) test.send();
   };
+  const turnOffHere = () => {
+    turnOff();
+    stopNotificationAsk();
+  };
 
   const state = inApp
     ? on
@@ -256,7 +263,7 @@ function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
             {state}
           </p>
           {permission !== "unsupported" && (
-            <Button size='sm' onClick={on ? turnOff : turnOnHere}>
+            <Button size='sm' onClick={on ? turnOffHere : turnOnHere}>
               {on ? "Turn off notifications" : "Turn on notifications"}
             </Button>
           )}

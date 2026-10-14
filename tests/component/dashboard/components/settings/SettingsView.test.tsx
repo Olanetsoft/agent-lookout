@@ -14,6 +14,10 @@ import type {
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { SettingsView } from "@dashboard/components/settings/SettingsView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import {
+  NOTIFICATION_ASK_STORAGE_KEY,
+  resetNotificationAskForTests,
+} from "@dashboard/lib/notifications/ask/notificationAskStore";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
   NOTIFICATION_EVENTS_STORAGE_KEY,
@@ -185,6 +189,7 @@ afterEach(async () => {
   localStorage.clear();
   resetThemeForTests();
   resetNotificationSettingForTests();
+  resetNotificationAskForTests();
   setNotificationHost();
   setApiHost();
   document.documentElement.removeAttribute("data-theme");
@@ -395,6 +400,31 @@ test("pressing the button asks the browser, and once allowed they are on, the bu
     .toBeVisible();
   expect(stateOf(again).textContent).toBe("Notifications are off.");
   expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("off");
+});
+
+test('turning notifications off here stops the Overview\'s question for good: it stores {"stopped":true}, and turning them on stores nothing there', async () => {
+  const screen = await render(<SettingsView />);
+  const card = notifications(screen);
+
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
+
+  await card.getByRole("button", { name: "Turn off notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBe('{"stopped":true}');
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("off");
+});
+
+test("drawing the view writes nothing under the question's key", async () => {
+  const setItem = vi.spyOn(Storage.prototype, "setItem");
+  onTestFinished(() => setItem.mockRestore());
+  const screen = await render(<SettingsView />);
+  await expect.element(notifications(screen)).toBeVisible();
+  await screen.rerender(<SettingsView />);
+
+  expect(setItem.mock.calls.filter(([key]) => key === NOTIFICATION_ASK_STORAGE_KEY)).toEqual([]);
+  expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
 });
 
 test("the button keeps the keyboard's focus as it changes from on to off", async () => {
@@ -610,6 +640,17 @@ describe("in the Mac app", () => {
     await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
     await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
     expect(macTests).toHaveLength(1);
+  });
+
+  test('turning notifications off in the app stops the Overview\'s question there for good: it stores {"stopped":true}, and turning them on stores nothing there', async () => {
+    const screen = await render(<SettingsView inApp />);
+    await notifications(screen).getByRole("button", { name: "Turn on notifications" }).click();
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
+    expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
+
+    await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
+    await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
+    expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBe('{"stopped":true}');
   });
 
   test("Send a test says it is sending, then what macOS made of it, and keeps its focus", async () => {

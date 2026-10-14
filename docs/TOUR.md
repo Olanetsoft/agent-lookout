@@ -675,7 +675,7 @@ The channels are read-only because each one sends something off the computer, an
 
 Where a choice is kept depends on what needs it:
 
-- **Choices only the page needs** are kept in local storage, so they belong to one browser at one address: the theme, whether notifications are on and for which events, the Sessions layout, the sessions you hid from Left running, and when you last looked.
+- **Choices only the page needs** are kept in local storage, so they belong to one browser at one address: the theme, whether notifications are on and for which events, whether the Overview's question about notifications may come back, the Sessions layout, the sessions you hid from Left running, and when you last looked.
 - **Choices the collector needs** are the time rules and the permission rules. They go through `POST /api/settings/time-rules` and `POST /api/settings/permission-rules` and are kept in `~/.agent-lookout/settings.json`. Every copy of Agent Lookout on the computer reads that file, the Mac app included.
 
 #### The design system
@@ -782,9 +782,9 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - Nothing is installed until the person presses Install and Restart. Then `install/installHelper.ts` starts a small, fixed `/bin/sh` script. The script waits for the app to quit, moves the new bundle in place of the old one and opens it. If the new bundle cannot be moved in, it puts the old one back.
 - The switch and the update state are kept in `update-state.json` (`updateSettings.ts`).
 
-#### Still open for the Mac app
+#### The question about notifications
 
-#84 asks the app to offer notifications once, when it first opens. Today they are off until you turn them on in Settings, and nothing tells you so. The app's page also has its own local storage, separate from any browser's, so turning notifications on in a browser does not turn them on in the app. The app's Notifications card still talks about a browser.
+#84 made the app ask once on the Overview whether to turn notifications on, and send a test so macOS asks its own question then (0.2.10). #121 made the Overview ask in a browser too, and again after Not now: about a day later, then 3 days, then a week, and then not again. Not now keeps a count and the time of the last press under `agent-lookout-notification-ask`, in the page's local storage. In the app that is the app's own page storage, beside its notification choice, so the record and the choice it asks about stay together and need no file or route of their own.
 
 ### The landing page and its tour
 
@@ -837,7 +837,7 @@ The pictures in the README and the guide come from the tour too. `npm run captur
 ### Things you would not guess about the page and the app
 
 - **The browser and the Mac app keep separate page settings.** Local storage belongs to one address, and the app's page lives at `agent-lookout://app/`. So the theme, the notification switch and the Sessions layout are set separately in the app and in each browser. The time rules, the permission rules and the history are on disk, so every copy shares them.
-- **Notifications in the Mac app start off.** The collector shows a notification only after a page has said, in the request header, that notifications are on. Until you turn them on in the app's Settings, neither the app's page nor its collector notifies you (#84).
+- **Notifications in the Mac app start off.** The collector shows a notification only after a page has said, in the request header, that notifications are on. Until you turn them on, in the Overview's question or in Settings, neither the app's page nor its collector notifies you (#84).
 - **Only the tour calls `setApiHost`.** It was built for a Mac app or a browser extension, and the Mac app turned out not to need it.
 - **The landing page shows the last release, not `main`.** Do not edit `site/tour/` by hand. It is rebuilt by `npm run build:tour` as part of a release.
 - **In the Mac app, the header and the strip above it move the window.** Anything you add there that is not a control will swallow clicks unless it has `no-drag`.
@@ -903,11 +903,14 @@ There are four events: `needs-you`, `finished`, `failed` and `ended`. Needs you 
 - `lib/notifications/notificationHandover.ts`: hands notifications from a closing tab to the other open tabs.
 - `hooks/notifications/useWaitNotifications.ts`: connects all of this to the store.
 - The card is `NotificationsCard` in `components/settings/SettingsView.tsx`.
+- `components/dashboard/NotificationPrompt.tsx`: the Overview's question, while notifications are not on.
+- `hooks/notifications/useNotificationAsk.ts`: whether the Overview asks, decided when it is drawn and when the page comes back into sight.
+- `lib/notifications/ask/notificationAskStore.ts`: how many times Not now was pressed and when it last was, or that the question stopped, kept in local storage (`agent-lookout-notification-ask`). The rule of when it comes back is `src/core/notices/notificationAsk.ts`.
 
 **Why it works this way.** This was the first notification, built for #4 (cddaa73, 5 October). The issue asked that a notification clear when its session moves on, so old alerts do not pile up.
 
 - Each session has at most one notification, tagged `agent-lookout:<session id>`. A wait's notification is taken down when the wait ends. Finished, Failed and Ended stay until you clear them.
-- Permission is asked for only when you click Turn on notifications. Browsers only allow the question from a click, and nobody sees a prompt when the page loads.
+- Permission is asked for only when you click Turn on notifications, or Turn on in the Overview's question. Browsers only allow the question from a click, and nobody sees a prompt when the page loads.
 - Only the page that made a notification can close it. When a tab closes, it takes its notifications down and sends the ids of their sessions over a `BroadcastChannel`, and another open tab shows them again. Only session ids are sent, and they never leave the browser.
 - If the collector restarts while a page stays open, its `startedAt` changes. The page then starts again from a baseline, as if it had just opened.
 

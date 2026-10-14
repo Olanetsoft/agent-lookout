@@ -13,6 +13,10 @@ import {
   type CollectorState,
   type CollectorStore,
 } from "@dashboard/lib/api/collectorStore";
+import {
+  NOTIFICATION_ASK_STORAGE_KEY,
+  resetNotificationAskForTests,
+} from "@dashboard/lib/notifications/ask/notificationAskStore";
 import { NOTIFICATION_HANDOVER_CHANNEL } from "@dashboard/lib/notifications/notificationHandover";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
@@ -265,6 +269,7 @@ afterEach(async () => {
   localStorage.clear();
   resetThemeForTests();
   resetNotificationSettingForTests();
+  resetNotificationAskForTests();
   document.documentElement.removeAttribute("data-theme");
   atView(null);
 });
@@ -2004,6 +2009,68 @@ test.each(["overview", "sources", "settings"] as const)(
 
     expect(host.asked).toBe(0);
     expect(host.shown).toEqual([]);
+  },
+);
+
+const QUESTION = "Get a notification when a session needs you?";
+
+test("in a browser the question is on the Overview only, never on Sources or Settings, and is gone from the Overview once notifications are turned on in Settings", async () => {
+  const host = notificationsFor(false);
+  const screen = await render(<App store={fixedStore(liveState())} />);
+  await expect.element(screen.getByText(QUESTION)).toBeVisible();
+  // Drawing it asks the browser nothing.
+  expect(host.asked).toBe(0);
+
+  await screen.getByRole("link", { name: "Sources", exact: true }).click();
+  await vi.waitFor(() => expect(main().dataset.view).toBe("sources"));
+  expect(screen.container.textContent).not.toContain(QUESTION);
+
+  await screen.getByRole("link", { name: "Settings", exact: true }).click();
+  await vi.waitFor(() => expect(main().dataset.view).toBe("settings"));
+  expect(screen.container.textContent).not.toContain(QUESTION);
+  const card = screen.getByRole("region", { name: "Notifications" });
+  await card.getByRole("button", { name: "Turn on notifications" }).click();
+  await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
+  expect(host.asked).toBe(1);
+
+  await screen.getByRole("link", { name: "Overview", exact: true }).click();
+  await vi.waitFor(() => expect(main().dataset.view).toBe("overview"));
+  await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
+  expect(screen.container.textContent).not.toContain(QUESTION);
+  expect(host.asked).toBe(1);
+});
+
+test.each(["Not now", "Turn on"])(
+  "%s in the question sends nothing about it: no path, header or body names what is kept",
+  async (button) => {
+    notificationsFor(false);
+    const sent: string[] = [];
+    setApiHost(async (path, init) => {
+      const body = typeof init?.body === "string" ? init.body : "";
+      sent.push(`${path} ${JSON.stringify([...new Headers(init?.headers)])} ${body}`);
+      return path === "/api/waits"
+        ? new Response(JSON.stringify(quietWaits(Date.now())))
+        : new Response("{}");
+    });
+    const screen = await render(<App store={fixedStore(liveState())} />);
+    await screen.getByRole("button", { name: button, exact: true }).click();
+    await expect.element(screen.getByText(QUESTION)).not.toBeInTheDocument();
+    if (button === "Not now") {
+      expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toMatch(
+        /^\{"notNow":1,"at":\d+\}$/,
+      );
+    } else {
+      expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+      // The app is told the setting changed, as from the card.
+      await vi.waitFor(() =>
+        expect(sent.some((each) => each.startsWith("/api/health"))).toBe(true),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    for (const word of ["notNow", "stopped", NOTIFICATION_ASK_STORAGE_KEY]) {
+      expect(sent.filter((each) => each.includes(word))).toEqual([]);
+    }
   },
 );
 

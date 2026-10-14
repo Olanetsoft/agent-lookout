@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Changed
+
+- The Overview asks "Get a notification when a session needs you?" in a browser too, not only in the Mac app, and asks again after Not now: about a day later, then 3 days later, then a week later, each counted from the last Not now, and after the fourth not again. It never asks while notifications are on, or while the browser blocks them, when Settings says how to allow them, and it stops for good once you turn notifications off in Settings. In a browser Turn on asks the browser, as Turn on notifications in Settings does; in the Mac app it also sends the test notification, as before. Not now no longer turns notifications off: it leaves them as they were. How many times you pressed Not now and when you last did are kept in the page's local storage, under `agent-lookout-notification-ask`, for each browser and address, and apart in the Mac app. If notifications were left off in an earlier version, with Not now or in Settings, the Overview asks the next time you open it, and then as above (#121).
+
 ## 0.2.12 - 2026-10-14
 
 An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does.
