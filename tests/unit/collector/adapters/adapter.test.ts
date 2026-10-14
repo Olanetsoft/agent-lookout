@@ -31,6 +31,8 @@ import {
   MISTRAL_VIBE_CAPABILITIES,
 } from "@collector/adapters/mistral-vibe/index";
 import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
+import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import {
   createStatusFileAdapter,
   STATUS_FILE_CAPABILITIES,
@@ -51,6 +53,7 @@ import {
   type GeminiCliRecord,
 } from "@core/mapping/gemini-cli/geminiCliMapping";
 import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
+import { mapOpencodeStatus } from "@core/mapping/opencode/opencodeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -65,6 +68,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
   ["Mistral Vibe", MISTRAL_VIBE_CAPABILITIES],
   ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
+  ["OpenCode", OPENCODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -122,6 +126,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createAntigravityAppAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(ANTIGRAVITY_APP_CAPABILITIES);
+    expect(
+      createOpencodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(OPENCODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -507,6 +514,72 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GEMINI_CLI_CAPABILITIES.jump.level).toBe("no");
     expect(GEMINI_CLI_CAPABILITIES.stop.level).toBe("no");
     expect(GEMINI_CLI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("OpenCode: no message ever makes a session need you, and only an error OpenCode records fails", () => {
+    const messages = [
+      null,
+      ...["user", "assistant", "system", 7].flatMap((role) =>
+        [null, NOW - 1_000, NOW - 60_000, "soon"].flatMap((completedAt) =>
+          [null, "MessageAbortedError", "APIError", "SomeNewError"].flatMap((error) =>
+            [null, "stop", "tool-calls", "unknown"].flatMap((finish) =>
+              [0, 1].map((tools) => ({ role, completedAt, error, finish, tools })),
+            ),
+          ),
+        ),
+      ),
+    ];
+    const mapped = statuses(
+      messages.flatMap((message) =>
+        [true, false].map((open) => mapOpencodeStatus({ message, open, now: NOW })),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
+    // With the database closed, nothing is working or idle.
+    const closed = statuses(
+      messages.map((message) => mapOpencodeStatus({ message, open: false, now: NOW })),
+    );
+    expect(closed).toEqual(new Set(["finished", "failed", "unknown"]));
+    expect(OPENCODE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.failed.level).toBe("partly");
+    expect(OPENCODE_CAPABILITIES.finished.level).toBe("partly");
+    expect(OPENCODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+  });
+
+  test("OpenCode: a session has no time of its last write, no tokens, jump, stop or link, and its title for a name", () => {
+    const session = opencodeSession({
+      row: {
+        id: "ses_000000000000000000000000a1",
+        folder: "/Users/example/code/demo",
+        title: "Rename the helper",
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 30_000,
+        message: {
+          createdAt: NOW - 30_000,
+          updatedAt: NOW - 30_000,
+          role: "assistant",
+          completedAt: null,
+          error: null,
+          finish: null,
+          tools: 1,
+          partsUpdatedAt: NOW - 10_000,
+        },
+        userCreatedAt: NOW - 40_000,
+      },
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "working", name: "Rename the helper" });
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session?.links).toEqual({});
+    expect(OPENCODE_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.names.level).toBe("yes");
+    expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {

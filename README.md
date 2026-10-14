@@ -61,6 +61,7 @@ Any other agent can show up by writing one small file per session. [Your own age
 | Antigravity     | Partly    | No     | Yes       | Yes    | No     | No     |
 | Mistral Vibe    | No        | No     | Yes       | No     | No     | No     |
 | Gemini CLI      | No        | No     | Yes       | No     | No     | No     |
+| OpenCode        | No        | No     | No        | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -68,6 +69,8 @@ Codex doesn't record when it waits for your approval, so a waiting session shows
 Mistral Vibe support was built from Vibe 2.26.1's source and has not yet been checked on a computer running Vibe.
 
 Gemini CLI support was built from its source at v0.64.0 and has not yet been checked on a machine running it.
+
+OpenCode support was built from its source at v1.19.0 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
