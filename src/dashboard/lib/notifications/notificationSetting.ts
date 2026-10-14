@@ -23,8 +23,7 @@ import {
  *
  * They are off until the person turns them on, and turning them on is the only
  * thing that ever asks the browser for permission. Off because nothing was ever
- * stored is told apart from off because the person chose it, so the Mac app
- * can ask once whether to turn them on.
+ * stored is told apart from off because the person chose it.
  *
  * The events, a session starting to wait, finishing, failing or ending, are
  * chosen one by one and kept in local storage beside the choice. Until the

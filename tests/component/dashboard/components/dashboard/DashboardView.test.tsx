@@ -6,6 +6,10 @@ import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@cor
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import {
+  NOTIFICATION_ASK_STORAGE_KEY,
+  resetNotificationAskForTests,
+} from "@dashboard/lib/notifications/ask/notificationAskStore";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
 import {
   NOTIFICATIONS_STORAGE_KEY,
@@ -984,7 +988,9 @@ describe("the question about notifications", () => {
 
   afterEach(() => {
     localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    localStorage.removeItem(NOTIFICATION_ASK_STORAGE_KEY);
     resetNotificationSettingForTests();
+    resetNotificationAskForTests();
     setNotificationHost();
   });
 
@@ -1039,7 +1045,47 @@ describe("the question about notifications", () => {
     );
   });
 
-  test("in a browser, with nothing chosen, it is not there and nothing asks the app", async () => {
+  test("in a browser, with nothing chosen, it is over the cards in the browser's words, and Turn on asks the browser and never the app", async () => {
+    const host = fakeNotificationHost({ permission: "default", answer: "granted" });
+    setNotificationHost(host);
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp={false} />,
+    );
+    await expect.element(screen.getByText(QUESTION)).toBeVisible();
+    const prompt = slot(screen.container, "notification-prompt");
+    expect(
+      prompt.compareDocumentPosition(slot(screen.container, "overview-grid")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(prompt.textContent).toContain("Your browser shows one");
+    expect(prompt.textContent).not.toContain("macOS");
+
+    await screen.getByRole("button", { name: "Turn on", exact: true }).click();
+    await expect.element(screen.getByText(QUESTION)).not.toBeInTheDocument();
+    expect(host.asked).toBe(1);
+    expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+    await waitsRead(screen);
+    expect(posted).toEqual([]);
+  });
+
+  test.each([true, false])(
+    "after Not now it leaves no gap over the cards (in the app: %s)",
+    async (inApp) => {
+      const screen = await render(
+        <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp={inApp} />,
+      );
+      await screen.getByRole("button", { name: "Not now", exact: true }).click();
+      await expect.element(screen.getByText(QUESTION)).not.toBeInTheDocument();
+      expect(slot(screen.container, "notification-prompt")).toBeNull();
+      expect(slot(screen.container, "overview-grid").getBoundingClientRect().top).toBe(
+        slot(screen.container, "dashboard").getBoundingClientRect().top,
+      );
+      expect(posted).toEqual([]);
+    },
+  );
+
+  test("with the browser blocking notifications it is not over the cards", async () => {
+    setNotificationHost(fakeNotificationHost({ permission: "denied" }));
     const screen = await render(
       <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp={false} />,
     );

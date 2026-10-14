@@ -31,7 +31,7 @@ interface DashboardViewProps {
   newSince?: number | null;
   /** Told whether that line is in view. */
   onNewLineInView?: (inView: boolean) => void;
-  /** Whether the page is in the Mac app's window, which alone asks about notifications. Tests say which it is. */
+  /** Whether the page is in the Mac app's window, which words the question about notifications uses and whether its Turn on sends a test. Tests say which it is. */
   inApp?: boolean;
 }
 
@@ -64,8 +64,9 @@ const PLACE = {
  * needs the person, the rest light while none does, and neither before anything
  * is counted.
  *
- * In the Mac app, until notifications have been turned on or left off once,
- * a question over the cards asks whether to turn them on.
+ * Until notifications are on, and while the browser does not block them, a
+ * question over the cards asks whether to turn them on, and again after Not
+ * now, after a day, 3 days and a week.
  *
  * Focus held in a session's row follows the session when its row is drawn
  * somewhere else: to another group of the table, or up into the hero when the
@@ -104,7 +105,7 @@ export function DashboardView({
         <StaleNotice lastOkAt={state.lastOkAt} now={now} onRetry={onRetry} />
       )}
 
-      {/* In the Mac app, until it is answered: whether to turn notifications on. */}
+      {/* Until notifications are on: whether to turn them on. */}
       <NotificationPrompt inApp={inApp} />
 
       <div
