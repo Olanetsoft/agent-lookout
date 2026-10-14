@@ -13,18 +13,18 @@
 // It reads none of this machine's own agents. It makes folders of its own, in
 // the system's temporary folder or, with `-- --dir <folder>`, in that folder: a
 // Claude Code folder whose registry names two stand-ins for Claude Code's
-// processes, small Node programs this script starts that only wait, a copy
-// of tests/fixtures/codex-home, an empty folder for the Antigravity CLI and
-// one for Antigravity, a folder with one status file, and a folder for the
-// history the app keeps, so nothing is written to this machine's. It starts
-// the app on a port the system picks, with the claude command, tmux and
-// Terminal left alone, and asks only `/api/health`, `/api/sessions`, the
-// dashboard's page and its script. Then it runs the same command's `mcp`, as
-// an agent's app would, and checks over its stdin and stdout that it lists its
-// tools and names the session that needs you. In the package, `mcp` runs the
-// MCP SDK bundled into it, so this is what shows that bundle works. Then it
-// stops the app, and every process it started, each by its own process ID,
-// and removes the folders.
+// processes, small Node programs this script starts that only wait, a copy of
+// tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
+// Antigravity and one for Mistral Vibe, a folder with one status file, and a
+// folder for the history the app keeps, so nothing is written to this
+// machine's. It starts the app on a port the system picks, with the claude
+// command, tmux and Terminal left alone, and asks only `/api/health`,
+// `/api/sessions`, the dashboard's page and its script. Then it runs the same
+// command's `mcp`, as an agent's app would, and checks over its stdin and
+// stdout that it lists its tools and names the session that needs you. In the
+// package, `mcp` runs the MCP SDK bundled into it, so this is what shows that
+// bundle works. Then it stops the app, and every process it started, each by
+// its own process ID, and removes the folders.
 //
 // On Windows `npm start` is run as npm's own script, `npm_execpath`, with this
 // Node, because `npm` there is a `.cmd`, which only a shell runs. Windows has
@@ -87,6 +87,7 @@ const SOURCES = [
   ["codex", "Codex"],
   ["antigravity-cli", "Antigravity CLI"],
   ["antigravity-app", "Antigravity"],
+  ["mistral-vibe", "Mistral Vibe"],
   ["status-files", "Status files"],
 ];
 
@@ -303,12 +304,14 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const codexHome = path.join(dir, "codex");
   const antigravityHome = path.join(dir, "antigravity-cli");
   const antigravityAppHome = path.join(dir, "antigravity");
+  const vibeSessionDir = path.join(dir, "vibe");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   const work = path.join(dir, "work");
   await mkdir(path.join(claudeHome, "sessions"), { recursive: true });
   await mkdir(antigravityHome, { recursive: true });
   await mkdir(antigravityAppHome, { recursive: true });
+  await mkdir(vibeSessionDir, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -368,6 +371,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     codexHome,
     antigravityHome,
     antigravityAppHome,
+    vibeSessionDir,
     statusDir,
     historyDir,
     procStart,
@@ -376,14 +380,16 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
 
 /**
  * The environment `npm start` is given: this one, without any setting of
- * Agent Lookout's own or Codex's, and with the folders made for the check. The
+ * Agent Lookout's own, Codex's or Mistral Vibe's, and with the folders made
+ * for the check. The
  * claude command is not run, tmux and Terminal are not asked, and npm does not
  * look for a newer version of itself.
  */
 function appEnv(folders) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([name]) => !name.startsWith("AGENT_LOOKOUT_") && name !== "CODEX_HOME",
+      ([name]) =>
+        !name.startsWith("AGENT_LOOKOUT_") && name !== "CODEX_HOME" && name !== "VIBE_HOME",
     ),
   );
   return {
@@ -395,6 +401,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_CODEX_HOME: folders.codexHome,
     AGENT_LOOKOUT_ANTIGRAVITY_HOME: folders.antigravityHome,
     AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: folders.antigravityAppHome,
+    AGENT_LOOKOUT_VIBE_SESSION_DIR: folders.vibeSessionDir,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_TMUX: "off",

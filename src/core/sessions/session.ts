@@ -15,9 +15,16 @@ export type RemoteSourceId = `remote:${string}`;
  * machine: its sessions belong to the agents on it, which each session names.
  * `antigravity-cli` is the Antigravity CLI, `agy`, and `antigravity-app` is
  * Antigravity 2.0, Google's desktop app with the Agent Manager.
+ * `mistral-vibe` is Mistral Vibe, in its terminal, an editor or its desktop app.
  */
 export type SourceId =
-  "claude-code" | "codex" | "antigravity-cli" | "antigravity-app" | "status-files" | RemoteSourceId;
+  | "claude-code"
+  | "codex"
+  | "antigravity-cli"
+  | "antigravity-app"
+  | "mistral-vibe"
+  | "status-files"
+  | RemoteSourceId;
 
 /** What every remote source's id begins with. */
 export const REMOTE_SOURCE_PREFIX = "remote:";

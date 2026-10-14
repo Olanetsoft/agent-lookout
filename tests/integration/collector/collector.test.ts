@@ -89,6 +89,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
       AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
       AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+      AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -101,7 +102,7 @@ async function serve(settings: Record<string, string>) {
 }
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI and Antigravity, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity and Mistral Vibe, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -109,6 +110,7 @@ describe("createCollector", () => {
       ["codex", "Codex", "ok"],
       ["antigravity-cli", "Antigravity CLI", "ok"],
       ["antigravity-app", "Antigravity", "ok"],
+      ["mistral-vibe", "Mistral Vibe", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -140,6 +142,7 @@ describe("createCollector", () => {
       },
       { id: "antigravity-cli", state: "ok" },
       { id: "antigravity-app", state: "ok" },
+      { id: "mistral-vibe", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -260,6 +263,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -328,6 +332,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CODEX_HOME: codexHome,
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2323,6 +2328,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_CODEX_HOME: path.join(await tempDir(), "no-codex-here"),
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -2549,6 +2555,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "codex",
       "antigravity-cli",
       "antigravity-app",
+      "mistral-vibe",
       "status-files",
       "remote:",
     ]);

@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
+  EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
 } from "@tests/support/node/tempFiles";
 
@@ -44,3 +45,9 @@ mkdirSync(EMPTY_ANTIGRAVITY_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_ANTIGRAVITY_HOME = EMPTY_ANTIGRAVITY_HOME;
 mkdirSync(EMPTY_ANTIGRAVITY_APP_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME = EMPTY_ANTIGRAVITY_APP_HOME;
+
+// Nor does one read Mistral Vibe's session folder, `~/.vibe/logs/session`:
+// the adapter is pointed at an empty folder. A test of the adapter names a
+// folder of its own.
+mkdirSync(EMPTY_VIBE_SESSION_DIR, { recursive: true });
+process.env.AGENT_LOOKOUT_VIBE_SESSION_DIR = EMPTY_VIBE_SESSION_DIR;

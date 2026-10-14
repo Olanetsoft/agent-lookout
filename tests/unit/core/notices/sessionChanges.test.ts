@@ -622,6 +622,7 @@ describe("over a long run of snapshots", () => {
     // Not in this run, which keeps to the three sources it has always drawn on.
     "antigravity-cli": [],
     "antigravity-app": [],
+    "mistral-vibe": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

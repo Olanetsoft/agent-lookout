@@ -59,6 +59,19 @@ export const EMPTY_ANTIGRAVITY_APP_HOME = path.join(
   "antigravity",
 );
 
+/**
+ * An empty folder for the Mistral Vibe adapter to read in place of
+ * `~/.vibe/logs/session`, so that a collector a test builds from `process.env`
+ * finds no sessions there: `nodeSetup.ts` makes it and names it there.
+ * Nothing is ever written in it. A test that builds an environment of its own
+ * names a `tempDir` there.
+ */
+export const EMPTY_VIBE_SESSION_DIR = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-vibe",
+  "session",
+);
+
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));

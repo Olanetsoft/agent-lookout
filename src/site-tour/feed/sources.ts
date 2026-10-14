@@ -5,9 +5,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * The sources of the landing page's hour, as each adapter reports itself
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
- * collector's order: Claude Code, Codex, the Antigravity CLI and Antigravity,
- * neither installed here, and status files. Then the other machine, connected
- * over SSH.
+ * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity and
+ * Mistral Vibe, none of the three installed here, and status files. Then the
+ * other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -184,6 +184,46 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": { level: "yes" },
+  "needs-you": {
+    level: "no",
+    reason:
+      "This version does not read Vibe's approval waits, so a session waiting for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once no Vibe program holds it, or one took it in the last 30 seconds and wrote nothing. The desktop app lets go after each turn.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When a turn ends on an error Vibe records. A Vibe that stops mid-turn without closing shows as finished.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title Vibe or you give a session. Until it has one, or with Vibe's titles turned off, its folder's name.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "Vibe's files name no terminal or window, and Vibe documents no link that opens a session.",
+  },
+  "quiet-for": { level: "yes" },
+  tokens: { level: "no", reason: "This version does not read Vibe's token counts." },
+  stop: {
+    level: "no",
+    reason:
+      "The process holding a Vibe session can hold others too, so none can be confirmed and stopped alone.",
+  },
+  answer: {
+    level: "no",
+    reason: "Vibe takes its answers only in its own terminal, editor or app.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -309,6 +349,21 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Mistral Vibe is not installed: its folder is looked for, and nothing more.
+      id: "mistral-vibe",
+      label: "Mistral Vibe",
+      state: "unavailable",
+      detail:
+        "Mistral Vibe was not found: there is no ~/.vibe/logs/session folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.vibe/logs/session/unified" },
+        { label: "Read", value: "not found" },
+        { label: "Open-sessions folder", value: "~/.vibe/logs/session/active" },
+      ],
+      capabilities: MISTRAL_VIBE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -339,6 +394,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Codex there", value: "Not found" },
         { label: "Antigravity CLI there", value: "Not found" },
         { label: "Antigravity there", value: "Not found" },
+        { label: "Mistral Vibe there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],
