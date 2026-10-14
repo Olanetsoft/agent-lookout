@@ -17,31 +17,33 @@ import {
  * at fixed places only, never on `PATH`, directly with no shell, stdin closed,
  * a timeout, a cap on what it prints, and never on Windows.
  *
- * OpenCode keeps the database in WAL mode: while a program of its own has it
- * open, what it has saved lies in `opencode.db-wal` until SQLite moves it into
- * the database, and `opencode.db-shm` indexes it. Which way it is opened
- * follows the files beside it, looked at with `lstat` on every poll:
+ * OpenCode keeps the database in WAL mode: what it has saved lies in
+ * `opencode.db-wal` until SQLite moves it into the database, and
+ * `opencode.db-shm` indexes it. OpenCode 1.19.0 never closes the database
+ * itself, so its `-wal` is left full after it quits, as after a crash, and
+ * what it saved there must still be read. Which way it is opened follows the
+ * files beside it, looked at with `lstat` on every poll:
  *
  * - no `-wal`, or an empty one: `mode=ro&immutable=1`, which takes no lock and
  *   makes no file. An empty `-wal` holds nothing to read.
  * - a `-wal` that holds something, and the `-shm`: `mode=ro&readonly_shm=1`,
  *   which reads the `-wal` and opens the `-shm` read-only, so nothing is
- *   written to either.
+ *   written to either, whether or not a program still has the database open.
+ *   It holds a shared lock on the database while it runs, so a program that
+ *   closes the database then leaves its `-wal` and `-shm` in place.
  * - such a `-wal` without its `-shm`, or either of them not an ordinary file:
  *   not read.
  *
  * An empty `opencode.db` is taken as none: SQLite would delete a `-wal` beside
  * it.
  *
- * OpenCode is taken to have the database open while its `-wal` holds
- * something. SQLite removes that file when the last program closes the
- * database, and the SQLite of macOS leaves it there, empty, so an empty one
- * is taken as closed too.
+ * Whether OpenCode runs is not read from these files, but from `ps`
+ * (`processes.ts`).
  *
- * If OpenCode closes the database between the `lstat` and the read, a
- * `sqlite3` built from SQLite's own source, as on Linux, makes an empty `-wal`
- * as it opens the database, and that read does not work. SQLite has no
- * setting that stops it. The empty `-wal` then reads as closed.
+ * If a program closes the database between the `lstat` and the read, and
+ * SQLite removes the `-wal` and `-shm` as it does then, a `sqlite3` built from
+ * SQLite's own source, as on Linux, makes an empty `-wal` as it opens the
+ * database, and that read does not work. SQLite has no setting that stops it.
  *
  * The sessions are asked for again only when `opencode.db` or its `-wal`
  * changed since the last read, by identity, size or modified time, or when
@@ -72,8 +74,6 @@ export type DatabaseState =
 
 export interface DatabaseRead {
   state: DatabaseState;
-  /** Whether an OpenCode program has the database open: its `-wal` holds something. */
-  open: boolean;
   /** The root sessions read. Empty unless `state` is `read`. */
   rows: readonly SessionRow[];
   /** Whether OpenCode 2's table, `session_v2`, is there. Its sessions are not read yet. */
@@ -94,8 +94,8 @@ interface Files {
 
 const NONE: readonly SessionRow[] = [];
 
-/** Whether an OpenCode program has the database open: its `-wal` is an ordinary file that holds something. */
-function isOpen(files: Files): boolean {
+/** Whether the `-wal` is an ordinary file that holds something, so the database is read with it. */
+function walHolds(files: Files): boolean {
   return files.wal !== null && files.wal.kind === "file" && files.wal.size > 0;
 }
 
@@ -132,33 +132,33 @@ export function createDatabaseReader(options: {
 
   async function read(at: number): Promise<DatabaseRead> {
     if (platform === "win32") {
-      return { state: "not-on-windows", open: false, rows: NONE, opencode2: false };
+      return { state: "not-on-windows", rows: NONE, opencode2: false };
     }
     let database: FileInfo;
     try {
       database = await io.lstat(file);
     } catch {
       last = null;
-      return { state: "missing", open: false, rows: NONE, opencode2: false };
+      return { state: "missing", rows: NONE, opencode2: false };
     }
     // SQLite deletes the -wal beside an empty database as it opens it, so an
     // empty one is not read.
     if (database.kind !== "file" || database.size === 0) {
       last = null;
-      return { state: "missing", open: false, rows: NONE, opencode2: false };
+      return { state: "missing", rows: NONE, opencode2: false };
     }
     const files: Files = {
       database,
       wal: await beside(`${file}-wal`),
       shm: await beside(`${file}-shm`),
     };
-    const open = isOpen(files);
     if (
-      (files.wal !== null && (files.wal.kind !== "file" || (open && files.shm === null))) ||
+      (files.wal !== null &&
+        (files.wal.kind !== "file" || (walHolds(files) && files.shm === null))) ||
       (files.shm !== null && files.shm.kind !== "file")
     ) {
       last = null;
-      return { state: "not-safe", open, rows: NONE, opencode2: false };
+      return { state: "not-safe", rows: NONE, opencode2: false };
     }
 
     const unchanged =
@@ -169,7 +169,7 @@ export function createDatabaseReader(options: {
     const settled = last?.state === "read" || last?.state === "unsupported";
     const due = last === null || at - last.at < 0 || at - last.at >= retryMs;
     if (last !== null && unchanged && (settled || !due)) {
-      return { state: last.state, open, rows: last.rows, opencode2: last.opencode2 };
+      return { state: last.state, rows: last.rows, opencode2: last.opencode2 };
     }
 
     const next = await ask(files);
@@ -179,21 +179,20 @@ export function createDatabaseReader(options: {
 
   /** Runs the probe, then the query of the sessions. */
   async function ask(files: Files): Promise<DatabaseRead> {
-    const open = isOpen(files);
     const binary = await find();
-    if (binary === null) return { state: "no-sqlite", open, rows: NONE, opencode2: false };
+    if (binary === null) return { state: "no-sqlite", rows: NONE, opencode2: false };
     // An empty -wal holds nothing, so the database is read as a file nothing changes.
-    const mode: DatabaseMode = open ? "open" : "closed";
+    const mode: DatabaseMode = walHolds(files) ? "with-wal" : "whole";
     const probe = await run(binary, sqliteArguments(file, mode, PROBE_QUERY));
     const found: Schema | null = probe.ok ? readSchema(probe.stdout) : null;
-    if (found === null) return { state: "failed", open, rows: NONE, opencode2: false };
+    if (found === null) return { state: "failed", rows: NONE, opencode2: false };
     const { layout, opencode2 } = found;
-    if (layout === "v2-only") return { state: "read", open, rows: NONE, opencode2 };
-    if (layout === "unsupported") return { state: "unsupported", open, rows: NONE, opencode2 };
+    if (layout === "v2-only") return { state: "read", rows: NONE, opencode2 };
+    if (layout === "unsupported") return { state: "unsupported", rows: NONE, opencode2 };
     const answer = await run(binary, sqliteArguments(file, mode, SESSIONS_QUERY));
     const rows = answer.ok ? readSessionRows(answer.stdout) : null;
-    if (rows === null) return { state: "failed", open, rows: NONE, opencode2 };
-    return { state: "read", open, rows, opencode2 };
+    if (rows === null) return { state: "failed", rows: NONE, opencode2 };
+    return { state: "read", rows, opencode2 };
   }
 
   return {
@@ -202,7 +201,7 @@ export function createDatabaseReader(options: {
         return await read(at);
       } catch {
         last = null;
-        return { state: "failed", open: false, rows: NONE, opencode2: false };
+        return { state: "failed", rows: NONE, opencode2: false };
       }
     },
   };

@@ -1,9 +1,10 @@
 // The OpenCode adapter, cut off from this machine, for the tests that share
 // it: the same file system held in memory that the Codex tests use, a
 // stand-in for `sqlite3` that answers the probe and the sessions query with
-// what the test gives it and keeps every argument list it was given, and an
-// adapter built from them with a clock the test moves by hand. Nothing here
-// touches a real file or runs a program.
+// what the test gives it and keeps every argument list it was given, a
+// stand-in for what `ps` says of OpenCode, and an adapter built from them
+// with a clock the test moves by hand. Nothing here touches a real file or
+// runs a program.
 
 import type { SqliteAnswer } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/opencode/database";
@@ -12,6 +13,7 @@ import {
   opencodeDatabaseFor,
   type OpencodeAdapterOptions,
 } from "@collector/adapters/opencode/index";
+import type { ProcessAnswer } from "@collector/adapters/opencode/processes";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
 import { HOME, NOW, probeJson, sqliteJson } from "@tests/fixtures/opencode/opencode";
 import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -75,8 +77,32 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
 export type StandInSqlite = ReturnType<typeof standInSqlite>;
 
 /**
+ * A stand-in for what `ps` says of OpenCode: that an OpenCode program runs,
+ * unless the test says otherwise, and how many times it was asked.
+ */
+export function standInProcesses(initial: ProcessAnswer = { ok: true, running: true }) {
+  let answer = initial;
+  let asked = 0;
+  return {
+    async read(): Promise<ProcessAnswer> {
+      asked += 1;
+      return answer;
+    },
+    /** What it says from now on. */
+    set(next: ProcessAnswer) {
+      answer = next;
+    },
+    /** How many times it was asked. */
+    asked: () => asked,
+  };
+}
+
+export type StandInProcesses = ReturnType<typeof standInProcesses>;
+
+/**
  * An adapter that reads only the stand-in files and asks only the stand-in
- * `sqlite3`. With nothing in `env`, it reads `~/.local/share/opencode/opencode.db`.
+ * `sqlite3`, and a `ps` that says an OpenCode program runs unless `options`
+ * gives another. With nothing in `env`, it reads `~/.local/share/opencode/opencode.db`.
  */
 export function opencodeAdapterFor(
   files: MemoryFiles,
@@ -102,6 +128,7 @@ export function opencodeAdapterFor(
             run: sqlite.run,
             find: sqlite.find,
           }),
+    processes: standInProcesses(),
     ...options,
   });
 }

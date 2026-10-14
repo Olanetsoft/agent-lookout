@@ -189,7 +189,11 @@ test("the view says that Agent Lookout sends nothing by default, names each way 
       "The Mac app asks GitHub about once a day whether a newer version is out, unless you turn that off in its Settings.",
     );
   await expect.element(about).toHaveTextContent("that tool's own program");
-  await expect.element(about).toHaveTextContent("It reads its files and never writes to them.");
+  await expect
+    .element(about)
+    .toHaveTextContent(
+      "It reads its files and never writes to them, except that the sqlite3 it runs for OpenCode can leave an empty -wal file beside OpenCode's database.",
+    );
   await expect
     .element(about)
     .toHaveTextContent(

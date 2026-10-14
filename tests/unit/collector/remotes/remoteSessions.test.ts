@@ -1,14 +1,21 @@
 import { describe, expect, test } from "vitest";
 
+import * as antigravityApp from "@collector/adapters/antigravity/app/index";
+import * as antigravityCli from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
-import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
-import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
+import * as codex from "@collector/adapters/codex/index";
+import * as geminiCli from "@collector/adapters/gemini-cli/index";
+import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
+import * as opencode from "@collector/adapters/opencode/index";
+import * as statusFiles from "@collector/adapters/status-files/index";
 import {
+  KNOWN_WAYS,
   MAX_REMOTE_SESSIONS,
   MAX_REMOTE_SOURCES,
   readRemoteSnapshot,
 } from "@collector/remotes/remoteSessions";
 import { repositoryId } from "@collector/git/repository";
+import type { SourceHealth, SourceId, SourceState } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   NOW,
@@ -243,6 +250,66 @@ describe("readRemoteSnapshot", () => {
     expect(waiting).not.toHaveProperty("waitingText");
   });
 
+  test("the way each source there was read is kept, by the start of its sessions' ids here, when this version knows it", () => {
+    const there = (id: string, state: SourceState, basis: string): SourceHealth => ({
+      ...sourcesThere()[0]!,
+      id: id as SourceId,
+      state,
+      basis,
+    });
+    const sources = [
+      there("claude-code", "ok", "registry+feed"),
+      there("codex", "ok", "files-without-locks"),
+      there("status-files", "not-set-up", "files"),
+      // A way this version does not name for that source, and sources it does not know.
+      there("opencode", "ok", "Database Closed"),
+      there("gemini-cli", "ok", "database-closed"),
+      there("new-agent", "ok", "files"),
+      there("constructor", "ok", "files"),
+      // A source there that did not answer is not compared, whatever it says.
+      there("mistral-vibe", "error", "files"),
+    ];
+    expect(read({ generatedAt: NOW, sources, sessions: [] }).parts).toEqual({
+      "remote:devbox:claude-code:": "registry+feed",
+      "remote:devbox:codex:": "files-without-locks",
+      "remote:devbox:status-files:": "files",
+    });
+    expect(read(snapshotThere()).parts).toEqual({});
+  });
+
+  test("every way this version's adapters read is one it takes from another machine", () => {
+    const ways = (module: Record<string, unknown>) =>
+      Object.entries(module)
+        .filter(([name, value]) => name.startsWith("BASIS") && typeof value === "string")
+        .map(([, value]) => value);
+    for (const [source, module] of [
+      ["antigravity-app", antigravityApp],
+      ["antigravity-cli", antigravityCli],
+      ["codex", codex],
+      ["gemini-cli", geminiCli],
+      ["mistral-vibe", mistralVibe],
+      ["opencode", opencode],
+      ["status-files", statusFiles],
+    ] as const) {
+      expect(ways(module).length, source).toBeGreaterThan(0);
+      expect([...(KNOWN_WAYS.get(source) ?? [])].sort(), source).toEqual(ways(module).sort());
+    }
+    // Claude Code's adapter names its three where it reads, in claude-code/index.ts.
+    expect(KNOWN_WAYS.get("claude-code")).toEqual(["registry+feed", "registry", "feed"]);
+    expect([...KNOWN_WAYS.keys()].sort()).toEqual(
+      [
+        "antigravity-app",
+        "antigravity-cli",
+        "claude-code",
+        "codex",
+        "gemini-cli",
+        "mistral-vibe",
+        "opencode",
+        "status-files",
+      ].sort(),
+    );
+  });
+
   test("each source there is kept as its name and its state", () => {
     expect(read(snapshotThere()).sources).toEqual([
       { label: "Claude Code", state: "ok" },
@@ -262,7 +329,9 @@ describe("readRemoteSnapshot", () => {
       stop: { level: "no", reason: "Stop acts on this computer only, not on devbox." },
       answer: { level: "no", reason: "Answer acts on this computer only, not on devbox." },
     });
-    expect(agents[1]?.capabilities["needs-you"]).toEqual(STATUS_FILE_CAPABILITIES["needs-you"]);
+    expect(agents[1]?.capabilities["needs-you"]).toEqual(
+      statusFiles.STATUS_FILE_CAPABILITIES["needs-you"],
+    );
   });
 
   test("an agent there whose Agent Lookout is older, and sends no Stop or Answer, keeps its row, with both as no", () => {
@@ -293,7 +362,7 @@ describe("readRemoteSnapshot", () => {
         reason: "The Agent Lookout on devbox does not send token counts.",
       });
     }
-    expect(agents[1]?.capabilities.names).toEqual(CODEX_CAPABILITIES.names);
+    expect(agents[1]?.capabilities.names).toEqual(codex.CODEX_CAPABILITIES.names);
   });
 
   test("a Tokens cell that is sent is taken as it was sent, and one that cannot be read loses the row", () => {
@@ -302,7 +371,7 @@ describe("readRemoteSnapshot", () => {
     expect(agents.map((agent) => [agent.label, agent.capabilities.tokens])).toEqual([
       ["Claude Code", { level: "no", reason: CLAUDE_CODE_TOKENS_THERE }],
       ["Codex", { level: "yes" }],
-      ["Status files", STATUS_FILE_CAPABILITIES.tokens],
+      ["Status files", statusFiles.STATUS_FILE_CAPABILITIES.tokens],
     ]);
 
     const [, codex] = sources;

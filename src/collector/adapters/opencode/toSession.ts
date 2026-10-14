@@ -31,9 +31,20 @@ export function lastActivity(row: SessionRow, now: number): number | null {
   return times.length === 0 ? null : Math.max(...times);
 }
 
+/**
+ * Whether a session is listed: something of it was written in the last 24
+ * hours. Kept by the newest time as it was written, so a time ahead of a
+ * clock set back keeps a session, as a clock that steps backwards never hides
+ * one.
+ */
+export function isListed(row: SessionRow, now: number): boolean {
+  const times = writeTimes(row);
+  return times.length > 0 && isWithinRetention(Math.max(...times), now);
+}
+
 export interface OpencodeSessionInput {
   row: SessionRow;
-  /** Whether an OpenCode program has the database open. */
+  /** Whether OpenCode may have it open: an OpenCode program runs, or whether one does is not known. */
   open: boolean;
   now: number;
 }
@@ -42,8 +53,8 @@ export interface OpencodeSessionInput {
  * One OpenCode session in the shared model, or null when nothing of it was
  * written in the last 24 hours, or no time of it is known.
  *
- * - The status comes from its newest message and whether OpenCode has the
- *   database open (`mapOpencodeStatus`). It is never "needs-you".
+ * - The status comes from its newest message and whether OpenCode may have
+ *   it open (`mapOpencodeStatus`). It is never "needs-you".
  * - The name is OpenCode's title, or the folder's name while the title is
  *   still OpenCode's placeholder, or the id.
  * - The app is not known: the database names no program.
@@ -53,10 +64,7 @@ export interface OpencodeSessionInput {
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
   const { row, open, now } = input;
-  // Kept by the newest time as it was written, so a time ahead of a clock set
-  // back keeps a session, as a clock that steps backwards never hides one.
-  const times = writeTimes(row);
-  if (times.length === 0 || !isWithinRetention(Math.max(...times), now)) return null;
+  if (!isListed(row, now)) return null;
   const activityAt = lastActivity(row, now);
 
   const id = `${SOURCE_ID}:${row.id}`;

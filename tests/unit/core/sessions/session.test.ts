@@ -5,6 +5,7 @@ import {
   isRemoteSource,
   machineInId,
   nameOnMachine,
+  readWays,
   remoteSourceId,
   surfaceLabel,
   withoutWaitingText,
@@ -49,6 +50,8 @@ const snapshot: SessionsSnapshot = {
       label: "devbox",
       machine: "devbox",
       state: "ok",
+      basis: "api",
+      parts: { "remote:devbox:claude-code:": "registry+feed" },
       agents: [
         {
           label: "Claude Code",
@@ -205,4 +208,33 @@ test("a session's name says the other machine it runs on after it, and nothing f
   expect(nameOnMachine("demo-local", "devbox")).toBe("demo-local on devbox");
   expect(nameOnMachine("demo-local", null)).toBe("demo-local");
   expect(nameOnMachine("demo-local", undefined)).toBe("demo-local");
+});
+
+test("a source is read one way, its basis, and another machine's one way for each of its sources it names", () => {
+  const plain = readWays({ basis: "files" });
+  expect(plain.keys).toEqual(["files"]);
+  expect(plain.keyOf("codex:019a0000-0000-7000-8000-000000000001")).toBe("files");
+  expect(readWays({}).keys).toEqual([""]);
+
+  const machine = readWays({
+    basis: "api",
+    parts: {
+      "remote:devbox:opencode:": "database-closed",
+      "remote:devbox:codex:": "files",
+    },
+  });
+  expect(machine.keys).toHaveLength(3);
+  expect(new Set(machine.keys).size).toBe(3);
+  const opencode = machine.keyOf("remote:devbox:opencode:ses_000000000000000000000000a1");
+  const codex = machine.keyOf("remote:devbox:codex:019a0000-0000-7000-8000-000000000001");
+  expect(machine.keys).toEqual(["api", opencode, codex]);
+  // A source there that names no way of its own is read as the machine is.
+  expect(machine.keyOf("remote:devbox:status-files:night-shift.json")).toBe("api");
+  // The same source read another way there is another key.
+  const reopened = readWays({ basis: "api", parts: { "remote:devbox:opencode:": "database" } });
+  expect(reopened.keyOf("remote:devbox:opencode:ses_000000000000000000000000a1")).not.toBe(
+    opencode,
+  );
+  // And no part's key is ever a source's own basis.
+  expect(machine.keys.slice(1)).not.toContain("database-closed");
 });

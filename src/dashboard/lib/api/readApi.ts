@@ -387,6 +387,8 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   if (advice) source.advice = advice;
   const basis = text(value.basis);
   if (basis) source.basis = basis;
+  const parts = readParts(value.parts);
+  if (parts) source.parts = parts;
   const capabilities = readCapabilities(value.capabilities);
   if (capabilities) source.capabilities = capabilities;
   if (isMachineName(value.machine)) source.machine = value.machine;
@@ -403,6 +405,24 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
 
 /** The most agents read for one machine. A machine sends one for each of its sources. */
 const MAX_AGENTS = 20;
+
+/** The most parts read for one machine's source: one for each of its sources. */
+const MAX_PARTS = 20;
+
+/** The way another machine read each of its sources, by the start of their sessions' ids, or null. */
+function readParts(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) return null;
+  const parts: Record<string, string> = {};
+  let count = 0;
+  for (const [start, way] of Object.entries(value)) {
+    if (count >= MAX_PARTS) break;
+    const basis = text(way);
+    if (start === "" || basis === null) continue;
+    parts[start] = basis;
+    count += 1;
+  }
+  return count > 0 ? parts : null;
+}
 
 /** What one agent on another machine can report: its name and every cell, or null. */
 function readAgent(value: unknown): AgentCapabilities | null {

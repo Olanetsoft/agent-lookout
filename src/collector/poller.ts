@@ -2,6 +2,7 @@ import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/ses
 import { historyPointFor } from "../core/history.ts";
 import {
   isStatusEvent,
+  readWays,
   withoutWaitingText,
   type Session,
   type SessionEvent,
@@ -201,12 +202,13 @@ interface LastSeen {
 interface SourceMemory {
   /**
    * The sessions each way of reading reported the last time it answered
-   * properly, by `basis`. A poll is compared against the last poll read the
-   * same way, not against the poll just before it. So a source that fails for
-   * one poll does not "end" every session and bring them all back, and a
-   * source that falls back to another way of reading for a while is, on its
-   * return, compared with what it last saw itself. They are kept without what
-   * a waiting session was asking.
+   * properly, by `basis`, and for another machine's source by the way that
+   * machine read each of its own (`readWays`). A poll is compared against the
+   * last poll read the same way, not against the poll just before it. So a
+   * source that fails for one poll does not "end" every session and bring
+   * them all back, and a source that falls back to another way of reading for
+   * a while is, on its return, compared with what it last saw itself. They
+   * are kept without what a waiting session was asking.
    */
   baselines: Map<string, Session[]>;
   /** What the event log has said about this source's sessions so far. */
@@ -387,39 +389,44 @@ export function createPoller(options: PollerOptions): Poller {
         resumed.delete(id);
       }
       const { baselines, reported } = remembered;
-      const basis = result.basis ?? "";
-      const previous = baselines.get(basis);
-      // A baseline takes every session as it is found, as it always has.
-      const sessions = previous ? forEvents(result.sessions, previous, answered) : result.sessions;
-
-      if (previous) {
-        // A change seen while another way of reading was in use shows up again
-        // here, against this way's older poll. It is reported only once.
-        changes.push(...withoutRepeats(diffSessions(previous, sessions, at), reported));
-      } else {
-        // The first good poll read this way is a baseline. The sessions in it
-        // were already running; they did not appear at this moment, so it
-        // produces no events. It is not compared with a poll read another way
-        // either: an adapter's fallback does not see exactly what its main feed
-        // sees, and the difference between the two views is not news.
-        if (lastSeen) {
-          // But the first of all this run is compared with what the history
-          // kept from before it says, for the sessions it says anything of.
-          const known = new Set(lastSeen.map((session) => session.id));
-          const before = lastSeen.filter(
-            (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
-          );
-          const after = sessions.filter((session) => known.has(session.id));
-          changes.push(...diffSessions(before, after, at));
-        }
-        for (const session of sessions) {
-          if (!reported.has(session.id)) reported.set(session.id, session.status);
-        }
+      if (lastSeen) {
+        // The first good poll of all this run is compared with what the history
+        // kept from before it says, for the sessions it says anything of.
+        const known = new Set(lastSeen.map((session) => session.id));
+        const before = lastSeen.filter(
+          (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
+        );
+        const after = result.sessions.filter((session) => known.has(session.id));
+        changes.push(...diffSessions(before, after, at));
       }
-      // What a waiting session is asking belongs to its wait. A baseline can
-      // outlive the wait, while the source is read another way, so it is kept
-      // without it.
-      baselines.set(basis, sessions.map(withoutWaitingText));
+      // Each way this poll was read, with its sessions: one, or for another
+      // machine one for each of its sources that says how it was read.
+      const ways = readWays({ basis: result.basis, parts: result.health.parts });
+      const read = new Map<string, Session[]>(ways.keys.map((key) => [key, []]));
+      for (const session of result.sessions) read.get(ways.keyOf(session.id))?.push(session);
+      for (const [way, found] of read) {
+        const previous = baselines.get(way);
+        // A baseline takes every session as it is found, as it always has.
+        const sessions = previous ? forEvents(found, previous, answered) : found;
+        if (previous) {
+          // A change seen while another way of reading was in use shows up again
+          // here, against this way's older poll. It is reported only once.
+          changes.push(...withoutRepeats(diffSessions(previous, sessions, at), reported));
+        } else {
+          // The first good poll read this way is a baseline. The sessions in it
+          // were already running; they did not appear at this moment, so it
+          // produces no events. It is not compared with a poll read another way
+          // either: an adapter's fallback does not see exactly what its main
+          // feed sees, and the difference between the two views is not news.
+          for (const session of sessions) {
+            if (!reported.has(session.id)) reported.set(session.id, session.status);
+          }
+        }
+        // What a waiting session is asking belongs to its wait. A baseline can
+        // outlive the wait, while the source is read another way, so it is kept
+        // without it.
+        baselines.set(way, sessions.map(withoutWaitingText));
+      }
     });
 
     const rules = options.timeRules?.();

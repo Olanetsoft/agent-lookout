@@ -35,7 +35,7 @@ flowchart LR
     aa["Antigravity<br/>~/.gemini/antigravity, ps, sqlite3"]
     mv["Mistral Vibe<br/>~/.vibe/logs/session"]
     gc["Gemini CLI<br/>~/.gemini/tmp session files"]
-    oc["OpenCode<br/>~/.local/share/opencode, sqlite3"]
+    oc["OpenCode<br/>~/.local/share/opencode, sqlite3, ps"]
     qw["Qwen Code<br/>~/.qwen sessions and chat files"]
     sf["Your own agents<br/>~/.agent-lookout/sessions"]
   end
@@ -88,7 +88,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 - Before the snapshot is made, an `annotate` step adds each session's git branch. Events are worked out from the sessions as the adapters gave them, so a branch change is not an event.
 - Events come from `diffSessions` in `src/core/sessions/diff.ts`: a session appeared, changed status or ended. Arriving at needs-you is a warning, arriving at failed is critical, and the rest are advisory (`severityFor`).
 - The first good poll of each source is a baseline and makes no events, because those sessions were already running. After a restart with history on disk, `resume` hands the poller the kept events. The first poll is compared with them instead, so a change made while Agent Lookout was stopped still shows up (#21).
-- Each poll is compared only with the last poll read the same way, its `basis`. An adapter that falls back to another way of reading sees slightly different sessions, and comparing the two would announce sessions ending and appearing that never did. `withoutRepeats` drops a change the log already holds.
+- Each poll is compared only with the last poll read the same way, its `basis`, and another machine's source in parts, each of its sources there by the way that machine read it (`readWays`). An adapter that falls back to another way of reading sees slightly different sessions, and comparing the two would announce sessions ending and appearing that never did. `withoutRepeats` drops a change the log already holds.
 - A history point is added only when no source that answered before has stopped answering (`measuredEverySource`). Otherwise a failed read would draw a dip in the chart that never happened.
 - `staleBy` works out `stale` again at the poll's moment, with the idle time in force, whatever the adapter said. `sortSessions` then puts needs-you first.
 - Until the first poll ends, `getSnapshot` answers with every source `searching` and the adapter's `lookingIn` sentence, so the page can say where it is looking.
@@ -292,12 +292,13 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **The pieces.**
 
-- `database.ts` looks at `opencode.db`, `opencode.db-wal` and `opencode.db-shm` with `lstat` on every poll, and runs `sqlite3` only when they changed, or 10 seconds after a read that did not work. With no `-wal`, or an empty one, it opens the database with `immutable=1`. With a `-wal` that holds something and the `-shm` it uses `readonly_shm=1`, which reads OpenCode's newest work in the `-wal` and writes to neither file. A test with the real `sqlite3` holds the database open from a second `sqlite3` and checks that nothing changes on disk.
+- `database.ts` looks at `opencode.db`, `opencode.db-wal` and `opencode.db-shm` with `lstat` on every poll, and runs `sqlite3` only when the database or its `-wal` changed, or the `-wal` came or went, or 10 seconds after a read that did not work. With no `-wal`, or an empty one, it opens the database with `immutable=1`. With a `-wal` that holds something and the `-shm` it uses `readonly_shm=1`, which reads OpenCode's newest work in the `-wal` and writes to neither file. A test with the real `sqlite3` holds the database open from a second `sqlite3`, then kills it, and checks that nothing changes on disk. When a program closes the database between the `lstat` and the read, a `sqlite3` built from SQLite's own source can make an empty `-wal`, and the test checks what is left then ([adapters/opencode.md](adapters/opencode.md#how-sqlite3-opens-the-database)).
+- `processes.ts` asks `ps -A -o comm=` whether a program named `opencode` runs. `index.ts` asks it at most every 10 seconds (`PROCESS_CHECK_MS`), and sooner, after 2 seconds (`PROMPT_PROCESS_CHECK_MS`), when a session is written after `ps` showed none, and holds no session open until then. OpenCode never closes its database, so it leaves its `-wal` full when it quits, and the files cannot say.
 - `sessionRows.ts` holds the two fixed questions, a probe of the tables and the query of root sessions that are not archived, and checks each answer field by field. No text of a message is asked for.
 - `opencodeMapping.ts` turns each session's newest message into a status. A prompt or a step under way is working. A step that asked for tools is working for 10 seconds after it ended (`STEP_GAP_MS`), since OpenCode starts the next step at once. A reply that ended is idle, and one that ended on an error OpenCode records is failed.
 - `toSession.ts` names a session by its title, unless it is still OpenCode's placeholder, and lists it for a day after anything of it was written.
 
-**Bases.** `database` is the usual one. `database-closed` is used while the `-wal` is missing or empty, when no OpenCode program has the database open and every session is finished, unless it failed or cannot be read.
+**Bases.** `database` is the usual one. `database-closed` is used while `ps` shows no OpenCode program, when every session is finished, unless it failed or cannot be read, and `database-without-processes` while `ps` cannot say, when none is.
 
 **How sure it is.** Not checked against OpenCode yet. Approval waits and questions are kept in OpenCode's memory, so a session that waits shows as working. OpenCode 2's sessions, in `session_v2`, are not read yet, and the card says so when it finds them.
 
@@ -353,7 +354,7 @@ In short:
 - **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
 - **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Gemini CLI** reports Quiet for, and working and idle in part, since a reply with text whose tool waits or runs shows as idle. Names only once Gemini CLI saves a title. Never needs you, finished or failed. No Jump, tokens, Stop or Answer.
-- **OpenCode** reports working and idle, finished once no OpenCode program has its database open, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Never needs you, and no Quiet for, Jump, tokens, Stop or Answer.
+- **OpenCode** reports working and idle, finished once `ps` shows no OpenCode program, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Never needs you, and no Quiet for, Jump, tokens, Stop or Answer.
 - **Qwen Code** reports Quiet for, and working, idle and finished in part. Never needs you or failed. No Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 

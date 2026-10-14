@@ -506,6 +506,25 @@ test("the way a source was read is kept, so notifications compare answers read t
   expect(readSource({ id: "claude-code", state: "ok", basis: 2 }, T)).not.toHaveProperty("basis");
 });
 
+test("the way another machine read each of its sources is kept, so each is compared apart", () => {
+  const parts = { "remote:devbox:opencode:": "database-closed", "remote:devbox:codex:": "files" };
+  expect(readSource({ id: "remote:devbox", state: "ok", basis: "api", parts }, T)?.parts).toEqual(
+    parts,
+  );
+  const odd = { "remote:devbox:opencode:": 2, "": "files", "remote:devbox:codex:": " " };
+  expect(readSource({ id: "remote:devbox", state: "ok", parts: odd }, T)).not.toHaveProperty(
+    "parts",
+  );
+  expect(readSource({ id: "remote:devbox", state: "ok", parts: ["files"] }, T)).not.toHaveProperty(
+    "parts",
+  );
+  const many = Object.fromEntries(
+    Array.from({ length: 30 }, (_, index) => [`remote:devbox:s${index}:`, "files"]),
+  );
+  const kept = readSource({ id: "remote:devbox", state: "ok", parts: many }, T)?.parts;
+  expect(Object.keys(kept ?? {})).toHaveLength(20);
+});
+
 test("what a source can report is kept whole, or not at all, so no cell is a guess", () => {
   const capabilities = {
     "working-and-idle": { level: "yes" },

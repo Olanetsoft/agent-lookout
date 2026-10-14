@@ -34,8 +34,8 @@ export const MAX_REMOTE_SESSIONS = 500;
 
 /**
  * The most of the other machine's sources taken, and so the most agents whose
- * capabilities are shown: Agent Lookout has three of its own, and a machine
- * that sends many more is not read for them.
+ * capabilities are shown: far more than Agent Lookout has of its own, and a
+ * machine that sends many more is not read for them.
  */
 export const MAX_REMOTE_SOURCES = 20;
 
@@ -48,6 +48,24 @@ const MAX_PATH_LENGTH = 4_096;
 /** The longest source id, agent name or reason taken. */
 const MAX_WORD_LENGTH = 200;
 
+/**
+ * The ways of reading this version's own sources name, by source: the only
+ * ones taken from the other machine. A source there read a way not listed
+ * here, as a newer Agent Lookout's can be, is compared with the rest of that
+ * machine's under `api` alone. So a machine that sends a new way, or a new
+ * source, each poll cannot make this one keep an answer for each.
+ */
+export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["claude-code", ["registry+feed", "registry", "feed"]],
+  ["codex", ["files", "files-without-locks"]],
+  ["antigravity-cli", ["files", "files-without-processes", "files-unmatched"]],
+  ["antigravity-app", ["files", "files-without-processes", "files-app-closed"]],
+  ["mistral-vibe", ["files", "files-without-leases"]],
+  ["gemini-cli", ["files"]],
+  ["opencode", ["database", "database-closed", "database-without-processes"]],
+  ["status-files", ["files"]],
+]);
+
 /** One of the other machine's sources, as its card says it: its name and its state. */
 export interface RemoteSource {
   label: string;
@@ -59,6 +77,15 @@ export interface RemoteSnapshot {
   sessions: Session[];
   /** Its own sources, in its order. */
   sources: RemoteSource[];
+  /**
+   * The way that machine read each of its sources that answered there and
+   * whose way is one of `KNOWN_WAYS`, by the start of the ids their sessions
+   * have here,
+   * `remote:<name>:<source id>:`. Each such source is compared apart here, as
+   * it is there (`readWays`), so one that switches, as OpenCode's does when
+   * OpenCode quits there, starts a fresh comparison of its own sessions alone.
+   */
+  parts: Record<string, string>;
   /** What each agent there can report, for each source it found. */
   agents: AgentCapabilities[];
 }
@@ -277,6 +304,7 @@ export function readRemoteSnapshot(
   const named = new Map<string, string>();
   const sources: RemoteSource[] = [];
   const agents: AgentCapabilities[] = [];
+  const parts: Record<string, string> = {};
   for (const item of value.sources) {
     if (sources.length >= MAX_REMOTE_SOURCES) break;
     if (!isRecord(item)) continue;
@@ -287,6 +315,12 @@ export function readRemoteSnapshot(
     if (named.has(id)) continue;
     named.set(id, label);
     sources.push({ label, state });
+    // Only a source there that answered is compared, as only one that answers
+    // there names a way.
+    const answered = state === "ok" || state === "not-set-up";
+    if (answered && typeof item.basis === "string" && KNOWN_WAYS.get(id)?.includes(item.basis)) {
+      parts[`${remoteSourceId(machine)}:${id}:`] = item.basis;
+    }
     if (state === "unavailable" || state === "not-set-up") continue;
     const capabilities = readCapabilities(item.capabilities, machine, id);
     if (capabilities) agents.push({ label, capabilities });
@@ -301,5 +335,5 @@ export function readRemoteSnapshot(
     seen.add(session.id);
     sessions.push(session);
   }
-  return { sessions, sources, agents };
+  return { sessions, sources, agents, parts };
 }

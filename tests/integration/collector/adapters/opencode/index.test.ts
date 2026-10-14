@@ -9,6 +9,7 @@ import { describe, expect, onTestFinished, test } from "vitest";
 import { findSqlite, runSqlite } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/opencode/database";
 import { BASIS, BASIS_CLOSED, createOpencodeAdapter } from "@collector/adapters/opencode/index";
+import type { OpencodeProcessReader } from "@collector/adapters/opencode/processes";
 import { PROBE_QUERY, SESSIONS_QUERY, sqliteUri } from "@collector/adapters/opencode/sessionRows";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
@@ -33,8 +34,10 @@ import { tempDir } from "@tests/support/node/tempFiles";
 
 // The adapter end to end, with the real sqlite3, on a copy of
 // `tests/fixtures/opencode/home`, OpenCode's data folder as OpenCode 1.19.0
-// lays it out, with a database this test writes. Where there is no sqlite3,
-// as on Windows, there is nothing to run.
+// lays it out, with a database this test writes. A second sqlite3 stands in
+// for OpenCode, and what `ps` would say of it is whether that one runs: the
+// real `ps` is asked in processes.test.ts. Where there is no sqlite3, as on
+// Windows, there is nothing to run.
 
 const sqlite = process.platform === "win32" ? null : await findSqlite();
 
@@ -70,13 +73,21 @@ function rows(now: number): string[] {
       assistantData({ createdAt: at(5), completedAt: at(5), finish: "stop" }),
       5,
     ),
-    // Working: still the title OpenCode gives a new session, and a step that runs a tool.
+    // Working: still the title OpenCode gives a new session, a turn that
+    // ended, and a newer prompt whose step runs a tool.
     sessionRow({
       id: WORKING,
       title: "New session - 2026-10-01T11:00:00.000Z",
       createdAt: at(20),
       updatedAt: at(1),
     }),
+    ...step(WORKING, "b1u", userData(at(15)), 15),
+    ...step(
+      WORKING,
+      "b1a",
+      assistantData({ createdAt: at(14), completedAt: at(14), finish: "stop" }),
+      14,
+    ),
     ...step(WORKING, "b2u", userData(at(2)), 2),
     ...step(WORKING, "b2a", assistantData({ createdAt: at(1) }), 1),
     partRow({
@@ -166,7 +177,11 @@ function recordingIo() {
 }
 
 /** The adapter on this folder, as OpenCode's default one, with the real sqlite3, and every run of it written down. */
-function adapterFor(home: string, now: number) {
+function adapterFor(
+  home: string,
+  now: number,
+  processes: OpencodeProcessReader = { read: async () => ({ ok: true, running: false }) },
+) {
   const { io, calls } = recordingIo();
   const runs: (readonly string[])[] = [];
   const file = path.join(home, "opencode.db");
@@ -183,17 +198,27 @@ function adapterFor(home: string, now: number) {
     now: () => now,
     io,
     reader,
+    processes,
+    processCheckMs: 0,
   });
   return { adapter, calls, runs, file };
 }
 
-/** A second sqlite3 that keeps the database open, as OpenCode does while it runs, until its input ends. */
+/** A second sqlite3 that keeps the database open, as OpenCode does while it runs. */
 function holdOpen(file: string) {
   const child = spawn(sqlite as string, ["-batch", file], { stdio: ["pipe", "ignore", "ignore"] });
   onTestFinished(() => {
     child.kill("SIGKILL");
   });
+  let running = true;
+  child.once("exit", () => {
+    running = false;
+  });
   return {
+    /** What `ps` would say: whether this stand-in for OpenCode runs. */
+    processes: {
+      read: async () => ({ ok: true, running }) as const,
+    } satisfies OpencodeProcessReader,
     async write(statements: string[], mark: string): Promise<void> {
       child.stdin.write(`${statements.join("\n")}\n.once ${mark}\nSELECT 'done';\n`);
       const until = Date.now() + 10_000;
@@ -207,17 +232,20 @@ function holdOpen(file: string) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
     },
-    /** Ends its input, so it closes the database cleanly, as OpenCode does when it quits. */
-    async close(): Promise<void> {
+    /**
+     * Ends it with SIGKILL, so it never closes the database and leaves its -wal
+     * full, as OpenCode 1.19.0 leaves it when it quits under Bun.
+     */
+    async quit(): Promise<void> {
       const gone = new Promise((resolve) => child.once("exit", resolve));
-      child.stdin.end();
+      child.kill("SIGKILL");
       await gone;
     },
   };
 }
 
 describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", () => {
-  test("lists each root session with its name, folder and status while OpenCode has the database open, and finishes them once it quits", async () => {
+  test("lists each root session with its name, folder and status while OpenCode runs, and finishes them once it quits, leaving its -wal full", async () => {
     const now = Date.now();
     const { home, file } = await makeHome(now);
     const writer = holdOpen(file);
@@ -229,7 +257,7 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
     );
     expect((await lstat(`${file}-wal`)).size).toBeGreaterThan(0);
     const placeholders = await snapshotOf(home, PLACEHOLDERS);
-    const { adapter, calls, runs } = adapterFor(home, now);
+    const { adapter, calls, runs } = adapterFor(home, now, writer.processes);
 
     const open = await adapter.poll();
     expect(open.health.state).toBe("ok");
@@ -241,13 +269,16 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
       [`opencode:${IDLE}`, "Rename the helper", FOLDER, "idle"],
       [`opencode:${FAILED}`, "Write the notes", FOLDER, "failed"],
     ]);
+    // Working since the person's newest prompt, not the first.
     expect(open.sessions[0]).toMatchObject({
       statusSince: now - 2 * MINUTE,
       startedAt: now - 20 * MINUTE,
     });
 
-    // OpenCode quits: the database is closed, and every session but the failed one is finished.
-    await writer.close();
+    // OpenCode quits, leaving its -wal full: no OpenCode program runs, so
+    // every session but the failed one is finished.
+    await writer.quit();
+    expect((await lstat(`${file}-wal`)).size).toBeGreaterThan(0);
     const closed = await adapter.poll();
     expect(closed.basis).toBe(BASIS_CLOSED);
     expect(closed.sessions.map((session) => [session.id, session.status])).toEqual([
@@ -267,7 +298,7 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
     expect(runs.length).toBeGreaterThan(0);
     for (const args of runs) {
       expect(args.slice(0, 4)).toEqual(["-init", "/dev/null", "-batch", "-json"]);
-      expect([sqliteUri(file, "open"), sqliteUri(file, "closed")]).toContain(args[4]);
+      expect([sqliteUri(file, "with-wal"), sqliteUri(file, "whole")]).toContain(args[4]);
       expect([PROBE_QUERY, SESSIONS_QUERY]).toContain(args[5]);
       expect(args).toHaveLength(6);
     }

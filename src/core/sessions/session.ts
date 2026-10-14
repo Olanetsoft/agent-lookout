@@ -605,6 +605,15 @@ export interface SourceHealth {
    */
   basis?: string;
   /**
+   * For another machine's source: the way that machine read each of its own
+   * sources, by the start of the ids their sessions have here, such as
+   * `remote:devbox:opencode:` for `database-closed`. Each of those sources is
+   * compared apart, only with its own last answer read the same way, as that
+   * machine compares it, so one switching there leaves the others alone
+   * (`readWays`).
+   */
+  parts?: Record<string, string>;
+  /**
    * What the source's agent can report at all, whatever state the source is in:
    * fixed for each adapter, which declares it. The Sources view draws its table
    * of what each agent can report from this and from `agents`.
@@ -621,6 +630,34 @@ export interface SourceHealth {
    */
   agents?: AgentCapabilities[];
   checkedAt: number;
+}
+
+/** The ways one answer of a source was read, as `readWays` gives them. */
+export interface ReadWays {
+  /** The key of every way this answer was read, the source's own `basis` first. */
+  keys: string[];
+  /** The key of the way the session with this id was read. */
+  keyOf(sessionId: string): string;
+}
+
+/**
+ * The ways one answer of a source was read, each named by a key that is
+ * compared only with itself: the source's `basis`, or "" when it has none,
+ * and, for another machine's source, one for each of that machine's sources
+ * it gave a way for (`parts`), which its sessions are compared under.
+ */
+export function readWays(source: Pick<SourceHealth, "basis" | "parts">): ReadWays {
+  const basis = source.basis ?? "";
+  const parts = Object.entries(source.parts ?? {});
+  // A newline is in no basis, so no part's key is ever a source's own.
+  const keyFor = ([start, way]: [string, string]) => `${start}\n${way}`;
+  return {
+    keys: [basis, ...parts.map(keyFor)],
+    keyOf(sessionId) {
+      const part = parts.find(([start]) => sessionId.startsWith(start));
+      return part ? keyFor(part) : basis;
+    },
+  };
 }
 
 export interface SessionsSnapshot {

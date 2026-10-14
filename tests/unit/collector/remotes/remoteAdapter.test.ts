@@ -1,10 +1,21 @@
 import { describe, expect, test } from "vitest";
 
+import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import { createEventStore } from "@collector/eventStore";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
 import { BASIS, createRemoteAdapter, STILL_CONNECTING_MS } from "@collector/remotes/remoteAdapter";
 import type { RemoteReading } from "@collector/remotes/remoteReader";
 import type { Remote } from "@collector/remotes/remoteSettings";
 import type { TunnelEnd, TunnelState } from "@collector/remotes/tunnel";
-import { NOW, REMOTE_VERSION, snapshotThere } from "@tests/fixtures/remote";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
+import type {
+  SessionsSnapshot,
+  SessionStatus,
+  SourceHealth,
+  SourceId,
+} from "@core/sessions/session";
+import { NOW, REMOTE_VERSION, snapshotThere, workingThere } from "@tests/fixtures/remote";
 
 const REMOTE: Remote = { name: "devbox", target: "dev@devbox.local", port: 4777 };
 
@@ -333,5 +344,171 @@ describe("a machine's card", () => {
     release({ kind: "read", version: REMOTE_VERSION, snapshot: snapshotThere() });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect((await adapter.poll()).health.state).toBe("ok");
+  });
+});
+
+describe("the way a machine is read", () => {
+  /** One of the other machine's sources, read the way it says. */
+  const sourceThere = (id: string, label: string, basis: string): SourceHealth => ({
+    id: id as SourceId,
+    label,
+    state: "ok",
+    basis,
+    capabilities: OPENCODE_CAPABILITIES,
+    checkedAt: NOW,
+  });
+
+  /** One of the other machine's sessions, of that source there. */
+  const sessionThere = (source: string, id: string, status: SessionStatus) =>
+    workingThere({ id: `${source}:${id}`, source: source as SourceId, name: id, status });
+
+  /** What the other machine sends: OpenCode there, read the way it says, with these sessions. */
+  function opencodeThere(basis: string, statuses: [string, SessionStatus][]): SessionsSnapshot {
+    return {
+      generatedAt: NOW,
+      sources: [sourceThere("opencode", "OpenCode", basis)],
+      sessions: statuses.map(([id, status]) => sessionThere("opencode", id, status)),
+    };
+  }
+
+  /**
+   * The real poller and the real comparison that notices are made from, on a
+   * machine that sends what `there` holds, and what each poll told and logged.
+   */
+  function watched(first: SessionsSnapshot) {
+    let clock = NOW;
+    let snapshot = first;
+    const adapter = createRemoteAdapter({
+      remote: REMOTE,
+      version: "0.2.3",
+      tunnel: { state: () => RUNNING, connected: () => {} },
+      read: async () => ({ kind: "read", version: REMOTE_VERSION, snapshot }),
+      now: () => clock,
+      answerWaitMs: 50,
+    });
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      now: () => clock,
+    });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const notices: string[] = [];
+    return {
+      notices,
+      /** The status changes the event log holds, as `<id> <from>-><to>`. */
+      changes: () =>
+        events
+          .list()
+          .map((event) =>
+            event.kind === "status-changed"
+              ? `${event.sessionId} ${event.from}->${event.to}`
+              : event.kind,
+          ),
+      async poll(next: SessionsSnapshot = snapshot) {
+        snapshot = next;
+        clock += 2_000;
+        const changes = sessionChanges(memory, await poller.pollOnce());
+        memory = changes.memory;
+        notices.push(...changes.changes.map((change) => `${change.event} ${change.session.id}`));
+      },
+    };
+  }
+
+  test("is api, and its card gives the way that machine read each of its sources, by the start of their sessions' ids here", async () => {
+    const { adapter, answer } = setUp();
+    const first = await adapter.poll();
+    expect(first.basis).toBe(BASIS);
+    expect(first.health).not.toHaveProperty("parts");
+    answer({
+      kind: "read",
+      version: REMOTE_VERSION,
+      snapshot: opencodeThere("database-closed", [["ses_a", "finished"]]),
+    });
+    const closed = await adapter.poll();
+    expect(closed.basis).toBe(BASIS);
+    expect(closed.health.parts).toEqual({ "remote:devbox:opencode:": "database-closed" });
+  });
+
+  test("so OpenCode quitting there sends no notice for each of its sessions, as it sends none there", async () => {
+    const machine = watched(
+      opencodeThere("database", [
+        ["ses_a", "idle"],
+        ["ses_b", "working"],
+      ]),
+    );
+    await machine.poll();
+    await machine.poll();
+    // OpenCode quits there, which finishes every session at once, then opens again.
+    await machine.poll(
+      opencodeThere("database-closed", [
+        ["ses_a", "finished"],
+        ["ses_b", "finished"],
+      ]),
+    );
+    await machine.poll(
+      opencodeThere("database", [
+        ["ses_a", "idle"],
+        ["ses_b", "working"],
+      ]),
+    );
+    // Nothing finished, and nothing started again.
+    expect(machine.notices).toEqual([]);
+    expect(machine.changes()).toEqual([]);
+  });
+
+  test("each source there is compared apart, so one that switches there does not hide another's finish", async () => {
+    /** Codex and OpenCode there, each read the way it says. */
+    const there = (
+      codex: SessionStatus,
+      opencode: string,
+      ses: SessionStatus,
+    ): SessionsSnapshot => ({
+      generatedAt: NOW,
+      sources: [
+        sourceThere("codex", "Codex", "files"),
+        sourceThere("opencode", "OpenCode", opencode),
+      ],
+      sessions: [sessionThere("codex", "job", codex), sessionThere("opencode", "ses_a", ses)],
+    });
+    const machine = watched(there("working", "database", "idle"));
+    await machine.poll();
+    await machine.poll();
+    // A Codex job there finishes in the same answer as OpenCode quits there.
+    await machine.poll(there("finished", "database-closed", "finished"));
+    await machine.poll();
+    await machine.poll(there("finished", "database", "idle"));
+    expect(machine.notices).toEqual(["finished remote:devbox:codex:job"]);
+    expect(machine.changes()).toEqual(["remote:devbox:codex:job working->finished"]);
+  });
+
+  test("a source there that falls back for one answer does not hide another's failure", async () => {
+    const there = (claude: string, codex: SessionStatus): SessionsSnapshot => ({
+      generatedAt: NOW,
+      sources: [
+        sourceThere("claude-code", "Claude Code", claude),
+        sourceThere("codex", "Codex", "files"),
+      ],
+      sessions: [sessionThere("claude-code", "chat", "idle"), sessionThere("codex", "job", codex)],
+    });
+    const machine = watched(there("registry+feed", "working"));
+    await machine.poll();
+    await machine.poll();
+    // Claude Code there reads its command alone for one answer, while a Codex job fails.
+    await machine.poll(there("feed", "failed"));
+    await machine.poll(there("registry+feed", "failed"));
+    expect(machine.notices).toEqual(["failed remote:devbox:codex:job"]);
+    expect(machine.changes()).toEqual(["remote:devbox:codex:job working->failed"]);
+  });
+
+  test("a way this version does not name for a source there is left out, and that source is compared under api", async () => {
+    for (const basis of ["database closed\n", "Database-Closed", "files"]) {
+      const odd = opencodeThere(basis, [["ses_a", "idle"]]);
+      const { adapter } = setUp({ kind: "read", version: REMOTE_VERSION, snapshot: odd });
+      const polled = await adapter.poll();
+      expect(polled.basis, basis).toBe(BASIS);
+      expect(polled.health, basis).not.toHaveProperty("parts");
+    }
   });
 });
