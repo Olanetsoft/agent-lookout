@@ -2,7 +2,7 @@
 // machine, for the tests that share them: the same file system held in memory
 // that the Codex tests use, a stand-in for `ps` that says which agy programs
 // run, or whether the app's hub does, and counts each time it is asked, a
-// stand-in for `sqlite3` that answers with the rows a test gives it, and an
+// stand-in for `sqlite3` that answers with the rows and steps a test gives it, and an
 // adapter built from them with a clock the test moves by hand. Nothing here
 // touches a real file or runs a program.
 
@@ -15,6 +15,11 @@ import {
   createSummariesReader,
   type SqliteAnswer,
 } from "@collector/adapters/antigravity/app/summaries";
+import {
+  createWaitReader,
+  NEWEST_STEP_QUERY,
+  type NewestStep,
+} from "@collector/adapters/antigravity/app/waits";
 import {
   createAntigravityAdapter,
   type AntigravityAdapterOptions,
@@ -97,20 +102,36 @@ export function standInHub(running = true) {
 }
 
 /**
- * A stand-in for `sqlite3`: the rows the app's list of chats holds, which the
- * test changes, every argument list it was given, and a way to make it fail
- * or not be there at all.
+ * A stand-in for `sqlite3`: the rows the app's list of chats holds and each
+ * chat's newest step, which the test changes, every argument list it was
+ * given, and a way to make it fail or not be there at all.
  */
 export function standInSqlite(initial: SummaryRow[] = []) {
   let rows = initial;
   let failing = false;
   let found = true;
+  const newest = new Map<string, NewestStep>();
   const runs: { binary: string; args: readonly string[] }[] = [];
   return {
     async run(binary: string, args: readonly string[]): Promise<SqliteAnswer> {
       runs.push({ binary, args });
-      return failing ? { ok: false } : { ok: true, stdout: sqliteJson(rows) };
+      if (failing) return { ok: false };
+      if (args.at(-1) === NEWEST_STEP_QUERY) {
+        const id = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.db\?/.exec(
+          String(args.at(-2)),
+        )?.[1];
+        const step = id === undefined ? undefined : newest.get(id);
+        return { ok: true, stdout: step === undefined ? "" : `[${JSON.stringify(step)}]\n` };
+      }
+      return { ok: true, stdout: sqliteJson(rows) };
     },
+    /** The newest step of this chat's database from now on, or none. */
+    step(id: string, step: NewestStep | null) {
+      if (step === null) newest.delete(id);
+      else newest.set(id, step);
+    },
+    /** The runs that asked for a chat's newest step. */
+    stepRuns: () => runs.filter((run) => run.args.at(-1) === NEWEST_STEP_QUERY),
     async find(): Promise<string | null> {
       return found ? "/usr/bin/sqlite3" : null;
     },
@@ -151,6 +172,11 @@ export function antigravityAppAdapterFor(
     summaries: createSummariesReader({
       home,
       io: files.io,
+      platform: options.platform ?? "darwin",
+      run: sqlite.run,
+      find: sqlite.find,
+    }),
+    waits: createWaitReader({
       platform: options.platform ?? "darwin",
       run: sqlite.run,
       find: sqlite.find,

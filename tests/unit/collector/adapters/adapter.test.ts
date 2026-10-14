@@ -272,13 +272,13 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(ANTIGRAVITY_CAPABILITIES.answer.level).toBe("no");
   });
 
-  test("Antigravity: no step, write or process makes a chat need you, and only an error of its own fails", () => {
+  test("Antigravity: only a wait read from its database makes a chat need you, and only an error of its own fails", () => {
     const steps = ANTIGRAVITY_STEP_TYPES.flatMap((type) =>
       ANTIGRAVITY_STEP_STATUSES.flatMap((status) =>
         [true, false].map((toolCalls) => ({ type, status, toolCalls })),
       ),
     );
-    // The app's adapter never says a chat is asking: it reads no approvals.
+    // No step of its transcript, write or process makes a chat need you on its own.
     const mapped = statuses(
       [...steps, null, undefined].flatMap((last) =>
         ([true, false, "unknown"] as const).flatMap((live) =>
@@ -287,7 +287,16 @@ describe("each declaration agrees with what its adapter does", () => {
       ),
     );
     expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
-    expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("no");
+    // A wait from its database does, unless the app is closed or the chat failed.
+    const asking = statuses(
+      [...steps, null].flatMap((last) =>
+        ([true, false, "unknown"] as const).map((live) =>
+          mapAntigravityStatus({ last, live, asking: true }),
+        ),
+      ),
+    );
+    expect(asking).toEqual(new Set(["needs-you", "finished", "failed", "unknown"]));
+    expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("partly");
     expect(ANTIGRAVITY_APP_CAPABILITIES.answer.level).toBe("no");
     expect(ANTIGRAVITY_APP_CAPABILITIES.failed.level).toBe("partly");
     expect(ANTIGRAVITY_APP_CAPABILITIES.finished.level).toBe("partly");

@@ -150,9 +150,9 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
 export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "Antigravity's waits for approval are not read yet, so a chat that waits does not show as needing you.",
+      "While a chat waits for you to approve a step, read from its database with sqlite3, on macOS and Linux. What it asks is not shown.",
   },
   finished: {
     level: "partly",
@@ -180,7 +180,7 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Antigravity's waits for approval are not read yet, so there is none to answer.",
+    reason: "Antigravity documents no way to answer one of its approvals from outside the app.",
   },
 };
 
@@ -303,6 +303,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Command run", value: "every 10 seconds at most" },
         { label: "Folders file", value: "~/.gemini/antigravity/conversation_summaries.db" },
         { label: "Folders read", value: "with sqlite3, when the file changes" },
+        { label: "Waits read", value: "with sqlite3, when a chat's database changes" },
       ],
       capabilities: ANTIGRAVITY_APP_CAPABILITIES,
       checkedAt,

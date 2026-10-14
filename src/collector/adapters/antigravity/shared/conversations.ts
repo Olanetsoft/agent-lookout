@@ -59,6 +59,12 @@ export interface ConversationFiles {
   transcriptInfo: FileInfo | null;
   /** When the transcript was last written, in whole milliseconds. Null when it is not an ordinary file. */
   writtenAt: number | null;
+  /** Where its database is. */
+  database: string;
+  /** What `lstat` said of the database, when it is an ordinary file. Null otherwise. */
+  databaseInfo: FileInfo | null;
+  /** Whether the database's write-ahead log, `<id>.db-wal`, is there. */
+  logThere: boolean;
   /** The newest modified time of the transcript, the database and its log, in whole milliseconds. Null when none is there. */
   lastWriteAt: number | null;
 }
@@ -92,12 +98,12 @@ export function createConversationFinder(options: {
 
   async function lookAt(id: string): Promise<ConversationFiles> {
     const transcript = path.join(brainDir, id, ...TRANSCRIPT_IN_FOLDER);
+    const database = path.join(databaseDir, `${id}.db`);
     const infos = await Promise.all(
-      [transcript, path.join(databaseDir, `${id}.db`), path.join(databaseDir, `${id}.db-wal`)].map(
-        (file) => io.lstat(file).catch(() => null),
-      ),
+      [transcript, database, `${database}-wal`].map((file) => io.lstat(file).catch(() => null)),
     );
     const transcriptInfo = infos[0]?.kind === "file" ? infos[0] : null;
+    const databaseInfo = infos[1]?.kind === "file" ? infos[1] : null;
     const writtenAt = transcriptInfo === null ? null : Math.floor(transcriptInfo.mtimeMs);
     let lastWriteAt: number | null = null;
     for (const info of infos) {
@@ -105,7 +111,16 @@ export function createConversationFinder(options: {
       const at = Math.floor(info.mtimeMs);
       lastWriteAt = lastWriteAt === null ? at : Math.max(lastWriteAt, at);
     }
-    return { id, transcript, transcriptInfo, writtenAt, lastWriteAt };
+    return {
+      id,
+      transcript,
+      transcriptInfo,
+      writtenAt,
+      database,
+      databaseInfo,
+      logThere: infos[2] !== null,
+      lastWriteAt,
+    };
   }
 
   return {

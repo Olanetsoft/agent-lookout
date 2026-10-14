@@ -47,10 +47,12 @@ export interface AntigravitySessionInput {
   state: TranscriptState;
   live: AntigravityLiveness;
   /**
-   * The approval the conversation's program waits for, from its log, when the
-   * transcript has no step yet at the one that waits (`waitsForApproval`).
+   * The approval the conversation waits for: for the CLI from its program's
+   * log, when the transcript has no step yet at the one that waits
+   * (`waitsForApproval`), with the tool agy names; for Antigravity 2.0 from
+   * the chat's database (`../app/waits.ts`), with no tool.
    */
-  waiting?: { tool: string; since: number | null } | null;
+  waiting?: { tool: string | null; since: number | null } | null;
   /** The title agy gave it, from its annotation file. */
   title?: string | null;
   /** The folder its program works in, from that program's log. */
@@ -74,7 +76,8 @@ export interface AntigravitySessionInput {
  *   may have the conversation open (`mapAntigravityStatus`). A CLI session
  *   needs you, for permission, while its program's log says it waits for
  *   approval, with the tool agy names, such as `RunCommand`, as the detail.
- *   Antigravity 2.0's are never given a wait, and stay working while their
+ *   An Antigravity 2.0 chat needs you, for permission, while its database
+ *   says its newest step waits, with no detail, and stays working while its
  *   files are written.
  * - The app is the profile's: the terminal for the CLI, the desktop app for
  *   Antigravity 2.0.
@@ -142,7 +145,7 @@ export function antigravitySession(input: AntigravitySessionInput): Session {
   };
   if (status === "needs-you" && waiting !== null) {
     session.waitingReason = "permission";
-    session.waitingDetail = waiting.tool;
+    if (waiting.tool !== null) session.waitingDetail = waiting.tool;
   }
   const writtenAt = plausibleTime(input.writtenAt, now);
   const beforeStart =

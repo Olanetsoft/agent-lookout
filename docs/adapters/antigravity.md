@@ -277,7 +277,7 @@ Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `conten
 The CLI's table applies, from `antigravityMapping.ts`, with three differences, each in `mapAntigravityStatus` or `app/index.ts`:
 
 - A chat whose last step says idle is working while any of its transcript, its database and the database's log was written in the last 10 seconds (`WRITING_MS`), since the step under way is not in the transcript yet. That the app writes the database while a step runs has not been seen yet. So a chat that has just answered shows as working for up to 10 seconds more, and a chat whose files are written while it waits can show as working. If the app also writes the database later, as agy has been seen to half a minute after the transcript, an idle chat shows as working for 10 seconds then too.
-- Needs you is never shown. The program's step states include `WAITING`, which may be its wait for approval, but no wait has been seen yet. A chat that waits shows as working, or as idle once its files are quiet if its last step is a reply that names no tool.
+- Needs you comes from the chat's database, as [Waits](#waits) says, not from a log, and is shown unless the app is known to be closed or the last step failed.
 - Open and closed come from the app's one program, not from one program for each conversation, as [Liveness](#liveness) says.
 
 ### Liveness
@@ -297,9 +297,22 @@ sqlite3 -init /dev/null -batch -json 'file:<folder>/conversation_summaries.db?mo
 
 Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly` with `?mode=ro` did not, with "unable to open database file (14)", while no `-wal` or `-shm` file was beside it, since a reader of a database in WAL mode otherwise makes its `-shm`. `immutable=1` takes no lock and makes no file. `mode=ro` is added so a database that is not there is never made: with `immutable=1` alone, `sqlite3` makes an empty one. `?mode=ro&immutable=1` was checked on a database in WAL mode with no side files, made for the tests, not on the app's own. `immutable=1` also means the app's `-wal` file is not read, so a chat begun a moment ago may have no folder until the app moves its writes into the database, and a read made while it does can fail. The folder is the first address in `workspace_uris` that is a local absolute path. The database is looked at with `lstat` on each poll that shows a chat, and read again only when its size or modified time changes after a read that worked, or a minute after a read that did not work, whether it changed or not, so a `sqlite3` that cannot read it, such as one too old to know `-json`, is not run on every change. With no `sqlite3`, or when it fails, chats show without a folder, and the card says so.
 
+### Waits
+
+`conversations/<id>.db` is each chat's own SQLite database. Its table `steps` has a row for each step: `idx`, `step_type`, `status`, `has_subtrajectory`, `metadata`, `error_details`, `permissions`, `task_details`, `render_info`, `step_payload` and `step_format`, with `step_type` and `status` numbers from the program's `CortexStepType` and `CortexStepStatus`. Seen on 2026-10-13, while the app asked to approve a command and said it was waiting for user input: the newest step, by `idx`, had status 9, `CORTEX_STEP_STATUS_WAITING`, and type 132, `CORTEX_STEP_TYPE_GENERIC`, not `RUN_COMMAND`, with `permissions` empty. The transcript held only the steps before it, and the app's list of chats said `CASCADE_RUN_STATUS_RUNNING`. The database was in WAL mode, with no `-wal` or `-shm` file beside it for the hours the wait lasted.
+
+`app/waits.ts` reads two numbers of the newest step alone, with the same `sqlite3` as [Folders](#folders):
+
+```sh
+sqlite3 -init /dev/null -batch -json 'file:<folder>/conversations/<id>.db?mode=ro&immutable=1' \
+  'SELECT idx, status FROM steps ORDER BY idx DESC LIMIT 1'
+```
+
+A chat whose newest step has status 9 needs you, for permission, with no detail, since the step's payload, which holds what it asks, is never read. It has waited since the database's modified time when that step was first seen to wait. The database is read only for a chat that is shown and whose app is not known to be closed, again only when its size or modified time changes after a read that worked, or a minute after one that did not, and not while its `-wal` file is there, since `immutable=1` would not see what that file holds: the chat then shows as it would without it. With no `sqlite3`, or when it fails, a chat that waits shows as working or idle, and the card says so. Nothing is read on Windows.
+
 ### Its gaps
 
-- No Needs you, no Jump, no Stop and no Answer.
+- No Jump, no Stop and no Answer. Needs you does not say what a chat asks, and is not shown on Windows.
 - No chat is shown as finished on Linux or Windows, and on Windows none has a folder.
 - A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own. None was seen.
 - A 1.x Antigravity IDE's chats left in the same folder are listed as the app's, if their transcript was written in the last day.
@@ -307,12 +320,12 @@ Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly`
 
 ### What breaks when Antigravity 2.0 changes
 
-| Change in the app                                           | What the dashboard shows                                                 | Where to fix it                          |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
-| `~/.gemini/antigravity` stops being its folder              | Antigravity is not found, or found empty                                 | `app/index.ts`                           |
-| The layout under `brain/` or the transcript's fields change | As for the CLI: no chats, or chats shown as Unknown                      | `shared/`                                |
-| The hub is renamed or moves inside the app                  | Every chat shows as finished                                             | `app/hubProcess.ts`                      |
-| `conversation_summaries` or its two columns are renamed     | Chats show without a folder, and the card says sqlite3 could not read it | `app/summaries.ts`                       |
-| A wait for approval is written as a step in `WAITING`       | It shows as working, not as needing you                                  | `src/core/mapping/antigravityMapping.ts` |
+| Change in the app                                            | What the dashboard shows                                                 | Where to fix it     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------- |
+| `~/.gemini/antigravity` stops being its folder               | Antigravity is not found, or found empty                                 | `app/index.ts`      |
+| The layout under `brain/` or the transcript's fields change  | As for the CLI: no chats, or chats shown as Unknown                      | `shared/`           |
+| The hub is renamed or moves inside the app                   | Every chat shows as finished                                             | `app/hubProcess.ts` |
+| `conversation_summaries` or its two columns are renamed      | Chats show without a folder, and the card says sqlite3 could not read it | `app/summaries.ts`  |
+| A wait is written with another status, or `steps` is renamed | A chat that waits shows as working, not as needing you                   | `app/waits.ts`      |
 
 To check a new version, with the app open, start a chat that asks to run a command, and note, never the content: `ls -la` of `brain/<id>/.system_generated/logs/` and `steps/`, the `type` and `status` of the transcript's last lines, and `ps -A -o comm=` for the hub's path. Then compare Agent Lookout's card and the chat's status with what was noted.
