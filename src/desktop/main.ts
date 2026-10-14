@@ -19,14 +19,21 @@
 // from the menu bar too, through the collector's own answer in this process
 // (`answers/desktopAnswers.ts`), with every check a press on the page makes.
 //
-// It asks the internet one thing: whether GitHub has a newer version of it, at
-// start and then about once a day while the switch in Settings is on, or when
-// the person chooses Check for Updates…. A newer one is downloaded and checked,
-// and installed only when the person presses Install and Restart
+// Its own code asks the internet one thing: whether GitHub has a newer version
+// of it, at start and then about once a day while the switch in Settings is on,
+// or when the person chooses Check for Updates…. A newer one is downloaded and
+// checked, and installed only when the person presses Install and Restart
 // (`updates/updater.ts`). The page reaches that through `/api/app/*` on the
 // app's own scheme, which only this host answers (`updates/updateRoute.ts`),
-// and so it reaches the menu bar's switch and a test of the app's own
-// notifications, which reports what macOS made of it.
+// and so it reaches the menu bar's switch, a test of the app's own
+// notifications, which reports what macOS made of it, and what came of the
+// plugin's install, below.
+//
+// Once, the first time it opens, it runs Claude Code's own `claude plugin`
+// commands to install its plugin, so Allow and Deny work from here, when it
+// finds the `claude` program it runs for `claude agents` and the plugin is not
+// installed. Claude Code fetches the plugin from GitHub. The app remembers that
+// it tried, and never tries again (`claude-plugin/pluginInstaller.ts`).
 //
 // What would otherwise be lost, an error here or a warning from the collector,
 // goes to the app's log (`process/appLog.ts`). A startup that fails says so in
@@ -55,6 +62,9 @@ import { UPDATES_HASH, type InstallRefusal } from "../core/appUpdate.ts";
 import { createCollector, type Collector } from "../collector/collector.ts";
 import { isQuietAt } from "../core/time-rules/quietHours.ts";
 import { createDesktopAnswers } from "./answers/desktopAnswers.ts";
+import { createPluginInstallRoute } from "./claude-plugin/pluginInstallRoute.ts";
+import { createPluginInstaller, type PluginInstaller } from "./claude-plugin/pluginInstaller.ts";
+import { pluginInstallFile } from "./claude-plugin/pluginInstallSettings.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
 import { createMenuBar, type MenuBar } from "./menu-bar/menuBar.ts";
 import { menuBarActions, sessionAddress } from "./menu-bar/menuBarActions.ts";
@@ -108,6 +118,7 @@ function whereTheLogIs(): string {
 let collector: Collector | null = null;
 let updater: Updater | null = null;
 let menuBar: MenuBar | null = null;
+let pluginInstaller: PluginInstaller | null = null;
 
 /** Notifications the app has shown of its own, held so a click on one is still heard. */
 const shownNotices: Notification[] = [];
@@ -248,6 +259,7 @@ function start(): void {
     collector = null;
     updater?.stop();
     menuBar?.stop();
+    pluginInstaller?.stop();
   });
 
   app
@@ -353,6 +365,15 @@ function start(): void {
         quit: () => app.quit(),
         warn: log,
       });
+      // Once ever, the first time the packaged app opens: Claude Code's own
+      // commands install its plugin, in the background.
+      const installer = createPluginInstaller({
+        env: process.env,
+        packaged: app.isPackaged,
+        settings: pluginInstallFile(app.getPath("userData")),
+        warn: log,
+      });
+      pluginInstaller = installer;
       protocol.handle(
         APP_SCHEME,
         createAppProtocolHandler({
@@ -361,6 +382,7 @@ function start(): void {
             update: createUpdateRoute(updater),
             menuBar: createMenuBarRoute(bar),
             notifications: createNotificationRoute(notifier),
+            pluginInstall: createPluginInstallRoute(installer),
           }),
           distDir: path.join(app.getAppPath(), "dist"),
         }),
@@ -368,6 +390,8 @@ function start(): void {
       collector.start();
       updater.start();
       bar.start();
+      // Not waited for: the window is never held up, and the page hears that it is under way.
+      void installer.start();
       // An update that could not be installed opens on the card that says why.
       const { update } = updater.status();
       showWindow(update.phase === "failed" && update.step === "install" ? UPDATES_URL : undefined);

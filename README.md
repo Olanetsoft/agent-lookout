@@ -27,7 +27,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 
 **Mac app:** download it from the [latest release](https://github.com/Olanetsoft/agent-lookout/releases/latest) (`arm64` for Apple silicon, `x64` for Intel) and drag it to Applications. It needs macOS 13 or later, and no Node.js. The first time, macOS says it was not opened: press Open Anyway in System Settings › Privacy & Security.
 
-**To answer Claude Code's permission prompts from the page**, add the plugin in Claude Code:
+**To answer Claude Code's permission prompts from the page**, add the plugin in Claude Code. The Mac app adds it for you the first time it opens.
 
 ```text
 /plugin marketplace add Olanetsoft/agent-lookout

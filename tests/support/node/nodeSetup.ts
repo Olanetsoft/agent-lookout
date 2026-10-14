@@ -32,6 +32,11 @@ process.env.AGENT_LOOKOUT_SETTINGS_FILE = NO_SETTINGS_FILE;
 // prompts. A test of answering names a socket of its own.
 process.env.AGENT_LOOKOUT_ANSWER = "off";
 
+// Nor does anything built from `process.env` run `claude plugin` to install
+// the Mac app's Claude Code plugin. A test of the installer passes an
+// environment of its own, with a stand-in `claude`.
+process.env.AGENT_LOOKOUT_PLUGIN_INSTALL = "off";
+
 // Nor does one built from `process.env` push to a phone, whatever the shell
 // running the tests has set: a test of ntfy or Pushover passes an environment
 // of its own, aimed at a stand-in on 127.0.0.1.

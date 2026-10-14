@@ -6,7 +6,7 @@ It is one `PermissionRequest` hook, `hooks/ask-agent-lookout.sh`. Claude Code ru
 
 ## Install
 
-In Claude Code:
+The Agent Lookout Mac app installs it for you the first time it opens. Everywhere else, in Claude Code:
 
 ```text
 /plugin marketplace add Olanetsoft/agent-lookout

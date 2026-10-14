@@ -9,6 +9,7 @@ import { createApiHandler, type ApiHandler } from "@collector/handler";
 import { createHistoryStore } from "@collector/historyStore";
 import { contentSecurityPolicy } from "@collector/hosts/staticFiles";
 import { APP_ORIGIN, APP_START_URL } from "@core/appAddress";
+import { createPluginInstallRoute } from "@desktop/claude-plugin/pluginInstallRoute";
 import { createNotificationRoute } from "@desktop/notifications/notificationRoute";
 import { createAppProtocolHandler } from "@desktop/protocol/appProtocol";
 import { createAppRoutes } from "@desktop/protocol/appRoutes";
@@ -197,6 +198,7 @@ describe("the app's own scheme", () => {
         update: nothing,
         menuBar: nothing,
         notifications: createNotificationRoute(notifications),
+        pluginInstall: nothing,
       });
       const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
       const answer = await serve(press(APP_ORIGIN));
@@ -217,6 +219,60 @@ describe("the app's own scheme", () => {
       expect((await serve(from(`${APP_ORIGIN}/api/app/notifications`, APP_ORIGIN))).status).toBe(
         404,
       );
+    });
+  });
+
+  describe("what came of installing the Claude Code plugin", () => {
+    const STATUS_URL = `${APP_ORIGIN}/api/app/claude-plugin`;
+    const TOLD_URL = `${APP_ORIGIN}/api/app/claude-plugin/told`;
+    /** The POST the Overview sends once its note is dismissed, as the app's own page or another page makes it. */
+    const told = (initiator: string) =>
+      from(TOLD_URL, initiator, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Agent-Lookout-Action": "plugin-install-told",
+        },
+        body: "{}",
+      });
+    const installer = () => ({
+      status: vi.fn(() => ({ state: "installed" as const })),
+      markTold: vi.fn(() => ({ state: "idle" as const })),
+    });
+    const nothing: ApiHandler = () => {
+      throw new Error("Not this route.");
+    };
+
+    test("is read and dismissed by the app's own page, and by no other", async () => {
+      const { dist } = await makeApp();
+      const installs = installer();
+      const app = createAppRoutes({
+        update: nothing,
+        menuBar: nothing,
+        notifications: nothing,
+        pluginInstall: createPluginInstallRoute(installs),
+      });
+      const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
+      const read = await serve(from(STATUS_URL, APP_ORIGIN));
+      expect(read.status).toBe(200);
+      expect(await read.json()).toEqual({ state: "installed" });
+
+      const answer = await serve(told(APP_ORIGIN));
+      expect(answer.status).toBe(200);
+      expect(await answer.json()).toEqual({ state: "idle" });
+      expect(installs.markTold).toHaveBeenCalledOnce();
+
+      // Another page's request never reaches it.
+      expect((await serve(told("https://evil.example"))).status).toBe(403);
+      expect((await serve(from(STATUS_URL, "https://evil.example"))).status).toBe(403);
+      expect(installs.markTold).toHaveBeenCalledOnce();
+    });
+
+    test("is not there without the app's own routes, as in the standalone server and the dev server", async () => {
+      const { dist } = await makeApp();
+      const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
+      expect((await serve(from(STATUS_URL, APP_ORIGIN))).status).toBe(404);
+      expect((await serve(told(APP_ORIGIN))).status).toBe(405);
     });
   });
 

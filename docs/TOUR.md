@@ -710,6 +710,7 @@ In this part, a bare path such as `main.ts` is under `src/desktop/`.
 | `answers/`       | Deny and Allow from a notification or the menu bar                                            |
 | `menu-bar/`      | The item in the menu bar, its menu, and its switch in Settings                                |
 | `menu/`          | The app menu and the right-click menu                                                         |
+| `claude-plugin/` | The one-time install of the Claude Code plugin, and what came of it                           |
 | `updates/`       | The daily check, the download, its checks, and the install                                    |
 | `process/`       | The app's log, and the launch switches it refuses                                             |
 
@@ -767,6 +768,15 @@ The fix (cd9dfef) sets `-webkit-app-region: none` on those fields of light in `s
   - `desktopAnswers.ts` takes every press and hands it to the collector's own answer path, the same one the route uses. So a press here goes through every check a press on the page does.
   - It refuses a press within the first second of a request being shown, and while the Mac is locked.
   - #81 stays open until it is checked by hand on a packaged build.
+
+#### The Claude Code plugin, installed once (#120)
+
+The first time the packaged app opens, it installs the Claude Code plugin, so Allow and Deny work from the first day. The code is in `claude-plugin/`.
+
+- `pluginInstaller.ts` decides whether this launch may try. Not in a development run, not with answering off, and not where the app does not run `claude`. `AGENT_LOOKOUT_PLUGIN_INSTALL=off` is remembered.
+- It finds `claude` as `claude agents` does, and runs Claude Code's own commands through the same `runProgram`: `claude plugin list`, then, only if no line names `agent-lookout@agent-lookout`, `claude plugin marketplace add`, `claude plugin install` and `claude plugin list` again. Of the list it keeps only that one yes or no.
+- Before the first command, `pluginInstallSettings.ts` writes `plugin-install-state.json`. With that file there, it never tries again, so a plugin the person removes stays removed. A file that cannot be read means it never tries.
+- `pluginInstallRoute.ts` tells the page what came of it. `src/dashboard/components/dashboard/PluginNotice.tsx` says so once on the Overview, with the command that removes the plugin, or the two that install it by hand. The commands come from `src/core/answers/pluginInstall.ts`, so what is shown is what was run.
 
 #### Updates
 
@@ -1126,10 +1136,10 @@ All of this is in `src/collector/handler.ts`. Every request, reads included, fir
 - a content type of `application/json` (415). A custom header and a JSON content type force a CORS preflight from any other origin. The API never answers one with CORS headers, so a page on another origin cannot send the request.
 - a body no larger than the route's limit (413)
 
-Ten files call `actionRefusalFor`:
+Twelve files call `actionRefusalFor`:
 
 - the collector's eight routes that act: `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop`, `POST /api/sessions/clean-up`, `POST /api/permission/answer`, `POST /api/settings/time-rules`, `POST /api/settings/permission-rules` and `POST /api/phone/test`
-- the Mac app's own routes: `src/desktop/menu-bar/menuBarRoute.ts`, and `src/desktop/updates/updateRoute.ts`, which serves three POSTs
+- the Mac app's own routes: `src/desktop/menu-bar/menuBarRoute.ts`, `src/desktop/notifications/notificationRoute.ts`, `src/desktop/claude-plugin/pluginInstallRoute.ts`, and `src/desktop/updates/updateRoute.ts`, which serves three POSTs
 
 **After those checks, each route follows the same pattern.**
 
@@ -1258,7 +1268,7 @@ sequenceDiagram
 
 **Why it works this way.**
 
-- **It is a plugin, not a settings edit.** #9 asked for it this way "so nobody's settings file is edited". Agent Lookout never writes under `~/.claude`. You install the plugin yourself with `/plugin`.
+- **It is a plugin, not a settings edit.** #9 asked for it this way "so nobody's settings file is edited". Agent Lookout's own code never writes under `~/.claude`. The Mac app installs the plugin once through Claude Code's own command (#120), and anywhere else you install it yourself with `/plugin`.
 - **It uses a Unix socket, not an HTTP route.** The Mac app opens no port, and no web page can reach a Unix socket. The folder has mode 0700 and the socket 0600.
 - **Allow is offered only when the whole request is on screen.** The one-line summary ("Run: npm test") is not enough to approve, because a second line could do anything. Only Deny is offered for:
   - edits, because the change itself is not shown
@@ -1378,7 +1388,7 @@ A test ends in `.test.tsx` only when its module is a `.tsx` file. A module may h
 **Why no test touches your machine.** Tests run on a contributor's own computer, next to their real sessions, so two safeguards keep them apart:
 
 - The test config leaves out the collector's Vite plugin.
-- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code at empty folders and the settings at `NO_SETTINGS_FILE`.
+- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed, keeps the Mac app's plugin install from running `claude plugin` and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code at empty folders and the settings at `NO_SETTINGS_FILE`.
 
 A test that builds its own environment does the same itself. One block of tests, the check against the real `claude`, runs only with `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1`. [tests/README.md](../tests/README.md) has the command, says what goes in each group and describes every helper in `tests/support/`.
 
@@ -1522,15 +1532,16 @@ Both ship inside the npm package.
 
 **Why they matter here.** They are promises, and the project treats them as part of the code. PRIVACY.md ends with a rule: a change that adds a command or a file read, stores anything on disk, or talks to a network updates PRIVACY.md in the same pull request. The pull request template asks for the same. Most of the promises have a test that would fail if the code broke them:
 
-| Promise                                                                                                                                                                                                               | Test that holds it                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                                                               | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
-| `npm start` listens on loopback only                                                                                                                                                                                  | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
-| The page loads nothing from another site                                                                                                                                                                              | The same file: "the page may load and call nothing but this server"                                                                                  |
-| What a waiting session is asking is never written to disk or given to an MCP client                                                                                                                                   | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
-| A session's last message is kept only within the stated limits                                                                                                                                                        | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
-| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                                                      | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
-| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode or Qwen Code folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
+| Promise                                                                                                                                                                                                               | Test that holds it                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                                                               | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host"                |
+| `npm start` listens on loopback only                                                                                                                                                                                  | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                                       |
+| The page loads nothing from another site                                                                                                                                                                              | The same file: "the page may load and call nothing but this server"                                                                                                 |
+| What a waiting session is asking is never written to disk or given to an MCP client                                                                                                                                   | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                  |
+| A session's last message is kept only within the stated limits                                                                                                                                                        | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                                  |
+| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                                                      | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                               |
+| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode or Qwen Code folder | `tests/support/node/nodeSetup.ts`                                                                                                                                   |
+| The Mac app's plugin install runs only its fixed `claude plugin` commands, once ever, and nothing built from `process.env` runs them                                                                                  | `tests/unit/desktop/claude-plugin/pluginInstaller.test.ts`, `tests/integration/desktop/claude-plugin/pluginInstaller.test.ts` and `tests/support/node/nodeSetup.ts` |
 
 The docs are held to the code in the same way:
 

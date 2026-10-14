@@ -1095,3 +1095,62 @@ describe("the question about notifications", () => {
     expect(posted).toEqual([]);
   });
 });
+
+describe("what came of installing the Claude Code plugin", () => {
+  /** Every address the page asked the app for. */
+  let asked: string[];
+
+  beforeEach(() => {
+    // Granted, as the app's window grants it, so the question about notifications is drawn too.
+    setNotificationHost(fakeNotificationHost({ permission: "granted" }));
+    resetNotificationSettingForTests();
+    asked = [];
+    setApiHost(async (path) => {
+      asked.push(path);
+      if (path === "/api/app/claude-plugin") {
+        return new Response(JSON.stringify({ state: "installed" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return path === "/api/waits"
+        ? new Response(JSON.stringify(quietWaits(NOW)))
+        : new Response("{}");
+    });
+  });
+
+  afterEach(() => {
+    localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    resetNotificationSettingForTests();
+    setNotificationHost();
+  });
+
+  test("in the Mac app, a quiet note over the cards, after the question about notifications, says it was installed", async () => {
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp />,
+    );
+    await expect
+      .element(screen.getByText("Agent Lookout installed its Claude Code plugin", { exact: true }))
+      .toBeVisible();
+    const notice = slot(screen.container, "plugin-notice");
+    expect(
+      slot(screen.container, "notification-prompt").compareDocumentPosition(notice) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      notice.compareDocumentPosition(slot(screen.container, "overview-grid")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(notice.querySelector('[data-slot="callout"]')?.getAttribute("data-tone")).toBe("info");
+    await pointAway();
+    expect(warmPaint(notice)).toEqual([]);
+  });
+
+  test("in a browser, it is not there and nothing asks the app", async () => {
+    const screen = await render(
+      <DashboardView state={state({})} now={NOW} onRetry={() => {}} inApp={false} />,
+    );
+    await waitsRead(screen);
+    expect(slot(screen.container, "plugin-notice")).toBeNull();
+    expect(asked).not.toContain("/api/app/claude-plugin");
+  });
+});
