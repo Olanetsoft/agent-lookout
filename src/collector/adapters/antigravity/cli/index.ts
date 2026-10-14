@@ -238,10 +238,16 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  *   See `transcriptFile.ts`.
  * - `ps`, for which agy programs run, to tell an open conversation from one
  *   that has ended. See `agyProcesses.ts`.
+ * - Each running agy program's own log, `<agy folder>/log/cli-*.log`, for the
+ *   folder it works in, the conversation it has open and an approval it waits
+ *   for, read only while `ps` can say which programs run. See `agyLogs.ts`.
+ * - Each listed conversation's title, from `annotations/<id>.pbtxt`. See
+ *   `../shared/annotations.ts`.
  *
  * A conversation is listed while an agy program may have it open, and for 24
  * hours after its transcript was last written. Its status is working, idle,
- * failed or finished, never "needs-you".
+ * needs-you while its program's log says agy waits for approval of a tool,
+ * failed or finished.
  *
  * agy not being installed costs nothing: when its folder is missing, the
  * adapter says so and looks again only once a minute, with a single `stat`,

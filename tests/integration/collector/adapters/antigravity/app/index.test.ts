@@ -201,7 +201,7 @@ describe("the Antigravity adapter, on a folder laid out as Antigravity 2.0 lays 
     expect(await snapshotOf(home)).toEqual(before);
   });
 
-  test("opens only transcripts and titles of the last day, and looks at the databases only for when they were written", async () => {
+  test("itself opens only transcripts and titles of the last day, and never a database", async () => {
     const home = await makeAppHome();
     const { io, calls } = recordingIo();
     await adapterFor(home, { io }).poll();

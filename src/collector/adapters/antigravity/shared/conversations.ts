@@ -4,14 +4,16 @@ import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../../core/sessi
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 
 /**
- * Finding the Antigravity CLI's conversations, by the names of two folders and
- * the modified times of three files each. No file is opened here.
+ * Finding the conversations of the Antigravity CLI, or the chats of
+ * Antigravity 2.0, which keeps them the same way, by the names of two folders
+ * and the modified times of three files each. No file is opened here.
  *
  * - `<agy folder>/brain/<conversation id>/` holds a conversation's transcript,
  *   `.system_generated/logs/transcript.jsonl`.
  * - `<agy folder>/conversations/<conversation id>.db` is the conversation's
  *   SQLite database, with its write-ahead log `<id>.db-wal` beside it. Neither
- *   is ever opened.
+ *   is opened here: the CLI's adapter never opens them, and Antigravity 2.0's
+ *   asks `sqlite3` for two numbers of the database alone (`../app/waits.ts`).
  *
  * Whether a conversation was written lately, and so may be open, is told by
  * its transcript's modified time alone. Only the program running a

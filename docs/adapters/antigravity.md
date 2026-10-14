@@ -17,7 +17,7 @@ agy documents several things another program could use, and none of them can be 
 | Hooks, in `~/.gemini/config/hooks.json` | Need the person to edit that file, which the CLI and its backend share (changelog 1.0.8). The events are `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation` and `Stop`. No hook fires when an approval prompt is shown, and Esc fires no `Stop`.                                                                                    |
 | The status line command                 | Needs a change to the person's `settings.json`. Its `agent_state` is `idle`, `thinking`, `working`, `tool_use` or `initializing`, with no waiting value. Its `transcript_path` points into `~/.gemini/antigravity/` instead of `antigravity-cli/` (google-antigravity/antigravity-cli#744, open).                                               |
 | `conversation_summaries.db`             | SQLite, with a row for each conversation: its `title`, `workspace_uris`, `status`, `not_fully_idle`, `killed` and more. It also holds `preview` and `raw_summary`, which hold prompt text. `node:sqlite` needs a flag on Node 22.12. The CLI's is not read; Antigravity 2.0's is, for two columns, with `sqlite3`, as [Folders](#folders) says. |
-| `conversations/<id>.db`                 | The conversation's own SQLite database, in WAL mode, described for agy 1.0.16 as holding a `steps` table with each step's payload, which holds the content. The same reasons apply. Only its modified time is used.                                                                                                                             |
+| `conversations/<id>.db`                 | The conversation's own SQLite database, in WAL mode, described for agy 1.0.16 as holding a `steps` table with each step's payload, which holds the content. The same reasons apply. The CLI's is only looked at for its modified time; Antigravity 2.0's is read for the place and status of its newest step, as [Waits](#waits) says.          |
 | `agy` itself                            | Has no command that lists conversations, and running it signs in to Google.                                                                                                                                                                                                                                                                     |
 
 ## What it reads
@@ -276,8 +276,8 @@ Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `conten
 
 The CLI's table applies, from `antigravityMapping.ts`, with three differences, each in `mapAntigravityStatus` or `app/index.ts`:
 
-- A chat whose last step says idle is working while any of its transcript, its database and the database's log was written in the last 10 seconds (`WRITING_MS`), since the step under way is not in the transcript yet. That the app writes the database while a step runs has not been seen yet. So a chat that has just answered shows as working for up to 10 seconds more, and a chat whose files are written while it waits can show as working. If the app also writes the database later, as agy has been seen to half a minute after the transcript, an idle chat shows as working for 10 seconds then too.
-- Needs you comes from the chat's database, as [Waits](#waits) says, not from a log, and is shown unless the app is known to be closed or the last step failed.
+- A chat whose last step says idle is working while any of its transcript, its database and the database's log was written in the last 10 seconds (`WRITING_MS`), since the step under way is not in the transcript yet. The app was seen to write a step that waits for approval into the database before the transcript, as [Waits](#waits) says. Whether it writes the database while other steps run has not been seen yet. So a chat that has just answered shows as working for up to 10 seconds more, and a chat whose files are written while it waits can show as working. If the app also writes the database later, as agy has been seen to half a minute after the transcript, an idle chat shows as working for 10 seconds then too.
+- Needs you comes from the chat's database, as [Waits](#waits) says, not from a log, and is shown unless the app is known to be closed or the transcript's last step failed, reads as unknown, or was not found.
 - Open and closed come from the app's one program, not from one program for each conversation, as [Liveness](#liveness) says.
 
 ### Liveness
@@ -313,6 +313,7 @@ A chat whose newest step has status 9 needs you, for permission, with no detail,
 ### Its gaps
 
 - No Jump, no Stop and no Answer. Needs you does not say what a chat asks, and is not shown on Windows.
+- On Linux, where the app is never known to be closed, a chat the app left waiting when it quit or crashed shows as needing you until its transcript is a day old, unless its database changes.
 - No chat is shown as finished on Linux or Windows, and on Windows none has a folder.
 - A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own. None was seen.
 - A 1.x Antigravity IDE's chats left in the same folder are listed as the app's, if their transcript was written in the last day.
@@ -328,4 +329,4 @@ A chat whose newest step has status 9 needs you, for permission, with no detail,
 | `conversation_summaries` or its two columns are renamed      | Chats show without a folder, and the card says sqlite3 could not read it | `app/summaries.ts`  |
 | A wait is written with another status, or `steps` is renamed | A chat that waits shows as working, not as needing you                   | `app/waits.ts`      |
 
-To check a new version, with the app open, start a chat that asks to run a command, and note, never the content: `ls -la` of `brain/<id>/.system_generated/logs/` and `steps/`, the `type` and `status` of the transcript's last lines, and `ps -A -o comm=` for the hub's path. Then compare Agent Lookout's card and the chat's status with what was noted.
+To check a new version, with the app open, start a chat that asks to run a command, and note, never the content: `ls -la` of `brain/<id>/.system_generated/logs/` and `steps/`, the `type` and `status` of the transcript's last lines, `ls` of `conversations/<id>.db*` and the `idx`, `step_type` and `status` of the newest row of its `steps` while the approval is asked, and `ps -A -o comm=` for the hub's path. Then compare Agent Lookout's card and the chat's status with what was noted.
