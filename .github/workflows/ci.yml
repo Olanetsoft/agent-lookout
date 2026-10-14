@@ -135,11 +135,11 @@ jobs:
       # binary comes only when something runs it, and no job does.
       - run: node scripts/build-desktop.mjs
 
-  # The landing page's tour in site/tour/ and Motion's bundle in site/vendor/
-  # are built from a release, as one of its steps, so the page never shows a
-  # dashboard feature before it ships. Every run checks their sizes and the
-  # licence line. A run whose package.json has a new version, a release, also
-  # builds them again and fails when what is committed is not what it builds.
+  # The landing page's tour in site/tour/ is built from a release, as one of
+  # its steps, so the page never shows a dashboard feature before it ships.
+  # Every run checks its sizes. A run whose package.json has a new version, a
+  # release, also builds it again and fails when what is committed is not what
+  # it builds.
   tour:
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -16,6 +16,20 @@ html[data-mode="yours"] {
   overscroll-behavior: auto;
 }
 
+/*
+ * The frame is a picture of a window, so nothing in it draws a scroll bar, in
+ * either mode: not the page, not a list such as Events. They still scroll, by
+ * the keys and as the director brings a card into view, and the page fades
+ * the frame's foot to say there is more.
+ */
+html,
+html * {
+  scrollbar-width: none;
+}
+::-webkit-scrollbar {
+  display: none;
+}
+
 /* The ring a key would draw on the Jump the tour presses. */
 [data-tour-pressed] {
   outline: 2px solid var(--focus);

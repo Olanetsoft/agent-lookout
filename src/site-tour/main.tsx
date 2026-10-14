@@ -38,8 +38,9 @@ import { createTourStore } from "@site-tour/host/tourStore";
 /*
  * The landing page's dashboard: the real one, in a frame of the page, given an
  * hour of its own to show and a host for each thing it would otherwise ask
- * the computer for. The page drives it from its scroll, scene by scene, until
- * the visitor takes it over, and the page takes it back.
+ * the computer for. The page puts it in a scene, and the picture scripts in
+ * scripts/ in each of theirs, until the visitor takes it over, and the page
+ * takes it back.
  */
 
 /** The theme the page around the frame is in: chosen there, or following the system. */

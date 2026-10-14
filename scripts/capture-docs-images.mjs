@@ -47,20 +47,25 @@
 // colours or fewer, and the rows filtered whichever way packs best, under
 // zlib's strongest setting.
 //
+// What it shares with the landing page's own picture script, the server, the
+// held clock and the wait for a scene to settle, is in
+// scripts/site-tour/tour-page.mjs.
+//
 // It fails if the page logs an error or asks for anything outside its own
 // address, and it stops its server and the browser whatever happens. It writes
 // the pictures only once every one is taken and the page did nothing wrong, so
 // a run that fails leaves the folder as it was.
 
 import { execFileSync } from "node:child_process";
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
 
 import { chromium } from "playwright";
+
+import { openScene, sceneNames, serveSite, settle } from "./site-tour/tour-page.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const site = path.join(root, "site");
@@ -71,18 +76,8 @@ if (outAt !== -1 && !args[outAt + 1]) {
 }
 const out = path.resolve(outAt === -1 ? path.join(root, "docs/images") : args[outAt + 1]);
 
-/** The moment every picture shows: 09:12:00 UTC on 5 October 2026. */
-const NOW = Date.UTC(2026, 9, 5, 9, 12, 0);
 const VIEWPORT = { width: 1440, height: 900 };
 const DENSITY = 2;
-/** How long the scene must stay as it is before the picture is taken. */
-const STILL_MS = 1500;
-
-/** The ports the app and its dev server use, which this never takes. */
-const RESERVED_PORTS = new Set([4777, 5173]);
-
-/** The ground's dither, left out: see above. */
-const NO_DITHER = ".ground::after { display: none !important; }";
 
 /**
  * Each picture: the tour's scene and step it shows, its theme, whether its
@@ -200,14 +195,7 @@ if (args.includes("--build") || !existsSync(tourPage)) {
   });
 }
 
-/** The tour's scenes, by name, in the order the director numbers them. */
-async function sceneNames() {
-  const source = await readFile(path.join(root, "src/site-tour/feed/scenes.ts"), "utf8");
-  const list = source.slice(source.indexOf("export const SCENES"));
-  return [...list.matchAll(/^ {4}name: "([^"]+)",$/gm)].map((match) => match[1]);
-}
-
-const names = await sceneNames();
+const names = await sceneNames(root);
 for (const picture of PICTURES) {
   picture.index = names.indexOf(picture.scene);
   if (picture.index === -1) {
@@ -217,92 +205,7 @@ for (const picture of PICTURES) {
   }
 }
 
-// site/, served as Vercel serves it.
-
-const TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript",
-  ".mjs": "text/javascript",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp",
-  ".png": "image/png",
-  ".woff2": "font/woff2",
-};
-
-/** The file a path names in site/, as Vercel finds it: `/tour/` is `tour/index.html`. */
-function fileFor(pathname) {
-  const clean = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, "");
-  for (const candidate of [clean, `${clean}.html`, path.join(clean, "index.html")]) {
-    const file = path.join(site, candidate);
-    if (file.startsWith(site) && existsSync(file) && statSync(file).isFile()) return file;
-  }
-  return null;
-}
-
-/** Serves site/ on 127.0.0.1, on a port the system picks that is not the app's own. */
-async function serveSite() {
-  for (;;) {
-    const server = createServer((request, response) => {
-      const file = fileFor(new URL(request.url ?? "/", "http://127.0.0.1").pathname);
-      if (!file) {
-        response.writeHead(404).end();
-        return;
-      }
-      response.setHeader("content-type", TYPES[path.extname(file)] ?? "application/octet-stream");
-      createReadStream(file).pipe(response);
-    });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address();
-    if (!RESERVED_PORTS.has(port)) return { server, origin: `http://127.0.0.1:${port}` };
-    server.close();
-  }
-}
-
 // The pictures.
-
-/**
- * Holds the page's clock at `now`, before any of its own script runs: the
- * tour's clock, src/site-tour/host/clock.ts, then reads that time and keeps it.
- * Only Date is held. Playwright's own clock would hold performance too, and
- * its stand-in keeps none of the measures `settle` counts.
- */
-function holdTheClock(now) {
-  class HeldDate extends Date {
-    constructor(...args) {
-      if (args.length === 0) super(now);
-      else super(...args);
-    }
-    static now() {
-      return now;
-    }
-  }
-  globalThis.Date = HeldDate;
-}
-
-/**
- * Waits until the fonts are in, the director has applied no scene for
- * STILL_MS, by the "tour:scene" measure it records as it finishes each, and
- * two frames are drawn. The tour draws each of its views once before it
- * applies the scene it was last given, so this is the scene asked for.
- */
-async function settle(page) {
-  await page.evaluate(() => document.fonts.ready);
-  const applied = () => page.evaluate(() => performance.getEntriesByName("tour:scene").length);
-  let last = await applied();
-  let stillFor = 0;
-  for (let waited = 0; stillFor < STILL_MS; waited += 250) {
-    if (waited > 30_000) throw new Error("The tour did not settle on its scene in 30 seconds.");
-    await page.waitForTimeout(250);
-    const now = await applied();
-    stillFor = now === last && now > 0 ? stillFor + 250 : 0;
-    last = now;
-  }
-  await page.evaluate(
-    () =>
-      new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))),
-  );
-}
 
 /** The Overview's top row, the Needs you panel and the Last hour chart, down to where the next row begins. */
 async function topRow(page) {
@@ -326,33 +229,12 @@ async function take(browser, origin, picture, problems) {
     timezoneId: "UTC",
   });
   try {
-    const page = await context.newPage();
-    await page.addInitScript(holdTheClock, NOW);
-    page.on("console", (m) => m.type() === "error" && problems.push(`console: ${m.text()}`));
-    page.on("pageerror", (error) => problems.push(`error: ${error}`));
-    page.on("request", (request) => {
-      const url = request.url();
-      if (!url.startsWith("data:") && new URL(url).origin !== origin) {
-        problems.push(`left the page's address: ${url}`);
-      }
-    });
-    await page.goto(`${origin}/tour/`, { waitUntil: "load" });
-    // As the landing page says them: the theme, then the scene. The tour applies the
-    // last scene it was given once it has drawn each of its views.
-    await page.evaluate(
-      ({ theme, index, step }) => {
-        window.postMessage({ type: "theme", theme }, location.origin);
-        window.postMessage({ type: "scene", index, step, lamp: null }, location.origin);
-      },
-      { theme: picture.theme, index: picture.index, step: picture.step },
+    const page = await openScene(
+      context,
+      origin,
+      { theme: picture.theme, index: picture.index, step: picture.step, label: picture.file },
+      problems,
     );
-    await page.addStyleTag({ content: NO_DITHER });
-    await settle(page);
-    if ((await page.locator(".ground").count()) === 0) {
-      throw new Error(
-        `${picture.file}: the dashboard's ground, whose dither is left out, has moved.`,
-      );
-    }
     // A window as tall as the view: grown until the view no longer runs past it.
     for (let tries = 0; picture.whole; tries++) {
       const height = await page.evaluate(() => document.documentElement.scrollHeight);
@@ -574,7 +456,7 @@ const mb = (bytes) => `${(bytes / 1_000_000).toFixed(2)} MB`;
 // pictures there as they were, and never some new and some old.
 const problems = [];
 const shots = [];
-const { server, origin } = await serveSite();
+const { server, origin } = await serveSite(site);
 try {
   const browser = await chromium.launch();
   try {

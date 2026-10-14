@@ -799,21 +799,21 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 
 ### The landing page and its tour
 
-**What it does.** It is one page that says what Agent Lookout is, shows it, and sends people to GitHub. In its middle is the real dashboard in a frame. As the page scrolls, the frame plays twelve scenes, and visitors can also click through it as they would in the app. Nothing in it acts, and nothing leaves the page.
+**What it does.** It is one page that guides a visitor from its first screen: what Agent Lookout is, the three ways to get it, and the app itself, the real dashboard in a window frame. Visitors can click about in the frame as they would in the app, and a switch shows it with a session waiting or with nothing waiting. Nothing in it acts, and nothing leaves the page. Below it come a section for each feature, with a picture the capture script takes from the same dashboard, then how to run it and a few questions.
 
 **Where it is.**
 
-| Path                                   | Holds                                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `site/index.html`, `site/styles.css`   | The page                                                                                                                       |
-| `site/site.js`                         | The first script, loaded in the head. It sets the Night and Day switch and the lamp's switch before the first paint            |
-| `site/tour.js`                         | The scroll tour, loaded after the page: the scenes, the numbered chips, and handing the frame between the page and the visitor |
-| `site/vercel.json`                     | The headers Vercel sends, including a strict Content-Security-Policy for the page and a separate one for `/tour`               |
-| `site/assets/`                         | The fonts, the app icon, and the pictures shown until the tour arrives                                                         |
-| `site/tour/`, `site/vendor/motion.mjs` | Built by `npm run build:tour` and committed                                                                                    |
-| `src/site-tour/`                       | The tour's page, which is built into `site/tour/`                                                                              |
-| `scripts/site-tour/build.mjs`          | `build:tour`, `check:tour` and `check:tour-size`                                                                               |
-| `scripts/site-tour/capture.mjs`        | Takes, from the tour itself, the pictures the page shows until the tour arrives                                                |
+| Path                                     | Holds                                                                                                                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/index.html`, `site/styles.css`     | The page                                                                                                                                                                                                |
+| `site/site.js`                           | The first script, loaded in the head. It sets the Night and Day switch and the lamp's switch before the first paint, copies the npx command and the prompt, and brings each feature in as it is reached |
+| `site/tour.js`                           | The frame on the first screen, loaded after the page: it puts the dashboard over its pictures and hands it between the page and the visitor                                                             |
+| `site/vercel.json`                       | The headers Vercel sends, including a strict Content-Security-Policy for the page and a separate one for `/tour`                                                                                        |
+| `site/assets/`                           | The fonts, the app icon, the frame's pictures, and the features' pictures in `features/`                                                                                                                |
+| `site/tour/`                             | Built by `npm run build:tour` and committed                                                                                                                                                             |
+| `src/site-tour/`                         | The tour's page, which is built into `site/tour/`                                                                                                                                                       |
+| `scripts/site-tour/build.mjs`            | `build:tour`, `check:tour` and `check:tour-size`                                                                                                                                                        |
+| `scripts/site-tour/capture-pictures.mjs` | `npm run capture:site`: takes every picture on the page from the tour                                                                                                                                   |
 
 **Where it came from.**
 
@@ -821,10 +821,11 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - #63 added three ways to get Agent Lookout: give your agent the repository, run `npx agent-lookout`, or download the Mac app.
 - #64 brought the page's text up to date with what had shipped.
 - #62 replaced the picture with a dashboard you can watch and click (ff3fb4f, 6 October).
+- #131 redesigned the page to guide a visitor from the first screen: the app, then one feature at a time.
 
 **Why it works the way it does.**
 
-- **No build step.** Vercel serves `site/` as it is. The parts the page needs built, the tour and the pieces of Motion that `tour.js` uses, are built once and committed. The page loads nothing from another site.
+- **No build step.** Vercel serves `site/` as it is. The one part the page needs built, the tour, is built once and committed, and so are the pictures taken from it. The page loads nothing from another site.
 - **The real dashboard, not pictures of it.** #62 weighed pictures with clickable areas against the real dashboard. It chose the real dashboard so that the page never falls behind the app. `src/site-tour/main.tsx` renders the same `App` as the dashboard and gives it a stand-in for each thing it would ask the computer for:
   - `src/site-tour/host/tourStore.ts`, a store worked out from the tour's current moment, in place of the store that polls
   - `src/site-tour/host/tourApi.ts`, an `ApiHost` installed with `setApiHost`. It answers every route inside the page and has no `fetch` in it. A route that would act in the app only says what it would have done.
@@ -835,7 +836,7 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - **An hour that adds up.**
   - `src/site-tour/feed/hour.ts` is the hour of sessions the tour shows, and `feed/week.ts` is the six days before it.
   - `feed/derive.ts` turns any moment into what the collector's routes would answer, using the same rules from `src/core/`. So the charts, the events and the waits agree with the sessions.
-  - `feed/scenes.ts` names the twelve scenes. Each scene is a state, not a sequence of moves, so scrolling back shows an earlier scene exactly as it was.
+  - `feed/scenes.ts` names the twelve scenes the frame and the picture scripts put the dashboard in. Each scene is a state, not a sequence of moves, so it lands the same from any scene before or after it.
 - **Driven as a person would drive it.**
   - `src/site-tour/director/director.ts` moves the dashboard into each scene using only what a person can reach: a view's address, a session's details, the Sessions switch, the switch in Settings, scrolling, and the Jump and Stop buttons.
   - `director/bridge.ts` defines the messages the page and the frame send each other over `postMessage`. Each side accepts a message only from the other, at the page's own address, in a shape it knows.
@@ -843,7 +844,7 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - **It shows the version people install.** `npm run build:tour` is a step of each release, so the page never shows a feature before it ships. See [The release flow](#the-release-flow).
 - **The hour is the page's content.** It lives in `src/site-tour/feed/`, not under `tests/`, and no build of the app includes it. Visitors read it, so nothing in it is named `example`, `demo` or `test`.
 
-The pictures in the README and the guide come from the tour too. `npm run capture:images` runs `scripts/capture-docs-images.mjs`, which opens the built tour in Playwright and takes the pictures with the clock held still. [The pictures in the docs](../CONTRIBUTING.md#the-pictures-in-the-docs) says when to run it.
+The pictures on the page, and in the README and the guide, come from the tour too. `npm run capture:site` runs `scripts/site-tour/capture-pictures.mjs`, and `npm run capture:images` runs `scripts/capture-docs-images.mjs`. Each opens the built tour in Playwright and takes the pictures with the clock held still, and what they share is in `scripts/site-tour/tour-page.mjs`. [The pictures on the landing page](../CONTRIBUTING.md#the-pictures-on-the-landing-page) and [The pictures in the docs](../CONTRIBUTING.md#the-pictures-in-the-docs) say when to run them.
 
 ### Things you would not guess about the page and the app
 
@@ -1406,7 +1407,7 @@ A test that builds its own environment does the same itself. One block of tests,
 | `test (Node 22)`, `test (Node 24)` | All three groups on Ubuntu. Node 22 includes 22.12, the oldest version the package supports                                                                                                                          | First commit, on Node 20 and 22. #68 (f80fe4e) moved it to 22 and 24 |
 | `test (Windows)`                   | All three groups on Windows                                                                                                                                                                                          | #22 (0e33aa1)                                                        |
 | `build`                            | `npm run build`. Since #2 (8eb9daf), it also bundles the Mac app's main process with `scripts/build-desktop.mjs`. Packing the app itself needs a Mac, so that happens only in the release                            | First commit                                                         |
-| `tour`                             | The landing page's tour. Every run checks its sizes and its licence line. When a commit changes the version, it also checks that `site/tour/` and `site/vendor/` hold what that version builds                       | #62 (ff3fb4f)                                                        |
+| `tour`                             | The landing page's tour. Every run checks its sizes. When a commit changes the version, it also checks that `site/tour/` holds what that version builds                                                              | #62 (ff3fb4f)                                                        |
 | `start`, `start (Windows)`         | Runs `scripts/start-check.mjs`. It builds the app, starts it with `npm start` on folders of its own, and checks that it finds a Claude Code, a Codex and a status-file session, and that `agent-lookout mcp` answers | #22: `start` in e6ff654, `start (Windows)` in 0e33aa1                |
 | `package`                          | Packs the npm package, checks what is in it and how big it is, installs it into an empty folder, and starts it there with `npx --yes=false agent-lookout`                                                            | #1 (e4c7563). The size limits came with #67 (a8cd2e5)                |
 
@@ -1419,9 +1420,9 @@ A test that builds its own environment does the same itself. One block of tests,
 | `scripts/build-package.mjs`                                       | `npm run build:package`, `prepack`                               | Bundles the command for npm                                                                    |
 | `scripts/package-size.mjs`                                        | CI `package`, the npm release                                    | Fails when the package grows past its limits                                                   |
 | `scripts/build-desktop.mjs`                                       | `npm run build:desktop`, CI `build`                              | Bundles the Mac app's main process into `dist-electron/`                                       |
-| `scripts/site-tour/build.mjs`                                     | `npm run build:tour`, `check:tour`, `check:tour-size`, CI `tour` | Builds the landing page's tour and the Motion bundle                                           |
+| `scripts/site-tour/build.mjs`                                     | `npm run build:tour`, `check:tour`, `check:tour-size`, CI `tour` | Builds the landing page's tour                                                                 |
 | `scripts/capture-docs-images.mjs`                                 | `npm run capture:images`                                         | Takes the pictures in `docs/images/` from the tour                                             |
-| `scripts/site-tour/capture.mjs`                                   | By hand                                                          | Takes the pictures the landing page shows until its tour loads                                 |
+| `scripts/site-tour/capture-pictures.mjs`                          | `npm run capture:site`                                           | Takes every picture on the landing page from the tour                                          |
 | `scripts/render-app-icon.mjs`, `scripts/render-menu-bar-icon.mjs` | By hand                                                          | Draw the Mac app's icons into `build/`. The PNGs are committed, so no build runs these scripts |
 
 ### Versioning
@@ -1438,7 +1439,7 @@ Each release is one commit named for it, such as `Release 0.2.9: the Mac app no 
 
 [Publishing](../CONTRIBUTING.md#publishing) in CONTRIBUTING.md has the exact steps. In short:
 
-1. On `main`, set the version in `package.json`, and turn `Unreleased` in `CHANGELOG.md` into that version and the date. Run `npm run build:tour`, and bring `site/index.html` up to what the version ships. If the dashboard changed, take the pictures again with `npm run capture:images`. Commit, push, and wait for CI to pass.
+1. On `main`, set the version in `package.json`, and turn `Unreleased` in `CHANGELOG.md` into that version and the date. Run `npm run build:tour`, and bring `site/index.html` up to what the version ships. If the dashboard changed, take the pictures again with `npm run capture:site` and `npm run capture:images`. Commit, push, and wait for CI to pass.
 2. Tag that commit, such as `v0.2.9`, and push the tag. The tag starts two workflows.
 3. Approve the npm publish in GitHub Actions.
 4. Write the GitHub release's notes and publish the release, so the Mac apps already installed can find it.

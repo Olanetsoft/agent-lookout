@@ -1,21 +1,15 @@
-// Builds the two things the landing page in site/ takes from this repository,
-// since Vercel serves that folder as it is and runs no build:
+// Builds the one thing the landing page in site/ takes from this repository,
+// since Vercel serves that folder as it is and runs no build: site/tour/, the
+// real dashboard, built from src/site-tour/ with Vite, for the frame on the
+// page's first screen.
 //
-//   site/tour/          the real dashboard, built from src/site-tour/ with Vite,
-//                       for the frame the page plays its tour in
-//   site/vendor/motion.mjs
-//                       the two parts of Motion the page's own script uses,
-//                       scroll and the small animate, bundled with esbuild under
-//                       Motion's licence
-//
-// Both are committed, and both are built from a release: the landing page shows
-// the dashboard as the version people install has it, never a feature that has
-// not shipped. So they are rebuilt only as part of a release:
+// It is committed, and built from a release: the landing page shows the
+// dashboard as the version people install has it, never a feature that has not
+// shipped. So it is rebuilt only as part of a release:
 //
 //   node scripts/site-tour/build.mjs           npm run build:tour, a step of the
-//                                              release: writes them, and the
-//                                              line for Motion in site/licenses.txt
-//   node scripts/site-tour/build.mjs --check   npm run check:tour: builds them
+//                                              release: writes site/tour/
+//   node scripts/site-tour/build.mjs --check   npm run check:tour: builds it
 //                                              again into a temporary folder and
 //                                              fails when what is committed differs
 //   ... --check --since <commit>               CI: the same, but only when the
@@ -24,28 +18,32 @@
 //                                              Otherwise only the sizes are checked
 //   node scripts/site-tour/build.mjs --sizes   npm run check:tour-size: the sizes of
 //                                              what is committed, built nothing
+//   node scripts/site-tour/build.mjs --out <folder>
+//                                              builds the tour from the working tree
+//                                              into <folder>/tour/ and measures it,
+//                                              writing nothing in site/. The landing
+//                                              page's picture script uses it, with
+//                                              --from-source, to take pictures of a
+//                                              dashboard no release has built yet
 //
 // A feature on main that no release has yet stays out of the tour until one
-// does. Today there is none: the tour shows all that 0.2.6 builds, permission
-// rules with it.
+// does.
 //
 // Every mode fails when a file is over its budget: the first screen of the page
 // must load as fast as it did before the tour, and everything here loads after
-// it. And every mode fails when site/licenses.txt names another version of
-// Motion than the one bundled.
+// it.
 //
 // The tour takes its fonts from the page's own folder, site/assets/fonts/, so
 // the page and its dashboard share one copy of each face.
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
-import { build as esbuild } from "esbuild";
 import { build as viteBuild, createLogger } from "vite";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -54,9 +52,11 @@ const checking = process.argv.includes("--check");
 const sizesOnly = process.argv.includes("--sizes");
 const sinceAt = process.argv.indexOf("--since");
 const since = sinceAt === -1 ? null : (process.argv[sinceAt + 1] ?? "");
-const LICENSES = path.join(site, "licenses.txt");
-/** The line in site/licenses.txt that names the Motion bundled, and its version. */
-const MOTION_LINE = /^- Motion (\S+), MIT licence/m;
+const outAt = process.argv.indexOf("--out");
+if (outAt !== -1 && !process.argv[outAt + 1]) {
+  throw new Error("Usage: node scripts/site-tour/build.mjs --out <folder>");
+}
+const out = outAt === -1 ? null : path.resolve(process.argv[outAt + 1]);
 
 /**
  * Vite's own logger, without its note on each font: the fonts are the page's,
@@ -75,9 +75,8 @@ const BUDGET = {
   tourJs: 256 * 1024,
   tourCss: 14 * 1024,
   tourHtml: 2 * 1024,
+  /** The page's own script that puts the dashboard in its frame. */
   pageScript: 8 * 1024,
-  /** Motion's scroll and animate, and the licence it carries, which is 0.7 KB of it. */
-  motion: 8 * 1024,
   /** Everything the frame fetches, its two fonts the page does not use included. */
   tourAll: 288 * 1024,
 };
@@ -145,80 +144,8 @@ async function buildTour(out) {
   }
 }
 
-/** The version of Motion installed, which is the one bundled. */
-async function motionVersion() {
-  const manifest = JSON.parse(
-    await readFile(path.join(root, "node_modules/motion/package.json"), "utf8"),
-  );
-  return manifest.version;
-}
-
-/** The version a bundle of Motion says it is, from its licence header. */
-async function bundledMotion(file) {
-  return (
-    /^ \* Motion (\S+), https:\/\/motion\.dev/m.exec(await readFile(file, "utf8"))?.[1] ?? null
-  );
-}
-
-/** The version of Motion site/licenses.txt names. */
-async function listedMotion() {
-  return MOTION_LINE.exec(await readFile(LICENSES, "utf8"))?.[1] ?? null;
-}
-
-/** Names the bundled version of Motion in site/licenses.txt. */
-async function listMotion(version) {
-  const text = await readFile(LICENSES, "utf8");
-  if (!MOTION_LINE.test(text)) fail("site/licenses.txt has no line for Motion to update.");
-  await writeFile(LICENSES, text.replace(MOTION_LINE, `- Motion ${version}, MIT licence`));
-}
-
-/** Every way site/licenses.txt and the bundle of Motion disagree. */
-async function licenceProblems(motionFile, installed = null) {
-  const bundled = await bundledMotion(motionFile);
-  const listed = await listedMotion();
-  const problems = [];
-  if (listed !== bundled) {
-    problems.push(
-      `site/licenses.txt names Motion ${listed}, but site/vendor/motion.mjs is Motion ${bundled}.`,
-    );
-  }
-  if (installed !== null && installed !== bundled) {
-    problems.push(`Motion ${installed} is installed, but site/vendor/motion.mjs is ${bundled}.`);
-  }
-  return problems;
-}
-
-/** Bundles the parts of Motion the page uses into one module, under Motion's licence. */
-async function buildMotion(file) {
-  const manifest = { version: await motionVersion() };
-  const licence = (await readFile(path.join(root, "node_modules/motion/LICENSE.md"), "utf8"))
-    .trim()
-    .replaceAll("*/", "* /");
-  const result = await esbuild({
-    stdin: {
-      contents: 'export { scroll } from "motion";\nexport { animate } from "motion/mini";\n',
-      resolveDir: root,
-      loader: "js",
-    },
-    bundle: true,
-    format: "esm",
-    minify: true,
-    platform: "browser",
-    target: "es2020",
-    legalComments: "none",
-    define: { "process.env.NODE_ENV": '"production"' },
-    write: false,
-  });
-  const header = `/*!\n * Motion ${manifest.version}, https://motion.dev: scroll and animate from motion/mini,\n * bundled for the landing page by scripts/site-tour/build.mjs.\n *\n${licence
-    .split("\n")
-    .map((line) => (line ? ` * ${line}` : " *"))
-    .join("\n")}\n */\n`;
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, header + result.outputFiles[0].text);
-}
-
 /** The sizes of what was built, and every budget it is over. */
-async function measure(tourDir, motionFile) {
+async function measure(tourDir) {
   const over = [];
   const lines = [];
   const totals = { js: 0, css: 0, html: 0, fonts: 0 };
@@ -233,7 +160,6 @@ async function measure(tourDir, motionFile) {
     if (!existsSync(file)) over.push(`site/assets/fonts/${font} is missing.`);
     else totals.fonts += (await readFile(file)).length;
   }
-  const motion = gz(await readFile(motionFile));
   const pageScript = gz(await readFile(path.join(site, "tour.js")));
   const all = totals.js + totals.css + totals.html + totals.fonts;
 
@@ -246,7 +172,6 @@ async function measure(tourDir, motionFile) {
   row("tour HTML", totals.html, BUDGET.tourHtml);
   row("tour, with its two fonts", all, BUDGET.tourAll);
   row("site/tour.js", pageScript, BUDGET.pageScript);
-  row("site/vendor/motion.mjs", motion, BUDGET.motion);
   return { lines, over };
 }
 
@@ -287,12 +212,10 @@ function versionAt(commit) {
   }
 }
 
-/** Checks only what is committed: its sizes and its licence line. Builds nothing. */
+/** Checks only what is committed: its sizes. Builds nothing. */
 async function checkSizes(note = "") {
-  const motionFile = path.join(site, "vendor/motion.mjs");
-  const { lines, over } = await measure(path.join(site, "tour"), motionFile);
-  const problems = [...over, ...(await licenceProblems(motionFile))];
-  if (problems.length > 0) fail(problems.join("\n"));
+  const { lines, over } = await measure(path.join(site, "tour"));
+  if (over.length > 0) fail(over.join("\n"));
   console.log(`${note}The landing page's tour is within its sizes.\n${lines.join("\n")}`);
 }
 
@@ -300,7 +223,14 @@ const version = JSON.parse(await readFile(path.join(root, "package.json"), "utf8
 const released =
   since === null ? true : since !== "" && ![null, version].includes(versionAt(since));
 
-if (sizesOnly || (checking && !released)) {
+if (out !== null) {
+  const tourDir = path.join(out, "tour");
+  await rm(tourDir, { recursive: true, force: true });
+  await buildTour(tourDir);
+  const { lines, over } = await measure(tourDir);
+  console.log(`Built the tour from the working tree into ${tourDir}.\n${lines.join("\n")}`);
+  if (over.length > 0) fail(over.join("\n"));
+} else if (sizesOnly || (checking && !released)) {
   await checkSizes(
     sizesOnly
       ? ""
@@ -310,24 +240,16 @@ if (sizesOnly || (checking && !released)) {
   const scratch = await mkdtemp(path.join(tmpdir(), "agent-lookout-tour-check-"));
   try {
     await buildTour(path.join(scratch, "tour"));
-    await buildMotion(path.join(scratch, "vendor/motion.mjs"));
-    const stale = [
-      ...(await differences(path.join(site, "tour"), path.join(scratch, "tour"))).map(
-        (line) => `site/tour/${line}`,
-      ),
-      ...(await differences(path.join(site, "vendor"), path.join(scratch, "vendor"))).map(
-        (line) => `site/vendor/${line}`,
-      ),
-    ];
+    const stale = (await differences(path.join(site, "tour"), path.join(scratch, "tour"))).map(
+      (line) => `site/tour/${line}`,
+    );
     if (stale.length > 0) {
       fail(
-        `The landing page's tour is not what ${version} builds:\n  ${stale.join("\n  ")}\nAs part of the release, run npm run build:tour and commit site/tour/, site/vendor/ and site/licenses.txt.`,
+        `The landing page's tour is not what ${version} builds:\n  ${stale.join("\n  ")}\nAs part of the release, run npm run build:tour and commit site/tour/.`,
       );
     }
-    const motionFile = path.join(site, "vendor/motion.mjs");
-    const { lines, over } = await measure(path.join(site, "tour"), motionFile);
-    const problems = [...over, ...(await licenceProblems(motionFile, await motionVersion()))];
-    if (problems.length > 0) fail(problems.join("\n"));
+    const { lines, over } = await measure(path.join(site, "tour"));
+    if (over.length > 0) fail(over.join("\n"));
     console.log(`The landing page's tour is what ${version} builds.\n${lines.join("\n")}`);
   } finally {
     await rm(scratch, { recursive: true, force: true });
@@ -335,14 +257,7 @@ if (sizesOnly || (checking && !released)) {
 } else {
   await rm(path.join(site, "tour"), { recursive: true, force: true });
   await buildTour(path.join(site, "tour"));
-  await buildMotion(path.join(site, "vendor/motion.mjs"));
-  await listMotion(await motionVersion());
-  const { lines, over } = await measure(
-    path.join(site, "tour"),
-    path.join(site, "vendor/motion.mjs"),
-  );
-  console.log(
-    `Built site/tour/ and site/vendor/motion.mjs from ${version}, and named Motion in site/licenses.txt.\n${lines.join("\n")}`,
-  );
+  const { lines, over } = await measure(path.join(site, "tour"));
+  console.log(`Built site/tour/ from ${version}.\n${lines.join("\n")}`);
   if (over.length > 0) fail(over.join("\n"));
 }

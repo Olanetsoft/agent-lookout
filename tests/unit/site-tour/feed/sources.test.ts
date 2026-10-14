@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "vitest";
 
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
@@ -25,6 +27,9 @@ import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
+
+const readme = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../../../site/index.html", import.meta.url), "utf8");
 
 // The landing page's dashboard cannot run the adapters, so it says their words
 // itself. These hold it to the adapters' own, so it never says more than they do.
@@ -214,4 +219,25 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
   expect(command.slice(1)).toEqual(
     sshArguments({ localPort: port, remotePort: MACHINE.port, target: MACHINE.target }),
   );
+});
+
+test("the page's Works with names every agent the tour's Sources reads", () => {
+  const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";
+  const named = [...works.matchAll(/<li>([\s\S]*?)<\/li\s*>/g)]
+    .map(([, name]) => name.replace(/\s+/g, " ").trim())
+    .filter((name) => name !== "your own agents");
+  const read = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .filter((source) => source.machine === undefined)
+    .map((source) => source.label)
+    .filter((label) => label !== "Status files");
+  // The agent column of the README's table of what each agent can report.
+  const table = readme.slice(readme.indexOf("| Agent "));
+  const rows = table.slice(0, table.indexOf("\n\n")).split("\n").slice(2);
+  const inReadme = rows
+    .map((row) => row.split("|")[1].trim())
+    .filter((agent) => agent !== "Status files");
+  expect(named).toHaveLength(8);
+  expect(new Set(named)).toEqual(new Set(read));
+  expect(new Set(named)).toEqual(new Set(inReadme));
 });
