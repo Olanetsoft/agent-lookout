@@ -133,7 +133,7 @@
   --pad: 28px;
   /* Inside a card of words: a feature's, or a way to run it. */
   --card-pad: clamp(24px, 2.6vw, 40px);
-  --hero-title: clamp(38px, 5.2vw, 68px);
+  --hero-title: clamp(38px, 5.6vw, 88px);
   --feature-title: clamp(24px, 2.4vw, 34px);
   /* The longest line of running text. */
   --measure: 34em;
@@ -1039,8 +1039,9 @@ html:not(.js) .seg {
 /* -------------------------------------------------------------------- hero */
 
 /*
- * The first screen: what it is, the three ways to get it, and what holds for
- * everyone, in one centred column, above the app in its window. It sits over
+ * The first screen: what it is, the two ways to get it side by side, what each
+ * needs in one line, and what holds for everyone, in one centred column, above
+ * the app in its window. It sits over
  * the light behind the frame, which would otherwise wash its words out in Day.
  */
 .hero {
@@ -1051,7 +1052,6 @@ html:not(.js) .seg {
 }
 
 .hero h1 {
-  max-width: 16ch;
   margin-inline: auto;
   font-size: var(--hero-title);
   line-height: 1.04;
@@ -1060,40 +1060,58 @@ html:not(.js) .seg {
 }
 
 .lede {
-  max-width: 34em;
-  margin: 20px auto 0;
-  font-size: clamp(17px, 1.5vw, 20px);
+  max-width: 50em;
+  margin: 24px auto 0;
+  font-size: clamp(17px, 1.6vw, 22px);
   line-height: 1.5;
   color: var(--ink-secondary);
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 /*
- * The three ways to get it, in three equal columns, each control centred over
- * its note, so the three stand evenly apart and their notes start on one line.
+ * The two ways to get it, side by side and close together, so they read as one
+ * choice. What each needs, and the way through a coding agent, follow in one
+ * line under them.
  */
 .ctas {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  justify-items: center;
-  align-items: start;
-  column-gap: 24px;
-  max-width: 1000px;
-  margin: 32px auto 0;
-}
-.cta {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 36px;
 }
 .cta-note {
-  font-size: 13px;
-  line-height: 1.45;
+  margin-top: 18px;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--ink-muted);
   text-wrap: balance;
 }
+
+/* The third way, through a coding agent, as a quiet link to its card below. */
+.cta-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--ink-muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  transition:
+    color 120ms,
+    text-decoration-color 120ms;
+}
+.cta-agent:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+/* The hero's two controls, a size up from the rest of the page's. */
 
 .glyph {
   flex: none;
@@ -1180,20 +1198,49 @@ html:not(.js) :is(.copy, .copy-text) {
   display: none;
 }
 
-/* What holds for everyone, a middle dot between each, kept at a line's end when it wraps. */
+/* The hero's two controls, a size up from the rest of the page's. */
+.btn-large,
+.cmd-large {
+  height: 56px;
+  font-size: 17px;
+}
+.btn-large {
+  padding: 0 32px;
+}
+.cmd-large {
+  gap: 12px;
+  padding: 0 10px 0 26px;
+}
+.cmd-large :is(.cmd-sign, code) {
+  font-size: 17px;
+}
+
+/* What holds for everyone, each in a small capsule of its own with a check. */
 .promise {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px 0;
-  margin-top: 24px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--ink-secondary);
+  gap: 8px;
+  margin-top: 28px;
 }
-.promise li:not(:last-child)::after {
-  content: "·";
-  margin-inline: 10px;
+.promise li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px 0 13px;
+  border-radius: var(--radius-capsule);
+  background-color: var(--fill-quiet);
+  box-shadow: inset 0 0 0 1px var(--control-rim);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.promise .glyph {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
   color: var(--ink-muted);
 }
 
@@ -2135,19 +2182,6 @@ main:has(> .lost) {
     --lamp-at: 28% 16.3%;
   }
 
-  .ctas {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 16px;
-    max-width: 400px;
-  }
-  .cta {
-    width: 100%;
-  }
-  .cta > .btn,
-  .cta > .cmd {
-    width: 100%;
-  }
-
   .rig {
     max-width: 480px;
   }
@@ -2244,12 +2278,26 @@ main:has(> .lost) {
   .hero {
     padding-top: 40px;
   }
-  .promise {
+  /* Stacked, the command sits centred like the button's label above it. */
+  .ctas {
     flex-direction: column;
-    gap: 2px;
+    align-items: stretch;
+    max-width: 400px;
+    margin-inline: auto;
   }
-  .promise li:not(:last-child)::after {
-    content: none;
+  .ctas .cmd {
+    justify-content: center;
+  }
+  .ctas .cmd code {
+    flex: 0 1 auto;
+  }
+  .promise li {
+    height: auto;
+    min-height: 32px;
+    padding-block: 7px;
+    line-height: 1.3;
+    text-align: left;
+    white-space: normal;
   }
 
   .window {
@@ -2367,6 +2415,7 @@ main:has(> .lost) {
   .feature-screen,
   .window-bar,
   .cmd,
+  .promise li,
   .run {
     border: 1px solid CanvasText;
   }

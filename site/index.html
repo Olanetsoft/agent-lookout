@@ -125,58 +125,67 @@
         </p>
 
         <div class="ctas">
-          <div class="cta">
-            <a
-              class="btn btn-solid"
-              href="https://github.com/Olanetsoft/agent-lookout/releases/latest"
+          <a
+            class="btn btn-solid btn-large"
+            href="https://github.com/Olanetsoft/agent-lookout/releases/latest"
+          >
+            <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 2v8.2M4.6 7 8 10.4 11.4 7M3 13.5h10" />
+            </svg>
+            Download for Mac
+          </a>
+
+          <div class="cmd cmd-large">
+            <span class="cmd-sign" aria-hidden="true">$</span>
+            <code id="hero-npx">npx agent-lookout</code>
+            <button
+              type="button"
+              class="copy"
+              aria-label="Copy the command npx agent-lookout"
+              data-copy-from="hero-npx"
             >
-              <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2v8.2M4.6 7 8 10.4 11.4 7M3 13.5h10" />
+              <svg class="glyph glyph-copy" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="5.5" y="5.5" width="8" height="8" rx="2" />
+                <path
+                  d="M10.5 3.2a1.7 1.7 0 0 0-1.7-1.7H4.2a1.7 1.7 0 0 0-1.7 1.7v4.6a1.7 1.7 0 0 0 1.7 1.7"
+                />
               </svg>
-              Download for Mac
-            </a>
-            <p class="cta-note">Apple silicon or Intel&nbsp;· macOS 13 or later</p>
-          </div>
-
-          <div class="cta">
-            <div class="cmd">
-              <span class="cmd-sign" aria-hidden="true">$</span>
-              <code id="hero-npx">npx agent-lookout</code>
-              <button
-                type="button"
-                class="copy"
-                aria-label="Copy the command npx agent-lookout"
-                data-copy-from="hero-npx"
-              >
-                <svg class="glyph glyph-copy" viewBox="0 0 16 16" aria-hidden="true">
-                  <rect x="5.5" y="5.5" width="8" height="8" rx="2" />
-                  <path
-                    d="M10.5 3.2a1.7 1.7 0 0 0-1.7-1.7H4.2a1.7 1.7 0 0 0-1.7 1.7v4.6a1.7 1.7 0 0 0 1.7 1.7"
-                  />
-                </svg>
-                <svg class="glyph glyph-done" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M3.2 8.4 6.4 11.4 12.8 4.8" />
-                </svg>
-              </button>
-            </div>
-            <p class="cta-note">Node.js 22.12 or later&nbsp;· macOS, Linux or Windows</p>
-          </div>
-
-          <div class="cta">
-            <a class="btn btn-quiet" href="#run-agent">
-              Ask your coding agent
-              <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 3v9.5M4.4 9 8 12.6 11.6 9" />
+              <svg class="glyph glyph-done" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.2 8.4 6.4 11.4 12.8 4.8" />
               </svg>
-            </a>
-            <p class="cta-note">One prompt for Claude Code, Codex or another agent</p>
+            </button>
           </div>
         </div>
 
+        <p class="cta-note">
+          Mac app: macOS 13 or later&nbsp;· npx: Node.js 22.12 or later, on macOS, Linux or Windows
+        </p>
+        <a class="cta-agent" href="#run-agent">
+          Or ask your coding agent to set it up
+          <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 3v9.5M4.4 9 8 12.6 11.6 9" />
+          </svg>
+        </a>
+
         <ul class="promise">
-          <li>Free and open source (MIT)</li>
-          <li>No account</li>
-          <li>By default, it sends nothing about your sessions anywhere</li>
+          <li>
+            <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3.2 8.4 6.4 11.4 12.8 4.8" />
+            </svg>
+            Free and open source (MIT)
+          </li>
+          <li>
+            <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3.2 8.4 6.4 11.4 12.8 4.8" />
+            </svg>
+            No account
+          </li>
+          <li>
+            <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3.2 8.4 6.4 11.4 12.8 4.8" />
+            </svg>
+            Sends nothing about your sessions, by default
+          </li>
         </ul>
       </section>
 
