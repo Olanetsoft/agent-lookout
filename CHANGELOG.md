@@ -2,9 +2,19 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.13 - 2026-10-14
+
+Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions show up beside the others, the Mac app sets up Allow and Deny for Claude Code by itself, and Agent Lookout asks again about notifications until they are on.
 
 ### Added
+
+- Mistral Vibe sessions appear read-only beside the other agents', with their name, folder and status: working, idle, finished or failed, and how long a working one has been quiet. Agent Lookout reads them from Vibe's session folder, `~/.vibe/logs/session`, `logs/session` in the folder Vibe's own `VIBE_HOME` names, or the folder `AGENT_LOOKOUT_VIBE_SESSION_DIR` names, and never takes or opens the locks Vibe keeps there. Needs you, token counts and what a session last said are not read yet, and sessions Vibe ran on its older engine are not shown. This was built from Vibe 2.26.1's source and has not yet been checked on a computer running Vibe (#70).
+
+- Gemini CLI sessions, read from its own files: working or idle, by folder and title. Agent Lookout reads each project's session files in `~/.gemini/tmp`, keeps only each message's ID, kind and time and a few facts about it, such as whether it calls a tool, and the session's title, and runs no program. A session waiting for your approval shows as working, or as idle after a reply with text, and none shows as finished or failed. Built from Gemini CLI 0.64.0's source, and not yet checked on a machine running it.
+
+- OpenCode sessions, read from OpenCode's own database on macOS and Linux: working, idle, failed or finished, by title and folder. Agent Lookout runs the system's `sqlite3` with two fixed questions when the database changes, asks for each root session's folder, title and a few short fields of its newest message, never the text of a message, and opens the files SQLite keeps beside the database only to read them, though a `sqlite3` built from SQLite's own source, as on Linux, can leave an empty `-wal` there when a program closes the database between Agent Lookout's look at the files and `sqlite3` opening it. A session is finished once `ps` shows no program named `opencode`, so while only OpenCode's desktop app runs, its sessions show as finished. A session waiting for your approval or an answer shows as working, Quiet for is not shown, and nothing is read on Windows. OpenCode 2's sessions are not read yet. Built from OpenCode's source at v1.19.0, and not yet checked on a computer running it.
+
+- Qwen Code sessions in a terminal appear with no setup, from the list of running sessions Qwen Code keeps in `~/.qwen/sessions` and each one's chat file: working, idle or finished, named by their title or their folder. A session waiting for your approval shows as working, since Qwen Code does not record the wait. `AGENT_LOOKOUT_QWEN_HOME` names another folder to read. This was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
 
 - The Mac app installs its Claude Code plugin the first time it opens, so Allow and Deny work from the first day, when it finds Claude Code and the plugin is not installed. It checks with Claude Code's own `claude plugin list`, and only when the plugin is not there runs Claude Code's own two commands, once and never again, so a plugin you remove stays removed; if you removed it before this version, it installs it once. The Overview says so once, with how to remove it, or says plainly that it could not, with the two commands to run. `AGENT_LOOKOUT_PLUGIN_INSTALL=off` before the first launch keeps it from happening. The browser version and `npx agent-lookout` never install anything (#120).
 
@@ -12,21 +22,17 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - The Overview asks "Get a notification when a session needs you?" in a browser too, not only in the Mac app, and asks again after Not now: about a day later, then 3 days later, then a week later, each counted from the last Not now, and after the fourth not again. It never asks while notifications are on, or while the browser blocks them, when Settings says how to allow them, and it stops for good once you turn notifications off in Settings. In a browser Turn on asks the browser, as Turn on notifications in Settings does; in the Mac app it also sends the test notification, as before. Not now no longer turns notifications off: it leaves them as they were. How many times you pressed Not now and when you last did are kept in the page's local storage, under `agent-lookout-notification-ask`, for each browser and address, and apart in the Mac app. If notifications were left off in an earlier version, with Not now or in Settings, the Overview asks the next time you open it, and then as above (#121).
 
+### Fixed
+
+- When Antigravity is closed on another machine you read over SSH, which finishes every chat there at once, this computer no longer sends a Finished notification, email, post or push for each, as that machine sends none. The same holds for OpenCode there.
+
 ## 0.2.12 - 2026-10-14
 
 An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does.
 
 ### Added
 
-- Mistral Vibe sessions appear read-only beside the other agents', with their name, folder and status: working, idle, finished or failed, and how long a working one has been quiet. Agent Lookout reads them from Vibe's session folder, `~/.vibe/logs/session`, `logs/session` in the folder Vibe's own `VIBE_HOME` names, or the folder `AGENT_LOOKOUT_VIBE_SESSION_DIR` names, and never takes or opens the locks Vibe keeps there. Needs you, token counts and what a session last said are not read yet, and sessions Vibe ran on its older engine are not shown. This was built from Vibe 2.26.1's source and has not yet been checked on a computer running Vibe (#70).
-- Gemini CLI sessions, read from its own files: working or idle, by folder and title. Agent Lookout reads each project's session files in `~/.gemini/tmp`, keeps only each message's ID, kind and time and a few facts about it, such as whether it calls a tool, and the session's title, and runs no program. A session waiting for your approval shows as working, or as idle after a reply with text, and none shows as finished or failed. Built from Gemini CLI 0.64.0's source, and not yet checked on a machine running it.
-- OpenCode sessions, read from OpenCode's own database on macOS and Linux: working, idle, failed or finished, by title and folder. Agent Lookout runs the system's `sqlite3` with two fixed questions when the database changes, asks for each root session's folder, title and a few short fields of its newest message, never the text of a message, and opens the files SQLite keeps beside the database only to read them, though a `sqlite3` built from SQLite's own source, as on Linux, can leave an empty `-wal` there when a program closes the database between Agent Lookout's look at the files and `sqlite3` opening it. A session is finished once `ps` shows no program named `opencode`, so while only OpenCode's desktop app runs, its sessions show as finished. A session waiting for your approval or an answer shows as working, Quiet for is not shown, and nothing is read on Windows. OpenCode 2's sessions are not read yet. Built from OpenCode's source at v1.19.0, and not yet checked on a computer running it.
 - An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does, so it is in the Needs you panel and sends a notification for the wait. Agent Lookout reads two numbers from the chat's own database with `sqlite3`: the place and the status of its newest step, never what the step asks, so the chat does not say what it asks. What each agent can report, in Sources, says Partly for its Needs you. Not on Windows, and on Linux, where Agent Lookout cannot tell whether the app is open, a chat the app left waiting when it quit goes on showing as needing you for up to a day.
-- Qwen Code sessions in a terminal appear with no setup, from the list of running sessions Qwen Code keeps in `~/.qwen/sessions` and each one's chat file: working, idle or finished, named by their title or their folder. A session waiting for your approval shows as working, since Qwen Code does not record the wait. `AGENT_LOOKOUT_QWEN_HOME` names another folder to read. This was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
-
-### Fixed
-
-- When Antigravity is closed on another machine you read over SSH, which finishes every chat there at once, this computer no longer sends a Finished notification, email, post or push for each, as that machine sends none. The same holds for OpenCode there.
 
 ## 0.2.11 - 2026-10-13
 
