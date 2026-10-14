@@ -19,13 +19,23 @@ describe("createFinishedSessions", () => {
   test("a session found open and then not is finished from the poll that found it closed", () => {
     const tracker = createFinishedSessions();
     expect(tracker.update([open(1), open(2)], [], NOW)).toEqual([]);
-    // Its record has gone, its process has gone, or /clear gave its record another session.
+    // Its record has gone, or its process has.
     expect(tracker.update([open(2)], [], NOW + 2_000)).toEqual([
       { ...open(1), status: "finished", statusSince: NOW + 2_000, alive: false, stale: false },
     ]);
     // It stays finished from that moment.
     expect(tracker.update([open(2)], [], NOW + 4_000)).toEqual([
       { ...open(1), status: "finished", statusSince: NOW + 2_000, alive: false, stale: false },
+    ]);
+  });
+
+  test("one whose process is open with another session, as after /clear, names no process", () => {
+    const tracker = createFinishedSessions();
+    tracker.update([open(1)], [], NOW);
+    const cleared = { ...open(7), pid: open(1).pid };
+    const { pid: _pid, alive: _alive, ...before } = open(1);
+    expect(tracker.update([cleared], [], NOW + 2_000)).toEqual([
+      { ...before, status: "finished", statusSince: NOW + 2_000, stale: false },
     ]);
   });
 

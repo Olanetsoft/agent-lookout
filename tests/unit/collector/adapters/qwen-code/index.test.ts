@@ -539,6 +539,57 @@ describe("closed sessions", () => {
       [`qwen-code:${sessionIdOf(7)}`, "idle"],
       [`qwen-code:${ID}`, "finished"],
     ]);
+    // Its process runs on with the new session, so the one before names no process that ended.
+    expect(sessions[0]).toMatchObject({ pid: 41001, alive: true });
+    expect(sessions[1]).not.toHaveProperty("pid");
+    expect(sessions[1]).not.toHaveProperty("alive");
+  });
+
+  test("after /clear in a Qwen Code open for days, the new session counts from the clear", async () => {
+    const files = memoryFiles();
+    const startedAt = NOW - 2 * DAY;
+    addSession(files, { pid: 41001, sessionId: ID, startedAt, lines: [promptLine(NOW - MINUTE)] });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    const record = (sessionId: string) =>
+      registryRecord({ pid: 41001, sessionId, startedAt, kind: "tui" });
+    files.rewrite(recordPath(QWEN_DIR, "41001.json"), record(sessionIdOf(7)));
+    clock.set(NOW + NO_CHAT_AFTER_MS - 1);
+    const cleared = await adapter.poll();
+    // Idle since the last poll that found the session before, which is not stale, and no chat file is missed yet.
+    expect(cleared.sessions[0]).toMatchObject({
+      id: `qwen-code:${sessionIdOf(7)}`,
+      status: "idle",
+      statusSince: NOW,
+      startedAt: NOW,
+      stale: false,
+    });
+    expect(cleared.health.detail).toBe(healthy());
+
+    // Its first prompt is its own.
+    const prompt = NOW + NO_CHAT_AFTER_MS;
+    files.write(chatPath(QWEN_DIR, sessionIdOf(7)), chatFile(promptLine(prompt)));
+    clock.set(prompt + 2_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "working",
+      statusSince: prompt,
+    });
+
+    // /resume of a session last used before this Qwen Code started is idle since the resume.
+    addSession(files, {
+      pid: 41001,
+      sessionId: sessionIdOf(8),
+      startedAt,
+      lines: [promptLine(NOW - 3 * DAY), assistantLine(NOW - 3 * DAY + 5_000)],
+    });
+    clock.set(prompt + 4_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      id: `qwen-code:${sessionIdOf(8)}`,
+      status: "idle",
+      statusSince: prompt + 2_000,
+      stale: false,
+    });
   });
 
   test("with the whole list gone, every session shown open has closed", async () => {

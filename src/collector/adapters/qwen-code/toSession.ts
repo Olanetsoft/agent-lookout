@@ -60,6 +60,12 @@ export interface QwenCodeSessionInput {
   chat: ChatState | null;
   /** The chat file's modified time, as the `lstat` made before reading it gave it. */
   writtenAt?: number;
+  /**
+   * When `/clear` or `/resume` moved its process to this session, as Agent
+   * Lookout saw it: the last poll that found the process with its earlier one.
+   * Without it, the session is its process's since the process registered it.
+   */
+  tookOverAt?: number;
   now: number;
 }
 
@@ -67,19 +73,20 @@ export interface QwenCodeSessionInput {
  * One Qwen Code session whose process is running, in the shared model.
  *
  * - The status comes from the end of its chat file and when its process
- *   registered it (`mapQwenCodeStatus`). It is never "needs-you" or "failed".
+ *   registered it, or moved to it with /clear or /resume (`mapQwenCodeStatus`).
+ *   It is never "needs-you" or "failed".
  * - Its name is the title Qwen Code gave it, or the one set with /rename,
  *   then its folder's name, then its id. What was typed is never used.
  * - Its folder is the one its record names now, which /cd moves on.
  * - It began with its chat file's first line, when the file was read from its
- *   start, and otherwise when its process registered it.
+ *   start, and otherwise when its process registered it or moved to it.
  * - Its last write is its chat file's modified time: every line Qwen Code
  *   adds moves it on. Without a chat file it has none.
  * - It has its process's id, and no link, Jump or Stop.
  */
 export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   const { entry, chat, now } = input;
-  const liveSince = plausibleTime(entry.startedAt, now);
+  const liveSince = plausibleTime(input.tookOverAt ?? entry.startedAt, now);
   const { status, since } = mapQwenCodeStatus(chat?.fold ?? null, liveSince);
   const startedAt = plausibleTime(chat?.firstAt ?? null, now) ?? liveSince;
   let statusSince = plausibleTime(since, now);
@@ -105,9 +112,19 @@ export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   return session;
 }
 
-/** A session that was listed open and whose process has gone, or let it go, since `closedAt`. */
-export function closedQwenCodeSession(session: Session, closedAt: number): Session {
-  return { ...session, status: "finished", statusSince: closedAt, alive: false, stale: false };
+/**
+ * A session that was listed open and whose process has gone, or let it go, since `closedAt`.
+ * When its process runs on, as after /clear or /resume, it names no process: that one has not ended.
+ */
+export function closedQwenCodeSession(
+  session: Session,
+  closedAt: number,
+  processRunsOn = false,
+): Session {
+  const closed: Session = { ...session, status: "finished", statusSince: closedAt, stale: false };
+  if (!processRunsOn) return { ...closed, alive: false };
+  const { pid: _pid, alive: _alive, ...rest } = closed;
+  return rest;
 }
 
 /**

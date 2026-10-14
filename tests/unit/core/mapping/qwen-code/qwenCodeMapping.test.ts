@@ -280,6 +280,12 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
     expect(statusOf([...lines, lifecycle(6, "ended", "error")]).status).toBe("working");
   });
 
+  test("the next prompt after a request that failed for good starts a stretch of its own", () => {
+    const failed = [prompt(0), lifecycle(1, "started"), lifecycle(2, "ended", "error")];
+    expect(statusOf(failed)).toEqual({ status: "working", since: at(0) });
+    expect(statusOf([...failed, prompt(3600)])).toEqual({ status: "working", since: at(3600) });
+  });
+
   test("a subagent's requests and events change nothing", () => {
     const idle = [prompt(0), reply(5)];
     expect(statusOf([...idle, lifecycle(6, "started", undefined, true)])).toEqual({
@@ -377,6 +383,14 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
       status: "idle",
       since: at(1),
     });
+  });
+
+  test("a file read from its middle knows when work began once it has seen the session idle", () => {
+    expect(statusOf([reply(1), lifecycle(2, "started")], false)).toEqual({
+      status: "working",
+      since: at(2),
+    });
+    expect(statusOf([calls(1), result(2)], false)).toEqual({ status: "working", since: null });
   });
 
   test("never says a session needs you, failed or finished", () => {

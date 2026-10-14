@@ -316,7 +316,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "A request that fails for good shows as working until the next prompt, and before Qwen Code 0.25.1 so can a stopped reply.",
+      "A request that fails for good, and some replies stopped with Esc, such as between retries, show as working until the next prompt.",
   },
   "needs-you": {
     level: "no",
@@ -326,7 +326,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once its Qwen Code closes, if Agent Lookout saw it open or Qwen Code left its record behind.",
+      "Once its Qwen Code closes or moves on with /clear or /resume, if Agent Lookout saw it open or Qwen Code left its record behind.",
   },
   failed: {
     level: "no",
