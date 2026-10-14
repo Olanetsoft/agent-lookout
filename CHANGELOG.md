@@ -6,7 +6,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Added
 
-- An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does, so it is in the Needs you panel and sends a notification for the wait. Agent Lookout reads two numbers from the chat's own database with `sqlite3`: the place and the status of its newest step, never what the step asks, so the chat does not say what it asks. What each agent can report, in Sources, says Partly for its Needs you. Not on Windows.
+- An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does, so it is in the Needs you panel and sends a notification for the wait. Agent Lookout reads two numbers from the chat's own database with `sqlite3`: the place and the status of its newest step, never what the step asks, so the chat does not say what it asks. What each agent can report, in Sources, says Partly for its Needs you. Not on Windows, and on Linux, where Agent Lookout cannot tell whether the app is open, a chat the app left waiting when it quit goes on showing as needing you for up to a day.
 
 ## 0.2.11 - 2026-10-13
 

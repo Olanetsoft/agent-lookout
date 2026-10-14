@@ -10,7 +10,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 - For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity IDE's conversations do not appear yet, and Sources says when its folder is there.
-- For Antigravity, the desktop app Google calls Antigravity 2.0, Agent Lookout was written from the layout of its files on one Mac. Its chats show as working, idle or failed, and on a Mac as finished once the app is closed, never as needing you yet, and each chat's folder is read with the system's `sqlite3`, which macOS has.
+- For Antigravity, the desktop app Google calls Antigravity 2.0, Agent Lookout was written from the layout of its files on one Mac. Its chats show as working, idle or failed, as needing you while the app asks you to approve a step, except on Windows, and on a Mac as finished once the app is closed. Each chat's folder, and whether it waits for you, are read with the system's `sqlite3`, which macOS has.
 
 Check what you have:
 

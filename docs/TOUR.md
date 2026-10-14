@@ -267,7 +267,7 @@ In short:
 - **Claude Code** reports working, idle, needs you and names. Finished and failed only for background jobs. No Quiet for, because its registry file is not rewritten as a session works. Jump, Stop and Answer only in some places, and fewer on Windows. Tokens only on this computer, from its newest reply, while its details are open.
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle, Quiet for and tokens. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
-- **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Never needs you yet. No Jump, Stop or Answer.
+- **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.

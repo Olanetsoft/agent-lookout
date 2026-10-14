@@ -105,6 +105,8 @@ describe("whether a chat waits", () => {
     sqlite.step(A, { idx: 2, status: WAITING_STATUS });
     const first = await reader.read(A, FILE_A, database(), false, NOW);
     await reader.read(A, FILE_A, database(), false, NOW + 10 * SECOND);
+    // Not even a minute later, as a read that failed would be.
+    await reader.read(A, FILE_A, database(), false, NOW + RETRY_MS + SECOND);
     expect(sqlite.stepRuns()).toHaveLength(1);
 
     const later = database({ mtimeMs: NOW + 20 * SECOND, size: 8192 });

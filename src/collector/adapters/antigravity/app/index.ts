@@ -61,11 +61,12 @@ export const PROMPT_PROCESS_CHECK_MS = 2_000;
 /**
  * How recently a chat's files must have been written for one whose last step
  * reads as idle to show as working. Antigravity 2.0 writes a step to the
- * transcript only once it is done. Its conversation database is taken to be
- * written while a step runs, but when the app writes it has not been seen yet:
- * if it also writes it later, as agy has been seen to half a minute after the
- * transcript (`../shared/conversations.ts`), an idle chat shows as working for
- * these 10 seconds then.
+ * transcript only once it is done. It was seen to write a step that waits for
+ * approval to its database before the transcript (`waits.ts`); whether it
+ * writes the database while other steps run has not been seen yet. If it also
+ * writes it later, as agy has been seen to half a minute after the transcript
+ * (`../shared/conversations.ts`), an idle chat shows as working for these 10
+ * seconds then.
  */
 export const WRITING_MS = 10_000;
 
@@ -99,8 +100,9 @@ export const NEEDS_YOU_NOTE =
 export const UNCHECKED_NOTE =
   "This was built from the layout of Antigravity 2.0's files on one Mac, and not yet checked against a chat that fails, so a status can be wrong.";
 
-/** What the card always says, after how it reads. */
-const ALWAYS_NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
+/** Said instead on Windows, where nothing is read for it. */
+export const WINDOWS_NEEDS_YOU_NOTE =
+  "On Windows a chat that waits for you to approve a step shows as working or idle: Agent Lookout reads whether a chat waits only on macOS and Linux.";
 
 /** Said when a chat's last step is one this adapter does not know, or none could be read. */
 export const UNKNOWN_STEP_NOTE =
@@ -270,6 +272,8 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     platform === "win32" ? "not on Windows" : "with sqlite3, when the file changes";
   const waitsRead =
     platform === "win32" ? "not on Windows" : "with sqlite3, when a chat's database changes";
+  /** What the card always says, after how it reads. */
+  const alwaysNotes = `${platform === "win32" ? WINDOWS_NEEDS_YOU_NOTE : NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
   function watching(read: string): SourceFact[] {
     return [
@@ -357,11 +361,22 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     return "";
   }
 
-  /** What the card adds when whether a chat waits could not be read, or nothing. */
-  function waitsNote(failed: boolean): string {
-    return failed
-      ? " sqlite3 could not read whether some chats wait for you, so they show as working or idle."
-      : "";
+  /**
+   * What the card adds when whether a chat waits could not be read, or
+   * nothing. A missing sqlite3 is said once: by the folders' note when it
+   * said so.
+   */
+  function waitsNote(failed: boolean, noSqlite: boolean, folders: SummariesState | null): string {
+    let note = "";
+    if (noSqlite && folders !== "no-sqlite") {
+      note +=
+        " No sqlite3 program was found to read whether a chat waits for you, so none shows as needing you.";
+    }
+    if (failed) {
+      note +=
+        " sqlite3 could not read whether some chats wait for you, so they show as working or idle.";
+    }
+    return note;
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -397,7 +412,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       if (homeFrom === "agent-lookout") {
         return result(
           "ok",
-          `${ANTIGRAVITY_APP_HOME_ENV} is set to ${homeName}, which has no ${BRAIN_DIR} folder, so no Antigravity sessions are listed. ${ALWAYS_NOTES}`,
+          `${ANTIGRAVITY_APP_HOME_ENV} is set to ${homeName}, which has no ${BRAIN_DIR} folder, so no Antigravity sessions are listed. ${alwaysNotes}`,
           "not found",
           checkedAt,
         );
@@ -411,7 +426,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       homeSeen = true;
       return result(
         "ok",
-        `Antigravity has not saved any chats in ${brainName} yet. ${ALWAYS_NOTES}`,
+        `Antigravity has not saved any chats in ${brainName} yet. ${alwaysNotes}`,
         "not found",
         checkedAt,
       );
@@ -430,6 +445,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     const sessions: Session[] = [];
     let unknownStep = false;
     let waitFailed = false;
+    let waitNoSqlite = false;
     for (const files of shown) {
       if (files.transcriptInfo === null) continue;
       let state: TranscriptState;
@@ -454,6 +470,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
               checkedAt,
             );
       if (wait.state === "failed") waitFailed = true;
+      if (wait.state === "no-sqlite") waitNoSqlite = true;
       const session = antigravitySession({
         profile: APP_PROFILE,
         conversationId: files.id,
@@ -474,19 +491,24 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     titles.keepOnly(shownIds);
     waits.keepOnly(shownIds);
 
-    let detail = `Sessions are read from the transcripts Antigravity keeps in ${brainName}. ${ALWAYS_NOTES}`;
+    let detail = `Sessions are read from the transcripts Antigravity keeps in ${brainName}. ${alwaysNotes}`;
     let basis = BASIS;
     if (answer !== null && !answer.ok) {
       detail +=
         platform === "darwin"
-          ? " ps could not be run to tell whether Antigravity is open, so no chat is shown as finished."
-          : ` On ${system} Agent Lookout cannot tell yet whether Antigravity is open, so no chat is shown as finished.`;
+          ? " ps could not be run to tell whether Antigravity is open, so no chat is shown as finished"
+          : ` On ${system} Agent Lookout cannot tell yet whether Antigravity is open, so no chat is shown as finished`;
+      // A chat left waiting goes on needing you only where waits are read.
+      const waitsKnown = platform !== "win32" && !waitNoSqlite && read?.state !== "no-sqlite";
+      detail += waitsKnown
+        ? ", and one left waiting when the app quit still shows as needing you, for up to a day."
+        : ".";
       basis = BASIS_WITHOUT_PROCESSES;
     } else if (answer?.ok && !answer.running) {
       basis = BASIS_APP_CLOSED;
     }
     detail += foldersNote(read?.state ?? null);
-    detail += waitsNote(waitFailed);
+    detail += waitsNote(waitFailed, waitNoSqlite, read?.state ?? null);
     if (unknownStep) detail += ` ${UNKNOWN_STEP_NOTE}`;
     const answered = result("ok", detail, every(pollIntervalMs), checkedAt, basis);
     return { ...answered, sessions };

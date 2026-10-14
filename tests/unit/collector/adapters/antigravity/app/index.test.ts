@@ -12,6 +12,7 @@ import {
   RECHECK_MS,
   UNCHECKED_NOTE,
   UNKNOWN_STEP_NOTE,
+  WINDOWS_NEEDS_YOU_NOTE,
   WRITING_MS,
   writtenJustNow,
 } from "@collector/adapters/antigravity/app/index";
@@ -157,7 +158,7 @@ describe("with Antigravity 2.0's folder there", () => {
     ]);
   });
 
-  test("no chat ever needs you: a reply that waits for approval shows as working or idle", async () => {
+  test("no step of a transcript makes a chat need you on its own: a reply that waits for approval shows as working or idle", async () => {
     const { adapter, write } = setUp();
     write(
       IDLE,
@@ -245,12 +246,12 @@ describe("with Antigravity 2.0's folder there", () => {
     for (const [platform, sentence, run] of [
       [
         "darwin",
-        "ps could not be run to tell whether Antigravity is open, so no chat is shown as finished.",
+        "ps could not be run to tell whether Antigravity is open, so no chat is shown as finished, and one left waiting when the app quit still shows as needing you, for up to a day.",
         "every 10 seconds at most",
       ],
       [
         "linux",
-        "On Linux Agent Lookout cannot tell yet whether Antigravity is open, so no chat is shown as finished.",
+        "On Linux Agent Lookout cannot tell yet whether Antigravity is open, so no chat is shown as finished, and one left waiting when the app quit still shows as needing you, for up to a day.",
         "not run on Linux",
       ],
       [
@@ -271,6 +272,30 @@ describe("with Antigravity 2.0's folder there", () => {
         [IDLE]: "idle",
         [FAILED]: "failed",
       });
+    }
+  });
+
+  test("on Linux with no sqlite3, the card never says a chat left waiting still needs you", async () => {
+    for (const list of [true, false]) {
+      const { files, hub, sqlite } = setUp();
+      hub.fail();
+      sqlite.there(false);
+      // With the list there, only its reader looks for sqlite3, since no chat
+      // has a database to read. Without it, only the wait reader does.
+      if (!list) {
+        files.remove(summariesPath(APP_HOME));
+        files.write(databasePath(APP_HOME, IDLE), "SQLite format 3\u0000", {
+          mtimeMs: NOW - MINUTE,
+        });
+      }
+      const result = await antigravityAppAdapterFor(files, hub, sqlite, {
+        platform: "linux",
+      }).poll();
+      expect(result.health.detail, `list ${list}`).toContain(
+        "On Linux Agent Lookout cannot tell yet whether Antigravity is open, so no chat is shown as finished.",
+      );
+      expect(result.health.detail, `list ${list}`).not.toContain("still shows as needing you");
+      expect(statuses(result.sessions)[IDLE], `list ${list}`).toBe("idle");
     }
   });
 
@@ -384,9 +409,11 @@ describe("names and folders", () => {
     expect(sqlite.runs).toEqual([]);
   });
 
-  test("on Windows the list is not read, and the card says so", async () => {
+  test("on Windows neither the list nor a chat's database is read, and the card says so", async () => {
     const { files, hub, sqlite } = setUp();
     hub.fail();
+    files.write(databasePath(APP_HOME, IDLE), "SQLite format 3\u0000", { mtimeMs: NOW - MINUTE });
+    sqlite.step(IDLE, { idx: 2, status: WAITING_STATUS });
     const result = await antigravityAppAdapterFor(files, hub, sqlite, {
       platform: "win32",
     }).poll();
@@ -394,6 +421,12 @@ describe("names and folders", () => {
       label: "Folders read",
       value: "not on Windows",
     });
+    expect(result.health.watching).toContainEqual({ label: "Waits read", value: "not on Windows" });
+    // The card never says there what is not so there.
+    expect(result.health.detail).toContain(WINDOWS_NEEDS_YOU_NOTE);
+    expect(result.health.detail).not.toContain(NEEDS_YOU_NOTE);
+    expect(result.health.detail).not.toContain("still shows as needing you");
+    expect(statuses(result.sessions)[IDLE]).toBe("idle");
     expect(sqlite.runs).toEqual([]);
   });
 });
@@ -486,7 +519,7 @@ describe("writtenJustNow", () => {
   });
 });
 
-test("carries its own declaration of what it can report, with No for Needs you and Yes for Tokens", () => {
+test("carries its own declaration of what it can report, with Partly for Needs you and Yes for Tokens", () => {
   const adapter = antigravityAppAdapterFor(
     memoryFiles(() => NOW),
     standInHub(),
@@ -573,6 +606,45 @@ describe("a chat that waits for approval", () => {
     files.write(databasePath(APP_HOME, IDLE, true), "", { mtimeMs: NOW - 3 * MINUTE });
     expect(statuses((await adapter.poll()).sessions)[IDLE]).toBe("idle");
     expect(sqlite.stepRuns()).toEqual([]);
+  });
+
+  test("with no sqlite3, a chat that waits shows as it would without it, and the card says so once", async () => {
+    const withList = waiting();
+    withList.sqlite.there(false);
+    const said = (await withList.adapter.poll()).health.detail;
+    expect(said).toContain(
+      "or whether it waits for you, so chats show without one and never as needing you.",
+    );
+    expect(said).not.toContain("No sqlite3 program was found to read whether a chat waits for you");
+
+    // With no list of chats to read, the folders' note says nothing, so the waits' note does.
+    const withoutList = waiting();
+    withoutList.sqlite.there(false);
+    withoutList.files.remove(summariesPath(APP_HOME));
+    const result = await withoutList.adapter.poll();
+    expect(statuses(result.sessions)[IDLE]).toBe("idle");
+    expect(result.health.detail).toBe(
+      `${DETAIL} No sqlite3 program was found to read whether a chat waits for you, so none shows as needing you.`,
+    );
+  });
+
+  test("a read that failed and a sqlite3 that is gone are both said, when the list of chats says neither", async () => {
+    const { adapter, clock, files, sqlite } = waiting();
+    sqlite.fail();
+    await adapter.poll();
+    // Within the minute a failed read is kept, sqlite3 goes, the list goes, and another chat's database appears.
+    sqlite.fail(false);
+    sqlite.there(false);
+    files.remove(summariesPath(APP_HOME));
+    files.write(databasePath(APP_HOME, WORKING), "SQLite format 3\u0000", { mtimeMs: NOW });
+    clock.advance(2 * SECOND);
+    const { health } = await adapter.poll();
+    expect(health.detail).toContain(
+      " No sqlite3 program was found to read whether a chat waits for you, so none shows as needing you.",
+    );
+    expect(health.detail).toContain(
+      " sqlite3 could not read whether some chats wait for you, so they show as working or idle.",
+    );
   });
 
   test("when sqlite3 cannot read it, the chat shows as it would without it and the card says so", async () => {
