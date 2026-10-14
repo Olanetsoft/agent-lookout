@@ -17,6 +17,7 @@ import {
   readSync,
   renameSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import path from "node:path";
 
@@ -114,6 +115,19 @@ function errorCode(error: unknown): string | undefined {
   return isObject(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
+/**
+ * A record that is not there was never written, unless what should hold it
+ * is not a folder. macOS and Linux say so when the file is opened, and
+ * Windows says only that the file is not there, so the folder is looked at.
+ */
+function missingIn(dir: string): PluginInstallReading {
+  try {
+    return statSync(dir).isDirectory() ? { kind: "none" } : { kind: "unreadable" };
+  } catch (error) {
+    return errorCode(error) === "ENOENT" ? { kind: "none" } : { kind: "unreadable" };
+  }
+}
+
 /** The record in `plugin-install-state.json` in a folder, the app's folder of user data. */
 export function pluginInstallFile(dir: string): PluginInstallStore {
   const file = path.join(dir, PLUGIN_INSTALL_FILE);
@@ -124,7 +138,7 @@ export function pluginInstallFile(dir: string): PluginInstallStore {
         // Never through a link, and never waiting on a named pipe.
         fd = openWithoutFollowingNow(file, constants.O_RDONLY);
       } catch (error) {
-        return errorCode(error) === "ENOENT" ? { kind: "none" } : { kind: "unreadable" };
+        return errorCode(error) === "ENOENT" ? missingIn(dir) : { kind: "unreadable" };
       }
       let text: string;
       try {
