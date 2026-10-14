@@ -123,6 +123,19 @@ describe("one line of a journal", () => {
     }
   });
 
+  test("an entry before the state that holds the markers as structure does not hide the state", () => {
+    // A tool's arguments are JSON objects the model writes, so an entry can hold
+    // either marker as its own structure, unescaped.
+    const entries = [
+      { id: "entry-5", type: "tool_call", input: { rows: [{ a: 1 }], watermark: 2 } },
+      { id: "entry-6", type: "tool_call", input: { op: "set_envelope", state: { a: 1 } } },
+    ];
+    const text = delta(5, running, entries);
+    expect(text).toContain('{"a":1}],"watermark":2}');
+    expect(text).toContain('{"op":"set_envelope","state":{"a":1}}');
+    expect(statusOf(readJournalLine(line(text))!)).toBe("state:running");
+  });
+
   test("what the person asked, errors and the queue are not kept", () => {
     const failed = delta(5, {
       id: ID,

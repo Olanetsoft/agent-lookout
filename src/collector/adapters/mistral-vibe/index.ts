@@ -23,7 +23,13 @@ import { every } from "../words.ts";
 import type { Envelope } from "./envelope.ts";
 import { createJournalReader, type Newest } from "./journal.ts";
 import { createLeaseReader, LEASE_DIR } from "./leases.ts";
-import { createStoreReader, legacyWrittenSince, scanStores, STORE_DIR } from "./stores.ts";
+import {
+  createStoreReader,
+  legacyWrittenSince,
+  scanStores,
+  STORE_DIR,
+  storeWrittenAt,
+} from "./stores.ts";
 import { mistralVibeSession, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that names Vibe's session folder, for Agent Lookout alone. */
@@ -80,10 +86,11 @@ export const SCAN_MAX_MS = 5 * 60_000;
 
 /**
  * How long a lease must have been held before it lists a session Vibe last
- * wrote to more than a day ago. To clear old process output, Vibe takes the
- * lease of every stored session that ran a process, however old, and holds
- * them all until it is done (harness/.../vibe/_host.py,
- * `_cleanup_process_output_once`). Those sessions are not listed for that.
+ * wrote to more than a day ago, or opens a session Vibe has not written to
+ * since it took the lease. To clear old process output, Vibe takes the lease
+ * of every stored session that ran a process, however old, and holds them all
+ * until it is done (harness/.../vibe/_host.py, `_cleanup_process_output_once`).
+ * Those sessions are not listed, or shown as open, for that.
  */
 export const OLD_SESSION_LEASE_MS = 30_000;
 
@@ -128,8 +135,10 @@ export const WITHOUT_LEASES_NOTE =
  *   journal or the generation (`mistralVibeMapping.ts`).
  * - Needs you not yet: the requests Vibe journals while it waits are not read
  *   by this version, so a waiting session shows as working.
- * - Finished is a session no Vibe program holds the lease of. The desktop app
- *   lets go of a session's lease after each turn, so its sessions finish then.
+ * - Finished is a session no Vibe program holds the lease of, or whose lease
+ *   was taken less than 30 seconds ago with nothing written to it since. The
+ *   desktop app lets go of a session's lease after each turn, so its sessions
+ *   finish then.
  * - Failed is a turn that ended on an error Vibe recorded. A Vibe that stops
  *   mid-turn without closing records none, and its lease is left behind for a
  *   program that no longer runs, so the session shows as finished.
@@ -152,7 +161,7 @@ export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once no Vibe program holds the session. Vibe's desktop app lets go of a session after each turn.",
+      "Once no Vibe program holds it, or one took it in the last 30 seconds and wrote nothing. The desktop app lets go after each turn.",
   },
   failed: {
     level: "partly",
@@ -226,16 +235,20 @@ const sameMark = (a: Mark, b: Mark) =>
  *   Vibe program holds (`leases.ts`).
  * - Each session's store, `<session folder>/unified/<id>`: its `CURRENT`, and
  *   the manifest, public state and runtime state of the generation it names,
- *   once each (`stores.ts`).
+ *   once each while it follows the session (`stores.ts`).
  * - The journal segment that generation names, read from its end and then as
  *   it grows, for the newest public state (`journal.ts`).
  *
- * A session is listed for 24 hours after Vibe last wrote to it, and while a
- * Vibe program holds it. One older than that is listed only once its lease
- * is 30 seconds old (`OLD_SESSION_LEASE_MS`). The stores of sessions no
- * program holds are looked through on the first poll, and then at most every
- * 30 seconds, when `unified/` or the session folder changed, and at least
- * every 5 minutes.
+ * A session is listed for 24 hours after Vibe last wrote to its `CURRENT` or
+ * its journal, and while a Vibe program holds it. One older than that is
+ * listed only once its lease is 30 seconds old (`OLD_SESSION_LEASE_MS`), and
+ * nothing of its store is opened before. A lease younger than that, with
+ * nothing written to the session since, does not show it as open. A lease
+ * whose `.lock.json` gives no time yet counts from the poll that first found
+ * it so. The stores
+ * of sessions no program holds are looked through on the first poll, and then
+ * at most every 30 seconds, when `unified/` or the session folder changed, and
+ * at least every 5 minutes.
  * Subagents, sessions being deleted and sessions not yet saved are left out.
  * Forks are listed. Sessions the older engine saved are not, and the card
  * says so when it saved one in the last day.
@@ -280,7 +293,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
 
   /** When the session folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
-  /** The sessions followed from one poll to the next: those a program held, or that were written in the last day. */
+  /** The sessions followed from one poll to the next: those written in the last day, or a program has held a while. */
   let tracked = new Set<string>();
   /** The newest state last read from each session's journal, kept for a poll that cannot read it. */
   const lastNewest = new Map<string, Newest>();
@@ -289,6 +302,12 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
   let scannedMarks: [Mark, Mark] = [null, null];
   /** When the older engine last saved a session, as of the last look. */
   let legacyAt: number | null = null;
+  /**
+   * For each lock whose `.lock.json` gives no time, as while Vibe is still
+   * writing it, the poll that first found it so. That counts as when the lease
+   * was taken.
+   */
+  const untimedSince = new Map<string, number>();
 
   function watching(read: string): SourceFact[] {
     return [
@@ -405,6 +424,17 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
     }
 
     const found = await leases.read();
+    if (found.supported) {
+      for (const [id, lease] of found.held) {
+        if (lease.acquiredAt !== null) untimedSince.delete(id);
+        else if (!untimedSince.has(id)) untimedSince.set(id, checkedAt);
+      }
+      for (const id of untimedSince.keys()) {
+        if (!found.held.has(id)) untimedSince.delete(id);
+      }
+    } else {
+      untimedSince.clear();
+    }
     const extra: string[] = [];
 
     if (scanDue(checkedAt, [dirMark, storesMark])) {
@@ -457,6 +487,22 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
         locked: lease !== undefined,
         alive: lease === undefined || lease.pid === null ? null : isAlive(lease.pid),
       });
+      /** When a program that runs took the lease, when the lease says. */
+      const acquiredAt = held === true ? (lease?.acquiredAt ?? null) : null;
+      const heldFor = acquiredAt === null ? null : checkedAt - acquiredAt;
+      const heldAWhile = heldFor !== null && heldFor >= OLD_SESSION_LEASE_MS;
+      /** When it was taken, or, when the lease gives no time, when a poll first found it so. */
+      const takenAt = held === true ? (acquiredAt ?? untimedSince.get(id) ?? null) : null;
+
+      // A session only a lease names, which the look through the stores did not
+      // find written in the last day, is opened only once a program that runs
+      // has held it a while. A lease left behind, or one Vibe takes for a
+      // moment to clear old output, opens nothing.
+      if (!tracked.has(id) && !heldAWhile) {
+        if (held !== true) continue;
+        const writtenAt = await storeWrittenAt(storesDir, id, io);
+        if (writtenAt !== null && !isWithinRetention(writtenAt, checkedAt)) continue;
+      }
 
       const read = await stores.read(id);
       // A lease with no store yet is a session Vibe has not saved, and drops
@@ -489,19 +535,19 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       const lastWrite = Math.max(current.mtimeMs, journalInfo?.mtimeMs ?? -Infinity);
       const lastActivity = plausibleTime(Math.floor(lastWrite), checkedAt);
       const recent = lastActivity !== null && isWithinRetention(lastActivity, checkedAt);
-      const heldAWhile =
-        held === true &&
-        lease !== undefined &&
-        lease.acquiredAt !== null &&
-        checkedAt - lease.acquiredAt >= OLD_SESSION_LEASE_MS;
-      if (!recent && !heldAWhile) {
-        // A lease left behind, or one Vibe takes for a moment, keeps what was
-        // read of the store, so it is not read again on every poll.
-        if (lease !== undefined) kept.add(id);
-        continue;
-      }
+      if (!recent && !heldAWhile) continue;
       kept.add(id);
       if (!isMistralVibeUserSession(id, store.kind) || store.deleting) continue;
+
+      // Vibe takes the lease of a closed session for a moment, as it does for
+      // every session with old process output while it clears that output. So
+      // a lease taken less than 30 seconds ago opens the session only once Vibe
+      // writes to it, as a program that uses the session does at once.
+      const justTaken =
+        takenAt !== null &&
+        checkedAt >= takenAt &&
+        checkedAt - takenAt < OLD_SESSION_LEASE_MS &&
+        Math.floor(lastWrite) < takenAt;
 
       const envelope: Envelope | null =
         newest.kind === "state" ? newest.envelope : newest.kind === "none" ? store.snapshot : null;
@@ -514,7 +560,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
           envelope,
           title,
           cwd: store.cwd,
-          held,
+          held: justTaken ? false : held,
           tooNew: store.tooNew,
           writtenAt: journalInfo?.mtimeMs,
           now: checkedAt,

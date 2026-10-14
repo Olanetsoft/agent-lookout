@@ -194,7 +194,7 @@ export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once no Vibe program holds the session. Vibe's desktop app lets go of a session after each turn.",
+      "Once no Vibe program holds it, or one took it in the last 30 seconds and wrote nothing. The desktop app lets go after each turn.",
   },
   failed: {
     level: "partly",

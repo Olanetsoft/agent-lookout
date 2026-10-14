@@ -248,7 +248,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 **The pieces.**
 
 - `leases.ts` lists `active/` and reads the `<id>.lock.json` beside each `<id>.lock`, for the process that holds the session. It never opens a lock: Vibe's own programs try the lock, and this adapter takes a lease as held while its process exists.
-- `stores.ts` reads `CURRENT` when it changes, and the manifest, public state and runtime state of the generation it names once each. It also looks through `unified/` for sessions no program holds, at most every 30 seconds while it changes.
+- `stores.ts` reads `CURRENT` when it changes, and the manifest, public state and runtime state of the generation it names once each while it follows the session. It also looks through `unified/` for sessions no program holds, dating each by its `CURRENT` and its journal segments, at most every 30 seconds while it changes.
 - `journal.ts` reads the journal segment from its end, then as it grows, and parses only the public state at the end of each `projection_delta` record, never the history before it. The journal's newest state wins over the generation's, which is often older.
 - `envelope.ts` keeps the title, the status and a few times of a state, and `toSession.ts` makes the session.
 
@@ -290,7 +290,7 @@ In short:
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle, Quiet for and tokens. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
 - **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
-- **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
+- **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.

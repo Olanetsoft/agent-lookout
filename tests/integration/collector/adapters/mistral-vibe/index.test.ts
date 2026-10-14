@@ -287,6 +287,34 @@ describe("the Mistral Vibe adapter, on a folder laid out as Vibe lays it out", (
     ).toEqual([]);
   });
 
+  test("a unified/ that is a link is not read, even while a session's lease is held", async () => {
+    const dir = await tempDir();
+    const elsewhere = await tempDir();
+    await writeAll(elsewhere, {
+      ...storeFiles({ id: WORKING, state: running(WORKING, "demo-project refactor") }),
+      ...storeFiles({ id: CLOSED, state: idle(CLOSED, "demo-project notes") }),
+    });
+    await symlink(path.join(elsewhere, "unified"), path.join(dir, "unified"));
+    await writeAll(dir, {
+      [`active/${WORKING}.lock`]: "",
+      [`active/${WORKING}.lock.json`]: leaseFile(WORKING, process.pid),
+    });
+
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(dir, { io });
+    for (let poll = 0; poll < 2; poll += 1) {
+      const { health, sessions } = await adapter.poll();
+      expect(health.state).toBe("ok");
+      expect(sessions).toEqual([]);
+    }
+    const link = path.join(dir, "unified");
+    expect(
+      calls.filter(
+        (call) => call.path.startsWith(`${link}${path.sep}`) || call.path.startsWith(elsewhere),
+      ),
+    ).toEqual([]);
+  });
+
   test("says Vibe was not found when there is no session folder, and names none it made", async () => {
     const dir = await tempDir();
     const adapter = createMistralVibeAdapter({ env: { VIBE_HOME: dir }, homeDir: HOME });

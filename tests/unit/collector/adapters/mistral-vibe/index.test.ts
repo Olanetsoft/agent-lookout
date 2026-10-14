@@ -17,6 +17,8 @@ import {
   vibeSessionDirFor,
   WITHOUT_LEASES_NOTE,
 } from "@collector/adapters/mistral-vibe/index";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
   CWD,
   DAY,
@@ -52,6 +54,7 @@ import {
   writeLease,
   writeStore,
 } from "@tests/support/adapters/mistralVibeAdapter";
+import { asWritten } from "@tests/support/paths";
 
 const A = sessionId("a1");
 const B = sessionId("b1");
@@ -100,6 +103,17 @@ function makeOld(files: ReturnType<typeof memoryFiles>, id: string, at: number) 
   files.rewrite(`${SESSION_DIR}/${storePath(id)}/CURRENT`, current({ id }), { mtimeMs: at });
   files.rewrite(`${SESSION_DIR}/${journalPath(id)}`, "", { mtimeMs: at });
 }
+
+/** A lease a program that runs took at `at`, as Vibe writes one. */
+function takeLease(files: ReturnType<typeof memoryFiles>, id: string, at: number) {
+  files.write(`${SESSION_DIR}/active/${id}.lock`, "");
+  files.write(`${SESSION_DIR}/active/${id}.lock.json`, leaseFile(id, LIVE_PID, at));
+}
+
+/** The calls made under one session's store. */
+const underStore = (id: string) => (target: string) =>
+  target.startsWith(`${SESSION_DIR}/${storePath(id)}/`) ||
+  target === `${SESSION_DIR}/${storePath(id)}`;
 
 describe("finding the session folder", () => {
   test("is VIBE_HOME's logs/session, then ~/.vibe's, unless Agent Lookout's own setting names one", () => {
@@ -424,6 +438,140 @@ describe("open and closed", () => {
     expect((await vibeAdapterFor(files).poll()).basis).toBe(BASIS_WITHOUT_LEASES);
   });
 
+  test("a lease Vibe has only just taken leaves a closed session finished, until it has held it a while", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    // Vibe takes the lease of every session with old process output while it clears it.
+    takeLease(files, A, NOW - SECOND);
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    clock.advance(OLD_SESSION_LEASE_MS - 2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    clock.advance(2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "idle" });
+  });
+
+  test("a program that takes a closed session back and writes to it opens it at once", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    takeLease(files, A, NOW - SECOND);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    clock.advance(2 * SECOND);
+    files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, running(A)));
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+  });
+
+  test("a lease Vibe takes for a moment on a closed session tells nothing, wherever the polls fall", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+
+    let memory = EMPTY_CHANGE_MEMORY;
+    const seen: string[] = [];
+    const told: string[] = [];
+    // Agent Lookout starts while Vibe clears old output, and Vibe does so again a few seconds later.
+    for (const taken of [true, false, true, false, true]) {
+      if (taken) takeLease(files, A, clock.now());
+      else releaseLease(files, A);
+      const result = await adapter.poll();
+      seen.push(statuses(result.sessions)[A] ?? "not listed");
+      // As the poller puts it in the snapshot.
+      const health = { ...result.health, basis: result.basis };
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [health],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event, session }) => `${session.name} ${event}`));
+      clock.advance(2 * SECOND);
+    }
+    expect(seen).toEqual(["finished", "finished", "finished", "finished", "finished"]);
+    expect(told).toEqual([]);
+  });
+
+  test("a lease whose time Vibe has not written yet tells nothing either, wherever the polls fall", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    const lock = `${SESSION_DIR}/active/${A}.lock`;
+    const json = `${lock}.json`;
+
+    let memory = EMPTY_CHANGE_MEMORY;
+    const seen: string[] = [];
+    const told: string[] = [];
+    // Vibe makes the lock, empties its `.json`, then writes it. A poll can fall in either moment.
+    const steps = [
+      () => files.write(lock, ""),
+      () => files.write(json, ""),
+      () => takeLease(files, A, clock.now() - SECOND),
+      // Let go and taken again between two polls.
+      () => files.rewrite(json, ""),
+      () => releaseLease(files, A),
+      () => files.write(lock, ""),
+      () => releaseLease(files, A),
+    ];
+    for (const step of steps) {
+      step();
+      const result = await adapter.poll();
+      seen.push(statuses(result.sessions)[A] ?? "not listed");
+      const health = { ...result.health, basis: result.basis };
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [health],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event, session }) => `${session.name} ${event}`));
+      clock.advance(2 * SECOND);
+    }
+    expect(seen).toEqual(steps.map(() => "finished"));
+    expect(told).toEqual([]);
+  });
+
+  test("a lease with no time to read counts from the poll that first found it", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A) });
+    writeStore(files, { id: B, state: idle(B) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    makeOld(files, B, NOW - 2 * HOUR);
+    files.write(`${SESSION_DIR}/active/${A}.lock`, "");
+    files.write(`${SESSION_DIR}/active/${B}.lock`, "");
+    files.write(`${SESSION_DIR}/active/${B}.lock.json`, '{"acquired_at":');
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished", [B]: "finished" });
+
+    // Vibe writes to one of them, as a program that uses the session does at once.
+    clock.advance(2 * SECOND);
+    files.append(`${SESSION_DIR}/${journalPath(B)}`, delta(5, running(B)));
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished", [B]: "working" });
+
+    // A lock left with no time, as by a program that crashed before writing it, looks held after 30 seconds.
+    clock.advance(OLD_SESSION_LEASE_MS - 4 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished", [B]: "working" });
+    clock.advance(2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "idle", [B]: "working" });
+
+    // B's program writes the lease's time, works a while, and lets go; Vibe takes it back between two polls.
+    takeLease(files, B, NOW);
+    expect(statuses((await adapter.poll()).sessions)[B]).toBe("working");
+    clock.advance(OLD_SESSION_LEASE_MS);
+    files.append(`${SESSION_DIR}/${journalPath(B)}`, delta(6, idle(B)));
+    clock.advance(2 * SECOND);
+    files.rewrite(`${SESSION_DIR}/active/${B}.lock.json`, "");
+    expect(statuses((await adapter.poll()).sessions)[B]).toBe("finished");
+  });
+
   test("a failed session stays failed once its program lets it go", async () => {
     const files = vibeFiles();
     writeStore(files, { id: A, state: failed(A) });
@@ -432,15 +580,56 @@ describe("open and closed", () => {
 });
 
 describe("which sessions are followed", () => {
-  test("one no program holds is listed for a day after Vibe last wrote to it", async () => {
+  test("one no program holds is listed for a day after Vibe last wrote to it, and an older one's store is never opened", async () => {
     const files = vibeFiles();
     writeStore(files, { id: A, state: idle(A) });
     writeStore(files, { id: B, state: idle(B) });
-    const root = `${SESSION_DIR}/${storePath(B)}`;
-    files.rewrite(`${root}/CURRENT`, current({ id: B }), { mtimeMs: NOW - DAY - HOUR });
-    files.rewrite(`${SESSION_DIR}/${journalPath(B)}`, "", { mtimeMs: NOW - DAY - HOUR });
+    const journalOfB = `${SESSION_DIR}/${journalPath(B)}`;
+    files.rewrite(`${SESSION_DIR}/${storePath(B)}/CURRENT`, current({ id: B }), {
+      mtimeMs: NOW - DAY - HOUR,
+    });
+    files.rewrite(journalOfB, delta(5, running(B)), { mtimeMs: NOW - DAY - HOUR });
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    for (const at of [NOW, NOW + SCAN_MAX_MS]) {
+      clock.set(at);
+      files.forget();
+      const { sessions } = await adapter.poll();
+      expect(sessions.map((session) => session.id)).toEqual([`mistral-vibe:${A}`]);
+      expect(files.opened().filter(underStore(B))).toEqual([]);
+      expect(files.reads.filter((read) => read.path === journalOfB)).toEqual([]);
+    }
+    // The second poll was a look through the stores too.
+    expect(files.count("readdir", (target) => target === `${SESSION_DIR}/unified`)).toBe(1);
+  });
+
+  test("one Vibe last wrote to in its journal, as it does a rename, is found by the look through the stores", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A) });
+    files.rewrite(`${SESSION_DIR}/${storePath(A)}/CURRENT`, current({ id: A }), {
+      mtimeMs: NOW - 2 * DAY,
+    });
+    files.rewrite(
+      `${SESSION_DIR}/${journalPath(A)}`,
+      delta(5, idle(A, "demo-project renamed"), []),
+      {
+        mtimeMs: NOW - HOUR,
+      },
+    );
     const { sessions } = await vibeAdapterFor(files).poll();
-    expect(sessions.map((session) => session.id)).toEqual([`mistral-vibe:${A}`]);
+    expect(sessions.map((session) => [session.status, session.name])).toEqual([
+      ["finished", "demo-project renamed"],
+    ]);
+  });
+
+  test("one whose newest save goes on in an older journal segment is found by its CURRENT", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A) });
+    files.rewrite(`${SESSION_DIR}/${storePath(A)}/CURRENT`, current({ id: A }), {
+      mtimeMs: NOW - HOUR,
+    });
+    files.rewrite(`${SESSION_DIR}/${journalPath(A)}`, "", { mtimeMs: NOW - 2 * DAY });
+    expect(statuses((await vibeAdapterFor(files).poll()).sessions)).toEqual({ [A]: "finished" });
   });
 
   test("a finished session leaves once a day has passed, and a held one stays however old", async () => {
@@ -456,7 +645,7 @@ describe("which sessions are followed", () => {
     expect(later.sessions.map((session) => session.id)).toEqual([`mistral-vibe:${B}`]);
   });
 
-  test("a lease a crashed Vibe left on a session older than a day lists nothing, and its store is read once", async () => {
+  test("a lease a crashed Vibe left on a session older than a day lists nothing, and its store is never opened", async () => {
     const files = vibeFiles();
     writeStore(files, { id: A, state: idle(A) });
     makeOld(files, A, NOW - 3 * DAY);
@@ -464,12 +653,29 @@ describe("which sessions are followed", () => {
     const clock = handClock();
     const adapter = vibeAdapterFor(files, standInPids([LIVE_PID]), { now: clock.now });
     expect((await adapter.poll()).sessions).toEqual([]);
+    expect(files.opened().filter(underStore(A))).toEqual([]);
     for (let poll = 0; poll < 3; poll += 1) {
       files.forget();
       clock.advance(2 * SECOND);
       expect((await adapter.poll()).sessions).toEqual([]);
-      expect(files.opened()).toEqual([]);
+      // Between looks through the stores, it is not even looked at.
+      expect(files.count(undefined, underStore(A))).toBe(0);
     }
+  });
+
+  test("a session a crashed Vibe left leased leaves once a day has passed, and is then not looked at", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: running(A) });
+    writeLease(files, A, GONE_PID);
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids([LIVE_PID]), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    files.forget();
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(files.count(undefined, underStore(A))).toBe(0);
   });
 
   test("a lease Vibe has only just taken lists no session older than a day, until it has held it a while", async () => {
@@ -477,8 +683,7 @@ describe("which sessions are followed", () => {
     writeStore(files, { id: A, state: idle(A) });
     makeOld(files, A, NOW - 20 * DAY);
     // Vibe takes the lease of every old session that ran a process while it clears their output.
-    files.write(`${SESSION_DIR}/active/${A}.lock`, "");
-    files.write(`${SESSION_DIR}/active/${A}.lock.json`, leaseFile(A, LIVE_PID, NOW - SECOND));
+    takeLease(files, A, NOW - SECOND);
     const clock = handClock();
     const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
     expect((await adapter.poll()).sessions).toEqual([]);
@@ -489,9 +694,10 @@ describe("which sessions are followed", () => {
     expect((await adapter.poll()).sessions).toEqual([]);
 
     // Taken by a program that keeps it: once it has held it a while, the session is open.
-    files.write(`${SESSION_DIR}/active/${A}.lock`, "");
-    files.write(`${SESSION_DIR}/active/${A}.lock.json`, leaseFile(A, LIVE_PID, clock.now()));
+    takeLease(files, A, clock.now());
     expect((await adapter.poll()).sessions).toEqual([]);
+    // Until then, nothing of its store is opened.
+    expect(files.opened().filter(underStore(A))).toEqual([]);
     clock.advance(OLD_SESSION_LEASE_MS);
     expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "idle" });
   });
@@ -568,6 +774,26 @@ describe("when something goes wrong", () => {
     expect(health.state).toBe("error");
     expect(health.detail).toBe(
       "Mistral Vibe sessions could not be read: the folder ~/.vibe/logs/session/unified could not be looked at.",
+    );
+    expect(sessions).toEqual([]);
+  });
+
+  test("a stores folder that can be looked at but not listed says so", async () => {
+    const files = vibeFiles();
+    const stores = `${SESSION_DIR}/unified`;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      async readdir(dir) {
+        if (asWritten(dir) === stores) {
+          throw Object.assign(new Error(`EACCES: ${stores}`), { code: "EACCES" });
+        }
+        return files.io.readdir(dir);
+      },
+    };
+    const { health, sessions } = await vibeAdapterFor(files, standInPids(), { io }).poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toBe(
+      "Mistral Vibe sessions could not be read: the folder ~/.vibe/logs/session/unified could not be listed.",
     );
     expect(sessions).toEqual([]);
   });

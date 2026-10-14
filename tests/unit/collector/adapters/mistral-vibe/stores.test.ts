@@ -19,6 +19,7 @@ import {
   current,
   document,
   generationName,
+  journalPath,
   sessionId,
   storePath,
 } from "@tests/fixtures/mistralVibe";
@@ -322,21 +323,36 @@ async function read(files: ReturnType<typeof memoryFiles>, file: string) {
 }
 
 describe("looking through unified/", () => {
-  test("names each session's store with when its CURRENT was written", async () => {
+  test("names each session's store with when Vibe last wrote to its CURRENT or a journal segment", async () => {
     const files = memoryFiles();
     const B = sessionId("b1");
+    const C = sessionId("c1");
     writeStore(files, { id: A });
     writeStore(files, { id: B });
+    writeStore(files, { id: C });
     files.rewrite(`${SESSION_DIR}/${storePath(B)}/CURRENT`, current({ id: B }), {
       mtimeMs: NOW - DAY,
     });
+    files.rewrite(`${SESSION_DIR}/${journalPath(B)}`, "", { mtimeMs: NOW - 2 * DAY });
+    // A rename journaled with no save after it, beside the segment before.
+    const journalOfC = `${SESSION_DIR}/${storePath(C)}/journal`;
+    files.rewrite(`${SESSION_DIR}/${storePath(C)}/CURRENT`, current({ id: C }), {
+      mtimeMs: NOW - 2 * DAY,
+    });
+    files.rewrite(`${SESSION_DIR}/${journalPath(C)}`, "", { mtimeMs: NOW - HOUR });
+    files.write(`${journalOfC}/0000000000000001.jsonl`, "", { mtimeMs: NOW - 3 * DAY });
+    // Anything else there is not a segment, and a link is not followed.
+    files.write(`${journalOfC}/0000000000000009.jsonl.tmp`, "");
+    files.special(`${journalOfC}/0000000000000010.jsonl`);
     expect(await scanStores(STORES, files.io)).toEqual({
       state: "ok",
       written: new Map([
         [A, NOW],
         [B, NOW - DAY],
+        [C, NOW - HOUR],
       ]),
     });
+    expect(files.opened()).toEqual([]);
   });
 
   test("leaves out Vibe's index, temporary files, subagents, links and folders with no CURRENT", async () => {

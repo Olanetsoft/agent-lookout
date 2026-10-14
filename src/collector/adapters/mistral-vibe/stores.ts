@@ -28,10 +28,12 @@ import { envelopeOf, isRecord, type Envelope } from "./envelope.ts";
  *   (`lifecycle.type`). Only those three are kept.
  *
  * A generation's files are written once and never change, so each is read
- * once, when `CURRENT` names a new one. Vibe keeps only the two newest
- * generations, so one can go between reading `CURRENT` and reading its
- * files. `CURRENT` is then read once more, as Vibe's own readers do, and if
- * that fails too, what was read before stands until the next poll.
+ * once while the adapter follows the session, when `CURRENT` names a new one.
+ * A session it stops following and finds again is read afresh. Vibe keeps
+ * only the two newest generations, so one can go between reading `CURRENT`
+ * and reading its files. `CURRENT` is then read once more, as Vibe's own
+ * readers do, and if that fails too, what was read before stands until the
+ * next poll.
  *
  * Nothing else in a store is opened: not `checkpoint.json`, which holds the
  * whole conversation, nor `chunks/`, `attachments/`, `processes/`,
@@ -57,6 +59,7 @@ export const RUNTIME_LIMIT_BYTES = 8 * 1024 * 1024;
 
 const CURRENT = "CURRENT";
 const GENERATIONS = "generations";
+const JOURNAL = "journal";
 const MANIFEST = "manifest.json";
 
 /** A generation: 16 digits. */
@@ -363,15 +366,59 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
   };
 }
 
-/** What a look through `unified/` found: the store of each session, with when its `CURRENT` was last written. */
+/** A segment's name in a store's `journal/`: 16 digits. */
+const SEGMENT = /^[0-9]{16}\.jsonl$/;
+
+/**
+ * When Vibe last wrote to a session's store: the later of the modified times
+ * of its `CURRENT` and of the segments in its `journal/`, which Vibe keeps two
+ * of. A rename is journaled with no save after it, so the journal can be
+ * newer than `CURRENT`. Two `lstat`s, a listing of `journal/` and an `lstat`
+ * for each segment. Nothing is opened. Null when there is no store there that
+ * can be looked at: no folder, a link, or no `CURRENT`.
+ */
+export async function storeWrittenAt(
+  storesDir: string,
+  sessionId: string,
+  io: ReadOnlyIo,
+): Promise<number | null> {
+  const root = path.join(storesDir, sessionId);
+  let newest: number;
+  try {
+    if ((await io.lstat(root)).kind !== "directory") return null;
+    const current = await io.lstat(path.join(root, CURRENT));
+    if (current.kind !== "file") return null;
+    newest = current.mtimeMs;
+  } catch {
+    // Gone, or not readable: not a store this time.
+    return null;
+  }
+  let names: string[] = [];
+  try {
+    names = await io.readdir(path.join(root, JOURNAL));
+  } catch {
+    // No journal yet, or one that cannot be listed: `CURRENT`'s time stands.
+  }
+  for (const name of names.filter((each) => SEGMENT.test(each))) {
+    try {
+      const segment = await io.lstat(path.join(root, JOURNAL, name));
+      if (segment.kind === "file") newest = Math.max(newest, segment.mtimeMs);
+    } catch {
+      // Gone between the listing and the look.
+    }
+  }
+  return newest;
+}
+
+/** What a look through `unified/` found: the store of each session, with when Vibe last wrote to it. */
 export type StoreScan =
   { state: "ok"; written: Map<string, number> } | { state: "missing" | "unreadable" };
 
 /**
- * Every session's store in `unified/`, with the modified time of its
- * `CURRENT`: one listing, and two `lstat`s for each store. Hidden names, such
- * as Vibe's own `.session-index.json`, subagents' stores, names that are not
- * session ids, links and stores with no `CURRENT` are left out.
+ * Every session's store in `unified/`, with when Vibe last wrote to it
+ * (`storeWrittenAt`): one listing, and a few looks at each store. Hidden
+ * names, such as Vibe's own `.session-index.json`, subagents' stores, names
+ * that are not session ids, links and stores with no `CURRENT` are left out.
  */
 export async function scanStores(storesDir: string, io: ReadOnlyIo): Promise<StoreScan> {
   let names: string[];
@@ -382,14 +429,8 @@ export async function scanStores(storesDir: string, io: ReadOnlyIo): Promise<Sto
   }
   const written = new Map<string, number>();
   for (const name of names.filter(isStoreName).sort()) {
-    try {
-      const root = path.join(storesDir, name);
-      if ((await io.lstat(root)).kind !== "directory") continue;
-      const current = await io.lstat(path.join(root, CURRENT));
-      if (current.kind === "file") written.set(name, current.mtimeMs);
-    } catch {
-      // Gone, or not readable: not a store this time.
-    }
+    const at = await storeWrittenAt(storesDir, name, io);
+    if (at !== null) written.set(name, at);
   }
   return { state: "ok", written };
 }
