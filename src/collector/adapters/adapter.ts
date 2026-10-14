@@ -44,6 +44,9 @@ export interface AdapterResult {
    *   every session is finished, unless it failed or cannot be read.
    *
    * The status-file adapter has one, `files`: the folder of status files.
+   *
+   * The Qwen Code adapter has one, `files`: Qwen Code's list of running
+   * sessions and each one's chat file.
    */
   basis?: string;
 }

@@ -281,6 +281,7 @@ test.each([
       "Mistral Vibe",
       "Gemini CLI",
       "OpenCode",
+      "Qwen Code",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -288,7 +289,7 @@ test.each([
       (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
     );
     // Claude Code's are read here while its details are open, and never from another machine.
-    expect(tokens).toEqual(["Partly", "Yes", "Yes", "Yes", "No", "No", "No", "No", "No"]);
+    expect(tokens).toEqual(["Partly", "Yes", "Yes", "Yes", "No", "No", "No", "No", "No", "No"]);
 
     // Each word sits whole on one line in its cell, and the heads take at most two.
     for (const cell of table.querySelectorAll<HTMLElement>('[data-part="capability"]')) {

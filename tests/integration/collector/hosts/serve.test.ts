@@ -69,6 +69,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
       AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
       AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+      AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_HISTORY: "off",

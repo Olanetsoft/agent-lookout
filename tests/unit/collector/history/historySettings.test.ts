@@ -66,17 +66,25 @@ test("the fingerprint of the folders sessions are read from names none of them, 
         AGENT_LOOKOUT_VIBE_SESSION_DIR: "/Users/example/.vibe/logs/session",
         AGENT_LOOKOUT_GEMINI_CLI_HOME: "/Users/example/.gemini",
         AGENT_LOOKOUT_OPENCODE_HOME: "/Users/example/.local/share/opencode",
+        AGENT_LOOKOUT_QWEN_HOME: "/Users/example/.qwen",
       },
       HOME,
     ),
   ).toBe(defaults);
-  // Codex's own variable counts as Agent Lookout's does, and so does Vibe's;
-  // Gemini CLI's names its home folder, and OpenCode's own name its database.
+  // Codex's own variable counts as Agent Lookout's does, and so do Vibe's and
+  // Qwen Code's; Gemini CLI's names its home folder, and OpenCode's own name
+  // its database.
   expect(sourcesFingerprint({ CODEX_HOME: "/Users/example/.codex" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ VIBE_HOME: "/Users/example/.vibe" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ GEMINI_CLI_HOME: "/Users/example" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ XDG_DATA_HOME: "/Users/example/.local/share" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ OPENCODE_DB: "opencode.db" }, HOME)).toBe(defaults);
+  expect(
+    sourcesFingerprint(
+      { QWEN_HOME: "/Users/example/.qwen", QWEN_RUNTIME_DIR: "/Users/example/.qwen" },
+      HOME,
+    ),
+  ).toBe(defaults);
 
   const others = [
     sourcesFingerprint({ AGENT_LOOKOUT_CLAUDE_HOME: "/tmp/empty-claude" }, HOME),
@@ -93,6 +101,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ XDG_DATA_HOME: "/tmp/empty-data" }, HOME),
     sourcesFingerprint({ OPENCODE_DB: "/tmp/empty-opencode.db" }, HOME),
     sourcesFingerprint({ OPENCODE_DB: ":memory:" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_QWEN_HOME: "/tmp/empty-qwen" }, HOME),
+    sourcesFingerprint({ QWEN_HOME: "/tmp/empty-qwen" }, HOME),
+    sourcesFingerprint({ QWEN_RUNTIME_DIR: "/tmp/empty-qwen" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

@@ -6,8 +6,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI and OpenCode, none of the five installed here, and
- * status files. Then the other machine, connected over SSH.
+ * Mistral Vibe, Gemini CLI, OpenCode and Qwen Code, none of the six installed
+ * here, and status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -312,6 +312,51 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "A request that fails for good shows as working until the next prompt, and before Qwen Code 0.25.1 so can a stopped reply.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Qwen Code does not record approval waits, so a session waiting for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once its Qwen Code closes, if Agent Lookout saw it open or Qwen Code left its record behind.",
+  },
+  failed: {
+    level: "no",
+    reason:
+      "Qwen Code records each failed try but not when it gives up, so a session whose request failed shows as working.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title Qwen Code gives a session, or one set with /rename. Until then, or without its fast model, the folder's name.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "Agent Lookout looks for tmux panes and Terminal tabs only for Claude Code sessions so far.",
+  },
+  "quiet-for": { level: "yes" },
+  tokens: { level: "no", reason: "Agent Lookout does not read Qwen Code's token counts yet." },
+  stop: {
+    level: "no",
+    reason:
+      "Qwen Code records no process start time on a Mac or Windows, so its process cannot be confirmed before a stop.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Qwen Code records no approval waits, so there is nothing to answer from here, by hand or by a permission rule.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -488,6 +533,21 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Qwen Code is not installed: its folders are looked for, and nothing more.
+      id: "qwen-code",
+      label: "Qwen Code",
+      state: "unavailable",
+      detail:
+        "Qwen Code was not found: there is no ~/.qwen/sessions or ~/.qwen/projects folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.qwen/sessions" },
+        { label: "Chats folder", value: "~/.qwen/projects" },
+        { label: "Read", value: "not found" },
+      ],
+      capabilities: QWEN_CODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -521,6 +581,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Mistral Vibe there", value: "Not found" },
         { label: "Gemini CLI there", value: "Not found" },
         { label: "OpenCode there", value: "Not found" },
+        { label: "Qwen Code there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

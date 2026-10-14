@@ -33,6 +33,8 @@ import {
 import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
+import { createQwenCodeAdapter, QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
+import { qwenCodeSession } from "@collector/adapters/qwen-code/toSession";
 import {
   createStatusFileAdapter,
   STATUS_FILE_CAPABILITIES,
@@ -54,6 +56,12 @@ import {
 } from "@core/mapping/gemini-cli/geminiCliMapping";
 import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
 import { mapOpencodeStatus } from "@core/mapping/opencode/opencodeMapping";
+import {
+  foldQwenCodeRecord,
+  mapQwenCodeStatus,
+  startQwenCodeFold,
+  type QwenCodeRecord,
+} from "@core/mapping/qwen-code/qwenCodeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -69,6 +77,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Mistral Vibe", MISTRAL_VIBE_CAPABILITIES],
   ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
   ["OpenCode", OPENCODE_CAPABILITIES],
+  ["Qwen Code", QWEN_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -129,6 +138,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createOpencodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(OPENCODE_CAPABILITIES);
+    expect(
+      createQwenCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(QWEN_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -580,6 +592,78 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Qwen Code: no line of its chat files makes a session need you, fail or finish", () => {
+    const records: QwenCodeRecord[] = [
+      { type: "user", at: NOW - 60_000 },
+      { type: "user", subtype: "notification", at: NOW - 60_000 },
+      { type: "user", subtype: "mid_turn_user_message", at: NOW - 60_000 },
+      { type: "assistant", at: NOW - 50_000, message: true, calls: true },
+      { type: "assistant", at: NOW - 50_000, message: true },
+      { type: "assistant", at: NOW - 50_000, oversized: true },
+      { type: "tool_result", at: NOW - 40_000 },
+      { type: "tool_result", at: NOW - 40_000, cancelled: true },
+      { type: "system", subtype: "rewind", at: NOW - 30_000 },
+      { type: "system", subtype: "turn_result", at: NOW - 30_000 },
+      {
+        type: "system",
+        subtype: "ui_telemetry",
+        at: NOW - 30_000,
+        lifecycle: { phase: "ended", outcome: "error", subagent: false },
+      },
+      { type: "summary", at: NOW - 20_000 },
+    ];
+    const mapped = statuses(
+      records.flatMap((first) =>
+        records.flatMap((second) =>
+          [true, false].map(
+            (whole) =>
+              mapQwenCodeStatus(
+                [first, second].reduce(foldQwenCodeRecord, startQwenCodeFold(whole)),
+                NOW - 90_000,
+              ).status,
+          ),
+        ),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "unknown"]));
+    expect(QWEN_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(QWEN_CODE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.failed.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Qwen Code: a session has its process and the time of its last write, and no tokens, jump or stop", () => {
+    const session = qwenCodeSession({
+      entry: {
+        pid: 41001,
+        sessionId: "00000000-0000-4000-8000-000000000001",
+        cwd: "/Users/example/code/demo",
+        startedAt: NOW - 60_000,
+        kind: "tui",
+        linux: false,
+      },
+      chat: {
+        fold: foldQwenCodeRecord(startQwenCodeFold(true), { type: "user", at: NOW - 30_000 }),
+        firstAt: NOW - 30_000,
+      },
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.lastWriteAt).toBe(NOW - 10_000);
+    expect(session.pid).toBe(41001);
+    expect(session).not.toHaveProperty("tokens");
+    expect(session).not.toHaveProperty("jump");
+    expect(session).not.toHaveProperty("stop");
+    expect(session).not.toHaveProperty("ask");
+    expect(session.links).toEqual({});
+    expect(QWEN_CODE_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(QWEN_CODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.names.level).toBe("partly");
+    expect(QWEN_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {

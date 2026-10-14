@@ -19,6 +19,7 @@ import {
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_OPENCODE_HOME,
+  EMPTY_QWEN_HOME,
   EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
 } from "@tests/support/node/tempFiles";
@@ -68,3 +69,12 @@ delete process.env.GEMINI_CLI_HOME;
 // and `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
 mkdirSync(EMPTY_OPENCODE_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_OPENCODE_HOME = EMPTY_OPENCODE_HOME;
+
+// Nor does one read Qwen Code's folders, `~/.qwen` or the ones `QWEN_HOME` and
+// `QWEN_RUNTIME_DIR` name: the adapter is pointed at an empty folder, and
+// Qwen Code's own variables are dropped. A test of the adapter names a folder
+// of its own.
+mkdirSync(EMPTY_QWEN_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_QWEN_HOME = EMPTY_QWEN_HOME;
+delete process.env.QWEN_HOME;
+delete process.env.QWEN_RUNTIME_DIR;

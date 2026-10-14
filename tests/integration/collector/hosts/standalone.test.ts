@@ -67,11 +67,11 @@ async function distFolder(withPage: boolean): Promise<string> {
 /**
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
- * Antigravity, Mistral Vibe, Gemini CLI and OpenCode folders, an empty folder
- * of status files and tmux turned off, on a free port. The poller runs in this
- * process, so anything less would read the real `~/.claude`, `~/.codex`,
- * `~/.vibe`, `~/.gemini`, `~/.local/share/opencode` and `~/.agent-lookout` and
- * run the real `claude`.
+ * Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code folders, an
+ * empty folder of status files and tmux turned off, on a free port. The poller
+ * runs in this process, so anything less would read the real `~/.claude`,
+ * `~/.codex`, `~/.vibe`, `~/.gemini`, `~/.local/share/opencode`, `~/.qwen` and
+ * `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -81,6 +81,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const vibeSessionDir = await tempDir();
   const geminiCliHome = await tempDir();
   const opencodeHome = await tempDir();
+  const qwenHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -91,6 +92,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     vibeSessionDir,
     geminiCliHome,
     opencodeHome,
+    qwenHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -101,6 +103,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_VIBE_SESSION_DIR: vibeSessionDir,
       AGENT_LOOKOUT_GEMINI_CLI_HOME: geminiCliHome,
       AGENT_LOOKOUT_OPENCODE_HOME: opencodeHome,
+      AGENT_LOOKOUT_QWEN_HOME: qwenHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -169,6 +172,7 @@ describe("the standalone host", () => {
       vibeSessionDir,
       geminiCliHome,
       opencodeHome,
+      qwenHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -256,6 +260,13 @@ describe("the standalone host", () => {
             state: process.platform === "win32" ? "unavailable" : "ok",
             watching: expect.arrayContaining([
               { label: "Database", value: path.join(opencodeHome, "opencode.db") },
+            ]),
+          },
+          {
+            id: "qwen-code",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(qwenHome, "sessions") },
             ]),
           },
           {

@@ -7,6 +7,7 @@ import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/in
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
 import { sshArguments } from "@collector/remotes/sshProgram";
@@ -23,6 +24,7 @@ import {
 import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
+import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
 
 // The landing page's dashboard cannot run the adapters, so it says their words
 // itself. These hold it to the adapters' own, so it never says more than they do.
@@ -35,6 +37,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.MISTRAL_VIBE_CAPABILITIES).toEqual(MISTRAL_VIBE_CAPABILITIES);
   expect(tour.GEMINI_CLI_CAPABILITIES).toEqual(GEMINI_CLI_CAPABILITIES);
   expect(tour.OPENCODE_CAPABILITIES).toEqual(OPENCODE_CAPABILITIES);
+  expect(tour.QWEN_CODE_CAPABILITIES).toEqual(QWEN_CODE_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -48,6 +51,7 @@ test("this computer's sources come in the collector's order", () => {
     "mistral-vibe",
     "gemini-cli",
     "opencode",
+    "qwen-code",
     "status-files",
   ]);
 });
@@ -119,6 +123,18 @@ test("OpenCode's card is the one its adapter shows on a computer without it", as
   expect(sessions).toEqual([]);
 });
 
+test("Qwen Code's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = qwenCodeAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "qwen-code")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -159,6 +175,12 @@ test("the other machine's agents and its row for each source are what this compu
           label: "OpenCode",
           state: "unavailable",
           capabilities: OPENCODE_CAPABILITIES,
+        },
+        {
+          id: "qwen-code",
+          label: "Qwen Code",
+          state: "unavailable",
+          capabilities: QWEN_CODE_CAPABILITIES,
         },
         {
           id: "status-files",
