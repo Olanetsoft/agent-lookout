@@ -5,7 +5,7 @@
   "author": {
     "name": "Olanetsoft"
   },
-  "homepage": "https://agent-lookout.vercel.app",
+  "homepage": "https://www.agentlookout.app",
   "repository": "https://github.com/Olanetsoft/agent-lookout",
   "license": "MIT",
   "keywords": ["permissions", "dashboard", "agent-lookout"]

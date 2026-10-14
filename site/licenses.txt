@@ -1,4 +1,4 @@
-Agent Lookout's landing page, https://agent-lookout.vercel.app
+Agent Lookout's landing page, https://www.agentlookout.app
 
 The page is MIT licensed, as the rest of Agent Lookout is:
 https://github.com/Olanetsoft/agent-lookout/blob/main/LICENSE

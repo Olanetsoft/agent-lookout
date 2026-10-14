@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://agent-lookout.vercel.app/sitemap.xml
+Sitemap: https://www.agentlookout.app/sitemap.xml
