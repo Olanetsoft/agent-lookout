@@ -64,6 +64,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
   const calls: IoCall[] = [];
   /** Each folder's identity, given the first time it is looked at. */
   const folderInos = new Map<string, number>();
+  /** Each folder's modified time, once a test sets one with `touch`. Otherwise 0. */
+  const folderTimes = new Map<string, number>();
   const reads: { path: string; position: number; length: number }[] = [];
   let nextIno = 1;
   let openHandles = 0;
@@ -98,7 +100,12 @@ export function memoryFiles(clock: () => number = () => NOW) {
     if (folders.has(target)) {
       // Each folder has an identity of its own, as on a disk, kept while it is there.
       if (!folderInos.has(target)) folderInos.set(target, nextIno++);
-      return { kind: "directory", size: 0, mtimeMs: 0, ino: folderInos.get(target) ?? 0 };
+      return {
+        kind: "directory",
+        size: 0,
+        mtimeMs: folderTimes.get(target) ?? 0,
+        ino: folderInos.get(target) ?? 0,
+      };
     }
     throw errno("ENOENT", target);
   }
@@ -199,6 +206,10 @@ export function memoryFiles(clock: () => number = () => NOW) {
     },
     mkdir(target: string) {
       addFolders(path.join(asWritten(target), "x"));
+    },
+    /** Moves a folder's modified time on, as adding or renaming a file in it does on a disk. */
+    touch(target: string, mtimeMs: number = clock()) {
+      folderTimes.set(asWritten(target), mtimeMs);
     },
     /** Removes a file, or a folder and everything in it. */
     remove(given: string) {

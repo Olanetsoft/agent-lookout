@@ -63,12 +63,14 @@ test("the fingerprint of the folders sessions are read from names none of them, 
         AGENT_LOOKOUT_STATUS_DIR: " /Users/example/.agent-lookout/sessions ",
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: "/Users/example/.gemini/antigravity-cli",
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: "/Users/example/.gemini/antigravity",
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: "/Users/example/.vibe/logs/session",
       },
       HOME,
     ),
   ).toBe(defaults);
-  // Codex's own variable counts as Agent Lookout's does.
+  // Codex's own variable counts as Agent Lookout's does, and so does Vibe's.
   expect(sourcesFingerprint({ CODEX_HOME: "/Users/example/.codex" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ VIBE_HOME: "/Users/example/.vibe" }, HOME)).toBe(defaults);
 
   const others = [
     sourcesFingerprint({ AGENT_LOOKOUT_CLAUDE_HOME: "/tmp/empty-claude" }, HOME),
@@ -77,6 +79,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_STATUS_DIR: "/tmp/empty-status" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_ANTIGRAVITY_HOME: "/tmp/empty-antigravity" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: "/tmp/empty-antigravity-app" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_VIBE_SESSION_DIR: "/tmp/empty-vibe" }, HOME),
+    sourcesFingerprint({ VIBE_HOME: "/tmp/empty-vibe-home" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

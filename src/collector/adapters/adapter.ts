@@ -29,6 +29,11 @@ export interface AdapterResult {
    * - `files-without-locks`: the same while the folder of locks is missing or
    *   cannot be listed, when no session can be shown as finished.
    *
+   * The Mistral Vibe adapter has two:
+   * - `files`: Vibe's session stores and its folder of leases. The usual one.
+   * - `files-without-leases`: the same while the folder of leases is missing
+   *   or cannot be listed, when no session can be shown as finished.
+   *
    * The status-file adapter has one, `files`: the folder of status files.
    */
   basis?: string;

@@ -22,6 +22,11 @@ import { sessionFromRegistry } from "@collector/adapters/claude-code/toSession";
 import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/codex/index";
 import { codexSession } from "@collector/adapters/codex/toSession";
 import {
+  createMistralVibeAdapter,
+  MISTRAL_VIBE_CAPABILITIES,
+} from "@collector/adapters/mistral-vibe/index";
+import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
+import {
   createStatusFileAdapter,
   STATUS_FILE_CAPABILITIES,
 } from "@collector/adapters/status-files/index";
@@ -33,6 +38,7 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
+import { mapMistralVibeStatus } from "@core/mapping/mistralVibeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -45,6 +51,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Codex", CODEX_CAPABILITIES],
   ["Antigravity CLI", ANTIGRAVITY_CAPABILITIES],
   ["Antigravity", ANTIGRAVITY_APP_CAPABILITIES],
+  ["Mistral Vibe", MISTRAL_VIBE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -103,6 +110,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
       createAntigravityAppAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(ANTIGRAVITY_APP_CAPABILITIES);
   }
+  expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
+    MISTRAL_VIBE_CAPABILITIES,
+  );
 });
 
 test("on Windows Claude Code reports all it does elsewhere, but Jump in VS Code alone, and no Stop or Answer", () => {
@@ -334,6 +344,53 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("yes");
     expect(ANTIGRAVITY_APP_CAPABILITIES.jump.level).toBe("no");
     expect(ANTIGRAVITY_APP_CAPABILITIES.stop.level).toBe("no");
+  });
+
+  test("Mistral Vibe: no status or lease makes a session need you yet, and only a turn Vibe records as failed fails", () => {
+    const types = ["idle", "running", "blocked", "failed", "archived", "something_else", undefined];
+    const mapped = statuses(
+      types.flatMap((statusType) =>
+        ([true, false, "unknown"] as const).flatMap((held) =>
+          [true, false].map((tooNew) => mapMistralVibeStatus({ statusType, held, tooNew })),
+        ),
+      ),
+    );
+    expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
+    expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(MISTRAL_VIBE_CAPABILITIES.failed.level).toBe("partly");
+    expect(MISTRAL_VIBE_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Mistral Vibe: a session has the time of its last write, and no jump, stop, pid or tokens", () => {
+    const session = mistralVibeSession({
+      sessionId: "00000000-0000-4000-8000-0000000000e1",
+      envelope: {
+        title: null,
+        statusType: "running",
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 30_000,
+        turnStatus: "in_progress",
+        turnStartedAt: NOW - 30_000,
+        turnCompletedAt: null,
+      },
+      title: null,
+      cwd: "/Users/example/code/demo",
+      held: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.lastWriteAt).toBe(NOW - 10_000);
+    expect(session.name).toBe("demo");
+    for (const key of ["jump", "stop", "pid", "alive", "tokens"]) {
+      expect(session, key).not.toHaveProperty(key);
+    }
+    expect(session.links).toEqual({});
+    expect(MISTRAL_VIBE_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(MISTRAL_VIBE_CAPABILITIES.names.level).toBe("partly");
+    expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("no");
+    expect(MISTRAL_VIBE_CAPABILITIES.jump.level).toBe("no");
+    expect(MISTRAL_VIBE_CAPABILITIES.stop.level).toBe("no");
+    expect(MISTRAL_VIBE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("status files: every status is the agent's own word, and nothing in a file reaches a session", () => {

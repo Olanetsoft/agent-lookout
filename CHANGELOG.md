@@ -6,6 +6,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Added
 
+- Mistral Vibe sessions appear read-only beside the other agents', with their name, folder and status: working, idle, finished or failed, and how long a working one has been quiet. Agent Lookout reads them from Vibe's session folder, `~/.vibe/logs/session`, `logs/session` in the folder Vibe's own `VIBE_HOME` names, or the folder `AGENT_LOOKOUT_VIBE_SESSION_DIR` names, and never takes or opens the locks Vibe keeps there. Needs you, token counts and what a session last said are not read yet, and sessions Vibe ran on its older engine are not shown. This was built from Vibe 2.26.1's source and has not yet been checked on a computer running Vibe (#70).
 - An Antigravity chat shows as needing you while the app asks you to approve a step, as an Antigravity CLI session does, so it is in the Needs you panel and sends a notification for the wait. Agent Lookout reads two numbers from the chat's own database with `sqlite3`: the place and the status of its newest step, never what the step asks, so the chat does not say what it asks. What each agent can report, in Sources, says Partly for its Needs you. Not on Windows, and on Linux, where Agent Lookout cannot tell whether the app is open, a chat the app left waiting when it quit goes on showing as needing you for up to a day.
 
 ## 0.2.11 - 2026-10-13

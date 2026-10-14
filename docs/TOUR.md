@@ -4,7 +4,7 @@ This tour walks through the whole project in plain language: what each part does
 
 ## What Agent Lookout is
 
-Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI and Antigravity sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
+Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI, Antigravity and Mistral Vibe sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
 
 It starts no agent and installs nothing into one. By default it sends nothing off the computer. The one exception is the Mac app's daily check on GitHub for a newer version, which Settings turns off. It can act on a session, but only when you ask: bring its tab forward, stop it, or answer its permission prompt.
 
@@ -33,6 +33,7 @@ flowchart LR
     cx["Codex<br/>~/.codex session files"]
     ag["Antigravity CLI<br/>~/.gemini/antigravity-cli, ps"]
     aa["Antigravity<br/>~/.gemini/antigravity, ps, sqlite3"]
+    mv["Mistral Vibe<br/>~/.vibe/logs/session"]
     sf["Your own agents<br/>~/.agent-lookout/sessions"]
   end
   remote["Agent Lookout on another machine<br/>over your ssh"]
@@ -48,6 +49,7 @@ flowchart LR
   cx --> adapters
   ag --> adapters
   aa --> adapters
+  mv --> adapters
   sf --> adapters
   remote --> adapters
   plugin -->|"Unix socket"| held
@@ -68,7 +70,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 
 ### The poller
 
-**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the five local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity and status files), adds one adapter for each other machine, and hands them all to the poller.
+**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the six local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe and status files), adds one adapter for each other machine, and hands them all to the poller.
 
 **Where it came from.** It was in the first commit, 042ec3e, on 4 October 2026. Later work added reading history back after a restart (#21), an idle time you can set (#12), marking a wait Agent Lookout answered (#9, #11) and other machines over SSH (#57).
 
@@ -94,7 +96,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 **A session** has:
 
-- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
+- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
 - its `source`, the app it runs in (`surface`) and a `name`
 - its folder, `cwd`, and `project`, the folder's last part (`projectOf` in `src/core/sessions/project.ts`)
 - a `status`, and when it started and last changed status (`startedAt`, `statusSince`)
@@ -104,7 +106,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 One rule matters more than it looks: `statusSince` must not move while a session keeps needing you. A later time on a session that is still waiting reads as a new wait, which means a second notification.
 
-**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`) and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
+**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`), `mistralVibeMapping.ts` and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
 
 **Times from other tools.** Every time read from another tool goes through `plausibleTime` in `src/core/time.ts`. A time before 2020, or more than a minute ahead of the clock, is taken as unknown, so nothing shows as idle since 1970.
 
@@ -131,6 +133,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 - Status files count from the file's status time, or its last write.
 - The Antigravity CLI lists a conversation whose transcript was written in the last day, or that an agy program may still have open.
 - Antigravity lists a chat whose transcript was written in the last day.
+- Mistral Vibe lists a session Vibe wrote to in the last day, or one a Vibe program has held for 30 seconds.
 
 ### Branches and pull requests
 
@@ -234,6 +237,25 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **How sure it is.** It was written from agy 1.3.1's program and documentation, then checked against one real conversation that waited for approval. The card says so (`UNCHECKED_NOTE`). The adapter notes list what is not yet checked, such as `/resume` and a denied prompt.
 
+### Mistral Vibe
+
+**Where.** `src/collector/adapters/mistral-vibe/`, with its rules in `src/core/mapping/mistralVibeMapping.ts`. [adapters/mistral-vibe.md](adapters/mistral-vibe.md) is its reference.
+
+**Where it came from.** #70 asked for Mistral Vibe. Vibe 2.26.0 made its unified engine the default, which keeps each session as a store of its own under `~/.vibe/logs/session/unified/`.
+
+**Why files.** Vibe documents no listing of its sessions for another program: `--resume` is a picker for a person. So the adapter reads the files Vibe's own list is built from, and runs no Vibe program.
+
+**The pieces.**
+
+- `leases.ts` lists `active/` and reads the `<id>.lock.json` beside each `<id>.lock`, for the process that holds the session. It never opens a lock: Vibe's own programs try the lock, and this adapter takes a lease as held while its process exists.
+- `stores.ts` reads `CURRENT` when it changes, and the manifest, public state and runtime state of the generation it names once each. It also looks through `unified/` for sessions no program holds, at most every 30 seconds while it changes.
+- `journal.ts` reads the journal segment from its end, then as it grows, and parses only the public state at the end of each `projection_delta` record, never the history before it. The journal's newest state wins over the generation's, which is often older.
+- `envelope.ts` keeps the title, the status and a few times of a state, and `toSession.ts` makes the session.
+
+**Bases.** `files` is the usual one. `files-without-leases` is used while `active/` cannot be listed, when no session is shown as finished.
+
+**How sure it is.** It was built from the source of Vibe 2.26.1 and has not yet been checked on a computer running Vibe. The card says so (`UNCHECKED_NOTE`), and says too that Needs you is not read yet (`NEEDS_YOU_NOTE`).
+
 ### Status files: your own agents
 
 **Where.** `src/collector/adapters/status-files/`, with the mapping in `src/core/mapping/statusFileMapping.ts`. The file format is Agent Lookout's own, and [Your own agents](GUIDE.md#your-own-agents) in the guide is its reference.
@@ -258,7 +280,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Why.** Each tool records different things. Unless that is said, a missing signal reads as good news: a Codex session waiting for approval just looks busy (#50).
 
-**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES`, `ANTIGRAVITY_APP_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
+**Where.** Each adapter declares its row once, as a constant in its `index.ts`: `CLAUDE_CODE_CAPABILITIES` (and `CLAUDE_CODE_WINDOWS_CAPABILITIES`), `CODEX_CAPABILITIES`, `ANTIGRAVITY_CAPABILITIES`, `ANTIGRAVITY_APP_CAPABILITIES`, `MISTRAL_VIBE_CAPABILITIES` and `STATUS_FILE_CAPABILITIES`. Each cell is yes, no or partly, and every no and partly carries one short reason. The poller puts the row on every health of that source. `src/dashboard/components/sources/CapabilitiesCard.tsx` draws What each agent can report in Sources from it. The columns are `CAPABILITIES` in `session.ts`: working and idle, needs you, finished, failed, names, Jump, Quiet for, Tokens, Stop and Answer. It shipped in c1bc3ed on 6 October, and Tokens joined with #83.
 
 The guide has the same table in [What each agent can report](GUIDE.md#what-each-agent-can-report). `tests/integration/collector/adapters/adapter.test.ts` fails if the guide's table says anything other than what the adapters declare, cell by cell and reason by reason, or if the README's agent table does, in each column it has. Change the constant and the docs together.
 
@@ -268,6 +290,7 @@ In short:
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle, Quiet for and tokens. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
 - **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
+- **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
@@ -1288,7 +1311,7 @@ A test ends in `.test.tsx` only when its module is a `.tsx` file. A module may h
 **Why no test touches your machine.** Tests run on a contributor's own computer, next to their real sessions, so two safeguards keep them apart:
 
 - The test config leaves out the collector's Vite plugin.
-- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI and Antigravity at empty folders and the settings at `NO_SETTINGS_FILE`.
+- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed and removes the phone settings. It also points the Antigravity CLI, Antigravity and Mistral Vibe at empty folders and the settings at `NO_SETTINGS_FILE`.
 
 A test that builds its own environment does the same itself. One block of tests, the check against the real `claude`, runs only with `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1`. [tests/README.md](../tests/README.md) has the command, says what goes in each group and describes every helper in `tests/support/`.
 
@@ -1432,15 +1455,15 @@ Both ship inside the npm package.
 
 **Why they matter here.** They are promises, and the project treats them as part of the code. PRIVACY.md ends with a rule: a change that adds a command or a file read, stores anything on disk, or talks to a network updates PRIVACY.md in the same pull request. The pull request template asks for the same. Most of the promises have a test that would fail if the code broke them:
 
-| Promise                                                                                                                                                                | Test that holds it                                                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
-| `npm start` listens on loopback only                                                                                                                                   | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
-| The page loads nothing from another site                                                                                                                               | The same file: "the page may load and call nothing but this server"                                                                                  |
-| What a waiting session is asking is never written to disk or given to an MCP client                                                                                    | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
-| A session's last message is kept only within the stated limits                                                                                                         | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
-| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                       | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
-| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI or Antigravity folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
+| Promise                                                                                                                                                                              | Test that holds it                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The API answers only requests with a loopback `Host`, and refuses other sites' `Origin`                                                                                              | `tests/unit/collector/handler.test.ts` and `tests/integration/collector/handler.test.ts`, such as "a loopback Origin does not rescue a foreign Host" |
+| `npm start` listens on loopback only                                                                                                                                                 | `tests/integration/collector/hosts/server.test.ts`: "listenOnLoopback refuses any other address and leaves the server closed"                        |
+| The page loads nothing from another site                                                                                                                                             | The same file: "the page may load and call nothing but this server"                                                                                  |
+| What a waiting session is asking is never written to disk or given to an MCP client                                                                                                  | `tests/integration/collector/collector.test.ts`, `tests/unit/collector/history/historyKeeper.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`   |
+| A session's last message is kept only within the stated limits                                                                                                                       | `tests/unit/collector/adapters/claude-code/transcript/lastMessages.test.ts`: "keeps to the limits PRIVACY.md and docs/API.md give"                   |
+| Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                     | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                |
+| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity or Mistral Vibe folder | `tests/support/node/nodeSetup.ts`                                                                                                                    |
 
 The docs are held to the code in the same way:
 

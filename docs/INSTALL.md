@@ -6,11 +6,12 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 
 - macOS, Linux or Windows. Agent Lookout is developed and used on macOS. On Linux and Windows, CI runs the tests and starts it, and no one has used it on those desktops yet. [On Linux](GUIDE.md#on-linux) and [On Windows](GUIDE.md#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#mac-app) needs no Node.js, and macOS 13 Ventura or later.
-- Claude Code, Codex, Antigravity or the Antigravity CLI, `agy`. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
+- Claude Code, Codex, Antigravity, the Antigravity CLI, `agy`, or Mistral Vibe. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 - For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity IDE's conversations do not appear yet, and Sources says when its folder is there.
 - For Antigravity, the desktop app Google calls Antigravity 2.0, Agent Lookout was written from the layout of its files on one Mac. Its chats show as working, idle or failed, as needing you while the app asks you to approve a step, except on Windows, and on a Mac as finished once the app is closed. Each chat's folder, and whether it waits for you, are read with the system's `sqlite3`, which macOS has.
+- For Mistral Vibe, Agent Lookout was built from the source of Vibe 2.26.1 and has not yet been checked on a computer running Vibe. Its sessions show as working, idle, finished or failed. Whether one waits for you is not read yet, and sessions Vibe ran on its older engine, the default before 2.26.0, do not appear.
 
 Check what you have:
 
