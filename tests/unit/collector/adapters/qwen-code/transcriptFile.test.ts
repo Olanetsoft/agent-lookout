@@ -17,9 +17,13 @@ import {
   sessionIdOf,
 } from "@tests/fixtures/qwen-code/qwenCode";
 import { memoryFiles } from "@tests/support/adapters/qwenCodeAdapter";
+import { asWritten } from "@tests/support/paths";
 
 const PROJECTS = `${QWEN_DIR}/projects`;
 const ID = sessionIdOf(1);
+
+/** The file found, as the tests write paths, whatever system joined it. */
+const written = (found: { path: string } | null) => found && asWritten(found.path);
 
 function finderOn(files: ReturnType<typeof memoryFiles>, platform: NodeJS.Platform = "darwin") {
   return createChatFinder({ projectsDir: PROJECTS, io: files.io, platform });
@@ -71,7 +75,7 @@ describe("createChatFinder", () => {
     const files = memoryFiles();
     files.write(chatPath(QWEN_DIR, ID), chatFile(promptLine(NOW)));
     const found = await finderOn(files).find(ID, PROJECT, NOW);
-    expect(found?.path).toBe(chatPath(QWEN_DIR, ID));
+    expect(written(found)).toBe(chatPath(QWEN_DIR, ID));
     expect(found?.info.kind).toBe("file");
     expect(files.calls).toEqual([{ method: "lstat", path: chatPath(QWEN_DIR, ID) }]);
   });
@@ -99,10 +103,10 @@ describe("createChatFinder", () => {
     files.write(elsewhere, chatFile(promptLine(NOW)));
     files.mkdir(`${PROJECTS}/.hidden`);
     const finder = finderOn(files);
-    expect((await finder.find(ID, PROJECT, NOW))?.path).toBe(elsewhere);
+    expect(written(await finder.find(ID, PROJECT, NOW))).toBe(elsewhere);
 
     files.forget();
-    expect((await finder.find(ID, PROJECT, NOW + 2_000))?.path).toBe(elsewhere);
+    expect(written(await finder.find(ID, PROJECT, NOW + 2_000))).toBe(elsewhere);
     expect(files.calls).toEqual([{ method: "lstat", path: elsewhere }]);
     expect(files.count("lstat", (target) => target.includes(".hidden"))).toBe(0);
   });
@@ -117,7 +121,7 @@ describe("createChatFinder", () => {
     files.remove(chatPath(QWEN_DIR, ID));
     const moved = chatPath(QWEN_DIR, ID, "-Users-example-code-demo-api");
     files.write(moved, chatFile(promptLine(NOW)));
-    expect((await finder.find(ID, "/Users/example/code/demo-api", NOW + 2_000))?.path).toBe(moved);
+    expect(written(await finder.find(ID, "/Users/example/code/demo-api", NOW + 2_000))).toBe(moved);
 
     files.remove(moved);
     expect(await finder.find(ID, "/Users/example/code/demo-api", NOW + 4_000)).toBeNull();
@@ -146,7 +150,7 @@ describe("createChatFinder", () => {
     const files = memoryFiles();
     const cwd = "/Users/Example/Code/Demo";
     files.write(chatPath(QWEN_DIR, ID, "-users-example-code-demo"), chatFile(promptLine(NOW)));
-    expect((await finderOn(files, "win32").find(ID, cwd, NOW))?.path).toBe(
+    expect(written(await finderOn(files, "win32").find(ID, cwd, NOW))).toBe(
       chatPath(QWEN_DIR, ID, "-users-example-code-demo"),
     );
   });

@@ -77,10 +77,12 @@ export const UNKNOWN_NOTE =
  *
  * - Working and idle are the end of the chat file (`qwenCodeMapping.ts`), but
  *   a request that fails for good writes nothing that ends the turn, and
- *   before 0.25.1 neither may a reply stopped with Esc.
+ *   neither does Esc while Qwen Code waits to retry or before its first
+ *   request, nor, before 0.25.1, may Esc at any time.
  * - Needs you never: an approval prompt writes nothing to the files.
  * - Finished is a session Agent Lookout saw open whose process has gone, or
- *   let it go, and a record a crash left behind (`finishedSessions.ts`).
+ *   let it go, as /clear and /resume do, and a record a crash left behind
+ *   (`finishedSessions.ts`).
  * - Failed never: each failed try is recorded, but not when Qwen Code gives up.
  * - Its name is the title Qwen Code gives a session, which needs its fast
  *   model, or the one set with /rename.
@@ -95,7 +97,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "A request that fails for good shows as working until the next prompt, and before Qwen Code 0.25.1 so can a stopped reply.",
+      "A request that fails for good, and some replies stopped with Esc, such as between retries, show as working until the next prompt.",
   },
   "needs-you": {
     level: "no",
@@ -105,7 +107,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once its Qwen Code closes, if Agent Lookout saw it open or Qwen Code left its record behind.",
+      "Once its Qwen Code closes or moves on with /clear or /resume, if Agent Lookout saw it open or Qwen Code left its record behind.",
   },
   failed: {
     level: "no",
@@ -230,10 +232,10 @@ export interface QwenCodeAdapterOptions {
  *   grew since the last poll (`chatRecords.ts`), for its status and title.
  *
  * Whether a session's process runs is asked with signal 0, which sends
- * nothing. A session whose process has gone, or whose record has, shows as
- * finished for 24 hours (`finishedSessions.ts`). Its status is working, idle,
- * finished or unknown, never "needs-you": Qwen Code does not write approval
- * waits to its files.
+ * nothing. A session whose process has gone, or whose record has gone or
+ * names another session, shows as finished for 24 hours
+ * (`finishedSessions.ts`). Its status is working, idle, finished or unknown,
+ * never "needs-you": Qwen Code does not write approval waits to its files.
  *
  * Qwen Code not being installed costs nothing: when neither folder is there,
  * the adapter says so and looks again only once a minute, with two `stat`s.
@@ -268,6 +270,10 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
   let seen = false;
   /** The records the last read parsed, by file name, for a record caught mid-write. */
   let parsed: ReadonlyMap<string, RegistryEntry> = new Map();
+  /** The session each running process had at the last poll that read the list, and that poll's time, by pid. */
+  let holders = new Map<number, { entry: RegistryEntry; seenAt: number }>();
+  /** Which process /clear or /resume moved to each session, and when, as `qwenCodeSession` takes it, by session id. */
+  const tookOver = new Map<string, { pid: number; at: number }>();
 
   function watching(read: string): SourceFact[] {
     return [
@@ -404,19 +410,35 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
     const read = new Set<string>();
     const open: Session[] = [];
     const gone: RegistryEntry[] = [];
+    const held = new Map<number, { entry: RegistryEntry; seenAt: number }>();
     let noChat = false;
     for (const { entry, alive } of oneForEachSession(registry.entries, isAlive)) {
       if (!alive) {
         gone.push(entry);
         continue;
       }
+      // /clear and /resume change the session a record names in place, and
+      // keep when its process registered: the session is the process's only
+      // since then, which was after the last poll that found the earlier one.
+      const before = holders.get(entry.pid);
+      if (
+        before !== undefined &&
+        before.entry.sessionId !== entry.sessionId &&
+        before.entry.startedAt === entry.startedAt
+      ) {
+        tookOver.set(entry.sessionId, { pid: entry.pid, at: before.seenAt });
+      }
+      held.set(entry.pid, { entry, seenAt: checkedAt });
+      const moved = tookOver.get(entry.sessionId);
+      const tookOverAt = moved?.pid === entry.pid ? moved.at : undefined;
       const { chat, writtenAt } = await chatOf(entry, checkedAt, read);
-      const registeredAt = plausibleTime(entry.startedAt, checkedAt);
+      const registeredAt = plausibleTime(tookOverAt ?? entry.startedAt, checkedAt);
       if (chat === null && registeredAt !== null && checkedAt - registeredAt >= NO_CHAT_AFTER_MS) {
         noChat = true;
       }
-      open.push(qwenCodeSession({ entry, chat, writtenAt, now: checkedAt }));
+      open.push(qwenCodeSession({ entry, chat, writtenAt, tookOverAt, now: checkedAt }));
     }
+    holders = held;
 
     // Records a crash left behind are looked at once, when Agent Lookout starts.
     const leftBehind = finished.first
@@ -428,8 +450,10 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
         )
       : [];
     const closed = finished.update(open, leftBehind, checkedAt);
-    finder.keepOnly(new Set(registry.entries.map((entry) => entry.sessionId)));
+    const listed = new Set(registry.entries.map((entry) => entry.sessionId));
+    finder.keepOnly(listed);
     reader.keepOnly(read);
+    for (const id of tookOver.keys()) if (!listed.has(id)) tookOver.delete(id);
 
     let detail = `Sessions are read from the list of running sessions Qwen Code keeps in ${sessionsName}, and each one's chat file in ${projectsName}. ${notes}`;
     if (noChat) detail += ` ${NO_CHAT_NOTE}`;

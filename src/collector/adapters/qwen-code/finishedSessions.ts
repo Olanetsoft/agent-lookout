@@ -10,7 +10,8 @@ import { closedQwenCodeSession } from "./toSession.ts";
  * finds it open, after an earlier poll did: its record has gone, its process
  * has gone, or its record names another session, as after /clear or /resume.
  * It is then shown as finished from that poll, with what was last known of
- * it, and its chat file is not read again.
+ * it, and its chat file is not read again. When its process is open with
+ * another session, it names no process, since that process has not ended.
  *
  * At the first poll, a record whose process has already gone, as one a crash
  * leaves behind, is shown as finished too, from when its chat file was last
@@ -47,9 +48,11 @@ export function createFinishedSessions(
     },
     update(open, leftBehind, now) {
       const openIds = new Set(open.map((session) => session.id));
+      const openPids = new Set(open.map((session) => session.pid));
       for (const [id, session] of wasOpen) {
-        if (!openIds.has(id) && !closed.has(id))
-          closed.set(id, closedQwenCodeSession(session, now));
+        if (openIds.has(id) || closed.has(id)) continue;
+        const runsOn = session.pid !== undefined && openPids.has(session.pid);
+        closed.set(id, closedQwenCodeSession(session, now, runsOn));
       }
       if (first) {
         for (const session of leftBehind) {

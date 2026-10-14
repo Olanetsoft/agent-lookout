@@ -86,6 +86,17 @@ describe("qwenCodeSession", () => {
     expect(session).not.toHaveProperty("lastWriteAt");
   });
 
+  test("one /clear or /resume moved its process to counts from then, not from when the process registered", () => {
+    const old = entry({ startedAt: NOW - 2 * DAY });
+    const session = qwenCodeSession({ entry: old, chat: null, tookOverAt: NOW - MINUTE, now: NOW });
+    expect(session).toMatchObject({
+      status: "idle",
+      startedAt: NOW - MINUTE,
+      statusSince: NOW - MINUTE,
+      stale: false,
+    });
+  });
+
   test("it began with its file's first line when the file was read from its start, otherwise when it registered", () => {
     // Resumed: the file is older than the process.
     const resumed = qwenCodeSession({
@@ -196,6 +207,14 @@ describe("closedQwenCodeSession", () => {
       alive: false,
       stale: false,
     });
+  });
+
+  test("names no process when its process runs on with another session", () => {
+    const open = qwenCodeSession({ entry: entry(), chat: chat([prompt(NOW - MINUTE)]), now: NOW });
+    const closed = closedQwenCodeSession(open, NOW + 2_000, true);
+    expect(closed).toMatchObject({ status: "finished", statusSince: NOW + 2_000, stale: false });
+    expect(closed).not.toHaveProperty("pid");
+    expect(closed).not.toHaveProperty("alive");
   });
 });
 

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFile,
@@ -15,7 +15,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   createQwenCodeAdapter,
@@ -304,6 +304,53 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     expect(JSON.stringify(sessions)).not.toContain(PRIVATE_TOKEN);
     expect(await snapshotOf(home)).toEqual(before);
   }, 10_000);
+
+  test("asks each process with signal 0 alone, and only the one its record's name gives", async () => {
+    const home = await tempDir();
+    const sessions = path.join(home, "sessions");
+    await mkdir(sessions);
+    const ended = spawnSync(process.execPath, ["-e", ""]);
+    expect(ended.status).toBe(0);
+    const startedAt = Date.now() - MINUTE;
+    const records: [string, number, string][] = [
+      [`${process.pid}.json`, process.pid, sessionIdOf(11)],
+      [`${ended.pid}.json`, ended.pid, sessionIdOf(12)],
+      // A name that gives one pid and a record that names another is no record.
+      [`${process.ppid}.json`, process.pid, sessionIdOf(13)],
+    ];
+    for (const [name, pid, sessionId] of records) {
+      await writeFile(
+        path.join(sessions, name),
+        registryRecord({ pid, sessionId, startedAt, kind: "tui" }),
+      );
+    }
+
+    const realKill = process.kill.bind(process);
+    // Nothing but signal 0 is ever sent, even if the adapter asked for more.
+    const kill = vi
+      .spyOn(process, "kill")
+      .mockImplementation((pid, signal) => (signal === 0 ? realKill(pid, 0) : true));
+    let result;
+    let asked: Parameters<typeof process.kill>[];
+    try {
+      // The adapter's own check of each process, with no stand-in for it.
+      result = await createQwenCodeAdapter({
+        env: { AGENT_LOOKOUT_QWEN_HOME: home },
+        homeDir: HOME,
+      }).poll();
+    } finally {
+      asked = [...kill.mock.calls];
+      kill.mockRestore();
+    }
+    expect(asked.map(([, signal]) => signal)).toEqual([0, 0]);
+    expect(asked.map(([pid]) => pid).sort((a, b) => a - b)).toEqual(
+      [process.pid, ended.pid].sort((a, b) => a - b),
+    );
+    expect(result.sessions.map((session) => [session.id, session.status, session.alive])).toEqual([
+      [`qwen-code:${sessionIdOf(11)}`, "idle", true],
+      [`qwen-code:${sessionIdOf(12)}`, "finished", false],
+    ]);
+  });
 
   test("a folder that is not there is watched and empty, and left so", async () => {
     const parent = await tempDir();

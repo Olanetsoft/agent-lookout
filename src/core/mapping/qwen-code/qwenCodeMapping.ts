@@ -291,8 +291,9 @@ export interface QwenCodeStatus {
 
 /**
  * Maps what a live session's chat file says to a status. `fold` is null when
- * there is no chat file. `liveSince` is when its Qwen Code process registered
- * the session, from its record in the list of running sessions.
+ * there is no chat file. `liveSince` is when the session became its Qwen Code
+ * process's: when the process registered it, from its record in the list of
+ * running sessions, or later, when /clear or /resume moved the process to it.
  *
  * The first rule that holds wins:
  *
@@ -303,8 +304,9 @@ export interface QwenCodeStatus {
  * 4. A newest event from before the session registered, left by an earlier
  *    Qwen Code that resumed it or stopped mid-turn: idle since it registered.
  * 5. A prompt, activity, calls, results or a request as the newest event:
- *    working. A request that fails for good writes nothing more, so its
- *    session stays working until the next prompt.
+ *    working. A request that fails for good writes nothing more, and nor does
+ *    Esc while Qwen Code waits to retry, so its session stays working until
+ *    the next prompt.
  * 6. A reply, results with a stopped call, a rewind, a turn's end or a
  *    stopped request: idle.
  * 7. Anything else: unknown.

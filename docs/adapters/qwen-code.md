@@ -151,13 +151,15 @@ The first rule that holds wins:
 4. A newest line that says something from before the session registered: idle since it registered. That is a session resumed with `/resume`, or one an earlier Qwen Code left mid-turn.
 5. Otherwise, what the newest line that says something says.
 
+A session that `/clear` or `/resume` moved a running process to while Agent Lookout watched counts as registered at the last poll before the move.
+
 A result that was stopped ends the turn because Esc while tools run ends it, whichever calls finished (`cli/ui/hooks/use-llm-stream.ts:5496-5522`). When a person declined one call of several, Qwen Code goes on, and its next request, written from 0.25.1, or a reply that calls a tool shows the session as working again.
 
 A working session's time is when its stretch of work began, or none when that is before what was read. An idle session's is when it became idle, never before it registered. A Qwen Code session is never shown as needing you or failed.
 
 ## Closed sessions
 
-A session closes when a poll no longer finds it open after an earlier poll did: its record has gone, its process has gone, or its record names another session, as after `/clear` or `/resume`. It is shown as finished from that poll for 24 hours, with what was last known of it, and its chat file is not read again. It leaves the list sooner if it is open again.
+A session closes when a poll no longer finds it open after an earlier poll did: its record has gone, its process has gone, or its record names another session, as after `/clear` or `/resume`. It is shown as finished from that poll for 24 hours, with what was last known of it, and its chat file is not read again. It leaves the list sooner if it is open again. When its process is still open with another session, as after `/clear` or `/resume`, it names no process, and with `finished` notifications on it sends one like any session that finishes.
 
 At the first poll, a record whose process has already gone, as a crash leaves, is shown as finished from its chat file's modified time, or from when it registered. One a day old or more is left out. Every other session that closed before Agent Lookout started is not shown, and nothing of this is kept across a restart.
 
@@ -165,7 +167,7 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 
 - **Name:** the title Qwen Code gave the session, or the one set with `/rename`, then the folder's name, then the id. The newest `custom_title` wins. What was typed is never used, and neither is the record's `name`.
 - **Folder:** the record's `cwd`, which `/cd` changes.
-- **Started:** the chat file's first line, when the file was read from its start. Otherwise when the process registered the session.
+- **Started:** the chat file's first line, when the file was read from its start. Otherwise when the process registered the session, or when `/clear` or `/resume` moved the process to it, if Agent Lookout saw that happen.
 - **Quiet for:** the chat file's modified time from the `lstat` on each poll. Every line Qwen Code adds moves it on. A session with no chat file has none.
 - **App:** Terminal.
 - **Process:** the record's `pid`, with no Jump, Stop or link.
@@ -180,28 +182,28 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 ## Known gaps
 
 - A session waiting for your approval shows as working, and its Quiet for grows. Qwen Code writes nothing while it asks.
-- A request that fails for good shows as working until the next prompt: Qwen Code records each failed try, and nothing when it gives up. Before 0.25.1, so can a reply stopped with Esc. From 0.24.0, Esc after any part of a reply writes that part (`core/core/llm-chat.ts:6218-6259`), which shows as idle unless it calls a tool, and an Esc before the first part writes nothing. From 0.25.1, Esc also writes a stopped request first, and the session shows as idle whatever the part holds.
+- A request that fails for good shows as working until the next prompt: Qwen Code records each failed try, and nothing when it gives up. So can a reply stopped with Esc. Before 0.24.0, Esc writes nothing. From 0.24.0, Esc after any part of a reply writes that part (`core/core/llm-chat.ts:6218-6259`), which shows as idle unless it calls a tool, and an Esc before the first part writes nothing. From 0.25.1, Esc during a request also writes a stopped request first, and the session shows as idle whatever the part holds. But Esc while Qwen Code waits to retry a failed try writes nothing, since no request is open then (`core/utils/retry.ts:171-195`), and nor may Esc before a turn's first request starts, as while Qwen Code compacts the chat. Those show as working until the next prompt on 0.25.1 too.
 - Before 0.25.1, a session where you declined one call of several shows as idle until Qwen Code's next reply.
 - Closed sessions are shown only while Agent Lookout runs, and records a crash left at its start.
-- After a crash, another process can take the pid. Until a Qwen Code process sweeps the record, the closed session shows as open, with the status its chat file last gave.
+- After a crash, another process can take the pid. The closed session then shows as open, with the status its chat file last gave, often working, since a crash tends to come mid-turn. That can last as long as the process that took the pid runs, and come back each time the pid is given out again while the record is left. On a Mac or Windows, with no start time to compare, Qwen Code keeps a record whose pid runs (`core/utils/process-liveness.ts:201-210`). On Linux, a Qwen Code that lists its sessions, as `qwen sessions ps` does, removes the record sooner. It does not once the computer has restarted: Qwen Code leaves alone a record from before the restart (`core/services/session-registry.ts:756-760`).
 - Never listed: `qwen -p` runs, which never register (`docs/users/features/commands.md:770`); Qwen Code before 0.21.14; sessions an editor or Qwen Code's server drives; sessions in a container, on a Mac or Windows; and sessions under a folder Agent Lookout's own environment does not name.
 - Chats moved by `advanced.runtimeOutputDir`, or with chat recording off, show as idle, and after ten minutes the Sources view says no chat file was found.
 - Managed Session logs show as unknown.
-- After `/clear`, until the new session writes its first line, Started is when the process registered, which can be long before. So is it for a chat file over 8 MiB, which is read from its middle.
+- After `/clear` or `/resume` made before Agent Lookout started, the session is idle since its process registered, which can be long before, until its next prompt, so it can show as stale at once. After such a `/clear`, Started is that time too until the new session writes its first line. Started is also when the process registered for a chat file over 8 MiB, which is read from its middle.
 - On Linux, a record written in a container is listed, and its pid is checked on this computer.
 
 ## What breaks when Qwen Code changes
 
-| Change in Qwen Code                                   | What the dashboard shows                                            | Where to fix it                                 |
-| ----------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------- |
-| The record's fields or `schemaVersion` change         | No Qwen Code sessions, and the Sources view names a newer format    | `registry.ts`                                   |
-| Record names change                                   | No Qwen Code sessions                                               | `registry.ts`                                   |
-| The project folder rule changes                       | Sessions are idle, and the Sources view says no chat file was found | `transcriptFile.ts`                             |
-| The order of the first keys of a line changes         | A line over 4 MiB reads as unknown                                  | `chatRecords.ts`                                |
-| `request_lifecycle` changes shape                     | A stopped reply shows as working until the next prompt              | `chatRecords.ts`                                |
-| A new `user` subtype begins turns                     | Those turns do not show as working                                  | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
-| A new line type                                       | Sessions show as unknown until their next line                      | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
-| `custom_title` changes                                | Sessions are named after their folder                               | `chatRecords.ts`                                |
-| `QWEN_HOME` or `QWEN_RUNTIME_DIR` mean something else | Qwen Code is not found, or found empty                              | `index.ts`                                      |
+| Change in Qwen Code                                   | What the dashboard shows                                                                                                                                  | Where to fix it                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| The record's fields or `schemaVersion` change         | No Qwen Code sessions, and the Sources view names a newer format                                                                                          | `registry.ts`                                   |
+| Record names change                                   | No Qwen Code sessions                                                                                                                                     | `registry.ts`                                   |
+| The project folder rule changes                       | Sessions are still found by a look through every folder in `projects/`, up to 30 seconds late, and a crash's leftover is finished from when it registered | `transcriptFile.ts`                             |
+| The order of the first keys of a line changes         | A line over 4 MiB reads as unknown                                                                                                                        | `chatRecords.ts`                                |
+| `request_lifecycle` changes shape                     | A stopped reply shows as working until the next prompt                                                                                                    | `chatRecords.ts`                                |
+| A new `user` subtype begins turns                     | Those turns do not show as working                                                                                                                        | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
+| A new line type                                       | Sessions show as unknown until their next line                                                                                                            | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
+| `custom_title` changes                                | Sessions are named after their folder                                                                                                                     | `chatRecords.ts`                                |
+| `QWEN_HOME` or `QWEN_RUNTIME_DIR` mean something else | Qwen Code is not found, or found empty                                                                                                                    | `index.ts`                                      |
 
 To check a new Qwen Code version, read `core/services/session-registry.ts`, `core/services/chatRecordingService.ts`, `core/telemetry/request-lifecycle.ts`, `core/utils/paths.ts`, `core/config/storage.ts` and `docs/users/features/cross-session-protocol.md` at its tag. Then run a session in a terminal, and compare the dashboard with `qwen sessions ps` on a machine where nothing else reads the list.
