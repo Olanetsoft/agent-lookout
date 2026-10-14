@@ -66,10 +66,11 @@ async function distFolder(withPage: boolean): Promise<string> {
 
 /**
  * Settings that name nothing on this machine: an empty Claude home, a
- * stand-in `claude` that lists no sessions, an empty Codex home, an empty
- * folder of status files and tmux turned off, on a free port. The poller runs
- * in this process, so anything less would read the real `~/.claude`,
- * `~/.codex` and `~/.agent-lookout` and run the real `claude`.
+ * stand-in `claude` that lists no sessions, an empty Codex home, empty
+ * Antigravity, Mistral Vibe and Gemini CLI folders, an empty folder of status
+ * files and tmux turned off, on a free port. The poller runs in this process,
+ * so anything less would read the real `~/.claude`, `~/.codex`, `~/.vibe`,
+ * `~/.gemini` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -77,6 +78,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const antigravityHome = await tempDir();
   const antigravityAppHome = await tempDir();
   const vibeSessionDir = await tempDir();
+  const geminiCliHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -85,6 +87,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     antigravityHome,
     antigravityAppHome,
     vibeSessionDir,
+    geminiCliHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -93,6 +96,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_ANTIGRAVITY_HOME: antigravityHome,
       AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: antigravityAppHome,
       AGENT_LOOKOUT_VIBE_SESSION_DIR: vibeSessionDir,
+      AGENT_LOOKOUT_GEMINI_CLI_HOME: geminiCliHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -159,6 +163,7 @@ describe("the standalone host", () => {
       antigravityHome,
       antigravityAppHome,
       vibeSessionDir,
+      geminiCliHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -231,6 +236,13 @@ describe("the standalone host", () => {
             state: "ok",
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(vibeSessionDir, "unified") },
+            ]),
+          },
+          {
+            id: "gemini-cli",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(geminiCliHome, "tmp") },
             ]),
           },
           {

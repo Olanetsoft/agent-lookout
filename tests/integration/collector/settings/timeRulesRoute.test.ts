@@ -50,6 +50,7 @@ async function serve(
       AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
       AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
       AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
+      AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",

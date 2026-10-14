@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
+  EMPTY_GEMINI_CLI_HOME,
   EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
 } from "@tests/support/node/tempFiles";
@@ -51,3 +52,11 @@ process.env.AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME = EMPTY_ANTIGRAVITY_APP_HOME;
 // folder of its own.
 mkdirSync(EMPTY_VIBE_SESSION_DIR, { recursive: true });
 process.env.AGENT_LOOKOUT_VIBE_SESSION_DIR = EMPTY_VIBE_SESSION_DIR;
+
+// Nor does one read Gemini CLI's folder, `~/.gemini`, whatever the shell
+// running the tests has set: the adapter is pointed at an empty folder, and
+// Gemini CLI's own variable for its home folder is dropped. A test of the
+// adapter names a folder of its own.
+mkdirSync(EMPTY_GEMINI_CLI_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_GEMINI_CLI_HOME = EMPTY_GEMINI_CLI_HOME;
+delete process.env.GEMINI_CLI_HOME;

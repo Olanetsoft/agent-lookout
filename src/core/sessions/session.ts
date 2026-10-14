@@ -16,6 +16,7 @@ export type RemoteSourceId = `remote:${string}`;
  * `antigravity-cli` is the Antigravity CLI, `agy`, and `antigravity-app` is
  * Antigravity 2.0, Google's desktop app with the Agent Manager.
  * `mistral-vibe` is Mistral Vibe, in its terminal, an editor or its desktop app.
+ * `gemini-cli` is Google's Gemini CLI, `gemini`.
  */
 export type SourceId =
   | "claude-code"
@@ -23,6 +24,7 @@ export type SourceId =
   | "antigravity-cli"
   | "antigravity-app"
   | "mistral-vibe"
+  | "gemini-cli"
   | "status-files"
   | RemoteSourceId;
 

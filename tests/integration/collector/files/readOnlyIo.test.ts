@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -81,8 +81,33 @@ describe("what openRegularFile will not open", () => {
 
 describe("nodeIo", () => {
   test("can only read: it has no way to write, make, move, lock or delete anything", () => {
-    expect(Object.keys(nodeIo).sort()).toEqual(["lstat", "openRegular", "readdir", "stat"]);
+    expect(Object.keys(nodeIo).sort()).toEqual([
+      "lstat",
+      "openRegular",
+      "readdir",
+      "realpath",
+      "stat",
+    ]);
   });
+
+  test("realpath follows a link to the folder it leads to", async () => {
+    const dir = await realpath(await tempDir());
+    await mkdir(path.join(dir, "real"));
+    await symlink("real", path.join(dir, "link"));
+    expect(await nodeIo.realpath?.(path.join(dir, "link"))).toBe(path.join(dir, "real"));
+  });
+
+  // Linux's disks tell case apart, so there a folder named in lower case is another folder.
+  test.skipIf(process.platform === "linux")(
+    "realpath gives a folder's name in the case its disk gives it",
+    async () => {
+      const dir = await realpath(await tempDir());
+      await mkdir(path.join(dir, "Demo-Project"));
+      expect(await nodeIo.realpath?.(path.join(dir, "demo-project"))).toBe(
+        path.join(dir, "Demo-Project"),
+      );
+    },
+  );
 
   test("stat follows a link and lstat does not", async () => {
     const dir = await tempDir();

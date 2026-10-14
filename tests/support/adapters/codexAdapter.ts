@@ -4,8 +4,8 @@
 // file.
 //
 // The stand-in has two sides. `io` is what the adapter is given, and it has
-// only the four reading methods of `ReadOnlyIo`. Everything that changes the files
-// is on the other side, for the test alone.
+// only four of the reading methods of `ReadOnlyIo`. Everything that changes the
+// files is on the other side, for the test alone.
 
 import nativePath from "node:path";
 // The stand-in keeps paths as the tests write them, `/` between their names.

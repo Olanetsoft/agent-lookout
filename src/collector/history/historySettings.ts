@@ -6,6 +6,7 @@ import { ANTIGRAVITY_APP_HOME_ENV, DEFAULT_APP_HOME } from "../adapters/antigrav
 import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/index.ts";
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
+import { geminiCliFolder } from "../adapters/gemini-cli/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { STATUS_DIR_ENV } from "../adapters/status-files/index.ts";
 import { tildify } from "../files/paths.ts";
@@ -50,7 +51,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the six sources read, as the adapters work them out, made into
+ * The folders the seven sources read, as the adapters work them out, made into
  * a short fingerprint that names none of them. Two copies of Agent Lookout
  * with the same one see the same sessions. The writer lock carries it, so a
  * copy can say when the one writing the history watches other folders, such
@@ -65,6 +66,7 @@ export function sourcesFingerprint(env: NodeJS.ProcessEnv, homeDir: string = os.
     path.resolve(set(ANTIGRAVITY_HOME_ENV) ?? path.join(homeDir, ...DEFAULT_HOME)),
     path.resolve(set(ANTIGRAVITY_APP_HOME_ENV) ?? path.join(homeDir, ...DEFAULT_APP_HOME)),
     vibeSessionDirFor(env, homeDir),
+    geminiCliFolder(env, homeDir).dir,
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { GitHead, Session } from "../../core/sessions/session.ts";
+import { pathsOf, sameFolder } from "../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo, type FileInfo } from "../files/readOnlyIo.ts";
 import { MAX_GIT_FILE_BYTES, parseCommonDir, parseGitFile, parseHead } from "./gitHead.ts";
 import { repositoryOf } from "./repository.ts";
@@ -28,6 +29,8 @@ export type GitIo = Pick<ReadOnlyIo, "stat" | "lstat" | "openRegular">;
 interface Where {
   io: GitIo;
   homeDir: string;
+  /** The system the folders are on. Defaults to this one. */
+  platform?: NodeJS.Platform;
 }
 
 /** Errors in what is read stop the read, so junk is never shown as a branch. */
@@ -69,11 +72,15 @@ export async function readGitFile(
  * when it has no `commondir`, as a submodule's has not, and undefined when it
  * has one that cannot be read, which says no repository.
  */
-async function commonDirOf(io: GitIo, gitDir: string): Promise<string | null | undefined> {
-  const content = await readGitFile(io, path.join(gitDir, "commondir"));
+async function commonDirOf(
+  io: GitIo,
+  gitDir: string,
+  paths: path.PlatformPath,
+): Promise<string | null | undefined> {
+  const content = await readGitFile(io, paths.join(gitDir, "commondir"));
   if (content === undefined) return null;
   const target = content === null ? null : parseCommonDir(content);
-  return target === null ? undefined : path.resolve(gitDir, target);
+  return target === null ? undefined : paths.resolve(gitDir, target);
 }
 
 /** What is checked out in a folder, and the repository's own git folder, which never leaves the collector. */
@@ -94,8 +101,13 @@ interface FoundHead {
  * one, names the repository's own. Anything else, such as a link, gives
  * nothing. `repository.ts` works out the repository from those paths.
  */
-async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<FoundHead | null> {
-  const marker = path.join(dir, ".git");
+async function headIn(
+  dir: string,
+  kind: FileInfo["kind"],
+  io: GitIo,
+  paths: path.PlatformPath,
+): Promise<FoundHead | null> {
+  const marker = paths.join(dir, ".git");
   let gitDir: string;
   if (kind === "directory") {
     gitDir = marker;
@@ -103,15 +115,15 @@ async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<F
     const content = await readGitFile(io, marker);
     const target = typeof content === "string" ? parseGitFile(content) : null;
     if (target === null) return null;
-    gitDir = path.resolve(dir, target);
+    gitDir = paths.resolve(dir, target);
   } else {
     return null;
   }
-  const content = await readGitFile(io, path.join(gitDir, "HEAD"));
+  const content = await readGitFile(io, paths.join(gitDir, "HEAD"));
   const head = typeof content === "string" ? parseHead(content) : null;
   if (head === null) return null;
   // Only a git folder a `.git` file names can be a worktree's.
-  const commonDir = kind === "file" ? await commonDirOf(io, gitDir) : null;
+  const commonDir = kind === "file" ? await commonDirOf(io, gitDir, paths) : null;
   const repository = commonDir === undefined ? null : repositoryOf({ dir, gitDir, commonDir });
   if (repository === null) return { head, gitFolder: null };
   return { head: { ...head, repository }, gitFolder: commonDir ?? gitDir };
@@ -124,30 +136,36 @@ async function headIn(dir: string, kind: FileInfo["kind"], io: GitIo): Promise<F
  * From the folder up, it looks for `.git` in each folder in turn, without
  * following a link, and the nearest wins, as it does for git. It never looks in
  * the home folder or the root, nor above them, nor more than `MAX_LEVELS`
- * folders up. A folder that does not exist is in no repository. It reads only
- * `.git` when that is a file, `HEAD`, and beside a `HEAD` that a `.git` file
- * leads to, `commondir`: `gitHead.ts` has what each holds.
+ * folders up. On macOS and Windows the home folder is told whatever the case of
+ * its letters, as Gemini CLI writes a folder in lower case on Windows. A
+ * folder that does not exist is in no repository. It reads only `.git` when
+ * that is a file, `HEAD`, and beside a `HEAD` that a `.git` file leads to,
+ * `commondir`: `gitHead.ts` has what each holds.
  */
 export async function findGitHead(cwd: string, where: Where): Promise<GitHead | null> {
   return (await findHead(cwd, where))?.head ?? null;
 }
 
 /** What `findGitHead` gives, with the repository's own git folder. Never rejects. */
-async function findHead(cwd: string, { io, homeDir }: Where): Promise<FoundHead | null> {
-  if (!path.isAbsolute(cwd)) return null;
-  const home = path.resolve(homeDir);
-  let dir = path.resolve(cwd);
+async function findHead(
+  cwd: string,
+  { io, homeDir, platform = process.platform }: Where,
+): Promise<FoundHead | null> {
+  const paths = pathsOf(platform);
+  if (!paths.isAbsolute(cwd)) return null;
+  const home = paths.resolve(homeDir);
+  let dir = paths.resolve(cwd);
   try {
     if ((await io.stat(dir)).kind !== "directory") return null;
   } catch {
     return null;
   }
   for (let level = 0; level < MAX_LEVELS; level += 1) {
-    const parent = path.dirname(dir);
-    if (dir === home || dir === parent) return null;
+    const parent = paths.dirname(dir);
+    if (sameFolder(dir, home, platform) || dir === parent) return null;
     let kind: FileInfo["kind"];
     try {
-      kind = (await io.lstat(path.join(dir, ".git"))).kind;
+      kind = (await io.lstat(paths.join(dir, ".git"))).kind;
     } catch (error) {
       if (!isMissing(error)) return null;
       dir = parent;
@@ -155,7 +173,7 @@ async function findHead(cwd: string, { io, homeDir }: Where): Promise<FoundHead 
     }
     // Whatever the nearest `.git` is, it is the one git would use, so the walk
     // ends here, and a repository further up is never shown in its place.
-    return headIn(dir, kind, io).catch(() => null);
+    return headIn(dir, kind, io, paths).catch(() => null);
   }
   return null;
 }

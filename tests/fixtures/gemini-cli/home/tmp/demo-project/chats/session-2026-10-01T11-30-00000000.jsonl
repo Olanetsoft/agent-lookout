@@ -1,0 +1,8 @@
+{"sessionId":"00000000-0000-4000-8000-000000000002","projectHash":"0000000000000000000000000000000000000000000000000000000000000000","startTime":"2026-10-01T11:30:00.000Z","lastUpdated":"2026-10-01T11:30:00.000Z","kind":"main"}
+{"id":"d04923d38bb0f6017037e74183378ef4","timestamp":"2026-10-01T11:30:00.100Z","type":"user","content":[{"text":"<session_context>\nA placeholder context. placeholder-private-words\n</session_context>"}]}
+{"$set":{"lastUpdated":"2026-10-01T11:30:00.100Z"}}
+{"id":"10000000-0000-4000-8000-000000000011","timestamp":"2026-10-01T11:31:00.000Z","type":"user","content":[{"text":"A placeholder prompt. placeholder-private-words"}],"displayContent":[{"text":"A placeholder shown prompt. placeholder-private-words"}]}
+{"$set":{"lastUpdated":"2026-10-01T11:31:00.000Z"}}
+{"id":"10000000-0000-4000-8000-000000000012","timestamp":"2026-10-01T11:32:00.000Z","type":"gemini","content":"A placeholder reply. placeholder-private-words","thoughts":[{"subject":"Placeholder","description":"placeholder-private-words","timestamp":"2026-10-01T11:31:59.000Z"}],"tokens":{"input":100,"output":20,"cached":0,"thoughts":5,"tool":0,"total":125},"model":"gemini-placeholder"}
+{"$set":{"lastUpdated":"2026-10-01T11:32:00.000Z"}}
+{"$set":{"summary":"Tidy the demo readme","memoryScratchpad":{"version":1,"workflowSummary":"placeholder-private-words","touchedPaths":["/Users/example/code/demo-project"]}}}

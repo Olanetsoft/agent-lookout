@@ -1,0 +1,5 @@
+{"sessionId":"00000000-0000-4000-8000-000000000001","projectHash":"0000000000000000000000000000000000000000000000000000000000000000","startTime":"2026-10-01T11:50:00.000Z","lastUpdated":"2026-10-01T11:50:00.000Z","kind":"main"}
+{"id":"d04923d38bb0f6017037e74183378ef4","timestamp":"2026-10-01T11:50:00.100Z","type":"user","content":[{"text":"<session_context>\nA placeholder context. placeholder-private-words\n</session_context>"}]}
+{"$set":{"lastUpdated":"2026-10-01T11:50:00.100Z"}}
+{"id":"10000000-0000-4000-8000-000000000001","timestamp":"2026-10-01T11:59:00.000Z","type":"user","content":[{"text":"A placeholder prompt. placeholder-private-words"}],"displayContent":[{"text":"A placeholder shown prompt. placeholder-private-words"}]}
+{"$set":{"lastUpdated":"2026-10-01T11:59:00.000Z"}}
