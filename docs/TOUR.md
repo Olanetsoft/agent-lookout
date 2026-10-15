@@ -825,7 +825,7 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 
 **Why it works the way it does.**
 
-- **No build step.** Vercel serves `site/` as it is. The one part the page needs built, the tour, is built once and committed, and so are the pictures taken from it. The page loads nothing from another site.
+- **No build step.** Vercel serves `site/` as it is. The one part the page needs built, the tour, is built once and committed, and so are the pictures taken from it. The page loads one script from another site, Sabilytics, which counts its visits, and the tour in its frame loads nothing from another site.
 - **The real dashboard, not pictures of it.** #62 weighed pictures with clickable areas against the real dashboard. It chose the real dashboard so that the page never falls behind the app. `src/site-tour/main.tsx` renders the same `App` as the dashboard and gives it a stand-in for each thing it would ask the computer for:
   - `src/site-tour/host/tourStore.ts`, a store worked out from the tour's current moment, in place of the store that polls
   - `src/site-tour/host/tourApi.ts`, an `ApiHost` installed with `setApiHost`. It answers every route inside the page and has no `fetch` in it. A route that would act in the app only says what it would have done.
