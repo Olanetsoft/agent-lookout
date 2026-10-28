@@ -5,6 +5,11 @@ description: Press Jump to go from the dashboard to the VS Code window, tmux pan
 
 The Jump button is in the Needs you panel, in the Sessions list or on a session's card on the board, and in a session's details. Only Claude Code sessions have it, and it never sends keys or text to the session.
 
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="../site/assets/features/jump-stop-day-1000.webp">
+  <img alt="A session's details: checkout-flow, with Jump and Stop at the top, what it asks to run with Deny and Allow, and its status, agent, app, folder, repository, branch and pull request." src="../site/assets/features/jump-stop-night-1000.webp">
+</picture>
+
 ## Where Jump works
 
 Find where your session runs:
@@ -114,4 +119,10 @@ To turn off the tmux part, set `AGENT_LOOKOUT_TMUX=off`. To turn off the tab par
 AGENT_LOOKOUT_TMUX=off AGENT_LOOKOUT_TERMINAL_JUMP=off npx agent-lookout
 ```
 
-The [Jump section of the guide](GUIDE.md#jump) has more. [PRIVACY.md](../PRIVACY.md#tmux) lists every command Jump runs and what it reads, and [API.md](API.md#post-apijump) describes the request a press sends. New to Agent Lookout? Start with the [introduction](introduction.md) and the [quickstart](quickstart.md).
+The [Jump section of the guide](GUIDE.md#jump) has more. [PRIVACY.md](../PRIVACY.md#tmux) lists every command Jump runs and what it reads, and [API.md](API.md#post-apijump) describes the request a press sends.
+
+## Next steps
+
+- [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt): answer with Allow or Deny from the page, without switching to the session.
+- [Quickstart](quickstart.md): start Agent Lookout and jump to your first waiting session.
+- [GitHub issues](https://github.com/Olanetsoft/agent-lookout/issues): ask a question or report a problem.
