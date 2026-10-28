@@ -265,6 +265,9 @@ export default defineConfig({
           name: "integration",
           environment: "node",
           include: ["tests/integration/**/*.test.ts"],
+          // A test here starts real programs and servers, which a busy machine
+          // can take seconds to start. A test that hangs still fails.
+          testTimeout: 30_000,
           setupFiles: ["./tests/support/node/nodeSetup.ts"],
           sequence: { groupOrder: 1 },
         },

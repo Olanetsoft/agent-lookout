@@ -25,6 +25,11 @@ import {
 
 const env = { PATH: "/usr/bin:/bin" };
 
+// On a busy Mac a stand-in written moments ago can take seconds to start the
+// first time, while macOS checks it. A test that is not about the timeout gives
+// the program this long, and itself 30 seconds.
+const GENEROUS_TIMEOUT_MS = 20_000;
+
 async function waitUntil(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
@@ -41,15 +46,20 @@ const oneJson = JSON.stringify(one);
 describe.skipIf(process.platform === "win32")("runProgram, against real programs", () => {
   test("returns what the program printed, trailing text and all", async () => {
     const stub = await writeStub(`cat <<'JSON'\n${feedJsonWithTrailingText}\nJSON`);
-    const result = await runProgram(stub, ["agents", "--json"], { timeoutMs: 5_000, env });
+    const result = await runProgram(stub, ["agents", "--json"], {
+      timeoutMs: GENEROUS_TIMEOUT_MS,
+      env,
+    });
     expect(result.ok).toBe(true);
     expect(result.ok && result.stdout).toContain("session tracker");
 
-    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
+    expect(
+      await createFeedReader(runProgram).read(stub, { timeoutMs: GENEROUS_TIMEOUT_MS, env }),
+    ).toEqual({
       ok: true,
       entries: feedEntries,
     });
-  });
+  }, 30_000);
 
   test("gives claude none of Agent Lookout's own settings, such as the mail server's password", async () => {
     const stub = await writeStub(
@@ -60,23 +70,31 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
       AGENT_LOOKOUT_SMTP_URL: "smtps://demo:secret@mail.example.com",
       AGENT_LOOKOUT_NTFY_TOKEN: "tk_demo",
     };
-    expect(await createFeedReader(runProgram).read(stub, { env: secrets })).toEqual({
+    expect(
+      await createFeedReader(runProgram).read(stub, {
+        timeoutMs: GENEROUS_TIMEOUT_MS,
+        env: secrets,
+      }),
+    ).toEqual({
       ok: true,
       entries: [{ sessionId: "none|none" }],
     });
-  });
+  }, 30_000);
 
   test("passes the arguments and the environment through, with no shell in between", async () => {
     const stub = await writeStub(
       `printf '[{"sessionId":"%s|%s|%s|%s|%s|%s|%s"}]' "$#" "$1" "$2" "$3" "$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" "$DISABLE_AUTOUPDATER" "\${HTTPS_PROXY-unset}"`,
     );
-    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
+    expect(
+      await createFeedReader(runProgram).read(stub, { timeoutMs: GENEROUS_TIMEOUT_MS, env }),
+    ).toEqual({
       ok: true,
       entries: [{ sessionId: "3|agents|--json|--all|1|1|unset" }],
     });
     // A proxy the person set arrives as they set it.
     expect(
       await createFeedReader(runProgram).read(stub, {
+        timeoutMs: GENEROUS_TIMEOUT_MS,
         env: { ...env, HTTPS_PROXY: "http://proxy.example:8080" },
       }),
     ).toEqual({
@@ -87,26 +105,26 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
     // An argument a shell would expand or split arrives untouched.
     const echo = await writeStub(`printf '%s' "$1"`);
     const result = await runProgram(echo, ["$(echo hacked); `id` && *"], {
-      timeoutMs: 5_000,
+      timeoutMs: GENEROUS_TIMEOUT_MS,
       env,
     });
     expect(result).toEqual({ ok: true, stdout: "$(echo hacked); `id` && *" });
-  });
+  }, 30_000);
 
   test("stdin is closed, so a program that reads it does not hang", async () => {
     const stub = await writeStub(`cat > /dev/null\necho '[]'`);
-    const result = await runProgram(stub, [], { timeoutMs: 5_000, env });
+    const result = await runProgram(stub, [], { timeoutMs: GENEROUS_TIMEOUT_MS, env });
     expect(result).toEqual({ ok: true, stdout: "[]\n" });
-  });
+  }, 30_000);
 
   test("a program that exits with an error is a failure that names the exit code", async () => {
     const stub = await writeStub(`echo '[]'\necho 'not logged in' >&2\nexit 3`);
-    expect(await runProgram(stub, [], { timeoutMs: 5_000, env })).toEqual({
+    expect(await runProgram(stub, [], { timeoutMs: GENEROUS_TIMEOUT_MS, env })).toEqual({
       ok: false,
       problem: "stopped with exit code 3",
       exitCode: 3,
     });
-  });
+  }, 30_000);
 
   test("a program that does not answer in time is stopped", async () => {
     const dir = await tempDir();
@@ -131,19 +149,21 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
 
   test("a program that prints far more than a session list is stopped", async () => {
     const stub = await writeStub("yes '[x] padding padding padding padding padding padding'");
-    const result = await runProgram(stub, [], { timeoutMs: 20_000, env });
+    const result = await runProgram(stub, [], { timeoutMs: GENEROUS_TIMEOUT_MS, env });
     expect(result).toEqual({ ok: false, problem: "printed far more than a session list" });
-  });
+  }, 30_000);
 
   test("a real program too old to know --all is read the plain way", async () => {
     const stub = await writeStub(
       `if [ "$3" = "--all" ]; then echo "error: unknown option '--all'" >&2; exit 1; fi\necho '${oneJson}'`,
     );
-    expect(await createFeedReader(runProgram).read(stub, { env })).toEqual({
+    expect(
+      await createFeedReader(runProgram).read(stub, { timeoutMs: GENEROUS_TIMEOUT_MS, env }),
+    ).toEqual({
       ok: true,
       entries: one,
     });
-  });
+  }, 30_000);
 
   test("when a wrapper's child hangs, the timeout stops the child as well as the wrapper", async () => {
     const dir = await tempDir();
@@ -152,14 +172,17 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
     // wrapper would leave the child running, one more for every poll.
     const stub = await writeStub(`sleep 30 &\necho $! > '${pidFile}'\nwait`);
 
-    // Long enough for the wrapper to start its child on a busy machine.
-    const result = await runProgram(stub, [], { timeoutMs: 2_000, env });
+    // The wrapper is handed to /bin/sh, the program its first line names, which
+    // starts at once. Run itself, a script written moments ago can take seconds
+    // to start on a busy Mac, and the timeout would stop it before it starts
+    // its child.
+    const result = await runProgram("/bin/sh", [stub], { timeoutMs: 2_000, env });
     expect(result).toEqual({ ok: false, problem: "did not answer within 2 seconds" });
 
     const childPid = Number((await readFile(pidFile, "utf8")).trim());
     expect(childPid).toBeGreaterThan(0);
     await waitUntil(() => !isProcessAlive(childPid));
-  });
+  }, 15_000);
 
   test("a child that ignores the request to stop is killed", async () => {
     const dir = await tempDir();
@@ -168,7 +191,8 @@ describe.skipIf(process.platform === "win32")("runProgram, against real programs
       `(trap '' TERM; sleep 30) &\necho $! > '${pidFile}'\ntrap '' TERM\nwait`,
     );
 
-    const result = await runProgram(stub, [], { timeoutMs: 2_000, env });
+    // Handed to /bin/sh as above, so the child is there to ignore the signal.
+    const result = await runProgram("/bin/sh", [stub], { timeoutMs: 2_000, env });
     expect(result.ok).toBe(false);
 
     const childPid = Number((await readFile(pidFile, "utf8")).trim());

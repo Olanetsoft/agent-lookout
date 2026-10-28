@@ -10,6 +10,12 @@ import { tempDir } from "@tests/support/node/tempFiles";
 // The stand-in tmux is a POSIX sh script, and tmux is never run on Windows.
 const posixTest = test.skipIf(process.platform === "win32");
 
+// On a busy machine the stand-in can take seconds to start, and the 2 seconds
+// tmux gets would stop it first. A test that is not about the timeout gives
+// it this long, and each test is given longer still.
+const ROOM_TO_START_MS = 20_000;
+const TEST_TIMEOUT_MS = 30_000;
+
 /** A stand-in program named `tmux`, in a folder of its own. Returns the folder. */
 async function stubTmux(script: string): Promise<string> {
   const dir = path.join(await tempDir(), "bin");
@@ -20,13 +26,13 @@ async function stubTmux(script: string): Promise<string> {
   return dir;
 }
 
-describe("runTmuxBinary", () => {
+describe("runTmuxBinary", { timeout: TEST_TIMEOUT_MS }, () => {
   posixTest("hands each argument over as it is, with no shell to read it", async () => {
     const dir = await stubTmux('for arg in "$@"; do printf "[%s]\\n" "$arg"; done');
     const result = await runTmuxBinary(
       path.join(dir, "tmux"),
       ["select-pane", "-t", "%7; touch /tmp/never", "$(echo no)", "a b"],
-      { env: {} },
+      { env: {}, timeoutMs: ROOM_TO_START_MS },
     );
 
     expect(result).toEqual({
@@ -39,6 +45,7 @@ describe("runTmuxBinary", () => {
     const dir = await stubTmux('echo "can\'t find pane: %7" >&2; exit 1');
     const result = await runTmuxBinary(path.join(dir, "tmux"), ["select-pane", "-t", "%7"], {
       env: {},
+      timeoutMs: ROOM_TO_START_MS,
     });
 
     expect(result).toEqual({ ok: false, stderr: "can't find pane: %7" });
@@ -46,7 +53,10 @@ describe("runTmuxBinary", () => {
 
   posixTest("a program that waits for input is given none", async () => {
     const dir = await stubTmux("cat; echo done");
-    const result = await runTmuxBinary(path.join(dir, "tmux"), [], { env: {}, timeoutMs: 5_000 });
+    const result = await runTmuxBinary(path.join(dir, "tmux"), [], {
+      env: {},
+      timeoutMs: ROOM_TO_START_MS,
+    });
 
     expect(result).toEqual({ ok: true, stdout: "done\n" });
   });
@@ -69,7 +79,7 @@ describe("runTmuxBinary", () => {
   });
 });
 
-describe("createTmuxRunner", () => {
+describe("createTmuxRunner", { timeout: TEST_TIMEOUT_MS }, () => {
   posixTest(
     "runs the tmux on PATH, with the collector's environment but none of Agent Lookout's own settings",
     async () => {
@@ -85,6 +95,7 @@ describe("createTmuxRunner", () => {
           TEST_MARK: "the collector",
           AGENT_LOOKOUT_SMTP_URL: "smtps://demo:secret@mail.example.com",
         },
+        timeoutMs: ROOM_TO_START_MS,
       });
       expect(await run(["list-panes"])).toEqual({
         ok: true,
@@ -95,8 +106,13 @@ describe("createTmuxRunner", () => {
 
   test("with AGENT_LOOKOUT_TMUX off, a tmux that is there is not started", async () => {
     const mark = path.join(await tempDir(), "ran");
-    const dir = await stubTmux(`touch "${mark}"`);
-    const run = createTmuxRunner({ env: { PATH: dir, AGENT_LOOKOUT_TMUX: "off" } });
+    // Made by the shell alone, as PATH holds nothing but the stand-in.
+    const dir = await stubTmux(`: > "${mark}"`);
+    // With room to start, a tmux started by mistake would leave its mark.
+    const run = createTmuxRunner({
+      env: { PATH: dir, AGENT_LOOKOUT_TMUX: "off" },
+      timeoutMs: ROOM_TO_START_MS,
+    });
 
     expect(await run(["list-panes"])).toEqual({ ok: false, stderr: "" });
     expect(existsSync(mark)).toBe(false);
