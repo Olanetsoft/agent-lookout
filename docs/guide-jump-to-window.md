@@ -3,7 +3,7 @@ title: Jump to a session's window
 description: Press Jump to go from the dashboard to the VS Code window, tmux pane, or Terminal or iTerm2 tab a Claude Code session runs in.
 ---
 
-The Jump button is in the Needs you panel, in the Sessions list or on a session's card on the board, and in a session's details. Only Claude Code sessions have it, and it never sends keys or text to the session.
+The Jump button is in the Needs you panel, in the Sessions list or on a session's card on the board, and in a session's details. Only Claude Code sessions have it. For another agent, such as Codex or Gemini CLI, switch to its session yourself. Jump never sends keys or text to a session.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="../site/assets/features/jump-stop-day-1000.webp">

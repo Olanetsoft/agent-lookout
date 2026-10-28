@@ -27,7 +27,7 @@ npm run dev
 
 The Playwright step downloads the Chromium build that the component tests run in. On Linux, add `--with-deps` to install the system libraries it needs. The tests that read OpenCode's and Antigravity's databases run the system's `sqlite3`, and are skipped where none is in one of its fixed places, such as `/usr/bin`, except in CI, where that fails. Ubuntu and Debian install it with `sudo apt install sqlite3`.
 
-`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code, Codex, Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions on your own machine. The Gemini CLI adapter was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The OpenCode adapter was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running it. The Qwen Code adapter was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
+`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions on your own machine. The Gemini CLI adapter was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The OpenCode adapter was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running it. The Qwen Code adapter was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
 
 To see the dashboard with no sessions, point it at an empty folder:
 
