@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
+import path from "node:path";
 
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
@@ -7,11 +9,13 @@ import type { Remote } from "@collector/remotes/remoteSettings";
 import { SSH_BIN_ENV, sshArguments } from "@collector/remotes/sshProgram";
 import {
   createTunnel,
+  STOP_WAIT_MS,
   type Tunnel,
   type TunnelOptions,
   type TunnelState,
 } from "@collector/remotes/tunnel";
 import { snapshotThere } from "@tests/fixtures/remote";
+import { tempDir } from "@tests/support/node/tempFiles";
 import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
 
 // The stand-in ssh is a POSIX sh script, and a drop is made with SIGHUP and an
@@ -114,6 +118,26 @@ describe("the tunnel to another machine", () => {
           notifications: undefined,
         },
       ]);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "a target a shell would split or run reaches ssh as it is",
+    async () => {
+      const mark = path.join(await tempDir(), "ran");
+      // Through a shell, this would be two words, and the touch would run.
+      const target = `dev@devbox $(touch ${mark})`;
+      const ssh = await makeStandInSsh();
+      const tunnel = tunnelFor({ name: "devbox", target, port: 4777 }, ssh.env);
+      tunnel.start();
+
+      const state = await running(tunnel, 1);
+      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
+      expect((await ssh.runs())[0]?.args).toEqual(
+        sshArguments({ localPort: state.port, remotePort: 4777, target }),
+      );
+      expect(existsSync(mark)).toBe(false);
     },
     STAND_IN_TIMEOUT_MS,
   );
@@ -235,6 +259,8 @@ describe("the tunnel to another machine", () => {
       await tunnel.stop();
       expect(tunnel.state()).toEqual({ kind: "off" } satisfies TunnelState);
       expect(isRunning(run?.pid as number)).toBe(false);
+      // SIGTERM ended it, not SIGKILL, which it could not have written down.
+      expect(await ssh.signals()).toEqual([{ pid: run?.pid, signal: "SIGTERM" }]);
       await new Promise((resolve) => setTimeout(resolve, 400));
       expect(await ssh.runs()).toHaveLength(1);
       expect(tunnel.state().kind).toBe("off");
@@ -252,9 +278,14 @@ describe("the tunnel to another machine", () => {
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
       const [run] = await ssh.runs();
 
+      const asked = Date.now();
       await tunnel.stop();
       expect(tunnel.state()).toEqual({ kind: "off" } satisfies TunnelState);
       expect(isRunning(run?.pid as number)).toBe(false);
+      // It was sent SIGTERM first, and SIGKILL only once the wait was over. A
+      // timer can fire a moment early, so the wait is allowed 100 ms less.
+      expect(await ssh.signals()).toEqual([{ pid: run?.pid, signal: "SIGTERM" }]);
+      expect(Date.now() - asked).toBeGreaterThanOrEqual(STOP_WAIT_MS - 100);
 
       tunnel.start();
       await running(tunnel, 2);
