@@ -7,6 +7,7 @@ import type { EmailSender } from "@collector/email/smtpSender";
 import type { SendOutcome } from "@collector/outbound/outboundChannel";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
 import { SENDS_PER_HOUR } from "@core/api";
+import { clockAt } from "@core/duration";
 import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
 import { makeSession } from "@tests/fixtures/session";
 
@@ -614,7 +615,11 @@ describe("finished, failed and ended", () => {
       "session-22 finished",
       "session-23 finished",
     ]);
-    expect(sender.sent[20]?.text).toMatch(/Agent Lookout saw this at \d\d:\d\d\./);
+    // A held finish says when it was seen, at 4 seconds, not when it went an
+    // hour later. On a clock where that hour passed midnight, the day is added.
+    expect(sender.sent[20]?.text).toContain(
+      `Agent Lookout saw this at ${clockAt(T0 + 4 * SECOND, T0 + HOUR_MS + 4 * SECOND)}.`,
+    );
     await email.settled();
   });
 
