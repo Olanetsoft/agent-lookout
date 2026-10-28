@@ -4,7 +4,7 @@ This tour walks through the whole project in plain language: what each part does
 
 ## What Agent Lookout is
 
-Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
+Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
 
 It starts no agent and installs nothing into one. By default it sends nothing off the computer. The one exception is the Mac app's daily check on GitHub for a newer version, which Settings turns off. It can act on a session, but only when you ask: bring its tab forward, stop it, or answer its permission prompt.
 

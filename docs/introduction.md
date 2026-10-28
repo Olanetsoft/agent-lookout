@@ -3,9 +3,9 @@ title: Introduction
 description: Agent Lookout shows the coding agent sessions on your machine on one page, with the ones waiting on you first.
 ---
 
-Agent Lookout is a local dashboard for the coding agent sessions running on your machine: Claude Code and Codex, and the other agents below.
+Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions running on your machine.
 
-When you run several coding agents at once, one of them often stops to ask you something while you are looking at another. Agent Lookout reads the sessions on your machine, shows them on one page, and puts the ones waiting on you first.
+When you run several coding agents at once, one of them often stops to ask you something while you are looking at another. Agent Lookout finds their sessions with no setup, shows them on one page, and puts the ones waiting on you first, for the agents that report a wait. Any other agent can show up too, by writing a small [status file](GUIDE.md#your-own-agents).
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="images/dashboard-day.png">
@@ -18,30 +18,31 @@ When you run several coding agents at once, one of them often stops to ask you s
 npx agent-lookout
 ```
 
-Then open http://127.0.0.1:4777. You need Node.js 22.12 or newer, on macOS, Linux or Windows. On a Mac you can use the [Mac app](https://github.com/Olanetsoft/agent-lookout/releases/latest) instead, which needs macOS 13 or later and no Node.js. The [Quickstart](quickstart.md) takes you from there to your first jump.
+Then open http://127.0.0.1:4777. You need Node.js 22.12 or newer, on macOS, Linux or Windows. On a Mac you can use the [Mac app](https://github.com/Olanetsoft/agent-lookout/releases/latest) instead, which needs macOS 13 or later and no Node.js. The [Quickstart](quickstart.md) takes you from there to your sessions and, with Claude Code, your first jump.
 
 ## What you can do
 
 - **See every session on one page,** with each one's status, folder and branch.
 - **See who needs you first.** The Needs you panel lists the sessions waiting for you, longest wait first, with the reason, such as Waiting for permission. For Claude Code it also shows what the session asks, such as `Run: npm test`.
-- **Jump to the session.** Jump opens a Claude Code session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac.
-- **Let your agents ask.** `agent-lookout mcp` is a read-only MCP server that an agent can ask which sessions are running and which need you.
+- **Answer or jump to a Claude Code session.** With Agent Lookout's plugin, Allow and Deny answer its permission prompt from the page. Jump opens the session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac.
+- **Let your agents ask.** `agent-lookout mcp` is a read-only MCP server that an agent can ask which sessions are running and which need you. [For your agents](GUIDE.md#for-your-agents) shows how to add it.
 
 Some of this depends on your system: on Windows, Jump reaches VS Code only, and there is no Stop, Allow or Deny. [What works on each system](../README.md#supported-agents-and-systems) has the full table.
 
 ## Supported agents
 
-It finds these with no setup:
+Every agent's sessions appear on the page with their status. What else each one shows:
 
-| Agent                                                           | Shows when it needs you                  |
-| --------------------------------------------------------------- | ---------------------------------------- |
-| Claude Code                                                     | Yes                                      |
-| Antigravity and the Antigravity CLI                             | Yes, while it asks you to approve a step |
-| Codex                                                           | No: a waiting session shows as working   |
-| Mistral Vibe, Gemini CLI, OpenCode and Qwen Code                | No                                       |
-| Any agent that writes a [status file](GUIDE.md#your-own-agents) | Yes, when it writes that it waits        |
+| Agent                                                           | Shows when it needs you                                          | Allow and Deny              | Jump                                 |
+| --------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------- | ------------------------------------ |
+| Claude Code                                                     | Yes, with what it asks                                           | With Agent Lookout's plugin | In VS Code, tmux, Terminal or iTerm2 |
+| Antigravity and the Antigravity CLI                             | While it asks you to approve a step                              | No                          | No                                   |
+| Codex, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code         | No: a waiting session shows as working, or as idle in Gemini CLI | No                          | No                                   |
+| Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                     | No                          | No                                   |
 
-Mistral Vibe, Gemini CLI, OpenCode and Qwen Code support was built from their source and has not yet been checked on a machine running them. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
+On Windows, OpenCode's sessions are not read, and the Antigravity app never shows as needing you. On Linux, both need the `sqlite3` program.
+
+Mistral Vibe, Gemini CLI, OpenCode and Qwen Code support was built from their source and has not yet been checked on a machine running them. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
 
 ## Privacy
 
@@ -53,8 +54,8 @@ Mistral Vibe, Gemini CLI, OpenCode and Qwen Code support was built from their so
 
 ## Next steps
 
-- [Quickstart](quickstart.md): start it with npx, find a Claude Code session that waits for your approval, and jump to it.
-- [Jump to a session's window](guide-jump-to-window.md): set up Jump for VS Code, tmux, and Terminal or iTerm2 on a Mac, and fix it when it fails.
+- [Quickstart](quickstart.md): start it with npx, see your sessions, and jump to a Claude Code session that waits for you.
+- [Jump to a session's window](guide-jump-to-window.md): set up Jump for Claude Code sessions in VS Code, tmux, and Terminal or iTerm2 on a Mac, and fix it when it fails.
 
 ## Get help
 

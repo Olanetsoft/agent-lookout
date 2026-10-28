@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Start Agent Lookout with npx, see a Claude Code session that waits for your approval, and jump straight to it.
+description: Start Agent Lookout with npx, see your sessions, and jump to a Claude Code session that waits for your approval.
 ---
 
 ## Before you begin
@@ -8,7 +8,9 @@ description: Start Agent Lookout with npx, see a Claude Code session that waits 
 You need these, and about five minutes:
 
 - Node.js 22.12 or later. Check with `node --version`.
-- Claude Code, run in a Terminal or iTerm2 tab on a Mac, inside tmux on macOS or Linux, or in its VS Code extension. Codex sessions show up too, but never as waiting for you.
+- Claude Code, run in a Terminal or iTerm2 tab on a Mac, inside tmux on macOS or Linux, or in its VS Code extension. Agent Lookout supports it most fully, so these steps use it.
+
+Not using Claude Code? Do step 1, then read [Using another agent](#using-another-agent) instead of steps 2 to 4.
 
 ## Steps
 
@@ -62,9 +64,28 @@ You need these, and about five minutes:
 
 5. **Stop Agent Lookout.** Press Ctrl+C where it runs. Nothing keeps running. The history behind its charts stays in `~/.agent-lookout/history`; start it with `AGENT_LOOKOUT_HISTORY=off` to keep none.
 
+## Using another agent
+
+After step 1, start your agent and send it a prompt. Within a few seconds its session appears in the Sessions list, with no setup. Only Antigravity and the Antigravity CLI also show in Needs you, while they ask you to approve a step. The others show a session that waits for you as working, and none of them has Jump. [Supported agents](introduction.md#supported-agents) lists what each one shows, and what differs on Windows and Linux.
+
+To see Needs you without Claude Code, write a status file by hand. It makes a test session that waits for you. Run this in another terminal on macOS or Linux:
+
+```bash
+mkdir -p ~/.agent-lookout/sessions
+printf '{"agent": "my-agent", "name": "docs-site", "status": "waiting", "reason": "question", "pid": %d}\n' $$ > ~/.agent-lookout/sessions/my-agent.json
+```
+
+Within a few seconds, Needs you shows `docs-site`, with the reason Asked you a question. To end the session, delete the file:
+
+```bash
+rm ~/.agent-lookout/sessions/my-agent.json
+```
+
+The `pid` is that terminal's, so the session also leaves the page if you close the terminal first. On Windows, or to write the file from an agent's own code, use the Python or Node.js example in [Your own agents](GUIDE.md#your-own-agents).
+
 ## Next steps
 
-- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches each app, and what to do when it fails.
+- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches a Claude Code session in each app, and what to do when it fails.
 - [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt): install the Claude Code plugin to answer with Allow and Deny from the page.
 - [Introduction](introduction.md): what Agent Lookout does, and what it leaves alone.
 - [GitHub issues](https://github.com/Olanetsoft/agent-lookout/issues): ask a question or report a problem.
