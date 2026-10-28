@@ -1815,6 +1815,11 @@ function realFeed(exited: number | undefined): string {
   ]);
 }
 
+// A stand-in claude written moments ago can take seconds to start on a busy
+// machine, so these give it longer than the 5 seconds the feed gets by default,
+// as the checks for Windows below do.
+const STAND_IN_FEED_TIMEOUT_MS = 20_000;
+
 // Each stand-in claude here is a POSIX sh script, which Windows cannot run, and
 // the start time of a process comes from ps, which Windows has not. Windows has
 // its own checks after these, with a stand-in claude.exe.
@@ -1845,6 +1850,7 @@ describe.skipIf(process.platform === "win32")(
           PATH: "/usr/bin:/bin",
         },
         homeDir: path.dirname(home),
+        feedTimeoutMs: STAND_IN_FEED_TIMEOUT_MS,
       });
       const { health, sessions, basis } = await adapter.poll();
 
@@ -1871,6 +1877,7 @@ describe.skipIf(process.platform === "win32")(
       const adapter = createClaudeCodeAdapter({
         env: { AGENT_LOOKOUT_CLAUDE_HOME: home, AGENT_LOOKOUT_CLAUDE_BIN: stub },
         homeDir: path.dirname(home),
+        feedTimeoutMs: STAND_IN_FEED_TIMEOUT_MS,
       });
       const { health, sessions } = await adapter.poll();
 
@@ -1896,6 +1903,7 @@ describe.skipIf(process.platform === "win32")(
           NO_PROXY: "localhost",
         },
         homeDir: path.dirname(home),
+        feedTimeoutMs: STAND_IN_FEED_TIMEOUT_MS,
       });
       const { sessions } = await adapter.poll();
       expect(sessions.map((session) => session.id)).toEqual([

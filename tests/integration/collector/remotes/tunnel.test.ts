@@ -20,6 +20,11 @@ const posixTest = test.skipIf(process.platform === "win32");
 
 const WAIT = { timeout: 8_000, interval: 20 };
 
+// Each test writes a stand-in ssh of its own, and on a busy Mac one written
+// moments ago can take seconds to start the first time, while macOS checks it.
+// A test that starts it is given this long. None of them is about this timeout.
+const STAND_IN_TIMEOUT_MS = 30_000;
+
 /** A tunnel that is stopped when the test finishes, however it ends. */
 function tunnelFor(
   remote: Remote,
@@ -110,16 +115,21 @@ describe("the tunnel to another machine", () => {
         },
       ]);
     },
+    STAND_IN_TIMEOUT_MS,
   );
 
-  posixTest("finds ssh on PATH when no program is named", async () => {
-    const ssh = await makeStandInSsh();
-    const env: NodeJS.ProcessEnv = { ...ssh.env, PATH: ssh.dir };
-    delete env[SSH_BIN_ENV];
-    const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, env);
-    tunnel.start();
-    expect((await running(tunnel)).command[0]).toBe(ssh.bin);
-  });
+  posixTest(
+    "finds ssh on PATH when no program is named",
+    async () => {
+      const ssh = await makeStandInSsh();
+      const env: NodeJS.ProcessEnv = { ...ssh.env, PATH: ssh.dir };
+      delete env[SSH_BIN_ENV];
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, env);
+      tunnel.start();
+      expect((await running(tunnel)).command[0]).toBe(ssh.bin);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
 
   test("with no ssh to run, says where it looked, and looks again", async () => {
     const tunnel = tunnelFor(
@@ -168,53 +178,69 @@ describe("the tunnel to another machine", () => {
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(2), WAIT);
       await vi.waitFor(async () => expect((await readRemote(second.port)).kind).toBe("read"), WAIT);
     },
+    STAND_IN_TIMEOUT_MS,
   );
 
-  posixTest("a machine that turns ssh away is tried again after waits that grow", async () => {
-    const ssh = await makeStandInSsh();
-    const tunnel = tunnelFor({ name: "devbox", target: "dev@refuse.example", port: 4777 }, ssh.env);
-    tunnel.start();
-    const waits: number[] = [];
-    let said: string | null = null;
-    for (const run of [1, 2, 3, 4]) {
-      const state = await ended(tunnel, run);
-      waits.push(state.retryAt - state.end.at);
-      said = state.end.said;
-      expect(state.end.connected).toBe(false);
-    }
-    expect(said).toBe("dev@refuse.example: Permission denied (publickey).");
-    expect(waits).toEqual([100, 300, 1_000, 1_000]);
-  });
+  posixTest(
+    "a machine that turns ssh away is tried again after waits that grow",
+    async () => {
+      const ssh = await makeStandInSsh();
+      const tunnel = tunnelFor(
+        { name: "devbox", target: "dev@refuse.example", port: 4777 },
+        ssh.env,
+      );
+      tunnel.start();
+      const waits: number[] = [];
+      let said: string | null = null;
+      for (const run of [1, 2, 3, 4]) {
+        const state = await ended(tunnel, run);
+        waits.push(state.retryAt - state.end.at);
+        said = state.end.said;
+        expect(state.end.connected).toBe(false);
+      }
+      expect(said).toBe("dev@refuse.example: Permission denied (publickey).");
+      expect(waits).toEqual([100, 300, 1_000, 1_000]);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
 
-  posixTest("a port taken on this computer ends ssh, which says why", async () => {
-    const taken = createServer();
-    await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve));
-    onTestFinished(() => new Promise<void>((resolve) => taken.close(() => resolve())));
-    const port = (taken.address() as { port: number }).port;
-    const ssh = await makeStandInSsh();
-    const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env, {
-      freePort: async () => port,
-    });
-    tunnel.start();
-    expect((await ended(tunnel, 1)).end.said).toBe("Could not request local forwarding.");
-  });
+  posixTest(
+    "a port taken on this computer ends ssh, which says why",
+    async () => {
+      const taken = createServer();
+      await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve));
+      onTestFinished(() => new Promise<void>((resolve) => taken.close(() => resolve())));
+      const port = (taken.address() as { port: number }).port;
+      const ssh = await makeStandInSsh();
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env, {
+        freePort: async () => port,
+      });
+      tunnel.start();
+      expect((await ended(tunnel, 1)).end.said).toBe("Could not request local forwarding.");
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
 
-  posixTest("stop ends ssh with SIGTERM and starts it no more", async () => {
-    const ssh = await makeStandInSsh();
-    const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env);
-    tunnel.start();
-    await running(tunnel, 1);
-    await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
-    const [run] = await ssh.runs();
-    expect(isRunning(run?.pid as number)).toBe(true);
+  posixTest(
+    "stop ends ssh with SIGTERM and starts it no more",
+    async () => {
+      const ssh = await makeStandInSsh();
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env);
+      tunnel.start();
+      await running(tunnel, 1);
+      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
+      const [run] = await ssh.runs();
+      expect(isRunning(run?.pid as number)).toBe(true);
 
-    await tunnel.stop();
-    expect(tunnel.state()).toEqual({ kind: "off" } satisfies TunnelState);
-    expect(isRunning(run?.pid as number)).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(await ssh.runs()).toHaveLength(1);
-    expect(tunnel.state().kind).toBe("off");
-  });
+      await tunnel.stop();
+      expect(tunnel.state()).toEqual({ kind: "off" } satisfies TunnelState);
+      expect(isRunning(run?.pid as number)).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(await ssh.runs()).toHaveLength(1);
+      expect(tunnel.state().kind).toBe("off");
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
 
   posixTest(
     "an ssh that SIGTERM does not end is ended with SIGKILL, and a later start runs ssh again",
@@ -234,7 +260,7 @@ describe("the tunnel to another machine", () => {
       await running(tunnel, 2);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(2), WAIT);
     },
-    15_000,
+    STAND_IN_TIMEOUT_MS,
   );
 
   posixTest(
@@ -255,6 +281,6 @@ describe("the tunnel to another machine", () => {
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(2), WAIT);
       expect(second.port).toBeGreaterThan(0);
     },
-    15_000,
+    STAND_IN_TIMEOUT_MS,
   );
 });

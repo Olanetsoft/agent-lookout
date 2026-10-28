@@ -155,6 +155,11 @@ export interface CollectorOptions {
    */
   osascript?: RunOsascript;
   /**
+   * How long `claude agents --json` gets. Defaults to 5 seconds. Tests that run
+   * a stand-in for claude give it longer, for a busy machine.
+   */
+  claudeFeedTimeoutMs?: number;
+  /**
    * Reads every process's parent, terminal and program, to find the tmux pane
    * and the Terminal or iTerm2 tab a session runs in. Defaults to asking `ps`.
    * Tests pass a table of their own.
@@ -475,6 +480,7 @@ export function createCollector(options: CollectorOptions): Collector {
       stops: stopTargets,
       platform,
       lastMessageLimits,
+      feedTimeoutMs: options.claudeFeedTimeoutMs,
     }),
     createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs, lastMessageLimits }),
     createAntigravityAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),

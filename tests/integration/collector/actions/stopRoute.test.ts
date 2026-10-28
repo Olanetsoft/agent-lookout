@@ -80,6 +80,9 @@ async function serve(
       ...env,
     },
     notifier: fakeSystemNotifier(),
+    // A stand-in for claude, written moments ago, can take seconds to start on
+    // a busy machine.
+    claudeFeedTimeoutMs: 20_000,
     ...options,
   });
   const port = await listen(createServer(collector.handler));
