@@ -18,7 +18,9 @@
 // SIGHUP stands in for the other machine closing the connection: it says so
 // and ends with 255. SIGTERM ends it as it ends ssh, unless
 // STAND_IN_SSH_IGNORE_TERM is set, when it stands in for an ssh that does not
-// end on SIGTERM and only SIGKILL ends it.
+// end on SIGTERM and only SIGKILL ends it. With STAND_IN_SSH_SIGNALS naming a
+// file, each SIGTERM or SIGHUP it is sent adds a line to it: its process ID and
+// the signal, as JSON. SIGKILL cannot be caught, so it is never written down.
 
 import { appendFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
@@ -40,12 +42,19 @@ function end(line, code) {
 if (!target || !localPort || !remotePort) end("usage: ssh -L ... -- destination", 255);
 if (target.includes("refuse")) end(`${target}: Permission denied (publickey).`, 255);
 
+function noted(signal) {
+  const signals = process.env.STAND_IN_SSH_SIGNALS;
+  if (signals) appendFileSync(signals, `${JSON.stringify({ pid: process.pid, signal })}\n`);
+}
+
 process.on("SIGTERM", () => {
+  noted("SIGTERM");
   if (!process.env.STAND_IN_SSH_IGNORE_TERM) end("Killed by signal 15.", 255);
 });
-process.on("SIGHUP", () =>
-  end(`Connection to ${target.split("@").pop()} closed by remote host.`, 255),
-);
+process.on("SIGHUP", () => {
+  noted("SIGHUP");
+  end(`Connection to ${target.split("@").pop()} closed by remote host.`, 255);
+});
 
 const server = createServer((client) => {
   const far = connect(Number(remotePort), "127.0.0.1");

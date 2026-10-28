@@ -24,6 +24,12 @@ export interface SshRun {
   args: string[];
 }
 
+/** A signal a run of the stand-in ssh was sent and caught, as it wrote it down. */
+export interface SshSignal {
+  pid: number;
+  signal: "SIGTERM" | "SIGHUP";
+}
+
 export interface StandInSsh {
   /** The program to name in `AGENT_LOOKOUT_SSH_BIN`, or to find on `PATH`, as `ssh`. */
   bin: string;
@@ -36,6 +42,8 @@ export interface StandInSsh {
   env: NodeJS.ProcessEnv;
   /** Each run so far, oldest first. */
   runs(): Promise<SshRun[]>;
+  /** Each SIGTERM and SIGHUP a run was sent, oldest first. SIGKILL is never among them. */
+  signals(): Promise<SshSignal[]>;
 }
 
 /**
@@ -48,15 +56,18 @@ export async function makeStandInSsh(settings: Record<string, string> = {}): Pro
   const dir = await tempDir();
   const bin = path.join(dir, "ssh");
   const log = path.join(dir, "runs.jsonl");
+  const signalLog = path.join(dir, "signals.jsonl");
   await writeFile(bin, `#!/bin/sh\nexec "${process.execPath}" "${STAND_IN_SSH}" "$@"\n`);
   await chmod(bin, 0o755);
   await writeFile(log, "");
+  await writeFile(signalLog, "");
 
-  const runs = async (): Promise<SshRun[]> =>
-    (await readFile(log, "utf8"))
+  const lines = async <T>(file: string): Promise<T[]> =>
+    (await readFile(file, "utf8"))
       .split("\n")
       .filter((line) => line !== "")
-      .map((line) => JSON.parse(line) as SshRun);
+      .map((line) => JSON.parse(line) as T);
+  const runs = () => lines<SshRun>(log);
 
   // A run the test left going is ended, and only one that is still this
   // stand-in: a process ID that has been given to another program is left alone.
@@ -71,8 +82,14 @@ export async function makeStandInSsh(settings: Record<string, string> = {}): Pro
   return {
     bin,
     dir,
-    env: { AGENT_LOOKOUT_SSH_BIN: bin, STAND_IN_SSH_LOG: log, ...settings },
+    env: {
+      AGENT_LOOKOUT_SSH_BIN: bin,
+      STAND_IN_SSH_LOG: log,
+      STAND_IN_SSH_SIGNALS: signalLog,
+      ...settings,
+    },
     runs,
+    signals: () => lines<SshSignal>(signalLog),
   };
 }
 

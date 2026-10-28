@@ -28,7 +28,7 @@ const MAX_SAID_LENGTH = 200;
  * How long `stop` waits for ssh to end after SIGTERM, which it does at once,
  * before it sends SIGKILL, and then again for that to end it.
  */
-const STOP_WAIT_MS = 2_000;
+export const STOP_WAIT_MS = 2_000;
 
 /** How one run of ssh ended. */
 export interface TunnelEnd {
