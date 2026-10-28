@@ -3,7 +3,7 @@ title: Quickstart
 description: Start Agent Lookout with npx, see a Claude Code session that waits for your approval, and jump straight to it.
 ---
 
-In about five minutes you start Agent Lookout, see a Claude Code session waiting for your approval, and jump to it.
+It takes about five minutes.
 
 ## Before you begin
 
