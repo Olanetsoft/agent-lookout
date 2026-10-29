@@ -96,7 +96,7 @@ test("kept on disk, it says for how long beside Clear history, and gives the fol
 
 test("a long folder breaks after its slashes inside the card on a phone, and copies whole", async () => {
   const long =
-    "/private/tmp/agent-lookout-scratch/-Users-example-Documents-code-lookout-tryout/3f1c2d4e-a0b1-4c2d-9e8f-77a60d75b78d/history";
+    "/Volumes/backup-disk/agent-lookout-history/kept-from-the-old-laptop-before-the-move-2026/2f6b9e1a-4c3d-4e5f-8a7b-1c2d3e4f5a6b/history";
   const screen = await render(
     <div style={{ width: 343 }}>
       <HistoryCard history={history({ ...ON_DISK, folder: long })} now={NOW} />
@@ -110,7 +110,7 @@ test("a long folder breaks after its slashes inside the card on a phone, and cop
   // Each name that fits on a line is whole, its hyphens unbroken. Only the one
   // longer than a whole line breaks inside itself, rather than run past the card.
   expect(piecesDrawn(folder, /[^/]+\//g).filter(({ lines }) => lines > 1)).toEqual([
-    { piece: "-Users-example-Documents-code-lookout-tryout/", lines: 2 },
+    { piece: "kept-from-the-old-laptop-before-the-move-2026/", lines: 2 },
   ]);
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
   expect(folder.getBoundingClientRect().right).toBeLessThanOrEqual(
