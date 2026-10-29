@@ -10,7 +10,7 @@ package-lock.json
 tests/.artifacts/
 site/tour/
 
-# Owner-only files. Builders never edit these, so `npm run format` must not either.
+# Local files that are not part of the project.
 .claude/
 .reference/
 CLAUDE.md
