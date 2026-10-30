@@ -7,6 +7,7 @@ import * as codex from "@collector/adapters/codex/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
 import * as opencode from "@collector/adapters/opencode/index";
+import * as qwenCode from "@collector/adapters/qwen-code/index";
 import * as statusFiles from "@collector/adapters/status-files/index";
 import {
   KNOWN_WAYS,
@@ -15,7 +16,7 @@ import {
   readRemoteSnapshot,
 } from "@collector/remotes/remoteSessions";
 import { repositoryId } from "@collector/git/repository";
-import type { SourceHealth, SourceId, SourceState } from "@core/sessions/session";
+import type { RemoteSourceId, SourceHealth, SourceId, SourceState } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   NOW,
@@ -282,32 +283,40 @@ describe("readRemoteSnapshot", () => {
       Object.entries(module)
         .filter(([name, value]) => name.startsWith("BASIS") && typeof value === "string")
         .map(([, value]) => value);
-    for (const [source, module] of [
-      ["antigravity-app", antigravityApp],
-      ["antigravity-cli", antigravityCli],
-      ["codex", codex],
-      ["gemini-cli", geminiCli],
-      ["mistral-vibe", mistralVibe],
-      ["opencode", opencode],
-      ["status-files", statusFiles],
-    ] as const) {
+    // Every source of this machine but Claude Code, by the module that names its ways.
+    // A source added to `SourceId` and left out here fails the typecheck.
+    const modules: Record<
+      Exclude<SourceId, RemoteSourceId | "claude-code">,
+      Record<string, unknown>
+    > = {
+      "antigravity-app": antigravityApp,
+      "antigravity-cli": antigravityCli,
+      codex,
+      "gemini-cli": geminiCli,
+      "mistral-vibe": mistralVibe,
+      opencode,
+      "qwen-code": qwenCode,
+      "status-files": statusFiles,
+    };
+    for (const [source, module] of Object.entries(modules)) {
       expect(ways(module).length, source).toBeGreaterThan(0);
       expect([...(KNOWN_WAYS.get(source) ?? [])].sort(), source).toEqual(ways(module).sort());
     }
     // Claude Code's adapter names its three where it reads, in claude-code/index.ts.
     expect(KNOWN_WAYS.get("claude-code")).toEqual(["registry+feed", "registry", "feed"]);
-    expect([...KNOWN_WAYS.keys()].sort()).toEqual(
-      [
-        "antigravity-app",
-        "antigravity-cli",
-        "claude-code",
-        "codex",
-        "gemini-cli",
-        "mistral-vibe",
-        "opencode",
-        "status-files",
-      ].sort(),
-    );
+    expect([...KNOWN_WAYS.keys()].sort()).toEqual(["claude-code", ...Object.keys(modules)].sort());
+  });
+
+  test("another machine's Qwen Code sessions are compared under their own way", () => {
+    const qwenThere: SourceHealth = {
+      ...sourcesThere()[0]!,
+      id: "qwen-code",
+      state: "ok",
+      basis: qwenCode.BASIS,
+    };
+    expect(read({ generatedAt: NOW, sources: [qwenThere], sessions: [] }).parts).toEqual({
+      "remote:devbox:qwen-code:": "files",
+    });
   });
 
   test("each source there is kept as its name and its state", () => {

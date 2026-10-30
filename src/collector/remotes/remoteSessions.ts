@@ -63,6 +63,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["mistral-vibe", ["files", "files-without-leases"]],
   ["gemini-cli", ["files"]],
   ["opencode", ["database", "database-closed", "database-without-processes"]],
+  ["qwen-code", ["files"]],
   ["status-files", ["files"]],
 ]);
 
