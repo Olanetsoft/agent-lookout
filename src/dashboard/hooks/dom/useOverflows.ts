@@ -5,9 +5,13 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  * scrolls. It is measured before the page is painted, again whenever
  * `content` changes, and whenever the element or what is in it changes size,
  * as when the window is narrowed and the text wraps onto more lines.
+ *
+ * Given `inner`, it measures that one part of the content alone, so what is
+ * put in the element only once it overflows cannot keep it overflowing.
  */
 export function useOverflows<T extends HTMLElement>(
   content: unknown,
+  inner?: RefObject<HTMLElement | null>,
 ): [RefObject<T | null>, boolean] {
   const ref = useRef<T>(null);
   const [overflows, setOverflows] = useState(false);
@@ -15,14 +19,18 @@ export function useOverflows<T extends HTMLElement>(
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const measure = () => setOverflows(element.scrollHeight > element.clientHeight);
+    const measure = () => {
+      const part = inner?.current;
+      const height = part ? part.offsetHeight : element.scrollHeight;
+      setOverflows(height > element.clientHeight);
+    };
     measure();
     // Fires once when it starts watching, and again whenever a box changes size.
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     for (const child of element.children) observer.observe(child);
     return () => observer.disconnect();
-  }, [content]);
+  }, [content, inner]);
 
   return [ref, overflows];
 }

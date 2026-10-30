@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import type { LastMessageReason, LastMessageSetting } from "@core/api";
 import { Literal } from "@dashboard/components/ui/facts/Literal";
@@ -16,7 +16,7 @@ const FAILED_LINE = "Its last message could not be read. The page asks again eve
 /** Said over a message whose start was left out. */
 const CUT_LINE = "The start of a longer message is left out.";
 
-/** Said under a message whose end its transcript left out. */
+/** Said under a message whose end its transcript left out: at the end of its block, when it scrolls. */
 const END_CUT_LINE = "The end of a longer message is left out.";
 
 /** One calm line in place of the message. */
@@ -65,11 +65,21 @@ function reasonWords(
  * read as markup or becomes a link, with every line break kept and long
  * words broken anywhere. It can be selected to copy. A long message scrolls
  * inside its block, which is then a Tab stop, so it can be scrolled from the
- * keyboard too. A line above it says when its start was left out, and one
- * below it when its end was.
+ * keyboard too. A line above the block says when its start was left out, and
+ * one under the text when its end was. For a message too long for its block,
+ * that line is the last thing in the block, reached by scrolling to the end,
+ * so it never sits under the line the block's edge cuts, where the message
+ * would seem to stop. Whether the message is too long is measured on its text
+ * alone, so a message that fits keeps the line whole under it.
  */
 function Message({ text, cut, endCut }: { text: string; cut: boolean; endCut: boolean }) {
-  const [ref, overflows] = useOverflows<HTMLDivElement>(text);
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [ref, overflows] = useOverflows<HTMLDivElement>(text, textRef);
+  const endLine = endCut && (
+    <p data-part='last-message-end-cut' className='mt-1.5 text-caption text-ink-muted'>
+      {END_CUT_LINE}
+    </p>
+  );
   return (
     <div className='pt-2.5'>
       {cut && (
@@ -90,17 +100,15 @@ function Message({ text, cut, endCut }: { text: string; cut: boolean; endCut: bo
         )}
       >
         <p
+          ref={textRef}
           data-part='last-message-text'
           className='text-body whitespace-pre-wrap text-ink wrap-anywhere select-text'
         >
           {text}
         </p>
+        {overflows && endLine}
       </div>
-      {endCut && (
-        <p data-part='last-message-end-cut' className='mt-1.5 text-caption text-ink-muted'>
-          {END_CUT_LINE}
-        </p>
-      )}
+      {!overflows && endLine}
     </div>
   );
 }

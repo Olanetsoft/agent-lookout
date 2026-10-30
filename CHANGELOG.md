@@ -16,6 +16,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - In the chart that Working, Idle or the Needs you panel's heading opens, Shift+Tab from the chart goes back to the time window and then to Close. While the chart showed the count at a moment, as it does once you reach it with Tab, point at it or press an arrow key, Shift+Tab left focus on the dialog itself, and pressing it again kept it there (#217).
 
+- In a session's details, when an Antigravity reply whose end is left out is long enough to scroll, the line saying so now comes after its text, at the end of the block it scrolls in. Before, it sat under the block's bottom edge, which cuts through a line, so the reply looked as if it stopped at that line (#204).
+
 ## 0.2.14 - 2026-10-30
 
 The Mac app can keep the Mac awake while your sessions work or wait, Antigravity sessions show what they last said, and Antigravity chats get their titles back.
