@@ -28,8 +28,8 @@
 //       times
 //   features/<feature>-…-{1600,1000}.webp
 //       one part of the dashboard for each feature the page shows, a 4:3 clip
-//       around it in a 1280-wide window, taken at the density that makes it
-//       1600 by 1200
+//       around it in a 1280-wide window, or a wider one a feature names,
+//       taken at the density that makes it 1600 by 1200
 //   features/<feature>-phone-…-{1200,800}.webp
 //       the same part in the one-column layout of a 390-wide window, a 4:5
 //       clip, taken at the density that makes it 1200 by 1500, for a phone,
@@ -142,8 +142,9 @@ const WINDOWS = [
 
 /**
  * The features, each a part of the dashboard in a scene, found and clipped by
- * its name in `inspect` below: `height` is the wide window's, `pressed` waits
- * for a button the scene presses to be let go, and `alone` hides the
+ * its name in `inspect` below: `height` is the wide window's, `width` a wider
+ * window for a part whose height would not fit its clip at 1280, `pressed`
+ * waits for a button the scene presses to be let go, and `alone` hides the
  * dashboard behind the part.
  */
 const FEATURES = [
@@ -152,7 +153,8 @@ const FEATURES = [
   { name: "allow-deny", scene: "Allow or Deny", step: 0, height: 800 },
   { name: "notifications", scene: "Settings", step: 0, height: 1000 },
   { name: "jump-stop", scene: "Stop", step: 0, height: 800, pressed: true, alone: true },
-  { name: "agents", scene: "Sources", step: 2, height: 1000 },
+  // With Hermes Agent's row, the card is taller than its clip in a 1280-wide window.
+  { name: "agents", scene: "Sources", step: 2, width: 1360, height: 1000 },
 ];
 
 /**
@@ -405,7 +407,11 @@ async function takeWindow(browser, origin, win, state, theme, problems) {
 /** A feature's picture in one form: measured once, then taken at the density that makes it its first size. */
 async function takeFeature(browser, origin, feature, form, theme, problems) {
   const label = `features/${feature.name}${form.stem}-${theme}`;
-  const viewport = { width: form.width, height: form.height ?? feature.height };
+  const wide = form.form === "wide";
+  const viewport = {
+    width: wide ? (feature.width ?? form.width) : form.width,
+    height: form.height ?? feature.height,
+  };
   const { ratio } = form;
   let clip;
   const first = await contextFor(browser, viewport, 1, THEMES[theme]);
