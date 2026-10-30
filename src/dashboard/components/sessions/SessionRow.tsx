@@ -14,7 +14,7 @@ import { useJump } from "@dashboard/hooks/actions/useJump";
 import { useResume } from "@dashboard/hooks/actions/useResume";
 import { quietFor } from "@dashboard/lib/sessions/quiet";
 import { rowLook } from "@dashboard/lib/sessions/sessions";
-import { surfaceLabel } from "@dashboard/lib/sessions/status";
+import { jumpWay, surfaceLabel } from "@dashboard/lib/sessions/status";
 import { openFromClick, openFromLink, sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { cn } from "@dashboard/lib/utils";
 
@@ -23,7 +23,8 @@ interface SessionRowProps {
   now: number;
   /**
    * Whether the table has a column for each row's action: Jump, or Resume for
-   * a Claude Code session that is over. It is left out when no session has either.
+   * a Claude Code session that is over. It is left out when no session has
+   * either, and in a narrow window, where the action ends the name's line.
    */
   actionColumn: boolean;
   /**
@@ -84,11 +85,15 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * goes with it. A branch whose open pull request has a check failing has a
  * small cross after it, in a failed session's quiet colour: `ChecksMark`.
  *
- * In a narrow window every row has two lines: the name, and under it the status
- * and its time, led by the tool when the table names one: "Codex · Working".
- * When that line is too short, it goes on to a third rather than cut a word,
- * and how long the agent has been quiet, when it says so, has a line of its own
- * under it.
+ * In a narrow window every row has two lines: the name, with the row's Jump or
+ * Resume at the right end of its line, and under it the status and its time,
+ * led by the tool when the table names one: "Codex · Working". There is no
+ * column for the action, so the line under the name has the cell's whole
+ * width, and its time ends where the button above it does. Two lines are
+ * 53px, or 61px with a button, which is taller than the name. When the line
+ * under the name is too short, it goes on to a third rather than cut a word,
+ * and how long the agent has been quiet, when it says so, has a line of its
+ * own under it.
  * The tool is never a logo or a colour.
  *
  * The sessions that need the person are the hero's, not the table's, so the
@@ -102,10 +107,11 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * terminal tab's Jump can say take a line of their own under the name, and the
  * row grows for as long as one is said.
  *
- * Resume, in the place a Jump has, copies the command that goes to the
- * session's folder and resumes it, and runs nothing. Should the clipboard
- * refuse it, a line of its own under the name says so and holds the command
- * to select by hand, and the row grows for as long as it is there.
+ * Resume, in the place a Jump has, which in a narrow window is the end of the
+ * name's line, copies the command that goes to the session's folder and
+ * resumes it, and runs nothing. Should the clipboard refuse it, a line of its
+ * own under the name says so and holds the command to select by hand, and the
+ * row grows for as long as it is there.
  *
  * A click anywhere on the row opens the session's details over the Overview,
  * except on what the row already answers to: Jump, and the folder and the
@@ -135,12 +141,32 @@ export function SessionRow({
 
   const duration = <Duration session={session} now={now} quiet={quiet} />;
 
+  // Jump, or Resume for a Claude Code session that is over. Each is nothing
+  // when the session has no way to it, and a row may have neither.
+  const hasAction = jumpWay(session) !== null || resume.command !== null;
+  const action = (
+    <>
+      <Jump
+        session={session}
+        jump={jump}
+        className='group-hover:bg-fill-selected group-hover:text-ink'
+      />
+      <ResumeButton
+        session={session}
+        resume={resume}
+        className='group-hover:bg-fill-selected group-hover:text-ink'
+      />
+    </>
+  );
+
   // How long the agent has written nothing, when the row says so.
   const quietLine = quietFor(session, now) !== null && <QuietFor session={session} now={now} />;
 
   /**
    * Narrow, the line under the name: the tool when the table names one, then
-   * the status and its time, "Codex · Working 12m". Nothing on it is cut while
+   * the status and its time, "Codex · Working 12m". It has the cell's whole
+   * width, since the row's Jump or Resume is on the name's line above it, and
+   * its time ends under that button's right edge. Nothing on it is cut while
    * a line can hold it: when the line is too short for all of it, the status
    * and its time go to a line of their own under the tool, and when that line
    * is too short as well, the time goes under the status. Only a tool's name
@@ -202,7 +228,9 @@ export function SessionRow({
         className={cn(
           CELL,
           "h-row",
-          narrow && "py-2",
+          // Narrow, it is the row's last cell on screen, so it ends 18px in
+          // from the card's edge, where a wide row's last cell does.
+          narrow && "py-2 pr-4.5",
           // The row's one rounded shape under the pointer, 10px inside the card.
           "before:pointer-events-none before:absolute before:inset-x-2.5 before:inset-y-px before:-z-10 before:rounded-inner before:transition-colors before:duration-120 group-hover:before:bg-fill-hover",
           // The focus ring, when Tab reaches its name.
@@ -212,9 +240,18 @@ export function SessionRow({
         <div className='flex min-w-0 items-center gap-3'>
           <StatusMark kind={mark} />
           <div className='grid min-w-0 flex-1 gap-px'>
-            {/* What Jump came to goes under the name when the line cannot hold both. */}
-            <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-px'>
-              <div className='flex max-w-full min-w-0 items-center gap-2'>
+            {/*
+             * What Jump came to goes under the name when the line cannot hold
+             * both. Narrow, the line does not wrap: it is the name, and at its
+             * right end the row's Jump or Resume.
+             */}
+            <div
+              className={cn(
+                "flex min-w-0 items-center",
+                narrow ? "gap-2" : "flex-wrap gap-x-2 gap-y-px",
+              )}
+            >
+              <div className={cn("flex max-w-full min-w-0 items-center gap-2", narrow && "flex-1")}>
                 <Truncated
                   data-part='name'
                   href={sessionHref(session.id)}
@@ -230,12 +267,17 @@ export function SessionRow({
                 </Truncated>
                 {orphaned && <Badge tone='outline'>Process ended</Badge>}
               </div>
+              {/* Narrow, the row's action: after the name, as it is read and as Tab reaches it. */}
+              {narrow && hasAction && (
+                <div className='flex shrink-0 items-center gap-2'>{action}</div>
+              )}
               {/* The machine, like what Jump came to, goes under the name when the line cannot hold both. */}
               {!narrow && <Machine session={session} />}
               {!narrow && <JumpNote session={session} jump={jump} />}
-              <ResumeNote resume={resume} />
+              {!narrow && <ResumeNote resume={resume} />}
             </div>
             {/* Narrow, there is no room beside the name, so each has a line of its own. */}
+            {narrow && <ResumeNote resume={resume} className='justify-self-start' />}
             {narrow && <Machine session={session} className='justify-self-start' />}
             {narrow && <JumpNote session={session} jump={jump} className='justify-self-start' />}
             {narrow &&
@@ -315,19 +357,9 @@ export function SessionRow({
         </td>
       )}
 
-      {actionColumn && (
-        <td className={cn(CELL, "overflow-visible text-right")}>
-          <Jump
-            session={session}
-            jump={jump}
-            className='group-hover:bg-fill-selected group-hover:text-ink'
-          />
-          <ResumeButton
-            session={session}
-            resume={resume}
-            className='group-hover:bg-fill-selected group-hover:text-ink'
-          />
-        </td>
+      {/* Narrow, there is no column for it: the action ends the name's line. */}
+      {actionColumn && !narrow && (
+        <td className={cn(CELL, "overflow-visible text-right")}>{action}</td>
       )}
     </tr>
   );
