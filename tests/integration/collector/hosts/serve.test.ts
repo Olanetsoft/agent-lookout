@@ -61,6 +61,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
     env: {
       PATH: process.env.PATH ?? "/usr/bin:/bin",
       HOME: home,
+      USERPROFILE: home,
       AGENT_LOOKOUT_CLAUDE_HOME: home,
       AGENT_LOOKOUT_CLAUDE_BIN: stub,
       AGENT_LOOKOUT_CODEX_HOME: codexHome,

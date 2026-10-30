@@ -107,6 +107,14 @@ export const EMPTY_OPENCODE_HOME = path.join(
  */
 export const EMPTY_QWEN_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-qwen", "qwen");
 
+/**
+ * An empty folder that stands in for the home folder of the person running the
+ * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
+ * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,
+ * `~/.gemini` or `~/.agent-lookout` a test forgets to name is the real one.
+ */
+export const EMPTY_HOME = path.join(os.tmpdir(), "agent-lookout-test-home");
+
 /** A fresh directory that is removed when the current test finishes. */
 export async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-lookout-test-"));

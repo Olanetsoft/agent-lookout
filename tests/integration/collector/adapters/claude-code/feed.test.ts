@@ -425,13 +425,17 @@ describe.runIf(enabled)("the real claude binary, run the way the collector runs 
   });
 
   test(`claude ${FEED_ARGS.join(" ")} holds no socket to another machine, in ${RUNS} runs of ${RUNS}`, async () => {
-    const binary = await findClaudeBinary({ env: process.env, homeDir: os.homedir() });
+    // `nodeSetup.ts` points HOME at an empty folder. This check means the real
+    // one, which the account's own record still names.
+    const realHome = os.userInfo().homedir;
+    const env = { ...process.env, HOME: realHome };
+    const binary = await findClaudeBinary({ env, homeDir: realHome });
     expect(binary.found, "No claude binary was found to check.").toBe(true);
     if (!binary.found) return;
 
     const leaving: string[] = [];
     for (let run = 0; run < RUNS; run += 1) {
-      const seen = await observe(binary.path, FEED_ARGS, feedEnvironment(process.env));
+      const seen = await observe(binary.path, FEED_ARGS, feedEnvironment(env));
 
       // The command still works with the network taken away.
       expect(seen.exitCode).toBe(0);
