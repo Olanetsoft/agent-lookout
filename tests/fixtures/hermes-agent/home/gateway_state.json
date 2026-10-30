@@ -1,0 +1,4 @@
+{
+  "note": "Placeholder. Agent Lookout never opens this file.",
+  "argv": ["hermes", "gateway", "demo-secret-value-that-must-stay-put"]
+}

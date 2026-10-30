@@ -16,8 +16,8 @@
 // processes, small Node programs this script starts that only wait, a copy of
 // tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
 // Antigravity and one for Mistral Vibe, an empty Gemini CLI folder with its
-// tmp/, an empty folder for OpenCode and one for Qwen Code, a folder with one
-// status file, and a folder for the history the app keeps, so nothing is
+// tmp/, an empty folder for OpenCode, one for Qwen Code and one for Hermes
+// Agent, a folder with one status file, and a folder for the history the app keeps, so nothing is
 // written to this machine's. It starts the app on a port the system picks, with
 // the claude command, tmux and Terminal left alone, and asks only
 // `/api/health`, `/api/sessions`, the dashboard's page and its script. Then it
@@ -94,6 +94,8 @@ const SOURCES = [
   // Nothing of OpenCode's is read on Windows.
   ["opencode", "OpenCode", "unavailable"],
   ["qwen-code", "Qwen Code"],
+  // Nothing of Hermes Agent's is read on Windows.
+  ["hermes-agent", "Hermes Agent", "unavailable"],
   ["status-files", "Status files"],
 ];
 
@@ -314,6 +316,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const geminiCliHome = path.join(dir, "gemini");
   const opencodeHome = path.join(dir, "opencode");
   const qwenHome = path.join(dir, "qwen");
+  const hermesHome = path.join(dir, "hermes");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   const work = path.join(dir, "work");
@@ -324,6 +327,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(path.join(geminiCliHome, "tmp"), { recursive: true });
   await mkdir(opencodeHome, { recursive: true });
   await mkdir(qwenHome, { recursive: true });
+  await mkdir(hermesHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -387,6 +391,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     geminiCliHome,
     opencodeHome,
     qwenHome,
+    hermesHome,
     statusDir,
     historyDir,
     procStart,
@@ -395,7 +400,8 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
 
 /**
  * The environment `npm start` is given: this one, without any setting of
- * Agent Lookout's own, Codex's, Mistral Vibe's, Gemini CLI's or Qwen Code's,
+ * Agent Lookout's own, Codex's, Mistral Vibe's, Gemini CLI's, Qwen Code's or
+ * Hermes Agent's,
  * and with the folders made for the check. The claude command is not run, tmux
  * and Terminal are not asked, and npm does not look for a newer version of
  * itself.
@@ -409,7 +415,8 @@ function appEnv(folders) {
         name !== "VIBE_HOME" &&
         name !== "GEMINI_CLI_HOME" &&
         name !== "QWEN_HOME" &&
-        name !== "QWEN_RUNTIME_DIR",
+        name !== "QWEN_RUNTIME_DIR" &&
+        name !== "HERMES_HOME",
     ),
   );
   return {
@@ -425,6 +432,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_GEMINI_CLI_HOME: folders.geminiCliHome,
     AGENT_LOOKOUT_OPENCODE_HOME: folders.opencodeHome,
     AGENT_LOOKOUT_QWEN_HOME: folders.qwenHome,
+    AGENT_LOOKOUT_HERMES_HOME: folders.hermesHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_TMUX: "off",

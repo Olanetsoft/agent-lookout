@@ -49,6 +49,11 @@ export interface AdapterResult {
    *
    * The Qwen Code adapter has one, `files`: Qwen Code's list of running
    * sessions and each one's chat file.
+   *
+   * The Hermes Agent adapter has one, `database`: each profile's database. It
+   * names each profile it read in `health.parts` too, by the start of the ids
+   * of that profile's sessions, `hermes-agent:<profile>/`, so a profile that
+   * could not be read on one poll leaves its sessions as they were.
    */
   basis?: string;
 }

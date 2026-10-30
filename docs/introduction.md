@@ -3,7 +3,7 @@ title: Introduction
 description: Agent Lookout shows the coding agent sessions on your machine on one page, with the ones waiting on you first.
 ---
 
-Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions running on your machine.
+Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent sessions running on your machine.
 
 When you run several coding agents at once, one of them often stops to ask you something while you are looking at another. Agent Lookout finds their sessions with no setup, shows them on one page, and puts the ones waiting on you first, for the agents that report a wait. Any other agent can show up too, by writing a small [status file](GUIDE.md#your-own-agents).
 
@@ -33,16 +33,17 @@ Some of this depends on your system: on Windows, Jump reaches VS Code only, and 
 
 Every agent's sessions appear on the page with their status. What else each one shows:
 
-| Agent                                                           | Shows when it needs you                                          | Allow and Deny              | Jump                                 |
-| --------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------- | ------------------------------------ |
-| Claude Code                                                     | Yes, with what it asks                                           | With Agent Lookout's plugin | In VS Code, tmux, Terminal or iTerm2 |
-| Antigravity and the Antigravity CLI                             | While it asks you to approve a step                              | No                          | No                                   |
-| Codex, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code         | No: a waiting session shows as working, or as idle in Gemini CLI | No                          | No                                   |
-| Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                     | No                          | No                                   |
+| Agent                                                           | Shows when it needs you                                                 | Allow and Deny              | Jump                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------- | ------------------------------------ |
+| Claude Code                                                     | Yes, with what it asks                                                  | With Agent Lookout's plugin | In VS Code, tmux, Terminal or iTerm2 |
+| Antigravity and the Antigravity CLI                             | While it asks you to approve a step                                     | No                          | No                                   |
+| Hermes Agent                                                    | While it asks you a question, and 10 to 70 seconds late for an approval | No                          | No                                   |
+| Codex, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code         | No: a waiting session shows as working, or as idle in Gemini CLI        | No                          | No                                   |
+| Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                            | No                          | No                                   |
 
-On Windows, OpenCode's sessions are not read, and the Antigravity app never shows as needing you. On Linux, both need the `sqlite3` program.
+On Windows, OpenCode's and Hermes Agent's sessions are not read, and the Antigravity app never shows as needing you. On Linux, all three need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
 
-Mistral Vibe, Gemini CLI, OpenCode and Qwen Code support was built from their source and has not yet been checked on a machine running them. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
+Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent support was built from their source and has not yet been checked on a machine running them. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
 
 ## Privacy
 

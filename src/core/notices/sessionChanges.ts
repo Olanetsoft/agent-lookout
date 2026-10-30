@@ -1,4 +1,5 @@
 import {
+  isPartKey,
   readWays,
   withoutWaitingText,
   type ReadWays,
@@ -8,14 +9,21 @@ import {
 } from "../sessions/session.ts";
 import { needsYou } from "../waits/answeredWaits.ts";
 
+/** One wait as it is remembered from one snapshot to the next. */
+export interface RememberedWait {
+  /** The latest status time the wait has been seen with, or null while its source has given none. */
+  since: number | null;
+  /** The key of the way its session was read, as `readWays` gives it. */
+  way: string;
+}
+
 /**
  * What is remembered from one snapshot to the next: for each source that has
  * answered, its sessions that needed the person at its last answer that could
- * be read, by id. Each is kept with the latest status time its wait has been
- * seen with, or null while its source has given none. A source that has never
- * answered so is absent, which is how its first answer is told from a later one.
+ * be read, by id, each with its wait. A source that has never answered so is
+ * absent, which is how its first answer is told from a later one.
  */
-export type WaitMemory = ReadonlyMap<SourceId, ReadonlyMap<string, number | null>>;
+export type WaitMemory = ReadonlyMap<SourceId, ReadonlyMap<string, RememberedWait>>;
 
 /** The memory to start from, before any snapshot has been seen. */
 export const EMPTY_WAIT_MEMORY: WaitMemory = new Map();
@@ -62,6 +70,13 @@ function laterOf(a: number | null, b: number | null): number | null {
  * - After that, a session that needs the person and is not remembered has
  *   started. A remembered one that is now in any other status, or gone from
  *   the list, has stopped.
+ * - But a source read in parts that can each fail alone (`parts`) is compared
+ *   part by part. A remembered session gone from the list, of a part not read
+ *   the same way in this answer, is kept as it is, and nothing is said about
+ *   it: a Hermes Agent profile that could not be read on one poll, or a source
+ *   on another machine that did not answer there, ends none of its waits. Its
+ *   source's own way, its `basis`, is not a part, so a session read that way
+ *   that is gone has stopped, as before.
  * - A remembered session that still needs the person, with a status time later
  *   than any its wait has been seen with, has stopped and started. Sources are
  *   read every couple of seconds. A session that is answered, works for a
@@ -90,45 +105,56 @@ function laterOf(a: number | null, b: number | null): number | null {
  * the same snapshot, it reports nothing.
  */
 export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): WaitChanges {
-  const waitingNow = new Map<SourceId, Map<string, number | null>>();
+  /** Each source that could be read, with the ways it was read and its sessions that wait now. */
+  const answers = new Map<SourceId, { ways: ReadWays; waiting: Map<string, RememberedWait> }>();
   for (const source of snapshot.sources) {
     if (source.state === "ok" || source.state === "not-set-up") {
-      waitingNow.set(source.id, new Map());
+      answers.set(source.id, { ways: readWays(source), waiting: new Map() });
     }
   }
+  /** Every session listed, by id, whatever its status. */
+  const listed = new Set(snapshot.sessions.map((session) => session.id));
 
   const started: Session[] = [];
   const stopped: string[] = [];
   for (const session of snapshot.sessions) {
     // A wait Agent Lookout answered is over, whatever its source still says.
     if (!needsYou(session)) continue;
-    const waiting = waitingNow.get(session.source);
-    // No map means the source did not answer. An id already in it was counted.
-    if (!waiting || waiting.has(session.id)) continue;
+    const answer = answers.get(session.source);
+    // No answer means the source did not answer. An id already in it was counted.
+    if (!answer || answer.waiting.has(session.id)) continue;
+    const way = answer.ways.keyOf(session.id);
 
     const remembered = memory.get(session.source);
-    if (!remembered?.has(session.id)) {
+    const before = remembered?.get(session.id);
+    if (before === undefined) {
       // Not remembered. In a source's first answer that is the baseline, and
       // after it the session has started.
       if (remembered) started.push(session);
-      waiting.set(session.id, session.statusSince);
+      answer.waiting.set(session.id, { since: session.statusSince, way });
       continue;
     }
 
-    const seen = remembered.get(session.id) ?? null;
+    const seen = before.since;
     const since = session.statusSince;
     if (seen !== null && since !== null && since > seen) {
       // The wait that was remembered ended and this one began, unseen.
       stopped.push(session.id);
       started.push(session);
     }
-    waiting.set(session.id, laterOf(seen, since));
+    answer.waiting.set(session.id, { since: laterOf(seen, since), way });
   }
 
   const next = new Map(memory);
-  for (const [source, waiting] of waitingNow) {
-    for (const id of memory.get(source)?.keys() ?? []) {
-      if (!waiting.has(id)) stopped.push(id);
+  for (const [source, { ways, waiting }] of answers) {
+    for (const [id, wait] of memory.get(source) ?? []) {
+      if (waiting.has(id)) continue;
+      if (!listed.has(id) && isPartKey(wait.way) && !ways.keys.includes(wait.way)) {
+        // Its part was not read this way in this answer, so nothing is known of it.
+        waiting.set(id, wait);
+        continue;
+      }
+      stopped.push(id);
     }
     next.set(source, waiting);
   }

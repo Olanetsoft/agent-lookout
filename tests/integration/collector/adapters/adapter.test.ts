@@ -8,6 +8,7 @@ import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/in
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
+import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
@@ -35,6 +36,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
   ["OpenCode", OPENCODE_CAPABILITIES],
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
+  ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 

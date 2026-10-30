@@ -7,6 +7,7 @@ import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { geminiCliFolder } from "../adapters/gemini-cli/index.ts";
+import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
 import { qwenFolders } from "../adapters/qwen-code/index.ts";
@@ -53,7 +54,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the eight other sources read, and OpenCode's database, as the
+ * The folders the nine other sources read, and OpenCode's database, as the
  * adapters work them out, made into a short fingerprint that names none of
  * them. Two copies of Agent Lookout with the same one see the same sessions.
  * The writer lock carries it, so a copy can say when the one writing the
@@ -73,6 +74,7 @@ export function sourcesFingerprint(env: NodeJS.ProcessEnv, homeDir: string = os.
     opencodeDatabaseFor(env, homeDir) ?? ":memory:",
     qwenFolders(env, homeDir).home,
     qwenFolders(env, homeDir).runtime,
+    hermesRootFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

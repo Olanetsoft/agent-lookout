@@ -327,6 +327,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Gemini CLI",
         "OpenCode",
         "Qwen Code",
+        "Hermes Agent",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

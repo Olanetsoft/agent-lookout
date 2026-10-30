@@ -27,6 +27,10 @@ import {
 } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSession } from "@collector/adapters/gemini-cli/toSession";
 import {
+  createHermesAgentAdapter,
+  HERMES_AGENT_CAPABILITIES,
+} from "@collector/adapters/hermes-agent/index";
+import {
   createMistralVibeAdapter,
   MISTRAL_VIBE_CAPABILITIES,
 } from "@collector/adapters/mistral-vibe/index";
@@ -78,6 +82,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Gemini CLI", GEMINI_CLI_CAPABILITIES],
   ["OpenCode", OPENCODE_CAPABILITIES],
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
+  ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -141,6 +146,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createQwenCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(QWEN_CODE_CAPABILITIES);
+    expect(
+      createHermesAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(HERMES_AGENT_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,

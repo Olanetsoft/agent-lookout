@@ -18,6 +18,7 @@ import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_GEMINI_CLI_HOME,
+  EMPTY_HERMES_HOME,
   EMPTY_HOME,
   EMPTY_OPENCODE_HOME,
   EMPTY_QWEN_HOME,
@@ -84,6 +85,15 @@ mkdirSync(EMPTY_QWEN_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_QWEN_HOME = EMPTY_QWEN_HOME;
 delete process.env.QWEN_HOME;
 delete process.env.QWEN_RUNTIME_DIR;
+
+// Nor does one read Hermes Agent's databases, in `~/.hermes` or the root
+// `HERMES_HOME` names, or run `sqlite3` for them, whatever the shell running
+// the tests has set: the adapter is pointed at an empty folder, and Hermes
+// Agent's own variable is dropped. A test of the adapter names a folder of
+// its own.
+mkdirSync(EMPTY_HERMES_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_HERMES_HOME = EMPTY_HERMES_HOME;
+delete process.env.HERMES_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

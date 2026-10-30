@@ -14,7 +14,7 @@ A pull request that breaks either rule will not be merged.
 
 ## Set up
 
-You need Node.js 22.12 or newer and, to see real sessions, Claude Code, Codex, Antigravity, the Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode or Qwen Code. `.nvmrc` holds 22, the version most CI jobs use.
+You need Node.js 22.12 or newer and, to see real sessions, Claude Code, Codex, Antigravity, the Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code or Hermes Agent. `.nvmrc` holds 22, the version most CI jobs use.
 
 Fork the repository, clone your fork, then:
 
@@ -25,18 +25,18 @@ npx playwright install chromium
 npm run dev
 ```
 
-The Playwright step downloads the Chromium build that the component tests run in. On Linux, add `--with-deps` to install the system libraries it needs. The tests that read OpenCode's and Antigravity's databases run the system's `sqlite3`, and are skipped where none is in one of its fixed places, such as `/usr/bin`, except in CI, where that fails. Ubuntu and Debian install it with `sudo apt install sqlite3`.
+The Playwright step downloads the Chromium build that the component tests run in. On Linux, add `--with-deps` to install the system libraries it needs. The tests that read OpenCode's, Hermes Agent's and Antigravity's databases run the system's `sqlite3`, and are skipped where none is in one of its fixed places, such as `/usr/bin`, except in CI, where that fails. Ubuntu and Debian install it with `sudo apt install sqlite3`.
 
-`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions on your own machine. The Gemini CLI adapter was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The OpenCode adapter was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running it. The Qwen Code adapter was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
+`npm run dev` serves the dashboard at <http://localhost:5173> with the collector running inside the dev server. It shows the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent sessions on your own machine. The Gemini CLI adapter was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The OpenCode adapter was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running it. The Qwen Code adapter was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it. The Hermes Agent adapter was built from Hermes Agent's source at v0.22.5 and has not yet been checked on a computer running it.
 
 To see the dashboard with no sessions, point it at an empty folder:
 
 ```sh
 mkdir -p /tmp/lookout-empty
-AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_ANTIGRAVITY_HOME=/tmp/lookout-empty/antigravity-cli AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME=/tmp/lookout-empty/antigravity AGENT_LOOKOUT_VIBE_SESSION_DIR=/tmp/lookout-empty/vibe AGENT_LOOKOUT_GEMINI_CLI_HOME=/tmp/lookout-empty/gemini AGENT_LOOKOUT_OPENCODE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_QWEN_HOME=/tmp/lookout-empty/qwen AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
+AGENT_LOOKOUT_CLAUDE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_CODEX_HOME=/tmp/lookout-empty AGENT_LOOKOUT_ANTIGRAVITY_HOME=/tmp/lookout-empty/antigravity-cli AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME=/tmp/lookout-empty/antigravity AGENT_LOOKOUT_VIBE_SESSION_DIR=/tmp/lookout-empty/vibe AGENT_LOOKOUT_GEMINI_CLI_HOME=/tmp/lookout-empty/gemini AGENT_LOOKOUT_OPENCODE_HOME=/tmp/lookout-empty AGENT_LOOKOUT_QWEN_HOME=/tmp/lookout-empty/qwen AGENT_LOOKOUT_HERMES_HOME=/tmp/lookout-empty/hermes AGENT_LOOKOUT_STATUS_DIR=/tmp/lookout-empty AGENT_LOOKOUT_HISTORY_DIR=/tmp/lookout-empty npm run dev
 ```
 
-With all ten set, Agent Lookout reads only that folder, does not run the `claude` command, reads none of `~/.codex`, `~/.gemini/antigravity-cli`, `~/.gemini/antigravity`, `~/.vibe/logs/session`, `~/.gemini/tmp`, `~/.local/share/opencode`, `~/.qwen` and `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
+With all eleven set, Agent Lookout reads only that folder, does not run the `claude` command, reads none of `~/.codex`, `~/.gemini/antigravity-cli`, `~/.gemini/antigravity`, `~/.vibe/logs/session`, `~/.gemini/tmp`, `~/.local/share/opencode`, `~/.qwen`, `~/.hermes` and `~/.agent-lookout/sessions`, and keeps its history in that folder, so the Events log and the charts do not show what earlier runs kept in `~/.agent-lookout/history`. The [guide](docs/GUIDE.md#settings-you-can-change) lists every setting.
 
 ## Checks
 

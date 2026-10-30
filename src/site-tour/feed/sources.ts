@@ -6,8 +6,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode and Qwen Code, none of the six installed
- * here, and status files. Then the other machine, connected over SSH.
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent, none of the
+ * seven installed here, and status files. Then the other machine, connected
+ * over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -357,6 +358,51 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Read from Hermes Agent's turn leases with sqlite3 on macOS and Linux. Nothing of Hermes Agent's is read on Windows.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "From an open question, and from an approval label Hermes Agent saves at most once a minute, so that wait shows late.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "When Hermes Agent ends a session. One whose process was killed, or whose gateway stopped, shows as idle.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When a turn ends on an error Hermes Agent records. One that overflows the model's context shows as idle.",
+  },
+  names: { level: "yes" },
+  jump: {
+    level: "no",
+    reason:
+      "Hermes Agent's database names no terminal or tab, and its turns run in a gateway shared by other sessions.",
+  },
+  "quiet-for": {
+    level: "no",
+    reason:
+      "Hermes Agent keeps every session in one database, so no file shows when one session was last written.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout does not read Hermes Agent's token counts yet." },
+  stop: {
+    level: "no",
+    reason:
+      "A Hermes Agent turn runs in a gateway process other sessions share, so no session can be stopped alone.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Hermes Agent keeps approvals and questions in its own memory, and Agent Lookout does not talk to its gateway.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -562,6 +608,29 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Hermes Agent is not installed: its folder is looked for, and nothing more.
+      id: "hermes-agent",
+      label: "Hermes Agent",
+      state: "unavailable",
+      detail:
+        "Hermes Agent was not found: there is no ~/.hermes folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Hermes folder", value: "~/.hermes" },
+        { label: "Profiles", value: "none found" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Command",
+          value:
+            'sqlite3 -init /dev/null -batch -json [-cmd ".timeout 1000"] <database> <fixed query>',
+        },
+        { label: "Command run", value: "when a database changes" },
+        { label: "sqlite3 for a live -wal", value: "not needed yet" },
+        { label: "Process check", value: "signal 0 to a running turn's process, every 2 seconds" },
+      ],
+      capabilities: HERMES_AGENT_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -596,6 +665,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Gemini CLI there", value: "Not found" },
         { label: "OpenCode there", value: "Not found" },
         { label: "Qwen Code there", value: "Not found" },
+        { label: "Hermes Agent there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

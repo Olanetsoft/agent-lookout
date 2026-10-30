@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Hermes Agent sessions, read from each of its profiles' databases on macOS and Linux: working, needing you, idle, failed or finished, by title and folder (#149). Agent Lookout reads `~/.hermes/state.db` and `~/.hermes/profiles/<name>/state.db` with the system's `sqlite3`, asking two fixed questions when a database changes, for each conversation's folder, title, times and a few short fields of its newest message and its turn lease, never the text of a message. A turn that holds a live lease is working, a question Hermes Agent asks you needs you at once, and a wait for your approval needs you 10 to 70 seconds late, since Hermes Agent saves that wait at most once a minute. A session whose Hermes Agent or gateway was killed stays idle. While Hermes Agent has commits in a database's `-wal`, that database is read only with a `sqlite3` that passes Hermes Agent's own test for SQLite's WAL-reset bug, 3.51.3 or newer for most, and the card says which one it found when none does. `AGENT_LOOKOUT_HERMES_HOME` names another folder to read. A profile that cannot be read for a moment, on this computer or on another machine you watch over SSH, drops out of Sessions until it is read again, but its sessions are not shown in Events as ended and its waits are not announced again. Nothing of Hermes Agent's is read on Windows. This was built from Hermes Agent's source at v0.22.5, and has not yet been checked on a computer running it.
+
 ### Fixed
 
 - On a phone, with more than one agent found, a session row such as "Claude Code · Working 5m" takes two lines at 375px wide, not three. Jump and Resume now sit at the right end of the name's line, so the line under the name no longer gives up room to a column for them. A longer line still goes on to a third rather than be cut. Below 1181px wide, where the Events log sits under Sessions, a long log now ends a little above its card's edge, as it does beside Sessions, instead of on it (#146).
@@ -25,6 +29,8 @@ The Mac app can keep the Mac awake while your sessions work or wait, Antigravity
 - The email channel's nodemailer is updated to 10.3.1, past three advisories in how it parses addresses. Agent Lookout only ever gave it addresses it had already checked, which those advisories cannot reach, but the Mac app carries its own copy, which only a new release updates (#199).
 
 - When you watch another machine over SSH and its Qwen Code could not be read for a moment, that machine's Qwen Code sessions no longer show in Events as ended and then as appeared again. They are compared on their own, as its other agents' sessions are (#188).
+
+- When you watch another machine over SSH and one of its agents could not be read for a moment, a session of that agent that was waiting for you no longer sends a second notice for the same wait once it is read again (#149).
 
 ## 0.2.13 - 2026-10-14
 
