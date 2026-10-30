@@ -10,13 +10,14 @@ import { linesDrawn } from "@tests/support/browser/lines";
 
 const ready = (answer: LastMessageResponse): LastMessageReading => ({ status: "ready", answer });
 const said = (text: string, cut = false) => ready({ message: { text, cut } });
+const saidStart = (text: string) => ready({ message: { text, cut: false, endCut: true } });
 
 /** The part as the details hold it: a block as wide as the dialog's body leaves. */
 async function show(reading: LastMessageReading, remote = false, width = 712) {
   const screen = await render(
     <div data-testid='part' style={{ width }}>
       <button type='button'>Before</button>
-      <LastMessage reading={reading} remote={remote} agent='Antigravity CLI' />
+      <LastMessage reading={reading} remote={remote} agent='Gemini CLI' />
     </div>,
   );
   return { screen, part: page.getByTestId("part").element() as HTMLElement };
@@ -57,6 +58,7 @@ test("the text is shown as it was written: markup and Markdown as characters, ne
   expect(style.whiteSpace).toBe("pre-wrap");
   expect(style.userSelect).not.toBe("none");
   expect(part.querySelector('[data-part="last-message-cut"]')).toBeNull();
+  expect(part.querySelector('[data-part="last-message-end-cut"]')).toBeNull();
 });
 
 test("a message whose start was left out says so above it, quietly", async () => {
@@ -65,6 +67,48 @@ test("a message whose start was left out says so above it, quietly", async () =>
   expect(cut.textContent).toBe("The start of a longer message is left out.");
   expect(getComputedStyle(cut).color).toBe(rgbOf("var(--ink-muted)"));
   expect(cut.compareDocumentPosition(text(part)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(part.querySelector('[data-part="last-message-end-cut"]')).toBeNull();
+});
+
+test("a message whose end its transcript left out says so below it, quietly, as the start line does above", async () => {
+  const { screen, part } = await show(said("the end of a long reply.", true));
+  const startLine = part.querySelector('[data-part="last-message-cut"]') as HTMLElement;
+  const startStyle = getComputedStyle(startLine);
+  const caption = { size: startStyle.fontSize, weight: startStyle.fontWeight };
+
+  await screen.rerender(
+    <div data-testid='part' style={{ width: 712 }}>
+      <button type='button'>Before</button>
+      <LastMessage
+        reading={saidStart("The start of a long reply.")}
+        remote={false}
+        agent='Gemini CLI'
+      />
+    </div>,
+  );
+  const end = part.querySelector('[data-part="last-message-end-cut"]') as HTMLElement;
+  expect(end.textContent).toBe("The end of a longer message is left out.");
+  expect(text(part)?.textContent).toBe("The start of a long reply.");
+  expect(part.querySelector('[data-part="last-message-cut"]')).toBeNull();
+  // Below the text, in the same quiet caption as the line that says the start is left out.
+  expect(text(part)!.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const style = getComputedStyle(end);
+  expect(style.color).toBe(rgbOf("var(--ink-muted)"));
+  expect({ size: style.fontSize, weight: style.fontWeight }).toEqual(caption);
+  expect(style.fontFamily).not.toMatch(/Mono/);
+});
+
+test("the line under a long start stays in sight outside its scrolling block", async () => {
+  const long = Array.from({ length: 40 }, (_, index) => `Line ${index + 1} of the reply.`).join(
+    "\n",
+  );
+  const { part } = await show(saidStart(long));
+  await expect.poll(() => scroll(part).getAttribute("tabindex")).toBe("0");
+  const end = part.querySelector('[data-part="last-message-end-cut"]') as HTMLElement;
+  expect(scroll(part).contains(end)).toBe(false);
+  expect(end.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    scroll(part).getBoundingClientRect().bottom,
+  );
 });
 
 test.each([
@@ -78,7 +122,7 @@ test.each([
   ],
   [
     { message: null, reason: "not-read" },
-    "Agent Lookout does not read what Antigravity CLI sessions say.",
+    "Agent Lookout does not read what Gemini CLI sessions say.",
   ],
   [{ message: null, reason: "not-found" }, "Its transcript was not found."],
   [{ message: null, reason: "unreadable" }, "Its transcript could not be read."],
@@ -139,7 +183,7 @@ test("a short message is no Tab stop, and a long one scrolls in its block, which
   await screen.rerender(
     <div data-testid='part' style={{ width: 712 }}>
       <button type='button'>Before</button>
-      <LastMessage reading={said(long)} remote={false} agent='Antigravity CLI' />
+      <LastMessage reading={said(long)} remote={false} agent='Gemini CLI' />
     </div>,
   );
   await expect.poll(() => scroll(part).getAttribute("tabindex")).toBe("0");
@@ -166,7 +210,7 @@ test("past the first reading, nothing in it is announced as it changes: a messag
     screen.rerender(
       <div data-testid='part' style={{ width: 712 }}>
         <button type='button'>Before</button>
-        <LastMessage reading={reading} remote={false} agent='Antigravity CLI' />
+        <LastMessage reading={reading} remote={false} agent='Gemini CLI' />
       </div>,
     );
   await again(said("Second."));
@@ -183,17 +227,24 @@ test("past the first reading, nothing in it is announced as it changes: a messag
 });
 
 test.each(["dark", "light"])(
-  "in the %s theme nothing of it is warm, a message, its cut line or a reason",
+  "in the %s theme nothing of it is warm, a message, its cut lines or a reason",
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
     const { screen, part } = await show(said("A reply.", true));
     expect(warmPaint(part)).toEqual([]);
     await screen.rerender(
       <div data-testid='part' style={{ width: 712 }}>
+        <LastMessage reading={saidStart("A reply.")} remote={false} agent='Gemini CLI' />
+      </div>,
+    );
+    expect(part.querySelector('[data-part="last-message-end-cut"]')).not.toBeNull();
+    expect(warmPaint(part)).toEqual([]);
+    await screen.rerender(
+      <div data-testid='part' style={{ width: 712 }}>
         <LastMessage
           reading={ready({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" })}
           remote={false}
-          agent='Antigravity CLI'
+          agent='Gemini CLI'
         />
       </div>,
     );

@@ -77,6 +77,14 @@ export const HOLD_MS = 5 * 60 * 1000;
 /** Answering, as the collector says it once the plugin's requests have reached it. */
 const ANSWERING: AnsweringStatus = { state: "on", plugin: "seen", holdMs: HOLD_MS };
 
+/** The agents whose sessions' last messages the collector reads, as it answers for them. */
+const READ_SOURCES: ReadonlySet<string> = new Set([
+  "claude-code",
+  "codex",
+  "antigravity-cli",
+  "antigravity-app",
+]);
+
 /**
  * What is shown of the hour: one of its moments, and for the answered one,
  * when the wait was answered, in epoch milliseconds. An answer before the end
@@ -117,8 +125,8 @@ export interface Feed {
   /**
    * `/api/sessions/last-message` for one session at a moment, with the present
    * `now`, or null for a session that is not listed then, which the collector
-   * answers 404. Only a Claude Code or Codex session on this computer is
-   * read, and a Claude Code session's answer holds the token counts of the
+   * answers 404. Only a Claude Code, Codex, Antigravity CLI or Antigravity
+   * session on this computer is read, and a Claude Code session's answer holds the token counts of the
    * same reply.
    */
   lastMessage(id: string, shown: Shown, now: number): LastMessageResponse | null;
@@ -436,8 +444,9 @@ export function createFeed(t0: number): Feed {
     lastMessage(id, shown, now) {
       const session = feed.snapshot(shown, now).sessions.find((listed) => listed.id === id);
       if (!session) return null;
-      // As the collector answers: Claude Code and Codex are read, another agent or another machine is not.
-      if (session.source !== "claude-code" && session.source !== "codex") {
+      // As the collector answers: Claude Code, Codex, the Antigravity CLI and
+      // Antigravity are read, another agent or another machine is not.
+      if (!READ_SOURCES.has(session.source)) {
         return { message: null, reason: "not-read" };
       }
       const hour = SESSIONS.find((one) => one.id === id);

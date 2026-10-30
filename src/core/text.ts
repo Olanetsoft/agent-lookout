@@ -39,12 +39,16 @@ export const MAX_WAITING_TEXT_LENGTH = 200;
  */
 export const MAX_NOTICE_TEXT_LENGTH = 240;
 
-/** The most kept of what a session last said, in characters: its end. */
+/**
+ * The most kept of what a session last said, in characters: its end, or its
+ * start when its transcript left the end out (`messageStart`).
+ */
 export const MAX_MESSAGE_LENGTH = 2000;
 
 /**
  * How far into what is kept of a long message a line break may be and still
  * be where it starts, in characters. Past that, it starts where it was cut.
+ * The same reach from the other side, for `messageStart`, says where it ends.
  */
 const MESSAGE_START_REACH = 200;
 
@@ -101,6 +105,32 @@ export function oneLine(text: string, max = MAX_LINE_LENGTH): string {
 }
 
 /**
+ * Text another program wrote, made fit to show on as many lines as it was
+ * written on, at any length: `\r\n`, `\r` and the line and paragraph
+ * separators become `\n`, a tab two spaces, and any other control character a
+ * space; the marks that reorder text are taken out; spaces at the end of a
+ * line are trimmed, three or more line breaks in a row become two, and the
+ * whole is trimmed. Empty, or not text, is none.
+ */
+function messageLines(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const lines = value
+    .replace(/\r\n?|[\u2028\u2029]/g, "\n")
+    .replace(/\t/g, "  ")
+    .replace(CONTROL_BUT_LINE_BREAK, " ")
+    .replace(REORDERING, "")
+    .split("\n");
+  // Each line is trimmed on its own, not by a pattern anchored at line ends,
+  // which takes time that grows with the square of a long run of spaces.
+  const text = lines
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text === "" ? undefined : text;
+}
+
+/**
  * Any text made fit to show as what a session last said, kept on as many
  * lines as it was written on.
  *
@@ -117,25 +147,39 @@ export function oneLine(text: string, max = MAX_LINE_LENGTH): string {
  * Empty, or not text, is none.
  */
 export function messageText(value: unknown): { text: string; cut: boolean } | undefined {
-  if (typeof value !== "string") return undefined;
-  const lines = value
-    .replace(/\r\n?|[\u2028\u2029]/g, "\n")
-    .replace(/\t/g, "  ")
-    .replace(CONTROL_BUT_LINE_BREAK, " ")
-    .replace(REORDERING, "")
-    .split("\n");
-  // Each line is trimmed on its own, not by a pattern anchored at line ends,
-  // which takes time that grows with the square of a long run of spaces.
-  const text = lines
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  if (text === "") return undefined;
+  const text = messageLines(value);
+  if (text === undefined) return undefined;
   const characters = Array.from(text);
   if (characters.length <= MAX_MESSAGE_LENGTH) return { text, cut: false };
   const kept = characters.slice(-MAX_MESSAGE_LENGTH);
   const lineBreak = kept.indexOf("\n");
   const start = lineBreak !== -1 && lineBreak < MESSAGE_START_REACH ? lineBreak + 1 : 0;
   return { text: kept.slice(start).join("").trimStart(), cut: true };
+}
+
+/**
+ * The start of a message whose end its transcript left out, made fit to show
+ * as `messageText` makes it, for a reply the agent's own file holds only the
+ * first part of.
+ *
+ * - It is cleaned exactly as `messageText` cleans it.
+ * - The first 2,000 characters are kept. When a line break falls within the
+ *   last 200 of those, it ends before it, and what is kept is trimmed at its
+ *   end too. It is cut between code points, so no letter is broken in two.
+ *
+ * `cut` is left out: the start is all there, and what is missing is the end,
+ * which the caller says. Empty, or not text, is none.
+ */
+export function messageStart(value: unknown): { text: string } | undefined {
+  const text = messageLines(value);
+  if (text === undefined) return undefined;
+  const characters = Array.from(text);
+  if (characters.length <= MAX_MESSAGE_LENGTH) return { text };
+  const kept = characters.slice(0, MAX_MESSAGE_LENGTH);
+  const lineBreak = kept.lastIndexOf("\n");
+  const end =
+    lineBreak !== -1 && lineBreak >= MAX_MESSAGE_LENGTH - MESSAGE_START_REACH
+      ? lineBreak
+      : MAX_MESSAGE_LENGTH;
+  return { text: kept.slice(0, end).join("").trimEnd() };
 }

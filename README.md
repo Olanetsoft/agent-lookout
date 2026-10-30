@@ -41,7 +41,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 - **Needs you:** the sessions waiting for your permission or an answer, longest first, with what a Claude Code session is asking.
 - **Sessions:** everything else, by status, by repository or on a board, with folder and branch.
 - **Answer and act:** Allow or Deny a Claude Code prompt, jump to its terminal or editor, or stop it after you confirm.
-- **Details:** a Claude Code or Codex session shows what it last said, and Claude Code, Codex and Antigravity sessions show how many tokens the newest reply took.
+- **Details:** Claude Code, Codex and Antigravity sessions show what they last said and how many tokens the newest reply took.
 - **Notifications:** on your desktop, by email, by webhook or on your phone, when a session waits or finishes. All off until you turn them on.
 - **Your own agents:** any agent that writes one small JSON file per session shows up too.
 

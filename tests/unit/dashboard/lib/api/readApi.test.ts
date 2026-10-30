@@ -1353,6 +1353,28 @@ describe("what a session last said", () => {
     expect(read).toEqual({ message: { text: `${"a".repeat(1_999)}z`, cut: true } });
   });
 
+  test("a message whose end the transcript left out keeps endCut, and its text is made fit to show as a start", () => {
+    const sent = { message: { text: "The start of a long reply.", cut: false, endCut: true } };
+    expect(readLastMessage(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+    expect(
+      readLastMessage({
+        message: { text: " One‮\r\nTwo\tthree\u0007  \n\n\n\nFour ", cut: false, endCut: true },
+      }),
+    ).toEqual({ message: { text: "One\nTwo  three\n\nFour", cut: false, endCut: true } });
+  });
+
+  test("a start longer than the collector sends keeps its first 2,000 characters, and its start is never cut", () => {
+    const read = readLastMessage({
+      message: { text: `a${"b".repeat(3_000)}`, cut: false, endCut: true },
+    });
+    expect(read).toEqual({ message: { text: `a${"b".repeat(1_999)}`, cut: false, endCut: true } });
+  });
+
+  test("an answer with no endCut has none", () => {
+    const read = readLastMessage({ message: { text: "Done.", cut: false } });
+    expect(read?.message).not.toHaveProperty("endCut");
+  });
+
   test("each reason is read, with the setting that turned it off", () => {
     for (const reason of [
       "not-read",
@@ -1427,6 +1449,13 @@ describe("what a session last said", () => {
     { message: { text: "Done.", cut: "no" } },
     { message: { text: 42, cut: false } },
     { message: { text: " \n\t ", cut: false } },
+    { message: { text: "Done.", cut: false, endCut: false } },
+    { message: { text: "Done.", cut: false, endCut: "true" } },
+    { message: { text: "Done.", cut: false, endCut: 1 } },
+    { message: { text: "Done.", cut: false, endCut: null } },
+    { message: { text: "Done.", endCut: true } },
+    { message: { text: " \n\t ", cut: false, endCut: true } },
+    { message: { text: 42, cut: false, endCut: true } },
     { message: null },
     { message: null, reason: "ended" },
     { message: null, reason: "off", setting: "AGENT_LOOKOUT_SOMETHING" },

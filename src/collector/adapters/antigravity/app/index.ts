@@ -10,6 +10,8 @@ import type {
 } from "../../../../core/sessions/session.ts";
 import { tildify } from "../../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../../poller.ts";
 import type { Adapter, AdapterResult } from "../../adapter.ts";
 import { every } from "../../words.ts";
@@ -20,6 +22,7 @@ import {
   writtenRecently,
   type ConversationFiles,
 } from "../shared/conversations.ts";
+import { createAntigravityLastMessages } from "../shared/lastMessages.ts";
 import { antigravitySession, APP_PROFILE } from "../shared/toSession.ts";
 import { createTranscriptReader, type TranscriptState } from "../shared/transcriptFile.ts";
 import {
@@ -190,6 +193,21 @@ export interface AntigravityAppAdapterOptions {
   processCheckMs?: number;
   /** How often chats not written for a day are looked at again. Defaults to 30 seconds. */
   oldRefreshMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Antigravity 2.0 adapter, which reads what its chats last said when asked. */
+export interface AntigravityAppAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many chats it keeps a last message for, in memory. For the tests that
+   * check none is kept once its chat has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** Where the folder was named. */
@@ -225,6 +243,15 @@ export function writtenJustNow(lastWriteAt: number | null, now: number): boolean
  * while its files are written, since steps not done are not in its
  * transcript yet.
  *
+ * What a chat last said is read from the end of the transcript the last poll
+ * read it from, but only when `lastMessage` is asked for it, which the route
+ * does while a page has the chat's details open, and only for a chat that
+ * poll listed (`../shared/lastMessages.ts`). No poll reads it, and it is never
+ * put on a session. While a chat works, it is the reply before the one under
+ * way, since that one is not in the transcript yet.
+ * `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so does
+ * `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * Antigravity not being installed costs nothing: when its folder is missing,
  * the adapter says so and looks again only once a minute, with a single
  * `stat`, and runs neither `ps` nor `sqlite3`.
@@ -233,7 +260,9 @@ export function writtenJustNow(lastWriteAt: number | null, now: number): boolean
  * `~/.gemini/antigravity`. Someone who sets the variable means that folder: if
  * it holds no chats, that is an answer, not a missing app.
  */
-export function createAntigravityAppAdapter(options: AntigravityAppAdapterOptions = {}): Adapter {
+export function createAntigravityAppAdapter(
+  options: AntigravityAppAdapterOptions = {},
+): AntigravityAppAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -256,6 +285,13 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
   const titles = createTitleReader({ home, io });
   const summaries = options.summaries ?? createSummariesReader({ home, io, platform });
   const waits = options.waits ?? createWaitReader({ platform });
+  // What a chat last said, read only when it is asked for. With either setting
+  // off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createAntigravityLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -264,6 +300,8 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
   /** What `ps` last said, and when. Null before it was first asked. */
   let lastHub: HubAnswer | null = null;
   let hubAt: number | null = null;
+  /** The transcript each chat the last poll listed was read from, by its id: the only file its last message is read from. */
+  let listedFiles: ReadonlyMap<string, string> = new Map();
 
   const system = platform === "win32" ? "Windows" : platform === "linux" ? "Linux" : "this system";
   const commandRun =
@@ -272,6 +310,9 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     platform === "win32" ? "not on Windows" : "with sqlite3, when the file changes";
   const waitsRead =
     platform === "win32" ? "not on Windows" : "with sqlite3, when a chat's database changes";
+  /** What Sources says of the last-message read: when it reads the end of a transcript, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null ? "end of a chat's transcript, while its details are open" : "Off";
   /** What the card always says, after how it reads. */
   const alwaysNotes = `${platform === "win32" ? WINDOWS_NEEDS_YOU_NOTE : NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
@@ -284,6 +325,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       { label: "Folders file", value: summariesName },
       { label: "Folders read", value: foldersRead },
       { label: "Waits read", value: waitsRead },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -381,6 +423,9 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
+    // A poll that returns early lists no chat. Until this poll ends, the last
+    // poll's list stands.
+    listedFiles = new Map();
 
     // A missing folder is believed missing for a while, so a machine without
     // Antigravity pays nothing on most polls. A clock set back counts as time enough.
@@ -443,6 +488,8 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     /** The transcripts read this poll, whose cache is worth keeping. */
     const kept = new Set<string>();
     const sessions: Session[] = [];
+    /** The transcript each chat was read from, by its id, for its last message. */
+    const transcripts = new Map<string, string>();
     let unknownStep = false;
     let waitFailed = false;
     let waitNoSqlite = false;
@@ -485,6 +532,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
       });
       if (session.status === "unknown") unknownStep = true;
       sessions.push(session);
+      transcripts.set(session.id, files.transcript);
     }
     reader.keepOnly(kept);
     const shownIds = new Set(sessions.map((session) => session.id.slice(SOURCE_ID.length + 1)));
@@ -510,6 +558,7 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     detail += foldersNote(read?.state ?? null);
     detail += waitsNote(waitFailed, waitNoSqlite, read?.state ?? null);
     if (unknownStep) detail += ` ${UNKNOWN_STEP_NOTE}`;
+    listedFiles = transcripts;
     const answered = result("ok", detail, every(pollIntervalMs), checkedAt, basis);
     return { ...answered, sessions };
   }
@@ -521,10 +570,15 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
     lookingIn: `Looking for Antigravity sessions in ${brainName}.`,
     async poll() {
       try {
-        return await poll();
+        const answered = await poll();
+        // The chats whose last message may be asked for until the next poll.
+        lastMessages?.keep(listedFiles);
+        return answered;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // chat, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Antigravity sessions.",
@@ -532,6 +586,15 @@ export function createAntigravityAppAdapter(options: AntigravityAppAdapterOption
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

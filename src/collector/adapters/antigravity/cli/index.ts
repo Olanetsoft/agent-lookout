@@ -21,6 +21,8 @@ import type {
 } from "../../../../core/sessions/session.ts";
 import { sameFolderOnDisk, tildify } from "../../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../../poller.ts";
 import type { Adapter, AdapterResult } from "../../adapter.ts";
 import { every } from "../../words.ts";
@@ -39,6 +41,7 @@ import {
   type ConversationFiles,
 } from "../shared/conversations.ts";
 import { createTitleReader } from "../shared/annotations.ts";
+import { createAntigravityLastMessages } from "../shared/lastMessages.ts";
 import { createOtherFolderCheck } from "./otherFolders.ts";
 import { antigravitySession, CLI_PROFILE } from "../shared/toSession.ts";
 import { createTranscriptReader, type TranscriptState } from "../shared/transcriptFile.ts";
@@ -192,6 +195,21 @@ export interface AntigravityAdapterOptions {
   processCheckMs?: number;
   /** How often conversations not written for a day are looked at again. Defaults to 30 seconds. */
   oldRefreshMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Antigravity CLI adapter, which reads what its conversations last said when asked. */
+export interface AntigravityAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many conversations it keeps a last message for, in memory. For the
+   * tests that check none is kept once its conversation has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** Where the folder was named. */
@@ -249,6 +267,14 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  * needs-you while its program's log says agy waits for approval of a tool,
  * failed or finished.
  *
+ * What a conversation last said is read from the end of the transcript the
+ * last poll read it from, but only when `lastMessage` is asked for it, which
+ * the route does while a page has the conversation's details open, and only
+ * for a conversation that poll listed (`../shared/lastMessages.ts`). No poll
+ * reads it, and it is never put on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off`
+ * stops it, and so does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no
+ * transcript is read.
+ *
  * agy not being installed costs nothing: when its folder is missing, the
  * adapter says so and looks again only once a minute, with a single `stat`,
  * and runs no `ps`.
@@ -265,7 +291,9 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  * `~/.gemini/antigravity-cli`. Someone who sets the variable means that
  * folder: if it holds no conversations, that is an answer, not a missing agy.
  */
-export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}): Adapter {
+export function createAntigravityAdapter(
+  options: AntigravityAdapterOptions = {},
+): AntigravityAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -295,6 +323,13 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     platform,
     name: (target) => tildify(target, homeDir),
   });
+  // What a conversation last said, read only when it is asked for. With either
+  // setting off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createAntigravityLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -307,6 +342,13 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
   let lastHolding: Holding | null = null;
   /** What the card says of the Antigravity IDE's folder, as last looked at. Null while it is not there. */
   let othersNote: string | null = null;
+  /** What Sources says of the last-message read: when it reads the end of a transcript, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null
+      ? "end of a conversation's transcript, while its details are open"
+      : "Off";
+  /** The transcript each conversation the last poll listed was read from, by its id: the only file its last message is read from. */
+  let listedFiles: ReadonlyMap<string, string> = new Map();
 
   const commandRun =
     platform === "win32" ? "not run on Windows" : `${every(processCheckMs)} at most`;
@@ -317,6 +359,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       { label: "Read", value: read },
       { label: "Command", value: `ps ${AGY_TABLE_ARGS.join(" ")}` },
       { label: "Command run", value: commandRun },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -394,6 +437,9 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
+    // A poll that returns early lists no conversation. Until this poll ends,
+    // the last poll's list stands.
+    listedFiles = new Map();
 
     // Each chat is listed once: a folder also read for Antigravity 2.0 is left to it.
     if (await sameFolderOnDisk(home, appHome, platform, io)) {
@@ -467,6 +513,8 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     /** The transcripts read this poll, whose cache is worth keeping. */
     const read = new Set<string>();
     const sessions: Session[] = [];
+    /** The transcript each conversation was read from, by its id, for its last message. */
+    const transcripts = new Map<string, string>();
     let unknownStep = false;
     for (const files of conversations) {
       const open = holding?.held.has(files.id) ?? false;
@@ -498,6 +546,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       });
       if (session.status === "unknown") unknownStep = true;
       sessions.push(session);
+      transcripts.set(session.id, files.transcript);
     }
     reader.keepOnly(read);
     titles.keepOnly(new Set(sessions.map((session) => session.id.slice(SOURCE_ID.length + 1))));
@@ -515,6 +564,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       basis = BASIS_UNMATCHED;
     }
     if (unknownStep) detail += ` ${UNKNOWN_STEP_NOTE}`;
+    listedFiles = transcripts;
     const answer = result("ok", detail, every(pollIntervalMs), checkedAt, basis);
     return { ...answer, sessions };
   }
@@ -526,10 +576,15 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
     lookingIn: `Looking for Antigravity CLI sessions in ${brainName}.`,
     async poll() {
       try {
-        return await poll();
+        const answer = await poll();
+        // The conversations whose last message may be asked for until the next poll.
+        lastMessages?.keep(listedFiles);
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // conversation, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Antigravity CLI sessions.",
@@ -537,6 +592,15 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

@@ -292,3 +292,79 @@ export function sqliteJson(rows: SummaryRow[]): string {
 export function workspaceUris(...folders: string[]): string {
   return JSON.stringify(folders.map((folder) => `file://${encodeURI(folder)}`));
 }
+
+// What a step's `content` holds, as a check of shape alone found it on
+// Antigravity 2.23.1 and agy 1.3.4, written up in docs/adapters/antigravity.md:
+// always a string; left out of a reply that only calls tools; and named in
+// `truncated_fields` when the transcript cut it. The words are invented.
+
+/** Words put where a last message must never come from: a reply's thinking, its tool calls and its media. */
+export const NEVER_SHOWN = {
+  thinking: "PRIVATE-THINKING",
+  toolCall: "PRIVATE-TOOL-CALL",
+  media: "PRIVATE-MEDIA",
+} as const;
+
+export interface ReplyFields {
+  index: number;
+  at: number;
+  /**
+   * The reply's `content`, as any value, so a list or a number can be written
+   * too. Left out, the line has no `content` key, as a reply that only calls
+   * tools has none.
+   */
+  content?: unknown;
+  /** Defaults to `PLANNER_RESPONSE`. Another type, or the same with agy's prefix, can be written. */
+  type?: string;
+  status?: string;
+  /** Tool calls the reply asks for, by tool name, with `NEVER_SHOWN.toolCall` in their arguments. */
+  tools?: string[];
+  /** The fields agy says it cut on this line. */
+  truncated?: unknown;
+  /** Token counts on the line, under the keys agy writes them by. */
+  counts?: ReplyCounts;
+}
+
+/**
+ * One reply's line, with its newline: `content` only when it is given, and
+ * `thinking` and `media` that hold words a last message must never show.
+ */
+export function replyStep(fields: ReplyFields): string {
+  const line: Record<string, unknown> = {
+    step_index: fields.index,
+    source: "MODEL",
+    type: fields.type ?? "PLANNER_RESPONSE",
+    status: fields.status ?? "DONE",
+    created_at: at(fields.at),
+  };
+  if ("content" in fields) line.content = fields.content;
+  line.thinking = `Thinking: ${NEVER_SHOWN.thinking}`;
+  if (fields.tools) {
+    line.tool_calls = fields.tools.map((name) => ({
+      name,
+      args: { CommandLine: `echo ${NEVER_SHOWN.toolCall}` },
+    }));
+  }
+  line.media = [{ mime_type: "text/plain", text: NEVER_SHOWN.media }];
+  if (fields.truncated !== undefined) line.truncated_fields = fields.truncated;
+  if (fields.counts) Object.assign(line, fields.counts);
+  return `${JSON.stringify(line)}\n`;
+}
+
+/** A step that is not a reply, such as `USER_INPUT`, `GENERIC` or `SYSTEM_MESSAGE`, with this `content`. */
+export function textStep(index: number, type: string, ms: number, content: unknown): string {
+  return `${JSON.stringify({
+    step_index: index,
+    source:
+      type === "USER_INPUT" ? "USER_EXPLICIT" : type === "SYSTEM_MESSAGE" ? "SYSTEM" : "MODEL",
+    type,
+    status: "DONE",
+    created_at: at(ms),
+    content,
+  })}\n`;
+}
+
+/** Where a conversation's whole transcript is, beside the one that may cut a field: never read. */
+export function fullTranscriptPath(home: string, id: string): string {
+  return `${home}/brain/${id}/.system_generated/logs/transcript_full.jsonl`;
+}

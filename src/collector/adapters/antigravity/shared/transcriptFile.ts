@@ -39,6 +39,11 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.t
  * over, since agy can leave one broken when it rewrites the file as it
  * compacts a conversation.
  *
+ * What a session last said, a reply's `content`, is not read here either:
+ * `lastMessages.ts` reads it from the end of this same file, and only when
+ * `GET /api/sessions/last-message` asks for a listed session. No poll reads
+ * it, and this reader reads no more for it.
+ *
  * Every read is bounded: the first line within 256 KiB, and at most the last
  * 2 MiB. After the first read, only what was added since is read. The file is
  * not only added to: agy rewrites it when it compacts a conversation, which is

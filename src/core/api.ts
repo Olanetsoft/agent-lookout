@@ -247,6 +247,10 @@ export type LastMessageSetting = (typeof LAST_MESSAGE_SETTINGS)[number];
  * text it last said, at most its last 2,000 characters, with `cut` true when
  * the start of a longer message is left out, or why there is none.
  *
+ * `endCut` is there, and true, only when the transcript itself cut the end of
+ * the reply, as Antigravity can: the text is then the reply's start, at most
+ * its first 2,000 characters, and `cut` is false. Left out otherwise.
+ *
  * Either can carry `tokens`, the token counts of the session's newest reply,
  * read from the same end of its transcript: only for a Claude Code session,
  * whose counts are in no other answer, and only when they could be right.
@@ -257,7 +261,7 @@ export type LastMessageSetting = (typeof LAST_MESSAGE_SETTINGS)[number];
  * `Retry-After: 1`, while more transcripts are asked for than are read in a second.
  */
 export type LastMessageResponse =
-  | { message: { text: string; cut: boolean }; tokens?: TokenCounts }
+  | { message: { text: string; cut: boolean; endCut?: true }; tokens?: TokenCounts }
   | {
       message: null;
       reason: LastMessageReason;

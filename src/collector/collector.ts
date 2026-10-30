@@ -467,7 +467,9 @@ export function createCollector(options: CollectorOptions): Collector {
     ...options.remotes,
   });
   if (remotes.problem !== null) warn(remotesProblemLine(remotes.problem));
-  // One set of limits for every agent's last messages: four reads a second, eight kept.
+  // One set of limits for every agent's last messages, those of Claude Code,
+  // Codex, the Antigravity CLI and Antigravity together: four reads a second,
+  // eight kept.
   const lastMessageLimits = createTailLimits();
   const localAdapters = options.adapters ?? [
     createClaudeCodeAdapter({
@@ -483,8 +485,20 @@ export function createCollector(options: CollectorOptions): Collector {
       feedTimeoutMs: options.claudeFeedTimeoutMs,
     }),
     createCodexAdapter({ env: options.env, now, pollIntervalMs: intervalMs, lastMessageLimits }),
-    createAntigravityAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
-    createAntigravityAppAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    createAntigravityAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      lastMessageLimits,
+    }),
+    createAntigravityAppAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      lastMessageLimits,
+    }),
     createMistralVibeAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     createGeminiCliAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
     createOpencodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),

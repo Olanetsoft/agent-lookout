@@ -1441,6 +1441,33 @@ test("a message whose start was left out says so", async () => {
   );
 });
 
+test("a message whose end its transcript left out is shown from its start, and says so below it", async () => {
+  // Longer than is shown, so the page's own rule for a start decides what is kept: its
+  // first 2,000 characters, ending at the line break near their end, never its last ones.
+  const kept = "Kept. ".repeat(310).trimEnd();
+  saying(() =>
+    json({ message: { text: `${kept}\n${"x".repeat(1_000)}`, cut: false, endCut: true } }),
+  );
+  await renderPanel(CLAUDE_ID);
+  await expect.poll(() => messageText()?.textContent).toBe(kept);
+  const end = document.querySelector('[data-part="last-message-end-cut"]');
+  expect(end?.textContent).toBe("The end of a longer message is left out.");
+  expect(
+    messageText()!.compareDocumentPosition(end!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(document.querySelector('[data-part="last-message-cut"]')).toBeNull();
+});
+
+test("an answer whose endCut is anything but true is one the page cannot read", async () => {
+  saying(() => json({ message: { text: "Done.", cut: false, endCut: "yes" } }));
+  await renderPanel(CLAUDE_ID);
+  await expect
+    .poll(stateLine)
+    .toBe("Its last message could not be read. The page asks again every two seconds.");
+  expect(messageText()).toBeNull();
+  expect(document.querySelector('[data-part="last-message-end-cut"]')).toBeNull();
+});
+
 test.each([
   [
     () => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" }),

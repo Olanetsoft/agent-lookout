@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- An Antigravity CLI session's details, and an Antigravity chat's, show what it last said, under Last message, as a Codex session's do: the text of its newest reply, up to its last 2,000 characters. Agent Lookout reads it from the end of the session's own `transcript.jsonl`, the last 256 KB, only while its details are open, and keeps it in memory for at most 15 seconds after the last ask. It takes the reply's text alone, never a prompt, the model's thinking, a tool call, a tool's output or media, and never opens `transcript_full.jsonl`. When Antigravity cut a long reply short in that file, up to its first 2,000 characters show, with a line saying the end is left out. While a chat works, it shows the reply before the one under way, since Antigravity writes a step only once it is done. Each Antigravity card in Sources says so, under Last message read. `GET /api/sessions/last-message` answers for these sessions now, without `tokens`, and with `endCut` for a reply whose end was cut. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` turns it off (#141).
+
 ### Fixed
 
 - Antigravity chats are named by the title Antigravity gave them, not by their folder. Antigravity 2.23 writes another field on the same line as a chat's title, and Agent Lookout took a title only from a line holding nothing else. It now reads the title in every form that file's format allows for it, and still reads no other field of that file (#140).
