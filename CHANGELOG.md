@@ -8,6 +8,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Antigravity chats are named by the title Antigravity gave them, not by their folder. Antigravity 2.23 writes another field on the same line as a chat's title, and Agent Lookout took a title only from a line holding nothing else. It now reads the title in every form that file's format allows for it, and still reads no other field of that file (#140).
 
+- When you watch another machine over SSH and its Qwen Code could not be read for a moment, that machine's Qwen Code sessions no longer show in Events as ended and then as appeared again. They are compared on their own, as its other agents' sessions are (#188).
+
 ## 0.2.13 - 2026-10-14
 
 Mistral Vibe, Gemini CLI, OpenCode and Qwen Code sessions show up beside the others, the Mac app sets up Allow and Deny for Claude Code by itself, and Agent Lookout asks again about notifications until they are on.
