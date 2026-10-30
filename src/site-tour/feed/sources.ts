@@ -458,6 +458,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "not found" },
         { label: "Command", value: "ps -A -o pid=,ppid=,lstart=,comm=" },
         { label: "Command run", value: "every 10 seconds at most" },
+        {
+          label: "Last message read",
+          value: "end of a conversation's transcript, while its details are open",
+        },
       ],
       capabilities: ANTIGRAVITY_CAPABILITIES,
       checkedAt,
@@ -477,6 +481,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Folders file", value: "~/.gemini/antigravity/conversation_summaries.db" },
         { label: "Folders read", value: "with sqlite3, when the file changes" },
         { label: "Waits read", value: "with sqlite3, when a chat's database changes" },
+        {
+          label: "Last message read",
+          value: "end of a chat's transcript, while its details are open",
+        },
       ],
       capabilities: ANTIGRAVITY_APP_CAPABILITIES,
       checkedAt,

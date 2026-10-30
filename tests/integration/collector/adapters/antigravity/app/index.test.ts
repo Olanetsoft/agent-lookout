@@ -32,13 +32,15 @@ import {
   MINUTE,
   NOW,
   PRIVATE_WORDS,
+  replyStep,
   SECOND,
   summariesPath,
+  textStep,
   transcriptPath,
   workspaceUris,
 } from "@tests/fixtures/antigravity";
 import { standInHub } from "@tests/support/adapters/antigravityAdapter";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // The adapter on real files laid out as Antigravity 2.0 lays out its folder,
 // with the real sqlite3 where there is one, and a stand-in for `ps`, since
@@ -282,5 +284,77 @@ describe("finding Antigravity 2.0's folder", () => {
     expect(result.health.state).toBe("ok");
     expect(result.sessions).toEqual([]);
     expect(await readdir(empty)).toEqual([]);
+  });
+});
+
+describe("what a chat last said, read from the real files", () => {
+  const SAID = conversationId("f6");
+
+  /** A chat whose newest reply the transcript cut, with the whole of it in transcript_full.jsonl beside it. */
+  async function cutReply(home: string) {
+    const kept = `${"Kept start. ".repeat(150)}`;
+    await put(
+      transcriptPath(home, SAID),
+      [
+        textStep(0, "USER_INPUT", NOW - 2 * MINUTE, `Prompt: ${PRIVATE_WORDS}`),
+        replyStep({ index: 1, at: NOW - 90 * SECOND, content: "An older reply." }),
+        replyStep({
+          index: 2,
+          at: NOW - MINUTE,
+          content: kept,
+          truncated: ["content"],
+          counts: { input_tokens: 512, cache_read_tokens: 1_024, output_tokens: 66 },
+        }),
+        replyStep({ index: 3, at: NOW - 50 * SECOND, tools: ["run_command"] }),
+        textStep(4, "GENERIC", NOW - 40 * SECOND, `Output: ${PRIVATE_WORDS}`),
+      ].join(""),
+      NOW - 40 * SECOND,
+    );
+    await put(
+      path.join(path.dirname(transcriptPath(home, SAID)), "transcript_full.jsonl"),
+      replyStep({ index: 2, at: NOW - MINUTE, content: `${kept} FULL-TRANSCRIPT-ONLY` }),
+      NOW - 40 * SECOND,
+    );
+    return kept;
+  }
+
+  test("is the start of a reply its transcript cut, never the whole one beside it, and only once asked", async () => {
+    const home = await makeAppHome();
+    const kept = await cutReply(home);
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(home, {
+      io,
+      env: {
+        AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: home,
+        AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+      },
+    });
+    await adapter.poll();
+    const polled = calls.length;
+
+    const answer = await adapter.lastMessage(`antigravity-app:${SAID}`);
+    if (answer === null || answer === "busy" || answer.message === null) {
+      throw new Error("A message was expected.");
+    }
+    expect(answer.message.cut).toBe(false);
+    expect(answer.message.endCut).toBe(true);
+    expect(kept.startsWith(answer.message.text)).toBe(true);
+    expect(answer).not.toHaveProperty("tokens");
+    const said = JSON.stringify(answer);
+    for (const words of [
+      PRIVATE_WORDS,
+      "FULL-TRANSCRIPT-ONLY",
+      "PRIVATE-THINKING",
+      "PRIVATE-TOOL-CALL",
+      "PRIVATE-MEDIA",
+    ]) {
+      expect(said).not.toContain(words);
+    }
+    // The ask opened only that chat's transcript, at the path the poll used.
+    expect(calls.slice(polled)).toEqual([
+      { method: "openRegular", path: path.normalize(transcriptPath(home, SAID)) },
+    ]);
+    for (const call of calls) expect(call.path).not.toMatch(/transcript_full/);
   });
 });

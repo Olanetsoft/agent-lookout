@@ -16,6 +16,9 @@ const FAILED_LINE = "Its last message could not be read. The page asks again eve
 /** Said over a message whose start was left out. */
 const CUT_LINE = "The start of a longer message is left out.";
 
+/** Said under a message whose end its transcript left out. */
+const END_CUT_LINE = "The end of a longer message is left out.";
+
 /** One calm line in place of the message. */
 function Line({ children }: { children: ReactNode }) {
   return (
@@ -62,9 +65,10 @@ function reasonWords(
  * read as markup or becomes a link, with every line break kept and long
  * words broken anywhere. It can be selected to copy. A long message scrolls
  * inside its block, which is then a Tab stop, so it can be scrolled from the
- * keyboard too.
+ * keyboard too. A line above it says when its start was left out, and one
+ * below it when its end was.
  */
-function Message({ text, cut }: { text: string; cut: boolean }) {
+function Message({ text, cut, endCut }: { text: string; cut: boolean; endCut: boolean }) {
   const [ref, overflows] = useOverflows<HTMLDivElement>(text);
   return (
     <div className='pt-2.5'>
@@ -92,6 +96,11 @@ function Message({ text, cut }: { text: string; cut: boolean }) {
           {text}
         </p>
       </div>
+      {endCut && (
+        <p data-part='last-message-end-cut' className='mt-1.5 text-caption text-ink-muted'>
+          {END_CUT_LINE}
+        </p>
+      )}
     </div>
   );
 }
@@ -118,7 +127,9 @@ export function LastMessage({ reading, remote, agent }: LastMessageProps) {
   }
   if (reading.status === "failed" || reading.answer === null) return <Line>{FAILED_LINE}</Line>;
   const { answer } = reading;
-  if (answer.message !== null)
-    return <Message text={answer.message.text} cut={answer.message.cut} />;
+  if (answer.message !== null) {
+    const { text, cut, endCut } = answer.message;
+    return <Message text={text} cut={cut} endCut={endCut === true} />;
+  }
   return <Line>{reasonWords(answer.reason, answer.setting, agent)}</Line>;
 }

@@ -6,6 +6,7 @@ import {
   MAX_MESSAGE_LENGTH,
   MAX_NAME_LENGTH,
   MAX_WAITING_TEXT_LENGTH,
+  messageStart,
   messageText,
   oneLine,
   sessionName,
@@ -184,6 +185,50 @@ describe("what a session last said", () => {
     expect(messageText(`a${"🦉".repeat(2000)}`)).toEqual({ text: "🦉".repeat(2000), cut: true });
     const owls = messageText("🦉".repeat(2500))!;
     expect(owls.cut).toBe(true);
+    expect(Array.from(owls.text)).toHaveLength(2000);
+    expect(owls.text).toBe("🦉".repeat(2000));
+  });
+});
+
+describe("the start of a message whose end its transcript left out", () => {
+  test("is cleaned exactly as messageText cleans it", () => {
+    for (const value of [
+      "One.\nTwo.\r\nThree.\rFour.\u2028Five.\u2029Six.",
+      "a\tb\u0000c\u0007d\u001be\u007ff\u0085g",
+      "checkout\u202eflow",
+      "\n\n  Done.   \n\n\n\n  - the list  \n\t\n",
+    ]) {
+      expect(messageStart(value)?.text).toBe(messageText(value)?.text);
+    }
+    for (const value of ["", " \n\t ", "\u0000\u200e\u2028", null, 42, ["words"]]) {
+      expect(messageStart(value)).toBeUndefined();
+    }
+  });
+
+  test("keeps the first 2,000 characters, and says nothing of a cut", () => {
+    expect(messageStart("x".repeat(2000))).toEqual({ text: "x".repeat(2000) });
+    expect(messageStart(`${"a".repeat(2000)}${"b".repeat(500)}`)).toEqual({
+      text: "a".repeat(2000),
+    });
+  });
+
+  test("ends before a line break within the last 200 of those, and not before one further in", () => {
+    expect(messageStart(`${"x".repeat(1850)}\n${"y".repeat(1000)}`)).toEqual({
+      text: "x".repeat(1850),
+    });
+    expect(messageStart(`${"x".repeat(1800)}\n${"y".repeat(1000)}`)).toEqual({
+      text: "x".repeat(1800),
+    });
+    const far = `${"x".repeat(1799)}\n${"y".repeat(1000)}`;
+    expect(messageStart(far)).toEqual({ text: `${"x".repeat(1799)}\n${"y".repeat(200)}` });
+    // Spaces before the break it ends at are trimmed.
+    expect(messageStart(`${"x".repeat(1900)}   \n\n${"y".repeat(1000)}`)).toEqual({
+      text: "x".repeat(1900),
+    });
+  });
+
+  test("is cut between code points, so no letter is broken in two", () => {
+    const owls = messageStart(`${"🦉".repeat(2500)}`)!;
     expect(Array.from(owls.text)).toHaveLength(2000);
     expect(owls.text).toBe("🦉".repeat(2000));
   });

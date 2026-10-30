@@ -62,7 +62,7 @@ import {
   type SourceId,
 } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
-import { MAX_NAME_LENGTH, messageText } from "@core/text";
+import { MAX_NAME_LENGTH, messageStart, messageText } from "@core/text";
 import { tokenCountsOf } from "@core/tokens/tokenCounts";
 import { readPermissionRules, ruleWordsIn } from "@core/permission-rules/permissionRules";
 import { readTimeRules } from "@core/time-rules/timeRules";
@@ -942,8 +942,17 @@ export function readRuleAnswer(value: unknown): RuleAnswer | null {
 function readSaid(data: Record<string, unknown>): LastMessageResponse | null {
   const { message } = data;
   if (isRecord(message)) {
+    if (typeof message.cut !== "boolean") return null;
+    if (message.endCut === true) {
+      // The transcript kept only the reply's start, so its start is what is shown.
+      const start = messageStart(message.text);
+      return start === undefined
+        ? null
+        : { message: { text: start.text, cut: message.cut, endCut: true } };
+    }
+    if (message.endCut !== undefined) return null;
     const shown = messageText(message.text);
-    if (shown === undefined || typeof message.cut !== "boolean") return null;
+    if (shown === undefined) return null;
     return { message: { text: shown.text, cut: message.cut || shown.cut } };
   }
   if (message !== null) return null;
@@ -961,6 +970,11 @@ function readSaid(data: Record<string, unknown>): LastMessageResponse | null {
  * characters: when this cuts it, the start is left out, as `cut` then says.
  * `cut` must be true or false, and a reason or a setting this page does not
  * know makes the whole answer one it cannot read.
+ *
+ * `endCut`, when the transcript itself cut the reply's end, must be true or
+ * left out: any other value makes the answer one the page cannot read. When it
+ * is true, the text is the reply's start, and is made fit to show again by
+ * the rule for a start (`messageStart`), so this never cuts its start too.
  *
  * The token counts of the newest reply go through the check every reader of
  * them makes (`tokenCountsOf`). Counts that could not be right are left out,

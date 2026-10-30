@@ -118,8 +118,8 @@ export interface HourSession {
   /** Its branch's pull request on github.com, shown while pull requests are on. */
   pullRequest?: PullRequest;
   /**
-   * What it last said, as its details show it, for a Claude Code or Codex
-   * session on this computer. Left out, it has said nothing yet.
+   * What it last said, as its details show it, for a Claude Code, Codex,
+   * Antigravity CLI or Antigravity session on this computer. Left out, it has said nothing yet.
    */
   said?: string;
   /**

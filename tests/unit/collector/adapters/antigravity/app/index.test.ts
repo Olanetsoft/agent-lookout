@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { createTailLimits } from "@collector/messages/tailReader";
 import {
   ANTIGRAVITY_APP_CAPABILITIES,
   ANTIGRAVITY_APP_HOME_ENV,
@@ -32,9 +33,11 @@ import {
   HOME,
   MINUTE,
   NOW,
+  replyStep,
   SECOND,
   step,
   summariesPath,
+  textStep,
   transcriptPath,
   workspaceUris,
 } from "@tests/fixtures/antigravity";
@@ -44,6 +47,7 @@ import {
   memoryFiles,
   standInHub,
   standInSqlite,
+  type MemoryFiles,
 } from "@tests/support/adapters/antigravityAdapter";
 
 const WORKING = conversationId("a1");
@@ -97,6 +101,10 @@ describe("with Antigravity 2.0's folder there", () => {
         { label: "Folders file", value: "~/.gemini/antigravity/conversation_summaries.db" },
         { label: "Folders read", value: "with sqlite3, when the file changes" },
         { label: "Waits read", value: "with sqlite3, when a chat's database changes" },
+        {
+          label: "Last message read",
+          value: "end of a chat's transcript, while its details are open",
+        },
       ],
     });
     expect(statuses(result.sessions)).toEqual({
@@ -655,5 +663,203 @@ describe("a chat that waits for approval", () => {
     expect(result.health.detail).toContain(
       "sqlite3 could not read whether some chats wait for you, so they show as working or idle.",
     );
+  });
+});
+
+describe("what a chat last said", () => {
+  const SAID = conversationId("f6");
+  const ID = `antigravity-app:${SAID}`;
+  const FILE = transcriptPath(APP_HOME, SAID);
+
+  /** A chat whose newest reply with text is followed by one that only calls a tool, and its output. */
+  function saying(
+    options: Parameters<typeof antigravityAppAdapterFor>[3] = {},
+    hub = standInHub(),
+  ) {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    files.write(
+      FILE,
+      [
+        textStep(0, "USER_INPUT", NOW - 2 * MINUTE, "Start"),
+        replyStep({ index: 1, at: NOW - MINUTE, content: "The reply." }),
+        replyStep({ index: 2, at: NOW - 30 * SECOND, tools: ["run_command"] }),
+        textStep(3, "GENERIC", NOW - 20 * SECOND, "Output"),
+      ].join(""),
+      { mtimeMs: NOW - 20 * SECOND },
+    );
+    files.write(summariesPath(APP_HOME), "SQLite format 3\u0000", { mtimeMs: NOW - HOUR_AGO });
+    const adapter = antigravityAppAdapterFor(files, hub, standInSqlite(), {
+      now: clock.now,
+      ...options,
+    });
+    return { clock, files, adapter };
+  }
+
+  test("is the newest reply's text for a listed chat, read from its transcript only when asked", async () => {
+    const { adapter, files } = saying();
+    await expect(adapter.lastMessage(ID)).resolves.toBeNull();
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(ID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(files.opened()).toEqual([FILE]);
+    files.forget();
+    await expect(
+      adapter.lastMessage(`antigravity-app:${conversationId("99")}`),
+    ).resolves.toBeNull();
+    await expect(adapter.lastMessage(`antigravity-cli:${SAID}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("keeps none once the chat leaves the list, or after a poll that throws", async () => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(ID);
+    expect(adapter.lastMessagesKept).toBe(1);
+    files.remove(FILE);
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(ID)).resolves.toBeNull();
+
+    let broken = false;
+    const hub = standInHub();
+    const failing = saying(
+      {},
+      {
+        ...hub,
+        reader: {
+          read: async () => {
+            if (broken) throw new Error("ps broke");
+            return { ok: true, running: true };
+          },
+        },
+      },
+    );
+    await failing.adapter.poll();
+    await failing.adapter.lastMessage(ID);
+    expect(failing.adapter.lastMessagesKept).toBe(1);
+    broken = true;
+    failing.clock.advance(PROCESS_CHECK_MS);
+    expect((await failing.adapter.poll()).health.state).toBe("error");
+    expect(failing.adapter.lastMessagesKept).toBe(0);
+    await expect(failing.adapter.lastMessage(ID)).resolves.toBeNull();
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: "off" }, "AGENT_LOOKOUT_WAITING_TEXT"],
+  ])(
+    "with %j, is off by that setting, and no transcript is opened for it",
+    async (env, setting) => {
+      const { adapter, files } = saying({ env });
+      const result = await adapter.poll();
+      expect(result.health.watching).toContainEqual({ label: "Last message read", value: "Off" });
+      files.forget();
+      await expect(adapter.lastMessage(ID)).resolves.toEqual({
+        message: null,
+        reason: "off",
+        setting,
+      });
+      expect(files.calls).toEqual([]);
+      expect(adapter.lastMessagesKept).toBe(0);
+    },
+  );
+
+  test("a poll opens and reads the transcripts as it does with the reader off", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    await on.adapter.poll();
+    await off.adapter.poll();
+    expect(on.files.count("openRegular")).toBeGreaterThan(0);
+    expect(on.files.count("openRegular")).toBe(off.files.count("openRegular"));
+    expect(on.files.reads).toEqual(off.files.reads);
+  });
+
+  test("counts its reads against the limits the collector shares", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const { adapter } = saying({ lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await adapter.lastMessage(ID);
+    expect(asked).toBe(1);
+  });
+
+  test.each([
+    ["the folder has gone", (files: MemoryFiles) => files.remove(APP_HOME)],
+    ["its brain folder cannot be listed", (files: MemoryFiles) => files.fail(`${APP_HOME}/brain`)],
+  ])("a poll that ends early, as when %s, lists no chat, so none is read", async (_, change) => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(ID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    change(files);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions ?? []).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    clock.advance(SECOND);
+    await expect(adapter.lastMessage(ID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("each chat's last message is its own, read from its own transcript and no other", async () => {
+    const OTHER = conversationId("e5");
+    const { adapter, files } = saying();
+    files.write(
+      transcriptPath(APP_HOME, OTHER),
+      [
+        textStep(0, "USER_INPUT", NOW - 3 * MINUTE, "Start"),
+        replyStep({ index: 1, at: NOW - 10 * SECOND, content: "The other reply." }),
+      ].join(""),
+      { mtimeMs: NOW - 10 * SECOND },
+    );
+    const listed = (await adapter.poll()).sessions?.map((session) => session.id);
+    expect(listed).toEqual(expect.arrayContaining([ID, `antigravity-app:${OTHER}`]));
+
+    files.forget();
+    await expect(adapter.lastMessage(ID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(files.opened()).toEqual([FILE]);
+    files.forget();
+    await expect(adapter.lastMessage(`antigravity-app:${OTHER}`)).resolves.toEqual({
+      message: { text: "The other reply.", cut: false },
+    });
+    expect(files.opened()).toEqual([transcriptPath(APP_HOME, OTHER)]);
+  });
+
+  test("after an ask, the next poll still opens and reads the transcript as it does with the reader off, and the next ask sees what was added", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    for (const side of [on, off]) {
+      await side.adapter.poll();
+      await side.adapter.lastMessage(ID);
+      side.clock.advance(2 * SECOND);
+      side.files.append(
+        FILE,
+        replyStep({ index: 4, at: side.clock.now(), content: "A newer reply." }),
+        { mtimeMs: side.clock.now() },
+      );
+      side.files.forget();
+      await side.adapter.poll();
+    }
+    expect(on.files.reads.length).toBeGreaterThan(0);
+    expect(on.files.calls).toEqual(off.files.calls);
+    expect(on.files.reads).toEqual(off.files.reads);
+    await expect(on.adapter.lastMessage(ID)).resolves.toEqual({
+      message: { text: "A newer reply.", cut: false },
+    });
   });
 });

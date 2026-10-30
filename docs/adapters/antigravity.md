@@ -28,6 +28,7 @@ agy documents several things another program could use, and none of them can be 
 | `brain/`                                             | Listed                                                                                                                     | Every poll                                                                                                                                            |
 | `conversations/`                                     | Listed                                                                                                                     | Every poll                                                                                                                                            |
 | `brain/<id>/.system_generated/logs/transcript.jsonl` | `lstat`, then opened read-only: the first line within 256 KiB, the first 4 KiB, the last 2 MiB, then only what is appended | `lstat` every poll for a conversation changed in the last day or that may be open, else every 30 seconds; read when its size or modified time changes |
+| The same file, for what its conversation last said   | Opened read-only, the last 256 KB, by position                                                                             | Only when `GET /api/sessions/last-message` asks, at most four files a second, and not again while the file is unchanged                               |
 | `conversations/<id>.db` and `<id>.db-wal`            | `lstat` only, for the modified time, for Quiet for. Never opened                                                           | As the transcript's `lstat`                                                                                                                           |
 | `annotations/<id>.pbtxt`                             | `lstat`, then opened read-only when it is an ordinary file of at most 4 KiB, for its `title`                               | `lstat` every poll for each conversation shown; read when it changes                                                                                  |
 | `log/`                                               | Listed                                                                                                                     | While `ps` shows an agy program, on each poll until every such program's log is found                                                                 |
@@ -82,7 +83,7 @@ Values are written without the `CORTEX_STEP_TYPE_` and `CORTEX_STEP_STATUS_` pre
 
 The program defines 118 step types (`CortexStepType`) and twelve statuses (`CortexStepStatus`): `UNSPECIFIED`, `PENDING`, `RUNNING`, `DONE`, `INVALID`, `CLEARED`, `CANCELED`, `ERROR`, `GENERATING`, `WAITING`, `QUEUED` and `INTERRUPTED`. Its own text says a step whose status is `WAITING` is waiting for the person's approval. Both lists are in `antigravityMapping.ts`.
 
-The adapter parses each line it reads and keeps `type`, `status`, `step_index`, `created_at` and whether `tool_calls` is empty, and from a reply its [token counts](#token-counts). It drops the rest at once. It never keeps `content`, `thinking`, `media`, `source` or a tool call's arguments.
+On each poll the adapter parses each line it reads and keeps `type`, `status`, `step_index`, `created_at` and whether `tool_calls` is empty, and from a reply its [token counts](#token-counts). It drops the rest at once. It never keeps `content`, `thinking`, `media`, `source` or a tool call's arguments. A reply's `content` is read apart from the poll, and only when it is asked for, as [What a session last said](#what-a-session-last-said) says.
 
 - The file is not only appended to. agy rewrites it when it compacts a conversation (changelog 1.1.13). A file that shrank, is a new file, or whose first 4 KiB changed is read afresh.
 - A line can be broken: 1.1.13 fixed a compaction that left malformed JSON in the saved transcript, and 1.2.14 fixed resuming a conversation with a step missing after a crash or an interrupted write. A line that does not parse is passed over.
@@ -109,6 +110,30 @@ So a session's Tokens are its newest reply's, as for Codex:
 - Nothing is summed: there are no totals.
 - The newest reply is noted as the tail is read for the last step. When none has been found by the start of the run of steps that say the same, at most 256 KiB more of the file is read for one, within the 2 MiB.
 
+### What a session last said
+
+Read only when `GET /api/sessions/last-message` asks for a conversation or chat the last poll listed, from the end of the `transcript.jsonl` that poll read it from. Nothing in a request names the file, and it is never `transcript_full.jsonl`, a file under `chunks/`, a database or another session's transcript. The code is in `shared/lastMessages.ts`, which both adapters use, with the limits every reader of last messages keeps, in `src/collector/messages/tailReader.ts`: the last 256 KB, by position, an answer given again for a second, the file not read again while its size, modified time and identity are unchanged, at most four files a second, with Claude Code's and Codex's, and what is kept dropped 15 seconds after the last ask or at the first poll that does not list the session. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and no file is opened for it.
+
+Checked on 2026-10-30 against transcripts of Antigravity 2.23.1 and of agy 1.3.4. Only the names of fields, the types of their values and their lengths were looked at. No text was read. Seen:
+
+- A step's `content`, where there was one, was always a JSON string, never a list of parts.
+- A `PLANNER_RESPONSE` that only calls tools had no `content` field at all. A reply with no tool calls had a string with something in it.
+- `truncated_fields` can name `content` in `transcript.jsonl` itself: one `PLANNER_RESPONSE` of Antigravity 2.23.1 had its `content` cut to about 4 KB there.
+- The step types were `USER_INPUT`, `PLANNER_RESPONSE`, `GENERIC`, which holds a tool's output, and `SYSTEM_MESSAGE`.
+- No conversation or chat had a `parent_conversation_id` or a `nesting_depth` above 0 in `conversation_summaries.db`, so no subagent's folder was seen.
+
+Read backwards from the end, the text is the `content` of the newest `PLANNER_RESPONSE` whose `content` is a string with something in it. So a newer reply that only calls tools does not hide the one before it, and neither does a prompt, a tool's output or a system message written after it. A reply agy cleared or marked invalid, as when a conversation is rewound, is passed over, as its token counts are. One that ended in `ERROR`, or has any other status, counts. A prompt (`USER_INPUT`), a tool's output (`GENERIC` and every other tool step), a `SYSTEM_MESSAGE`, `thinking`, `tool_calls`, `media` and the token counts are never taken. Only a line that names `PLANNER_RESPONSE`, in any case, with or without the `CORTEX_STEP_TYPE_` prefix, is parsed, and it is taken by its own `type`, so a reply's line quoted inside a prompt is never taken for one. A line that does not parse is read past. A step is one line, and a reply's line holds its `thinking` too, so a reply whose line is longer than the 256 KB read cannot be read whole, and the answer is `too-far-back`. The text is made fit to show by `messageText` in `src/core/text.ts`, at most its last 2,000 characters.
+
+When the reply's `truncated_fields` names `content`, `transcript.jsonl` holds only the reply's start. The answer is then at most its first 2,000 characters, ending at a line break within the last 200 of them when there is one (`messageStart` in `src/core/text.ts`), with `cut` false and `endCut` true, and the details say that the end is left out. `transcript_full.jsonl`, which holds the whole reply, is still never read.
+
+The answer has no `tokens`: a session's are on the session already. Antigravity 2.0 writes a step to the transcript only once it is done, so while a chat works, the answer is the reply before the one under way. A session's last message is read only from its own transcript: a subagent with a folder of its own would be a session of its own, and neither is read from the other's file.
+
+To check it again, by shape alone, with the field names and never the text:
+
+```sh
+jq -c 'select((.type // "") | test("PLANNER_RESPONSE")) | {status, content: (.content | type), bytes: (.content | if type == "string" then utf8bytelength else null end), truncated_fields, tc: (.tool_calls | length)}' <transcript.jsonl>
+```
+
 ### A program's log
 
 Each agy program writes a log of its own to `log/cli-YYYYMMDD_HHMMSS.log`, named for the local time it started; `cli.log` is a link to the newest. Seen: a program `ps` said started at 12:58:33 wrote `cli-20261007_125834.log`. Its lines are in the glog format, `I1007 13:00:19.223691     787 tool_confirmation_manager.go:226] message`: the level, the month and day, the local time, a thread, the source line and the message. Seen in that log, in this order:
@@ -132,7 +157,7 @@ On 2026-10-30, looked at by field names and value kinds only, agy 1.3.4 still wr
 
 A conversation is listed when its transcript is there and is an ordinary file, and its transcript was written in the last 24 hours or an agy program may have it open. Only the transcript's time counts: only the program running a conversation adds steps to it, while agy writes the database at other times too, as when a program exits (changelog 1.1.26), and it was seen written half a minute after the transcript. A conversation none of whose three files changed for a day is looked at again every 30 seconds, so one resumed after a day is found within that.
 
-Subagents: the program's instructions say a subagent's conversation can be found by searching a transcript for `invoke_subagent`. Whether agy gives a subagent a folder of its own in `brain/` was not checked. If it does, a subagent shows as a session of its own.
+Subagents: the program's instructions say a subagent's conversation can be found by searching a transcript for `invoke_subagent`. Whether agy gives a subagent a folder of its own in `brain/` is not known. On 2026-10-30 none of the 6 conversations and chats checked, of agy 1.3.4 and Antigravity 2.23.1, had a `parent_conversation_id` or a `nesting_depth` above 0 in `conversation_summaries.db`, so no subagent's folder was seen. If a subagent has one, it shows as a session of its own. Each session's last message is read from its own transcript alone, so a parent's is never read from a subagent's file, nor a subagent's from its parent's.
 
 ## Status
 
@@ -198,7 +223,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - A tool that fails shows as working. Only an error agy reports as its own step, or a failed reply, shows as failed.
 - The Antigravity IDE is not read. Only whether its folder is there is checked, as [The IDE's folder](#the-ides-folder) says. Antigravity 2.0 is read by a source of its own, [below](#antigravity-20).
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
-- What a session last said is not read yet. `GET /api/sessions/last-message` answers `not-read` for an Antigravity CLI session.
+- What a session last said is its newest reply with text. A reply whose `content` the transcript cut shows only its start, since `transcript_full.jsonl` is not read, and a reply whose line, with its `thinking`, is longer than the 256 KB read is too far back to show.
 - Tokens show a dash while the newest reply is further back than the part read for it, until the next reply.
 
 ## Not yet checked
@@ -244,21 +269,23 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 
 ## What breaks when Antigravity changes
 
-| Change in agy                                                    | What the dashboard shows                                                           | Where to fix it                                       |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| A step type or status is added or renamed                        | Conversations whose last step has it show as Unknown, and the Sources card says so | `src/core/mapping/antigravityMapping.ts`              |
-| The transcript moves, or `brain/` is renamed                     | No conversations are found                                                         | `shared/conversations.ts`                             |
-| The transcript's fields are renamed                              | Conversations show as Unknown                                                      | `shared/transcriptFile.ts`                            |
-| Transcripts are written only to SQLite                           | No conversations are found                                                         | `shared/conversations.ts`, `shared/transcriptFile.ts` |
-| The program is no longer named `agy`, or its commands change     | Every conversation shows as finished, or a daemon holds conversations open         | `cli/agyProcesses.ts`                                 |
-| A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                | `cli/agyProcesses.ts`                                 |
-| `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                      | `cli/agyProcesses.ts`                                 |
-| `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                   | `cli/index.ts`                                        |
-| The IDE's folder is renamed or moved                             | The card no longer says that folder is there                                       | `cli/otherFolders.ts`                                 |
-| The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                  | `antigravityLog.ts`, `cli/agyLogs.ts`                 |
-| The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                              | `shared/annotations.ts`                               |
-| A reply's token keys are renamed                                 | Tokens is a dash in every session's details                                        | `shared/transcriptFile.ts`                            |
-| `input_tokens` starts to count the part read from a cache        | Tokens shows more input than the context in use                                    | `shared/transcriptFile.ts`                            |
+| Change in agy                                                    | What the dashboard shows                                                                                                   | Where to fix it                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| A step type or status is added or renamed                        | Conversations whose last step has it show as Unknown, and the Sources card says so                                         | `src/core/mapping/antigravityMapping.ts`              |
+| The transcript moves, or `brain/` is renamed                     | No conversations are found                                                                                                 | `shared/conversations.ts`                             |
+| The transcript's fields are renamed                              | Conversations show as Unknown                                                                                              | `shared/transcriptFile.ts`                            |
+| Transcripts are written only to SQLite                           | No conversations are found                                                                                                 | `shared/conversations.ts`, `shared/transcriptFile.ts` |
+| The program is no longer named `agy`, or its commands change     | Every conversation shows as finished, or a daemon holds conversations open                                                 | `cli/agyProcesses.ts`                                 |
+| A program agy starts is named `agy` and is not under another agy | While it runs, no conversation is shown as finished                                                                        | `cli/agyProcesses.ts`                                 |
+| `--conversation` is renamed                                      | Nothing, unless no other program has written since it started                                                              | `cli/agyProcesses.ts`                                 |
+| `~/.gemini/antigravity-cli` stops being the CLI's folder         | The Antigravity CLI is not found, or found empty                                                                           | `cli/index.ts`                                        |
+| The IDE's folder is renamed or moved                             | The card no longer says that folder is there                                                                               | `cli/otherFolders.ts`                                 |
+| The log's lines, its name or its format change                   | No session needs you, and sessions have no folder                                                                          | `antigravityLog.ts`, `cli/agyLogs.ts`                 |
+| The annotation file moves or changes format                      | Sessions are named by their folder or conversation id                                                                      | `shared/annotations.ts`                               |
+| A reply's token keys are renamed                                 | Tokens is a dash in every session's details                                                                                | `shared/transcriptFile.ts`                            |
+| `input_tokens` starts to count the part read from a cache        | Tokens shows more input than the context in use                                                                            | `shared/transcriptFile.ts`                            |
+| A reply's `content` is renamed or made a list of parts           | Last message says the session has not said anything yet, or that its last message is further back than Agent Lookout reads | `shared/lastMessages.ts`                              |
+| The shape of `truncated_fields` changes                          | A reply the transcript cut is shown as if it were whole, without the line that says its end is left out                    | `shared/lastMessages.ts`                              |
 
 To check a new agy version, read its changelog for the transcript, compaction, `/resume` and the process, run `agy --help` for its commands, and make the check above.
 
@@ -272,7 +299,9 @@ Antigravity 2.0 is Google's desktop app with the Agent Manager, shown in Agent L
 
 ### Transcripts
 
-Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are read as the CLI's are, as [Token counts](#token-counts) says. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done.
+Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are read as the CLI's are, as [Token counts](#token-counts) says. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done. So while a chat works, its last message is the reply before the one under way.
+
+On 2026-10-30 `truncated_fields` was seen in `transcript.jsonl` too, naming `content` on one reply of Antigravity 2.23.1. [What a session last said](#what-a-session-last-said) has the rest of that check, with the step types seen, and how a cut reply is shown.
 
 ### Status
 
@@ -317,18 +346,21 @@ A chat whose newest step has status 9 needs you, for permission, with no detail,
 - No Jump, no Stop and no Answer. Needs you does not say what a chat asks, and is not shown on Windows.
 - On Linux, where the app is never known to be closed, a chat the app left waiting when it quit or crashed shows as needing you until its transcript is a day old, unless its database changes.
 - No chat is shown as finished on Linux or Windows, and on Windows none has a folder.
-- A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own. None was seen.
+- A chat with `nesting_depth` above 0, a subagent's, would show as a chat of its own if it has a transcript of its own, with its own last message. None was seen, on 2026-10-12 or in the 4 chats checked on 2026-10-30.
+- While a chat works, Last message shows the reply before the one under way, since that one is not in the transcript yet.
 - A 1.x Antigravity IDE's chats left in the same folder are listed as the app's, if their transcript was written in the last day.
 - The app's logs, in `~/Library/Logs/Antigravity`, are not read. `language_server.log` was seen to hold none of the lines the CLI's log has about conversations, folders and approvals.
 
 ### What breaks when Antigravity 2.0 changes
 
-| Change in the app                                            | What the dashboard shows                                                 | Where to fix it     |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------- |
-| `~/.gemini/antigravity` stops being its folder               | Antigravity is not found, or found empty                                 | `app/index.ts`      |
-| The layout under `brain/` or the transcript's fields change  | As for the CLI: no chats, or chats shown as Unknown                      | `shared/`           |
-| The hub is renamed or moves inside the app                   | Every chat shows as finished                                             | `app/hubProcess.ts` |
-| `conversation_summaries` or its two columns are renamed      | Chats show without a folder, and the card says sqlite3 could not read it | `app/summaries.ts`  |
-| A wait is written with another status, or `steps` is renamed | A chat that waits shows as working, not as needing you                   | `app/waits.ts`      |
+| Change in the app                                            | What the dashboard shows                                                                                                | Where to fix it          |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `~/.gemini/antigravity` stops being its folder               | Antigravity is not found, or found empty                                                                                | `app/index.ts`           |
+| The layout under `brain/` or the transcript's fields change  | As for the CLI: no chats, or chats shown as Unknown                                                                     | `shared/`                |
+| The hub is renamed or moves inside the app                   | Every chat shows as finished                                                                                            | `app/hubProcess.ts`      |
+| `conversation_summaries` or its two columns are renamed      | Chats show without a folder, and the card says sqlite3 could not read it                                                | `app/summaries.ts`       |
+| A wait is written with another status, or `steps` is renamed | A chat that waits shows as working, not as needing you                                                                  | `app/waits.ts`           |
+| A reply's `content` is renamed or made a list of parts       | Last message says the chat has not said anything yet, or that its last message is further back than Agent Lookout reads | `shared/lastMessages.ts` |
+| The shape of `truncated_fields` changes                      | A reply the transcript cut is shown as if it were whole, without the line that says its end is left out                 | `shared/lastMessages.ts` |
 
 To check a new version, with the app open, start a chat that asks to run a command, and note, never the content: `ls -la` of `brain/<id>/.system_generated/logs/` and `steps/`, the `type` and `status` of the transcript's last lines, `ls` of `conversations/<id>.db*` and the `idx`, `step_type` and `status` of the newest row of its `steps` while the approval is asked, and `ps -A -o comm=` for the hub's path. Then compare Agent Lookout's card and the chat's status with what was noted.
