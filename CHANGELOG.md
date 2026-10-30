@@ -18,6 +18,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - In a session's details, when an Antigravity reply whose end is left out is long enough to scroll, the line saying so now comes after its text, at the end of the block it scrolls in. Before, it sat under the block's bottom edge, which cuts through a line, so the reply looked as if it stopped at that line (#204).
 
+- On a phone narrower than about 370px, a session row that has Jump and whose process has ended puts its Process ended badge on a line of its own under the name, so the name keeps room beside Jump. At 320px wide the badge left the name no room and ran under the button (#209).
+
 ## 0.2.14 - 2026-10-30
 
 The Mac app can keep the Mac awake while your sessions work or wait, Antigravity sessions show what they last said, and Antigravity chats get their titles back.
