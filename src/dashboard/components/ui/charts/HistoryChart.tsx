@@ -46,6 +46,10 @@ interface HistoryChartProps {
  * chart use. Pointing at the chart, or focusing it and pressing the arrow keys,
  * reads out the count at that moment, in a box of the floating glass.
  *
+ * Losing focus clears the reading once focus has landed, because taking it out
+ * of the page while focus is between two elements makes the dialog's focus trap
+ * take focus back to the dialog.
+ *
  * It is drawn for the dialog, on floating glass: the halo behind a label and
  * around the reading's dot is that glass's tint, not a solid colour.
  */
@@ -62,6 +66,11 @@ export function HistoryChart({
   const [width, setWidth] = useState(0);
   // Where the reading is taken, as a share of the window. Null when nothing points.
   const [point, setPoint] = useState<number | null>(null);
+  // The clear that losing focus has asked for, waiting for focus to land.
+  const clearing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const keepReading = () => clearTimeout(clearing.current);
+
+  useEffect(() => () => clearTimeout(clearing.current), []);
 
   useEffect(() => {
     const element = frame.current;
@@ -133,12 +142,19 @@ export function HistoryChart({
       aria-valuemax={100}
       aria-valuenow={Math.round(share * 100)}
       aria-valuetext={`${formatClock(at)}: ${said}`}
-      onPointerMove={(event) => pointAt(event.clientX, event.currentTarget.getBoundingClientRect())}
+      onPointerMove={(event) => {
+        keepReading();
+        pointAt(event.clientX, event.currentTarget.getBoundingClientRect());
+      }}
       onPointerLeave={() => setPoint(null)}
       onFocus={(event) => {
+        keepReading();
         if (event.currentTarget.matches(":focus-visible")) setPoint((current) => current ?? 1);
       }}
-      onBlur={() => setPoint(null)}
+      onBlur={() => {
+        keepReading();
+        clearing.current = setTimeout(() => setPoint(null));
+      }}
       onKeyDown={onKeyDown}
       className={cn("relative w-full cursor-crosshair rounded-row", TONE[tone], className)}
       style={{ height: HEIGHT }}
