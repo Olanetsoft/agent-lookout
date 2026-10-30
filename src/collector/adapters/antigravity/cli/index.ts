@@ -147,7 +147,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The title agy gives a conversation once it has one, and the folder its program's log names. Until then, its conversation ID.",
+      "The title agy gives a conversation, else its folder's name, else its ID. Its folder is the one its program's log names.",
   },
   jump: {
     level: "no",
