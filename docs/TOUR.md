@@ -671,7 +671,7 @@ Commands and paths in Sources are drawn by the `Literal` primitive (`components/
 
 Settings is `components/settings/SettingsView.tsx`.
 
-- **Left column: what you change.** Theme, Notifications (#4, #24), Time rules (#12, with repeat reminders from #80) and History with Clear history (#21). In the Mac app only, it also has Menu bar and Updates.
+- **Left column: what you change.** Theme, Notifications (#4, #24), Time rules (#12, with repeat reminders from #80) and History with Clear history (#21). In the Mac app only, it also has Menu bar, Keep awake and Updates.
 - **Right column: what sends off the computer, and the answers.** Email (#26), Webhook (#25), ntfy and Pushover (#82) and Pull requests (#51) are read-only here. After them come Permission prompts (`components/settings/AnswerCard.tsx`, #9), Permission rules (`components/settings/PermissionRulesCard.tsx`, #11) and This copy.
 
 The channels are read-only because each one sends something off the computer, and stays off until the person sets it up in the environment Agent Lookout starts with. The page only says whether a channel is set up, what it sends and how the last send went. The only button among them is Send a test, for ntfy and Pushover (`components/settings/TestSend.tsx`).
@@ -712,6 +712,7 @@ In this part, a bare path such as `main.ts` is under `src/desktop/`.
 | `notifications/` | The collector's notifications as the app's own, and the Dock badge                            |
 | `answers/`       | Deny and Allow from a notification or the menu bar                                            |
 | `menu-bar/`      | The item in the menu bar, its menu, and its switch in Settings                                |
+| `keep-awake/`    | Keeping the Mac awake while a session counts, and its switch in Settings                      |
 | `menu/`          | The app menu and the right-click menu                                                         |
 | `claude-plugin/` | The one-time install of the Claude Code plugin, and what came of it                           |
 | `updates/`       | The daily check, the download, its checks, and the install                                    |
@@ -747,7 +748,7 @@ How it is built and run:
   - Only one copy runs at a time (`app.requestSingleInstanceLock`). A second copy brings the first to the front and quits.
   - The window remembers its place, its size and the background colour of the current theme in `window-state.json` (`window/windowState.ts`), so it opens in the right colour before the page paints.
   - Errors and the collector's warnings go to `~/Library/Logs/Agent Lookout/main.log` (`process/appLog.ts`).
-- **The page knows from its address.** Before React renders, `src/dashboard/lib/shell/appWindow.ts` checks the scheme. If it is the app's, it marks `<html>` with `data-host="app"`. The stylesheet then makes room on the rail for the window's buttons, and Settings shows the Menu bar and Updates cards. Those reach the app through `/api/app/menu-bar` and `/api/app/update`, which the standalone server and the dev server never mount.
+- **The page knows from its address.** Before React renders, `src/dashboard/lib/shell/appWindow.ts` checks the scheme. If it is the app's, it marks `<html>` with `data-host="app"`. The stylesheet then makes room on the rail for the window's buttons, and Settings shows the Menu bar, Keep awake and Updates cards, from `src/dashboard/components/settings/app/`. Those reach the app through `/api/app/menu-bar`, `/api/app/keep-awake` and `/api/app/update`, which the standalone server and the dev server never mount.
 
 #### The window, and the drag fix in 0.2.9
 
@@ -765,7 +766,11 @@ The fix (cd9dfef) sets `-webkit-app-region: none` on those fields of light in `s
   - `menuBar.ts` keeps an Electron `Tray` with template images, which macOS paints in the menu bar's own colour. `scripts/render-menu-bar-icon.mjs` draws those images into `build/menu-bar/`.
   - While something needs you, the lamp is lit and the count shows beside it.
   - `menuBarMenu.ts` lists up to 10 sessions (`MAX_MENU_SESSIONS`), longest wait first, with how long each has waited, why, and what it is asking. Choosing one opens its details (`menuBarActions.ts`).
-  - The Show in menu bar switch in Settings is kept in `menu-bar-state.json` (`menuBarSettings.ts`). Its card is `src/dashboard/components/settings/MenuBarCard.tsx`.
+  - The Show in menu bar switch in Settings is kept in `menu-bar-state.json` (`menuBarSettings.ts`). Its card is `src/dashboard/components/settings/app/MenuBarCard.tsx`.
+- **Keeping the Mac awake (#139).** The code is in `keep-awake/`, and the rule it goes by is in `src/core/keep-awake/keepAwakeRule.ts`.
+  - `keepAwake.ts` follows each poll's snapshot, as the Dock badge does. While the switch is on and a session counts, it holds one Electron `powerSaveBlocker` of the type `prevent-app-suspension`, which stops idle sleep and lets the display sleep. It lets go when none counts, when the switch is turned off, and as the app quits.
+  - A session counts when it needs you, for as long as it is listed, or when it works, until 30 minutes after its newest update. The newest update is the newer of its status time and its last write, and a working session with neither does not count. A working Claude Code session whose process runs counts while it is listed, on any machine, as Claude Code writes no time while it works, and an OpenCode session stops counting 30 minutes after the prompt that began its turn. Sessions on other machines count too, since this Mac sends their notifications.
+  - The switch is off until turned on, and kept in `keep-awake-state.json` (`keepAwakeSettings.ts`). Its card is `src/dashboard/components/settings/app/KeepAwakeCard.tsx`, and `keepAwakeRoute.ts` answers `/api/app/keep-awake` and its setting.
 - **Deny and Allow (#81, 9235005 and 015dfd9, out in 0.2.8).** The code is in `answers/`, and it adds no new route.
   - `answerOffer.ts` decides what a notification or the menu can offer. Deny is always offered. Allow is offered only when the whole request fits as written: for a notification, one shell command on one line of at most 40 characters, with no other input.
   - `desktopAnswers.ts` takes every press and hands it to the collector's own answer path, the same one the route uses. So a press here goes through every check a press on the page does.
@@ -856,7 +861,7 @@ The pictures on the page, and in the README and the guide, come from the tour to
 - **The landing page shows the last release, not `main`.** Do not edit `site/tour/` by hand. It is rebuilt by `npm run build:tour` as part of a release.
 - **In the Mac app, the header and the strip above it move the window.** Anything you add there that is not a control will swallow clicks unless it has `no-drag`.
 - **Settings cannot turn on email, the webhook, ntfy, Pushover or pull requests.** They are set in the environment Agent Lookout starts with, and the dashboard only reports on them.
-- **The Menu bar and Updates cards, and the `/api/app/*` routes behind them, exist only in the Mac app.** Do not look for them in `npm start` or `npm run dev`.
+- **The Menu bar, Keep awake and Updates cards, and the `/api/app/*` routes behind them, exist only in the Mac app.** Do not look for them in `npm start` or `npm run dev`.
 
 ## How it tells you
 
@@ -1140,10 +1145,10 @@ All of this is in `src/collector/handler.ts`. Every request, reads included, fir
 - a content type of `application/json` (415). A custom header and a JSON content type force a CORS preflight from any other origin. The API never answers one with CORS headers, so a page on another origin cannot send the request.
 - a body no larger than the route's limit (413)
 
-Twelve files call `actionRefusalFor`:
+Thirteen files call `actionRefusalFor`:
 
 - the collector's eight routes that act: `POST /api/jump`, `POST /api/history/clear`, `POST /api/sessions/stop`, `POST /api/sessions/clean-up`, `POST /api/permission/answer`, `POST /api/settings/time-rules`, `POST /api/settings/permission-rules` and `POST /api/phone/test`
-- the Mac app's own routes: `src/desktop/menu-bar/menuBarRoute.ts`, `src/desktop/notifications/notificationRoute.ts`, `src/desktop/claude-plugin/pluginInstallRoute.ts`, and `src/desktop/updates/updateRoute.ts`, which serves three POSTs
+- the Mac app's own routes: `src/desktop/menu-bar/menuBarRoute.ts`, `src/desktop/keep-awake/keepAwakeRoute.ts`, `src/desktop/notifications/notificationRoute.ts`, `src/desktop/claude-plugin/pluginInstallRoute.ts`, and `src/desktop/updates/updateRoute.ts`, which serves three POSTs
 
 **After those checks, each route follows the same pattern.**
 

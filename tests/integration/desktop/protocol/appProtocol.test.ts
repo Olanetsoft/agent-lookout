@@ -10,6 +10,7 @@ import { createHistoryStore } from "@collector/historyStore";
 import { contentSecurityPolicy } from "@collector/hosts/staticFiles";
 import { APP_ORIGIN, APP_START_URL } from "@core/appAddress";
 import { createPluginInstallRoute } from "@desktop/claude-plugin/pluginInstallRoute";
+import { createKeepAwakeRoute } from "@desktop/keep-awake/keepAwakeRoute";
 import { createNotificationRoute } from "@desktop/notifications/notificationRoute";
 import { createAppProtocolHandler } from "@desktop/protocol/appProtocol";
 import { createAppRoutes } from "@desktop/protocol/appRoutes";
@@ -199,6 +200,7 @@ describe("the app's own scheme", () => {
         menuBar: nothing,
         notifications: createNotificationRoute(notifications),
         pluginInstall: nothing,
+        keepAwake: nothing,
       });
       const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
       const answer = await serve(press(APP_ORIGIN));
@@ -251,6 +253,7 @@ describe("the app's own scheme", () => {
         menuBar: nothing,
         notifications: nothing,
         pluginInstall: createPluginInstallRoute(installs),
+        keepAwake: nothing,
       });
       const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
       const read = await serve(from(STATUS_URL, APP_ORIGIN));
@@ -273,6 +276,69 @@ describe("the app's own scheme", () => {
       const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
       expect((await serve(from(STATUS_URL, APP_ORIGIN))).status).toBe(404);
       expect((await serve(told(APP_ORIGIN))).status).toBe(405);
+    });
+  });
+
+  describe("the switch Keep the Mac awake", () => {
+    const STATUS_URL = `${APP_ORIGIN}/api/app/keep-awake`;
+    const SETTING_URL = `${APP_ORIGIN}/api/app/keep-awake/setting`;
+    /** The POST the Keep awake card sends, as the app's own page or another page makes it. */
+    const turn = (initiator: string, on: boolean) =>
+      from(SETTING_URL, initiator, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Agent-Lookout-Action": "keep-awake-setting",
+        },
+        body: JSON.stringify({ on }),
+      });
+    const keepAwake = () => {
+      let on = false;
+      return {
+        status: vi.fn(() => ({ on })),
+        setOn: vi.fn((next: boolean) => {
+          on = next;
+          return { on };
+        }),
+      };
+    };
+    const nothing: ApiHandler = () => {
+      throw new Error("Not this route.");
+    };
+
+    test("is read and turned by the app's own page, and by no other", async () => {
+      const { dist } = await makeApp();
+      const awake = keepAwake();
+      const app = createAppRoutes({
+        update: nothing,
+        menuBar: nothing,
+        notifications: nothing,
+        pluginInstall: nothing,
+        keepAwake: createKeepAwakeRoute(awake),
+      });
+      const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
+      const read = await serve(from(STATUS_URL, APP_ORIGIN));
+      expect(read.status).toBe(200);
+      expect(await read.json()).toEqual({ on: false });
+
+      const answer = await serve(turn(APP_ORIGIN, true));
+      expect(answer.status).toBe(200);
+      expect(await answer.json()).toEqual({ on: true });
+      expect(awake.setOn).toHaveBeenCalledExactlyOnceWith(true);
+
+      // Another page's request never reaches it.
+      expect((await serve(turn("https://evil.example", false))).status).toBe(403);
+      expect((await serve(from(STATUS_URL, "https://evil.example"))).status).toBe(403);
+      expect(awake.setOn).toHaveBeenCalledOnce();
+    });
+
+    test("is not there without the app's own routes, as in the standalone server and the dev server", async () => {
+      const { dist } = await makeApp();
+      const serve = createAppProtocolHandler({ api: collectorApi(), distDir: dist });
+      expect((await serve(from(STATUS_URL, APP_ORIGIN))).status).toBe(404);
+      expect((await serve(from(SETTING_URL, APP_ORIGIN))).status).toBe(404);
+      // The collector acts on none of its addresses but its own.
+      expect((await serve(turn(APP_ORIGIN, true))).status).toBe(405);
     });
   });
 

@@ -25,9 +25,15 @@
 // checked, and installed only when the person presses Install and Restart
 // (`updates/updater.ts`). The page reaches that through `/api/app/*` on the
 // app's own scheme, which only this host answers (`updates/updateRoute.ts`),
-// and so it reaches the menu bar's switch, a test of the app's own
-// notifications, which reports what macOS made of it, and what came of the
-// plugin's install, below.
+// and so it reaches the menu bar's switch, the switch Keep the Mac awake, a
+// test of the app's own notifications, which reports what macOS made of it,
+// and what came of the plugin's install, below.
+//
+// While Keep the Mac awake is on, which it is not until the person turns it
+// on, the app holds off idle sleep, but not the display's, while a session
+// works or needs you, on this Mac or another one it watches, and lets go once
+// none does, when the switch is turned off and as it quits
+// (`keep-awake/keepAwake.ts`).
 //
 // Once, the first time it opens, it runs Claude Code's own `claude plugin`
 // commands to install its plugin, so Allow and Deny work from here, when it
@@ -50,6 +56,7 @@ import {
   nativeImage,
   Notification,
   powerMonitor,
+  powerSaveBlocker,
   protocol,
   session,
   shell,
@@ -65,6 +72,9 @@ import { createDesktopAnswers } from "./answers/desktopAnswers.ts";
 import { createPluginInstallRoute } from "./claude-plugin/pluginInstallRoute.ts";
 import { createPluginInstaller, type PluginInstaller } from "./claude-plugin/pluginInstaller.ts";
 import { pluginInstallFile } from "./claude-plugin/pluginInstallSettings.ts";
+import { createKeepAwake, type KeepAwake } from "./keep-awake/keepAwake.ts";
+import { createKeepAwakeRoute } from "./keep-awake/keepAwakeRoute.ts";
+import { keepAwakeSettingsFile } from "./keep-awake/keepAwakeSettings.ts";
 import { appMenuTemplate, GUIDE_URL } from "./menu/appMenu.ts";
 import { createMenuBar, type MenuBar } from "./menu-bar/menuBar.ts";
 import { menuBarActions, sessionAddress } from "./menu-bar/menuBarActions.ts";
@@ -118,6 +128,7 @@ function whereTheLogIs(): string {
 let collector: Collector | null = null;
 let updater: Updater | null = null;
 let menuBar: MenuBar | null = null;
+let keepAwake: KeepAwake | null = null;
 let pluginInstaller: PluginInstaller | null = null;
 
 /** Notifications the app has shown of its own, held so a click on one is still heard. */
@@ -259,6 +270,7 @@ function start(): void {
     collector = null;
     updater?.stop();
     menuBar?.stop();
+    keepAwake?.stop();
     pluginInstaller?.stop();
   });
 
@@ -330,6 +342,17 @@ function start(): void {
         warn: log,
       });
       menuBar = bar;
+      // Keep the Mac awake, in Settings: one blocker at most, held while a
+      // session counts, which lets the display sleep.
+      const awake = createKeepAwake({
+        blocker: {
+          start: (type) => powerSaveBlocker.start(type),
+          stop: (id) => powerSaveBlocker.stop(id),
+        },
+        settings: keepAwakeSettingsFile(app.getPath("userData")),
+        warn: log,
+      });
+      keepAwake = awake;
       collector = createCollector({
         version: app.getVersion(),
         env: process.env,
@@ -339,6 +362,12 @@ function start(): void {
         onSnapshot: (snapshot) => {
           try {
             badge(snapshot);
+          } catch {
+            // Tried again on the next poll.
+          }
+          // Keep the Mac awake takes or lets go of its blocker to match the poll.
+          try {
+            awake.follow(snapshot);
           } catch {
             // Tried again on the next poll.
           }
@@ -383,6 +412,7 @@ function start(): void {
             menuBar: createMenuBarRoute(bar),
             notifications: createNotificationRoute(notifier),
             pluginInstall: createPluginInstallRoute(installer),
+            keepAwake: createKeepAwakeRoute(awake),
           }),
           distDir: path.join(app.getAppPath(), "dist"),
         }),

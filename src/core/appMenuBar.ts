@@ -4,7 +4,8 @@
 //
 // The app answers these under its own scheme, `agent-lookout://app/`, beside
 // its routes for updates. The standalone server and the dev server never do:
-// there, each of these addresses is the collector's 404.
+// there, the collector answers a GET of either address with 404 and a POST
+// with 405.
 
 /** `GET`: whether the menu bar item is shown, a `MenuBarStatus`. */
 export const APP_MENU_BAR_PATH = "/api/app/menu-bar";

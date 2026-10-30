@@ -3,7 +3,7 @@ import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
 import type { AppUpdateStatus, UpdatePhase } from "@core/appUpdate";
-import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
+import { UpdatesCard } from "@dashboard/components/settings/app/UpdatesCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { warmPaint } from "@tests/support/browser/colours";
 

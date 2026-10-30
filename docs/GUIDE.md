@@ -320,7 +320,7 @@ With `AGENT_LOOKOUT_WAITING_TEXT=off` or `AGENT_LOOKOUT_LAST_MESSAGE=off`, Claud
 
 ### Settings
 
-Settings has twelve cards, and in the Mac app two more, [Menu bar](#menu-bar) and [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one, and in the Mac app it sends a test to see what macOS answers. [Time rules](#time-rules) reminds you of a long wait, sets how long a session is idle before it is stale, and holds everything back during quiet hours. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, Webhook whether it posts to a webhook, such as a Slack channel's, and for what, and [ntfy](#ntfy) and [Pushover](#pushover) whether it pushes to your phone through either, and for what, with Send a test to try it. Pull requests says whether each session's [pull request](#pull-requests) is shown, and whether `gh` can be asked for them. All five are set up when you start it, not here. Permission prompts says whether Allow and Deny are offered, and whether the [plugin](#install-the-plugin)'s requests reach Agent Lookout, and [Permission rules](#permission-rules), under it, keeps the rules that answer a permission prompt for you, and lists what they answered. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails, webhook posts and pushes you set up, and with pull requests on, the names of repositories and branches to GitHub, through `gh`, unless `gh` was not found or is not signed in, when nothing goes to GitHub.
+Settings has twelve cards, and in the Mac app three more, [Menu bar](#menu-bar), [Keep awake](#keep-awake) and [Updates](#updates). Theme chooses Night, which is the default, Day, or System, which follows your computer's setting. Notifications turns notifications on and off, for the dashboard page and for Agent Lookout itself, and chooses what sends one, and in the Mac app it sends a test to see what macOS answers. [Time rules](#time-rules) reminds you of a long wait, sets how long a session is idle before it is stale, and holds everything back during quiet hours. History says where the Events log and the charts are kept, how much they hold and since when, and clears them. Email says whether Agent Lookout emails you, and for what, Webhook whether it posts to a webhook, such as a Slack channel's, and for what, and [ntfy](#ntfy) and [Pushover](#pushover) whether it pushes to your phone through either, and for what, with Send a test to try it. Pull requests says whether each session's [pull request](#pull-requests) is shown, and whether `gh` can be asked for them. All five are set up when you start it, not here. Permission prompts says whether Allow and Deny are offered, and whether the [plugin](#install-the-plugin)'s requests reach Agent Lookout, and [Permission rules](#permission-rules), under it, keeps the rules that answer a permission prompt for you, and lists what they answered. This copy shows the version you are running and where Agent Lookout sends your data: nowhere, or only in the emails, webhook posts and pushes you set up, and with pull requests on, the names of repositories and branches to GitHub, through `gh`, unless `gh` was not found or is not signed in, when nothing goes to GitHub.
 
 #### Notifications
 
@@ -1583,6 +1583,7 @@ It behaves as a Mac app does:
 - With its window open or closed, its [notifications](#notifications) come from Agent Lookout, not from Script Editor, and clicking one opens the window. They are off until you turn them on, and the app's setting is apart from a browser's: until they are on, the Overview asks whether to turn them on, and again a while after Not now. [Notifications in the Mac app](#notifications-in-the-mac-app) says more. A wait's notification that the app shows itself, with the window closed, or a reminder of one, opens the session's details, and can have Deny and Allow: [In the Mac app](#in-the-mac-app) says when.
 - Its icon in the Dock shows how many sessions need you, with the window open or closed, and no number when none do.
 - Its icon in the menu bar shows the same count, and lists those sessions when you click it. Choose one to open its details, or, while Agent Lookout holds its permission request, to answer it. [Menu bar](#menu-bar) says more.
+- With Keep the Mac awake on in Settings, the Mac does not go to sleep on its own while a session is working or needs you. It is off until you turn it on. [Keep awake](#keep-awake) says which sessions count.
 - Settings… in the Agent Lookout menu, or Cmd+comma, opens the Settings view. The Help menu opens this guide.
 - Right-click selected text to copy it, or in the search field to cut, copy and paste.
 - [Resume](#resume-a-session) copies its command as it does in a browser. The window may write to the clipboard when you press a button that copies, and never reads it.
@@ -1601,6 +1602,28 @@ A Claude Code session whose permission request Agent Lookout holds, through the 
 The times are those of the moment the pointer comes over the icon, or at most a minute old when you open the menu from the keyboard, and while it is open it stays as it is. A session that starts or stops waiting meanwhile shows the next time you open it, and the count beside the icon follows at once.
 
 To take the icon out of the menu bar, open Settings and, under Menu bar, set Show in menu bar to Off. Set it to On to put it back. The app remembers the choice, and the count on the Dock icon stays either way. If macOS does not let the app put its icon there, the switch reads Off and the app's log, `~/Library/Logs/Agent Lookout/main.log`, says why.
+
+### Keep awake
+
+While the Mac is asleep, Agent Lookout is too: it reads no session and sends no notification, email, post or push until the Mac wakes. To keep the Mac from going to sleep on its own while your sessions run, open Settings and, under Keep awake, set Keep the Mac awake to On. It is off until you turn it on, and the app remembers the choice.
+
+While it is on, the Mac stays awake as long as at least one session counts. The display still turns off on its usual timer. Sessions count by this rule, on this Mac and on every [other machine](#another-machine-over-ssh) Agent Lookout watches, since this Mac is the one that sends their notifications, emails, posts and pushes. It keeps only this Mac awake, never the other machine.
+
+- A session that needs you counts for as long as it is listed, however long it has waited.
+- A working session counts until 30 minutes after its newest update: the newer of when its status last changed and when its agent last wrote to its file. So a Gemini CLI session left showing working after its terminal was closed stops counting 30 minutes after its last write, and a Codex session waiting for your approval, which shows as working, stops counting once it has been quiet for 30 minutes. A session whose last write is not known goes by when its status last changed, and one with neither time does not count.
+- An OpenCode session has no last write, as the table under [Quiet for](#quiet-for) says, so it counts until 30 minutes after the prompt that began its turn, however busy it still is. Without that limit, a step that never ended would keep the Mac awake for the day the session stays listed, for as long as any program named `opencode` runs.
+- A working Claude Code session whose process is running, on this Mac or another, counts for as long as it is listed. Its status is Claude Code's own, read at every poll from a Claude Code that runs, and it stops showing as working once it ends. Claude Code writes no time while it works, so a limit would let the Mac sleep half an hour into a long task. A background job with no running process, such as a `/loop` job or a routine between its runs, which shows as working all the while, counts only until 30 minutes after its status last changed, like any other agent's.
+- Nothing else counts: no idle, finished or failed session, and none whose status is unknown.
+
+The app goes by each poll, every 2 seconds. It lets the Mac sleep again at the first poll where no session counts, and at once when you set the switch to Off or quit the app. To see it at work, run `pmset -g assertions` in a terminal: while the app keeps the Mac awake, `PreventUserIdleSystemSleep` is 1 or more and Agent Lookout is listed under the processes that hold an assertion.
+
+Some sleep cannot be held off. Closing a MacBook's lid puts it to sleep unless it is plugged in with a display connected, and so do Sleep in the Apple menu and a battery that runs low.
+
+Only the Mac app can do this: `npx agent-lookout` and `npm start` cannot keep the Mac awake. To keep the Mac awake while either runs, start it with macOS's own `caffeinate`. The Mac then stays awake for as long as Agent Lookout runs, whatever its sessions are doing, and the display still turns off.
+
+```sh
+caffeinate -i npx agent-lookout
+```
 
 ### Updates
 
@@ -1710,6 +1733,7 @@ In the Mac app, open Settings in the app itself, since its setting is apart from
 3. If the test was not sent, the note says why. For ntfy, a refused token or topic most often means the token is wrong, or the topic is reserved by another account, or the server lets no one write to it without a token. A server that could not be found, did not answer or had nothing answering is a problem with the network or with the address. For Pushover, a refusal with status 400 means the application's token or the user key is wrong: copy both again. A monthly limit reached waits for the next month.
 4. If the test was sent and nothing arrived, check the phone: that the ntfy app is subscribed to the same topic on the same server, that Pushover is signed in on it, and that its notifications are allowed for the app. A Pushover push for anything but a wait, a reminder or the test arrives without a sound. On an iPhone with an ntfy server of your own, a push can take hours unless the server sets `upstream-base-url`, as under [ntfy](#ntfy).
 5. Check [Time rules](#time-rules) in Settings. During quiet hours no push goes until they end, but a test does.
+6. Check that the computer running Agent Lookout was awake. A Mac that is asleep sends nothing, no notification, email, post or push, until it wakes. In the Mac app, [Keep awake](#keep-awake) keeps it from going to sleep on its own while a session is working or needs you.
 
 ### No pull request shows
 

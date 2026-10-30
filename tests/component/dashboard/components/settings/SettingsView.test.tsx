@@ -110,6 +110,8 @@ const SETTINGS: SettingsResponse = {
   ruleAnswers: [],
   ruleAnswersSince: Date.now() - 60_000,
 };
+/** Whether the Mac app keeps the Mac awake, as `GET /api/app/keep-awake` says on first launch. */
+const KEEP_AWAKE_OFF = { on: false };
 /** The paths the view asked the app for. */
 let asked: string[];
 /**
@@ -174,7 +176,9 @@ beforeEach(() => {
               ? pullRequests
               : path === "/api/settings"
                 ? SETTINGS
-                : email;
+                : path === "/api/app/keep-awake"
+                  ? KEEP_AWAKE_OFF
+                  : email;
     if (answer === null) throw new TypeError("Failed to fetch");
     return new Response(JSON.stringify(answer), {
       headers: { "Content-Type": "application/json" },
@@ -261,17 +265,22 @@ test("the facts about this copy say its version and that Agent Lookout sends its
   expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+/);
 });
 
-test("in a browser there is no Menu bar card and no Updates card, and nothing asks the app", async () => {
+test("in a browser there is no Menu bar, Keep awake or Updates card, and nothing asks the app", async () => {
+  // No `inApp`: the view tells a browser from the app by the page's own address.
   const screen = await render(<SettingsView />);
   await expect.element(screen.getByRole("region", { name: "This copy" })).toBeVisible();
   expect(screen.getByRole("region", { name: "Menu bar" }).elements()).toHaveLength(0);
+  expect(screen.getByRole("region", { name: "Keep awake" }).elements()).toHaveLength(0);
+  expect(screen.getByRole("radiogroup", { name: "Keep the Mac awake" }).elements()).toHaveLength(0);
   expect(screen.getByRole("region", { name: "Updates" }).elements()).toHaveLength(0);
+  expect(asked.filter((path) => path.startsWith("/api/app/keep-awake"))).toEqual([]);
   expect(asked.some((path) => path.startsWith("/api/app/"))).toBe(false);
 });
 
-test("in the Mac app, Menu bar and Updates follow History, among the settings the page changes", async () => {
+test("in the Mac app, Menu bar, Keep awake and Updates follow History, among the settings the page changes", async () => {
   const screen = await render(<SettingsView inApp />);
   await expect.element(screen.getByRole("region", { name: "Menu bar" })).toBeVisible();
+  await expect.element(screen.getByRole("region", { name: "Keep awake" })).toBeVisible();
   await expect.element(screen.getByRole("region", { name: "Updates" })).toBeVisible();
   const titles = [...screen.container.querySelectorAll('[data-slot="section-card"] h2')].map(
     (title) => title.textContent,
@@ -282,6 +291,7 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
     "Time rules",
     "History",
     "Menu bar",
+    "Keep awake",
     "Updates",
     "Email",
     "Webhook",
@@ -296,10 +306,22 @@ test("in the Mac app, Menu bar and Updates follow History, among the settings th
   const notifications = screen.getByRole("region", { name: "Notifications" }).element();
   const updates = screen.getByRole("region", { name: "Updates" }).element();
   const menuBar = screen.getByRole("region", { name: "Menu bar" }).element();
+  const keepAwake = screen.getByRole("region", { name: "Keep awake" }).element();
   expect(updates.parentElement).toBe(notifications.parentElement);
   expect(menuBar.parentElement).toBe(notifications.parentElement);
+  expect(keepAwake.parentElement).toBe(notifications.parentElement);
+  // Right after Menu bar and right before Updates, in that column.
+  const column = [...(notifications.parentElement?.children ?? [])];
+  expect(column.indexOf(keepAwake)).toBe(column.indexOf(menuBar) + 1);
+  expect(column.indexOf(updates)).toBe(column.indexOf(keepAwake) + 1);
+  // Its switch reads what the app answers, and drawing the view turns nothing.
+  await expect
+    .element(screen.getByRole("region", { name: "Keep awake" }).getByRole("radio", { name: "Off" }))
+    .toBeChecked();
   expect(asked).toContain("/api/app/update");
   expect(asked).toContain("/api/app/menu-bar");
+  expect(asked).toContain("/api/app/keep-awake");
+  expect(asked).not.toContain("/api/app/keep-awake/setting");
 });
 
 test.each(["dark", "light"] as const)(
