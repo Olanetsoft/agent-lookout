@@ -18,8 +18,7 @@ import { useNow } from "@dashboard/hooks/data/useNow";
 import { useShortcuts } from "@dashboard/hooks/shell/useShortcuts";
 import { useSessionAddress, useView } from "@dashboard/hooks/shell/useView";
 import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
-import { workerBeat } from "@dashboard/lib/api/beat";
-import { createCollectorStore, type CollectorStore } from "@dashboard/lib/api/collectorStore";
+import type { CollectorStore } from "@dashboard/lib/api/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import { countNeedingYou } from "@dashboard/lib/sessions/sessions";
 import { closeSession } from "@dashboard/lib/shell/sessionDetails";
@@ -63,10 +62,12 @@ const HISTORY_METRICS: readonly HistoryMetric[] = ["needsYou", "working", "idle"
 
 interface AppProps {
   /**
-   * Tests pass their own store. The app creates one that polls the local server,
-   * on a beat that keeps time while the tab is in the background.
+   * Where the app's data comes from. `Page.tsx` gives it a store that polls
+   * the local server, on a beat that keeps time while the tab is in the
+   * background, and a new one each time the app is drawn afresh. Tests and the
+   * landing page's tour pass their own. The first one given is kept.
    */
-  store?: CollectorStore;
+  store: CollectorStore;
 }
 
 /**
@@ -129,7 +130,7 @@ function Ground() {
  * on the Overview, or opens its details when it has none.
  */
 export default function App({ store: providedStore }: AppProps) {
-  const [store] = useState(() => providedStore ?? createCollectorStore({ beat: workerBeat }));
+  const [store] = useState(() => providedStore);
   const state = useCollector(store);
   // On every view, and with nothing drawn for it.
   useWaitNotifications(store);

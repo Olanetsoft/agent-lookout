@@ -137,9 +137,11 @@ jobs:
 
   # The landing page's tour in site/tour/ is built from a release, as one of
   # its steps, so the page never shows a dashboard feature before it ships.
-  # Every run checks its sizes. A run whose package.json has a new version, a
-  # release, also builds it again and fails when what is committed is not what
-  # it builds.
+  # Every run builds the tour from the working tree into a temporary folder
+  # and fails when it is over a budget, so a pull request that would put it
+  # over fails here and not at the next release. A run whose package.json has
+  # a new version, a release, also fails when what is committed in site/tour/
+  # is not what it builds.
   tour:
     runs-on: ubuntu-latest
     timeout-minutes: 10

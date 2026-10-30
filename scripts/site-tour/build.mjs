@@ -12,10 +12,17 @@
 //   node scripts/site-tour/build.mjs --check   npm run check:tour: builds it
 //                                              again into a temporary folder and
 //                                              fails when what is committed differs
-//   ... --check --since <commit>               CI: the same, but only when the
-//                                              version in package.json differs from
-//                                              the one at <commit>, which is a release.
-//                                              Otherwise only the sizes are checked
+//   ... --check --since <commit>               CI. On a release, when the version in
+//                                              package.json differs from the one at
+//                                              <commit>: the same as --check.
+//                                              Otherwise it builds the working tree
+//                                              into a temporary folder and checks
+//                                              only the budgets, of that build and of
+//                                              what is committed. It compares nothing
+//                                              with what is committed and writes
+//                                              nothing in site/, so a change that
+//                                              would put the tour over a budget fails
+//                                              in its own pull request
 //   node scripts/site-tour/build.mjs --sizes   npm run check:tour-size: the sizes of
 //                                              what is committed, built nothing
 //   node scripts/site-tour/build.mjs --out <folder>
@@ -44,7 +51,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
-import { build as viteBuild, createLogger } from "vite";
+import { build as viteBuild, createLogger, normalizePath } from "vite";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const site = path.join(root, "site");
@@ -69,9 +76,18 @@ const warnOnce = logger.warnOnce.bind(logger);
 logger.warn = (message, options) => fontNote(message) || warn(message, options);
 logger.warnOnce = (message, options) => fontNote(message) || warnOnce(message, options);
 
-/** Budgets, in bytes sent gzipped. */
+/**
+ * Budgets, in bytes sent gzipped.
+ *
+ * #203 took out what the tour bundled and never ran, the Mac app's own parts
+ * and the app's polling store, about 7 KB, so what is left is the dashboard
+ * the tour shows. From 0.2.9 to 0.2.14 a release added between 0 and 4 KB to
+ * it. CI builds the tour on every pull request and fails one that would put it
+ * over either budget, so raising one is decided there, with the change that
+ * needs it.
+ */
 const BUDGET = {
-  /** The dashboard, with Allow and Deny, time and permission rules and other machines, is about 241 KB of it. */
+  /** Built from main after #203, the tour's JavaScript is 246.4 KB, and 278.9 KB with its fonts. */
   tourJs: 256 * 1024,
   tourCss: 14 * 1024,
   tourHtml: 2 * 1024,
@@ -103,6 +119,76 @@ const fontAliases = [
   },
 ];
 
+/**
+ * The parts of the dashboard drawn only in the Mac app's window, and so never
+ * in a browser or in the tour: the Menu bar, Keep awake and Updates cards in
+ * Settings, and the note on the app's Claude Code plugin. Each is given, in
+ * the tour, the part beside it in src/site-tour/app-only/, which draws nothing.
+ */
+const APP_ONLY = {
+  "src/dashboard/components/settings/app/MenuBarCard.tsx": "src/site-tour/app-only/AppCards.tsx",
+  "src/dashboard/components/settings/app/KeepAwakeCard.tsx": "src/site-tour/app-only/AppCards.tsx",
+  "src/dashboard/components/settings/app/UpdatesCard.tsx": "src/site-tour/app-only/AppCards.tsx",
+  "src/dashboard/components/dashboard/PluginNotice.tsx": "src/site-tour/app-only/PluginNotice.tsx",
+};
+
+/**
+ * Puts the parts in APP_ONLY out of the tour, with the hooks and the calls to
+ * the app behind them. A part is known by the file an import resolves to, so
+ * an import by `@dashboard/…`, by a relative path or by any other name is
+ * caught alike.
+ *
+ * The tour's build fails when a part here was never imported, as happens once
+ * it is moved or renamed: point its line in APP_ONLY at it again. It also
+ * fails when one is in the tour anyway, and Rollup fails it when a part in
+ * src/site-tour/app-only/ lacks a name the dashboard imports. CI builds the
+ * tour on every pull request, so none of these can reach main. A new part
+ * that only the Mac app's window draws is not caught here: add it to APP_ONLY.
+ */
+function appOnlyParts() {
+  /** Each real part's file, by the id Vite gives it, with its name here and the file put in its place. */
+  const parts = new Map(
+    Object.entries(APP_ONLY).map(([real, standIn]) => [
+      normalizePath(path.join(root, real)),
+      { name: real, standIn: normalizePath(path.join(root, standIn)) },
+    ]),
+  );
+  const names = new Set(Object.keys(APP_ONLY).map((real) => path.parse(real).name));
+  const replaced = new Set();
+  return {
+    name: "agent-lookout:app-only-parts",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      // Only an import whose last part is one of their names is resolved again.
+      const last = path.posix.basename(source.split("?")[0].replaceAll("\\", "/"));
+      if (!importer || !names.has(last.replace(/\.[cm]?[jt]sx?$/, ""))) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      const real = resolved && normalizePath(resolved.id);
+      if (!real || !parts.has(real)) return null;
+      replaced.add(real);
+      return parts.get(real).standIn;
+    },
+    generateBundle(_options, bundle) {
+      const bundled = new Set();
+      for (const file of Object.values(bundle)) {
+        if (file.type !== "chunk") continue;
+        for (const id of Object.keys(file.modules)) bundled.add(normalizePath(id.split("?")[0]));
+      }
+      const problems = [];
+      for (const [real, { name }] of parts) {
+        if (bundled.has(real)) {
+          problems.push(`${name} is in the tour, though only the Mac app's window draws it.`);
+        } else if (!replaced.has(real)) {
+          problems.push(
+            `${name} was never imported. If it was moved or renamed, point its line in APP_ONLY at it, or the tour carries it again.`,
+          );
+        }
+      }
+      if (problems.length > 0) this.error(problems.join("\n"));
+    },
+  };
+}
+
 const gz = (bytes) => gzipSync(bytes, { level: 9 }).length;
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
@@ -128,6 +214,7 @@ async function buildTour(out) {
       base: "/tour/",
       customLogger: logger,
       resolve: { alias: fontAliases },
+      plugins: [appOnlyParts()],
       build: {
         outDir: work,
         emptyOutDir: true,
@@ -213,10 +300,53 @@ function versionAt(commit) {
 }
 
 /** Checks only what is committed: its sizes. Builds nothing. */
-async function checkSizes(note = "") {
+async function checkSizes() {
   const { lines, over } = await measure(path.join(site, "tour"));
   if (over.length > 0) fail(over.join("\n"));
-  console.log(`${note}The landing page's tour is within its sizes.\n${lines.join("\n")}`);
+  console.log(`The landing page's tour is within its sizes.\n${lines.join("\n")}`);
+}
+
+/** Builds the tour from the working tree into `tourDir`, in place of what was there, and measures it. */
+async function buildAndMeasure(tourDir) {
+  await rm(tourDir, { recursive: true, force: true });
+  await buildTour(tourDir);
+  return measure(tourDir);
+}
+
+/**
+ * Not a release: site/tour/ stays as the last release built it, and is only
+ * measured. The working tree is built into a temporary folder, measured and
+ * thrown away, so a change that would put the tour over a budget fails in its
+ * own pull request and not at the next release. Nothing is compared with what
+ * is committed, and nothing is written in site/.
+ */
+async function checkBetweenReleases() {
+  const committed = await measure(path.join(site, "tour"));
+  const scratch = await mkdtemp(path.join(tmpdir(), "agent-lookout-tour-sizes-"));
+  let built;
+  try {
+    built = await buildAndMeasure(path.join(scratch, "tour"));
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+  console.log(
+    `Not a release: package.json says ${version}, as before, so site/tour/ is not rebuilt.\n` +
+      `The tour built from the working tree:\n${built.lines.join("\n")}\n` +
+      `The tour committed in site/tour/:\n${committed.lines.join("\n")}`,
+  );
+  const over = [];
+  if (built.over.length > 0) {
+    over.push(
+      `The tour built from the working tree is over a budget:\n  ${built.over.join("\n  ")}`,
+    );
+  }
+  if (committed.over.length > 0) {
+    over.push(
+      `The tour committed in site/tour/ is over a budget:\n  ${committed.over.join("\n  ")}`,
+    );
+  }
+  // After the temporary folder is gone: fail() exits at once.
+  if (over.length > 0) fail(over.join("\n"));
 }
 
 const version = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
@@ -225,17 +355,13 @@ const released =
 
 if (out !== null) {
   const tourDir = path.join(out, "tour");
-  await rm(tourDir, { recursive: true, force: true });
-  await buildTour(tourDir);
-  const { lines, over } = await measure(tourDir);
+  const { lines, over } = await buildAndMeasure(tourDir);
   console.log(`Built the tour from the working tree into ${tourDir}.\n${lines.join("\n")}`);
   if (over.length > 0) fail(over.join("\n"));
-} else if (sizesOnly || (checking && !released)) {
-  await checkSizes(
-    sizesOnly
-      ? ""
-      : `Not a release: package.json says ${version}, as before. The tour is built only for a release.\n`,
-  );
+} else if (sizesOnly) {
+  await checkSizes();
+} else if (checking && !released) {
+  await checkBetweenReleases();
 } else if (checking) {
   const scratch = await mkdtemp(path.join(tmpdir(), "agent-lookout-tour-check-"));
   try {

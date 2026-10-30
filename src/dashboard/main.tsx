@@ -2,8 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./styles/index.css";
-import App from "@dashboard/App";
-import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
+import Page from "@dashboard/Page";
 import { markAppWindow } from "@dashboard/lib/shell/appWindow";
 
 // In the Mac app's window, the rail makes room for the window's buttons.
@@ -16,9 +15,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    {/* Whatever goes wrong while drawing, the page says so. It is never left empty. */}
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <Page />
   </StrictMode>,
 );

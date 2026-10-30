@@ -269,6 +269,39 @@ test("the Mac app's still is held where the wait was last seen, so its timer agr
   expect(held.at(-1)).toBe(left);
 });
 
+// The tour's build puts parts that draw nothing in place of the Menu bar, Keep
+// awake and Updates cards and the note on the Claude Code plugin, which only
+// the Mac app's window draws. That changes nothing only while the dashboard
+// knows it is in a browser in every scene, the Mac app's included.
+test("the Mac app's scene draws only the window: the dashboard still knows it is in a browser, so nothing only the app's window draws is shown or asked for", async () => {
+  const { store, director } = setUp();
+  const tourApi = createTourApi(store, () => Date.now());
+  const asked: string[] = [];
+  setApiHost((path, init) => {
+    asked.push(path);
+    return tourApi(path, init);
+  });
+  await render(createElement(App, { store }));
+
+  const mac = SCENES.findIndex((scene) => scene.app === true);
+  expect(mac).toBeGreaterThan(-1);
+  await director.apply(mac, 0, null);
+  await expect.poll(() => document.querySelector("main")?.dataset.view).toBe("overview");
+  expect(document.documentElement.dataset.host).toBe("app");
+
+  // Settings, as a visitor who has taken the frame over opens it, still in the app's window.
+  location.replace("#settings");
+  await expect.poll(() => document.querySelector("main")?.dataset.view).toBe("settings");
+  await expect.poll(() => cardTitled(document, "Time rules")).not.toBeNull();
+  expect(document.documentElement.dataset.host).toBe("app");
+  for (const name of ["Menu bar", "Keep awake", "Updates"]) {
+    expect(page.getByRole("region", { name }).elements(), name).toHaveLength(0);
+  }
+  // Nothing asked the app, as the plugin's note and those cards do in its window.
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.filter((path) => path.startsWith("/api/app/"))).toEqual([]);
+});
+
 test("a session's details left open are closed by the next scene", async () => {
   const { store, director } = setUp();
   await render(createElement(App, { store }));
