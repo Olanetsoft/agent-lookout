@@ -474,23 +474,41 @@ test.each([1440, 1000, 620])(
   },
 );
 
+/** Forty events of one afternoon, a minute apart: more than any card shows at once. */
+const MANY = Array.from({ length: 40 }, (_, index) =>
+  event(100 + index, at(17, 0, 0) - index * 60_000, `session-${index}`, "idle"),
+);
+
+/**
+ * What a list cut to whole rows shows at rest: no row in view is sliced by
+ * its foot, nothing of the next row shows, and the last whole row.
+ */
+function wholeRowsInView(list: HTMLElement): HTMLElement {
+  const bottom = list.getBoundingClientRect().bottom;
+  const items = [...list.children] as HTMLElement[];
+  const inView = items.filter((row) => row.getBoundingClientRect().top < bottom - 0.5);
+  for (const row of inView) {
+    expect(row.getBoundingClientRect().bottom, row.textContent ?? "").toBeLessThanOrEqual(
+      bottom + 0.5,
+    );
+  }
+  const next = items[inView.length];
+  if (next) expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(bottom - 0.5);
+  return inView.at(-1)!;
+}
+
+// Beside the Sessions card, the log is as tall as that card.
 test.each([
   [1440, 433],
   [1440, 471],
-  [1000, 900],
-  [620, 900],
 ])(
   "at %i pixels, in a card %i pixels tall, a log longer than its room shows whole rows only, ending above the card's rim",
   async (width, height) => {
     onTestFinished(() => page.viewport(414, 896));
     await page.viewport(width, 900);
-    const many = Array.from({ length: 40 }, (_, index) =>
-      event(100 + index, at(17, 0, 0) - index * 60_000, `session-${index}`, "idle"),
-    );
-    // Beside the Sessions card it is as tall as that card; stacked, it is capped.
     const screen = await render(
-      <div style={{ width: Math.min(420, width - 48), height, display: "flex" }}>
-        <EventsCard events={many} now={NOW} className='flex-1' />
+      <div style={{ width: 420, height, display: "flex" }}>
+        <EventsCard events={MANY} now={NOW} className='flex-1' />
       </div>,
     );
     const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
@@ -498,29 +516,119 @@ test.each([
 
     await vi.waitFor(() => expect(list.dataset.wholeRows).toBe("true"));
     const bottom = list.getBoundingClientRect().bottom;
-    // No row is sliced by the edge of what is in view.
-    for (const row of list.children) {
-      const box = row.getBoundingClientRect();
-      if (box.top >= bottom) continue;
-      expect(box.bottom, row.textContent ?? "").toBeLessThanOrEqual(bottom + 0.5);
-    }
-    // The last row in view ends above the card's rim, inside the card.
-    expect(bottom).toBeLessThan(card.getBoundingClientRect().bottom);
+    // No row is sliced by the edge of what is in view, and the last one in
+    // view ends at least the end of the log's 14px above the card's rim.
+    const last = wholeRowsInView(list);
+    expect(
+      card.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom,
+    ).toBeGreaterThanOrEqual(13.5);
     // The rest is below, behind the scrollbar.
     expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
     // Scrolled to the end, the oldest row is in view, whole.
     list.scrollTop = list.scrollHeight;
-    const last = list.lastElementChild!.getBoundingClientRect();
-    expect(last.bottom).toBeLessThanOrEqual(bottom + 0.5);
+    expect(list.lastElementChild!.getBoundingClientRect().bottom).toBeLessThanOrEqual(bottom + 0.5);
 
     // When every row fits, the list is left to fill its card as before.
     await screen.rerender(
-      <div style={{ width: Math.min(420, width - 48), height, display: "flex" }}>
-        <EventsCard events={many.slice(0, 3)} now={NOW} className='flex-1' />
+      <div style={{ width: 420, height, display: "flex" }}>
+        <EventsCard events={MANY.slice(0, 3)} now={NOW} className='flex-1' />
       </div>,
     );
     await vi.waitFor(() => expect(list.hasAttribute("data-whole-rows")).toBe(false));
     expect(list.scrollHeight).toBeLessThanOrEqual(list.clientHeight);
+  },
+);
+
+// Below 1181 pixels the Overview is one column, and the Events card is as tall
+// as what it holds, under Sessions: the list is capped at 480px, and nothing
+// else gives it room. Its width is the Overview's: the window less the rail,
+// the gap beside it and the insets. 1180 is the widest window where it stacks.
+test.each([1180, 1000, 620, 375])(
+  "at %i pixels, stacked in the one-column Overview, a log longer than its cap shows whole rows only, the last 14px above the card's rim",
+  async (width) => {
+    onTestFinished(() => page.viewport(414, 896));
+    await page.viewport(width, 900);
+    const overview = width - (width <= 760 ? 92 : 112);
+    const column = (events: SessionEvent[]) => (
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", width: overview }}>
+        <EventsCard events={events} now={NOW} />
+      </div>
+    );
+    const screen = await render(column(MANY));
+    const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    const rim = () => card.getBoundingClientRect().bottom;
+
+    await vi.waitFor(() => expect(list.dataset.wholeRows).toBe("true"));
+    const bottom = list.getBoundingClientRect().bottom;
+    // Whole rows only, with nothing of the next one showing, and the last
+    // whole row ends the end of the log's 14px above the card's rim: that
+    // space, and no more.
+    const last = wholeRowsInView(list);
+    expect(rim() - last.getBoundingClientRect().bottom).toBeGreaterThanOrEqual(13.5);
+    expect(rim() - last.getBoundingClientRect().bottom).toBeLessThanOrEqual(14.5);
+    // The list and the space under it stay within the cap.
+    expect(list.parentElement!.getBoundingClientRect().height).toBeLessThanOrEqual(480.5);
+    // The rest is below, behind the scrollbar, and scrolled to the end the
+    // oldest row is in view, whole.
+    expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
+    list.scrollTop = list.scrollHeight;
+    expect(list.lastElementChild!.getBoundingClientRect().bottom).toBeLessThanOrEqual(bottom + 0.5);
+
+    // A log that fits is not cut, and its last row still ends the same 14px
+    // above the rim: the list's own end space, with nothing added under it.
+    await screen.rerender(column(MANY.slice(0, 3)));
+    await vi.waitFor(() => expect(list.hasAttribute("data-whole-rows")).toBe(false));
+    expect(list.scrollHeight).toBeLessThanOrEqual(list.clientHeight);
+    const space = rim() - list.lastElementChild!.getBoundingClientRect().bottom;
+    expect(space).toBeGreaterThanOrEqual(13.5);
+    expect(space).toBeLessThanOrEqual(14.5);
+  },
+);
+
+/**
+ * A log over four days: one event today, three on each of the two days before
+ * and the rest on the day before those, so a day's head comes between rows.
+ * Above a phone's width that puts one row's foot between 466 and 480px down
+ * the list: under the cap, but in the 14px the end of the log keeps under it.
+ */
+const OVER_DAYS = Array.from({ length: 30 }, (_, index) => {
+  const day = index < 1 ? 5 : index < 4 ? 4 : index < 7 ? 3 : 2;
+  return event(
+    200 + index,
+    new Date(2026, 0, day, 17, 59 - index, 0).getTime(),
+    `run-${index}`,
+    "idle",
+  );
+});
+
+test.each([1180, 1000, 620])(
+  "at %i pixels, stacked, a row that would end in the space under the last one is left below, so the list and that space stay within the cap",
+  async (width) => {
+    onTestFinished(() => page.viewport(414, 896));
+    await page.viewport(width, 900);
+    const screen = await render(
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", width: width - 112 }}>
+        <EventsCard events={OVER_DAYS} now={NOW} />
+      </div>,
+    );
+    const list = screen.container.querySelector('[data-slot="event-list"]') as HTMLElement;
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    await vi.waitFor(() => expect(list.dataset.wholeRows).toBe("true"));
+
+    // The case itself: a row ends under the cap, but less than 14px above it.
+    const top = list.getBoundingClientRect().top;
+    const feet = [...list.children].map((item) => item.getBoundingClientRect().bottom - top);
+    expect(feet.some((foot) => foot > 466.5 && foot <= 480)).toBe(true);
+
+    // That row is left for the scrollbar: the list and the space under it
+    // stay within 480px, and the last whole row ends 14px above the rim.
+    const last = wholeRowsInView(list);
+    expect(last.getBoundingClientRect().bottom - top).toBeLessThanOrEqual(466.5);
+    expect(list.parentElement!.getBoundingClientRect().height).toBeLessThanOrEqual(480.5);
+    const space = card.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom;
+    expect(space).toBeGreaterThanOrEqual(13.5);
+    expect(space).toBeLessThanOrEqual(14.5);
   },
 );
 

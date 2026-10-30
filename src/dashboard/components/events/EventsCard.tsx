@@ -415,7 +415,9 @@ function NewLine({
  * card's rim, which reads as a fault and not as a list that goes on. So the
  * list ends at the foot of the last row that fits with the space under it that
  * the end of the log has, above the rim, and its scrollbar says the rest is
- * below.
+ * below. Beside the Sessions card that space is the frame's, which is as tall
+ * as the card; stacked, the card ends where the list does, so the space is
+ * the list's own, under it, and the two together stay within the cap.
  *
  * The room is read from the frame the list is laid in, or from the cap, and
  * never from the list itself, so setting its height does not change what is
@@ -539,9 +541,10 @@ type Item =
  *
  * Beside the Sessions card it takes that card's height and scrolls inside it
  * once its rows are many. Stacked under it, it scrolls within a fixed height of
- * about twelve rows. Either way, at rest it shows whole rows only, ending a
- * little above the card's rim, and its thin scrollbar is what shows that it
- * goes on: nothing fades, so every row keeps its contrast.
+ * about twelve rows. Either way, at rest it shows whole rows only, and the last
+ * ends at least 14px above the card's rim: beside the Sessions card that space
+ * is the frame's, and stacked it is under the list, its own. Its thin scrollbar
+ * is what shows that it goes on: nothing fades, so every row keeps its contrast.
  */
 export function EventsCard({
   events,
@@ -676,6 +679,9 @@ export function EventsCard({
             // the card's right edge.
             "thin-scroll flex flex-col overflow-y-auto pt-0.5 pb-3.5 focus-visible:-outline-offset-2",
             "wide:absolute wide:inset-0 max-wide:max-h-120",
+            // Stacked, a list cut to whole rows ends at the last one's foot, so
+            // the space the end of the log has goes under the list instead.
+            fit !== null && "max-wide:mb-3.5",
           )}
           style={fit !== null ? { bottom: "auto", height: fit } : undefined}
         >

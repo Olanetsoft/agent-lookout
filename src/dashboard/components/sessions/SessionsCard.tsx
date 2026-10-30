@@ -139,7 +139,7 @@ function Searching({ sources }: { sources: readonly SourceHealth[] }) {
 /** What a group's rows are drawn with, the same in every group of the table. */
 interface RowsProps {
   now: number;
-  /** Whether the table has a column for Jump, and for Resume. */
+  /** Whether the table has a column for Jump, and for Resume, when it is wide. */
   actionColumn: boolean;
   columns: number;
   narrow: boolean;
@@ -369,7 +369,9 @@ function useColumns(
  * When the card is too narrow for every column, the App column gives way, then
  * the Folder column, so a name of about 18 letters is never cut. Narrow, both
  * are left out, and the status and its time move under the name, so the name
- * keeps its room down to the width of a phone.
+ * keeps its room down to the width of a phone. A row's Jump or Resume sits at
+ * the end of the name's line there, and the table has no column for it, so
+ * the line under the name has the whole width of the row.
  *
  * A tool that is not on this computer is left out here, as if it were not
  * watched: no notice for it, and no name for it in the empty state. The Sources
@@ -438,12 +440,20 @@ export function SessionsCard({
     app: appColumn,
     folderRem,
   } = useColumns(table, listed.length > 0 && !narrow && !board, agentColumn, actionColumn);
+  // Narrow, a row's Jump or Resume ends the name's line, so the table has no
+  // column for it, and the line under the name has the cell's whole width.
+  const actionColumnShown = actionColumn && !narrow;
   // A group row spans the columns there are. A span wider than that would add
   // empty columns of its own and squeeze the ones with something in them.
-  // Wide, those are Session and Status, with Agent, Folder and App when shown.
-  const columns =
-    (narrow ? 1 : 2 + (agentColumn ? 1 : 0) + (folderColumn ? 1 : 0) + (appColumn ? 1 : 0)) +
-    (actionColumn ? 1 : 0);
+  // Wide, those are Session and Status, with Agent, Folder, App and the
+  // actions when shown. Narrow, there is only Session.
+  const columns = narrow
+    ? 1
+    : 2 +
+      (agentColumn ? 1 : 0) +
+      (folderColumn ? 1 : 0) +
+      (appColumn ? 1 : 0) +
+      (actionColumnShown ? 1 : 0);
   // A count that nobody could make is not a zero: while no source has been
   // read, the head says no number at all, as the counts in the hero do.
   const { counted } = countState(sessions, sources);
@@ -472,7 +482,7 @@ export function SessionsCard({
             {folderColumn && !narrow && <col style={{ width: `${folderRem}rem` }} />}
             {appColumn && !narrow && <col className='w-28' />}
             {!narrow && <col className='w-40' />}
-            {actionColumn && <col className='w-24' />}
+            {actionColumnShown && <col className='w-24' />}
           </colgroup>
           <thead className='sr-only'>
             <tr>
@@ -481,7 +491,7 @@ export function SessionsCard({
               {folderColumn && !narrow && <th scope='col'>Folder</th>}
               {appColumn && !narrow && <th scope='col'>App</th>}
               {!narrow && <th scope='col'>Status and time</th>}
-              {actionColumn && (
+              {actionColumnShown && (
                 <th scope='col'>
                   {jumpColumn && resumeColumn ? "Jump or resume" : jumpColumn ? "Jump" : "Resume"}
                 </th>

@@ -988,6 +988,35 @@ test("with no Jump on the card, Resume alone makes the column, and its head says
   ).toBe(18);
 });
 
+test("at the width of a phone a row with both Jump and Resume keeps a gap between them on the name's line", async () => {
+  await page.viewport(375, 900);
+  // A finished session started from VS Code keeps its link there, so it has both.
+  const sessions = [
+    session(2, {
+      name: "nightly-report",
+      status: "finished",
+      statusSince: NOW - HOUR,
+      surface: "vscode",
+      links: { open: jumpLink(2) },
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: 283 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const row = rowOf(screen.container, "nightly-report");
+  const jump = row.querySelector('[data-part="jump"]');
+  const resume = row.querySelector('[data-part="resume"]');
+  expect(jump, "Jump").not.toBeNull();
+  expect(resume, "Resume").not.toBeNull();
+  const [first, second] = [jump!, resume!]
+    .map((button) => button.getBoundingClientRect())
+    .sort((a, b) => a.left - b.left);
+  expect(second.left - first.right).toBeGreaterThanOrEqual(8);
+  expect(Math.abs(first.top - second.top)).toBeLessThan(1);
+});
+
 test("at the width of a phone a refused copy puts the command under the name, and nothing is cut or runs past the card", async () => {
   await page.viewport(375, 900);
   const write = vi
@@ -1009,7 +1038,10 @@ test("at the width of a phone a refused copy puts the command under the name, an
   );
   const row = rowOf(screen.container, "nightly-report");
   const height = row.getBoundingClientRect().height;
-  await userEvent.click(row.querySelector('[data-part="resume"]') as HTMLElement);
+  const resume = row.querySelector('[data-part="resume"]') as HTMLElement;
+  const nameWidth = row.querySelector('[data-part="name"]')!.getBoundingClientRect().width;
+  const resumeBox = resume.getBoundingClientRect();
+  await userEvent.click(resume);
 
   await expect.poll(() => row.querySelector('[data-part="resume-line"]')).not.toBeNull();
   const line = row.querySelector('[data-part="resume-line"]') as HTMLElement;
@@ -1026,6 +1058,10 @@ test("at the width of a phone a refused copy puts the command under the name, an
     status.getBoundingClientRect().top + 1,
   );
   expect(row.getBoundingClientRect().height).toBeGreaterThan(height);
+  // The name keeps its room, and Resume stays where it was, at the end of the name's line.
+  expect(name.getBoundingClientRect().width).toBe(nameWidth);
+  expect(resume.getBoundingClientRect().right).toBe(resumeBox.right);
+  expect(resume.getBoundingClientRect().top).toBe(resumeBox.top);
   const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
   expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
@@ -1060,9 +1096,7 @@ test.each([
   const visible = (element: Element) => getComputedStyle(element).display !== "none";
 
   expect(heads.map((head) => head.textContent)).toEqual(
-    shown
-      ? ["Session", "Folder", "App", "Status and time", "Jump or resume"]
-      : ["Session", "Jump or resume"],
+    shown ? ["Session", "Folder", "App", "Status and time", "Jump or resume"] : ["Session"],
   );
   expect(visible(rowOf(screen.container, "busy-one").querySelector('[data-part="app"]')!)).toBe(
     shown,
@@ -1073,13 +1107,19 @@ test.each([
     ),
   ).toBe(shown);
   // A group row spans only the columns there are, so the name keeps its room.
-  // Narrow, those are the session and Jump: the status and its time are under the name.
+  // Narrow, that is the session alone: the status and its time are under the
+  // name, and Jump is at the end of the name's line.
   const span = (
     screen.container.querySelector('[data-slot="group-row"] th') as HTMLTableCellElement
   ).colSpan;
-  expect(span).toBe(shown ? 5 : 2);
+  expect(span).toBe(shown ? 5 : 1);
   const busy = rowOf(screen.container, "busy-one");
-  expect(busy.querySelectorAll("td")).toHaveLength(shown ? 5 : 4);
+  // Narrow, the Folder and App cells are drawn, hidden, and there is no cell for Jump.
+  expect(busy.querySelectorAll("td")).toHaveLength(shown ? 5 : 3);
+  const stale = rowOf(screen.container, "stale-one");
+  expect(stale.querySelector('[data-part="jump"]')?.closest("td")).toBe(
+    shown ? stale.lastElementChild : stale.firstElementChild,
+  );
   expect(busy.querySelector('[data-part="status"]')?.textContent).toBe("Working");
   const under = busy.querySelector('[data-part="status-under"]');
   expect(under !== null).toBe(!shown);
@@ -1139,14 +1179,16 @@ test("a name that fits is plain text: no tooltip, and no stop for Tab", async ()
 
 test("at the width of a phone every row has two lines, and no word is cut or runs into another", async () => {
   await page.viewport(375, 900);
+  // The card's width on a phone's Overview, 375 less 92.
   const screen = await render(
-    <div style={{ width: 279 }}>
+    <div style={{ width: 283 }}>
       <SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />
     </div>,
   );
   const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  const edges = { button: new Set<number>(), duration: new Set<number>() };
 
   for (const row of screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')) {
     const name = row.querySelector('[data-part="name"]') as HTMLElement;
@@ -1164,13 +1206,22 @@ test("at the width of a phone every row has two lines, and no word is cut or run
     expect(status.getBoundingClientRect().top, what).toBeGreaterThanOrEqual(
       name.getBoundingClientRect().bottom - 1,
     );
-    // Nothing in the first cell runs into the Jump cell.
-    const cells = row.querySelectorAll("td");
-    const jumpCell = cells[cells.length - 1] as HTMLElement;
-    expect(duration.getBoundingClientRect().right, what).toBeLessThanOrEqual(
-      jumpCell.getBoundingClientRect().left,
-    );
+    edges.duration.add(Math.round(duration.getBoundingClientRect().right));
+    // Jump or Resume is on the name's line, after it, and nothing runs into it.
+    const button = row.querySelector<HTMLElement>('[data-part="jump"], [data-part="resume"]');
+    if (button) {
+      const box = button.getBoundingClientRect();
+      expect(box.left, what).toBeGreaterThanOrEqual(name.getBoundingClientRect().right);
+      expect(box.top, what).toBeLessThanOrEqual(name.getBoundingClientRect().top);
+      expect(box.bottom, what).toBeGreaterThanOrEqual(name.getBoundingClientRect().bottom);
+      expect(box.bottom, what).toBeLessThanOrEqual(status.getBoundingClientRect().top + 1);
+      edges.button.add(Math.round(box.right));
+    }
   }
+  // Every time ends at one right edge, and every button at the same one, 18px in.
+  const edge = Math.round(card.getBoundingClientRect().right - 18);
+  expect([...edges.duration]).toEqual([edge]);
+  expect([...edges.button]).toEqual([edge]);
 });
 
 test("the empty state says no agents are running and names what is being watched", async () => {
@@ -1676,9 +1727,9 @@ test("at the width of a phone the tool leads the line under the name, and neithe
       <SessionsCard sessions={BOTH} sources={[SOURCE_OK, CODEX_OK]} now={NOW} />
     </div>,
   );
+  // Jump and Resume are on the name's line, so the table has no column for them.
   expect([...screen.container.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
     "Session",
-    "Jump or resume",
   ]);
   for (const row of screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')) {
     const what = row.querySelector('[data-part="name"]')?.textContent ?? "";
@@ -1709,6 +1760,276 @@ test("at the width of a phone the tool leads the line under the name, and neithe
     "Codex, ·Workingfor 3 minutes3m",
   );
   const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+});
+
+/**
+ * How many lines a narrow row takes: its name, then the tool, the status and
+ * its time under it. A part starts a new line when its top is at or below the
+ * foot of the line before it.
+ */
+function linesOf(row: HTMLElement): number {
+  const boxes = ["name", "agent", "status", "duration"]
+    .map((part) => row.querySelector(`[data-part="${part}"]`))
+    .filter((element) => element !== null)
+    .map((element) => element.getBoundingClientRect());
+  let lines = 0;
+  let foot = -Infinity;
+  for (const box of boxes) {
+    if (box.top >= foot - 1) {
+      lines += 1;
+      foot = box.bottom;
+    } else {
+      foot = Math.max(foot, box.bottom);
+    }
+  }
+  return lines;
+}
+
+/**
+ * Rows of a phone's Overview with Claude Code and Codex both found: Working
+ * 5m with a Jump and without one, Codex working, and two finished sessions
+ * with Resume, the second with the longest phrase a row can show. The names
+ * are short, since beside a button a name has about 88px at 320.
+ */
+const ON_A_PHONE: Session[] = [
+  session(61, {
+    name: "api-docs",
+    surface: "vscode",
+    status: "working",
+    statusSince: NOW - 5 * MINUTE,
+    links: { open: jumpLink(61) },
+  }),
+  session(62, { name: "web-app", status: "working", statusSince: NOW - 5 * MINUTE }),
+  makeSession({
+    id: `codex:${uuid(63)}`,
+    source: "codex",
+    name: "codex-cli",
+    status: "working",
+    statusSince: NOW - 3 * MINUTE,
+  }),
+  session(64, {
+    name: "nightly",
+    status: "finished",
+    statusSince: NOW - 41 * MINUTE,
+    alive: false,
+  }),
+  session(65, {
+    name: "backfill",
+    status: "finished",
+    statusSince: NOW - (24 * HOUR - MINUTE),
+    alive: false,
+  }),
+];
+
+// The card's width on a phone's Overview is the window less 92px: the rail at
+// its narrowest, the gap beside it and the window's insets.
+test.each([320, 375, 390])(
+  "at %i pixels wide with two tools found, a row keeps to two lines, with its Jump or Resume at the end of the name's line",
+  async (width) => {
+    await page.viewport(width, 900);
+    const screen = await render(
+      <div style={{ width: width - 92 }}>
+        <SessionsCard sessions={ON_A_PHONE} sources={[SOURCE_OK, CODEX_OK]} now={NOW} />
+      </div>,
+    );
+    const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+    const edge = card.getBoundingClientRect().right - 18;
+
+    // There is no column for Jump or Resume: the table is the Session column alone.
+    expect([...screen.container.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+      "Session",
+    ]);
+    for (const th of screen.container.querySelectorAll<HTMLTableCellElement>(
+      '[data-slot="group-row"] th',
+    )) {
+      expect(th.colSpan).toBe(1);
+    }
+
+    const lines = new Map<string, number>();
+    const buttonEdges = new Set<number>();
+    const durationEdges = new Set<number>();
+    for (const row of screen.container.querySelectorAll<HTMLElement>('[data-slot="session-row"]')) {
+      const name = row.querySelector('[data-part="name"]') as HTMLElement;
+      const what = name.textContent ?? "";
+      const cell = row.querySelector("td") as HTMLElement;
+      const under = row.querySelector('[data-part="status-under"]') as HTMLElement;
+      const agent = row.querySelector('[data-part="agent"]') as HTMLElement;
+      const status = row.querySelector('[data-part="status"]') as HTMLElement;
+      const duration = row.querySelector('[data-part="duration"]') as HTMLElement;
+
+      // The line under the name has the cell's whole width for its words: the
+      // card less the cell's insets, the mark and the gap after it.
+      expect(Math.round(under.getBoundingClientRect().width), what).toBe(width - 92 - 68);
+
+      // Nothing on the row is cut.
+      await vi.waitFor(() => expect(name.dataset.cut, what).toBe("false"));
+      await vi.waitFor(() => expect(agent.dataset.cut, what).toBe("false"));
+      expect(name.scrollWidth, what).toBeLessThanOrEqual(name.clientWidth);
+      expect(agent.scrollWidth, what).toBeLessThanOrEqual(agent.clientWidth);
+      expect(status.scrollWidth, what).toBeLessThanOrEqual(status.clientWidth);
+      // The status and its time share a line.
+      expect(
+        Math.abs(status.getBoundingClientRect().top - duration.getBoundingClientRect().top),
+        what,
+      ).toBeLessThan(2);
+      durationEdges.add(Math.round(duration.getBoundingClientRect().right));
+
+      const button = row.querySelector<HTMLElement>('[data-part="jump"], [data-part="resume"]');
+      const count = linesOf(row);
+      lines.set(what, count);
+      if (button) {
+        // In the row's first cell, at the right end of the name's line, centred on it.
+        expect(button.closest("td"), what).toBe(cell);
+        const middle = (box: DOMRect) => box.top + box.height / 2;
+        expect(
+          Math.abs(middle(button.getBoundingClientRect()) - middle(name.getBoundingClientRect())),
+          what,
+        ).toBeLessThanOrEqual(1);
+        expect(button.getBoundingClientRect().bottom, what).toBeLessThanOrEqual(
+          under.getBoundingClientRect().top + 1,
+        );
+        buttonEdges.add(Math.round(button.getBoundingClientRect().right));
+      }
+      // Two lines are 53px, or 61px where the button sets the name's line.
+      if (count === 2) {
+        const height = row.getBoundingClientRect().height;
+        expect(Math.abs(height - (button ? 61 : 53)), `${what}: ${height}`).toBeLessThanOrEqual(1);
+      }
+    }
+
+    // Every time ends at one right edge, and every button at the same one, 18px in.
+    expect([...durationEdges]).toEqual([Math.round(edge)]);
+    expect([...buttonEdges]).toEqual([Math.round(edge)]);
+
+    // "Claude Code · Working 5m" fits under the name at 375 and 390. At 375,
+    // "Finished 23h 59m ago" goes on to a third line, and at 390 it fits by
+    // under 5px. At 320 the line is 160px: "Codex · Working 3m" fits, and
+    // "Claude Code · Working 5m" is about 3px over.
+    const expected: Record<number, Record<string, number>> = {
+      320: { "codex-cli": 2, nightly: 3 },
+      375: { "api-docs": 2, "web-app": 2, "codex-cli": 2, nightly: 2, backfill: 3 },
+      390: { "api-docs": 2, "web-app": 2, "codex-cli": 2, nightly: 2 },
+    };
+    for (const [name, count] of Object.entries(expected[width]!)) {
+      expect(lines.get(name), name).toBe(count);
+    }
+    // A row a few pixels from fitting is held only to three lines, so a font
+    // drawn a little wider does not fail it; no row takes four.
+    for (const [name, count] of lines) expect(count, name).toBeLessThanOrEqual(3);
+
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+);
+
+test("on a phone, Tab goes from a row's name to its Jump or Resume, then to how long it has been quiet, in the order they are on screen", async () => {
+  await page.viewport(375, 900);
+  const written: string[] = [];
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(async (text) => {
+    written.push(text);
+  });
+  onTestFinished(() => write.mockRestore());
+  const sessions = [
+    session(71, {
+      name: "api-docs",
+      surface: "vscode",
+      status: "working",
+      statusSince: NOW - 20 * MINUTE,
+      lastWriteAt: NOW - 12 * MINUTE,
+      links: { open: jumpLink(71) },
+    }),
+    session(72, {
+      name: "nightly",
+      status: "finished",
+      statusSince: NOW - 41 * MINUTE,
+      alive: false,
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: 283 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const working = rowOf(screen.container, "api-docs");
+  const ended = rowOf(screen.container, "nightly");
+  const part = (row: HTMLElement, name: string) =>
+    row.querySelector<HTMLElement>(`[data-part="${name}"]`)!;
+  // The quiet time is under the status, on a line of its own, below the Jump.
+  expect(part(working, "quiet").getBoundingClientRect().top).toBeGreaterThan(
+    part(working, "jump").getBoundingClientRect().bottom,
+  );
+
+  // Name, Jump, the quiet time; then the next row's name and its Resume.
+  part(working, "name").focus();
+  const stops = [part(working, "jump"), part(working, "quiet"), part(ended, "name")];
+  for (const stop of stops) {
+    await userEvent.tab();
+    expect(document.activeElement, stop.dataset.part).toBe(stop);
+  }
+  await userEvent.tab();
+  expect(document.activeElement).toBe(part(ended, "resume"));
+
+  // On the name's line, a press of Resume copies, and does not open the session's details.
+  const before = location.hash;
+  await userEvent.click(part(ended, "resume"));
+  expect(written).toEqual([`cd '/Users/example/code/demo' && claude --resume ${uuid(72)}`]);
+  expect(location.hash).toBe(before);
+});
+
+test("on a phone, a long name beside a Jump is cut before it, the Jump keeps its size and place, and a name with no button has the whole line", async () => {
+  await page.viewport(375, 900);
+  const long = "payments-reconciliation-nightly-backfill";
+  const sessions = [
+    session(73, {
+      name: long,
+      surface: "vscode",
+      status: "working",
+      statusSince: NOW - 5 * MINUTE,
+      links: { open: jumpLink(73) },
+    }),
+    session(74, { name: `${long}-two`, status: "working", statusSince: NOW - 5 * MINUTE }),
+    session(75, {
+      name: "api-docs",
+      surface: "vscode",
+      status: "idle",
+      statusSince: NOW - 9 * MINUTE,
+      links: { open: jumpLink(75) },
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: 283 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  const edge = card.getBoundingClientRect().right - 18;
+  const box = (row: HTMLElement, name: string) =>
+    row.querySelector(`[data-part="${name}"]`)!.getBoundingClientRect();
+  const withJump = rowOf(screen.container, long);
+  const without = rowOf(screen.container, `${long}-two`);
+  const short = rowOf(screen.container, "api-docs");
+
+  // Both long names are cut, and stay one hover or one Tab away.
+  for (const row of [withJump, without]) {
+    const name = row.querySelector('[data-part="name"]') as HTMLElement;
+    await vi.waitFor(() => expect(name.dataset.cut, name.textContent ?? "").toBe("true"));
+  }
+  // The Jump beside a cut name is as wide as the one beside a short name, at
+  // the same right edge, and the name stops the 8px gap before it.
+  const jump = box(withJump, "jump");
+  expect(jump.width).toBe(box(short, "jump").width);
+  expect(jump.right).toBe(box(short, "jump").right);
+  expect(Math.abs(jump.right - edge)).toBeLessThanOrEqual(0.5);
+  expect(box(withJump, "name").right).toBeLessThanOrEqual(jump.left - 8 + 0.5);
+  // With no button, nothing holds a place for one: the name runs to the end
+  // of the line, where the time under it ends.
+  expect(without.querySelector('[data-part="jump"], [data-part="resume"]')).toBeNull();
+  expect(Math.abs(box(without, "name").right - edge)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(box(without, "name").right - box(without, "duration").right)).toBeLessThan(1);
+  // A cut name does not make a row taller: 61px with the button, 53 without.
+  expect(Math.abs(withJump.getBoundingClientRect().height - 61)).toBeLessThanOrEqual(1);
+  expect(Math.abs(without.getBoundingClientRect().height - 53)).toBeLessThanOrEqual(1);
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
 });
 

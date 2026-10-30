@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- On a phone, with more than one agent found, a session row such as "Claude Code · Working 5m" takes two lines at 375px wide, not three. Jump and Resume now sit at the right end of the name's line, so the line under the name no longer gives up room to a column for them. A longer line still goes on to a third rather than be cut. Below 1181px wide, where the Events log sits under Sessions, a long log now ends a little above its card's edge, as it does beside Sessions, instead of on it (#146).
+
 ## 0.2.14 - 2026-10-30
 
 The Mac app can keep the Mac awake while your sessions work or wait, Antigravity sessions show what they last said, and Antigravity chats get their titles back.
