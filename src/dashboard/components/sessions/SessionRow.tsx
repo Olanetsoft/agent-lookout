@@ -96,6 +96,12 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * own under it.
  * The tool is never a logo or a colour.
  *
+ * Narrow, with a button at the end of the name's line, the "Process ended"
+ * badge stays beside the name while that line can also hold the start of the
+ * name, its first 2rem. Otherwise, on the narrowest phones, it goes on to a
+ * line of its own under the name, from the name's left edge, so neither the
+ * name nor the button gives way to it, and the button stays centred on the name.
+ *
  * The sessions that need the person are the hero's, not the table's, so the
  * Jump here is always the quiet one. What a press of a Jump to a tmux pane or
  * a terminal tab came to is said for a few seconds in a badge beside the name.
@@ -144,6 +150,9 @@ export function SessionRow({
   // Jump, or Resume for a Claude Code session that is over. Each is nothing
   // when the session has no way to it, and a row may have neither.
   const hasAction = jumpWay(session) !== null || resume.command !== null;
+  // Narrow, the name's line can be too short for the name, the badge and the
+  // button at its end. Then the badge goes under the name.
+  const badgeMayWrap = narrow && orphaned && hasAction;
   const action = (
     <>
       <Jump
@@ -243,15 +252,25 @@ export function SessionRow({
             {/*
              * What Jump came to goes under the name when the line cannot hold
              * both. Narrow, the line does not wrap: it is the name, and at its
-             * right end the row's Jump or Resume.
+             * right end the row's Jump or Resume. Only the Process ended badge
+             * may go on to a line of its own under the name, when the line
+             * cannot hold the start of the name, the badge and the button; the
+             * button stays at the end of the name's line, centred on it.
              */}
             <div
               className={cn(
-                "flex min-w-0 items-center",
+                "flex min-w-0",
+                badgeMayWrap ? "items-start" : "items-center",
                 narrow ? "gap-2" : "flex-wrap gap-x-2 gap-y-px",
               )}
             >
-              <div className={cn("flex max-w-full min-w-0 items-center gap-2", narrow && "flex-1")}>
+              <div
+                className={cn(
+                  "flex max-w-full min-w-0 items-center",
+                  narrow && "flex-1",
+                  badgeMayWrap ? "flex-wrap gap-x-2 gap-y-px" : "gap-2",
+                )}
+              >
                 <Truncated
                   data-part='name'
                   href={sessionHref(session.id)}
@@ -261,6 +280,12 @@ export function SessionRow({
                   className={cn(
                     "text-row focus-visible:outline-none",
                     quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
+                    // The badge stays beside the name while the line holds its
+                    // first 2rem, and a short name keeps the badge right after
+                    // it. The name is as tall as the button, its line centred
+                    // in it, so the button is centred on the name when the
+                    // badge goes under it, and placed as before when it does not.
+                    badgeMayWrap && "h-button max-w-max grow basis-8 content-center",
                   )}
                 >
                   {session.name}

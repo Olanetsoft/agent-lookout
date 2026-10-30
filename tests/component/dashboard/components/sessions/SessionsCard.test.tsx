@@ -2033,6 +2033,237 @@ test("on a phone, a long name beside a Jump is cut before it, the Jump keeps its
   expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
 });
 
+/** Whether two boxes share any area, beyond half a pixel of rounding. */
+function overlaps(a: DOMRect, b: DOMRect): boolean {
+  const slack = 0.5;
+  return (
+    a.left < b.right - slack &&
+    b.left < a.right - slack &&
+    a.top < b.bottom - slack &&
+    b.top < a.bottom - slack
+  );
+}
+
+/**
+ * On a phone's Overview, a row whose process has ended while it says it is
+ * idle, and a working row with a Jump and no badge, whose Jump is the one
+ * every row's should match.
+ */
+async function renderEndedRow(width: number, ended: Partial<Session> & { name: string }) {
+  await page.viewport(width, 900);
+  const sessions = [
+    session(81, { status: "idle", statusSince: NOW - 9 * MINUTE, alive: false, ...ended }),
+    session(82, {
+      name: "api-docs",
+      surface: "vscode",
+      status: "working",
+      statusSince: NOW - 5 * MINUTE,
+      links: { open: jumpLink(82) },
+    }),
+  ];
+  const screen = await render(
+    <div style={{ width: width - 92 }}>
+      <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
+    </div>,
+  );
+  const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
+  const row = rowOf(screen.container, ended.name);
+  const part = (from: HTMLElement, name: string) =>
+    from.querySelector<HTMLElement>(`[data-part="${name}"]`)!;
+  return {
+    card,
+    row,
+    name: part(row, "name"),
+    badge: row.querySelector<HTMLElement>('[data-slot="badge"]')!,
+    jump: part(row, "jump"),
+    under: part(row, "status-under"),
+    otherJump: part(rowOf(screen.container, "api-docs"), "jump"),
+  };
+}
+
+/** The same, with a Jump and a name too long for 320. */
+const renderEndedBesideJump = (width: number) =>
+  renderEndedRow(width, {
+    name: "payments-sync-nightly",
+    surface: "vscode",
+    links: { open: jumpLink(81) },
+  });
+
+const middle = (box: DOMRect) => box.top + box.height / 2;
+
+/**
+ * The box of an element's text as it is drawn. The element's own box can be
+ * wider or taller, with the text anywhere in it, so a box that is centred says
+ * nothing of where its words are.
+ */
+function textBox(element: HTMLElement): DOMRect {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  return range.getBoundingClientRect();
+}
+
+/** The width of an element's text as it is drawn, which a box may be wider than. */
+const textWidth = (element: HTMLElement) => textBox(element).width;
+
+test("at 320 pixels wide, a row whose process has ended keeps the start of its name beside its Jump, and its badge goes under the name, clear of the button", async () => {
+  const { card, name, badge, jump, under, otherJump } = await renderEndedBesideJump(320);
+  expect(badge.textContent).toBe("Process ended");
+  const nameBox = name.getBoundingClientRect();
+  const badgeBox = badge.getBoundingClientRect();
+  const jumpBox = jump.getBoundingClientRect();
+
+  // The name, the badge and the Jump do not overlap one another.
+  expect(overlaps(badgeBox, jumpBox), "badge and Jump").toBe(false);
+  expect(overlaps(nameBox, badgeBox), "name and badge").toBe(false);
+  expect(overlaps(nameBox, jumpBox), "name and Jump").toBe(false);
+  // The line shows at least the start of the name, which stops 8px before the Jump.
+  expect(nameBox.width).toBeGreaterThanOrEqual(32);
+  expect(nameBox.right).toBeLessThanOrEqual(jumpBox.left - 8 + 0.5);
+  // The badge is directly under the name, from its left edge, above the status line.
+  expect(badgeBox.top).toBeGreaterThanOrEqual(nameBox.bottom - 1);
+  expect(Math.abs(badgeBox.left - nameBox.left)).toBeLessThanOrEqual(0.5);
+  expect(badgeBox.bottom).toBeLessThanOrEqual(under.getBoundingClientRect().top + 1);
+
+  // The Jump keeps its whole capsule and its place: 18px in from the card's
+  // edge, centred on the name, as on a row with no badge.
+  const reference = otherJump.getBoundingClientRect();
+  expect(jumpBox.width).toBe(reference.width);
+  expect(jumpBox.height).toBe(reference.height);
+  expect(Math.abs(jumpBox.right - (card.getBoundingClientRect().right - 18))).toBeLessThanOrEqual(
+    0.5,
+  );
+  expect(Math.abs(middle(jumpBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+  // And on the name's words, not only on the box that holds them.
+  expect(
+    Math.abs(middle(jumpBox) - middle(textBox(name))),
+    "Jump and the name's text",
+  ).toBeLessThanOrEqual(1);
+  // Nothing is drawn over it: its middle, the tip of each round end, and 1px
+  // inside its top and bottom edges where the round ends meet the straight
+  // sides, are all the Jump's to press. A capsule has no square corners.
+  const radius = jumpBox.height / 2;
+  const points: [number, number][] = [
+    [jumpBox.left + jumpBox.width / 2, middle(jumpBox)],
+    [jumpBox.left + 1, middle(jumpBox)],
+    [jumpBox.right - 1, middle(jumpBox)],
+    [jumpBox.left + radius, jumpBox.top + 1],
+    [jumpBox.right - radius, jumpBox.top + 1],
+    [jumpBox.left + radius, jumpBox.bottom - 1],
+    [jumpBox.right - radius, jumpBox.bottom - 1],
+  ];
+  for (const [x, y] of points) {
+    expect(jump.contains(document.elementFromPoint(x, y)), `${x}, ${y}`).toBe(true);
+  }
+
+  // The cut name stays one hover or one Tab away, and nothing runs past the card.
+  await vi.waitFor(() => expect(name.dataset.cut).toBe("true"));
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+});
+
+test.each([375, 390, 760])(
+  "at %i pixels wide, a row whose process has ended keeps its badge on the name's line, between the name and its Jump",
+  async (width) => {
+    const { card, row, name, badge, jump, otherJump } = await renderEndedBesideJump(width);
+    const nameBox = name.getBoundingClientRect();
+    const badgeBox = badge.getBoundingClientRect();
+    const jumpBox = jump.getBoundingClientRect();
+    const reference = otherJump.getBoundingClientRect();
+
+    // One line: the badge and the Jump are both centred on the name, its box
+    // and the words drawn in it.
+    const text = textBox(name);
+    expect(Math.abs(middle(badgeBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+    expect(Math.abs(middle(jumpBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(middle(badgeBox) - middle(text)),
+      "badge and the name's text",
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(middle(jumpBox) - middle(text)),
+      "Jump and the name's text",
+    ).toBeLessThanOrEqual(1);
+    // The badge comes 8px after the name and ends at least 8px before the Jump.
+    expect(nameBox.width).toBeGreaterThanOrEqual(32);
+    expect(Math.abs(badgeBox.left - (nameBox.right + 8))).toBeLessThanOrEqual(0.5);
+    expect(badgeBox.right).toBeLessThanOrEqual(jumpBox.left - 8 + 0.5);
+    // The Jump is the one every row has, in the same place, 18px in from the card's edge.
+    expect(jumpBox.width).toBe(reference.width);
+    expect(jumpBox.height).toBe(reference.height);
+    expect(jumpBox.right).toBe(reference.right);
+    expect(Math.abs(jumpBox.right - (card.getBoundingClientRect().right - 18))).toBeLessThanOrEqual(
+      0.5,
+    );
+    // Two lines with a button, as every other row with one.
+    expect(Math.abs(row.getBoundingClientRect().height - 61)).toBeLessThanOrEqual(1);
+  },
+);
+
+test.each([320, 375])(
+  "at %i pixels wide, a short name whose process has ended is not cut, and its badge follows the name's text with no room held between them",
+  async (width) => {
+    const { name, badge, jump } = await renderEndedRow(width, {
+      name: "web",
+      surface: "vscode",
+      links: { open: jumpLink(81) },
+    });
+    const nameBox = name.getBoundingClientRect();
+    const badgeBox = badge.getBoundingClientRect();
+    const jumpBox = jump.getBoundingClientRect();
+
+    // The name's box is its text: nothing pads it out to push the badge away from it.
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    expect(nameBox.width).toBeLessThan(32);
+    expect(Math.abs(nameBox.width - textWidth(name))).toBeLessThanOrEqual(0.5);
+    if (width === 320) {
+      // The line cannot hold the badge beside the Jump, so it goes under the name.
+      expect(badgeBox.top).toBeGreaterThanOrEqual(nameBox.bottom - 1);
+      expect(Math.abs(badgeBox.left - nameBox.left)).toBeLessThanOrEqual(0.5);
+    } else {
+      expect(Math.abs(middle(badgeBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(middle(badgeBox) - middle(textBox(name))),
+        "badge and the name's text",
+      ).toBeLessThanOrEqual(1);
+      expect(Math.abs(badgeBox.left - (nameBox.right + 8))).toBeLessThanOrEqual(0.5);
+    }
+    // Either way the Jump is centred on the name and its words, and nothing runs under it.
+    expect(Math.abs(middle(jumpBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(middle(jumpBox) - middle(textBox(name))),
+      "Jump and the name's text",
+    ).toBeLessThanOrEqual(1);
+    expect(overlaps(badgeBox, jumpBox), "badge and Jump").toBe(false);
+    expect(overlaps(nameBox, jumpBox), "name and Jump").toBe(false);
+    expect(overlaps(nameBox, badgeBox), "name and badge").toBe(false);
+  },
+);
+
+test.each([320, 375])(
+  "at %i pixels wide, a row whose process has ended with no Jump or Resume keeps its badge on the name's line, at the line's end, in two lines",
+  async (width) => {
+    const { card, row, name, badge } = await renderEndedRow(width, {
+      name: "payments-sync-nightly-backfill",
+    });
+    const nameBox = name.getBoundingClientRect();
+    const badgeBox = badge.getBoundingClientRect();
+
+    expect(row.querySelector('[data-part="jump"], [data-part="resume"]')).toBeNull();
+    expect(badge.textContent).toBe("Process ended");
+    // The name gives way to the badge beside it, and the badge ends the line,
+    // 18px in from the card's edge, where a button would.
+    await vi.waitFor(() => expect(name.dataset.cut).toBe("true"));
+    expect(Math.abs(middle(badgeBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+    expect(Math.abs(badgeBox.left - (nameBox.right + 8))).toBeLessThanOrEqual(0.5);
+    expect(
+      Math.abs(badgeBox.right - (card.getBoundingClientRect().right - 18)),
+    ).toBeLessThanOrEqual(0.5);
+    // With no button to set the name's line, two lines are 53px.
+    expect(Math.abs(row.getBoundingClientRect().height - 53)).toBeLessThanOrEqual(1);
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+  },
+);
+
 test("with Codex not found and no session running, the empty state names only what is watched", async () => {
   const screen = await render(
     <SessionsCard sessions={[]} sources={[SOURCE_OK, CODEX_MISSING]} now={NOW} />,
