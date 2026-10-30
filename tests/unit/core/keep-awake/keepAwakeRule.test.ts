@@ -46,8 +46,10 @@ describe("a session that needs you", () => {
     expect(
       keepsAwake(gemini({ ...answered, statusSince: NOW - HOUR, lastWriteAt: NOW - HOUR }), NOW),
     ).toBe(false);
-    // A Claude Code session, which most answered waits are, counts while it is listed.
-    expect(keepsAwake(makeSession({ ...answered, statusSince: NOW - HOUR }), NOW)).toBe(true);
+    // A Claude Code session, which most answered waits are, counts while its process runs.
+    expect(
+      keepsAwake(makeSession({ ...answered, statusSince: NOW - HOUR, alive: true }), NOW),
+    ).toBe(true);
   });
 });
 
@@ -108,11 +110,31 @@ describe("a working session whose writes are measured", () => {
 });
 
 describe("a working Claude Code session", () => {
-  test("counts for as long as it is listed, as its status time stays where its task began", () => {
-    expect(keepsAwake(makeSession({ status: "working", statusSince: NOW - 2 * HOUR }), NOW)).toBe(
-      true,
-    );
-    expect(keepsAwake(makeSession({ status: "working", statusSince: null }), NOW)).toBe(true);
+  test("counts for as long as it is listed while its process runs, as its status time stays where its task began", () => {
+    expect(
+      keepsAwake(makeSession({ status: "working", statusSince: NOW - 2 * HOUR, alive: true }), NOW),
+    ).toBe(true);
+    expect(
+      keepsAwake(makeSession({ status: "working", statusSince: null, alive: true }), NOW),
+    ).toBe(true);
+  });
+
+  test("with no running process, as a background job between runs, is held to its status time", () => {
+    // A `/loop` job or a routine shows as working between its runs, with no process.
+    for (const alive of [undefined, false]) {
+      expect(
+        keepsAwake(makeSession({ status: "working", statusSince: NOW - 2 * HOUR, alive }), NOW),
+        String(alive),
+      ).toBe(false);
+      expect(
+        keepsAwake(makeSession({ status: "working", statusSince: NOW - 5 * MINUTE, alive }), NOW),
+        String(alive),
+      ).toBe(true);
+      expect(
+        keepsAwake(makeSession({ status: "working", statusSince: null, alive }), NOW),
+        String(alive),
+      ).toBe(false);
+    }
   });
 
   test("goes by its source, not by its id, on this Mac", () => {
@@ -184,13 +206,15 @@ describe("a session on another machine", () => {
     expect(keepsAwake(makeSession({ ...there("gemini-cli"), status: "idle" }), NOW)).toBe(false);
   });
 
-  test("of Claude Code counts while it is listed", () => {
-    expect(
-      keepsAwake(
-        makeSession({ ...there("claude-code"), status: "working", statusSince: NOW - 2 * HOUR }),
-        NOW,
-      ),
-    ).toBe(true);
+  test("of Claude Code counts while it is listed, if that machine says its process runs", () => {
+    const working = {
+      ...there("claude-code"),
+      status: "working" as const,
+      statusSince: NOW - 2 * HOUR,
+    };
+    expect(keepsAwake(makeSession({ ...working, alive: true }), NOW)).toBe(true);
+    expect(keepsAwake(makeSession({ ...working, alive: false }), NOW)).toBe(false);
+    expect(keepsAwake(makeSession(working), NOW)).toBe(false);
   });
 
   test("whose Agent Lookout sends no write time is held to its status time", () => {
@@ -218,6 +242,8 @@ describe("a session on another machine", () => {
             machine: "devbox",
             status: "working",
             statusSince: NOW - 2 * HOUR,
+            // A running process, so only the id decides.
+            alive: true,
           }),
           NOW,
         ),

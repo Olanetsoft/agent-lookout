@@ -13,15 +13,18 @@
 //   writes that it works again.
 // - A working session with neither time does not count: nothing says it was
 //   updated in the last 30 minutes.
-// - A working Claude Code session, on this Mac or another, counts for as long
-//   as it is listed. Its status is Claude Code's own word, read again at every
-//   poll from a Claude Code that runs, and Claude Code drops the session when
-//   its process ends. It rewrites no time as it works: a session busy on one
-//   task for an hour keeps the status time it began with, and would stop
-//   counting half an hour into its task. It goes by the source, never by
-//   whether a write time is there, so a session of another agent whose write
-//   time was left out, as one that could not be right is, is still held to
-//   its status time.
+// - A working Claude Code session whose process runs (`alive`), on this Mac
+//   or another, counts for as long as it is listed. Its status is Claude
+//   Code's own word, read again at every poll from a Claude Code that runs,
+//   and Claude Code drops the session when its process ends. It rewrites no
+//   time as it works: a session busy on one task for an hour keeps the status
+//   time it began with, and would stop counting half an hour into its task.
+//   It goes by the source, never by whether a write time is there, so a
+//   session of another agent whose write time was left out, as one that could
+//   not be right is, is still held to its status time. A Claude Code
+//   background job with no running process, which `claude agents --all`
+//   lists, is held to its status time too: a `/loop` job or a routine shows
+//   as working between its runs, and would keep the Mac awake all day.
 // - Idle, finished, failed and unknown sessions never count.
 //
 // Sessions on another machine Agent Lookout watches count by the same rule.
@@ -46,13 +49,13 @@ import { needsYou } from "../waits/answeredWaits.ts";
 /** How long after its newest update a working session stops counting, in milliseconds. */
 export const KEEP_AWAKE_WORKING_MS = 30 * 60 * 1000;
 
-/** The agent whose working sessions count for as long as they are listed. */
+/** The agent whose working sessions count for as long as they are listed, while their process runs. */
 export const LISTED_WORKING_SOURCE = "claude-code" satisfies SourceId;
 
 /** What the rule reads of a session. */
 export type KeepAwakeSession = Pick<
   Session,
-  "id" | "source" | "status" | "answered" | "statusSince" | "lastWriteAt"
+  "id" | "source" | "status" | "answered" | "statusSince" | "lastWriteAt" | "alive"
 >;
 
 /**
@@ -75,7 +78,7 @@ export function keepsAwake(session: KeepAwakeSession, now: number): boolean {
   const working =
     session.status === "working" || (session.status === "needs-you" && session.answered === true);
   if (!working) return false;
-  if (agentSource(session) === LISTED_WORKING_SOURCE) return true;
+  if (agentSource(session) === LISTED_WORKING_SOURCE && session.alive === true) return true;
   const times = [session.lastWriteAt, session.statusSince].filter(
     (time): time is number => typeof time === "number",
   );

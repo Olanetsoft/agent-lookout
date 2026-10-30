@@ -198,7 +198,7 @@ test("says what it does, which sessions count, that the display still sleeps, wh
   expect(text).toContain("does not go to sleep on its own while a session is working or needs you");
   expect(text).toContain("on this Mac or on another machine Agent Lookout watches");
   expect(text).toContain("The display still turns off.");
-  expect(text).toContain("A working Claude Code session counts for as long as it works");
+  expect(text).toContain("A working Claude Code session counts while its process runs");
   expect(text).toContain("stops counting 30 minutes after its newest update");
   expect(text).toContain("Closing the lid still puts the Mac to sleep");
   expect(text).toContain("unless it is plugged in with a display connected");

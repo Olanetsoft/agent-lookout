@@ -24,7 +24,7 @@ const KEEP_AWAKE = "Keep the Mac awake";
  * "Quiet" is the Quiet for of the Sessions list. A working session stops
  * counting 30 minutes after its newest update, and where its agent's writes
  * are measured, that is when it has been quiet for 30 minutes. A Claude Code
- * session counts while it is listed, and an OpenCode session, which never
+ * session whose process runs counts while it is listed, and an OpenCode session, which never
  * shows Quiet for, stops counting 30 minutes after the prompt that began its
  * turn, as the rule says.
  */
@@ -59,7 +59,7 @@ export function KeepAwakeCard() {
         <p className='mt-3 text-body text-ink-secondary'>
           While it is on, the Mac does not go to sleep on its own while a session is working or
           needs you, on this Mac or on another machine Agent Lookout watches. The display still
-          turns off. A working Claude Code session counts for as long as it works, and another
+          turns off. A working Claude Code session counts while its process runs, and another
           agent's stops counting 30 minutes after its newest update.
         </p>
         <p className='mt-2 text-body text-ink-secondary'>

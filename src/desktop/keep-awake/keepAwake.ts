@@ -1,9 +1,10 @@
 // Keeps the Mac from going to sleep on its own while the switch Keep the Mac
 // awake is on and a session counts, by the rule in
 // `src/core/keep-awake/keepAwakeRule.ts`: one that needs you, on this Mac or
-// another one Agent Lookout watches, a working Claude Code session, or
-// another agent's working session updated in the last 30 minutes. It follows each poll's snapshot, as the Dock badge
-// does, so it is right with the window closed.
+// another one Agent Lookout watches, a working Claude Code session whose
+// process runs, or another agent's working session updated in the last 30
+// minutes. It follows each poll's snapshot, as the Dock badge does, so it is
+// right with the window closed.
 //
 // It holds one blocker at most, Electron's `powerSaveBlocker` of the type
 // `prevent-app-suspension`, which macOS takes as an assertion that stops idle
