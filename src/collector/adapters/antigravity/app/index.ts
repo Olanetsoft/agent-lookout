@@ -147,7 +147,7 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The title Antigravity gives a chat, and the folder its list of chats names, read with sqlite3. Until then, its ID.",
+      "The title Antigravity gives a chat, else its folder's name, else its ID. The folder comes from its list of chats, via sqlite3.",
   },
   jump: {
     level: "no",

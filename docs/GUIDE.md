@@ -257,14 +257,14 @@ Why, for each No and Partly:
 - Antigravity CLI, Needs you: While agy asks you to approve a tool, from its own log. A question it asks you shows as working.
 - Antigravity CLI, Finished: Once ps shows no agy program running that could have the conversation open. Not on Windows.
 - Antigravity CLI, Failed: Only when agy records an error of its own or a failed reply. A tool that fails shows as working.
-- Antigravity CLI, Names: The title agy gives a conversation once it has one, and the folder its program's log names. Until then, its conversation ID.
+- Antigravity CLI, Names: The title agy gives a conversation, else its folder's name, else its ID. Its folder is the one its program's log names.
 - Antigravity CLI, Jump: The transcripts name no terminal, and agy documents no link that opens a conversation.
 - Antigravity CLI, Stop: No agy program is tied to one conversation surely enough for Agent Lookout to confirm it and stop it.
 - Antigravity CLI, Answer: Its approval prompt takes an answer only in the terminal agy runs in.
 - Antigravity, Needs you: While a chat waits for you to approve a step, read from its database with sqlite3, on macOS and Linux. What it asks is not shown.
 - Antigravity, Finished: Once ps shows the app is closed, on macOS. Not on Linux or Windows yet.
 - Antigravity, Failed: Only when Antigravity records an error of its own or a failed reply. A tool that fails shows as working.
-- Antigravity, Names: The title Antigravity gives a chat, and the folder its list of chats names, read with sqlite3. Until then, its ID.
+- Antigravity, Names: The title Antigravity gives a chat, else its folder's name, else its ID. The folder comes from its list of chats, via sqlite3.
 - Antigravity, Jump: Antigravity documents no link that opens one of its chats.
 - Antigravity, Stop: The app runs every chat in one program, so no chat can be stopped alone.
 - Antigravity, Answer: Antigravity documents no way to answer one of its approvals from outside the app.
