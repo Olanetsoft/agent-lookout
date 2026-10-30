@@ -612,9 +612,12 @@ describe("agent-lookout start, as a process", () => {
       { "dist/index.html": "<!doctype html><title>Agent Lookout</title>" },
       ["src", "node_modules"],
     );
+    const home = await tempDir();
     const child = spawn(process.execPath, [clone.program, "--port", "0"], {
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
+        HOME: home,
+        USERPROFILE: home,
         AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
         AGENT_LOOKOUT_CLAUDE_FEED: "off",
         AGENT_LOOKOUT_CODEX_HOME: await tempDir(),

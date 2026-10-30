@@ -18,6 +18,7 @@ import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_GEMINI_CLI_HOME,
+  EMPTY_HOME,
   EMPTY_OPENCODE_HOME,
   EMPTY_QWEN_HOME,
   EMPTY_VIBE_SESSION_DIR,
@@ -83,3 +84,13 @@ mkdirSync(EMPTY_QWEN_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_QWEN_HOME = EMPTY_QWEN_HOME;
 delete process.env.QWEN_HOME;
 delete process.env.QWEN_RUNTIME_DIR;
+
+// And `os.homedir()` is an empty folder, never the home of the person running
+// the tests, so a collector whose environment forgets to name a folder of an
+// agent's finds nothing, rather than the real `~/.claude`, `~/.codex`,
+// `~/.gemini` or `~/.agent-lookout`. Node reads `HOME`, and on Windows
+// `USERPROFILE`. A process a test starts with an environment of its own names
+// a home there too: one with neither set finds the real home.
+mkdirSync(EMPTY_HOME, { recursive: true });
+process.env.HOME = EMPTY_HOME;
+process.env.USERPROFILE = EMPTY_HOME;
