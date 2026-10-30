@@ -213,8 +213,8 @@ function refusedByMacOS({ step, lastRefusal }: NotificationTest): boolean {
  * them on can press it.
  *
  * The state is said in words beside a button that changes it. It is not the
- * switch the theme uses, because that chooses as soon as it has focus, and the
- * browser can refuse "on". When it does, or cannot show notifications at all,
+ * switch the theme uses, because that chooses as soon as an arrow key moves to
+ * an option, and the browser can refuse "on". When it does, or cannot show notifications at all,
  * the state stays off and a note says why and what to do. While they are on,
  * the events are listed under it, each with a switch of its own.
  *

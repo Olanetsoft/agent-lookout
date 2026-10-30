@@ -100,8 +100,8 @@ export function useTimeRules(
   const change = useCallback((update: (rules: TimeRules) => TimeRules) => {
     if (latest.current === null) return;
     const expected = update(latest.current);
-    // The same change asked for twice, as a switch does when a press also moves
-    // focus to the option, is sent once.
+    // A change that leaves the rules as they are, such as a second press on the
+    // same option before the app has answered, is not sent.
     if (same(expected, latest.current)) return;
     latest.current = expected;
     pending.current += 1;

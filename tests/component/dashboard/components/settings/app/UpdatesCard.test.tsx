@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
 import type { AppUpdateStatus, UpdatePhase } from "@core/appUpdate";
 import { UpdatesCard } from "@dashboard/components/settings/app/UpdatesCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { assistivePress } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
 const RELEASES = "https://github.com/Olanetsoft/agent-lookout/releases";
 const NOTES = `${RELEASES}/tag/v0.2.1`;
+const SETTING = "/api/app/update/setting";
 
 /** What the app says, as `GET /api/app/update` would, and what each POST changes it to. */
 let current: AppUpdateStatus;
@@ -20,6 +23,8 @@ let asked: { path: string; method: string; action: string | null; body: string |
 let answering: boolean;
 /** When set, the answer to a check waits for it, as GitHub can. */
 let checkHeld: Promise<void> | null;
+/** When set, the answer to a turn of the switch waits for it, as a slow app's does. */
+let settingHeld: Promise<void> | null;
 
 const status = (update: UpdatePhase, change: Partial<AppUpdateStatus> = {}): AppUpdateStatus => ({
   version: "0.2.0",
@@ -37,6 +42,7 @@ beforeEach(() => {
   asked = [];
   answering = true;
   checkHeld = null;
+  settingHeld = null;
   setApiHost(async (path, init) => {
     const headers = new Headers(init?.headers);
     const body = typeof init?.body === "string" ? init.body : null;
@@ -47,7 +53,8 @@ beforeEach(() => {
       current = { ...current, update: afterCheck, lastCheckedAt: Date.now() };
     }
     if (path === "/api/app/update/install") current = { ...current, update: afterInstall };
-    if (path === "/api/app/update/setting") {
+    if (path === SETTING) {
+      if (settingHeld !== null) await settingHeld;
       current = {
         ...current,
         automatic: (JSON.parse(body ?? "{}") as { automatic: boolean }).automatic,
@@ -64,13 +71,16 @@ afterEach(() => {
   history.replaceState(null, "", location.pathname);
 });
 
-const card = (screen: Awaited<ReturnType<typeof render>>) =>
-  screen.getByRole("region", { name: "Updates" });
+type Screen = Awaited<ReturnType<typeof render>>;
 
-const stateOf = (screen: Awaited<ReturnType<typeof render>>) =>
+const card = (screen: Screen) => screen.getByRole("region", { name: "Updates" });
+
+const posts = () => asked.filter((request) => request.path === SETTING);
+
+const stateOf = (screen: Screen) =>
   card(screen).element().querySelector('[data-part="state"]') as HTMLElement;
 
-const facts = (screen: Awaited<ReturnType<typeof render>>) =>
+const facts = (screen: Screen) =>
   [...card(screen).element().querySelectorAll('[data-slot="fact-row"]')].map((row) => [
     row.querySelector("dt")?.textContent,
     row.querySelector("dd")?.textContent,
@@ -222,12 +232,71 @@ test("the switch turns the automatic check off, and the app is told", async () =
     expect(stateOf(screen).textContent).toBe("Agent Lookout checks only when you ask."),
   );
   await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
-  expect(asked).toContainEqual({
-    path: "/api/app/update/setting",
-    method: "POST",
-    action: "update-setting",
-    body: '{"automatic":false}',
-  });
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "update-setting", body: '{"automatic":false}' },
+  ]);
+});
+
+test.each<[string, (screen: Screen) => Promise<unknown>]>([
+  ["A tap, a click with no hold,", (screen) => screen.getByRole("radio", { name: "Off" }).click()],
+  [
+    "A click held for a moment",
+    (screen) => screen.getByRole("radio", { name: "Off" }).click({ delay: 150 }),
+  ],
+  [
+    "An arrow key still held when focus lands",
+    async (screen) => {
+      (screen.getByRole("radio", { name: "On" }).element() as HTMLElement).focus();
+      await userEvent.keyboard("{ArrowLeft>}");
+      await expect.element(screen.getByRole("radio", { name: "Off" })).toHaveFocus();
+      await userEvent.keyboard("{/ArrowLeft}");
+    },
+  ],
+  [
+    "A press from VoiceOver, Voice Control or Switch Control",
+    async (screen) =>
+      assistivePress(screen.getByRole("radio", { name: "Off" }).element() as HTMLElement),
+  ],
+])(
+  "%s turns the automatic check off with one request while the app's answer is still out",
+  async (_press, press) => {
+    let answer = () => {};
+    settingHeld = new Promise((resolve) => {
+      answer = resolve;
+    });
+    const screen = await render(<UpdatesCard />);
+    await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+
+    await press(screen);
+    await vi.waitFor(() => expect(posts()).toHaveLength(1));
+    // Time for a second request to go out, were one coming.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts()).toEqual([
+      { path: SETTING, method: "POST", action: "update-setting", body: '{"automatic":false}' },
+    ]);
+    // Until the app answers, the switch shows where it stood.
+    await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+    expect(stateOf(screen).textContent).toBe("Agent Lookout checks about once a day.");
+
+    answer();
+    await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+    await vi.waitFor(() =>
+      expect(stateOf(screen).textContent).toBe("Agent Lookout checks only when you ask."),
+    );
+    expect(posts()).toHaveLength(1);
+  },
+);
+
+test("focus moving onto Off, as a screen reader's cursor can carry it, tells the app nothing", async () => {
+  const screen = await render(<UpdatesCard />);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+
+  (screen.getByRole("radio", { name: "Off" }).element() as HTMLElement).focus();
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toHaveFocus();
+  // Time for a request to go out, were one coming.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts()).toEqual([]);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
 });
 
 test("an app that does not answer is said plainly, with nothing to press", async () => {

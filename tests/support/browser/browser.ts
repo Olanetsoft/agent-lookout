@@ -24,3 +24,17 @@ export function startAtTop(): void {
   marker.focus();
   marker.remove();
 }
+
+/**
+ * Presses a control the way Chromium does when VoiceOver, Voice Control or
+ * Switch Control presses it: focus first, if it has none, and then the pointer
+ * and mouse events and the click, all at once.
+ */
+export function assistivePress(control: HTMLElement): void {
+  control.focus();
+  control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true }));
+  control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  control.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, isPrimary: true }));
+  control.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  control.click();
+}
