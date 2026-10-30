@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
-import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
+import { MenuBarCard } from "@dashboard/components/settings/app/MenuBarCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { warmPaint } from "@tests/support/browser/colours";
 

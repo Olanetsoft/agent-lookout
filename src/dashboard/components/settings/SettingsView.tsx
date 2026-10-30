@@ -11,11 +11,12 @@ import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { AnswerCard } from "@dashboard/components/settings/AnswerCard";
 import { HistoryCard } from "@dashboard/components/settings/HistoryCard";
-import { MenuBarCard } from "@dashboard/components/settings/MenuBarCard";
 import { PermissionRulesCard } from "@dashboard/components/settings/PermissionRulesCard";
 import { TestSend } from "@dashboard/components/settings/TestSend";
 import { TimeRulesCard } from "@dashboard/components/settings/TimeRulesCard";
-import { UpdatesCard } from "@dashboard/components/settings/UpdatesCard";
+import { KeepAwakeCard } from "@dashboard/components/settings/app/KeepAwakeCard";
+import { MenuBarCard } from "@dashboard/components/settings/app/MenuBarCard";
+import { UpdatesCard } from "@dashboard/components/settings/app/UpdatesCard";
 import {
   useNotificationTest,
   type NotificationTest,
@@ -476,7 +477,7 @@ interface SettingsViewProps {
   onTimeRulesChanged?: () => void;
   /** The page's latest snapshot, whose rules and quiet hours the Time rules card follows. Null before the first. */
   snapshot?: Pick<SessionsSnapshot, "generatedAt" | "timeRules" | "quiet"> | null;
-  /** Whether the page is in the Mac app's window, which alone shows the Menu bar and Updates cards. */
+  /** Whether the page is in the Mac app's window, which alone shows the Menu bar, Keep awake and Updates cards. */
   inApp?: boolean;
   /** Whether permission prompts can be answered from here, as the sessions' answer says. Null before it. */
   answering?: AnsweringStatus | null;
@@ -486,17 +487,18 @@ interface SettingsViewProps {
  * Settings, in the main area in place of the Overview: the theme, with the
  * choice to follow the computer that the header's switch does not offer,
  * whether to be notified and of what, the time rules, where the history is kept and the button
- * that clears it, in the Mac app whether it shows in the menu bar and its
- * updates, whether email, a webhook, ntfy and Pushover have been set up, with
- * a test push for the last two, whether pull requests
+ * that clears it, in the Mac app whether it shows in the menu bar, whether it
+ * keeps the Mac awake and its updates, whether email, a webhook, ntfy and
+ * Pushover have been set up, with a test push for the last two, whether pull requests
  * are shown and gh can be asked for them, a few facts about this copy of the
  * app, whether permission prompts can be answered from here, and the
  * permission rules that answer them for the person.
  *
  * The page knows it is in the app's window by its address. In a browser there
- * is no Menu bar card and no Updates card: a browser tab has no menu bar item,
- * and `npx agent-lookout` and the repository never check for anything. Tests
- * say which it is with `inApp`.
+ * is no Menu bar card, no Keep awake card and no Updates card: a browser tab
+ * has no menu bar item and cannot keep the Mac awake, and `npx agent-lookout`
+ * and the repository never check for anything. Tests say which it is with
+ * `inApp`.
  */
 export function SettingsView({
   history = null,
@@ -562,6 +564,8 @@ export function SettingsView({
         <HistoryCard history={history} now={clock} onCleared={onHistoryCleared} />
 
         {inApp && <MenuBarCard />}
+
+        {inApp && <KeepAwakeCard />}
 
         {inApp && <UpdatesCard />}
       </div>
