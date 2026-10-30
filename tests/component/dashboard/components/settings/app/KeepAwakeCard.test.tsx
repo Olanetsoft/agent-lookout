@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
 import { KeepAwakeCard } from "@dashboard/components/settings/app/KeepAwakeCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { assistivePress } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
 const READ = "/api/app/keep-awake";
@@ -22,6 +24,8 @@ let answering: boolean;
  */
 let readAnswer: { status: number; body: unknown } | undefined;
 let settingAnswer: { status: number; body: unknown } | "unreachable" | undefined;
+/** When set, the answer to a turn of the switch waits for it, as a slow app's does. */
+let settingHeld: Promise<void> | null;
 
 const json = (status: number, body: unknown) =>
   new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -35,6 +39,7 @@ beforeEach(() => {
   answering = true;
   readAnswer = undefined;
   settingAnswer = undefined;
+  settingHeld = null;
   setApiHost(async (path, init) => {
     const headers = new Headers(init?.headers);
     const body = typeof init?.body === "string" ? init.body : null;
@@ -44,6 +49,7 @@ beforeEach(() => {
       return json(readAnswer.status, readAnswer.body);
     }
     if (path === SETTING) {
+      if (settingHeld !== null) await settingHeld;
       if (settingAnswer === "unreachable") throw new TypeError("Failed to fetch");
       if (settingAnswer !== undefined) return json(settingAnswer.status, settingAnswer.body);
       on = (JSON.parse(body ?? "{}") as { on: boolean }).on;
@@ -56,8 +62,9 @@ afterEach(() => {
   setApiHost();
 });
 
-const card = (screen: Awaited<ReturnType<typeof render>>) =>
-  screen.getByRole("region", { name: "Keep awake" });
+type Screen = Awaited<ReturnType<typeof render>>;
+
+const card = (screen: Screen) => screen.getByRole("region", { name: "Keep awake" });
 
 const posts = () => asked.filter((request) => request.path === SETTING);
 
@@ -90,26 +97,73 @@ test("choosing On tells the app with its own action, and the switch shows the ap
   await screen.getByRole("radio", { name: "On" }).click();
   await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
   expect(on).toBe(true);
-  expect(posts().length).toBeGreaterThan(0);
-  for (const post of posts()) {
-    expect(post).toEqual({
-      path: SETTING,
-      method: "POST",
-      action: "keep-awake-setting",
-      body: '{"on":true}',
-    });
-  }
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "keep-awake-setting", body: '{"on":true}' },
+  ]);
 
   asked = [];
   await screen.getByRole("radio", { name: "Off" }).click();
   await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
   expect(on).toBe(false);
-  expect(posts()).toContainEqual({
-    path: SETTING,
-    method: "POST",
-    action: "keep-awake-setting",
-    body: '{"on":false}',
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "keep-awake-setting", body: '{"on":false}' },
+  ]);
+});
+
+test.each<[string, (screen: Screen) => Promise<unknown>]>([
+  ["A tap, a click with no hold,", (screen) => screen.getByRole("radio", { name: "On" }).click()],
+  [
+    "A click held for a moment",
+    (screen) => screen.getByRole("radio", { name: "On" }).click({ delay: 150 }),
+  ],
+  [
+    "An arrow key still held when focus lands",
+    async (screen) => {
+      (screen.getByRole("radio", { name: "Off" }).element() as HTMLElement).focus();
+      await userEvent.keyboard("{ArrowRight>}");
+      await expect.element(screen.getByRole("radio", { name: "On" })).toHaveFocus();
+      await userEvent.keyboard("{/ArrowRight}");
+    },
+  ],
+  [
+    "A press from VoiceOver, Voice Control or Switch Control",
+    async (screen) =>
+      assistivePress(screen.getByRole("radio", { name: "On" }).element() as HTMLElement),
+  ],
+])("%s sends On to the app once while its answer is still out", async (_press, press) => {
+  let answer = () => {};
+  settingHeld = new Promise((resolve) => {
+    answer = resolve;
   });
+  const screen = await render(<KeepAwakeCard />);
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+
+  await press(screen);
+  await vi.waitFor(() => expect(posts()).toHaveLength(1));
+  // Time for a second request to go out, were one coming.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "keep-awake-setting", body: '{"on":true}' },
+  ]);
+  // Until the app answers, the switch shows where it stood.
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+
+  answer();
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+  expect(on).toBe(true);
+  expect(posts()).toHaveLength(1);
+});
+
+test("focus moving onto On, as a screen reader's cursor can carry it, tells the app nothing", async () => {
+  const screen = await render(<KeepAwakeCard />);
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+
+  (screen.getByRole("radio", { name: "On" }).element() as HTMLElement).focus();
+  await expect.element(screen.getByRole("radio", { name: "On" })).toHaveFocus();
+  // Time for a request to go out, were one coming.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts()).toEqual([]);
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
 });
 
 test("the switch follows what the app answers, not what was pressed", async () => {

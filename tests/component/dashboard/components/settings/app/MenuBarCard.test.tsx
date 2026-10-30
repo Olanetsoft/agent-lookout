@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
 import { MenuBarCard } from "@dashboard/components/settings/app/MenuBarCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { assistivePress } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
 /** Whether the app shows its item in the menu bar, as `GET /api/app/menu-bar` would say. */
@@ -13,18 +15,24 @@ let asked: { path: string; method: string; action: string | null; body: string |
 /** Whether the app answers at all, and whether it takes a change of the switch. */
 let answering: boolean;
 let refusing: boolean;
+/** When set, the answer to a turn of the switch waits for it, as a slow app's does. */
+let settingHeld: Promise<void> | null;
+
+const SETTING = "/api/app/menu-bar/setting";
 
 beforeEach(() => {
   show = true;
   asked = [];
   answering = true;
   refusing = false;
+  settingHeld = null;
   setApiHost(async (path, init) => {
     const headers = new Headers(init?.headers);
     const body = typeof init?.body === "string" ? init.body : null;
     asked.push({ path, method: init?.method ?? "GET", action: headers.get(ACTION_HEADER), body });
     if (!answering) throw new TypeError("Failed to fetch");
-    if (path === "/api/app/menu-bar/setting") {
+    if (path === SETTING) {
+      if (settingHeld !== null) await settingHeld;
       if (refusing) {
         return new Response(JSON.stringify({ error: "No." }), {
           status: 403,
@@ -43,8 +51,11 @@ afterEach(() => {
   setApiHost();
 });
 
-const card = (screen: Awaited<ReturnType<typeof render>>) =>
-  screen.getByRole("region", { name: "Menu bar" });
+type Screen = Awaited<ReturnType<typeof render>>;
+
+const card = (screen: Screen) => screen.getByRole("region", { name: "Menu bar" });
+
+const posts = () => asked.filter((request) => request.path === SETTING);
 
 test("shows the switch Show in menu bar, on, as the app says, and what it does", async () => {
   const screen = await render(<MenuBarCard />);
@@ -62,17 +73,71 @@ test("off takes the item away: the app is told, and the switch shows its answer"
   await screen.getByRole("radio", { name: "Off" }).click();
 
   await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
-  expect(asked).toContainEqual({
-    path: "/api/app/menu-bar/setting",
-    method: "POST",
-    action: "menu-bar-setting",
-    body: '{"show":false}',
-  });
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "menu-bar-setting", body: '{"show":false}' },
+  ]);
   expect(show).toBe(false);
 
   await screen.getByRole("radio", { name: "On" }).click();
   await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
   expect(show).toBe(true);
+  expect(posts().map((post) => post.body)).toEqual(['{"show":false}', '{"show":true}']);
+});
+
+test.each<[string, (screen: Screen) => Promise<unknown>]>([
+  ["A tap, a click with no hold,", (screen) => screen.getByRole("radio", { name: "Off" }).click()],
+  [
+    "A click held for a moment",
+    (screen) => screen.getByRole("radio", { name: "Off" }).click({ delay: 150 }),
+  ],
+  [
+    "An arrow key still held when focus lands",
+    async (screen) => {
+      (screen.getByRole("radio", { name: "On" }).element() as HTMLElement).focus();
+      await userEvent.keyboard("{ArrowLeft>}");
+      await expect.element(screen.getByRole("radio", { name: "Off" })).toHaveFocus();
+      await userEvent.keyboard("{/ArrowLeft}");
+    },
+  ],
+  [
+    "A press from VoiceOver, Voice Control or Switch Control",
+    async (screen) =>
+      assistivePress(screen.getByRole("radio", { name: "Off" }).element() as HTMLElement),
+  ],
+])("%s sends Off to the app once while its answer is still out", async (_press, press) => {
+  let answer = () => {};
+  settingHeld = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const screen = await render(<MenuBarCard />);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+
+  await press(screen);
+  await vi.waitFor(() => expect(posts()).toHaveLength(1));
+  // Time for a second request to go out, were one coming.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts()).toEqual([
+    { path: SETTING, method: "POST", action: "menu-bar-setting", body: '{"show":false}' },
+  ]);
+  // Until the app answers, the switch shows where it stood.
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+
+  answer();
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+  expect(show).toBe(false);
+  expect(posts()).toHaveLength(1);
+});
+
+test("focus moving onto Off, as a screen reader's cursor can carry it, tells the app nothing", async () => {
+  const screen = await render(<MenuBarCard />);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+
+  (screen.getByRole("radio", { name: "Off" }).element() as HTMLElement).focus();
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toHaveFocus();
+  // Time for a request to go out, were one coming.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts()).toEqual([]);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
 });
 
 test("a switch that was turned off before shows off", async () => {
@@ -85,9 +150,7 @@ test("a change the app does not take leaves the switch as it was", async () => {
   refusing = true;
   const screen = await render(<MenuBarCard />);
   await screen.getByRole("radio", { name: "Off" }).click();
-  await vi.waitFor(() =>
-    expect(asked.some((request) => request.path === "/api/app/menu-bar/setting")).toBe(true),
-  );
+  await vi.waitFor(() => expect(posts().length).toBeGreaterThan(0));
   // The refusal has had its turn to come back.
   await new Promise((resolve) => setTimeout(resolve, 50));
   await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
