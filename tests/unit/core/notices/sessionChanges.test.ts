@@ -58,7 +58,9 @@ function remembered(memory: WaitMemory): Record<string, string[]> {
 
 /** The status time each remembered wait is kept with, as plain data. */
 function rememberedTimes(memory: WaitMemory): Record<string, number | null> {
-  return Object.fromEntries([...memory].flatMap(([, waits]) => [...waits]));
+  return Object.fromEntries(
+    [...memory].flatMap(([, waits]) => [...waits].map(([id, wait]) => [id, wait.since])),
+  );
 }
 
 describe("a source's first answer", () => {
@@ -535,6 +537,135 @@ describe("a source that did not answer", () => {
   });
 });
 
+describe("a source read in parts", () => {
+  const DEFAULT = "hermes-agent:default/20261001_110000_0000a1";
+  const CODER = "hermes-agent:coder/20261001_110000_0000b1";
+  const BOTH = { "hermes-agent:default/": "database", "hermes-agent:coder/": "database" };
+
+  /** One answer of Hermes Agent, with the profiles it read, as its adapter names them. */
+  function hermes(sessions: Session[], parts: Record<string, string> = BOTH): SessionsSnapshot {
+    const read: SourceHealth = {
+      ...source("hermes-agent"),
+      label: "Hermes Agent",
+      basis: "database",
+      parts,
+    };
+    return snapshot(
+      sessions.map((session) => ({ ...session, source: "hermes-agent" })),
+      [read],
+    );
+  }
+
+  test("a wait in a part not read on one poll is kept, and is not announced again when the part comes back", () => {
+    const memory = memoryAfter(
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+    );
+    // The coder profile could not be read: its sessions are not listed, and its part is not named.
+    const missed = waitChanges(
+      memory,
+      hermes([waiting(DEFAULT)], { "hermes-agent:default/": "database" }),
+    );
+    expect(missed.started).toEqual([]);
+    expect(missed.stopped).toEqual([]);
+    expect(remembered(missed.memory)).toEqual({ "hermes-agent": [DEFAULT, CODER] });
+    expect(rememberedTimes(missed.memory)[CODER]).toBe(1_000);
+
+    const back = waitChanges(
+      missed.memory,
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+    );
+    expect(back.started).toEqual([]);
+    expect(back.stopped).toEqual([]);
+  });
+
+  test("when the part comes back, its waits are compared with what was kept", () => {
+    const missed = memoryAfter(
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+      hermes([waiting(DEFAULT)], { "hermes-agent:default/": "database" }),
+    );
+    // It went back to work meanwhile.
+    expect(waitChanges(missed, hermes([waiting(DEFAULT), working(CODER)])).stopped).toEqual([
+      CODER,
+    ]);
+    // It answered and asked again meanwhile.
+    const again = waitChanges(
+      missed,
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 2_000 })]),
+    );
+    expect(again.stopped).toEqual([CODER]);
+    expect(again.started.map((session) => session.id)).toEqual([CODER]);
+    // It is gone, though its part was read.
+    expect(waitChanges(missed, hermes([waiting(DEFAULT)])).stopped).toEqual([CODER]);
+  });
+
+  test("a wait in a part that was read, whose session is gone, has stopped", () => {
+    const memory = memoryAfter(hermes([waiting(DEFAULT), waiting(CODER)]));
+    const result = waitChanges(memory, hermes([waiting(DEFAULT)]));
+    expect(result.stopped).toEqual([CODER]);
+    expect(remembered(result.memory)).toEqual({ "hermes-agent": [DEFAULT] });
+  });
+
+  test("a session still listed is compared, whether or not its part is named", () => {
+    const memory = memoryAfter(hermes([waiting(DEFAULT), waiting(CODER)]));
+    const result = waitChanges(
+      memory,
+      hermes([waiting(DEFAULT), working(CODER)], { "hermes-agent:default/": "database" }),
+    );
+    expect(result.stopped).toEqual([CODER]);
+  });
+
+  test("a source's own way is not a part: one read another way, whose wait is gone, has stopped as before", () => {
+    const readAs = (basis: string, sessions: Session[]) =>
+      snapshot(sessions, [{ ...source("claude-code"), basis }]);
+    const memory = memoryAfter(readAs("registry+feed", [waiting(A), waiting(B)]));
+    const result = waitChanges(memory, readAs("registry", [waiting(A)]));
+    expect(result.stopped).toEqual([B]);
+  });
+
+  test("another machine's source that did not answer there keeps its waits here", () => {
+    const JOB = "remote:devbox:opencode:ses_000000000000000000000000a1";
+    const machine = (parts: Record<string, string>, sessions: Session[]) =>
+      snapshot(
+        sessions.map((session) => ({ ...session, source: "remote:devbox" })),
+        [{ ...source("remote:devbox"), basis: "api", parts }],
+      );
+    const memory = memoryAfter(
+      machine({ "remote:devbox:opencode:": "database" }, [waiting(JOB)]),
+      machine({ "remote:devbox:opencode:": "database" }, [waiting(JOB)]),
+    );
+    const missed = waitChanges(memory, machine({}, []));
+    expect(missed.stopped).toEqual([]);
+    const back = waitChanges(
+      missed.memory,
+      machine({ "remote:devbox:opencode:": "database" }, [waiting(JOB)]),
+    );
+    expect(back.started).toEqual([]);
+    expect(back.stopped).toEqual([]);
+  });
+
+  test("through sessionChanges, a profile that fails one poll says nothing at all of its waiting session", () => {
+    let memory = EMPTY_CHANGE_MEMORY;
+    const told: [string, string][] = [];
+    const stopped: string[] = [];
+    for (const each of [
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+      hermes([waiting(DEFAULT)], { "hermes-agent:default/": "database" }),
+      hermes([waiting(DEFAULT), waiting(CODER, { statusSince: 1_000 })]),
+    ]) {
+      const result = sessionChanges(memory, each);
+      memory = result.memory;
+      told.push(
+        ...result.changes.map(({ event, session }): [string, string] => [event, session.id]),
+      );
+      stopped.push(...result.stopped);
+    }
+    expect(told).toEqual([]);
+    expect(stopped).toEqual([]);
+  });
+});
+
 // No Codex session is ever reported as waiting today. The second source in
 // these tests stands for any source: the logic does not know one from another.
 describe("two sources", () => {
@@ -626,6 +757,7 @@ describe("over a long run of snapshots", () => {
     "gemini-cli": [],
     opencode: [],
     "qwen-code": [],
+    "hermes-agent": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

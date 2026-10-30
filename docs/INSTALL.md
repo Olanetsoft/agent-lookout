@@ -6,7 +6,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 
 - macOS, Linux or Windows. Agent Lookout is developed and used on macOS. On Linux and Windows, CI runs the tests and starts it, and no one has used it on those desktops yet. [On Linux](GUIDE.md#on-linux) and [On Windows](GUIDE.md#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#mac-app) needs no Node.js, and macOS 13 Ventura or later.
-- Claude Code, Codex, Antigravity, the Antigravity CLI (`agy`), Mistral Vibe, Gemini CLI, OpenCode or Qwen Code. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
+- Claude Code, Codex, Antigravity, the Antigravity CLI (`agy`), Mistral Vibe, Gemini CLI, OpenCode, Qwen Code or Hermes Agent. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 - For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity IDE's conversations do not appear yet, and Sources says when its folder is there.
@@ -15,6 +15,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 - For Gemini CLI, version 0.39 or later, which saves sessions in the format Agent Lookout reads. Agent Lookout was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. Its sessions show as working, idle or unknown, never as needing you, finished or failed.
 - For OpenCode, a version that keeps its sessions in its `opencode.db` database, as OpenCode does from 1.2 on, on macOS or Linux, and the system's `sqlite3`, which macOS has, and which Ubuntu and Debian install with `sudo apt install sqlite3`. Agent Lookout was built from OpenCode's source at v1.19.0 and has not yet been checked on a computer running it. Its sessions show as working, idle, failed or finished, never as needing you, and nothing of OpenCode's is read on Windows.
 - For Qwen Code, version 0.21.14 or later, which lists its running sessions where Agent Lookout reads them. Agent Lookout was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it. Only sessions in a terminal appear.
+- For Hermes Agent, version 0.21.6 or later, on macOS or Linux, and the system's `sqlite3`, which macOS has, and which Ubuntu and Debian install with `sudo apt install sqlite3`. While Hermes Agent has commits in a database's `-wal`, that database is read only with a `sqlite3` of 3.51.3 or newer, or one of the few older ones Hermes Agent itself trusts: on a Mac, `brew install sqlite` gives one, and on Linux you can put one at `/usr/local/bin/sqlite3`. Agent Lookout was built from Hermes Agent's source at v0.22.5 and has not yet been checked on a computer running it. Its sessions show as working, idle, needing you, failed or finished, and nothing of Hermes Agent's is read on Windows.
 
 Check what you have:
 
@@ -26,9 +27,10 @@ codex --version
 agy --version
 gemini --version
 qwen --version
+hermes --version
 ```
 
-`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, `agy --version` a version number such as `1.3.1`, `gemini --version` a version number such as `0.64.0`, and `qwen --version` one such as `0.25.1`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, `agy`, `gemini` or `qwen`, so the Codex desktop app needs no CLI.
+`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, `agy --version` a version number such as `1.3.1`, `gemini --version` a version number such as `0.64.0`, `qwen --version` one such as `0.25.1`, and `hermes --version` a first line that starts with `Hermes Agent v` and a version such as `0.22.5`, and also checks for an update of itself. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, `agy`, `gemini`, `qwen` or `hermes`, so the Codex desktop app needs no CLI.
 
 ## With npx
 

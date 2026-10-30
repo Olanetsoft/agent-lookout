@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   isMachineName,
+  isPartKey,
   isRemoteSource,
   machineInId,
   nameOnMachine,
@@ -237,4 +238,13 @@ test("a source is read one way, its basis, and another machine's one way for eac
   );
   // And no part's key is ever a source's own basis.
   expect(machine.keys.slice(1)).not.toContain("database-closed");
+});
+
+test("a part's key is told from a source's own way", () => {
+  const ways = readWays({ basis: "database", parts: { "hermes-agent:coder/": "database" } });
+  expect(ways.keys.map(isPartKey)).toEqual([false, true]);
+  expect(isPartKey(ways.keyOf("hermes-agent:coder/20261001_110000_0000b1"))).toBe(true);
+  // A session of no part named is read the source's own way.
+  expect(isPartKey(ways.keyOf("hermes-agent:default/20261001_110000_0000a1"))).toBe(false);
+  expect(isPartKey("")).toBe(false);
 });

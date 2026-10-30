@@ -12,6 +12,7 @@
     "gemini-cli",
     "opencode",
     "qwen-code",
+    "hermes-agent",
     "mcp",
     "mcp-server",
     "tmux",

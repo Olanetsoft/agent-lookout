@@ -1,0 +1,7 @@
+{
+  "note": "Placeholder. Agent Lookout never opens this file.",
+  "agent:main:telegram:dm:1": {
+    "chat_id": "demo-secret-value-that-must-stay-put",
+    "user_id": "demo-secret-value-that-must-stay-put"
+  }
+}

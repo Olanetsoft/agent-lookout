@@ -7,6 +7,7 @@ import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/in
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
+import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
@@ -24,6 +25,7 @@ import {
   standInProcesses,
 } from "@tests/support/adapters/antigravityAdapter";
 import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
+import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
@@ -43,6 +45,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.GEMINI_CLI_CAPABILITIES).toEqual(GEMINI_CLI_CAPABILITIES);
   expect(tour.OPENCODE_CAPABILITIES).toEqual(OPENCODE_CAPABILITIES);
   expect(tour.QWEN_CODE_CAPABILITIES).toEqual(QWEN_CODE_CAPABILITIES);
+  expect(tour.HERMES_AGENT_CAPABILITIES).toEqual(HERMES_AGENT_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -57,6 +60,7 @@ test("this computer's sources come in the collector's order", () => {
     "gemini-cli",
     "opencode",
     "qwen-code",
+    "hermes-agent",
     "status-files",
   ]);
 });
@@ -140,6 +144,18 @@ test("Qwen Code's card is the one its adapter shows on a computer without it", a
   expect(sessions).toEqual([]);
 });
 
+test("Hermes Agent's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = hermesAgentAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "hermes-agent")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -188,6 +204,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: QWEN_CODE_CAPABILITIES,
         },
         {
+          id: "hermes-agent",
+          label: "Hermes Agent",
+          state: "unavailable",
+          capabilities: HERMES_AGENT_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -221,6 +243,13 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
   );
 });
 
+/**
+ * The agents whose support is not released yet. The landing page goes live as
+ * soon as it changes, so it names an agent at the release that ships it, and
+ * the agent leaves this list then.
+ */
+const NOT_ON_THE_PAGE_YET = new Set(["Hermes Agent"]);
+
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";
   const named = [...works.matchAll(/<li>([\s\S]*?)<\/li\s*>/g)]
@@ -230,13 +259,13 @@ test("the page's Works with names every agent the tour's Sources reads", () => {
     .sourcesAt(0, 1, "0.2.6")
     .filter((source) => source.machine === undefined)
     .map((source) => source.label)
-    .filter((label) => label !== "Status files");
+    .filter((label) => label !== "Status files" && !NOT_ON_THE_PAGE_YET.has(label));
   // The agent column of the README's table of what each agent can report.
   const table = readme.slice(readme.indexOf("| Agent "));
   const rows = table.slice(0, table.indexOf("\n\n")).split("\n").slice(2);
   const inReadme = rows
     .map((row) => row.split("|")[1].trim())
-    .filter((agent) => agent !== "Status files");
+    .filter((agent) => agent !== "Status files" && !NOT_ON_THE_PAGE_YET.has(agent));
   expect(named).toHaveLength(8);
   expect(new Set(named)).toEqual(new Set(read));
   expect(new Set(named)).toEqual(new Set(inReadme));

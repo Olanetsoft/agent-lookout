@@ -1,0 +1,3 @@
+# Placeholder
+
+Agent Lookout never opens this file. demo-private-words-from-a-prompt

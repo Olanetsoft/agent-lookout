@@ -64,8 +64,16 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["gemini-cli", ["files"]],
   ["opencode", ["database", "database-closed", "database-without-processes"]],
   ["qwen-code", ["files"]],
+  ["hermes-agent", ["database"]],
   ["status-files", ["files"]],
 ]);
+
+/**
+ * The most parts taken from one machine: as many as the page reads for one
+ * source (`src/dashboard/lib/api/readApi.ts`), so the page compares that
+ * machine's sessions as this one does.
+ */
+export const MAX_REMOTE_PARTS = 20;
 
 /** One of the other machine's sources, as its card says it: its name and its state. */
 export interface RemoteSource {
@@ -81,10 +89,16 @@ export interface RemoteSnapshot {
   /**
    * The way that machine read each of its sources that answered there and
    * whose way is one of `KNOWN_WAYS`, by the start of the ids their sessions
-   * have here,
-   * `remote:<name>:<source id>:`. Each such source is compared apart here, as
-   * it is there (`readWays`), so one that switches, as OpenCode's does when
-   * OpenCode quits there, starts a fresh comparison of its own sessions alone.
+   * have here, `remote:<name>:<source id>:`. Each such source is compared
+   * apart here, as it is there (`readWays`), so one that switches, as
+   * OpenCode's does when OpenCode quits there, starts a fresh comparison of
+   * its own sessions alone.
+   *
+   * A source there read in parts of its own, as Hermes Agent's is, one for
+   * each profile, has each of those parts here instead, such as
+   * `remote:<name>:hermes-agent:coder/`, so a profile that could not be read
+   * there leaves its sessions here as they were. When those parts would come
+   * to more than `MAX_REMOTE_PARTS`, each source is one part again.
    */
   parts: Record<string, string>;
   /** What each agent there can report, for each source it found. */
@@ -93,6 +107,25 @@ export interface RemoteSnapshot {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The parts a source on the other machine was read in, each by the start of
+ * its sessions' ids there, such as Hermes Agent's `hermes-agent:coder/` for
+ * a profile: only those that are clean text, start with that source's own
+ * id, and name a way `KNOWN_WAYS` lists for it. Empty when it names none.
+ */
+function ownParts(value: unknown, sourceId: string): [string, string][] {
+  if (!isRecord(value)) return [];
+  const known = KNOWN_WAYS.get(sourceId) ?? [];
+  const parts: [string, string][] = [];
+  for (const [start, way] of Object.entries(value)) {
+    if (parts.length >= MAX_REMOTE_PARTS) break;
+    if (exact(start, MAX_ID_LENGTH) === null || !start.startsWith(`${sourceId}:`)) continue;
+    if (typeof way !== "string" || !known.includes(way)) continue;
+    parts.push([start, way]);
+  }
+  return parts;
 }
 
 function oneOf<T extends string>(allowed: readonly T[], value: unknown): T | null {
@@ -305,7 +338,8 @@ export function readRemoteSnapshot(
   const named = new Map<string, string>();
   const sources: RemoteSource[] = [];
   const agents: AgentCapabilities[] = [];
-  const parts: Record<string, string> = {};
+  /** Each source compared apart: as one part, and as its own parts when it names any. */
+  const compared: { whole: [string, string]; own: [string, string][] }[] = [];
   for (const item of value.sources) {
     if (sources.length >= MAX_REMOTE_SOURCES) break;
     if (!isRecord(item)) continue;
@@ -320,11 +354,25 @@ export function readRemoteSnapshot(
     // there names a way.
     const answered = state === "ok" || state === "not-set-up";
     if (answered && typeof item.basis === "string" && KNOWN_WAYS.get(id)?.includes(item.basis)) {
-      parts[`${remoteSourceId(machine)}:${id}:`] = item.basis;
+      const here = remoteSourceId(machine);
+      compared.push({
+        whole: [`${here}:${id}:`, item.basis],
+        own: ownParts(item.parts, id).map(([start, way]) => [`${here}:${start}`, way]),
+      });
     }
     if (state === "unavailable" || state === "not-set-up") continue;
     const capabilities = readCapabilities(item.capabilities, machine, id);
     if (capabilities) agents.push({ label, capabilities });
+  }
+
+  // Each source's own parts, unless together they are more than the page
+  // reads: then each source is one part, as there are never more of those.
+  const count = compared.reduce((total, each) => total + Math.max(each.own.length, 1), 0);
+  const parts: Record<string, string> = {};
+  for (const { whole, own } of compared) {
+    for (const [start, way] of count <= MAX_REMOTE_PARTS && own.length > 0 ? own : [whole]) {
+      parts[start] = way;
+    }
   }
 
   const sessions: Session[] = [];

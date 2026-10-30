@@ -19,6 +19,8 @@ export type RemoteSourceId = `remote:${string}`;
  * `gemini-cli` is Google's Gemini CLI, `gemini`. `opencode` is OpenCode, whose
  * sessions are read from its database.
  * `qwen-code` is Qwen Code in a terminal.
+ * `hermes-agent` is Nous Research's Hermes Agent, whose sessions are read
+ * from each of its profiles' databases.
  */
 export type SourceId =
   | "claude-code"
@@ -29,6 +31,7 @@ export type SourceId =
   | "gemini-cli"
   | "opencode"
   | "qwen-code"
+  | "hermes-agent"
   | "status-files"
   | RemoteSourceId;
 
@@ -605,12 +608,19 @@ export interface SourceHealth {
    */
   basis?: string;
   /**
-   * For another machine's source: the way that machine read each of its own
-   * sources, by the start of the ids their sessions have here, such as
-   * `remote:devbox:opencode:` for `database-closed`. Each of those sources is
-   * compared apart, only with its own last answer read the same way, as that
-   * machine compares it, so one switching there leaves the others alone
-   * (`readWays`).
+   * The way each part of a source was read, by the start of the ids its
+   * sessions have, for a source read in parts that can each fail alone. Each
+   * part is compared apart, only with its own last answer read the same way,
+   * so one that switches, or is not read on a poll, leaves the others alone
+   * (`readWays`). A part not named on a poll keeps its last answer, so its
+   * sessions are not taken to have ended.
+   *
+   * - Another machine's source names the way that machine read each of its own
+   *   sources, such as `remote:devbox:opencode:` for `database-closed`, as that
+   *   machine compares them.
+   * - Hermes Agent names each profile it read this poll, such as
+   *   `hermes-agent:coder/` for `database`, so a profile that could not be read
+   *   leaves its sessions as they were.
    */
   parts?: Record<string, string>;
   /**
@@ -632,6 +642,14 @@ export interface SourceHealth {
   checkedAt: number;
 }
 
+/** What sets a part's key, as `readWays` makes one, apart from a source's own `basis`, which never holds it. */
+const PART_KEY_MARK = "\n";
+
+/** Whether a key `readWays` gave is one of a source's parts, rather than its own way. */
+export function isPartKey(key: string): boolean {
+  return key.includes(PART_KEY_MARK);
+}
+
 /** The ways one answer of a source was read, as `readWays` gives them. */
 export interface ReadWays {
   /** The key of every way this answer was read, the source's own `basis` first. */
@@ -643,14 +661,15 @@ export interface ReadWays {
 /**
  * The ways one answer of a source was read, each named by a key that is
  * compared only with itself: the source's `basis`, or "" when it has none,
- * and, for another machine's source, one for each of that machine's sources
- * it gave a way for (`parts`), which its sessions are compared under.
+ * and one for each part it gave a way for (`parts`), which that part's
+ * sessions are compared under: each of another machine's sources, or each
+ * Hermes Agent profile.
  */
 export function readWays(source: Pick<SourceHealth, "basis" | "parts">): ReadWays {
   const basis = source.basis ?? "";
   const parts = Object.entries(source.parts ?? {});
   // A newline is in no basis, so no part's key is ever a source's own.
-  const keyFor = ([start, way]: [string, string]) => `${start}\n${way}`;
+  const keyFor = ([start, way]: [string, string]) => `${start}${PART_KEY_MARK}${way}`;
   return {
     keys: [basis, ...parts.map(keyFor)],
     keyOf(sessionId) {

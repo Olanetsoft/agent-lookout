@@ -669,6 +669,127 @@ describe("events when an adapter changes how it reads its source", () => {
   });
 });
 
+describe("events of a source read in parts that can each fail alone", () => {
+  // As Hermes Agent's adapter reads each profile's database apart, and names
+  // in `parts` each profile it read on a poll.
+  const DEFAULT = "hermes-agent:default/";
+  const CODER = "hermes-agent:coder/";
+  const both = { [DEFAULT]: "database", [CODER]: "database" };
+  const own = makeSession({
+    id: `${DEFAULT}a`,
+    source: "hermes-agent",
+    name: "demo-a",
+    status: "idle",
+  });
+  const coder = makeSession({
+    id: `${CODER}b`,
+    source: "hermes-agent",
+    name: "demo-b",
+    status: "working",
+  });
+
+  function partsAdapter(...answers: [Session[], Record<string, string>][]) {
+    let calls = 0;
+    const adapter: Adapter = {
+      id: "hermes-agent",
+      label: "Hermes Agent",
+      lookingIn: "Looking for sessions in a test.",
+      poll: async () => {
+        const [sessions, parts] = answers[Math.min(calls, answers.length - 1)] as [
+          Session[],
+          Record<string, string>,
+        ];
+        calls += 1;
+        return {
+          health: {
+            id: "hermes-agent",
+            label: "Hermes Agent",
+            state: "ok",
+            checkedAt: Date.now(),
+            parts,
+          },
+          sessions,
+          basis: "database",
+        };
+      },
+    };
+    return adapter;
+  }
+
+  const told = (events: ReturnType<typeof createEventStore>) =>
+    events.list().map((event) => [event.sessionName, event.kind, event.from, event.to]);
+
+  test("a part left out of one poll has not ended, and has not appeared when it is read again", async () => {
+    const { poller, events } = setUp(
+      partsAdapter([[own, coder], both], [[own], { [DEFAULT]: "database" }], [[own, coder], both]),
+    );
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    // The coder profile's session is not in this snapshot, which shows what was read.
+    expect(poller.getSnapshot().sessions.map((session) => session.id)).toEqual([own.id]);
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+  });
+
+  test("a part left out keeps its own last answer, so a change it made meanwhile is told once it is read again, and the other part's changes at once", async () => {
+    const { poller, events } = setUp(
+      partsAdapter(
+        [[own, coder], both],
+        [[{ ...own, status: "working" }], { [DEFAULT]: "database" }],
+        [
+          [
+            { ...own, status: "working" },
+            { ...coder, status: "needs-you" },
+          ],
+          both,
+        ],
+      ),
+    );
+    for (let poll = 0; poll < 3; poll += 1) {
+      vi.setSystemTime(T0 + poll * 2_000);
+      await poller.pollOnce();
+    }
+    expect(told(events)).toEqual([
+      ["demo-b", "status-changed", "working", "needs-you"],
+      ["demo-a", "status-changed", "idle", "working"],
+    ]);
+  });
+
+  test("a part that is read and no longer lists a session has ended it, and one it lists for the first time has appeared", async () => {
+    const fresh = makeSession({
+      id: `${CODER}c`,
+      source: "hermes-agent",
+      name: "demo-c",
+      status: "working",
+    });
+    const { poller, events } = setUp(partsAdapter([[own, coder], both], [[own, fresh], both]));
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(told(events).sort()).toEqual([
+      ["demo-b", "ended", "working", undefined],
+      ["demo-c", "appeared", undefined, "working"],
+    ]);
+  });
+
+  test("without parts, the same poll would tell the part left out as ended, and again as appeared", async () => {
+    // What the parts are for: the same answers with no part named.
+    const { poller, events } = setUp(
+      partsAdapter([[own, coder], {}], [[own], {}], [[own, coder], {}]),
+    );
+    for (let poll = 0; poll < 3; poll += 1) {
+      vi.setSystemTime(T0 + poll * 2_000);
+      await poller.pollOnce();
+    }
+    expect(told(events)).toEqual([
+      ["demo-b", "appeared", undefined, "working"],
+      ["demo-b", "ended", "working", undefined],
+    ]);
+  });
+});
+
 describe("changes that happen across a switch between two ways of reading", () => {
   const feed = (sessions: Session[]): AdapterResult => ({ ...result(sessions), basis: "feed" });
   const registry = (sessions: Session[]): AdapterResult => ({

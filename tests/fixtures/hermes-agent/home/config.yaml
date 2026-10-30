@@ -1,0 +1,4 @@
+# Placeholder. Agent Lookout never opens this file.
+model:
+  provider: demo
+  api_key: demo-secret-value-that-must-stay-put

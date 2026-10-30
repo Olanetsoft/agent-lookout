@@ -192,7 +192,7 @@ test("the view says that Agent Lookout sends nothing by default, names each way 
   await expect
     .element(about)
     .toHaveTextContent(
-      "It reads its files and never writes to them, except that the sqlite3 it runs for OpenCode can leave an empty -wal file beside OpenCode's database.",
+      "It reads its files and never writes to them, except that the sqlite3 it runs for OpenCode and Hermes Agent can leave an empty -wal file beside OpenCode's or Hermes Agent's database.",
     );
   await expect
     .element(about)
@@ -286,6 +286,7 @@ test.each([
       "Gemini CLI",
       "OpenCode",
       "Qwen Code",
+      "Hermes Agent",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -293,7 +294,19 @@ test.each([
       (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
     );
     // Claude Code's are read here while its details are open, and never from another machine.
-    expect(tokens).toEqual(["Partly", "Yes", "Yes", "Yes", "No", "No", "No", "No", "No", "No"]);
+    expect(tokens).toEqual([
+      "Partly",
+      "Yes",
+      "Yes",
+      "Yes",
+      "No",
+      "No",
+      "No",
+      "No",
+      "No",
+      "No",
+      "No",
+    ]);
 
     // Each word sits whole on one line in its cell, and the heads take at most two.
     for (const cell of table.querySelectorAll<HTMLElement>('[data-part="capability"]')) {

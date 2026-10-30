@@ -85,6 +85,17 @@ test("the fingerprint of the folders sessions are read from names none of them, 
       HOME,
     ),
   ).toBe(defaults);
+  // Hermes Agent's own variable names its root, or a profile's folder in it.
+  expect(sourcesFingerprint({ HERMES_HOME: "/Users/example/.hermes" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ HERMES_HOME: "/Users/example/.hermes/profiles/coder" }, HOME)).toBe(
+    defaults,
+  );
+  // Agent Lookout's names the root outright. A home folder is a whole path,
+  // with a drive on Windows, as the system gives it.
+  const home = path.resolve(HOME);
+  expect(sourcesFingerprint({ AGENT_LOOKOUT_HERMES_HOME: path.join(home, ".hermes") }, home)).toBe(
+    sourcesFingerprint({}, home),
+  );
 
   const others = [
     sourcesFingerprint({ AGENT_LOOKOUT_CLAUDE_HOME: "/tmp/empty-claude" }, HOME),
@@ -104,6 +115,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_QWEN_HOME: "/tmp/empty-qwen" }, HOME),
     sourcesFingerprint({ QWEN_HOME: "/tmp/empty-qwen" }, HOME),
     sourcesFingerprint({ QWEN_RUNTIME_DIR: "/tmp/empty-qwen" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_HERMES_HOME: "/tmp/empty-hermes" }, HOME),
+    sourcesFingerprint({ HERMES_HOME: "/tmp/empty-hermes" }, HOME),
+    sourcesFingerprint({ HERMES_HOME: "/tmp/hermes/profiles/work" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

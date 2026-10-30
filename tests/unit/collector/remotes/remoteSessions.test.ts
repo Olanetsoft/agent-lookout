@@ -5,18 +5,22 @@ import * as antigravityCli from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import * as codex from "@collector/adapters/codex/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
+import * as hermesAgent from "@collector/adapters/hermes-agent/index";
 import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
 import * as opencode from "@collector/adapters/opencode/index";
 import * as qwenCode from "@collector/adapters/qwen-code/index";
 import * as statusFiles from "@collector/adapters/status-files/index";
 import {
   KNOWN_WAYS,
+  MAX_REMOTE_PARTS,
   MAX_REMOTE_SESSIONS,
   MAX_REMOTE_SOURCES,
   readRemoteSnapshot,
 } from "@collector/remotes/remoteSessions";
 import { repositoryId } from "@collector/git/repository";
 import type { RemoteSourceId, SourceHealth, SourceId, SourceState } from "@core/sessions/session";
+import { sessionChanges, EMPTY_CHANGE_MEMORY } from "@core/notices/sessionChanges";
+import { readWays } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
   NOW,
@@ -293,6 +297,7 @@ describe("readRemoteSnapshot", () => {
       "antigravity-cli": antigravityCli,
       codex,
       "gemini-cli": geminiCli,
+      "hermes-agent": hermesAgent,
       "mistral-vibe": mistralVibe,
       opencode,
       "qwen-code": qwenCode,
@@ -316,6 +321,144 @@ describe("readRemoteSnapshot", () => {
     };
     expect(read({ generatedAt: NOW, sources: [qwenThere], sessions: [] }).parts).toEqual({
       "remote:devbox:qwen-code:": "files",
+    });
+  });
+
+  test("another machine's Hermes Agent sessions are compared under their own way", () => {
+    const hermesThere: SourceHealth = {
+      ...sourcesThere()[0]!,
+      id: "hermes-agent",
+      state: "ok",
+      basis: hermesAgent.BASIS,
+    };
+    expect(read({ generatedAt: NOW, sources: [hermesThere], sessions: [] }).parts).toEqual({
+      "remote:devbox:hermes-agent:": "database",
+    });
+  });
+
+  describe("a source there read in parts of its own, as Hermes Agent's is, one for each profile", () => {
+    const DEFAULT_ID = "hermes-agent:default/20261001_110000_0000a1";
+    const CODER_ID = "hermes-agent:coder/20261001_110000_0000b1";
+    const BOTH = { "hermes-agent:default/": "database", "hermes-agent:coder/": "database" };
+    const hermesThere = (parts: unknown): SourceHealth =>
+      ({
+        ...sourcesThere()[0]!,
+        id: "hermes-agent",
+        state: "ok",
+        basis: hermesAgent.BASIS,
+        parts,
+      }) as SourceHealth;
+    const waitingThereAs = (id: string) => ({
+      ...waitingThere(),
+      id,
+      source: "hermes-agent",
+      statusSince: NOW - 60_000,
+    });
+
+    test("each of its parts is kept here, instead of one for the source", () => {
+      expect(read({ generatedAt: NOW, sources: [hermesThere(BOTH)], sessions: [] }).parts).toEqual({
+        "remote:devbox:hermes-agent:default/": "database",
+        "remote:devbox:hermes-agent:coder/": "database",
+      });
+    });
+
+    test("a part is taken only when it is clean, starts with its source's id and names a way this version knows for it", () => {
+      const parts = read({
+        generatedAt: NOW,
+        sources: [
+          hermesThere({
+            "hermes-agent:default/": "database",
+            "opencode:x/": "database",
+            "hermes-agent:a\nb/": "database",
+            "hermes-agent:coder/": "files",
+            "hermes-agent:other/": 3,
+            "hermes-agent:writer/": "database",
+          }),
+        ],
+        sessions: [],
+      }).parts;
+      expect(parts).toEqual({
+        "remote:devbox:hermes-agent:default/": "database",
+        "remote:devbox:hermes-agent:writer/": "database",
+      });
+      // With none it can take, the source is one part, as before.
+      expect(
+        read({ generatedAt: NOW, sources: [hermesThere({ "x:": "database" })], sessions: [] })
+          .parts,
+      ).toEqual({ "remote:devbox:hermes-agent:": "database" });
+      expect(
+        read({ generatedAt: NOW, sources: [hermesThere(["database"])], sessions: [] }).parts,
+      ).toEqual({ "remote:devbox:hermes-agent:": "database" });
+    });
+
+    test("when the parts would be more than the page reads, each source is one part again", () => {
+      const many = Object.fromEntries(
+        Array.from({ length: MAX_REMOTE_PARTS }, (_, index) => [
+          `hermes-agent:p${index}/`,
+          "database",
+        ]),
+      );
+      const codexThere: SourceHealth = {
+        ...sourcesThere()[0]!,
+        id: "codex",
+        state: "ok",
+        basis: "files",
+      };
+      const parts = read({
+        generatedAt: NOW,
+        sources: [codexThere, hermesThere(many)],
+        sessions: [],
+      }).parts;
+      expect(parts).toEqual({
+        "remote:devbox:codex:": "files",
+        "remote:devbox:hermes-agent:": "database",
+      });
+      // Just as many as the page reads are kept.
+      const fit = Object.fromEntries(Object.entries(many).slice(0, MAX_REMOTE_PARTS - 1));
+      expect(
+        Object.keys(
+          read({ generatedAt: NOW, sources: [codexThere, hermesThere(fit)], sessions: [] }).parts,
+        ),
+      ).toHaveLength(MAX_REMOTE_PARTS);
+    });
+
+    test("a profile that is not read there for one poll ends nothing here and starts no wait again", () => {
+      const answer = (parts: Record<string, string>, ids: string[]) => {
+        const snapshot = read({
+          generatedAt: NOW,
+          sources: [hermesThere(parts)],
+          sessions: ids.map(waitingThereAs),
+        });
+        const health: SourceHealth = {
+          id: "remote:devbox",
+          label: "devbox",
+          state: "ok",
+          basis: "api",
+          parts: snapshot.parts,
+          checkedAt: NOW,
+        };
+        return { generatedAt: NOW, sources: [health], sessions: snapshot.sessions };
+      };
+      // Each profile's sessions are compared under their own part.
+      const ways = readWays(answer(BOTH, []).sources[0]!);
+      expect(ways.keyOf(`remote:devbox:${CODER_ID}`)).not.toBe(
+        ways.keyOf(`remote:devbox:${DEFAULT_ID}`),
+      );
+
+      let memory = EMPTY_CHANGE_MEMORY;
+      const told: string[] = [];
+      for (const each of [
+        answer(BOTH, [DEFAULT_ID, CODER_ID]),
+        answer(BOTH, [DEFAULT_ID, CODER_ID]),
+        // The coder profile could not be read there.
+        answer({ "hermes-agent:default/": "database" }, [DEFAULT_ID]),
+        answer(BOTH, [DEFAULT_ID, CODER_ID]),
+      ]) {
+        const result = sessionChanges(memory, each);
+        memory = result.memory;
+        told.push(...result.changes.map(({ event }) => event), ...result.stopped);
+      }
+      expect(told).toEqual([]);
     });
   });
 

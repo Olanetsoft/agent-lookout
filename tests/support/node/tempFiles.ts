@@ -108,6 +108,15 @@ export const EMPTY_OPENCODE_HOME = path.join(
 export const EMPTY_QWEN_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-qwen", "qwen");
 
 /**
+ * An empty folder for the Hermes Agent adapter to read in place of
+ * `~/.hermes`, so that a collector a test builds from `process.env` finds no
+ * database and runs no `sqlite3`: `nodeSetup.ts` makes it and names it there.
+ * It holds no `state.db` and no `profiles/`, and nothing is ever written in
+ * it. A test that builds an environment of its own names a `tempDir` there.
+ */
+export const EMPTY_HERMES_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-hermes", "hermes");
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,
