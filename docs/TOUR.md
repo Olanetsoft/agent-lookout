@@ -616,7 +616,7 @@ In this part, a bare path such as `lib/shell/view.ts` is under `src/dashboard/`.
 
 **What it does.** It draws what the collector measured and nothing else. A rail down the left links to three views: Overview, Sources and Settings. The header above them says how many sessions are watched, and holds the search and the Night and Day switch. The lamp in the mark at the top of the rail is lit while any session needs you, so you can see it from every view. The tab's title gives the same count, as in `(2) Agent Lookout`.
 
-**Where it is.** `main.tsx` renders `App.tsx`, which holds the frame: the rail (`components/rail/Rail.tsx`), the header (`components/dashboard/Header.tsx`) and the current view. Features live in `components/<feature>/`, the logic they draw from in `lib/<area>/`, and hooks in `hooks/<area>/`. Primitives live in `components/ui/`.
+**Where it is.** `main.tsx` renders `Page.tsx`, which gives `App.tsx` a store that polls the local server, under the boundary that says so when drawing fails. `App.tsx` holds the frame: the rail (`components/rail/Rail.tsx`), the header (`components/dashboard/Header.tsx`) and the current view. Features live in `components/<feature>/`, the logic they draw from in `lib/<area>/`, and hooks in `hooks/<area>/`. Primitives live in `components/ui/`.
 
 **Where it came from.** The first commit already had the frame, the three views, the store that polls and the API seam. Most of what the Overview has now came later, each part from an issue named below.
 
@@ -854,6 +854,7 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - #64 brought the page's text up to date with what had shipped.
 - #62 replaced the picture with a dashboard you can watch and click (ff3fb4f, 6 October).
 - #131 redesigned the page to guide a visitor from the first screen: the app, then one feature at a time.
+- #203 took out about 7 KB of JavaScript the tour never ran, the Mac app's own parts and the store that polls, and made CI build the tour on every pull request to check its sizes.
 
 **Why it works the way it does.**
 
@@ -865,6 +866,7 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
   - a host installed with `setAddressHost`, so the frame replaces its address and Back never steps through the dashboard
   - `src/site-tour/host/memoryStorage.ts`, a `localStorage` kept in memory. Nothing a visitor does in the frame outlasts the page or touches the page's own theme choice.
   - `src/site-tour/host/clock.ts`, a clock that starts at the time of day shown in the page's pictures and can be held still
+  - `src/site-tour/app-only/`, stand-ins that draw nothing for the parts only the Mac app's window draws: the Menu bar, Keep awake and Updates cards and the note on the app's Claude Code plugin. `scripts/site-tour/build.mjs` puts each in place of the real one, so the tour does not carry code it never runs. The build fails when a real one is in the tour anyway, or was moved or renamed so that the build no longer finds it.
 - **An hour that adds up.**
   - `src/site-tour/feed/hour.ts` is the hour of sessions the tour shows, and `feed/week.ts` is the six days before it.
   - `feed/derive.ts` turns any moment into what the collector's routes would answer, using the same rules from `src/core/`. So the charts, the events and the waits agree with the sessions.
@@ -1439,7 +1441,7 @@ A test that builds its own environment does the same itself. One block of tests,
 | `test (Node 22)`, `test (Node 24)` | All three groups on Ubuntu. Node 22 includes 22.12, the oldest version the package supports                                                                                                                          | First commit, on Node 20 and 22. #68 (f80fe4e) moved it to 22 and 24 |
 | `test (Windows)`                   | All three groups on Windows                                                                                                                                                                                          | #22 (0e33aa1)                                                        |
 | `build`                            | `npm run build`. Since #2 (8eb9daf), it also bundles the Mac app's main process with `scripts/build-desktop.mjs`. Packing the app itself needs a Mac, so that happens only in the release                            | First commit                                                         |
-| `tour`                             | The landing page's tour. Every run checks its sizes. When a commit changes the version, it also checks that `site/tour/` holds what that version builds                                                              | #62 (ff3fb4f)                                                        |
+| `tour`                             | The landing page's tour. Every run builds it from the working tree into a temporary folder and checks its sizes. When a commit changes the version, it also checks that `site/tour/` holds what that version builds  | #62 (ff3fb4f)                                                        |
 | `start`, `start (Windows)`         | Runs `scripts/start-check.mjs`. It builds the app, starts it with `npm start` on folders of its own, and checks that it finds a Claude Code, a Codex and a status-file session, and that `agent-lookout mcp` answers | #22: `start` in e6ff654, `start (Windows)` in 0e33aa1                |
 | `package`                          | Packs the npm package, checks what is in it and how big it is, installs it into an empty folder, and starts it there with `npx --yes=false agent-lookout`                                                            | #1 (e4c7563). The size limits came with #67 (a8cd2e5)                |
 
@@ -1604,7 +1606,7 @@ Report security problems privately, as SECURITY.md describes, never in a public 
 - The layout check has no test of its own. A test must mirror a module under `src/` or `plugins/`, and `scripts/` is neither.
 - Naming is not checked by any script. Only review holds a file to kebab-case, `PascalCase.tsx` or `camelCase.ts`.
 - `.gitattributes` keeps every text file at LF line endings, on Windows too, because the fixtures, the format check and the scripts read files byte for byte.
-- The `tour` job rebuilds the tour only when `package.json` has a new version. On any other commit it checks only the sizes, so a feature merged to `main` stays off the landing page until the next release.
+- The `tour` job compares `site/tour/` with what it builds only when `package.json` has a new version. On any other commit it builds the tour from the working tree into a temporary folder and checks only its sizes, so a feature merged to `main` stays off the landing page until the next release, and a change that would put the tour over a budget fails in its own pull request.
 - A new trusted publisher on npmjs.com expires if no version is published with it within 2 days. [Setting up trusted publishing](../CONTRIBUTING.md#setting-up-trusted-publishing) has the setup.
 - `npm run build` empties `dist/`, which also removes any bundle `npm pack` left in `dist/cli/`.
 - Releases are small and frequent, and only the last number changes. A fix that lands on `main` goes out in the next release.

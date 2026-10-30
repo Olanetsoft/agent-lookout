@@ -5,6 +5,7 @@ import { cleanup, render } from "vitest-browser-react";
 import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
 import App from "@dashboard/App";
+import Page from "@dashboard/Page";
 import { LAST_LOOKED_STORAGE_KEY } from "@dashboard/hooks/data/useNewSince";
 import { ASK_AFTER_MS } from "@dashboard/hooks/actions/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
@@ -890,7 +891,7 @@ test("a failure to connect says so in the status line, and Try now polls at once
   expect(store.refresh).toHaveBeenCalledTimes(1);
 });
 
-test("with its own store, the app reads everything through apiRequest and nothing else", async () => {
+test("the page reads everything through apiRequest and nothing else", async () => {
   const requests: string[] = [];
   const host: ApiHost = async (path) => {
     requests.push(path);
@@ -905,7 +906,7 @@ test("with its own store, the app reads everything through apiRequest and nothin
   const fetchSpy = vi.spyOn(globalThis, "fetch");
   onTestFinished(() => fetchSpy.mockRestore());
 
-  const screen = await render(<App />);
+  const screen = await render(<Page />);
 
   await expect
     .element(screen.getByRole("region", { name: "Sessions" }).getByText("idle-one"))
@@ -919,35 +920,36 @@ test("with its own store, the app reads everything through apiRequest and nothin
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 
-test("with its own store, the app polls on a worker's beat, which is ended when the app leaves the page", async () => {
-  const requests: string[] = [];
-  setApiHost(async (path) => {
-    requests.push(path);
-    const body = path.startsWith("/api/sessions")
-      ? snapshot()
-      : path.startsWith("/api/events")
-        ? { events: [] }
-        : { points: [], startedAt: collectorStartedAt };
-    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
-  });
-  const polls = () => requests.filter((path) => path === "/api/sessions").length;
-  const pageTimer = vi.spyOn(window, "setInterval");
-  const told = vi.spyOn(Worker.prototype, "postMessage");
-  const ended = vi.spyOn(Worker.prototype, "terminate");
+test("the app keeps the first store it is given, and never reads one given to it later", async () => {
+  const first = fixedStore(liveState());
+  const laterSnapshot = snapshot();
+  laterSnapshot.sessions = [
+    session(3, { name: "later-one", status: "idle", statusSince: Date.now() - MINUTE }),
+  ];
+  const later = fixedStore(liveState({ snapshot: laterSnapshot }));
+  const laterSubscribed = vi.spyOn(later, "subscribe");
+  const laterRead = vi.spyOn(later, "getState");
 
-  const screen = await render(<App />);
-  await expect
-    .element(screen.getByRole("region", { name: "Sessions" }).getByText("idle-one"))
-    .toBeVisible();
+  const screen = await render(<App store={first} />);
+  const sessions = screen.getByRole("region", { name: "Sessions" });
+  await expect.element(sessions.getByText("idle-one")).toBeVisible();
 
-  // One worker, told the two seconds between polls. The page keeps no timer for it.
-  expect(told.mock.calls).toEqual([[2_000]]);
-  expect(pageTimer.mock.calls.filter(([, ms]) => ms === 2_000)).toEqual([]);
-  // The next poll comes on the worker's beat.
-  await vi.waitFor(() => expect(polls()).toBeGreaterThanOrEqual(2), { timeout: 6_000 });
+  await screen.rerender(<App store={later} />);
 
-  await screen.unmount();
-  expect(ended).toHaveBeenCalledTimes(1);
+  // Still the first store's sessions, and the later store is never asked.
+  await expect.element(sessions.getByText("idle-one")).toBeVisible();
+  expect(sessions.getByText("later-one").elements()).toHaveLength(0);
+  expect(laterSubscribed).not.toHaveBeenCalled();
+  expect(laterRead).not.toHaveBeenCalled();
+
+  // What the first store says next is still drawn.
+  const nextSnapshot = calmSnapshot();
+  nextSnapshot.sessions = [
+    ...nextSnapshot.sessions,
+    session(4, { name: "next-one", status: "idle", statusSince: Date.now() - MINUTE }),
+  ];
+  first.set(calmState({ snapshot: nextSnapshot }));
+  await expect.element(sessions.getByText("next-one")).toBeVisible();
 });
 
 test("at 760 pixels and below the status line keeps a short form under the wordmark, and the switch is one round button the size of the search's", async () => {
@@ -2411,7 +2413,7 @@ test("through the browser's own Notifications API, nothing is asked until the bu
   expect(StubNotification.asked).toBe(1);
 });
 
-test("with notifications on, its own store and its tab out of sight, a wait is notified by the answer that shows it and cleared by the answer that shows it over, and the page calls nothing but its own server", async () => {
+test("with notifications on and the page's tab out of sight, a wait is notified by the answer that shows it and cleared by the answer that shows it over, and the page calls nothing but its own server", async () => {
   onTestFinished(installStubNotification());
   StubNotification.permission = "granted";
   localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, "on");
@@ -2437,7 +2439,7 @@ test("with notifications on, its own store and its tab out of sight, a wait is n
   const serviceWorkersBefore = (await navigator.serviceWorker.getRegistrations()).length;
   performance.clearResourceTimings();
 
-  const screen = await render(<App />);
+  const screen = await render(<Page />);
   // The tab goes into the background, as far as the page can tell. This browser
   // does not slow a hidden page's timers, so what is checked here is that
   // nothing in the app stops asking or telling because it is out of sight.

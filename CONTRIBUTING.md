@@ -46,7 +46,7 @@ Run this before you open a pull request:
 npm run check
 ```
 
-It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five, `npm run build`, the start check described under [Running on Linux](#running-on-linux), and the package check described under [The npm package](#the-npm-package). Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
+It runs the layout check, the typecheck, the linter, the format check and the tests in that order, and stops at the first failure. CI runs the same five, `npm run build`, the start check described under [Running on Linux](#running-on-linux), and the package check described under [The npm package](#the-npm-package). It also builds the landing page's tour from your working tree and fails when the tour is over one of the size budgets in `scripts/site-tour/build.mjs`. `node scripts/site-tour/build.mjs --check --since HEAD` runs that check locally and writes nothing in `site/`. Most format and lint failures are fixed by `npm run format` and `npm run lint:fix`.
 
 A change in behaviour comes with a test. Every test lives under `tests/`, in `unit/`, `integration/` or `component/`, at the path that mirrors the module it covers. Nothing under `src/` is a test or imports from `tests/`. The layout check fails, and says where the file belongs, when one of those rules is broken.
 
