@@ -14,6 +14,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - In the Mac app, a press on Show in menu bar, Keep the Mac awake or Check for updates automatically in Settings sends its change once. An arrow key or a tap on a trackpad could send it twice, and so could a click released before the app answered. On any switch, focus that a screen reader moves onto an option no longer chooses it. A press or an arrow key still does (#198).
 
+- In the chart that Working, Idle or the Needs you panel's heading opens, Shift+Tab from the chart goes back to the time window and then to Close. While the chart showed the count at a moment, as it does once you reach it with Tab, point at it or press an arrow key, Shift+Tab left focus on the dialog itself, and pressing it again kept it there (#217).
+
 ## 0.2.14 - 2026-10-30
 
 The Mac app can keep the Mac awake while your sessions work or wait, Antigravity sessions show what they last said, and Antigravity chats get their titles back.

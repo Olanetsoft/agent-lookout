@@ -150,3 +150,62 @@ test("a history chart can be read with the keyboard", async () => {
   await userEvent.keyboard("{End}");
   await expect.element(chart).toHaveAttribute("aria-valuetext", "18:00:00: 3 working");
 });
+
+test("a history chart keeps a reading taken just after it loses focus", async () => {
+  const start = new Date(2026, 0, 5, 17, 45, 0).getTime();
+  const end = start + 900_000;
+  const samples = [];
+  for (let at = start + 300_000; at <= end; at += 2_000) {
+    samples.push({ at, value: at < start + 600_000 ? 1 : 3 });
+  }
+  const screen = await render(
+    <div style={{ width: 630 }}>
+      <HistoryChart
+        samples={samples}
+        start={start}
+        end={end}
+        tone='working'
+        label='Sessions working'
+        describe={(count) => `${count} working`}
+      />
+    </div>,
+  );
+  const chart = screen.getByRole("slider", { name: /Sessions working/ });
+  const element = chart.element() as HTMLElement;
+  const reading = () =>
+    [...element.querySelectorAll('[data-part="reading"] span')].map((line) => line.textContent);
+  // Longer than losing focus waits before it clears the reading.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  startAtTop();
+  await userEvent.tab();
+  await expect.element(chart).toHaveFocus();
+  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+  await expect.element(chart).toHaveAttribute("aria-valuetext", "17:59:30: 3 working");
+
+  // Focus leaves and comes straight back, as a focus trap brings it back: the
+  // reading stays where the keys left it.
+  element.blur();
+  element.focus();
+  await settle();
+  expect(document.activeElement).toBe(element);
+  expect(reading()).toEqual(["17:59:30", "3 working"]);
+  await expect.element(chart).toHaveAttribute("aria-valuetext", "17:59:30: 3 working");
+
+  // Focus leaves and the pointer moves over the chart at once: the reading
+  // follows the pointer and stays.
+  const box = element.getBoundingClientRect();
+  element.blur();
+  element.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: box.left + 30 + (box.width - 30 - 12) * 0.5,
+      clientY: box.top + 100,
+    }),
+  );
+  await settle();
+  expect(document.activeElement).not.toBe(element);
+  expect(reading()[1]).toBe("1 working");
+  expect(reading()[0]).toMatch(/^17:52:(2[89]|3[01])$/);
+  expect(element.querySelector('[data-part="crosshair"]')).not.toBeNull();
+});
