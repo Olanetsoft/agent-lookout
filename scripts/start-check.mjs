@@ -319,6 +319,8 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const hermesHome = path.join(dir, "hermes");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
+  // Named and never made, so the app reads no settings and starts with every rule off.
+  const settingsFile = path.join(dir, "settings.json");
   const work = path.join(dir, "work");
   await mkdir(path.join(claudeHome, "sessions"), { recursive: true });
   await mkdir(antigravityHome, { recursive: true });
@@ -394,6 +396,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     hermesHome,
     statusDir,
     historyDir,
+    settingsFile,
     procStart,
   };
 }
@@ -435,6 +438,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_HERMES_HOME: folders.hermesHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
+    AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",
     npm_config_update_notifier: "false",
