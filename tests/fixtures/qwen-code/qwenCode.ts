@@ -171,6 +171,12 @@ export interface AssistantFields extends LineFields {
   /** A reply with no `message`, as Qwen Code writes when a response had none. */
   noMessage?: boolean;
   subtype?: string;
+  /** What the reply says, in place of the words that must never leave the file. Its thought and calls stay. */
+  says?: string;
+  /** The reply's parts, in place of its thought, its text and its calls. */
+  parts?: unknown[];
+  /** Marks the line as one a subagent wrote into the file. */
+  sidechain?: boolean;
 }
 
 /** A whole reply, with its thought, its text, the tools it calls and its token counts. */
@@ -185,13 +191,18 @@ export function assistantLine(time: number, fields: AssistantFields = {}): strin
   return lineOf({
     ...baseOf("assistant", time, fields),
     ...(fields.subtype === undefined ? {} : { subtype: fields.subtype }),
+    ...(fields.sidechain ? { isSidechain: true } : {}),
     model: "demo-model",
     ...(fields.noMessage
       ? {}
       : {
           message: {
             role: "model",
-            parts: [{ text: PRIVATE_WORDS, thought: true }, { text: PRIVATE_WORDS }, ...calls],
+            parts: fields.parts ?? [
+              { text: PRIVATE_WORDS, thought: true },
+              { text: fields.says ?? PRIVATE_WORDS },
+              ...calls,
+            ],
           },
         }),
     usageMetadata: {

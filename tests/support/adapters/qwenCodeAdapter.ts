@@ -56,15 +56,20 @@ export function qwenCodeAdapterFor(files: MemoryFiles, options: QwenCodeAdapterO
 export const healthy = (sessions = "~/.qwen/sessions", projects = "~/.qwen/projects") =>
   `Sessions are read from the list of running sessions Qwen Code keeps in ${sessions}, and each one's chat file in ${projects}. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
-/** The three facts, in the order the adapter gives them. */
+/** What Sources says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ = "end of a session's chat file, while its details are open";
+
+/** The four facts, in the order the adapter gives them. */
 export function watching(
   read: string,
   sessions = "~/.qwen/sessions",
   projects = "~/.qwen/projects",
+  lastMessage = LAST_MESSAGE_READ,
 ) {
   return [
     { label: "Sessions folder", value: sessions },
     { label: "Chats folder", value: projects },
     { label: "Read", value: read },
+    { label: "Last message read", value: lastMessage },
   ];
 }
