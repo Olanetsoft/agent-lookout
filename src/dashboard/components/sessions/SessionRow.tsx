@@ -97,10 +97,12 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * The tool is never a logo or a colour.
  *
  * Narrow, with a button at the end of the name's line, the "Process ended"
- * badge stays beside the name while that line can also hold the start of the
- * name, its first 2rem. Otherwise, on the narrowest phones, it goes on to a
- * line of its own under the name, from the name's left edge, so neither the
- * name nor the button gives way to it, and the button stays centred on the name.
+ * badge stays beside the name while that line can also hold the name's first
+ * 6rem, a dozen letters or so, enough to tell one session from another, and
+ * never less than the name has on the narrowest phone. Otherwise, narrower
+ * than about 432px, it goes on to a line of its own under the name, from the
+ * name's left edge, so neither the name nor the button gives way to it, and
+ * the button stays centred on the name.
  *
  * The sessions that need the person are the hero's, not the table's, so the
  * Jump here is always the quiet one. What a press of a Jump to a tmux pane or
@@ -281,11 +283,11 @@ export function SessionRow({
                     "text-row focus-visible:outline-none",
                     quiet ? "font-medium text-ink-secondary" : "font-semibold text-ink",
                     // The badge stays beside the name while the line holds its
-                    // first 2rem, and a short name keeps the badge right after
+                    // first 6rem, and a short name keeps the badge right after
                     // it. The name is as tall as the button, its line centred
                     // in it, so the button is centred on the name when the
                     // badge goes under it, and placed as before when it does not.
-                    badgeMayWrap && "h-button max-w-max grow basis-8 content-center",
+                    badgeMayWrap && "h-button max-w-max grow basis-24 content-center",
                   )}
                 >
                   {session.name}

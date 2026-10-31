@@ -2066,6 +2066,8 @@ async function renderEndedRow(width: number, ended: Partial<Session> & { name: s
       <SessionsCard sessions={sessions} sources={[SOURCE_OK]} now={NOW} />
     </div>,
   );
+  // Where the badge goes is measured in the bundled font, not in the one drawn while it loads.
+  await document.fonts.ready;
   const card = screen.container.querySelector('[data-slot="section-card"]') as HTMLElement;
   const row = rowOf(screen.container, ended.name);
   const part = (from: HTMLElement, name: string) =>
@@ -2161,7 +2163,30 @@ test("at 320 pixels wide, a row whose process has ended keeps the start of its n
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
 });
 
-test.each([375, 390, 760])(
+// The badge moves at about 432px: 424 and 440 pin it to 8px either side, so a
+// system that draws the text a pixel or two wider passes as well.
+test.each([375, 390, 424])(
+  "at %i pixels wide, where the name's line cannot hold its first 6rem beside the badge, the badge goes under the name, and the name keeps more room than at 320",
+  async (width) => {
+    const { row, name, badge, jump, under } = await renderEndedBesideJump(width);
+    const nameBox = name.getBoundingClientRect();
+    const badgeBox = badge.getBoundingClientRect();
+    const jumpBox = jump.getBoundingClientRect();
+
+    expect(badgeBox.top).toBeGreaterThanOrEqual(nameBox.bottom - 1);
+    expect(Math.abs(badgeBox.left - nameBox.left)).toBeLessThanOrEqual(0.5);
+    expect(badgeBox.bottom).toBeLessThanOrEqual(under.getBoundingClientRect().top + 1);
+    // More of the name than the 88px it has at 320, which stops 8px before the Jump.
+    expect(nameBox.width).toBeGreaterThan(88);
+    expect(nameBox.right).toBeLessThanOrEqual(jumpBox.left - 8 + 0.5);
+    expect(Math.abs(middle(jumpBox) - middle(nameBox))).toBeLessThanOrEqual(1);
+    expect(overlaps(badgeBox, jumpBox), "badge and Jump").toBe(false);
+    // Three lines: the name and its Jump, the badge, and the status.
+    expect(Math.abs(row.getBoundingClientRect().height - 82)).toBeLessThanOrEqual(1);
+  },
+);
+
+test.each([440, 760])(
   "at %i pixels wide, a row whose process has ended keeps its badge on the name's line, between the name and its Jump",
   async (width) => {
     const { card, row, name, badge, jump, otherJump } = await renderEndedBesideJump(width);
@@ -2183,8 +2208,8 @@ test.each([375, 390, 760])(
       Math.abs(middle(jumpBox) - middle(text)),
       "Jump and the name's text",
     ).toBeLessThanOrEqual(1);
-    // The badge comes 8px after the name and ends at least 8px before the Jump.
-    expect(nameBox.width).toBeGreaterThanOrEqual(32);
+    // The badge comes 8px after the name's first 6rem, or more of it, and ends at least 8px before the Jump.
+    expect(nameBox.width).toBeGreaterThanOrEqual(96);
     expect(Math.abs(badgeBox.left - (nameBox.right + 8))).toBeLessThanOrEqual(0.5);
     expect(badgeBox.right).toBeLessThanOrEqual(jumpBox.left - 8 + 0.5);
     // The Jump is the one every row has, in the same place, 18px in from the card's edge.
