@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.15 - 2026-10-30
+
+Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.
 
 ### Added
 
