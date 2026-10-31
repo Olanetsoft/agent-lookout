@@ -12,12 +12,15 @@ import type {
 import { plausibleTime } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createChatReader, type ChatState } from "./chatRecords.ts";
 import { createFinishedSessions } from "./finishedSessions.ts";
+import { createQwenCodeLastMessages } from "./lastMessages.ts";
 import { oneForEachSession, readRegistry, SESSIONS_DIR, type RegistryEntry } from "./registry.ts";
 import { leftBehindQwenCodeSession, qwenCodeSession, SOURCE_ID } from "./toSession.ts";
 import { createChatFinder, PROJECTS_DIR } from "./transcriptFile.ts";
@@ -213,6 +216,21 @@ export interface QwenCodeAdapterOptions {
   recheckMs?: number;
   /** How often, at most, every folder in `projects` is looked in for one session's chat file. */
   rescanMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Qwen Code adapter, which reads what its sessions last said when asked. */
+export interface QwenCodeAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /**
@@ -231,6 +249,13 @@ export interface QwenCodeAdapterOptions {
  *   `<runtime>/projects/<folder>/chats/<id>.jsonl`, read only as far as it
  *   grew since the last poll (`chatRecords.ts`), for its status and title.
  *
+ * What a session last said is read from the end of the chat file the adapter
+ * last found for it, but only when `lastMessage` is asked for it, which the
+ * route does while a page has the session's details open, and only for a
+ * session the last poll listed (`lastMessages.ts`). No poll reads it, and it
+ * is never put on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so
+ * does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * Whether a session's process runs is asked with signal 0, which sends
  * nothing. A session whose process has gone, or whose record has gone or
  * names another session, shows as finished for 24 hours
@@ -242,7 +267,7 @@ export interface QwenCodeAdapterOptions {
  * Someone who sets `AGENT_LOOKOUT_QWEN_HOME` means that folder: if it holds
  * no sessions, that is an answer, not a missing Qwen Code.
  */
-export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Adapter {
+export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): QwenCodeAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -263,6 +288,26 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
   const finder = createChatFinder({ projectsDir, io, platform, rescanMs: options.rescanMs });
   const reader = createChatReader(io);
   const finished = createFinishedSessions();
+  // What a session last said, read only when it is asked for. With either
+  // setting off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createQwenCodeLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
+  /** What Sources says of the last-message read: when it reads the end of a chat file, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null ? "end of a session's chat file, while its details are open" : "Off";
+  /**
+   * The chat file each session the last poll that could list the sessions
+   * listed was found at, by its id, or null for one with none: the only file
+   * its last message is read from. A poll that could not list them leaves it
+   * as it was, since a session shown as finished afterwards is still read from
+   * the file found while it was open.
+   */
+  let listedFiles: ReadonlyMap<string, string | null> = new Map();
+  /** The chat files this poll found, by session id, or null for an open session with none. */
+  let foundFiles = new Map<string, string | null>();
 
   /** When the folders were last found missing. Null while they are there, or before the first look. */
   let absentAt: number | null = null;
@@ -280,6 +325,7 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
       { label: "Sessions folder", value: sessionsName },
       { label: "Chats folder", value: projectsName },
       { label: "Read", value: read },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -332,19 +378,40 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
     entry: RegistryEntry,
     checkedAt: number,
     read: Set<string>,
-  ): Promise<{ chat: ChatState | null; writtenAt?: number }> {
+  ): Promise<{ chat: ChatState | null; writtenAt?: number; file?: string }> {
     const found = await finder.find(entry.sessionId, entry.cwd, checkedAt);
     if (found === null) return { chat: null };
     read.add(found.path);
     try {
-      return { chat: await reader.read(found.path, found.info), writtenAt: found.info.mtimeMs };
+      return {
+        chat: await reader.read(found.path, found.info),
+        writtenAt: found.info.mtimeMs,
+        file: found.path,
+      };
     } catch {
       // A chat file that cannot be read, and never could, says nothing that can be known.
       return {
         chat: { fold: startQwenCodeFold(false), firstAt: null },
         writtenAt: found.info.mtimeMs,
+        file: found.path,
       };
     }
+  }
+
+  /**
+   * The chat file of each session a poll listed, by id: the one this poll
+   * found for an open session, or the one last found for a session shown as
+   * finished, which this poll did not look for.
+   */
+  function filesOf(sessions: readonly Session[]): Map<string, string | null> {
+    const files = new Map<string, string | null>();
+    for (const { id } of sessions) {
+      files.set(
+        id,
+        foundFiles.has(id) ? (foundFiles.get(id) ?? null) : (listedFiles.get(id) ?? null),
+      );
+    }
+    return files;
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -431,12 +498,14 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
       held.set(entry.pid, { entry, seenAt: checkedAt });
       const moved = tookOver.get(entry.sessionId);
       const tookOverAt = moved?.pid === entry.pid ? moved.at : undefined;
-      const { chat, writtenAt } = await chatOf(entry, checkedAt, read);
+      const { chat, writtenAt, file } = await chatOf(entry, checkedAt, read);
       const registeredAt = plausibleTime(tookOverAt ?? entry.startedAt, checkedAt);
       if (chat === null && registeredAt !== null && checkedAt - registeredAt >= NO_CHAT_AFTER_MS) {
         noChat = true;
       }
-      open.push(qwenCodeSession({ entry, chat, writtenAt, tookOverAt, now: checkedAt }));
+      const session = qwenCodeSession({ entry, chat, writtenAt, tookOverAt, now: checkedAt });
+      foundFiles.set(session.id, file ?? null);
+      open.push(session);
     }
     holders = held;
 
@@ -444,8 +513,10 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
     const leftBehind = finished.first
       ? await Promise.all(
           gone.map(async (entry) => {
-            const info = await finder.likely(entry.sessionId, entry.cwd);
-            return leftBehindQwenCodeSession(entry, info?.mtimeMs, checkedAt);
+            const found = await finder.likely(entry.sessionId, entry.cwd);
+            const session = leftBehindQwenCodeSession(entry, found?.info.mtimeMs, checkedAt);
+            foundFiles.set(session.id, found?.path ?? null);
+            return session;
           }),
         )
       : [];
@@ -469,11 +540,21 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
     capabilities: QWEN_CODE_CAPABILITIES,
     lookingIn: `Looking for Qwen Code sessions in ${sessionsName}.`,
     async poll() {
+      foundFiles = new Map();
       try {
-        return await poll();
+        const answer = await poll();
+        // The sessions whose last message may be asked for until the next poll.
+        // One that could not list them lists none, so none may be asked for,
+        // but the files known for them stand for the next poll that can.
+        const files = filesOf(answer.sessions);
+        if (answer.health.state === "ok") listedFiles = files;
+        lastMessages?.keep(files);
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Qwen Code sessions.",
@@ -481,6 +562,15 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Ada
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

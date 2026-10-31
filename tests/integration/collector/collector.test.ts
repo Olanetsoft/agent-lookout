@@ -48,6 +48,12 @@ import {
 } from "@tests/fixtures/antigravity";
 import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
 import {
+  assistantLine as qwenReplyLine,
+  chatPath as qwenChatPath,
+  promptLine as qwenPromptLine,
+  registryRecord as qwenRecord,
+} from "@tests/fixtures/qwen-code/qwenCode";
+import {
   agentMessageLine,
   fixtureSessions,
   messageLine,
@@ -2257,7 +2263,7 @@ describe("the last messages of every agent, under one set of limits", () => {
     );
   }
 
-  test("Claude Code, Codex, the Antigravity CLI and Antigravity read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+  test("Claude Code, Codex, the Antigravity CLI, Antigravity and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
     // Two live Claude Code sessions, in this test's own process and the one that started it.
     const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
     const claudeHome = await makeClaudeHome({
@@ -2296,6 +2302,26 @@ describe("the last messages of every agent, under one set of limits", () => {
     for (const [index, id] of app.entries()) {
       await putConversation(appHome, id, `Antigravity reply ${index + 1}.`);
     }
+    // Two live Qwen Code sessions, in the same two processes as Claude Code's.
+    const qwen = ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"];
+    const qwenHome = await tempDir();
+    await mkdir(path.join(qwenHome, "sessions"));
+    for (const [index, pid] of [process.pid, process.ppid].entries()) {
+      const id = qwen[index] ?? "";
+      await writeFile(
+        path.join(qwenHome, "sessions", `${pid}.json`),
+        qwenRecord({ pid, sessionId: id, kind: "tui", startedAt: NOW - 30 * MINUTE }),
+      );
+      const chat = qwenChatPath(qwenHome, id);
+      await mkdir(path.dirname(chat), { recursive: true });
+      await writeFile(
+        chat,
+        [
+          qwenPromptLine(NOW - 2 * MINUTE, { sessionId: id }),
+          qwenReplyLine(NOW - MINUTE, { sessionId: id, says: `Qwen Code reply ${index + 1}.` }),
+        ].join(""),
+      );
+    }
 
     let at = NOW;
     const made = readersMade.length;
@@ -2311,7 +2337,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
         AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
-        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
+        AGENT_LOOKOUT_QWEN_HOME: qwenHome,
         AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
@@ -2335,6 +2361,7 @@ describe("the last messages of every agent, under one set of limits", () => {
       codex: codex.map((id) => `codex:${id}`),
       cli: cli.map((id) => `antigravity-cli:${id}`),
       app: app.map((id) => `antigravity-app:${id}`),
+      qwen: qwen.map((id) => `qwen-code:${id}`),
     };
     const listed = collector.poller.getSnapshot().sessions.map((session) => session.id);
     expect(listed).toEqual(expect.arrayContaining(Object.values(sessions).flat()));
@@ -2347,38 +2374,56 @@ describe("the last messages of every agent, under one set of limits", () => {
     };
     /** The sessions every reader keeps, all of them together. */
     const kept = () => readersMade.slice(made).reduce((count, reader) => count + reader.size, 0);
-    const firsts = [sessions.claude[0], sessions.codex[0], sessions.cli[0], sessions.app[0]];
-    const seconds = [sessions.claude[1], sessions.codex[1], sessions.cli[1], sessions.app[1]];
+    const asked = async (ids: readonly (string | undefined)[]) => {
+      const answers = [];
+      for (const id of ids) answers.push(await ask(id ?? ""));
+      return answers;
+    };
 
-    // Four reads in a second, one for each agent, and then none for any of them.
-    const first = [];
-    for (const id of firsts) first.push(await ask(id ?? ""));
-    expect(first).toEqual([
+    // Four reads in a second, one for each of four agents, and then none for
+    // any agent: each meets the limit once, so an agent with limits of its
+    // own would be read here.
+    expect(
+      await asked([sessions.claude[0], sessions.codex[0], sessions.cli[0], sessions.app[0]]),
+    ).toEqual([
       "Claude Code reply 1.",
       "Codex reply 1.",
       "Antigravity CLI reply 1.",
       "Antigravity reply 1.",
     ]);
-    const fifth = [];
-    for (const id of seconds) fifth.push(await ask(id ?? ""));
-    expect(fifth).toEqual([{ busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }]);
+    expect(
+      await asked([
+        sessions.qwen[0],
+        sessions.claude[1],
+        sessions.codex[1],
+        sessions.cli[1],
+        sessions.app[1],
+      ]),
+    ).toEqual([{ busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }]);
 
-    // A second later each is read.
+    // A second later, four more are read, and eight are kept.
     at += 1_000;
-    const later = [];
-    for (const id of seconds) later.push(await ask(id ?? ""));
-    expect(later).toEqual([
+    expect(
+      await asked([sessions.qwen[0], sessions.claude[1], sessions.codex[1], sessions.cli[1]]),
+    ).toEqual([
+      "Qwen Code reply 1.",
       "Claude Code reply 2.",
       "Codex reply 2.",
       "Antigravity CLI reply 2.",
-      "Antigravity reply 2.",
     ]);
     expect(kept()).toBe(8);
 
-    // One more session, and the one asked for least recently, whichever agent's it is, makes room for it.
+    // Each session more makes room by dropping the one asked for least
+    // recently, whichever agent's it is, so eight are kept between them all.
     at += 1_000;
-    expect(await ask(sessions.codex[2] ?? "")).toBe("Codex reply 3.");
-    expect(kept()).toBe(8);
+    for (const [id, text] of [
+      [sessions.app[1], "Antigravity reply 2."],
+      [sessions.qwen[1], "Qwen Code reply 2."],
+      [sessions.codex[2], "Codex reply 3."],
+    ] as const) {
+      expect(await ask(id ?? "")).toBe(text);
+      expect(kept()).toBe(8);
+    }
   });
 });
 

@@ -603,6 +603,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Sessions folder", value: "~/.qwen/sessions" },
         { label: "Chats folder", value: "~/.qwen/projects" },
         { label: "Read", value: "not found" },
+        {
+          label: "Last message read",
+          value: "end of a session's chat file, while its details are open",
+        },
       ],
       capabilities: QWEN_CODE_CAPABILITIES,
       checkedAt,
