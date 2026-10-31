@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 import type { Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
@@ -104,6 +104,12 @@ const CELL = "px-3 first:pl-6 last:pr-4.5";
  * name's left edge, so neither the name nor the button gives way to it, and
  * the button stays centred on the name.
  *
+ * Crossing 760px draws the row's Jump or Resume again in its other place, and
+ * the command a refused Resume shows with it. The one that had focus has it
+ * again in its new place, so a keyboard user does not lose their place when
+ * the window is resized or a phone is turned, and a Resume that says "Copied"
+ * still says it, since the row holds that word, as it holds the command.
+ *
  * The sessions that need the person are the hero's, not the table's, so the
  * Jump here is always the quiet one. What a press of a Jump to a tmux pane or
  * a terminal tab came to is said for a few seconds in a badge beside the name.
@@ -146,6 +152,23 @@ export function SessionRow({
   const jump = useJump(session);
   const resume = useResume(session);
   const surface = surfaceLabel(session.surface);
+
+  const row = useRef<HTMLTableRowElement>(null);
+  /** What in the row has focus, or had it until it was drawn again in another place. */
+  const focused = useRef<HTMLElement | null>(null);
+  // Crossing 760px takes the part that had focus out of the page, and focus
+  // falls to the page's body. The same part, drawn in its other place, has it
+  // again. Focus that has gone anywhere else stays there.
+  useLayoutEffect(() => {
+    const was = focused.current;
+    if (was === null || was.isConnected) return;
+    focused.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const part = was.dataset.part;
+    if (part === undefined) return;
+    row.current?.querySelector<HTMLElement>(`[data-part="${part}"]`)?.focus();
+  }, [narrow]);
 
   const duration = <Duration session={session} now={now} quiet={quiet} />;
 
@@ -232,6 +255,21 @@ export function SessionRow({
       data-session={session.id}
       data-status={session.status}
       data-stale={stale || undefined}
+      ref={row}
+      onFocus={(event) => {
+        focused.current = event.target instanceof HTMLElement ? event.target : null;
+      }}
+      onBlur={(event) => {
+        const left = event.target;
+        // Looked at once the blur is over. A part taken out of the page as it
+        // is drawn in its other place is to have focus back, whether or not
+        // the browser said it lost it; one still in the page has truly lost it.
+        queueMicrotask(() => {
+          if (focused.current === left && left.isConnected && document.activeElement !== left) {
+            focused.current = null;
+          }
+        });
+      }}
       onClick={(event) => openFromClick(event, session.id)}
       className='group relative cursor-pointer text-body text-ink-secondary'
     >

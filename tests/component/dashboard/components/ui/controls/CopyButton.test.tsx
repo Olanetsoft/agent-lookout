@@ -2,8 +2,8 @@ import { afterEach, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import { COPIED_MS, CopyButton } from "@dashboard/components/ui/controls/CopyButton";
-import type { CopyOutcome } from "@dashboard/lib/shell/clipboard";
+import { CopyButton } from "@dashboard/components/ui/controls/CopyButton";
+import { COPIED_MS, type CopyOutcome } from "@dashboard/lib/shell/clipboard";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
@@ -84,6 +84,47 @@ test("a press puts the text on the clipboard, and the word says Copied for two s
   await expect.poll(() => shownWord(element), { timeout: COPIED_MS + 1_000 }).toBe("Resume");
   expect(element.dataset.copied).toBeUndefined();
   expect(element.getBoundingClientRect().width).toBe(width);
+});
+
+test("given what draws it holds the word, a new button says Copied from the start, and a press copies but leaves the word to it", async () => {
+  const onCopied = vi.fn();
+  const copy = vi.fn(async (): Promise<CopyOutcome> => "copied");
+  const screen = await render(
+    <CopyButton
+      text={TEXT}
+      copy={copy}
+      onCopied={onCopied}
+      copied
+      aria-label='Copy the command that resumes demo-project'
+      copiedSaid='Copied the command that resumes demo-project.'
+      refusedSaid='The command was not copied.'
+    >
+      Resume
+    </CopyButton>,
+  );
+  const element = button().element() as HTMLElement;
+  expect(shownWord(element)).toBe("Copied");
+  expect(element.dataset.copied).toBe("true");
+  // Nothing is said until a press, so a button drawn again is not heard again.
+  expect(said(screen.container)?.textContent).toBe("");
+
+  await screen.rerender(
+    <CopyButton
+      text={TEXT}
+      copy={copy}
+      onCopied={onCopied}
+      copied={false}
+      aria-label='Copy the command that resumes demo-project'
+      copiedSaid='Copied the command that resumes demo-project.'
+      refusedSaid='The command was not copied.'
+    >
+      Resume
+    </CopyButton>,
+  );
+  await userEvent.click(button());
+  await expect.poll(() => onCopied.mock.calls).toEqual([["copied"]]);
+  expect(said(screen.container)?.textContent).toBe("Copied the command that resumes demo-project.");
+  expect(shownWord(element)).toBe("Resume");
 });
 
 test("a refused copy leaves the word as it was, says so, and tells what draws it", async () => {

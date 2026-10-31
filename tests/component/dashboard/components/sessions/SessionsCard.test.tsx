@@ -1017,6 +1017,85 @@ test("at the width of a phone a row with both Jump and Resume keeps a gap betwee
   expect(Math.abs(first.top - second.top)).toBeLessThan(1);
 });
 
+/** Whether a row's Jump or Resume is at the end of the name's line, in the row's first cell, as it is at 760px and narrower. */
+const onNamesLine = (row: HTMLElement, part: "jump" | "resume") =>
+  row.querySelector(`[data-part="${part}"]`)?.closest("td") === row.firstElementChild;
+
+test("crossing 760px with a row's Jump focused, either way, keeps focus on that row's Jump", async () => {
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  const row = rowOf(screen.container, "stale-one");
+  const jump = () => row.querySelector<HTMLElement>('[data-part="jump"]')!;
+  expect(onNamesLine(row, "jump")).toBe(false);
+  jump().focus();
+
+  await page.viewport(760, 900);
+  await expect.poll(() => onNamesLine(row, "jump")).toBe(true);
+  expect(document.activeElement).toBe(jump());
+
+  await page.viewport(761, 900);
+  await expect.poll(() => onNamesLine(row, "jump")).toBe(false);
+  expect(document.activeElement).toBe(jump());
+});
+
+test("a Resume that says Copied keeps focus and its word across 760px, either way", async () => {
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+  onTestFinished(() => write.mockRestore());
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  const row = rowOf(screen.container, "done-one");
+  const resume = () => row.querySelector<HTMLElement>('[data-part="resume"]')!;
+  await userEvent.click(resume());
+  await expect.poll(() => resume().dataset.copied).toBe("true");
+  expect(document.activeElement).toBe(resume());
+
+  await page.viewport(760, 900);
+  await expect.poll(() => onNamesLine(row, "resume")).toBe(true);
+  expect(document.activeElement).toBe(resume());
+  expect(resume().dataset.copied).toBe("true");
+
+  await page.viewport(1280, 900);
+  await expect.poll(() => onNamesLine(row, "resume")).toBe(false);
+  expect(document.activeElement).toBe(resume());
+  expect(resume().dataset.copied).toBe("true");
+
+  // Then, two seconds from the press, it says Resume again.
+  await expect.poll(() => resume().dataset.copied, { timeout: 3_000 }).toBeUndefined();
+});
+
+test("crossing 760px with the command a refused Resume shows focused keeps focus on it", async () => {
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockRejectedValue(new DOMException("Write permission denied.", "NotAllowedError"));
+  onTestFinished(() => write.mockRestore());
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  const row = rowOf(screen.container, "done-one");
+  const command = () => row.querySelector<HTMLElement>('[data-part="resume-command"]');
+  await userEvent.click(row.querySelector<HTMLElement>('[data-part="resume"]')!);
+  await expect.poll(command).not.toBeNull();
+  const wide = command()!;
+  wide.focus();
+
+  await page.viewport(760, 900);
+  await expect.poll(() => onNamesLine(row, "resume")).toBe(true);
+  // Drawn again under the name's line, not the one it was.
+  expect(wide.isConnected).toBe(false);
+  expect(document.activeElement).toBe(command());
+});
+
+test("focus that left a row's Jump before the window crosses 760px is not brought back to it", async () => {
+  const screen = await render(<SessionsCard sessions={MIXED} sources={[SOURCE_OK]} now={NOW} />);
+  const row = rowOf(screen.container, "stale-one");
+  const jump = () => row.querySelector<HTMLElement>('[data-part="jump"]')!;
+  jump().focus();
+  // As a click on the page's empty space does, focus goes to the page's body.
+  jump().blur();
+  await Promise.resolve();
+  expect(document.activeElement).toBe(document.body);
+
+  await page.viewport(760, 900);
+  await expect.poll(() => onNamesLine(row, "jump")).toBe(true);
+  expect(document.activeElement).toBe(document.body);
+});
+
 test("at the width of a phone a refused copy puts the command under the name, and nothing is cut or runs past the card", async () => {
   await page.viewport(375, 900);
   const write = vi

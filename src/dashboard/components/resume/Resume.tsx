@@ -32,7 +32,8 @@ function Command({ command, className }: { command: string; className?: string }
  * nothing: it copies the command that goes to the session's folder and
  * resumes its conversation, `cd '<folder>' && claude --resume <ID>`, which is
  * one hover or one Tab away in its tooltip. For two seconds after, its word
- * reads "Copied".
+ * reads "Copied", held with the command by `useResume`, so it stays when the
+ * button is drawn again in another place.
  */
 export function ResumeButton({
   session,
@@ -56,6 +57,7 @@ export function ResumeButton({
       copiedSaid={`Copied the command that resumes ${session.name}. Paste it in a terminal.`}
       refusedSaid={REFUSED_SAID}
       onCopied={resume.onCopied}
+      copied={resume.copied}
       tooltip={tooltip ? resume.command : undefined}
       tooltipMono
       // As wide as a Jump, so a column of them lines up, with less room at its sides for the longer word.
