@@ -160,7 +160,9 @@ describe("createChatFinder", () => {
     const finder = finderOn(files);
     expect(await finder.likely(ID, PROJECT)).toBeNull();
     files.write(chatPath(QWEN_DIR, ID), chatFile(promptLine(NOW)), { mtimeMs: NOW - 5_000 });
-    expect((await finder.likely(ID, PROJECT))?.mtimeMs).toBe(NOW - 5_000);
+    const found = await finder.likely(ID, PROJECT);
+    expect(found?.info.mtimeMs).toBe(NOW - 5_000);
+    expect(written(found)).toBe(chatPath(QWEN_DIR, ID));
     expect(await finder.likely(ID, null)).toBeNull();
     expect(files.count("readdir")).toBe(0);
     expect(files.count("lstat")).toBe(2);

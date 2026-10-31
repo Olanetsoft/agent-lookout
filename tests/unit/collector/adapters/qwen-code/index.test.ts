@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
+import { createTailLimits } from "@collector/messages/tailReader";
+
 import {
   BASIS,
   ELSEWHERE_NOTE,
@@ -27,11 +29,13 @@ import {
   MINUTE,
   NOW,
   PRIVATE_TOKEN,
+  PRIVATE_WORDS,
   PROJECT,
   promptLine,
   QWEN_DIR,
   recordPath,
   registryRecord,
+  SECOND,
   sessionIdOf,
   titleLine,
   toolResultLine,
@@ -639,5 +643,244 @@ describe("closed sessions", () => {
     expect((await adapter.poll()).sessions.map((session) => session.id)).toEqual([
       `qwen-code:${sessionIdOf(5)}`,
     ]);
+  });
+});
+
+describe("what a session last said", () => {
+  const SAID = `qwen-code:${ID}`;
+  const FILE = chatPath(QWEN_DIR, ID);
+
+  /** A session whose newest reply with text is followed by one that only calls a tool, and its result. */
+  function saying(options: Parameters<typeof qwenCodeAdapterFor>[1] = {}) {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    const processes = standInProcesses([41001]);
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      lines: [
+        promptLine(NOW - 2 * MINUTE),
+        assistantLine(NOW - MINUTE, { says: "The reply." }),
+        assistantLine(NOW - 30 * SECOND, { parts: [{ functionCall: { name: "read_file" } }] }),
+        toolResultLine(NOW - 20 * SECOND),
+      ],
+      mtimeMs: NOW - 20 * SECOND,
+    });
+    const adapter = qwenCodeAdapterFor(files, {
+      now: clock.now,
+      isAlive: processes.isAlive,
+      ...options,
+    });
+    return { clock, files, processes, adapter };
+  }
+
+  test("is the newest reply's text for a listed session, read from its chat file only when asked", async () => {
+    const { adapter, files } = saying();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    await adapter.poll();
+    files.forget();
+    const answer = await adapter.lastMessage(SAID);
+    expect(answer).toEqual({ message: { text: "The reply.", cut: false } });
+    expect(JSON.stringify(answer)).not.toContain(PRIVATE_WORDS);
+    expect(files.opened()).toEqual([FILE]);
+    files.forget();
+    await expect(adapter.lastMessage(`qwen-code:${sessionIdOf(9)}`)).resolves.toBeNull();
+    await expect(adapter.lastMessage(`codex:${ID}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a poll reads the chat files as it does with the reader off, and puts no message on a session", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    const [onResult] = [await on.adapter.poll(), await off.adapter.poll()];
+    expect(on.files.count("openRegular")).toBeGreaterThan(0);
+    expect(on.files.count("openRegular")).toBe(off.files.count("openRegular"));
+    expect(on.files.reads).toEqual(off.files.reads);
+    expect(JSON.stringify(onResult?.sessions)).not.toContain("The reply.");
+  });
+
+  test("Sources says it reads the end of a session's chat file while its details are open", async () => {
+    const { adapter } = saying();
+    expect((await adapter.poll()).health.watching).toContainEqual({
+      label: "Last message read",
+      value: "end of a session's chat file, while its details are open",
+    });
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: "off" }, "AGENT_LOOKOUT_WAITING_TEXT"],
+  ])("with %j, is off by that setting, and no chat file is opened for it", async (env, setting) => {
+    const { adapter, files } = saying({ env });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({ label: "Last message read", value: "Off" });
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: null,
+      reason: "off",
+      setting,
+    });
+    expect(files.calls).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("a listed session with no chat file yet is not found, and no file is opened for it", async () => {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    addSession(files, { pid: 41001, sessionId: ID });
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: null,
+      reason: "not-found",
+    });
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a session shown as finished is still read, from the chat file last found for it, until it leaves the list", async () => {
+    const { adapter, clock, files, processes } = saying();
+    await adapter.poll();
+    processes.stop(41001);
+    clock.advance(2 * SECOND);
+    const closed = await adapter.poll();
+    expect(closed.sessions.find((session) => session.id === SAID)?.status).toBe("finished");
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(files.opened()).toEqual([FILE]);
+
+    // A day on, it has left the list, and nothing of it is kept or read.
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions.map((session) => session.id)).not.toContain(SAID);
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a record a crash left behind, found at the first poll, is read from the file in the folder named for its folder", async () => {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    addSession(files, {
+      pid: 41005,
+      sessionId: ID,
+      lines: [promptLine(NOW - 2 * MINUTE), assistantLine(NOW - MINUTE, { says: "Before it." })],
+      mtimeMs: NOW - MINUTE,
+    });
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now, isAlive: () => false });
+    const result = await adapter.poll();
+    expect(result.sessions.find((session) => session.id === SAID)?.status).toBe("finished");
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "Before it.", cut: false },
+    });
+    expect(files.opened()).toEqual([FILE]);
+  });
+
+  test("keeps none once the session leaves the list, or after a poll that cannot read the list", async () => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    files.fail(SESSIONS);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).health.state).toBe("error");
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+  });
+
+  test("a session shown as finished is still read from the file found while it was open after a poll that could not read the list", async () => {
+    const { adapter, clock, files, processes } = saying();
+    await adapter.poll();
+    processes.stop(41001);
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+
+    files.fail(SESSIONS);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).health.state).toBe("error");
+    files.heal(SESSIONS);
+    clock.advance(SECOND);
+    const again = await adapter.poll();
+    expect(again.sessions.map((session) => [session.id, session.status])).toEqual([
+      [SAID, "finished"],
+    ]);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("a session that closes while the list cannot be read is read, once shown as finished, from the file found while it was open", async () => {
+    const { adapter, clock, files, processes } = saying();
+    await adapter.poll();
+    files.fail(SESSIONS);
+    processes.stop(41001);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).health.state).toBe("error");
+    files.heal(SESSIONS);
+    clock.advance(SECOND);
+    const again = await adapter.poll();
+    expect(again.sessions.map((session) => [session.id, session.status])).toEqual([
+      [SAID, "finished"],
+    ]);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("is dropped, and nothing may be read, after a poll that throws, and is read again once a poll lists the session", async () => {
+    let broken = false;
+    const processes = standInProcesses([41001]);
+    const { adapter, clock, files } = saying({
+      isAlive: (pid) => {
+        if (broken) throw new Error("A stand-in that throws.");
+        return processes.isAlive(pid);
+      },
+    });
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    broken = true;
+    clock.advance(SECOND);
+    const failed = await adapter.poll();
+    expect(failed.health.state).toBe("error");
+    expect(failed.health.detail).toBe(
+      "Something unexpected went wrong while reading Qwen Code sessions.",
+    );
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    broken = false;
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("counts its reads against the limits the collector shares", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const { adapter } = saying({ lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await adapter.lastMessage(SAID);
+    expect(asked).toBe(1);
   });
 });

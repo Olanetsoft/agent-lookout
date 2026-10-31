@@ -37,7 +37,8 @@ Qwen Code has other ways in, and none of them can be used that way:
 | `<runtime>/projects/<folder>/chats/<id>.jsonl`       | One `lstat`, for a session whose process runs                                                                          | Every poll                                                                                                                                    |
 | The same file                                        | Opened read-only: the last 8 MiB, then only what is appended                                                           | When its size, modified time or identity changes                                                                                              |
 | `<runtime>/projects/`                                | Listed, then one `lstat` of `<each>/chats/<id>.jsonl`, when a session's file is not in the folder named for its folder | At most every 30 seconds for each session                                                                                                     |
-| `chats/<id>.jsonl` of a record a crash left behind   | One `lstat`, for its modified time. Never opened                                                                       | Once, at the first poll                                                                                                                       |
+| `chats/<id>.jsonl` of a record a crash left behind   | One `lstat`, for its modified time. Never opened by a poll                                                             | Once, at the first poll                                                                                                                       |
+| The chat file the adapter last found for a session   | Opened read-only: at most its last 256 KB, for what the session last said                                              | Only when `GET /api/sessions/last-message` asks, while the session's details are open. Never by a poll                                        |
 
 A file is opened without following a link at its name and without waiting on a pipe, and read only if the open file is an ordinary file. A link at a chat file's name is not a chat file.
 
@@ -103,9 +104,19 @@ Kept of each line: its type, subtype and time, and
 - of a `custom_title` line, the title (`core/services/chatRecordingService.ts:3305-3335`);
 - whether the line belongs to a Managed Session log.
 
-Never kept: the prompt, the reply, its thoughts, a tool's input and output, `cwd`, `gitBranch`, token counts, or any other field. Each line is parsed and dropped at once. A line a subagent wrote, `isSidechain: true`, is skipped.
+Never kept by a poll: the prompt, the reply, its thoughts, a tool's input and output, `cwd`, `gitBranch`, token counts, or any other field. Each line is parsed and dropped at once. A line a subagent wrote, `isSidechain: true`, is skipped. The text of a session's newest reply is read only when it is asked for, as [Last message](#last-message) says.
 
 Every read is bounded. The first reads at most the last 8 MiB and drops the line it cut into. Each one after reads only what was appended, at most 8 MiB at once. A line still being written is left for the next read. A line over 4 MiB is not parsed: its type, subtype and time are read from its first 64 KiB. A file that shrank or was replaced is read again from its end.
+
+## Last message
+
+What a session last said is read only when `GET /api/sessions/last-message` asks for it, which the dashboard does while the session's details are open, and only for a session the last poll listed (`lastMessages.ts`, on `createTailReader` in `src/collector/messages/tailReader.ts`, as Codex's and Antigravity's are). No poll reads it, and it is never put on a session.
+
+- The file is the chat file the adapter last found for the session: for an open session, the one the last poll found; for one shown as finished, the one found while it was open; for a record a crash left behind, the one in the folder named for its folder. Never a file beside it, nor another session's, and nothing in a request names it. A session with no chat file is answered `not-found`, and no file is opened.
+- At most the last 256 KB are read, opened without following a link and without waiting on a pipe. The first line of that end, which the read cut into, is not read.
+- The model's reply is an `assistant` line whose `message` is the reply as the model gave it, a `role` of `model` and a list of `parts`, as the status reads it above. A part with `text` is what the reply says, unless it is marked `thought: true`, the model's thinking. A part with a `functionCall` calls a tool. That a reply's text parts make one answer joined with nothing between, as the model's parts do, is taken from that shape and not yet checked on a machine running Qwen Code.
+- So the text is that of the newest `assistant` line with no subtype and no `isSidechain: true` whose parts hold text that is not a thought: those parts' text, joined with nothing between. A reply that only calls tools, or only thinks, is passed over for the one before it. A prompt, a thought, a tool's call, a tool's result, a system line and a subagent's line are never taken. Only a line that names `"assistant"` is parsed, and only by its own `type`, so a reply quoted in a prompt is never taken.
+- It is made fit to show as every last message is, and at most its last 2,000 characters are kept, in memory, for at most 15 seconds after the last ask, with no token counts. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and the Sources card then says Last message read: Off.
 
 ## What it never reads
 
@@ -159,7 +170,7 @@ A working session's time is when its stretch of work began, or none when that is
 
 ## Closed sessions
 
-A session closes when a poll no longer finds it open after an earlier poll did: its record has gone, its process has gone, or its record names another session, as after `/clear` or `/resume`. It is shown as finished from that poll for 24 hours, with what was last known of it, and its chat file is not read again. It leaves the list sooner if it is open again. When its process is still open with another session, as after `/clear` or `/resume`, it names no process, and with `finished` notifications on it sends one like any session that finishes.
+A session closes when a poll no longer finds it open after an earlier poll did: its record has gone, its process has gone, or its record names another session, as after `/clear` or `/resume`. It is shown as finished from that poll for 24 hours, with what was last known of it, and no poll reads its chat file again. While its details are open, what it last said is still read from that file, as [Last message](#last-message) says. It leaves the list sooner if it is open again. When its process is still open with another session, as after `/clear` or `/resume`, it names no process, and with `finished` notifications on it sends one like any session that finishes.
 
 At the first poll, a record whose process has already gone, as a crash leaves, is shown as finished from its chat file's modified time, or from when it registered. One a day old or more is left out. Every other session that closed before Agent Lookout started is not shown, and nothing of this is kept across a restart.
 
@@ -189,6 +200,7 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - Never listed: `qwen -p` runs, which never register (`docs/users/features/commands.md:770`); Qwen Code before 0.21.14; sessions an editor or Qwen Code's server drives; sessions in a container, on a Mac or Windows; and sessions under a folder Agent Lookout's own environment does not name.
 - Chats moved by `advanced.runtimeOutputDir`, or with chat recording off, show as idle, and after ten minutes the Sources view says no chat file was found.
 - Managed Session logs show as unknown.
+- After `/rewind`, Last message can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, it is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop.
 - After `/clear` or `/resume` made before Agent Lookout started, the session is idle since its process registered, which can be long before, until its next prompt, so it can show as stale at once. After such a `/clear`, Started is that time too until the new session writes its first line. Started is also when the process registered for a chat file over 8 MiB, which is read from its middle.
 - On Linux, a record written in a container is listed, and its pid is checked on this computer.
 
@@ -204,6 +216,7 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 | A new `user` subtype begins turns                     | Those turns do not show as working                                                                                                                        | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
 | A new line type                                       | Sessions show as unknown until their next line                                                                                                            | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
 | `custom_title` changes                                | Sessions are named after their folder                                                                                                                     | `chatRecords.ts`                                |
+| A reply's `parts`, or how a thought is marked, change | Last message shows nothing, or shows a thought                                                                                                            | `lastMessages.ts`                               |
 | `QWEN_HOME` or `QWEN_RUNTIME_DIR` mean something else | Qwen Code is not found, or found empty                                                                                                                    | `index.ts`                                      |
 
 To check a new Qwen Code version, read `core/services/session-registry.ts`, `core/services/chatRecordingService.ts`, `core/telemetry/request-lifecycle.ts`, `core/utils/paths.ts`, `core/config/storage.ts` and `docs/users/features/cross-session-protocol.md` at its tag. Then run a session in a terminal, and compare the dashboard with `qwen sessions ps` on a machine where nothing else reads the list.

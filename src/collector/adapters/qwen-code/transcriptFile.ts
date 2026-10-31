@@ -52,8 +52,8 @@ export interface FoundChat {
 export interface ChatFinder {
   /** The session's chat file, or null when it has none where Qwen Code keeps them. */
   find(sessionId: string, cwd: string | null, now: number): Promise<FoundChat | null>;
-  /** What one `lstat` says of the file in the folder named for the session's folder, or null. */
-  likely(sessionId: string, cwd: string | null): Promise<FileInfo | null>;
+  /** The file in the folder named for the session's folder, with what one `lstat` says of it, or null. */
+  likely(sessionId: string, cwd: string | null): Promise<FoundChat | null>;
   /** Forgets every session not in this set. */
   keepOnly(sessionIds: ReadonlySet<string>): void;
 }
@@ -142,7 +142,9 @@ export function createChatFinder(options: ChatFinderOptions): ChatFinder {
     async likely(sessionId, cwd) {
       if (!isQwenSessionId(sessionId)) return null;
       const file = likelyPath(sessionId, cwd);
-      return file === null ? null : fileAt(file);
+      if (file === null) return null;
+      const info = await fileAt(file);
+      return info === null ? null : { path: file, info };
     },
     keepOnly(sessionIds) {
       for (const id of known.keys()) if (!sessionIds.has(id)) known.delete(id);

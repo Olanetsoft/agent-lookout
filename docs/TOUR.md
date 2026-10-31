@@ -319,6 +319,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `transcriptFile.ts` finds each session's chat file, `projects/<folder>/chats/<id>.jsonl`, and `chatRecords.ts` reads its last 8 MiB, then only what was added. It keeps a few marks of each line and the title, and drops the content at once.
 - `qwenCodeMapping.ts` folds those marks in order. A prompt, a reply that calls tools, their results or a request to the model under way is working. A reply that calls none, or a stopped tool or request, is idle. An approval prompt writes nothing, so a session that waits shows as working.
 - `finishedSessions.ts` shows a session whose record or process has gone as finished for a day, from the poll that found it so.
+- `lastMessages.ts` reads what a session last said, the text of its newest reply that is not a thought, from the end of the chat file the adapter last found, only when it is asked for, as [A session's last message](#a-sessions-last-message) says (#187). No poll reads it.
 
 **How sure it is.** It was built from Qwen Code's source at v0.25.1 and has not yet been checked on a machine running Qwen Code. The card says so (`UNCHECKED_NOTE`).
 
@@ -544,7 +545,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 
 **Why.** #10: a name and a status do not say what a session was doing. Its last words let you decide whether it needs you without switching to it.
 
-**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9, for Claude Code. Codex sessions came next, read from the session file the adapter already reads. Antigravity CLI and Antigravity sessions followed (#141), read from the transcript each adapter already reads. Every other agent's session answers `not-read`.
+**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9, for Claude Code. Codex sessions came next, read from the session file the adapter already reads. Antigravity CLI and Antigravity sessions followed (#141), read from the transcript each adapter already reads, and then Qwen Code sessions (#187), read from the chat file its adapter already finds. Every other agent's session answers `not-read`.
 
 **Where it is.**
 
@@ -554,6 +555,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 - Claude Code's reader: `createLastMessageReader` in `src/collector/adapters/claude-code/transcript/lastMessages.ts`, and `lastSaidInTail` in `lastSaid.ts` beside it, with `lastUsageInTail` in `lastUsage.ts` for the token counts.
 - Codex's reader: `createCodexLastMessages` and `lastSaidInRollout` in `src/collector/adapters/codex/lastMessages.ts`. [adapters/codex.md](adapters/codex.md#what-a-session-last-said) has the lines it reads.
 - The Antigravity CLI's and Antigravity's reader, one for both: `createAntigravityLastMessages` and `lastSaidInTranscript` in `src/collector/adapters/antigravity/shared/lastMessages.ts`, with `messageStart` in `src/core/text.ts` for a reply the transcript cut. [adapters/antigravity.md](adapters/antigravity.md#what-a-session-last-said) has the fields it reads.
+- Qwen Code's reader: `createQwenCodeLastMessages` and `lastSaidInChat` in `src/collector/adapters/qwen-code/lastMessages.ts`. [adapters/qwen-code.md](adapters/qwen-code.md#last-message) has the fields it reads.
 - The hook an adapter may offer: the optional `lastMessage` in `src/collector/adapters/adapter.ts`. `collector.ts` hands the route this computer's own adapters only.
 - The page: `src/dashboard/hooks/data/useLastMessage.ts` and `src/dashboard/components/panels/LastMessage.tsx`.
 

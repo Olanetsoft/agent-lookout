@@ -8,6 +8,7 @@ import {
   readdir,
   readFile,
   readlink,
+  rm,
   symlink,
   utimes,
   writeFile,
@@ -23,6 +24,8 @@ import {
 } from "@collector/adapters/qwen-code/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  assistantLine,
+  chatPath,
   fixture,
   HOME,
   MINUTE,
@@ -37,7 +40,9 @@ import {
   registeredAt,
   registryRecord,
   RUNNING_PIDS,
+  SECOND,
   sessionIdOf,
+  toolResultLine,
 } from "@tests/fixtures/qwen-code/qwenCode";
 import { handClock, healthy } from "@tests/support/adapters/qwenCodeAdapter";
 import { tempDir } from "@tests/support/node/tempFiles";
@@ -363,4 +368,108 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     await adapterFor(home).poll();
     expect(await readdir(home)).toEqual([]);
   });
+});
+
+describe("what a session last said, read from the real files", () => {
+  /** A session whose newest reply is its own, listed by a poll, with a clock the test moves. */
+  async function listedSession() {
+    const home = await tempDir();
+    const id = sessionIdOf(1);
+    await mkdir(path.join(home, "sessions"));
+    await writeFile(
+      path.join(home, "sessions", "41001.json"),
+      registryRecord({ pid: 41001, sessionId: id, kind: "tui" }),
+    );
+    const file = chatPath(home, id);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      [
+        promptLine(NOW - 2 * MINUTE, { sessionId: id }),
+        assistantLine(NOW - MINUTE, { sessionId: id, says: "A reply of its own." }),
+        assistantLine(NOW - 50 * SECOND, { sessionId: id, says: PRIVATE_WORDS, sidechain: true }),
+        toolResultLine(NOW - 40 * SECOND, "success", { sessionId: id }),
+      ].join(""),
+    );
+    // Beside it, a file of the session's own that is never opened.
+    const beside = path.join(path.dirname(file), `${id}.runtime.json`);
+    await writeFile(beside, JSON.stringify({ text: PRIVATE_WORDS }));
+    let at = NOW;
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(home, { io, now: () => at, isAlive: (pid) => pid === 41001 });
+    const { sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.id)).toContain(`qwen-code:${id}`);
+    return {
+      file,
+      beside,
+      calls,
+      ask: () => adapter.lastMessage(`qwen-code:${id}`),
+      later: () => (at += SECOND),
+    };
+  }
+
+  test("is the newest reply's text, read from the session's own chat file when asked, and from no file beside it", async () => {
+    const { file, beside, calls, ask } = await listedSession();
+    calls.length = 0;
+    const answer = await ask();
+    expect(answer).toEqual({ message: { text: "A reply of its own.", cut: false } });
+    expect(JSON.stringify(answer)).not.toContain(PRIVATE_WORDS);
+    // The adapter joins its paths as the system does, so on Windows with its own separator.
+    expect(calls.filter((call) => call.method === "openRegular").map((call) => call.path)).toEqual([
+      path.normalize(file),
+    ]);
+    expect(calls.filter((call) => call.path === beside)).toEqual([]);
+  });
+
+  test("is unreadable once a link is put in its chat file's place after the poll listed it, and is never read through", async () => {
+    const elsewhere = path.join(await tempDir(), "elsewhere.jsonl");
+    await writeFile(elsewhere, assistantLine(NOW - MINUTE, { says: "PRIVATE-ELSEWHERE reply" }));
+    const { file, calls, ask, later } = await listedSession();
+
+    // Put there before the first ask.
+    await rm(file);
+    await symlink(elsewhere, file);
+    const linked = await ask();
+    expect(linked).toEqual({ message: null, reason: "unreadable" });
+
+    // Read as a file, then a link put in its place.
+    await rm(file);
+    await writeFile(file, assistantLine(NOW - MINUTE, { says: "A reply of its own." }));
+    later();
+    await expect(ask()).resolves.toEqual({ message: { text: "A reply of its own.", cut: false } });
+    await rm(file);
+    await symlink(elsewhere, file);
+    later();
+    const swapped = await ask();
+    expect(swapped).toEqual({ message: null, reason: "unreadable" });
+    expect(JSON.stringify([linked, swapped])).not.toContain("PRIVATE-ELSEWHERE");
+    expect(calls.filter((call) => call.path === elsewhere)).toEqual([]);
+  });
+
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "is unreadable once a named pipe is put in its chat file's place after the poll listed it, and does not wait on it",
+    async () => {
+      const { file, ask, later } = await listedSession();
+      const started = Date.now();
+
+      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+
+      await rm(file);
+      await writeFile(file, assistantLine(NOW - MINUTE, { says: "A reply of its own." }));
+      later();
+      await expect(ask()).resolves.toEqual({
+        message: { text: "A reply of its own.", cut: false },
+      });
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      later();
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    },
+    8_000,
+  );
 });
