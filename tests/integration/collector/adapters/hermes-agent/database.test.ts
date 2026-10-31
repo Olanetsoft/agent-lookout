@@ -60,6 +60,15 @@ const anySqlite: SqliteFinder = {
 };
 
 /**
+ * A finder that finds the same sqlite3 and takes it to fail Hermes Agent's
+ * WAL-reset test, as macOS's own and Ubuntu's do, whatever its version here.
+ */
+const failingSqlite: SqliteFinder = {
+  pick: async () => ({ kind: "vulnerable", path: sqlite as string, version: [3, 51, 0] }),
+  lastWalSafe: () => null,
+};
+
+/**
  * Put first in every sqlite3 this test runs to write a database: sqlite3 runs
  * the person's own ~/.sqliterc otherwise, found from the account whatever HOME
  * says, and no test reads the real home.
@@ -391,7 +400,7 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
     expect(await snapshotOf(dir)).toEqual(before);
   });
 
-  test("a database Hermes Agent switches to WAL mode between the look at its header and the read is read, and nothing is written", async () => {
+  test("a database Hermes Agent switches to WAL mode between the look at its header and the read is read, with a sqlite3 that passes the test, and nothing is written", async () => {
     const now = Date.now();
     const { dir, file } = await makeDatabase("rollback", sceneRows(now));
     const writer = holdOpen(file, await tempDir());
@@ -421,6 +430,35 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
     const again = readerFor(file);
     expect((await again.reader.read(now)).state).toBe("read");
     expect(again.runs.every((args) => !args.includes("-cmd"))).toBe(true);
+    expect(await snapshotOf(dir)).toEqual(switched);
+  });
+
+  test("the same switch, with only a sqlite3 that fails the test, is seen once the sessions are read: what was read is dropped, nothing is written, and the next read reads none of it", async () => {
+    const now = Date.now();
+    const { dir, file } = await makeDatabase("rollback", sceneRows(now));
+    const writer = holdOpen(file, await tempDir());
+    let switched: Record<string, string> | null = null;
+    const { reader, runs } = readerFor(file, failingSqlite, async (binary, args) => {
+      if (switched === null) {
+        // As above: switched to WAL mode, with a commit in the -wal of a writer that keeps it open.
+        await writer.write(["PRAGMA journal_mode=WAL;", ...begun(now)]);
+        switched = await snapshotOf(dir);
+        expect(Object.keys(switched)).toEqual(["state.db", "state.db-shm", "state.db-wal"]);
+      }
+      return runSqlite(binary, args);
+    });
+    expect(await reader.read(now)).toEqual({ state: "switched", rows: [] });
+    expect(runs).toHaveLength(2);
+    expect(await snapshotOf(dir)).toEqual(switched);
+
+    // The next read sees the -wal that holds a commit, and with no sqlite3 that passes, runs nothing.
+    const next = await reader.read(now + 2_000);
+    expect(next).toEqual({
+      state: "vulnerable-sqlite",
+      rows: [],
+      vulnerable: { path: sqlite, version: [3, 51, 0] },
+    });
+    expect(runs).toHaveLength(2);
     expect(await snapshotOf(dir)).toEqual(switched);
   });
 

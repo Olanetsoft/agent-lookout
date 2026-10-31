@@ -404,10 +404,18 @@ describe.skipIf(process.platform === "win32")(
       await writeFile(path.join(root, "state.db"), databaseHeader("rollback"));
       const stub = await writeStub("exec /bin/sleep 30");
       const runs: number[] = [];
+      // Its version is known before the poll, and fails Hermes Agent's test,
+      // so the probe is the poll's first run: a database in rollback-journal
+      // mode is still read with one that fails it, when it is all there is.
+      const finder = createSqliteFinder({
+        locations: [stub],
+        runVersion: async () => ({ ok: true, stdout: "3.51.0 2026-01-01 00:00:00 (64-bit)\n" }),
+      });
+      expect(await finder.pick("wal-safe")).toMatchObject({ kind: "vulnerable", path: stub });
       const adapter = createHermesAgentAdapter({
         env: { AGENT_LOOKOUT_HERMES_HOME: root },
         homeDir: "/Users/example",
-        finder: createSqliteFinder({ locations: [stub] }),
+        finder,
         run: (binary, args, timeoutMs) => (
           runs.push(timeoutMs ?? -1),
           runSqlite(binary, args, timeoutMs)

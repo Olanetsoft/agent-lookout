@@ -25,8 +25,10 @@ import { isExecutableFile } from "../../files/paths.ts";
  * Each place is asked its version once, with `sqlite3 -init /dev/null
  * --version`, and again only when the program there changes. `-init
  * /dev/null` keeps it from running the person's own `~/.sqliterc`, which
- * `sqlite3` runs before it answers even `--version`. Any other database is read with the
- * first `sqlite3` found: the bug is in WAL mode alone.
+ * `sqlite3` runs before it answers even `--version`. Every other database is
+ * read with one that passes too, when one is found, so a database Hermes Agent
+ * switches to WAL mode as it is opened is still read safely, and otherwise
+ * with the first found, since the bug is in WAL mode alone.
  *
  * Every run of `sqlite3` for Hermes Agent, these and the two questions, runs
  * within the poll's time for reading (`runWithin`). The first run of a poll
@@ -154,7 +156,11 @@ export function hasWalResetBug(version: SqliteVersion): boolean {
   return !safe;
 }
 
-/** What a `sqlite3` is needed for: any database, or one whose `-wal` holds something. */
+/**
+ * What a `sqlite3` is needed for: `wal-safe`, the first that passes the test,
+ * which every read of a database asks for, or `any`, the first found, with no
+ * version asked.
+ */
 export type SqliteNeed = "any" | "wal-safe";
 
 /**
@@ -162,7 +168,8 @@ export type SqliteNeed = "any" | "wal-safe";
  *
  * found       the first one at the fixed places, or for `wal-safe` the first that passes the test
  * none        none at any of them
- * vulnerable  for `wal-safe`, none passes: the first found, and its version, or null when it printed none
+ * vulnerable  for `wal-safe`, none passes: the first found, and its version, or null when it printed none,
+ *             which reads a database whose `-wal` holds nothing, and no other
  */
 export type SqlitePick =
   | { kind: "found"; path: string; version: SqliteVersion | null }
