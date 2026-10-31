@@ -10,6 +10,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - A slow `sqlite3` no longer holds up Hermes Agent's sessions. Agent Lookout gives its Hermes Agent reads 5 seconds of each poll, but checked that only before it started each profile, so with a slow `sqlite3` one poll could run past 15 seconds, and Sources then said Hermes Agent had not answered and showed none of its sessions until it did. Now no run of `sqlite3` starts once those 5 seconds have passed, and each gets at most what is left of them. A profile they cut short, or do not reach, keeps its last read until the next poll, which starts with it, and when that leaves no profile read, the card says Searching (#213).
 
+- On a phone, a session row with Jump or Resume whose process has ended keeps a dozen letters or so of its name in sight. Narrower than about 432px, where the name's line cannot hold that much of the name beside the Process ended badge and the button, the badge goes on a line of its own under the name. Before, from 368px to about 430px, among them the common widths of an iPhone, the badge stayed beside the name and cut it to as few as three letters (#225).
+
 ## 0.2.15 - 2026-10-30
 
 Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.
