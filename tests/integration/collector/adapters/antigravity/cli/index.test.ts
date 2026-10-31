@@ -7,6 +7,7 @@ import {
   readdir,
   readFile,
   readlink,
+  rm,
   symlink,
   utimes,
   writeFile,
@@ -502,4 +503,91 @@ describe("what a conversation last said, read from the real files", () => {
     ]);
     for (const call of calls) expect(call.path).not.toMatch(/transcript_full/);
   });
+
+  /** A conversation whose newest reply is its own, listed by a poll, with a clock the test moves. */
+  async function listedConversation() {
+    const home = await makeAgyHome();
+    const id = conversationId("e7");
+    const file = transcriptPath(home, id);
+    await put(
+      file,
+      [
+        textStep(0, "USER_INPUT", NOW - 2 * MINUTE, "Tidy the docs"),
+        replyStep({ index: 1, at: NOW - MINUTE, content: "A reply of its own." }),
+      ].join(""),
+      NOW - MINUTE,
+    );
+    let at = NOW;
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(home, { io, now: () => at });
+    const { sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.id)).toContain(`antigravity-cli:${id}`);
+    return {
+      file,
+      calls,
+      ask: () => adapter.lastMessage(`antigravity-cli:${id}`),
+      later: () => (at += SECOND),
+    };
+  }
+
+  test("is unreadable once a link is put in its transcript's place after the poll listed it, and is never read through", async () => {
+    const elsewhere = path.join(await tempDir(), "transcript.jsonl");
+    await writeFile(
+      elsewhere,
+      replyStep({ index: 1, at: NOW - MINUTE, content: "PRIVATE-ELSEWHERE reply" }),
+    );
+    const { file, calls, ask, later } = await listedConversation();
+
+    // Put there before the first ask.
+    await rm(file);
+    await symlink(elsewhere, file);
+    const linked = await ask();
+    expect(linked).toEqual({ message: null, reason: "unreadable" });
+
+    // Read as a file, then a link put in its place.
+    await rm(file);
+    await writeFile(
+      file,
+      replyStep({ index: 1, at: NOW - MINUTE, content: "A reply of its own." }),
+    );
+    later();
+    await expect(ask()).resolves.toEqual({ message: { text: "A reply of its own.", cut: false } });
+    await rm(file);
+    await symlink(elsewhere, file);
+    later();
+    const swapped = await ask();
+    expect(swapped).toEqual({ message: null, reason: "unreadable" });
+    expect(JSON.stringify([linked, swapped])).not.toContain("PRIVATE-ELSEWHERE");
+    expect(calls.filter((call) => call.path === elsewhere)).toEqual([]);
+  });
+
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "is unreadable once a named pipe is put in its transcript's place after the poll listed it, and does not wait on it",
+    async () => {
+      const { file, ask, later } = await listedConversation();
+      const started = Date.now();
+
+      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+
+      await rm(file);
+      await writeFile(
+        file,
+        replyStep({ index: 1, at: NOW - MINUTE, content: "A reply of its own." }),
+      );
+      later();
+      await expect(ask()).resolves.toEqual({
+        message: { text: "A reply of its own.", cut: false },
+      });
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      later();
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    },
+    8_000,
+  );
 });
