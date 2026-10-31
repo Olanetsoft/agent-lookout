@@ -38,12 +38,12 @@ test("the switch is kept in keep-awake-state.json in the app's folder, readable 
 test("a switch turned on is still on at the next launch", async () => {
   const dir = await tempDir();
   const first = createKeepAwake({ blocker, settings: keepAwakeSettingsFile(dir) });
-  expect(first.status()).toEqual({ on: false });
+  expect(first.status()).toEqual({ on: false, holding: false, failed: false });
   first.setOn(true);
   first.stop();
 
   const next = createKeepAwake({ blocker, settings: keepAwakeSettingsFile(dir) });
-  expect(next.status()).toEqual({ on: true });
+  expect(next.status()).toEqual({ on: true, holding: false, failed: false });
 });
 
 test("makes the folder when it is not there yet", async () => {

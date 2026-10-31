@@ -16,7 +16,9 @@
 // The switch is read from `keep-awake-state.json` once, as it is made, and
 // written there each time it is turned (`keepAwakeSettings.ts`). Of each
 // snapshot it keeps one thing, whether any session counted, and nothing about
-// any session.
+// any session. Its status says whether the switch is on, whether it holds the
+// blocker, and whether a session counts that it could not take one for, so
+// Settings can say whether the Mac is kept awake now.
 //
 // It imports nothing from Electron, so it is tested in plain Node with a
 // stand-in for the blocker. `main.ts` hands it Electron's.
@@ -49,7 +51,7 @@ export interface KeepAwakeSnapshot {
 export interface KeepAwake {
   /** Takes each poll's snapshot, and takes or lets go of the blocker to match it. */
   follow(snapshot: KeepAwakeSnapshot): void;
-  /** Whether the switch is on. */
+  /** Whether the switch is on, whether the blocker is held, and whether it could not be taken. */
   status(): KeepAwakeStatus;
   /** Turns the switch on or off, remembers it, takes or lets go of the blocker at once, and says which it is. */
   setOn(on: boolean): KeepAwakeStatus;
@@ -64,8 +66,8 @@ export function createKeepAwake(options: KeepAwakeOptions): KeepAwake {
   let counts = false;
   /** The blocker held, or null. Never more than one. */
   let id: number | null = null;
-  /** Whether a failed start has been told of, so a start failing at every poll is told once. */
-  let warnedStart = false;
+  /** Whether the last try to take the blocker failed, so a start failing at every poll is told once. */
+  let failedStart = false;
   let stopped = false;
 
   function release(): void {
@@ -85,15 +87,21 @@ export function createKeepAwake(options: KeepAwakeOptions): KeepAwake {
     if (wanted && id === null) {
       try {
         id = blocker.start("prevent-app-suspension");
-        warnedStart = false;
+        failedStart = false;
       } catch (error) {
         // Tried again at the next poll.
-        if (!warnedStart) warn?.(`The Mac could not be kept awake: ${String(error)}`);
-        warnedStart = true;
+        if (!failedStart) warn?.(`The Mac could not be kept awake: ${String(error)}`);
+        failedStart = true;
       }
-    } else if (!wanted && id !== null) {
+    } else if (!wanted) {
       release();
+      // Nothing is wanted, so nothing has failed.
+      failedStart = false;
     }
+  }
+
+  function status(): KeepAwakeStatus {
+    return { on, holding: id !== null, failed: id === null && failedStart };
   }
 
   return {
@@ -101,14 +109,12 @@ export function createKeepAwake(options: KeepAwakeOptions): KeepAwake {
       counts = anyKeepsAwake(snapshot.sessions, snapshot.generatedAt);
       apply();
     },
-    status() {
-      return { on };
-    },
+    status,
     setOn(next) {
       on = next;
       settings.write({ on });
       apply();
-      return { on };
+      return status();
     },
     stop() {
       stopped = true;

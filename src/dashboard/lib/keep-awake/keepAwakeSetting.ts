@@ -21,11 +21,14 @@ export const KEEP_AWAKE_TIMEOUT_MS = 4_000;
 /** Reads the app's answer, or null when it is not one. */
 export function readKeepAwakeStatus(value: unknown): KeepAwakeStatus | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const { on } = value as { on?: unknown };
-  return typeof on === "boolean" ? { on } : null;
+  const { on, holding, failed } = value as { on?: unknown; holding?: unknown; failed?: unknown };
+  if (typeof on !== "boolean" || typeof holding !== "boolean" || typeof failed !== "boolean") {
+    return null;
+  }
+  return { on, holding, failed };
 }
 
-/** Asks the app whether the switch is on. Null when it did not answer, or answered with something else. */
+/** Asks the app whether the switch is on and the Mac is kept awake now. Null when it did not answer, or answered with something else. */
 export async function fetchKeepAwakeStatus(): Promise<KeepAwakeStatus | null> {
   try {
     const response = await apiRequest(APP_KEEP_AWAKE_PATH, {

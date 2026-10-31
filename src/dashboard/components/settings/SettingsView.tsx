@@ -475,8 +475,15 @@ interface SettingsViewProps {
   onHistoryCleared?: () => void;
   /** Told once the time rules have changed, so the page reads the sessions again at once. */
   onTimeRulesChanged?: () => void;
-  /** The page's latest snapshot, whose rules and quiet hours the Time rules card follows. Null before the first. */
-  snapshot?: Pick<SessionsSnapshot, "generatedAt" | "timeRules" | "quiet"> | null;
+  /**
+   * The page's latest snapshot, whose rules and quiet hours the Time rules card
+   * follows, and whose sessions the Keep awake card names while they keep the
+   * Mac awake. Null before the first.
+   */
+  snapshot?: Pick<
+    SessionsSnapshot,
+    "generatedAt" | "timeRules" | "quiet" | "sessions" | "sources"
+  > | null;
   /** Whether the page is in the Mac app's window, which alone shows the Menu bar, Keep awake and Updates cards. */
   inApp?: boolean;
   /** Whether permission prompts can be answered from here, as the sessions' answer says. Null before it. */
@@ -565,7 +572,7 @@ export function SettingsView({
 
         {inApp && <MenuBarCard />}
 
-        {inApp && <KeepAwakeCard />}
+        {inApp && <KeepAwakeCard snapshot={snapshot} />}
 
         {inApp && <UpdatesCard />}
       </div>

@@ -26,11 +26,16 @@ function answering(status: number, body: unknown) {
   return host;
 }
 
+/** The app's answer, with nothing held and nothing failed unless said. */
+const status = (on: boolean, holding = false, failed = false) => ({ on, holding, failed });
+
 describe("readKeepAwakeStatus", () => {
-  test("reads whether the switch is on, and nothing else", () => {
-    expect(readKeepAwakeStatus({ on: true })).toEqual({ on: true });
-    expect(readKeepAwakeStatus({ on: false })).toEqual({ on: false });
-    expect(readKeepAwakeStatus({ on: false, more: 1 })).toEqual({ on: false });
+  test("reads whether the switch is on, whether the Mac is kept awake now and whether it could not be, and nothing else", () => {
+    expect(readKeepAwakeStatus(status(true))).toEqual(status(true));
+    expect(readKeepAwakeStatus(status(false))).toEqual(status(false));
+    expect(readKeepAwakeStatus(status(true, true))).toEqual(status(true, true));
+    expect(readKeepAwakeStatus(status(true, false, true))).toEqual(status(true, false, true));
+    expect(readKeepAwakeStatus({ ...status(false), more: 1 })).toEqual(status(false));
   });
 
   test.each([
@@ -45,6 +50,12 @@ describe("readKeepAwakeStatus", () => {
     { on: "true" },
     { on: 1 },
     { on: null },
+    // An answer with the switch alone, as the app gave before it said whether it holds the Mac awake.
+    { on: true },
+    { on: true, holding: true },
+    { on: true, failed: false },
+    { on: true, holding: "yes", failed: false },
+    { on: true, holding: false, failed: null },
     { show: true },
     { automatic: true },
   ])("reads %j as no answer", (value) => {
@@ -54,8 +65,8 @@ describe("readKeepAwakeStatus", () => {
 
 describe("fetchKeepAwakeStatus", () => {
   test("asks the app whether the switch is on, with a GET of its own address", async () => {
-    const host = answering(200, { on: false });
-    expect(await fetchKeepAwakeStatus()).toEqual({ on: false });
+    const host = answering(200, status(false));
+    expect(await fetchKeepAwakeStatus()).toEqual(status(false));
     expect(host).toHaveBeenCalledOnce();
     const [path, init] = host.mock.calls[0] ?? [];
     expect(path).toBe("/api/app/keep-awake");
@@ -65,9 +76,9 @@ describe("fetchKeepAwakeStatus", () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test("passes on the app's answer that the switch is on", async () => {
-    answering(200, { on: true });
-    expect(await fetchKeepAwakeStatus()).toEqual({ on: true });
+  test("passes on the app's answer that the switch is on and the Mac is kept awake", async () => {
+    answering(200, status(true, true));
+    expect(await fetchKeepAwakeStatus()).toEqual(status(true, true));
   });
 
   test.each<[string, number, unknown]>([
@@ -93,7 +104,7 @@ describe("fetchKeepAwakeStatus", () => {
   });
 
   test("never takes an error answer as the switch, whatever its body says", async () => {
-    answering(500, { on: true });
+    answering(500, status(true));
     expect(await fetchKeepAwakeStatus()).toBeNull();
   });
 });
@@ -102,8 +113,8 @@ describe("requestKeepAwake", () => {
   test.each([true, false])(
     "sends the switch %s as a POST with its own action, and the app's answer comes back",
     async (on) => {
-      const host = answering(200, { on });
-      expect(await requestKeepAwake(on)).toEqual({ on });
+      const host = answering(200, status(on));
+      expect(await requestKeepAwake(on)).toEqual(status(on));
       expect(host).toHaveBeenCalledOnce();
       const [path, init] = host.mock.calls[0] ?? [];
       expect(path).toBe("/api/app/keep-awake/setting");
@@ -116,8 +127,8 @@ describe("requestKeepAwake", () => {
   );
 
   test("gives the app's answer, not what was asked for", async () => {
-    answering(200, { on: false });
-    expect(await requestKeepAwake(true)).toEqual({ on: false });
+    answering(200, status(false));
+    expect(await requestKeepAwake(true)).toEqual(status(false));
   });
 
   test.each<[string, number, unknown]>([
@@ -139,7 +150,7 @@ describe("requestKeepAwake", () => {
   });
 
   test("never takes a refused change as taken, whatever its body says", async () => {
-    answering(403, { on: true });
+    answering(403, status(true));
     expect(await requestKeepAwake(true)).toBeNull();
   });
 });

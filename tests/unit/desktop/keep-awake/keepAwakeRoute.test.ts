@@ -26,10 +26,10 @@ const SETTING = "/api/app/keep-awake/setting";
 function fakeKeepAwake(on = false) {
   let current = on;
   return {
-    status: vi.fn(() => ({ on: current })),
+    status: vi.fn(() => ({ on: current, holding: false, failed: false })),
     setOn: vi.fn((next: boolean) => {
       current = next;
-      return { on: current };
+      return { on: current, holding: false, failed: false };
     }),
   };
 }
@@ -71,10 +71,22 @@ describe("GET /api/app/keep-awake", () => {
   test("says whether the switch is on, and is never cached", async () => {
     const answer = await ask(fakeKeepAwake(true), "/api/app/keep-awake");
     expect(answer.status).toBe(200);
-    expect(answer.json).toEqual({ on: true });
+    expect(answer.json).toEqual({ on: true, holding: false, failed: false });
     expect(answer.headers.get("cache-control")).toBe("no-store");
     expect(answer.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     expect([...answer.headers.keys()].join()).not.toContain("access-control");
+  });
+
+  test("says whether the Mac is kept awake now, or could not be, as the app says, and nothing more", async () => {
+    for (const [holding, failed] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      const keepAwake = fakeKeepAwake(true);
+      keepAwake.status.mockReturnValue({ on: true, holding, failed });
+      const answer = await ask(keepAwake, "/api/app/keep-awake");
+      expect(answer.json).toEqual({ on: true, holding, failed });
+    }
   });
 
   test("answers only GET", async () => {
@@ -111,7 +123,7 @@ describe("POST /api/app/keep-awake/setting", () => {
     const keepAwake = fakeKeepAwake(!on);
     const answer = await ask(keepAwake, SETTING, { body });
     expect(answer.status).toBe(200);
-    expect(answer.json).toEqual({ on });
+    expect(answer.json).toEqual({ on, holding: false, failed: false });
     expect(keepAwake.setOn).toHaveBeenCalledExactlyOnceWith(on);
   });
 

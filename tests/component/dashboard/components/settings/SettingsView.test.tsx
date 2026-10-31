@@ -111,7 +111,7 @@ const SETTINGS: SettingsResponse = {
   ruleAnswersSince: Date.now() - 60_000,
 };
 /** Whether the Mac app keeps the Mac awake, as `GET /api/app/keep-awake` says on first launch. */
-const KEEP_AWAKE_OFF = { on: false };
+const KEEP_AWAKE_OFF = { on: false, holding: false, failed: false };
 /** The paths the view asked the app for. */
 let asked: string[];
 /**
