@@ -38,6 +38,7 @@ import {
 import { DATABASE_FILE, type HermesRow, type LeaseRow } from "./sessionRows.ts";
 import {
   createSqliteFinder,
+  readTimeUntil,
   versionText,
   type SqliteFinder,
   type SqlitePick,
@@ -51,9 +52,14 @@ export { HERMES_HOME_ENV, hermesRootFor } from "./home.ts";
 export const RECHECK_MS = 60_000;
 
 /**
- * How much of a poll the profiles' reads may take before no new one is
- * started. A profile left for the next poll keeps its last read. Well within
- * the poller's own limit for an answer.
+ * How much of a poll the profiles' reads may take. No profile, and no run of
+ * `sqlite3`, is started once it is used. The first run of a poll gets its
+ * whole 5 seconds, so one that does not answer in them is known not to work,
+ * and each later run gets at most what is left. So a poll's reads end within
+ * it, or within one run's 5 seconds when the poll's first run starts late or
+ * a run outlasts its timeout: well within the poller's own limit for an
+ * answer. A profile left for the next poll, or cut short, keeps its last
+ * read, and the next poll starts with it.
  */
 export const READ_BUDGET_MS = 5_000;
 
@@ -173,8 +179,8 @@ export interface HermesAgentAdapterOptions {
   finder?: SqliteFinder;
   /** Whether a place holds a program this user may run. */
   isExecutable?: (candidate: string) => Promise<boolean>;
-  /** Runs `<candidate> -init /dev/null --version`. */
-  runVersion?: (candidate: string) => Promise<SqliteAnswer>;
+  /** Runs `<candidate> -init /dev/null --version`, within this timeout. */
+  runVersion?: (candidate: string, timeoutMs: number) => Promise<SqliteAnswer>;
   /** A program's identity and modified time, or null, so a changed one is asked its version again. */
   binaryIdentity?: (candidate: string) => Promise<string | null>;
   /** Whether a process exists. Defaults to signal 0. */
@@ -193,7 +199,11 @@ export interface HermesAgentAdapterOptions {
   retryMs?: number;
   /** How long the list of named profiles stands. Defaults to a minute. */
   profilesEveryMs?: number;
-  /** How much of a poll the reads may take before no new one is started. Defaults to 5 seconds. */
+  /**
+   * How much of a poll the reads may take: no profile is started, and no run
+   * of `sqlite3`, once it is used, and each run but the poll's first gets at
+   * most what is left. Defaults to 5 seconds.
+   */
   readBudgetMs?: number;
 }
 
@@ -203,7 +213,7 @@ type RootFrom = "agent-lookout" | "default";
 /** A profile that was not read on a poll, and why. */
 interface NotRead {
   profile: string;
-  state: Exclude<DatabaseState, "read" | "missing" | "not-on-windows">;
+  state: Exclude<DatabaseState, "read" | "missing" | "out-of-time" | "not-on-windows">;
   vulnerable?: { path: string; version: SqliteVersion | null };
 }
 
@@ -339,6 +349,11 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
   let rootSeen = false;
   /** The profiles of the last poll that saw the root, for Sources. */
   let profilesSeen: readonly string[] = [];
+  /**
+   * The profile the last poll's time for reading ran out at, cut short or not
+   * reached, which the next poll reads first. Null when every one was reached.
+   */
+  let resumeAt: string | null = null;
 
   const commandRun = platform === "win32" ? "not run on Windows" : "when a database changes";
   const processCheck =
@@ -479,14 +494,26 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
       }
     }
 
-    // Each profile is read in turn. Once the reads have taken their share of
-    // the poll, the rest keep their last read until the next.
+    // Each profile is read in turn, and each run of sqlite3 within the reads'
+    // share of the poll. Once that is used, the rest, and one cut short, keep
+    // their last read until the next poll, which starts with the first of
+    // them, so one slow profile cannot keep the others from ever being read.
+    const time = readTimeUntil(checkedAt + readBudgetMs, now);
+    const start = resumeAt === null ? -1 : profiles.indexOf(resumeAt);
+    const order = start > 0 ? [...profiles.slice(start), ...profiles.slice(0, start)] : profiles;
+    resumeAt = null;
     const reads = new Map<string, DatabaseRead>();
-    for (const profile of profiles) {
-      const elapsed = now() - checkedAt;
-      if (elapsed >= readBudgetMs) {
-        const kept = lastReads.get(profile);
-        if (kept !== undefined) reads.set(profile, kept);
+    /** Profiles not read this poll for want of time that have no last read either. */
+    const unread: string[] = [];
+    const keep = (profile: string) => {
+      resumeAt ??= profile;
+      const kept = lastReads.get(profile);
+      if (kept === undefined) unread.push(profile);
+      else reads.set(profile, kept);
+    };
+    for (const profile of order) {
+      if (!(time.left() > 0)) {
+        keep(profile);
         continue;
       }
       let reader = readers.get(profile);
@@ -501,7 +528,11 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
         });
         readers.set(profile, reader);
       }
-      const read = await reader.read(checkedAt);
+      const read = await reader.read(checkedAt, time);
+      if (read.state === "out-of-time") {
+        keep(profile);
+        continue;
+      }
       lastReads.set(profile, read);
       reads.set(profile, read);
     }
@@ -517,6 +548,9 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
       switch (answer.state) {
         case "missing":
           parts[profilePrefix(profile)] = BASIS;
+          continue;
+        case "out-of-time":
+          // Never kept: a read cut short leaves the last one in its place.
           continue;
         case "not-on-windows":
           return result("unavailable", WINDOWS_DETAIL, "not on Windows", checkedAt);
@@ -549,6 +583,16 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
     const advice = failures.map(adviceFor).find((text) => text !== undefined);
 
     if (read === 0 && failures.length === 0) {
+      // A database not read yet for want of time may hold sessions, so this is
+      // not yet an answer.
+      if (unread.length > 0) {
+        return result(
+          "searching",
+          `Hermes Agent's databases in ${rootName} are still being read.`,
+          looked,
+          checkedAt,
+        );
+      }
       if (rootFrom === "agent-lookout") {
         return withParts(
           result(

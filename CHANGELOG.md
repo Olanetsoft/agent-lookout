@@ -8,6 +8,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Shift+Tab moves on from a dialog's title and from the dialog itself. In a session's details, where focus starts on the title, and in any dialog after a click on its plain text, such as What this counts under a history chart or the line under the search's list, Shift+Tab left focus where it was, and pressing it again kept it there. It now goes to the dialog's last control, as it does from the first. In a dialog taller than the window, such as a long session's details, Tab from the last control and Shift+Tab from the first now scroll the control they go round to into view, where before it could be out of sight (#221).
 
+- A slow `sqlite3` no longer holds up Hermes Agent's sessions. Agent Lookout gives its Hermes Agent reads 5 seconds of each poll, but checked that only before it started each profile, so with a slow `sqlite3` one poll could run past 15 seconds, and Sources then said Hermes Agent had not answered and showed none of its sessions until it did. Now no run of `sqlite3` starts once those 5 seconds have passed, and each gets at most what is left of them. A profile they cut short, or do not reach, keeps its last read until the next poll, which starts with it, and when that leaves no profile read, the card says Searching (#213).
+
 ## 0.2.15 - 2026-10-30
 
 Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.

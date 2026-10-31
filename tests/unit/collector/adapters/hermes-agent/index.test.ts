@@ -2,6 +2,9 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
+import { SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
+import type { Adapter } from "@collector/adapters/adapter";
+import { RETRY_MS } from "@collector/adapters/hermes-agent/database";
 import {
   BASIS,
   COMMAND_SHOWN,
@@ -17,8 +20,10 @@ import {
   VULNERABLE_SQLITE_ADVICE,
   VULNERABLE_SQLITE_ADVICE_MAC,
   WINDOWS_DETAIL,
+  type HermesAgentAdapterOptions,
 } from "@collector/adapters/hermes-agent/index";
 import { SESSIONS_QUERY } from "@collector/adapters/hermes-agent/sessionRows";
+import { HERMES_SQLITE_LOCATIONS } from "@collector/adapters/hermes-agent/sqlite";
 import { POLL_DEADLINE_MS } from "@collector/poller";
 import {
   answerRow,
@@ -100,6 +105,70 @@ function hermesHome(
 /** The value of one of the facts Sources shows. */
 const fact = (health: { watching?: { label: string; value: string }[] }, label: string) =>
   health.watching?.find((each) => each.label === label)?.value;
+
+/**
+ * One poll, checked to have kept its runs of sqlite3 to the 5 seconds for
+ * reading: each started while some of them was left, the first with its whole
+ * 5 seconds, and each later one with those or what was left, whichever is
+ * less. With how long it took, and the runs it made.
+ */
+async function pollWithin(
+  adapter: Adapter,
+  sqlite: StandInSqlite,
+  clock: ReturnType<typeof handClock>,
+) {
+  const started = clock.now();
+  const from = sqlite.timed.length;
+  const polled = await adapter.poll();
+  const runs = sqlite.timed.slice(from);
+  runs.forEach((run, index) => {
+    const left = started + READ_BUDGET_MS - (run.startedAt as number);
+    expect(left).toBeGreaterThan(0);
+    expect(run.timeoutMs).toBe(index === 0 ? SQLITE_TIMEOUT_MS : Math.min(SQLITE_TIMEOUT_MS, left));
+  });
+  return { polled, took: clock.now() - started, runs };
+}
+
+/**
+ * A live -wal in the default profile alone, with a sqlite3 at every fixed
+ * place, each taking this long to answer. All but the last have the WAL-reset
+ * bug, so each is asked its version before the last is chosen.
+ */
+function slowLiveWal(slow: { takesMs: number; honoursTimeout?: boolean }) {
+  const files = memoryFiles();
+  writeLiveWalDatabase(files, DEFAULT_DATABASE);
+  const clock = handClock();
+  const sqlite = standInSqlite(
+    { [DEFAULT_DATABASE]: [answerRow({ id: A })] },
+    { slow: { clock, ...slow } },
+  );
+  const last = HERMES_SQLITE_LOCATIONS.at(-1) as string;
+  for (const place of HERMES_SQLITE_LOCATIONS) {
+    sqlite.install(place, place === last ? "3.53.0" : "3.51.0");
+  }
+  const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+  return { files, sqlite, clock, adapter, last };
+}
+
+/**
+ * A live -wal in the default profile alone, with /usr/bin/sqlite3, which has
+ * the WAL-reset bug, and Homebrew's own, which passes, each run taking 3
+ * seconds: the first place's version has the poll's whole 5 seconds, and the
+ * keg's, given the 2 left, is cut short.
+ */
+function slowWalHome(options: HermesAgentAdapterOptions = {}) {
+  const files = memoryFiles();
+  writeLiveWalDatabase(files, DEFAULT_DATABASE);
+  const clock = handClock();
+  const sqlite = standInSqlite(
+    { [DEFAULT_DATABASE]: [answerRow({ id: A })] },
+    { slow: { clock, takesMs: 3_000 } },
+  );
+  sqlite.install("/usr/bin/sqlite3", "3.51.0");
+  sqlite.install(KEG, "3.53.0");
+  const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, ...options });
+  return { files, sqlite, clock, adapter };
+}
 
 describe("a Hermes Agent that is not there", () => {
   test("is not found, calmly, and its folder is looked for again only once a minute, with nothing else looked at or run", async () => {
@@ -600,7 +669,7 @@ describe("when a profile cannot be read", () => {
 });
 
 describe("the reads of a poll", () => {
-  test("stop starting once about 5 seconds of it are used, and the profiles left are read on the next polls, keeping their last read meanwhile", async () => {
+  test("stop starting once about 5 seconds of it are used, and the profiles left, or cut short, are read on the next polls, keeping their last read meanwhile", async () => {
     const files = memoryFiles();
     const names = Array.from({ length: 16 }, (_, index) => `p${String(index).padStart(2, "0")}`);
     const databases = [
@@ -608,8 +677,8 @@ describe("the reads of a poll", () => {
       ...names.map((name) => `${ROOT}/profiles/${name}/state.db`),
     ];
     const clock = handClock();
-    // Each run of sqlite3 takes 600 ms: 1.2 seconds a profile.
-    const sqlite = standInSqlite({}, { onRun: () => clock.advance(600) });
+    // Each run of sqlite3 takes 600 ms, 1.2 seconds a profile, and is stopped at its timeout.
+    const sqlite = standInSqlite({}, { slow: { clock, takesMs: 600 } });
     databases.forEach((database, index) => {
       writeRollbackDatabase(files, database);
       sqlite.set(database, [answerRow({ id: sessionId(`d${index}`) })]);
@@ -619,26 +688,570 @@ describe("the reads of a poll", () => {
     expect(READ_BUDGET_MS * 2).toBeLessThan(POLL_DEADLINE_MS);
 
     const partsOf = async () => {
-      const polled = await adapter.poll();
+      const { polled, took } = await pollWithin(adapter, sqlite, clock);
+      expect(took).toBeLessThanOrEqual(READ_BUDGET_MS);
       clock.advance(2_000);
       return Object.keys(polled.health.parts ?? {});
     };
-    // Five profiles start within the 5 seconds, the fifth at 4.8.
+    // Four profiles are read within the 5 seconds. The fifth starts at 4.8,
+    // and its probe, given the 200 ms left, is cut short at 5.
     const first = await partsOf();
-    expect(first).toEqual(["default", "p00", "p01", "p02", "p03"].map((p) => `hermes-agent:${p}/`));
-    expect(sqlite.queries()).toHaveLength(5);
-    // Those read cost nothing on the next poll, so the next five are read.
-    expect(await partsOf()).toHaveLength(10);
-    expect(await partsOf()).toHaveLength(15);
+    expect(first).toEqual(["default", "p00", "p01", "p02"].map((p) => `hermes-agent:${p}/`));
+    expect(sqlite.queries()).toHaveLength(4);
+    expect(sqlite.probes()).toHaveLength(5);
+    expect(sqlite.probes().at(-1)?.timeoutMs).toBe(200);
+    // Those read cost nothing on the next poll, so the next four are read, the one cut short first.
+    const second = await partsOf();
+    expect(second).toHaveLength(8);
+    expect(second).toContain("hermes-agent:p03/");
+    expect(await partsOf()).toHaveLength(12);
+    expect(await partsOf()).toHaveLength(16);
     expect(await partsOf()).toHaveLength(17);
     expect(sqlite.queries()).toHaveLength(17);
 
-    // Every database changes: those not reached this poll keep their last read, and their sessions.
+    // Every database changes: those not reached this poll, and the one cut
+    // short, keep their last read, and their sessions.
     for (const database of databases) writeRollbackDatabase(files, database);
-    const changed = await adapter.poll();
+    const { polled: changed, took } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
     expect(Object.keys(changed.health.parts ?? {})).toHaveLength(17);
     expect(changed.sessions).toHaveLength(17);
-    expect(sqlite.queries()).toHaveLength(22);
+    expect(changed.health.detail).toBe(HEALTHY);
+    expect(sqlite.queries()).toHaveLength(21);
+  });
+
+  test("each run of sqlite3 gets its own 5 seconds or what is left of the poll's, and none starts once they are used, so a slow one ends the reads within them", async () => {
+    // Each run, version runs among them, takes 2 seconds, and is stopped at its timeout.
+    const { sqlite, clock, adapter, last } = slowLiveWal({ takesMs: 2_000 });
+    const seen: [string, string | undefined, number][] = [];
+    for (let poll = 0; poll < 5; poll += 1) {
+      const { polled, took } = await pollWithin(adapter, sqlite, clock);
+      expect(took).toBeLessThanOrEqual(READ_BUDGET_MS);
+      if (polled.health.state === "searching") {
+        expect(polled.health.detail).toBe(
+          "Hermes Agent's databases in ~/.hermes are still being read.",
+        );
+        expect(polled.health).not.toHaveProperty("parts");
+        expect(polled.basis).toBeUndefined();
+      }
+      seen.push([
+        polled.health.state,
+        fact(polled.health, "sqlite3 for a live -wal"),
+        polled.sessions.length,
+      ]);
+      clock.advance(2_000);
+    }
+    expect(seen).toEqual([
+      // Two places answer in 4 seconds, and the third is given 1 and cut
+      // short, so it is asked again on the next poll, as nothing was learned.
+      ["searching", "not needed yet", 0],
+      ["searching", "not needed yet", 0],
+      ["searching", "not needed yet", 0],
+      // The last place passes, and the probe answers. The query is cut short.
+      ["searching", `${last} 3.53.0`, 0],
+      ["ok", `${last} 3.53.0`, 1],
+    ]);
+    const [l0, l1, l2, l3, l4, l5, l6] = HERMES_SQLITE_LOCATIONS;
+    expect(sqlite.versionRuns).toEqual([l0, l1, l2, l2, l3, l4, l4, l5, l6, l6]);
+    expect(sqlite.timed.filter((run) => run.kind !== "version").map((run) => run.kind)).toEqual([
+      "probe",
+      "query",
+      "probe",
+      "query",
+    ]);
+  });
+
+  test("a sqlite3 that outlasts its timeout holds the reads past the 5 seconds by that one run at most, well within the poller's limit", async () => {
+    // Each run takes 4 seconds, whatever its timeout.
+    const { sqlite, clock, adapter } = slowLiveWal({ takesMs: 4_000, honoursTimeout: false });
+    const states: string[] = [];
+    for (let poll = 0; poll < 5; poll += 1) {
+      const { polled, took } = await pollWithin(adapter, sqlite, clock);
+      // The second run starts at 4 seconds, with 1 left, and ends at 8.
+      expect(took).toBe(READ_BUDGET_MS + 3_000);
+      states.push(polled.health.state);
+      clock.advance(2_000);
+    }
+    expect(states).toEqual(["searching", "searching", "searching", "searching", "ok"]);
+    expect(READ_BUDGET_MS + 4_000).toBeLessThan(POLL_DEADLINE_MS);
+  });
+
+  test("a profile cut short keeps its last read, says nothing of it, and is read first on the next poll", async () => {
+    const { files, sqlite } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const shown = (sessions: { id: string; name: string }[]) =>
+      sessions.map((session) => [session.id, session.name]);
+    const before = await adapter.poll();
+    expect(shown(before.sessions)).toEqual([
+      [`hermes-agent:default/${A}`, "Rename the helper"],
+      [`hermes-agent:coder/${B}`, "Write the notes"],
+    ]);
+
+    // Both databases change, and each run of sqlite3 now takes 2 seconds: the
+    // default profile is read in 4, and the coder profile's probe, given the 1
+    // left, is cut short at 5.
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    sqlite.set(PROFILE_DATABASE, [answerRow({ id: C, title: "Tidy the tests" })]);
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    clock.advance(2_000);
+    const { polled: cut, took, runs } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    expect(runs.map((run) => [run.kind, run.database, run.timeoutMs])).toEqual([
+      ["probe", DEFAULT_DATABASE, SQLITE_TIMEOUT_MS],
+      ["query", DEFAULT_DATABASE, 3_000],
+      ["probe", PROFILE_DATABASE, 1_000],
+    ]);
+    expect(cut.health).toMatchObject({
+      state: "ok",
+      detail: HEALTHY,
+      parts: { "hermes-agent:default/": BASIS, "hermes-agent:coder/": BASIS },
+    });
+    expect(cut.health).not.toHaveProperty("advice");
+    expect(cut.basis).toBe(BASIS);
+    expect(shown(cut.sessions)).toEqual(shown(before.sessions));
+
+    // A fast sqlite3 again, 2 seconds on, with both changed once more: the
+    // coder profile is read first, and its new rows are shown.
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    sqlite.slowly(undefined);
+    clock.advance(2_000);
+    const from = sqlite.runs.length;
+    const after = await adapter.poll();
+    expect(sqlite.runs.slice(from).map((run) => run.database)).toEqual([
+      PROFILE_DATABASE,
+      PROFILE_DATABASE,
+      DEFAULT_DATABASE,
+      DEFAULT_DATABASE,
+    ]);
+    expect(after.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(shown(after.sessions)).toEqual([
+      [`hermes-agent:default/${A}`, "Rename the helper"],
+      [`hermes-agent:coder/${C}`, "Tidy the tests"],
+    ]);
+  });
+
+  test("a profile cut short with no earlier read has no part and no sessions, and nothing is said of it", async () => {
+    const { files, sqlite } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    // The default profile is read in 4 seconds, and the coder profile's probe is cut short at 5.
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const { polled, took } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    expect(polled.health).toMatchObject({
+      state: "ok",
+      detail: HEALTHY,
+      parts: { "hermes-agent:default/": BASIS },
+    });
+    expect(polled.sessions.map((session) => session.id)).toEqual([`hermes-agent:default/${A}`]);
+
+    clock.advance(2_000);
+    const next = await adapter.poll();
+    expect(next.health.parts).toEqual({
+      "hermes-agent:default/": BASIS,
+      "hermes-agent:coder/": BASIS,
+    });
+    expect(next.sessions).toHaveLength(2);
+  });
+
+  test("when the only database is cut short on the first poll, the card is still searching, not without a database, and the next poll with time reads it", async () => {
+    const { files, sqlite, clock, adapter } = slowWalHome();
+    const { polled, took, runs } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    // The keg's version, given the 2 seconds left, is cut short.
+    expect(runs.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["version", SQLITE_TIMEOUT_MS],
+      ["version", 2_000],
+    ]);
+    expect(polled.health).toEqual({
+      id: "hermes-agent",
+      label: "Hermes Agent",
+      state: "searching",
+      detail: "Hermes Agent's databases in ~/.hermes are still being read.",
+      watching: watching("every 2 seconds", { profiles: "default" }),
+      checkedAt: NOW,
+    });
+    expect(polled.basis).toBeUndefined();
+    expect(polled.sessions).toEqual([]);
+    expect(files.count("stat")).toBe(1);
+
+    sqlite.slowly(undefined);
+    clock.advance(2_000);
+    const next = await adapter.poll();
+    expect(next.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(fact(next.health, "sqlite3 for a live -wal")).toBe(`${KEG} 3.53.0`);
+    expect(next.sessions).toHaveLength(1);
+    // The keg was asked again, as nothing was learned of it.
+    expect(sqlite.versionRuns).toEqual(["/usr/bin/sqlite3", KEG, KEG]);
+  });
+
+  test("with Agent Lookout's setting, the only database cut short on the first poll is still being read, not a folder with no database", async () => {
+    const env = { AGENT_LOOKOUT_HERMES_HOME: ROOT };
+    const { files, sqlite, clock, adapter } = slowWalHome({ env });
+    const { polled, took } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    expect(polled.health).toMatchObject({
+      state: "searching",
+      detail: "Hermes Agent's databases in ~/.hermes are still being read.",
+    });
+    expect(polled.health).not.toHaveProperty("parts");
+    expect(polled.basis).toBeUndefined();
+    expect(polled.sessions).toEqual([]);
+    expect(files.count("stat")).toBe(0);
+
+    sqlite.slowly(undefined);
+    clock.advance(2_000);
+    const next = await adapter.poll();
+    expect(next.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(next.sessions.map((session) => session.id)).toEqual([`hermes-agent:default/${A}`]);
+  });
+
+  test("a profile whose last read failed, cut short when it is due again, is still named as not read, and is read on the next poll with time", async () => {
+    const { files, sqlite } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    sqlite.fail(PROFILE_DATABASE);
+    const clock = handClock();
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const notRead = `${HEALTHY} Not read: the coder profile, because sqlite3 could not read it.`;
+    expect((await adapter.poll()).health.detail).toBe(notRead);
+
+    // 10 seconds on, the coder profile is due again. The default profile has
+    // changed, and each run now takes 2 seconds, so the coder profile's probe
+    // is given the 1 second left and cut short.
+    sqlite.fail(PROFILE_DATABASE, false);
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    clock.advance(RETRY_MS);
+    const { polled: cut, took, runs } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    expect(runs.at(-1)).toMatchObject({
+      kind: "probe",
+      database: PROFILE_DATABASE,
+      timeoutMs: 1_000,
+    });
+    expect(cut.health).toMatchObject({ state: "ok", detail: notRead });
+    expect(cut.health.parts).toEqual({ "hermes-agent:default/": BASIS });
+    expect(cut.sessions.map((session) => session.id)).toEqual([`hermes-agent:default/${A}`]);
+
+    sqlite.slowly(undefined);
+    clock.advance(2_000);
+    const after = await adapter.poll();
+    expect(after.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(after.sessions.map((session) => session.id)).toEqual([
+      `hermes-agent:default/${A}`,
+      `hermes-agent:coder/${B}`,
+    ]);
+  });
+
+  test("the only database, whose last read failed, cut short: the card is the error it was, not searching", async () => {
+    const { sqlite, clock, adapter } = slowWalHome();
+    sqlite.slowly(undefined);
+    sqlite.fail();
+    const failed = await adapter.poll();
+    expect(failed.health).toMatchObject({
+      state: "error",
+      detail:
+        "sqlite3 could not read Hermes Agent's database, ~/.hermes/state.db, so no Hermes Agent sessions are listed. Agent Lookout tries again when it changes, or 10 seconds on.",
+    });
+
+    // 10 seconds on, Homebrew's sqlite3 has been updated, so its version is
+    // asked first, and the probe after it is cut short.
+    sqlite.fail(undefined, false);
+    sqlite.install(KEG, "3.53.0");
+    sqlite.slowly({ clock, takesMs: 3_000 });
+    clock.advance(RETRY_MS);
+    const { polled: cut, took, runs } = await pollWithin(adapter, sqlite, clock);
+    expect(took).toBe(READ_BUDGET_MS);
+    expect(runs.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["version", SQLITE_TIMEOUT_MS],
+      ["probe", 2_000],
+    ]);
+    expect(cut.health).toMatchObject({ state: "error", detail: failed.health.detail });
+    expect(cut.sessions).toEqual([]);
+  });
+
+  test("a sqlite3 that does not answer in its whole 5 seconds, as a poll's first run, did not work: the card says so, it is asked again only 10 seconds on, and the next profile is read on the next poll", async () => {
+    const { files } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    // sqlite3 never answers on the default profile's database, and is stopped at its timeout.
+    const hung = standInSqlite(
+      {
+        [DEFAULT_DATABASE]: [answerRow({ id: A })],
+        [PROFILE_DATABASE]: [answerRow({ id: B, title: "Write the notes" })],
+      },
+      {
+        onRun: (database, _query, timeoutMs) => {
+          if (database === DEFAULT_DATABASE) clock.advance(timeoutMs ?? SQLITE_TIMEOUT_MS);
+        },
+      },
+    );
+    hung.fail(DEFAULT_DATABASE);
+    const adapter = hermesAgentAdapterFor(files, hung, { now: clock.now });
+    const defaultProbes = () =>
+      hung.probes().filter((run) => run.database === DEFAULT_DATABASE).length;
+    const seen: [string, string[], number][] = [];
+    for (let poll = 0; poll < 4; poll += 1) {
+      const { polled, took } = await pollWithin(adapter, hung, clock);
+      expect(took).toBeLessThanOrEqual(READ_BUDGET_MS);
+      seen.push([
+        polled.health.state,
+        polled.sessions.map((session) => session.id),
+        defaultProbes(),
+      ]);
+      if (poll === 0) {
+        expect(polled.health.detail).toBe(
+          "sqlite3 could not read Hermes Agent's database, ~/.hermes/state.db, so no Hermes Agent sessions are listed. Agent Lookout tries again when it changes, or 10 seconds on.",
+        );
+      } else {
+        expect(polled.health.detail).toBe(
+          `${HEALTHY} Not read: the default profile, because sqlite3 could not read it.`,
+        );
+      }
+      clock.advance(2_000);
+    }
+    expect(seen).toEqual([
+      // Its probe had the whole 5 seconds, and the coder profile is left for the next poll.
+      ["error", [], 1],
+      // The next poll starts with the coder profile. The default profile is not due.
+      ["ok", [`hermes-agent:coder/${B}`], 1],
+      ["ok", [`hermes-agent:coder/${B}`], 1],
+      // Due again 10 seconds after it failed, and the coder profile keeps its read.
+      ["ok", [`hermes-agent:coder/${B}`], 2],
+    ]);
+  });
+
+  test("a sqlite3 that does not print its version in its whole 5 seconds is taken as printing none, and the next place is asked on the next poll, once", async () => {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, DEFAULT_DATABASE);
+    const clock = handClock();
+    const sqlite = standInSqlite({ [DEFAULT_DATABASE]: [answerRow({ id: A })] });
+    sqlite.install("/usr/bin/sqlite3", "3.51.0");
+    sqlite.install("/bin/sqlite3", null);
+    sqlite.install(KEG, "3.53.0");
+    // /bin/sqlite3 never answers its version, and is stopped at its timeout.
+    const runVersion = async (candidate: string, timeoutMs: number) => {
+      if (candidate !== "/bin/sqlite3") return sqlite.runVersion(candidate, timeoutMs);
+      sqlite.versionRuns.push(candidate);
+      clock.advance(timeoutMs);
+      return { ok: false as const };
+    };
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, runVersion });
+    const seen: [string, number, string | undefined][] = [];
+    for (let poll = 0; poll < 3; poll += 1) {
+      const started = clock.now();
+      const polled = await adapter.poll();
+      expect(clock.now() - started).toBeLessThanOrEqual(READ_BUDGET_MS);
+      seen.push([
+        polled.health.state,
+        polled.sessions.length,
+        fact(polled.health, "sqlite3 for a live -wal"),
+      ]);
+      clock.advance(2_000);
+    }
+    expect(seen).toEqual([
+      ["searching", 0, "not needed yet"],
+      ["ok", 1, `${KEG} 3.53.0`],
+      ["ok", 1, `${KEG} 3.53.0`],
+    ]);
+    expect(sqlite.versionRuns).toEqual(["/usr/bin/sqlite3", "/bin/sqlite3", KEG]);
+  });
+
+  test.each<[string, number, string[]]>([
+    ["never answers", 30_000, ["probe"]],
+    ["takes 3 seconds a question, too long for both in one poll", 3_000, ["probe", "query"]],
+  ])(
+    "the only database, with a sqlite3 that %s, is said not to be read on every poll from the first, never as still being read, and is asked again only every 10 seconds",
+    async (_slowness, takesMs, asked) => {
+      const { files, sqlite } = hermesHome([answerRow({ id: A })], null);
+      const clock = handClock();
+      sqlite.slowly({ clock, takesMs });
+      const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+      const seen: string[][] = [];
+      for (let poll = 0; poll < 7; poll += 1) {
+        const { polled, took, runs } = await pollWithin(adapter, sqlite, clock);
+        expect(took).toBeLessThanOrEqual(READ_BUDGET_MS);
+        expect(polled.health).toMatchObject({
+          state: "error",
+          detail:
+            "sqlite3 could not read Hermes Agent's database, ~/.hermes/state.db, so no Hermes Agent sessions are listed. Agent Lookout tries again when it changes, or 10 seconds on.",
+        });
+        expect(polled.sessions).toEqual([]);
+        seen.push(runs.map((run) => run.kind));
+        clock.advance(2_000);
+      }
+      // The polls start 0, 7, 9, 11, 18, 20 and 22 seconds in: due again 10
+      // seconds after each start that asked.
+      expect(seen).toEqual([asked, [], [], asked, [], [], asked]);
+    },
+  );
+
+  test("a /usr/bin/sqlite3 that never prints its version is asked once, as a poll's first run, and Homebrew's own is chosen on the next poll and every one after", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const sqlite = standInSqlite({ [DEFAULT_DATABASE]: [answerRow({ id: A })] });
+    sqlite.install("/usr/bin/sqlite3", null);
+    sqlite.install(KEG, "3.53.0");
+    // /usr/bin/sqlite3 never answers --version, and is stopped at its timeout.
+    const asked: [string, number][] = [];
+    const runVersion = async (candidate: string, timeoutMs: number) => {
+      asked.push([candidate, timeoutMs]);
+      if (candidate !== "/usr/bin/sqlite3") return sqlite.runVersion(candidate, timeoutMs);
+      clock.advance(timeoutMs);
+      return { ok: false as const };
+    };
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, runVersion });
+    const seen: [string, number, string | undefined][] = [];
+    for (let poll = 0; poll < 6; poll += 1) {
+      // Hermes Agent writes to its live -wal before every poll, so a sqlite3 is picked on each.
+      writeLiveWalDatabase(files, DEFAULT_DATABASE);
+      const started = clock.now();
+      const polled = await adapter.poll();
+      expect(clock.now() - started).toBeLessThanOrEqual(READ_BUDGET_MS);
+      seen.push([
+        polled.health.state,
+        polled.sessions.length,
+        fact(polled.health, "sqlite3 for a live -wal"),
+      ]);
+      clock.advance(2_000);
+    }
+    expect(seen).toEqual([
+      // Its whole 5 seconds are the poll's, so Homebrew's is left for the next.
+      ["searching", 0, "not needed yet"],
+      ...Array.from({ length: 5 }, () => ["ok", 1, `${KEG} 3.53.0`]),
+    ]);
+    expect(asked).toEqual([
+      ["/usr/bin/sqlite3", SQLITE_TIMEOUT_MS],
+      [KEG, SQLITE_TIMEOUT_MS],
+    ]);
+    expect(sqlite.queries()).toHaveLength(5);
+  });
+
+  test("a read whose two questions do not fit in a poll's 5 seconds, though each fits its own, did not work: the card says so, and it is asked again 10 seconds on", async () => {
+    const { files, sqlite } = hermesHome([answerRow({ id: A })], null);
+    const clock = handClock();
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    expect((await adapter.poll()).sessions).toHaveLength(1);
+
+    // The database grows, and each question now takes 3 seconds.
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    sqlite.set(DEFAULT_DATABASE, [
+      answerRow({ id: A }),
+      answerRow({ id: B, title: "Write the notes" }),
+    ]);
+    sqlite.slowly({ clock, takesMs: 3_000 });
+    const states: [string, number, number][] = [];
+    for (let poll = 0; poll < 6; poll += 1) {
+      clock.advance(2_000);
+      const { polled, took, runs } = await pollWithin(adapter, sqlite, clock);
+      expect(took).toBeLessThanOrEqual(READ_BUDGET_MS);
+      states.push([polled.health.state, polled.sessions.length, runs.length]);
+      if (polled.health.state === "error") {
+        expect(polled.health.detail).toBe(
+          "sqlite3 could not read Hermes Agent's database, ~/.hermes/state.db, so no Hermes Agent sessions are listed. Agent Lookout tries again when it changes, or 10 seconds on.",
+        );
+      }
+      // Quick again once it has failed.
+      if (poll === 0) sqlite.slowly(undefined);
+    }
+    expect(states).toEqual([
+      // The probe has the whole 5 seconds, and the query the 2 left after it.
+      ["error", 0, 2],
+      // The next polls start 7 and 9 seconds after that poll did: not due.
+      ["error", 0, 0],
+      ["error", 0, 0],
+      // 11 seconds after, it is asked again, and read.
+      ["ok", 2, 2],
+      ["ok", 2, 0],
+      ["ok", 2, 0],
+    ]);
+  });
+
+  test("the next poll starts with the profile the last one ran out of time at, so one slow profile cannot keep another from ever being read", async () => {
+    const { files, sqlite } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    // Each run takes 2 seconds, so a read takes 4, and both databases change before every poll.
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const queried: (string | null)[][] = [];
+    for (let poll = 0; poll < 4; poll += 1) {
+      writeRollbackDatabase(files, DEFAULT_DATABASE);
+      writeRollbackDatabase(files, PROFILE_DATABASE);
+      const { polled, took, runs } = await pollWithin(adapter, sqlite, clock);
+      expect(took).toBe(READ_BUDGET_MS);
+      expect(polled.health).toMatchObject({ state: "ok", detail: HEALTHY });
+      queried.push(runs.filter((run) => run.kind === "query").map((run) => run.database));
+      clock.advance(2_000);
+    }
+    expect(queried).toEqual([
+      [DEFAULT_DATABASE],
+      [PROFILE_DATABASE],
+      [DEFAULT_DATABASE],
+      [PROFILE_DATABASE],
+    ]);
+  });
+
+  test("a clock set back while the reads run gives no run of sqlite3 more than its own 5 seconds", async () => {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    // Each probe and query sets the clock back a minute, so more than 5 seconds seem left.
+    const sqlite = standInSqlite(
+      {
+        [DEFAULT_DATABASE]: [answerRow({ id: A })],
+        [PROFILE_DATABASE]: [answerRow({ id: B, title: "Write the notes" })],
+      },
+      { onRun: () => clock.advance(-MINUTE) },
+    );
+    sqlite.install("/usr/bin/sqlite3", "3.51.0");
+    sqlite.install(KEG, "3.53.0");
+    const { health, sessions } = await hermesAgentAdapterFor(files, sqlite, {
+      now: clock.now,
+    }).poll();
+    expect(health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(sessions).toHaveLength(2);
+    expect(clock.now()).toBe(NOW - 4 * MINUTE);
+    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["version", SQLITE_TIMEOUT_MS],
+      ["version", SQLITE_TIMEOUT_MS],
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", SQLITE_TIMEOUT_MS],
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", SQLITE_TIMEOUT_MS],
+    ]);
+  });
+
+  test("a poll with time to spare gives every run of sqlite3 its whole 5 seconds", async () => {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    const sqlite = standInSqlite({
+      [DEFAULT_DATABASE]: [answerRow({ id: A })],
+      [PROFILE_DATABASE]: [answerRow({ id: B, title: "Write the notes" })],
+    });
+    sqlite.install("/usr/bin/sqlite3", "3.51.0");
+    sqlite.install(KEG, "3.53.0");
+    // The clock does not move.
+    const { health, sessions } = await hermesAgentAdapterFor(files, sqlite).poll();
+    expect(health.state).toBe("ok");
+    expect(sessions).toHaveLength(2);
+    expect(SQLITE_TIMEOUT_MS).toBe(5_000);
+    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["version", SQLITE_TIMEOUT_MS],
+      ["version", SQLITE_TIMEOUT_MS],
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", SQLITE_TIMEOUT_MS],
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", SQLITE_TIMEOUT_MS],
+    ]);
   });
 
   test("never opens a file of Hermes Agent's but the first 20 bytes of each database, nor looks at any but the root, its profiles and their three database files", async () => {

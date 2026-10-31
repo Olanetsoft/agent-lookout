@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { runSqlite } from "@collector/adapters/antigravity/app/summaries";
+import { runSqlite, SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
 import { BASIS, createHermesAgentAdapter } from "@collector/adapters/hermes-agent/index";
 import { parsePidNamespace } from "@collector/adapters/hermes-agent/processes";
 import {
@@ -18,6 +18,7 @@ import { createSqliteFinder } from "@collector/adapters/hermes-agent/sqlite";
 import { nodeIo, type OpenFile, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import type { Session } from "@core/sessions/session";
 import {
+  databaseHeader,
   FOLDER,
   messageRow,
   MINUTE,
@@ -30,7 +31,7 @@ import {
   sessionRow,
   TIP_FOLDER,
 } from "@tests/fixtures/hermes-agent/hermesAgent";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // The adapter end to end, with the real sqlite3, the real signal 0 and, on
 // Linux, the real /proc/self/ns/pid, on a copy of
@@ -175,7 +176,7 @@ function adapterFor(root: string, now: number) {
     homeDir: "/Users/example",
     now: () => now,
     io,
-    run: (binary, args) => (runs.push(args), runSqlite(binary, args)),
+    run: (binary, args, timeoutMs) => (runs.push(args), runSqlite(binary, args, timeoutMs)),
   });
   return { adapter, calls, reads, runs };
 }
@@ -393,3 +394,41 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
     ).toBe("working");
   });
 });
+
+// A stand-in sqlite3 that never answers is a POSIX sh script, which Windows cannot run.
+describe.skipIf(process.platform === "win32")(
+  "the Hermes Agent adapter, with a sqlite3 that never answers",
+  () => {
+    test("stops it at its own 5 seconds as a poll's first run, however little time the reads have, says sqlite3 could not read the database, and does not run it again on the next poll", async () => {
+      const root = await tempDir();
+      await writeFile(path.join(root, "state.db"), databaseHeader("rollback"));
+      const stub = await writeStub("exec /bin/sleep 30");
+      const runs: number[] = [];
+      const adapter = createHermesAgentAdapter({
+        env: { AGENT_LOOKOUT_HERMES_HOME: root },
+        homeDir: "/Users/example",
+        finder: createSqliteFinder({ locations: [stub] }),
+        run: (binary, args, timeoutMs) => (
+          runs.push(timeoutMs ?? -1),
+          runSqlite(binary, args, timeoutMs)
+        ),
+        readBudgetMs: 1_000,
+      });
+      const from = Date.now();
+      const polled = await adapter.poll();
+      const elapsed = Date.now() - from;
+      // Stopped at its own 5 seconds, not at the second the reads had, and not at 30.
+      expect(runs).toEqual([SQLITE_TIMEOUT_MS]);
+      expect(elapsed).toBeGreaterThanOrEqual(SQLITE_TIMEOUT_MS - 100);
+      expect(elapsed).toBeLessThan(15_000);
+      const detail = `sqlite3 could not read Hermes Agent's database, ${path.join(root, "state.db")}, so no Hermes Agent sessions are listed. Agent Lookout tries again when it changes, or 10 seconds on.`;
+      expect(polled.health).toMatchObject({ state: "error", detail });
+      expect(polled.sessions).toEqual([]);
+
+      // Not due again for 10 seconds, so the next poll runs nothing and says the same.
+      const next = await adapter.poll();
+      expect(runs).toHaveLength(1);
+      expect(next.health).toMatchObject({ state: "error", detail });
+    }, 20_000);
+  },
+);

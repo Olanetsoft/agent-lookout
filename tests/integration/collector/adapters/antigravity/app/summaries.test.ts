@@ -15,7 +15,7 @@ import {
 } from "@collector/adapters/antigravity/app/summaries";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import { conversationId, NOW, PRIVATE_WORDS, workspaceUris } from "@tests/fixtures/antigravity";
-import { tempDir } from "@tests/support/node/tempFiles";
+import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // The real sqlite3 is run, as the adapter runs it, on a database this test
 // writes by hand with that same sqlite3, laid out as Antigravity 2.0's list of
@@ -187,6 +187,36 @@ describe.skipIf(process.platform === "win32")("runSqlite, against stand-in progr
     const elapsed = Date.now() - started;
     expect(elapsed).toBeGreaterThanOrEqual(SQLITE_TIMEOUT_MS - 100);
     // Far short of the 30 seconds the program wanted.
+    expect(elapsed).toBeLessThan(15_000);
+  }, 20_000);
+
+  test("stops a program sooner when given a shorter timeout", async () => {
+    const started = Date.now();
+    expect(await runSqlite("/bin/sleep", ["30"], 300)).toEqual({ ok: false });
+    expect(Date.now() - started).toBeLessThan(SQLITE_TIMEOUT_MS - 1_000);
+  });
+
+  test("starts nothing for a timeout under a millisecond, which execFile would take as none", async () => {
+    const started = path.join(await tempDir(), "started");
+    const stub = await writeStub(`touch '${started}'`);
+    for (const timeout of [0, 0.5, -1, Number.NaN]) {
+      expect(await runSqlite(stub, [], timeout), String(timeout)).toEqual({ ok: false });
+    }
+    await expect(lstat(started)).rejects.toMatchObject({ code: "ENOENT" });
+    // Given its usual timeout, the same program runs.
+    expect(await runSqlite(stub, [])).toEqual({ ok: true, stdout: "" });
+    expect((await lstat(started)).isFile()).toBe(true);
+  });
+
+  test("never lets a program run longer than 5 seconds, whatever longer timeout it is given", async () => {
+    const started = Date.now();
+    const answers = await Promise.all(
+      [60_000, Number.POSITIVE_INFINITY].map((timeout) => runSqlite("/bin/sleep", ["30"], timeout)),
+    );
+    expect(answers).toEqual([{ ok: false }, { ok: false }]);
+    const elapsed = Date.now() - started;
+    // Stopped at 5 seconds, not at once and not at 30.
+    expect(elapsed).toBeGreaterThanOrEqual(SQLITE_TIMEOUT_MS - 100);
     expect(elapsed).toBeLessThan(15_000);
   }, 20_000);
 });

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { runSqlite } from "@collector/adapters/antigravity/app/summaries";
+import { runSqlite, SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
 import {
   createSqliteFinder,
   HERMES_SQLITE_LOCATIONS,
@@ -51,6 +51,22 @@ describe.skipIf(process.platform === "win32")("the adapter's own finder", () => 
       "/dev/null",
       "--version",
     ]);
+  });
+
+  test("gives the program it asks its version, after a poll's first run, no more than the time left, so one that hangs is stopped then, and nothing of it is kept", async () => {
+    const stub = await writeStub("exec /bin/sleep 30");
+    const finder = createSqliteFinder({ locations: [stub] });
+    const from = Date.now();
+    const deadline = from + 1_000;
+    const time = { left: () => deadline - Date.now(), started: true };
+    expect(await finder.pick("wal-safe", time)).toEqual({
+      kind: "out-of-time",
+    });
+    const elapsed = Date.now() - from;
+    // Stopped at the second it was given, not at once and not at its own 5.
+    expect(elapsed).toBeGreaterThanOrEqual(900);
+    expect(elapsed).toBeLessThan(SQLITE_TIMEOUT_MS - 1_000);
+    expect(finder.lastWalSafe()).toBeNull();
   });
 });
 
