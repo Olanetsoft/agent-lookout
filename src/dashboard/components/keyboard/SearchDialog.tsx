@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { Session } from "@core/sessions/session";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
+import { wrapTab } from "@dashboard/lib/dom/dialogFocus";
 import { formatShortDuration, shortDurationInWords } from "@dashboard/lib/format";
 import { searchSessions } from "@dashboard/lib/sessions/search";
 import { isAnswered, rowLook } from "@dashboard/lib/sessions/sessions";
@@ -337,7 +338,10 @@ function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
  * header's button. It is the system's dialog: floating glass with blur over a
  * flat scrim, built on Radix Dialog as the history dialog is, so it holds
  * focus, closes on Escape and on a click outside, and gives focus back to what
- * had it.
+ * had it. As there, Tab and Shift+Tab go round its controls and bring the one
+ * they come to into view, and Shift+Tab from the dialog itself, which a click
+ * on its plain text focuses, goes to its last control, as it does from the
+ * field.
  *
  * Choosing a session closes it first, and what the choice does follows once it
  * has gone, from the page: a Jump is pressed on the session's own row, and a
@@ -401,6 +405,7 @@ export function SearchDialog({
               if (next === "shortcuts") onShortcuts();
             }}
             onKeyDown={(event) => {
+              wrapTab(event);
               // "?" asks for the shortcuts, unless it is being typed into a search.
               const typed = event.target instanceof HTMLInputElement && event.target.value !== "";
               if (event.key !== "?" || typed) return;

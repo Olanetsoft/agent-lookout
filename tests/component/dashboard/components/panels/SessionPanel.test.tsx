@@ -486,6 +486,93 @@ test("Escape and the close button ask to close it, and closing gives focus back 
   row.remove();
 });
 
+test("Shift+Tab from the title, where focus starts, goes to the last control, and on from there", async () => {
+  await renderPanel(CLAUDE_ID);
+  const panel = dialog("checkout-flow");
+  const title = panel.getByRole("heading", { name: "checkout-flow", exact: true });
+  const jump = page.getByRole("link", { name: "Jump to checkout-flow in VS Code" });
+  await expect.element(title).toHaveFocus();
+
+  // Off the title, to the control from which Tab goes round to the first, Jump.
+  await userEvent.tab({ shift: true });
+  const last = document.activeElement as HTMLElement;
+  expect(panel.element().contains(last)).toBe(true);
+  expect(last).not.toBe(title.element());
+  expect(last.matches(":focus-visible")).toBe(true);
+  await userEvent.tab();
+  await expect.element(jump).toHaveFocus();
+
+  // From Jump back round to the last, then on to the control before it.
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(last);
+  await userEvent.tab({ shift: true });
+  expect(panel.element().contains(document.activeElement)).toBe(true);
+  expect(document.activeElement).not.toBe(last);
+  expect(document.activeElement).not.toBe(title.element());
+});
+
+test("in details taller than the window, Tab and Shift+Tab going round bring Jump and the last control into view", async () => {
+  await page.viewport(1000, 600);
+  await renderPanel(CLAUDE_ID);
+  const panel = dialog("checkout-flow");
+  const jump = page.getByRole("link", { name: "Jump to checkout-flow in VS Code" });
+  await expect
+    .element(panel.getByRole("heading", { name: "checkout-flow", exact: true }))
+    .toHaveFocus();
+  // Once it has risen into place, so what is measured is where it stays.
+  await Promise.all(
+    panel
+      .element()
+      .getAnimations()
+      .map((animation) => animation.finished),
+  );
+  expect(panel.element().getBoundingClientRect().height).toBeGreaterThan(window.innerHeight);
+  const inView = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= window.innerHeight;
+  };
+
+  await userEvent.tab({ shift: true });
+  const last = document.activeElement as HTMLElement;
+  expect(inView(last)).toBe(true);
+  expect(inView(jump.element())).toBe(false);
+  await userEvent.tab();
+  await expect.element(jump).toHaveFocus();
+  expect(inView(jump.element())).toBe(true);
+  expect(inView(last)).toBe(false);
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(last);
+  expect(inView(last)).toBe(true);
+});
+
+test("Shift+Tab from what Stop came to, which has focus once it is said, steps back to the control before it, not round to the last", async () => {
+  setApiHost(lastMessageHost(undefined, async () => json({ ok: true })));
+  await renderPanel(CLAUDE_ID, withClaude({ stop: { how: "signal" } }));
+  await userEvent.click(page.getByRole("button", { name: "Stop checkout-flow" }));
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+  const outcome = page.getByRole("status").filter({ hasText: "Stopped." });
+  await expect.element(outcome).toHaveFocus();
+
+  // The line sits under the head, after its controls, so Shift+Tab is the browser's own.
+  await userEvent.tab({ shift: true });
+  await expect
+    .element(dialog("checkout-flow").getByRole("button", { name: "Close" }))
+    .toHaveFocus();
+});
+
+test("Tab from the title, where focus starts, still goes to Jump", async () => {
+  await renderPanel(CLAUDE_ID);
+  const panel = dialog("checkout-flow");
+  await expect
+    .element(panel.getByRole("heading", { name: "checkout-flow", exact: true }))
+    .toHaveFocus();
+
+  await userEvent.tab();
+  await expect
+    .element(page.getByRole("link", { name: "Jump to checkout-flow in VS Code" }))
+    .toHaveFocus();
+});
+
 test.each([
   ["dark", 1440],
   ["dark", 375],

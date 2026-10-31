@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- Shift+Tab moves on from a dialog's title and from the dialog itself. In a session's details, where focus starts on the title, and in any dialog after a click on its plain text, such as What this counts under a history chart or the line under the search's list, Shift+Tab left focus where it was, and pressing it again kept it there. It now goes to the dialog's last control, as it does from the first. In a dialog taller than the window, such as a long session's details, Tab from the last control and Shift+Tab from the first now scroll the control they go round to into view, where before it could be out of sight (#221).
+
 ## 0.2.15 - 2026-10-30
 
 Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.

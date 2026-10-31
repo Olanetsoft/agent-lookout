@@ -3,6 +3,7 @@ import { Dialog } from "radix-ui";
 import { useRef, type ReactNode } from "react";
 
 import { Button } from "@dashboard/components/ui/controls/Button";
+import { wrapTab } from "@dashboard/lib/dom/dialogFocus";
 import { cn } from "@dashboard/lib/utils";
 
 const SIZES = {
@@ -41,6 +42,13 @@ interface DetailsModalProps {
  * the deepest shadow and the panel's 24px corners, over a flat scrim. Radix
  * Dialog does the hard parts: it traps focus and closes on Escape and on a
  * click outside.
+ *
+ * Tab and Shift+Tab go round its controls here rather than in the trap, which
+ * focuses without scrolling, so a long dialog's control they come to is
+ * brought into view. And the trap wraps Shift+Tab only from the first control,
+ * so Shift+Tab from the title, where `focusTitle` puts focus, or from the
+ * dialog itself, which a click on plain text focuses, goes round to the last
+ * control here, as it does from the first.
  *
  * Radix returns focus to a `Dialog.Trigger`, and this dialog has none: a count
  * opens it from its own button. So the dialog remembers what had focus when it
@@ -83,6 +91,7 @@ export function DetailsModal({
               SIZES[size],
             )}
             {...(description ? {} : { "aria-describedby": undefined })}
+            onKeyDown={wrapTab}
             onOpenAutoFocus={(event) => {
               // Focus has not moved into the dialog yet, so this is still the opener.
               opener.current =
