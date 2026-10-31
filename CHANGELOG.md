@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- In the Mac app, with Keep the Mac awake on, Settings says whether the Mac is being kept awake now, and names the sessions that keep it awake, on this Mac and on the other machines Agent Lookout watches, by the rule the app goes by: "The Mac is being kept awake now, by checkout-flow, docs-site and api-tests on devbox." It follows a session that starts or stops counting within a poll or two, without leaving Settings, and says so when the app could not keep the Mac awake, rather than look as if it works. The app keeps nothing more about sessions than before: Settings works out which count from the sessions the page already has (#201).
+
 ### Fixed
 
 - Shift+Tab moves on from a dialog's title and from the dialog itself. In a session's details, where focus starts on the title, and in any dialog after a click on its plain text, such as What this counts under a history chart or the line under the search's list, Shift+Tab left focus where it was, and pressing it again kept it there. It now goes to the dialog's last control, as it does from the first. In a dialog taller than the window, such as a long session's details, Tab from the last control and Shift+Tab from the first now scroll the control they go round to into view, where before it could be out of sight (#221).

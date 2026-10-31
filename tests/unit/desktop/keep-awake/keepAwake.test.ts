@@ -40,6 +40,9 @@ const snapshot = (sessions: Session[], generatedAt = NOW) => ({ generatedAt, ses
 const counting = () => snapshot([makeSession({ status: "needs-you" })]);
 const quiet = () => snapshot([makeSession({ status: "idle" })]);
 
+/** The status, with nothing held and nothing failed unless said. */
+const statusOf = (on: boolean, holding = false, failed = false) => ({ on, holding, failed });
+
 function keepAwake(on: boolean) {
   const { blocker, held } = fakeBlocker();
   const settings = memoryStore(on);
@@ -53,7 +56,7 @@ describe("with the switch off", () => {
     const { awake, blocker } = keepAwake(false);
     for (let i = 0; i < 5; i++) awake.follow(counting());
     expect(blocker.start).not.toHaveBeenCalled();
-    expect(awake.status()).toEqual({ on: false });
+    expect(awake.status()).toEqual(statusOf(false));
   });
 });
 
@@ -84,6 +87,15 @@ describe("with the switch on", () => {
     expect(blocker.stop).toHaveBeenCalledOnce();
   });
 
+  test("says it holds the Mac awake while it holds the blocker, and not once it has let go", () => {
+    const { awake } = keepAwake(true);
+    expect(awake.status()).toEqual(statusOf(true));
+    awake.follow(counting());
+    expect(awake.status()).toEqual(statusOf(true, true));
+    awake.follow(quiet());
+    expect(awake.status()).toEqual(statusOf(true));
+  });
+
   test("a working session lets go once its last write is 30 minutes old", () => {
     const { awake, blocker, held } = keepAwake(true);
     // An agent whose writes are measured: a Claude Code session would count while listed.
@@ -107,11 +119,11 @@ describe("turning the switch", () => {
     awake.follow(counting());
     expect(held.size).toBe(1);
 
-    expect(awake.setOn(false)).toEqual({ on: false });
+    expect(awake.setOn(false)).toEqual(statusOf(false));
     expect(held.size).toBe(0);
     expect(blocker.stop).toHaveBeenCalledOnce();
     expect(settings.write).toHaveBeenLastCalledWith({ on: false });
-    expect(awake.status()).toEqual({ on: false });
+    expect(awake.status()).toEqual(statusOf(false));
 
     // Nothing is taken while it is off.
     awake.follow(counting());
@@ -123,7 +135,8 @@ describe("turning the switch", () => {
     awake.follow(counting());
     expect(blocker.start).not.toHaveBeenCalled();
 
-    expect(awake.setOn(true)).toEqual({ on: true });
+    // It says so in its answer, as the hold is taken.
+    expect(awake.setOn(true)).toEqual(statusOf(true, true));
     expect(blocker.start).toHaveBeenCalledExactlyOnceWith("prevent-app-suspension");
     expect(held.size).toBe(1);
     expect(settings.write).toHaveBeenLastCalledWith({ on: true });
@@ -142,7 +155,7 @@ describe("turning the switch", () => {
 
   test("reads the switch from the store once, as it is made", () => {
     const { awake, settings } = keepAwake(true);
-    expect(awake.status()).toEqual({ on: true });
+    expect(awake.status()).toEqual(statusOf(true));
     awake.follow(counting());
     awake.status();
     expect(settings.read).toHaveBeenCalledOnce();
@@ -194,6 +207,43 @@ describe("a blocker that fails", () => {
     awake.follow(counting());
     expect(blocker.start).toHaveBeenCalledTimes(3);
     expect(held.size).toBe(1);
+  });
+
+  test("to start says so in the status while a session counts, and no longer once it is taken or none counts", () => {
+    const { awake, blocker } = keepAwake(true);
+    blocker.start.mockImplementation(() => {
+      throw new Error("no assertion");
+    });
+    awake.follow(counting());
+    expect(awake.status()).toEqual(statusOf(true, false, true));
+    awake.follow(counting());
+    expect(awake.status()).toEqual(statusOf(true, false, true));
+
+    // Nothing counts: nothing is wanted, so nothing has failed.
+    awake.follow(quiet());
+    expect(awake.status()).toEqual(statusOf(true));
+
+    awake.follow(counting());
+    expect(awake.status()).toEqual(statusOf(true, false, true));
+    // Turned off, nothing is wanted either.
+    expect(awake.setOn(false)).toEqual(statusOf(false));
+
+    blocker.start.mockReset();
+    blocker.start.mockReturnValue(9);
+    expect(awake.setOn(true)).toEqual(statusOf(true, true));
+  });
+
+  test("to start again after a time it was not wanted is told of again", () => {
+    const { awake, blocker, warn } = keepAwake(true);
+    blocker.start.mockImplementation(() => {
+      throw new Error("no assertion");
+    });
+    awake.follow(counting());
+    awake.follow(counting());
+    expect(warn).toHaveBeenCalledOnce();
+    awake.follow(quiet());
+    awake.follow(counting());
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   test("to stop is told of, and the blocker is taken as let go", () => {

@@ -295,10 +295,10 @@ describe("the app's own scheme", () => {
     const keepAwake = () => {
       let on = false;
       return {
-        status: vi.fn(() => ({ on })),
+        status: vi.fn(() => ({ on, holding: false, failed: false })),
         setOn: vi.fn((next: boolean) => {
           on = next;
-          return { on };
+          return { on, holding: false, failed: false };
         }),
       };
     };
@@ -319,11 +319,11 @@ describe("the app's own scheme", () => {
       const serve = createAppProtocolHandler({ api: collectorApi(), app, distDir: dist });
       const read = await serve(from(STATUS_URL, APP_ORIGIN));
       expect(read.status).toBe(200);
-      expect(await read.json()).toEqual({ on: false });
+      expect(await read.json()).toEqual({ on: false, holding: false, failed: false });
 
       const answer = await serve(turn(APP_ORIGIN, true));
       expect(answer.status).toBe(200);
-      expect(await answer.json()).toEqual({ on: true });
+      expect(await answer.json()).toEqual({ on: true, holding: false, failed: false });
       expect(awake.setOn).toHaveBeenCalledExactlyOnceWith(true);
 
       // Another page's request never reaches it.

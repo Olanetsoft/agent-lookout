@@ -3,16 +3,21 @@ import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { ACTION_HEADER } from "@core/api";
-import { KeepAwakeCard } from "@dashboard/components/settings/app/KeepAwakeCard";
+import type { Session, SourceHealth } from "@core/sessions/session";
+import { KeepAwakeCard, NAMED_SESSIONS } from "@dashboard/components/settings/app/KeepAwakeCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { assistivePress } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
+import { makeSession } from "@tests/fixtures/session";
 
 const READ = "/api/app/keep-awake";
 const SETTING = "/api/app/keep-awake/setting";
 
 /** Whether the switch is on, as `GET /api/app/keep-awake` would say. Off on first launch. */
 let on: boolean;
+/** Whether the app says it holds the Mac awake, or could not, while the switch is on. */
+let holding: boolean;
+let failed: boolean;
 /** Each request the card made: its path, method, action and body. */
 let asked: { path: string; method: string; action: string | null; body: string | null }[];
 /** Whether the app answers at all. */
@@ -33,8 +38,13 @@ const json = (status: number, body: unknown) =>
     headers: { "Content-Type": "application/json" },
   });
 
+/** What the app says, from where the switch stands and what it holds. */
+const status = () => ({ on, holding: on && holding, failed: on && failed });
+
 beforeEach(() => {
   on = false;
+  holding = false;
+  failed = false;
   asked = [];
   answering = true;
   readAnswer = undefined;
@@ -54,7 +64,7 @@ beforeEach(() => {
       if (settingAnswer !== undefined) return json(settingAnswer.status, settingAnswer.body);
       on = (JSON.parse(body ?? "{}") as { on: boolean }).on;
     }
-    return json(200, { on });
+    return json(200, status());
   });
 });
 
@@ -167,7 +177,7 @@ test("focus moving onto On, as a screen reader's cursor can carry it, tells the 
 });
 
 test("the switch follows what the app answers, not what was pressed", async () => {
-  settingAnswer = { status: 200, body: { on: false } };
+  settingAnswer = { status: 200, body: { on: false, holding: false, failed: false } };
   const screen = await render(<KeepAwakeCard />);
   await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
   await screen.getByRole("radio", { name: "On" }).click();
@@ -228,7 +238,7 @@ test("before the app has answered, the row is empty and keeps its height", async
   });
   setApiHost(async () => {
     await held;
-    return json(200, { on: false });
+    return json(200, status());
   });
   const screen = await render(<KeepAwakeCard />);
   const row = card(screen).element().querySelector('[data-part="row"]') as HTMLElement;
@@ -283,5 +293,225 @@ test.each(["dark", "light"] as const)(
     } finally {
       document.documentElement.removeAttribute("data-theme");
     }
+  },
+);
+
+const NOW = Date.UTC(2026, 9, 5, 12, 0, 0);
+const MINUTE = 60_000;
+
+/** A source that has been read, so the page's snapshot has counted its sessions. */
+const READ_SOURCE: SourceHealth = {
+  id: "claude-code",
+  label: "Claude Code",
+  state: "ok",
+  checkedAt: NOW,
+};
+
+/** A snapshot of the page's, made at `generatedAt`, from sources that have been read. */
+const snapshotOf = (sessions: Session[], generatedAt = NOW, sources = [READ_SOURCE]) => ({
+  generatedAt,
+  sessions,
+  sources,
+});
+
+/** Sessions the app's rule counts, and some it does not, here and on another machine. */
+const SESSIONS: Session[] = [
+  makeSession({ id: "claude-code:a", name: "checkout-flow", status: "needs-you" }),
+  makeSession({ id: "claude-code:b", name: "nightly-report", status: "idle" }),
+  makeSession({
+    id: "gemini-cli:c",
+    source: "gemini-cli",
+    name: "docs-site",
+    status: "working",
+    lastWriteAt: NOW - 5 * MINUTE,
+  }),
+  // Quiet for more than 30 minutes, so it no longer counts.
+  makeSession({
+    id: "gemini-cli:d",
+    source: "gemini-cli",
+    name: "old-migration",
+    status: "working",
+    lastWriteAt: NOW - 45 * MINUTE,
+  }),
+  makeSession({
+    id: "remote:devbox:claude-code:e",
+    source: "remote:devbox",
+    machine: "devbox",
+    name: "api-tests",
+    status: "needs-you",
+  }),
+];
+
+const nowLine = (screen: Screen) =>
+  card(screen).element().querySelector<HTMLElement>('[data-part="now"]');
+
+test("with the switch on and the Mac kept awake, it says so and names the sessions that count, here and on another machine", async () => {
+  on = true;
+  holding = true;
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(SESSIONS)} />);
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "The Mac is being kept awake now, by checkout-flow, docs-site and api-tests on devbox.",
+    ),
+  );
+  // Under the switch, before what it does.
+  const row = card(screen).element().querySelector('[data-part="row"]') as HTMLElement;
+  expect(row.nextElementSibling).toBe(nowLine(screen));
+});
+
+test(`it names the first ${NAMED_SESSIONS} sessions that count, and counts the rest`, async () => {
+  on = true;
+  holding = true;
+  const many = ["one", "two", "three", "four", "five"].map((name) =>
+    makeSession({ id: `claude-code:${name}`, name, status: "needs-you" }),
+  );
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(many)} />);
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "The Mac is being kept awake now, by one, two, three and 2 more.",
+    ),
+  );
+});
+
+test("with the switch on and no session that counts, it says the Mac can sleep as usual", async () => {
+  on = true;
+  const screen = await render(
+    <KeepAwakeCard snapshot={snapshotOf([makeSession({ status: "idle" })])} />,
+  );
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "No session keeps the Mac awake now, so it can go to sleep as usual.",
+    ),
+  );
+});
+
+test("when the app could not keep the Mac awake, it says so rather than look as if it works", async () => {
+  on = true;
+  failed = true;
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(SESSIONS)} />);
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "The Mac could not be kept awake, so it can go to sleep as usual. Agent Lookout tries again every few seconds.",
+    ),
+  );
+  expect(nowLine(screen)?.textContent).not.toContain("checkout-flow");
+});
+
+test("while the app holds the Mac awake for a newer snapshot than the page's, which names none, it says so without names", async () => {
+  on = true;
+  holding = true;
+  const screen = await render(
+    <KeepAwakeCard snapshot={snapshotOf([makeSession({ status: "idle" })])} />,
+  );
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe("The Mac is being kept awake now."),
+  );
+});
+
+test("with the switch off, it says nothing of now", async () => {
+  holding = true;
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(SESSIONS)} />);
+  await expect.element(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+  expect(nowLine(screen)).toBeNull();
+});
+
+test("asks the app again with each new snapshot, so the line follows a session that starts or stops counting", async () => {
+  on = true;
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf([])} />);
+  await vi.waitFor(() => expect(nowLine(screen)?.textContent).toContain("No session"));
+  const reads = () => asked.filter((request) => request.path === READ).length;
+  expect(reads()).toBe(1);
+
+  holding = true;
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf(SESSIONS, NOW + 2_000)} />);
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "The Mac is being kept awake now, by checkout-flow, docs-site and api-tests on devbox.",
+    ),
+  );
+  expect(reads()).toBe(2);
+
+  holding = false;
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf([], NOW + 4_000)} />);
+  await vi.waitFor(() => expect(nowLine(screen)?.textContent).toContain("No session"));
+  expect(reads()).toBe(3);
+
+  // The same snapshot drawn again asks nothing more.
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf([], NOW + 4_000)} />);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(reads()).toBe(3);
+});
+
+test("a read again that cannot be read leaves the switch and the line as they were", async () => {
+  on = true;
+  holding = true;
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(SESSIONS)} />);
+  await vi.waitFor(() => expect(nowLine(screen)?.textContent).toContain("checkout-flow"));
+
+  answering = false;
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf(SESSIONS, NOW + 2_000)} />);
+  await vi.waitFor(() => expect(asked.filter((request) => request.path === READ)).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await expect.element(screen.getByRole("radio", { name: "On" })).toBeChecked();
+  expect(nowLine(screen)?.textContent).toContain("checkout-flow");
+  expect(card(screen).element().querySelector('[data-part="state"]')).toBeNull();
+});
+
+test("an answer that comes after a newer one, from a slower read, is left out", async () => {
+  on = true;
+  const held: (() => void)[] = [];
+  let reads = 0;
+  setApiHost(async (path) => {
+    if (path !== READ) return json(200, status());
+    reads += 1;
+    // The second read is slow, and says what was so when it was asked.
+    if (reads === 2) {
+      const then = status();
+      await new Promise<void>((resolve) => held.push(resolve));
+      return json(200, then);
+    }
+    return json(200, status());
+  });
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf([])} />);
+  await vi.waitFor(() => expect(nowLine(screen)?.textContent).toContain("No session"));
+
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf([], NOW + 2_000)} />);
+  await vi.waitFor(() => expect(held).toHaveLength(1));
+  holding = true;
+  await screen.rerender(<KeepAwakeCard snapshot={snapshotOf(SESSIONS, NOW + 4_000)} />);
+  await vi.waitFor(() => expect(nowLine(screen)?.textContent).toContain("checkout-flow"));
+
+  held[0]?.();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(nowLine(screen)?.textContent).toContain("checkout-flow");
+});
+
+test("a working session past its 30 minutes, which the list still shows as Working, does not count, and the line says only that no session keeps the Mac awake", async () => {
+  on = true;
+  const quietTooLong = SESSIONS.filter((session) => session.name === "old-migration");
+  const screen = await render(<KeepAwakeCard snapshot={snapshotOf(quietTooLong)} />);
+  await vi.waitFor(() =>
+    expect(nowLine(screen)?.textContent).toBe(
+      "No session keeps the Mac awake now, so it can go to sleep as usual.",
+    ),
+  );
+  expect(nowLine(screen)?.textContent).not.toMatch(/working/i);
+});
+
+test.each<[string, ReturnType<typeof snapshotOf> | null]>([
+  ["before the page has a snapshot", null],
+  [
+    "while every source is still being read",
+    snapshotOf([], NOW, [{ ...READ_SOURCE, state: "searching" }]),
+  ],
+])(
+  "%s, it says the sessions have not been read yet, not that none counts",
+  async (_when, snapshot) => {
+    on = true;
+    const screen = await render(<KeepAwakeCard snapshot={snapshot} />);
+    await vi.waitFor(() =>
+      expect(nowLine(screen)?.textContent).toBe("Agent Lookout has not read your sessions yet."),
+    );
   },
 );
