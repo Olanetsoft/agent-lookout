@@ -139,3 +139,38 @@ test("Shift+Tab from the chart, clicked with the pointer still on it, goes back 
   await userEvent.tab({ shift: true });
   await expect.element(window15).toHaveFocus();
 });
+
+test.each([
+  { metric: "needsYou", title: "Needs you", chart: "Sessions that need you" },
+  { metric: "working", title: "Working", chart: "Sessions working" },
+  { metric: "idle", title: "Idle", chart: "Idle sessions" },
+] as const)(
+  "in $title, after a click on the words under the chart, Shift+Tab goes to the chart and then to the time window, and Tab to Close",
+  async ({ metric, title, chart: chartLabel }) => {
+    const now = Date.now();
+    await render(
+      <HistoryPanel metric={metric} open onOpenChange={() => {}} now={now} state={state(now)} />,
+    );
+    const dialog = page.getByRole("dialog", { name: title });
+    const close = dialog.getByRole("button", { name: "Close" });
+    const window15 = dialog.getByRole("radio", { name: "15 min" });
+    const chart = dialog.getByRole("slider", { name: new RegExp(`^${chartLabel} over the last`) });
+    const words = dialog.getByText("What this counts");
+    await expect.element(close).toHaveFocus();
+
+    // Plain text takes no focus, so the click puts it on the dialog itself.
+    await words.click();
+    expect(document.activeElement).toBe(dialog.element());
+    expect(dialog.element().getAttribute("data-slot")).toBe("details-modal");
+    await userEvent.tab({ shift: true });
+    await expect.element(chart).toHaveFocus();
+    expect(chart.element().matches(":focus-visible")).toBe(true);
+    await userEvent.tab({ shift: true });
+    await expect.element(window15).toHaveFocus();
+
+    await words.click();
+    expect(document.activeElement).toBe(dialog.element());
+    await userEvent.tab();
+    await expect.element(close).toHaveFocus();
+  },
+);

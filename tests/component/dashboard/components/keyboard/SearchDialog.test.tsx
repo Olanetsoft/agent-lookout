@@ -459,6 +459,39 @@ test("the list is no stop of Tab, and a click in it, between sessions, leaves fo
   expect(litName()).toBe("checkout-flow");
 });
 
+test("Tab from the last control goes round to the field with what is typed in it selected", async () => {
+  await openSearch();
+  await userEvent.keyboard("check");
+  await userEvent.tab();
+  await expect.element(page.getByRole("button", { name: "? for shortcuts" })).toHaveFocus();
+
+  await userEvent.tab();
+  await expect.element(field()).toHaveFocus();
+  expect([field_().selectionStart, field_().selectionEnd]).toEqual([0, 5]);
+});
+
+test("after a click on the words under the list, Shift+Tab goes to the last control, and Tab still to the field", async () => {
+  await openSearch();
+  const hint = part(dialog().element(), "enter");
+  const shortcuts = page.getByRole("button", { name: "? for shortcuts" });
+  expect(hint.textContent).toBe("Enter opens its details");
+
+  // Plain text takes no focus, so the click puts it on the dialog itself.
+  await userEvent.click(hint);
+  expect(document.activeElement).toBe(dialog().element());
+  expect(dialog().element().getAttribute("data-slot")).toBe("search-dialog");
+  await userEvent.tab({ shift: true });
+  await expect.element(shortcuts).toHaveFocus();
+  expect(shortcuts.element().matches(":focus-visible")).toBe(true);
+  await userEvent.tab({ shift: true });
+  await expect.element(field()).toHaveFocus();
+
+  await userEvent.click(hint);
+  expect(document.activeElement).toBe(dialog().element());
+  await userEvent.tab();
+  await expect.element(field()).toHaveFocus();
+});
+
 test("the lit session stays lit when an answer moves the sessions about", async () => {
   const screen = await openSearch();
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");

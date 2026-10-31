@@ -187,3 +187,17 @@ test("it closes on Escape and gives focus back to what opened it", async () => {
   await expect.element(sheet()).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Open shortcuts" })).toHaveFocus();
 });
+
+test("Close is its only control, so Shift+Tab after a click on its words goes to Close, and stays there", async () => {
+  await openSheet();
+  const close = sheet().getByRole("button", { name: "Close" });
+  await expect.element(close).toHaveFocus();
+
+  // Plain text takes no focus, so the click puts it on the sheet itself.
+  await userEvent.click(sheet().getByText("On every view", { exact: true }));
+  expect(document.activeElement).toBe(sheet().element());
+  await userEvent.tab({ shift: true });
+  await expect.element(close).toHaveFocus();
+  await userEvent.tab({ shift: true });
+  await expect.element(close).toHaveFocus();
+});
