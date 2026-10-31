@@ -11,6 +11,7 @@ import { createCollector } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
 import { createSmtpSender } from "@collector/email/smtpSender";
+import type { TailReaderOptions } from "@collector/messages/tailReader";
 import { createCollectorSettings } from "@collector/settings/collectorSettings";
 import { readSettingsSetup } from "@collector/settings/settingsFile";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
@@ -27,6 +28,7 @@ import {
   type EmailStatusResponse,
   type EventsResponse,
   type HistoryResponse,
+  type LastMessageResponse,
   type NtfyStatusResponse,
   type PullRequestsStatusResponse,
   type PushoverStatusResponse,
@@ -38,6 +40,12 @@ import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { readEvents, readHistory, readSnapshot } from "@dashboard/lib/api/readApi";
 import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
+import {
+  conversationId,
+  replyStep,
+  textStep,
+  transcriptPath as agyTranscriptPath,
+} from "@tests/fixtures/antigravity";
 import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
 import {
   agentMessageLine,
@@ -60,7 +68,7 @@ import {
   type SmtpBehaviour,
 } from "@tests/support/channels/smtp";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
-import { adapterFor, prints } from "@tests/support/adapters/claudeCodeAdapter";
+import { adapterFor, noStartTimes, prints } from "@tests/support/adapters/claudeCodeAdapter";
 import {
   CODEX_FIXTURE_HOME,
   makeClaudeHome,
@@ -71,6 +79,23 @@ import {
 import { startWebhookServer } from "@tests/support/channels/webhook";
 import { snapshotThere, waitingThere, workingThere } from "@tests/fixtures/remote";
 import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
+
+/**
+ * Every reader of last messages made, by any adapter, so a test can count the
+ * sessions they keep between them. Each is the real one, untouched.
+ */
+const readersMade = vi.hoisted(() => [] as { readonly size: number }[]);
+vi.mock("@collector/messages/tailReader", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@collector/messages/tailReader")>();
+  return {
+    ...actual,
+    createTailReader: <Target>(options: TailReaderOptions<Target>) => {
+      const reader = actual.createTailReader(options);
+      readersMade.push(reader);
+      return reader;
+    },
+  };
+});
 
 /**
  * A collector built the way every host builds it, with its default adapters,
@@ -2191,6 +2216,169 @@ describe("history kept on disk", () => {
     second.collector.stop();
     expect(await files(dir)).toBe(before);
     expect(await readFile(path.join(dir, "writer.lock"), "utf8")).toContain(String(process.ppid));
+  });
+});
+
+describe("the last messages of every agent, under one set of limits", () => {
+  /** Writes a file and sets its modified time. */
+  async function put(file: string, content: string, mtimeMs: number) {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, content);
+    await utimes(file, mtimeMs / 1000, mtimeMs / 1000);
+  }
+
+  /** A conversation of the Antigravity CLI or a chat of Antigravity whose newest reply says this, written a minute ago. */
+  async function putConversation(home: string, id: string, reply: string) {
+    await put(
+      agyTranscriptPath(home, id),
+      [
+        textStep(0, "USER_INPUT", NOW - 2 * MINUTE, "Tidy the docs"),
+        replyStep({ index: 1, at: NOW - MINUTE, content: reply }),
+      ].join(""),
+      NOW - MINUTE,
+    );
+  }
+
+  /** A Codex session open in Codex whose newest reply says this. */
+  async function putThread(home: string, thread: string, reply: string) {
+    await mkdir(path.join(home, "thread-writer-locks"), { recursive: true });
+    await writeFile(path.join(home, "thread-writer-locks", `${thread}.lock`), "");
+    const file = rolloutPath(home, "2026-10-01T09-00-00", thread);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(
+      file,
+      rollout(
+        metaLine(NOW - 30 * MINUTE, { id: thread, cwd: "/Users/example/code/demo-api" }),
+        messageLine(NOW - 20 * MINUTE, "Tidy the docs"),
+        turnLine(NOW - 20 * MINUTE, "task_started"),
+        agentMessageLine(NOW - 19 * MINUTE, reply),
+        replyLine(NOW - 19 * MINUTE, reply),
+      ),
+    );
+  }
+
+  test("Claude Code, Codex, the Antigravity CLI and Antigravity read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+    // Two live Claude Code sessions, in this test's own process and the one that started it.
+    const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
+    const claudeHome = await makeClaudeHome({
+      [`${process.pid}.json`]: registryFile({ pid: process.pid, sessionId: claude[0] }),
+      [`${process.ppid}.json`]: registryFile({
+        pid: process.ppid,
+        sessionId: claude[1],
+        name: "demo-project-two",
+      }),
+    });
+    const folder = path.join(claudeHome, "projects", "-Users-example-code-demo");
+    await mkdir(folder, { recursive: true });
+    for (const [index, id] of claude.entries()) {
+      await writeFile(
+        path.join(folder, `${id}.jsonl`),
+        transcript([prompt("Tidy the docs"), said(`Claude Code reply ${index + 1}.`)]),
+      );
+    }
+    // Three Codex sessions, the third for one more session than are kept.
+    const codex = [
+      "00000000-0000-4000-8000-0000000000d1",
+      "00000000-0000-4000-8000-0000000000d2",
+      "00000000-0000-4000-8000-0000000000d3",
+    ];
+    const codexHome = await makeCodexHome();
+    for (const [index, thread] of codex.entries()) {
+      await putThread(codexHome, thread, `Codex reply ${index + 1}.`);
+    }
+    const cli = [conversationId("e1"), conversationId("e2")];
+    const cliHome = await tempDir();
+    for (const [index, id] of cli.entries()) {
+      await putConversation(cliHome, id, `Antigravity CLI reply ${index + 1}.`);
+    }
+    const app = [conversationId("f1"), conversationId("f2")];
+    const appHome = path.join(await tempDir(), "antigravity");
+    for (const [index, id] of app.entries()) {
+      await putConversation(appHome, id, `Antigravity reply ${index + 1}.`);
+    }
+
+    let at = NOW;
+    const made = readersMade.length;
+    const collector = createCollector({
+      version: "9.9.9-test",
+      env: {
+        AGENT_LOOKOUT_HISTORY: "off",
+        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+        AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
+        AGENT_LOOKOUT_CODEX_HOME: codexHome,
+        AGENT_LOOKOUT_ANTIGRAVITY_HOME: cliHome,
+        AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: appHome,
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
+        AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
+        AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
+        AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
+        AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
+        AGENT_LOOKOUT_TMUX: "off",
+        AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+        AGENT_LOOKOUT_STOP: "off",
+        AGENT_LOOKOUT_ANSWER: "off",
+      },
+      notifier: fakeSystemNotifier(),
+      readProcessStarts: noStartTimes,
+      now: () => at,
+      intervalMs: 1_000_000_000,
+    });
+    onTestFinished(() => collector.stop());
+    const port = await listen(createServer(collector.handler));
+    await collector.poller.pollOnce();
+    at += 2_000;
+    await collector.poller.pollOnce();
+
+    const sessions = {
+      claude: claude.map((id) => `claude-code:${id}`),
+      codex: codex.map((id) => `codex:${id}`),
+      cli: cli.map((id) => `antigravity-cli:${id}`),
+      app: app.map((id) => `antigravity-app:${id}`),
+    };
+    const listed = collector.poller.getSnapshot().sessions.map((session) => session.id);
+    expect(listed).toEqual(expect.arrayContaining(Object.values(sessions).flat()));
+
+    const ask = async (id: string) => {
+      const response = await request(port, `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(id)}`);
+      if (response.status === 429) return { busy: response.headers["retry-after"] };
+      expect([id, response.status]).toEqual([id, 200]);
+      return response.json<LastMessageResponse>().message?.text;
+    };
+    /** The sessions every reader keeps, all of them together. */
+    const kept = () => readersMade.slice(made).reduce((count, reader) => count + reader.size, 0);
+    const firsts = [sessions.claude[0], sessions.codex[0], sessions.cli[0], sessions.app[0]];
+    const seconds = [sessions.claude[1], sessions.codex[1], sessions.cli[1], sessions.app[1]];
+
+    // Four reads in a second, one for each agent, and then none for any of them.
+    const first = [];
+    for (const id of firsts) first.push(await ask(id ?? ""));
+    expect(first).toEqual([
+      "Claude Code reply 1.",
+      "Codex reply 1.",
+      "Antigravity CLI reply 1.",
+      "Antigravity reply 1.",
+    ]);
+    const fifth = [];
+    for (const id of seconds) fifth.push(await ask(id ?? ""));
+    expect(fifth).toEqual([{ busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }]);
+
+    // A second later each is read.
+    at += 1_000;
+    const later = [];
+    for (const id of seconds) later.push(await ask(id ?? ""));
+    expect(later).toEqual([
+      "Claude Code reply 2.",
+      "Codex reply 2.",
+      "Antigravity CLI reply 2.",
+      "Antigravity reply 2.",
+    ]);
+    expect(kept()).toBe(8);
+
+    // One more session, and the one asked for least recently, whichever agent's it is, makes room for it.
+    at += 1_000;
+    expect(await ask(sessions.codex[2] ?? "")).toBe("Codex reply 3.");
+    expect(kept()).toBe(8);
   });
 });
 
