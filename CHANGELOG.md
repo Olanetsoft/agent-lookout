@@ -12,6 +12,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - On a phone, a session row with Jump or Resume whose process has ended keeps a dozen letters or so of its name in sight. Narrower than about 432px, where the name's line cannot hold that much of the name beside the Process ended badge and the button, the badge goes on a line of its own under the name. Before, from 368px to about 430px, among them the common widths of an iPhone, the badge stayed beside the name and cut it to as few as three letters (#225).
 
+- When the window is resized across 760px, or a phone or a tablet is turned, a session row's Jump or Resume keeps keyboard focus, and a Resume that says Copied keeps saying it for the rest of its two seconds. The row draws its button in one place at 760px and narrower and in another above that, so before, focus fell back to the page and Copied went back to Resume. The command a refused Resume shows to select keeps focus the same way (#208).
+
 ## 0.2.15 - 2026-10-30
 
 Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.

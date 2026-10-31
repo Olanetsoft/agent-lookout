@@ -1,6 +1,9 @@
 /** What a copy came to: the text is on the clipboard, or the page was not let write it. */
 export type CopyOutcome = "copied" | "refused";
 
+/** How long a button that copies says "Copied" after a copy. */
+export const COPIED_MS = 2_000;
+
 /**
  * Puts text on the clipboard, for a press of a button that copies. It never
  * reads the clipboard, and never rejects.

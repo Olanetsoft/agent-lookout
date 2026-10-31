@@ -2,11 +2,8 @@ import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from
 
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
-import { copyText, type CopyOutcome } from "@dashboard/lib/shell/clipboard";
+import { COPIED_MS, copyText, type CopyOutcome } from "@dashboard/lib/shell/clipboard";
 import { cn } from "@dashboard/lib/utils";
-
-/** How long the button's word says "Copied" after a copy. */
-export const COPIED_MS = 2_000;
 
 type CopyButtonProps = Omit<ComponentProps<typeof Button>, "onClick" | "children" | "asChild"> & {
   /** What a press puts on the clipboard. */
@@ -19,6 +16,12 @@ type CopyButtonProps = Omit<ComponentProps<typeof Button>, "onClick" | "children
   refusedSaid: string;
   /** Told what each press came to, so what draws the button can show the text when it was refused. */
   onCopied?: (outcome: CopyOutcome) => void;
+  /**
+   * Whether its word reads "Copied", when what draws it holds that, told by
+   * `onCopied`, so the word stays when the button is drawn again in another
+   * place. Left out, the button holds it itself.
+   */
+  copied?: boolean;
   /** What copies. Defaults to the clipboard. */
   copy?: (text: string) => Promise<CopyOutcome>;
   /** What the button says when pointed at or reached with Tab, such as the text it copies. */
@@ -45,13 +48,15 @@ export function CopyButton({
   copiedSaid,
   refusedSaid,
   onCopied,
+  copied: held,
   copy = copyText,
   tooltip,
   tooltipMono = false,
   className,
   ...props
 }: CopyButtonProps) {
-  const [copied, setCopied] = useState(false);
+  const [own, setCopied] = useState(false);
+  const copied = held ?? own;
   const [said, setSaid] = useState("");
   const underWay = useRef(false);
   const drawn = useRef(true);
