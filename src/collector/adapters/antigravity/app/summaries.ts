@@ -57,7 +57,7 @@ export const SQLITE_LOCATIONS = [
   "/opt/local/bin/sqlite3",
 ] as const;
 
-/** How long `sqlite3` gets. It answers in a few milliseconds. */
+/** The longest `sqlite3` gets. It answers in a few milliseconds. */
 export const SQLITE_TIMEOUT_MS = 5_000;
 
 /** How long after a read that did not work the file is read again, changed or not. */
@@ -144,11 +144,27 @@ export function readFolders(stdout: string): Map<string, string> | null {
 /** What one run of `sqlite3` printed, or `ok: false` when it did not answer. */
 export type SqliteAnswer = { ok: true; stdout: string } | { ok: false };
 
-/** Runs `sqlite3` with these arguments. Tests pass their own. */
-export type RunSqlite = (binary: string, args: readonly string[]) => Promise<SqliteAnswer>;
+/** Runs `sqlite3` with these arguments, within a timeout when one is given. Tests pass their own. */
+export type RunSqlite = (
+  binary: string,
+  args: readonly string[],
+  timeoutMs?: number,
+) => Promise<SqliteAnswer>;
 
-/** Starts one `sqlite3` directly, with no shell between, stdin closed and a timeout. Never rejects. */
-export function runSqlite(binary: string, args: readonly string[]): Promise<SqliteAnswer> {
+/**
+ * Starts one `sqlite3` directly, with no shell between, stdin closed and a
+ * timeout: `SQLITE_TIMEOUT_MS`, or a shorter one when given, never a longer.
+ * A timeout under a millisecond starts nothing and answers `ok: false`, since
+ * `execFile` takes 0 as no timeout at all. Never rejects.
+ */
+export function runSqlite(
+  binary: string,
+  args: readonly string[],
+  timeoutMs: number = SQLITE_TIMEOUT_MS,
+): Promise<SqliteAnswer> {
+  // Also true of NaN.
+  if (!(timeoutMs >= 1)) return Promise.resolve({ ok: false });
+  const timeout = Math.min(SQLITE_TIMEOUT_MS, Math.ceil(timeoutMs));
   return new Promise((resolve) => {
     try {
       const child = execFile(
@@ -156,7 +172,7 @@ export function runSqlite(binary: string, args: readonly string[]): Promise<Sqli
         [...args],
         {
           env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-          timeout: SQLITE_TIMEOUT_MS,
+          timeout,
           maxBuffer: MAX_OUTPUT_BYTES,
           encoding: "utf8",
           windowsHide: true,

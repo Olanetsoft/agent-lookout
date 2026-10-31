@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
 import {
   createDatabaseReader,
   HEADER_LENGTH,
@@ -19,7 +20,9 @@ import {
   sessionId,
 } from "@tests/fixtures/hermes-agent/hermesAgent";
 import {
+  handClock,
   memoryFiles,
+  readTime,
   standInSqlite,
   writeLiveWalDatabase,
   writeRollbackDatabase,
@@ -488,5 +491,240 @@ describe("the probe", () => {
     sqlite.probe("[not json");
     expect((await reader.read(NOW)).state).toBe("failed");
     expect(sqlite.queries()).toEqual([]);
+  });
+});
+
+describe("within the time left for reading", () => {
+  test("the probe and the query each get their own 5 seconds or what is left, whichever is less, and with no time given, the whole 5", async () => {
+    for (const [left, timeout] of [
+      [2_500, 2_500],
+      [9_000, SQLITE_TIMEOUT_MS],
+    ] as const) {
+      const { sqlite, reader } = databaseIn("rollback");
+      expect(
+        (
+          await reader.read(
+            NOW,
+            readTime(() => left),
+          )
+        ).state,
+      ).toBe("read");
+      expect(sqlite.runs.map((run) => [run.args.at(-1), run.timeoutMs])).toEqual([
+        [PROBE_QUERY, timeout],
+        [SESSIONS_QUERY, timeout],
+      ]);
+    }
+    const { sqlite, reader } = databaseIn("rollback");
+    await reader.read(NOW);
+    expect(sqlite.runs.map((run) => run.timeoutMs)).toEqual([SQLITE_TIMEOUT_MS, SQLITE_TIMEOUT_MS]);
+  });
+
+  test("as the poll's first run, the probe gets its whole 5 seconds, and the query what is left after it", async () => {
+    const { sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 1_000 });
+    const time = readTime(() => NOW + 2_500 - clock.now(), false);
+    expect((await reader.read(NOW, time)).state).toBe("read");
+    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", 1_500],
+    ]);
+  });
+
+  test("with nothing left, nothing is run, the read is out of time, and the next read with time asks at once", async () => {
+    const { sqlite, reader } = databaseIn("live-wal");
+    expect(
+      await reader.read(
+        NOW,
+        readTime(() => 0),
+      ),
+    ).toEqual({ state: "out-of-time", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+    expect(sqlite.versionRuns).toEqual([]);
+    const read = await reader.read(NOW + SECOND);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([A]);
+  });
+
+  test("a probe cut short is out of time, and the query is not run", async () => {
+    const { sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    expect(
+      await reader.read(
+        NOW,
+        readTime(() => NOW + 1_000 - clock.now()),
+      ),
+    ).toEqual({
+      state: "out-of-time",
+      rows: [],
+    });
+    expect(sqlite.probes()).toHaveLength(1);
+    expect(sqlite.probes()[0]?.timeoutMs).toBe(1_000);
+    expect(sqlite.queries()).toEqual([]);
+    expect(clock.now()).toBe(NOW + 1_000);
+  });
+
+  test("a query cut short after a probe that was given less than its 5 seconds is out of time", async () => {
+    const { sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    const time = readTime(() => NOW + 3_000 - clock.now());
+    expect((await reader.read(NOW, time)).state).toBe("out-of-time");
+    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["probe", 3_000],
+      ["query", 1_000],
+    ]);
+  });
+
+  test("a probe that does not answer in its whole 5 seconds did not work, and is asked again only 10 seconds on", async () => {
+    const { sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    // It never answers, and is stopped at its timeout.
+    sqlite.slowly({ clock, takesMs: 60_000 });
+    const first = clock.now();
+    // A poll's time, from now, with no run of it started yet.
+    const pollAt = () => {
+      const end = clock.now() + SQLITE_TIMEOUT_MS;
+      return readTime(() => end - clock.now(), false);
+    };
+    expect(await reader.read(first, pollAt())).toEqual({ state: "failed", rows: [] });
+    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["probe", SQLITE_TIMEOUT_MS],
+    ]);
+    // Not due for 10 seconds, so nothing is run until then.
+    for (const after of [2, 4, 6, 8]) {
+      expect((await reader.read(first + after * SECOND, pollAt())).state).toBe("failed");
+    }
+    expect(sqlite.probes()).toHaveLength(1);
+    expect((await reader.read(first + RETRY_MS, pollAt())).state).toBe("failed");
+    expect(sqlite.probes()).toHaveLength(2);
+  });
+
+  test("when the probe had its whole 5 seconds and the query does not fit after it, every poll would cut it short, so the read did not work and waits 10 seconds", async () => {
+    const { files, sqlite, reader } = databaseIn("rollback");
+    expect((await reader.read(NOW)).state).toBe("read");
+    // The database changes, and each question now takes 3 seconds, each well within its own 5.
+    writeRollbackDatabase(files, DATABASE);
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 3_000 });
+    const pollAt = () => {
+      const end = clock.now() + SQLITE_TIMEOUT_MS;
+      return readTime(() => end - clock.now(), false);
+    };
+    const at = clock.now();
+    expect(await reader.read(at, pollAt())).toEqual({ state: "failed", rows: [] });
+    expect(sqlite.timed.slice(2).map((run) => [run.kind, run.timeoutMs])).toEqual([
+      ["probe", SQLITE_TIMEOUT_MS],
+      ["query", 2_000],
+    ]);
+    const runs = sqlite.runs.length;
+    expect((await reader.read(at + 2 * SECOND, pollAt())).state).toBe("failed");
+    expect(sqlite.runs).toHaveLength(runs);
+    // With nothing else in its way, and quick again, it is read 10 seconds on.
+    sqlite.slowly(undefined);
+    const read = await reader.read(at + RETRY_MS, pollAt());
+    expect(read.state).toBe("read");
+    expect(sqlite.runs).toHaveLength(runs + 2);
+  });
+
+  test("a query cut short after a probe that was not the poll's first run is out of time, and the next read, its probe first, settles it", async () => {
+    const { sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 3_000 });
+    // Another profile's runs used 1 second of the poll first.
+    let end = clock.now() + 4_000;
+    expect(
+      (
+        await reader.read(
+          NOW,
+          readTime(() => end - clock.now()),
+        )
+      ).state,
+    ).toBe("out-of-time");
+    expect(sqlite.timed.map((run) => run.timeoutMs)).toEqual([4_000, 1_000]);
+    // The next poll starts with it.
+    end = clock.now() + SQLITE_TIMEOUT_MS;
+    expect(
+      (
+        await reader.read(
+          NOW + 2 * SECOND,
+          readTime(() => end - clock.now(), false),
+        )
+      ).state,
+    ).toBe("failed");
+    expect(sqlite.timed.slice(2).map((run) => run.timeoutMs)).toEqual([SQLITE_TIMEOUT_MS, 2_000]);
+  });
+
+  test("a read cut short leaves the last one where it was, so a failed read stays due and a changed database is asked again", async () => {
+    const { files, sqlite, reader } = databaseIn("live-wal");
+    sqlite.fail(DATABASE);
+    expect((await reader.read(NOW)).state).toBe("failed");
+    sqlite.fail(DATABASE, false);
+    // Due 10 seconds on, and cut short then: it is asked again on the next read, not 10 seconds after that.
+    expect(
+      (
+        await reader.read(
+          NOW + RETRY_MS,
+          readTime(() => 0),
+        )
+      ).state,
+    ).toBe("out-of-time");
+    expect((await reader.read(NOW + RETRY_MS + 2 * SECOND)).state).toBe("read");
+
+    // The -wal grows, and that read is cut short: the next read asks again, though nothing changed since.
+    files.append(WAL, "more");
+    const runs = sqlite.runs.length;
+    expect(
+      (
+        await reader.read(
+          NOW + RETRY_MS + 4 * SECOND,
+          readTime(() => 0),
+        )
+      ).state,
+    ).toBe("out-of-time");
+    expect(sqlite.runs).toHaveLength(runs);
+    expect((await reader.read(NOW + RETRY_MS + 6 * SECOND)).state).toBe("read");
+    expect(sqlite.runs).toHaveLength(runs + 2);
+  });
+
+  test("a sqlite3 that throws once the time is used is a failed read, not one cut short, and the next read starts again from the header", async () => {
+    const { files, sqlite, reader } = databaseIn("rollback");
+    const clock = handClock(NOW);
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    sqlite.throw();
+    expect(
+      await reader.read(
+        NOW,
+        readTime(() => NOW + 1_000 - clock.now()),
+      ),
+    ).toEqual({
+      state: "failed",
+      rows: [],
+    });
+    expect(clock.now()).toBe(NOW + 1_000);
+    expect(headerReads(files)).toHaveLength(1);
+
+    // Nothing changed, and the 10 seconds a failed read waits have not passed,
+    // yet it is asked again, with its header read again.
+    sqlite.throw(false);
+    sqlite.slowly(undefined);
+    const read = await reader.read(NOW + 2 * SECOND);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([A]);
+    expect(headerReads(files)).toHaveLength(2);
+  });
+
+  test("a read that stands, as nothing changed, answers its rows with no time left, and runs nothing", async () => {
+    const { sqlite, reader } = databaseIn("live-wal");
+    await reader.read(NOW);
+    const runs = sqlite.runs.length;
+    const read = await reader.read(
+      NOW + 2 * SECOND,
+      readTime(() => 0),
+    );
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([A]);
+    expect(sqlite.runs).toHaveLength(runs);
   });
 });

@@ -220,7 +220,7 @@ function readerFor(file: string, finder: SqliteFinder = anySqlite, run: RunSqlit
     io: nodeIo,
     platform: process.platform,
     finder,
-    run: (binary, args) => (runs.push(args), run(binary, args)),
+    run: (binary, args, timeoutMs) => (runs.push(args), run(binary, args, timeoutMs)),
   });
   return { reader, runs };
 }

@@ -1,4 +1,4 @@
-import { runSqlite, type RunSqlite } from "../antigravity/app/summaries.ts";
+import { runSqlite, SQLITE_TIMEOUT_MS, type RunSqlite } from "../antigravity/app/summaries.ts";
 import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import {
   PROBE_QUERY,
@@ -9,7 +9,15 @@ import {
   type DatabaseMode,
   type HermesRow,
 } from "./sessionRows.ts";
-import { createSqliteFinder, type SqliteFinder, type SqliteVersion } from "./sqlite.ts";
+import {
+  createSqliteFinder,
+  isOutOfTime,
+  runWithin,
+  unlimitedTime,
+  type ReadTime,
+  type SqliteFinder,
+  type SqliteVersion,
+} from "./sqlite.ts";
 
 /**
  * One Hermes Agent profile's database, `state.db`, read with the system's
@@ -51,6 +59,15 @@ import { createSqliteFinder, type SqliteFinder, type SqliteVersion } from "./sql
  * the next change, or 10 seconds later. The probe of the tables is asked each
  * time before them, in the same mode.
  *
+ * A read can be given the poll's time for reading. Each run of `sqlite3` then
+ * runs within it (`runWithin` in `sqlite.ts`): the first of the poll with its
+ * whole 5 seconds, each later one with at most what is left, and none once it
+ * is gone. A read cut short that way leaves the last read where it was, so
+ * the database is asked again on the next read, whatever the 10 seconds say.
+ * The probe and the query are asked on the same poll, so when the probe had
+ * its whole 5 seconds and the query still does not fit, every poll would cut
+ * the read short the same way: it is taken as a read that did not work.
+ *
  * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
  * computer running Hermes Agent.
  */
@@ -84,10 +101,13 @@ export function headerMode(bytes: Uint8Array): HeaderMode {
  * missing            there is no database, it is empty, or it is not an ordinary file
  * not-safe           its `-wal` holds something but has no `-shm`, or one of them is not an ordinary file
  * failed             its header is not one Agent Lookout reads, a `-wal` is beside a rollback-journal
- *                    database, or `sqlite3` did not answer, or its answer could not be read
+ *                    database, `sqlite3` did not answer, its answer could not be read, or the probe
+ *                    had its whole 5 seconds and the query did not fit in the poll's time after it
  * no-sqlite          no `sqlite3` was found to read it
  * vulnerable-sqlite  its `-wal` holds something, and every `sqlite3` found fails Hermes Agent's WAL-reset test
  * unsupported        its tables are not laid out as Hermes Agent v0.21.6 and later lay them out
+ * out-of-time        the time for reading ran out, or cut a run of `sqlite3` short, before it
+ *                    answered: nothing is known of it, and the last read stands until the next
  * not-on-windows     nothing is read on Windows
  */
 export type DatabaseState =
@@ -98,6 +118,7 @@ export type DatabaseState =
   | "no-sqlite"
   | "vulnerable-sqlite"
   | "unsupported"
+  | "out-of-time"
   | "not-on-windows";
 
 export interface DatabaseRead {
@@ -109,8 +130,12 @@ export interface DatabaseRead {
 }
 
 export interface DatabaseReader {
-  /** The rows, asked for again only when the database changed, or a failed read is due again. Never throws. */
-  read(at: number): Promise<DatabaseRead>;
+  /**
+   * The rows, asked for again only when the database changed, a failed read
+   * is due again, or the last was cut short. Each run of `sqlite3` runs within
+   * the `time` given, unlimited when none is. Never throws.
+   */
+  read(at: number, time?: ReadTime): Promise<DatabaseRead>;
 }
 
 /** The three files, as `lstat` saw them this poll. */
@@ -121,6 +146,8 @@ interface Files {
 }
 
 const NONE: readonly HermesRow[] = [];
+
+const CUT_SHORT: DatabaseRead = { state: "out-of-time", rows: NONE };
 
 /** Whether the `-wal` is an ordinary file that holds something, so the database is read with it. */
 function walHolds(files: Files): boolean {
@@ -182,7 +209,7 @@ export function createDatabaseReader(options: {
     return mode;
   }
 
-  async function read(at: number): Promise<DatabaseRead> {
+  async function read(at: number, time: ReadTime): Promise<DatabaseRead> {
     if (platform === "win32") return { state: "not-on-windows", rows: NONE };
     let database: FileInfo;
     try {
@@ -224,13 +251,15 @@ export function createDatabaseReader(options: {
       return vulnerable === undefined ? { state, rows } : { state, rows, vulnerable };
     }
 
-    const next = await ask(files);
+    const next = await ask(files, time);
+    // Nothing was learned, so the last read stands, and the next read asks again.
+    if (next.state === "out-of-time") return next;
     last = { ...next, files, at };
     return next;
   }
 
   /** Chooses how to open the database, then runs the probe, then the query of the sessions, the same way. */
-  async function ask(files: Files): Promise<DatabaseRead> {
+  async function ask(files: Files, time: ReadTime): Promise<DatabaseRead> {
     let mode: HeaderMode | null;
     try {
       mode = await modeOf(files.database);
@@ -253,7 +282,8 @@ export function createDatabaseReader(options: {
       way = "with-wal";
     }
 
-    const picked = await finder.pick(way === "with-wal" ? "wal-safe" : "any");
+    const picked = await finder.pick(way === "with-wal" ? "wal-safe" : "any", time);
+    if (picked.kind === "out-of-time") return CUT_SHORT;
     if (picked.kind === "none") return { state: "no-sqlite", rows: NONE };
     if (picked.kind === "vulnerable") {
       return {
@@ -263,20 +293,31 @@ export function createDatabaseReader(options: {
       };
     }
     const binary = picked.path;
-    const probe = await run(binary, sqliteArguments(file, way, PROBE_QUERY));
+    /** Whether the probe had its whole 5 seconds, as the first run of a poll has. */
+    let probeWhole = false;
+    const probe = await runWithin(time, (timeoutMs) => {
+      probeWhole = timeoutMs >= SQLITE_TIMEOUT_MS;
+      return run(binary, sqliteArguments(file, way, PROBE_QUERY), timeoutMs);
+    });
+    if (isOutOfTime(probe)) return CUT_SHORT;
     const schema = probe.ok ? readSchema(probe.stdout) : null;
     if (schema === null) return { state: "failed", rows: NONE };
     if (schema === "unsupported") return { state: "unsupported", rows: NONE };
-    const answer = await run(binary, sqliteArguments(file, way, SESSIONS_QUERY));
+    const answer = await runWithin(time, (timeoutMs) =>
+      run(binary, sqliteArguments(file, way, SESSIONS_QUERY), timeoutMs),
+    );
+    // The two questions had as much of a poll as any read gets, so every poll
+    // would cut this one short: it did not work, and waits 10 seconds.
+    if (isOutOfTime(answer)) return probeWhole ? { state: "failed", rows: NONE } : CUT_SHORT;
     const rows = answer.ok ? readSessionRows(answer.stdout) : null;
     if (rows === null) return { state: "failed", rows: NONE };
     return { state: "read", rows };
   }
 
   return {
-    async read(at) {
+    async read(at, time = unlimitedTime()) {
       try {
-        return await read(at);
+        return await read(at, time);
       } catch {
         last = null;
         header = null;

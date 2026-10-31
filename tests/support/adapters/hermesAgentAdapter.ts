@@ -2,20 +2,23 @@
 // share it: the same file system held in memory that the Codex tests use, a
 // stand-in for `sqlite3` that answers the probe and the sessions query of
 // each profile's database with what the test gives it, says what version
-// each program at the fixed places is, and keeps every argument list it was
-// given, a stand-in for signal 0, a stand-in for Agent Lookout's own pid
-// namespace, and an adapter built from them with a clock the test moves by
-// hand. Nothing here touches a real file, runs a program or asks after a
-// real process.
+// each program at the fixed places is, keeps every argument list and timeout
+// it was given, and can take time on a clock the test holds, a stand-in for
+// signal 0, a stand-in for Agent Lookout's own pid namespace, and an adapter
+// built from them with a clock the test moves by hand. Nothing here touches a
+// real file, runs a program or asks after a real process.
 
-import type { SqliteAnswer } from "@collector/adapters/antigravity/app/summaries";
+import {
+  SQLITE_TIMEOUT_MS,
+  type SqliteAnswer,
+} from "@collector/adapters/antigravity/app/summaries";
 import {
   createHermesAgentAdapter,
   type HermesAgentAdapterOptions,
 } from "@collector/adapters/hermes-agent/index";
 import type { PidNamespace, PidNamespaceReader } from "@collector/adapters/hermes-agent/processes";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/hermes-agent/sessionRows";
-import { createSqliteFinder } from "@collector/adapters/hermes-agent/sqlite";
+import { createSqliteFinder, type ReadTime } from "@collector/adapters/hermes-agent/sqlite";
 import {
   databaseHeader,
   GATEWAY_PID,
@@ -30,6 +33,16 @@ import { asWritten } from "@tests/support/paths";
 
 export { handClock, memoryFiles, type MemoryFiles };
 
+/**
+ * A poll's time for reading, as a test gives it: this much left, and by
+ * default a run already started in it, so the next gets at most what is left.
+ * With `started: false`, the next run is the poll's first, which gets its
+ * whole 5 seconds.
+ */
+export function readTime(left: () => number, started = true): ReadTime {
+  return { left, started };
+}
+
 /** What `sqlite3 --version` prints for a version. */
 export const versionLine = (version: string) =>
   `${version} 2026-01-01 00:00:00 0000000000000000000000000000000000000000000000000000000000000000 (64-bit)\n`;
@@ -42,6 +55,26 @@ export function databaseOf(args: readonly string[]): string {
   return asWritten(encoded.split("/").map(decodeURIComponent).join("/"));
 }
 
+/**
+ * How long each run of the stand-in takes, version runs among them, on a clock
+ * the test holds. One that honours its timeout, as `execFile` stops a program
+ * at its own, takes no longer than that and then answers `ok: false`. One that
+ * does not takes as long as it takes, and answers as it would have.
+ */
+export interface SlowSqlite {
+  clock: { now(): number; advance(ms: number): void };
+  takesMs: number;
+  honoursTimeout?: boolean;
+}
+
+/** One run of the stand-in, version runs among them, in order: what it was, its timeout, and when it started on the slow clock. */
+export interface TimedRun {
+  kind: "version" | "probe" | "query" | "other";
+  database: string | null;
+  timeoutMs: number | undefined;
+  startedAt: number | null;
+}
+
 /** A program at one of the fixed places: what it says of its version, or null when it says nothing, and its identity. */
 interface Program {
   version: string | null;
@@ -52,13 +85,17 @@ interface Program {
  * A stand-in for `sqlite3`: the rows the sessions query prints for each
  * database, by its path, which the test changes, what the probe prints, the
  * programs at the fixed places with their versions, every run with its
- * arguments, every `--version` asked, and ways to make a run fail or throw.
+ * arguments and timeout, every `--version` asked, ways to make a run fail or
+ * throw, and how long each run takes on the test's clock, if any time.
  * Unless the test says otherwise, `/usr/bin/sqlite3` is there, at 3.53.0,
  * which passes Hermes Agent's WAL-reset test.
  */
 export function standInSqlite(
   initial: Record<string, Record<string, unknown>[] | string> = {},
-  options: { onRun?: (database: string, query: string) => void } = {},
+  options: {
+    onRun?: (database: string, query: string, timeoutMs: number | undefined) => void;
+    slow?: SlowSqlite;
+  } = {},
 ) {
   const answers = new Map<string, Record<string, unknown>[] | string>(Object.entries(initial));
   const probes = new Map<string, string>();
@@ -69,16 +106,47 @@ export function standInSqlite(
   const programs = new Map<string, Program>([
     ["/usr/bin/sqlite3", { version: "3.53.0", identity: "usr-bin-1" }],
   ]);
-  const runs: { binary: string; args: readonly string[]; database: string }[] = [];
+  const runs: {
+    binary: string;
+    args: readonly string[];
+    database: string;
+    timeoutMs: number | undefined;
+  }[] = [];
   const versionRuns: string[] = [];
+  const timed: TimedRun[] = [];
+  let slow = options.slow;
   let nextIdentity = 1;
 
-  async function run(binary: string, args: readonly string[]): Promise<SqliteAnswer> {
+  /** Notes a run, and takes its time on the slow clock. True when it was stopped at its timeout. */
+  function spend(
+    kind: TimedRun["kind"],
+    database: string | null,
+    timeoutMs: number | undefined,
+  ): boolean {
+    timed.push({ kind, database, timeoutMs, startedAt: slow?.clock.now() ?? null });
+    if (slow === undefined) return false;
+    const limit = timeoutMs ?? SQLITE_TIMEOUT_MS;
+    if ((slow.honoursTimeout ?? true) && slow.takesMs > limit) {
+      slow.clock.advance(limit);
+      return true;
+    }
+    slow.clock.advance(slow.takesMs);
+    return false;
+  }
+
+  async function run(
+    binary: string,
+    args: readonly string[],
+    timeoutMs?: number,
+  ): Promise<SqliteAnswer> {
     const database = databaseOf(args);
-    runs.push({ binary, args, database });
-    options.onRun?.(database, args.at(-1) ?? "");
+    const query = args.at(-1) ?? "";
+    runs.push({ binary, args, database, timeoutMs });
+    options.onRun?.(database, query, timeoutMs);
+    const kind = query === PROBE_QUERY ? "probe" : query === SESSIONS_QUERY ? "query" : "other";
+    const stopped = spend(kind, database, timeoutMs);
     if (throwing) throw new Error("A stand-in that throws.");
-    if (failAll || failing.has(database)) return { ok: false };
+    if (stopped || failAll || failing.has(database)) return { ok: false };
     if (args.at(-1) === PROBE_QUERY) return { ok: true, stdout: probes.get(database) ?? probe };
     if (args.at(-1) === SESSIONS_QUERY) {
       const rows = answers.get(database) ?? [];
@@ -89,8 +157,9 @@ export function standInSqlite(
   async function isExecutable(candidate: string): Promise<boolean> {
     return programs.has(candidate);
   }
-  async function runVersion(candidate: string): Promise<SqliteAnswer> {
+  async function runVersion(candidate: string, timeoutMs?: number): Promise<SqliteAnswer> {
     versionRuns.push(candidate);
+    if (spend("version", null, timeoutMs)) return { ok: false };
     const program = programs.get(candidate);
     if (program === undefined || program.version === null) return { ok: false };
     return { ok: true, stdout: versionLine(program.version) };
@@ -127,6 +196,10 @@ export function standInSqlite(
     throw(next = true) {
       throwing = next;
     },
+    /** How long each run takes from now on, or no time at all. */
+    slowly(next: SlowSqlite | undefined) {
+      slow = next;
+    },
     /** A program at a place from now on, saying this version, or nothing. A new program each time. */
     install(place: string, version: string | null) {
       programs.set(place, { version, identity: `${place}-${nextIdentity++}` });
@@ -142,6 +215,8 @@ export function standInSqlite(
     },
     runs,
     versionRuns,
+    /** Every run, version runs among them, in order, with its timeout and when it started. */
+    timed,
     /** The runs that asked for the sessions. */
     queries: () => runs.filter((run) => run.args.at(-1) === SESSIONS_QUERY),
     /** The runs that asked for the tables. */
@@ -208,9 +283,9 @@ export function hermesAgentAdapterFor(
     now: () => NOW,
     platform,
     io: files.io,
-    run: (binary, args) => sqlite.run(binary, args),
+    run: (binary, args, timeoutMs) => sqlite.run(binary, args, timeoutMs),
     isExecutable: (candidate) => sqlite.isExecutable(candidate),
-    runVersion: (candidate) => sqlite.runVersion(candidate),
+    runVersion: (candidate, timeoutMs) => sqlite.runVersion(candidate, timeoutMs),
     binaryIdentity: (candidate) => sqlite.identity(candidate),
     isAlive: standInProcesses().isAlive,
     pidNamespace: standInNamespace(platform === "linux" ? LINUX_NAMESPACE : { supported: false }),
