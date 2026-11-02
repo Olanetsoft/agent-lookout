@@ -2567,6 +2567,10 @@ describe("pull requests", () => {
 // The stand-in ssh is a POSIX sh script, ended by POSIX signals, and the machine's
 // waiting session is answered through a Unix socket, so this is for macOS and Linux.
 describe.skipIf(process.platform === "win32")("another machine over SSH", () => {
+  // The stand-in ssh is a Node program: on a heavily loaded machine its first
+  // start alone can take seconds, so each wait here goes well past that.
+  const TUNNEL_WAIT_MS = 20_000;
+
   /**
    * The collector as every host builds it, with nothing of this machine to
    * read, and one other machine named: a stand-in Agent Lookout reached
@@ -2620,7 +2624,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
           if (!snapshot || card?.state !== state) throw new Error(`still ${card?.state}`);
           return snapshot;
         },
-        { timeout: 8_000, interval: 100 },
+        { timeout: TUNNEL_WAIT_MS, interval: 100 },
       );
     return { collector, ssh, warnings, notifier, port, until };
   }
@@ -2725,9 +2729,9 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
           ["remote:devbox:status-files:night-shift.json", "status-changed", "needs-you"],
         ]);
       },
-      { timeout: 8_000, interval: 100 },
+      { timeout: TUNNEL_WAIT_MS, interval: 100 },
     );
-    await vi.waitFor(() => expect(notifier.shown).toHaveLength(1), { timeout: 8_000 });
+    await vi.waitFor(() => expect(notifier.shown).toHaveLength(1), { timeout: TUNNEL_WAIT_MS });
     expect(notifier.shown[0]).toEqual({
       title: "demo-docs on devbox",
       body: "Asked you a question",
@@ -2760,7 +2764,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         if (session?.status !== "needs-you") throw new Error(`still ${session?.status}`);
         return session;
       },
-      { timeout: 8_000, interval: 100 },
+      { timeout: TUNNEL_WAIT_MS, interval: 100 },
     );
     expect(seen).toMatchObject({ machine: "devbox", answered: true });
     await collector.poller.pollOnce();
@@ -2772,7 +2776,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         const snapshot = readSnapshot((await request(port, "/api/sessions")).json());
         expect(snapshot?.sessions.find((one) => one.id === id)?.status).toBe("working");
       },
-      { timeout: 8_000, interval: 100 },
+      { timeout: TUNNEL_WAIT_MS, interval: 100 },
     );
     const events = readEvents((await request(port, "/api/events?since=0")).json()) ?? [];
     expect(events).toEqual([]);
