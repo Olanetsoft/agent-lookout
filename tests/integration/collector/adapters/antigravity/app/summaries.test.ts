@@ -197,16 +197,21 @@ describe.skipIf(process.platform === "win32")("runSqlite, against stand-in progr
   });
 
   test("starts nothing for a timeout under a millisecond, which execFile would take as none", async () => {
-    const started = path.join(await tempDir(), "started");
-    const stub = await writeStub(`touch '${started}'`);
+    const dir = await tempDir();
+    const started = path.join(dir, "started");
+    const stub = await writeStub('touch "$1"');
+    // A program written moments ago can take seconds to start the first time
+    // on a busy machine, more than runSqlite's 5 seconds, so it is started
+    // once first, with no limit, to touch another file.
+    execFileSync(stub, [path.join(dir, "warmed")]);
     for (const timeout of [0, 0.5, -1, Number.NaN]) {
-      expect(await runSqlite(stub, [], timeout), String(timeout)).toEqual({ ok: false });
+      expect(await runSqlite(stub, [started], timeout), String(timeout)).toEqual({ ok: false });
     }
     await expect(lstat(started)).rejects.toMatchObject({ code: "ENOENT" });
     // Given its usual timeout, the same program runs.
-    expect(await runSqlite(stub, [])).toEqual({ ok: true, stdout: "" });
+    expect(await runSqlite(stub, [started])).toEqual({ ok: true, stdout: "" });
     expect((await lstat(started)).isFile()).toBe(true);
-  });
+  }, 30_000);
 
   test("never lets a program run longer than 5 seconds, whatever longer timeout it is given", async () => {
     const started = Date.now();
