@@ -9,6 +9,7 @@ import {
   SQLITE_MAGIC,
 } from "@collector/adapters/hermes-agent/database";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/hermes-agent/sessionRows";
+import type { SqliteFinder } from "@collector/adapters/hermes-agent/sqlite";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
   answerRow,
@@ -39,13 +40,13 @@ const KEG = "/opt/homebrew/opt/sqlite/bin/sqlite3";
 function readerFor(
   files: MemoryFiles,
   sqlite: StandInSqlite,
-  options: { platform?: NodeJS.Platform; io?: ReadOnlyIo } = {},
+  options: { platform?: NodeJS.Platform; io?: ReadOnlyIo; finder?: SqliteFinder } = {},
 ) {
   return createDatabaseReader({
     file: DATABASE,
     io: options.io ?? files.io,
     platform: options.platform ?? "darwin",
-    finder: sqlite.finder(),
+    finder: options.finder ?? sqlite.finder(),
     run: sqlite.run,
   });
 }
@@ -58,6 +59,21 @@ function databaseIn(mode: "rollback" | "live-wal") {
   const sqlite = standInSqlite({ [DATABASE]: [answerRow({ id: A })] });
   return { files, sqlite, reader: readerFor(files, sqlite) };
 }
+
+/**
+ * The same, read by a reader whose finder has already asked each sqlite3 its
+ * version, as one has after its first read, so that a read runs only the
+ * probe and the query, which the tests of time are about.
+ */
+async function knownDatabaseIn(mode: "rollback" | "live-wal") {
+  const { files, sqlite } = databaseIn(mode);
+  const finder = sqlite.finder();
+  await finder.pick("wal-safe");
+  return { files, sqlite, reader: readerFor(files, sqlite, { finder }) };
+}
+
+/** The probes and queries run, with their timeouts and times, leaving out the versions asked. */
+const questions = (sqlite: StandInSqlite) => sqlite.timed.filter((run) => run.kind !== "version");
 
 /** The address each run of sqlite3 opened, in order. */
 const addresses = (sqlite: StandInSqlite) =>
@@ -96,9 +112,9 @@ describe("headerMode, as Hermes Agent reads bytes 18 and 19", () => {
 });
 
 describe("which way the database is opened", () => {
-  test("in rollback-journal mode: read-only with a second's wait for a commit, by any sqlite3", async () => {
+  test("in rollback-journal mode: read-only with a second's wait for a commit, by the first sqlite3 found when none passes Hermes Agent's test", async () => {
     const { sqlite, reader } = databaseIn("rollback");
-    // A sqlite3 with the WAL-reset bug is still taken: the bug is in WAL mode alone.
+    // A sqlite3 with the WAL-reset bug is still taken when it is all there is: the bug is in WAL mode alone.
     sqlite.install("/usr/bin/sqlite3", "3.45.1");
     const read = await reader.read(NOW);
     expect(read).toMatchObject({ state: "read" });
@@ -131,8 +147,8 @@ describe("which way the database is opened", () => {
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
     ]);
-    // Its version was never asked.
-    expect(sqlite.versionRuns).toEqual([]);
+    // Its version was asked, once, in case one that passes is there.
+    expect(sqlite.versionRuns).toEqual(["/usr/bin/sqlite3"]);
   });
 
   test("in rollback-journal mode, a -shm alone beside it is passed over", async () => {
@@ -142,7 +158,7 @@ describe("which way the database is opened", () => {
     expect(sqlite.runs[0]?.args).toContain(".timeout 1000");
   });
 
-  test("in WAL mode with no -wal, or an empty one with or without its -shm, as a file nothing changes, by any sqlite3", async () => {
+  test("in WAL mode with no -wal, or an empty one with or without its -shm, as a file nothing changes, by the first sqlite3 found when none passes Hermes Agent's test", async () => {
     for (const sidecars of ["none", "empty -wal", "empty -wal and -shm"] as const) {
       const files = memoryFiles();
       files.write(DATABASE, databaseHeader("wal"));
@@ -160,7 +176,7 @@ describe("which way the database is opened", () => {
         sqlite.runs.every((run) => !run.args.includes("-cmd")),
         sidecars,
       ).toBe(true);
-      expect(sqlite.versionRuns, sidecars).toEqual([]);
+      expect(sqlite.versionRuns, sidecars).toEqual(["/usr/bin/sqlite3"]);
     }
   });
 
@@ -274,6 +290,119 @@ describe("which way the database is opened", () => {
     expect(files.calls).toEqual([]);
     expect(sqlite.runs).toEqual([]);
     expect(sqlite.versionRuns).toEqual([]);
+  });
+});
+
+describe("which sqlite3 reads it, and a switch to WAL mode while it is read", () => {
+  test.each(["rollback-journal mode", "WAL mode with no -wal"] as const)(
+    "in %s, one that passes Hermes Agent's test is chosen over a first one that fails it",
+    async (mode) => {
+      const files = memoryFiles();
+      if (mode === "rollback-journal mode") writeRollbackDatabase(files, DATABASE);
+      else files.write(DATABASE, databaseHeader("wal"));
+      const sqlite = standInSqlite({ [DATABASE]: [answerRow({ id: A })] });
+      sqlite.install("/usr/bin/sqlite3", "3.51.0");
+      sqlite.install(KEG, "3.53.0");
+      const read = await readerFor(files, sqlite).read(NOW);
+      expect(read.state).toBe("read");
+      expect(sqlite.runs.map((run) => run.binary)).toEqual([KEG, KEG]);
+      expect(sqlite.versionRuns).toEqual(["/usr/bin/sqlite3", KEG]);
+    },
+  );
+
+  /**
+   * A database in rollback-journal mode with one session, read with the sqlite3
+   * there, and what happens to its files as the sessions are asked for, once.
+   */
+  function readWhile(
+    change: (files: MemoryFiles) => void,
+    options: { version?: string; mode?: "rollback" | "wal" } = {},
+  ) {
+    const files = memoryFiles();
+    if (options.mode === "wal") files.write(DATABASE, databaseHeader("wal"));
+    else writeRollbackDatabase(files, DATABASE);
+    let changed = false;
+    const sqlite = standInSqlite(
+      { [DATABASE]: [answerRow({ id: A })] },
+      {
+        onRun: (_database, query) => {
+          if (changed || query !== SESSIONS_QUERY) return;
+          changed = true;
+          change(files);
+        },
+      },
+    );
+    // Only one that fails the test, unless the test says otherwise.
+    sqlite.install("/usr/bin/sqlite3", options.version ?? "3.51.0");
+    return { files, sqlite, reader: readerFor(files, sqlite) };
+  }
+
+  /** Hermes Agent switches it to WAL mode and closes it: the header says so, and no -wal is left. */
+  const switchedAndClosed = (files: MemoryFiles) =>
+    files.rewrite(DATABASE, databaseHeader("wal"), { mtimeMs: NOW + 1 });
+
+  /** Hermes Agent switches it to WAL mode and keeps it open, with a commit in its -wal. */
+  const switchedAndOpen = (files: MemoryFiles) => {
+    switchedAndClosed(files);
+    files.write(WAL, "frames");
+    files.write(SHM, "index");
+  };
+
+  test.each<[string, (files: MemoryFiles) => void, string]>([
+    ["switches it to WAL mode and closes it", switchedAndClosed, "read"],
+    [
+      "switches it to WAL mode and keeps it open, with a commit in its -wal",
+      switchedAndOpen,
+      "vulnerable-sqlite",
+    ],
+    // A -wal beside a rollback-journal database means it was opened in WAL mode.
+    ["opens it in WAL mode, leaving an empty -wal", (files) => files.write(WAL, ""), "failed"],
+    ["removes it", (files) => files.remove(DATABASE), "missing"],
+  ])(
+    "a read with only a sqlite3 that fails the test, while Hermes Agent %s, is dropped, and the next read goes by what the files then are",
+    async (_what, change, next) => {
+      const { sqlite, reader } = readWhile(change);
+      expect(await reader.read(NOW)).toEqual({ state: "switched", rows: [] });
+      expect(sqlite.queries()).toHaveLength(1);
+      expect((await reader.read(NOW + 2 * SECOND)).state).toBe(next);
+    },
+  );
+
+  test("in WAL mode with no -wal, a read with only a sqlite3 that fails the test is dropped when a -wal comes to hold commits as it is read, and kept when one comes empty", async () => {
+    const holding = readWhile((files) => (files.write(WAL, "frames"), files.write(SHM, "index")), {
+      mode: "wal",
+    });
+    expect(await holding.reader.read(NOW)).toEqual({ state: "switched", rows: [] });
+    expect((await holding.reader.read(NOW + 2 * SECOND)).state).toBe("vulnerable-sqlite");
+
+    const empty = readWhile((files) => files.write(WAL, ""), { mode: "wal" });
+    const read = await empty.reader.read(NOW);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([A]);
+  });
+
+  test("the same switch while a sqlite3 that passes the test reads it keeps the read", async () => {
+    for (const change of [switchedAndClosed, switchedAndOpen]) {
+      const { reader } = readWhile(change, { version: "3.53.0" });
+      const read = await reader.read(NOW);
+      expect(read.state).toBe("read");
+      expect(read.rows.map((row) => row.id)).toEqual([A]);
+    }
+  });
+
+  test("a read with only a sqlite3 that fails the test, and no switch, is kept, with the header read again only when state.db changed as it was read", async () => {
+    const still = readWhile(() => {});
+    const read = await still.reader.read(NOW);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([A]);
+    expect(headerReads(still.files)).toEqual([[DATABASE, 0, 20]]);
+
+    // Hermes Agent writes in rollback-journal mode as it is read: still rollback-journal mode.
+    const written = readWhile((files) =>
+      files.rewrite(DATABASE, databaseHeader("rollback"), { mtimeMs: NOW + 1 }),
+    );
+    expect((await written.reader.read(NOW)).state).toBe("read");
+    expect(headerReads(written.files)).toHaveLength(2);
   });
 });
 
@@ -520,12 +649,12 @@ describe("within the time left for reading", () => {
   });
 
   test("as the poll's first run, the probe gets its whole 5 seconds, and the query what is left after it", async () => {
-    const { sqlite, reader } = databaseIn("rollback");
+    const { sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     sqlite.slowly({ clock, takesMs: 1_000 });
     const time = readTime(() => NOW + 2_500 - clock.now(), false);
     expect((await reader.read(NOW, time)).state).toBe("read");
-    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+    expect(questions(sqlite).map((run) => [run.kind, run.timeoutMs])).toEqual([
       ["probe", SQLITE_TIMEOUT_MS],
       ["query", 1_500],
     ]);
@@ -547,7 +676,7 @@ describe("within the time left for reading", () => {
   });
 
   test("a probe cut short is out of time, and the query is not run", async () => {
-    const { sqlite, reader } = databaseIn("rollback");
+    const { sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     sqlite.slowly({ clock, takesMs: 2_000 });
     expect(
@@ -566,19 +695,19 @@ describe("within the time left for reading", () => {
   });
 
   test("a query cut short after a probe that was given less than its 5 seconds is out of time", async () => {
-    const { sqlite, reader } = databaseIn("rollback");
+    const { sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     sqlite.slowly({ clock, takesMs: 2_000 });
     const time = readTime(() => NOW + 3_000 - clock.now());
     expect((await reader.read(NOW, time)).state).toBe("out-of-time");
-    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+    expect(questions(sqlite).map((run) => [run.kind, run.timeoutMs])).toEqual([
       ["probe", 3_000],
       ["query", 1_000],
     ]);
   });
 
   test("a probe that does not answer in its whole 5 seconds did not work, and is asked again only 10 seconds on", async () => {
-    const { sqlite, reader } = databaseIn("rollback");
+    const { sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     // It never answers, and is stopped at its timeout.
     sqlite.slowly({ clock, takesMs: 60_000 });
@@ -589,7 +718,7 @@ describe("within the time left for reading", () => {
       return readTime(() => end - clock.now(), false);
     };
     expect(await reader.read(first, pollAt())).toEqual({ state: "failed", rows: [] });
-    expect(sqlite.timed.map((run) => [run.kind, run.timeoutMs])).toEqual([
+    expect(questions(sqlite).map((run) => [run.kind, run.timeoutMs])).toEqual([
       ["probe", SQLITE_TIMEOUT_MS],
     ]);
     // Not due for 10 seconds, so nothing is run until then.
@@ -602,7 +731,7 @@ describe("within the time left for reading", () => {
   });
 
   test("when the probe had its whole 5 seconds and the query does not fit after it, every poll would cut it short, so the read did not work and waits 10 seconds", async () => {
-    const { files, sqlite, reader } = databaseIn("rollback");
+    const { files, sqlite, reader } = await knownDatabaseIn("rollback");
     expect((await reader.read(NOW)).state).toBe("read");
     // The database changes, and each question now takes 3 seconds, each well within its own 5.
     writeRollbackDatabase(files, DATABASE);
@@ -614,7 +743,11 @@ describe("within the time left for reading", () => {
     };
     const at = clock.now();
     expect(await reader.read(at, pollAt())).toEqual({ state: "failed", rows: [] });
-    expect(sqlite.timed.slice(2).map((run) => [run.kind, run.timeoutMs])).toEqual([
+    expect(
+      questions(sqlite)
+        .slice(2)
+        .map((run) => [run.kind, run.timeoutMs]),
+    ).toEqual([
       ["probe", SQLITE_TIMEOUT_MS],
       ["query", 2_000],
     ]);
@@ -629,7 +762,7 @@ describe("within the time left for reading", () => {
   });
 
   test("a query cut short after a probe that was not the poll's first run is out of time, and the next read, its probe first, settles it", async () => {
-    const { sqlite, reader } = databaseIn("rollback");
+    const { sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     sqlite.slowly({ clock, takesMs: 3_000 });
     // Another profile's runs used 1 second of the poll first.
@@ -642,7 +775,7 @@ describe("within the time left for reading", () => {
         )
       ).state,
     ).toBe("out-of-time");
-    expect(sqlite.timed.map((run) => run.timeoutMs)).toEqual([4_000, 1_000]);
+    expect(questions(sqlite).map((run) => run.timeoutMs)).toEqual([4_000, 1_000]);
     // The next poll starts with it.
     end = clock.now() + SQLITE_TIMEOUT_MS;
     expect(
@@ -653,7 +786,11 @@ describe("within the time left for reading", () => {
         )
       ).state,
     ).toBe("failed");
-    expect(sqlite.timed.slice(2).map((run) => run.timeoutMs)).toEqual([SQLITE_TIMEOUT_MS, 2_000]);
+    expect(
+      questions(sqlite)
+        .slice(2)
+        .map((run) => run.timeoutMs),
+    ).toEqual([SQLITE_TIMEOUT_MS, 2_000]);
   });
 
   test("a read cut short leaves the last one where it was, so a failed read stays due and a changed database is asked again", async () => {
@@ -689,7 +826,7 @@ describe("within the time left for reading", () => {
   });
 
   test("a sqlite3 that throws once the time is used is a failed read, not one cut short, and the next read starts again from the header", async () => {
-    const { files, sqlite, reader } = databaseIn("rollback");
+    const { files, sqlite, reader } = await knownDatabaseIn("rollback");
     const clock = handClock(NOW);
     sqlite.slowly({ clock, takesMs: 2_000 });
     sqlite.throw();

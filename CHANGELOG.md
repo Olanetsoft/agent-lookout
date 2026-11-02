@@ -20,6 +20,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - When the window is resized across 760px, or a phone or a tablet is turned, a session row's Jump or Resume keeps keyboard focus, and a Resume that says Copied keeps saying it for the rest of its two seconds. The row draws its button in one place at 760px and narrower and in another above that, so before, focus fell back to the page and Copied went back to Resume. The command a refused Resume shows to select keeps focus the same way (#208).
 
+- A Hermes Agent database is now read with a `sqlite3` that passes Hermes Agent's test for SQLite's WAL-reset bug whenever one is installed, not only while its `-wal` holds commits. So when Hermes Agent switches a database to WAL mode at the moment Agent Lookout opens it, it is still read safely. With only a `sqlite3` that fails the test, such as macOS's own, a read that Hermes Agent switched to WAL mode under it is dropped once Agent Lookout sees the switch, and the profile keeps its last read until the next poll. Each `sqlite3` is now asked its version before the first read of any database, once (#214).
+
 ## 0.2.15 - 2026-10-30
 
 Hermes Agent sessions show up beside the others, session rows on a phone keep to two lines, and a few things you meet with the keyboard work as they should.

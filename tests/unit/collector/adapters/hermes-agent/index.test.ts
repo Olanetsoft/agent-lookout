@@ -27,6 +27,7 @@ import { HERMES_SQLITE_LOCATIONS } from "@collector/adapters/hermes-agent/sqlite
 import { POLL_DEADLINE_MS } from "@collector/poller";
 import {
   answerRow,
+  databaseHeader,
   DEFAULT_DATABASE,
   GATEWAY_PID,
   HOME,
@@ -100,6 +101,17 @@ function hermesHome(
     initial[PROFILE_DATABASE] = coderRows;
   }
   return { files, sqlite: standInSqlite(initial) };
+}
+
+/**
+ * A finder that has already asked each sqlite3 there its version, as the
+ * adapter's has after its first poll that read anything, so that the polls of
+ * a test about their time run only the probes and the queries.
+ */
+async function knownFinder(sqlite: StandInSqlite) {
+  const finder = sqlite.finder();
+  await finder.pick("wal-safe");
+  return finder;
 }
 
 /** The value of one of the facts Sources shows. */
@@ -322,7 +334,10 @@ describe("reading the sessions", () => {
       label: "Hermes Agent",
       state: "ok",
       detail: HEALTHY,
-      watching: watching("every 2 seconds", { profiles: "default, coder" }),
+      watching: watching("every 2 seconds", {
+        profiles: "default, coder",
+        walSqlite: "/usr/bin/sqlite3 3.53.0",
+      }),
       checkedAt: NOW,
       parts: { "hermes-agent:default/": BASIS, "hermes-agent:coder/": BASIS },
     });
@@ -677,13 +692,15 @@ describe("the reads of a poll", () => {
       ...names.map((name) => `${ROOT}/profiles/${name}/state.db`),
     ];
     const clock = handClock();
-    // Each run of sqlite3 takes 600 ms, 1.2 seconds a profile, and is stopped at its timeout.
-    const sqlite = standInSqlite({}, { slow: { clock, takesMs: 600 } });
+    const sqlite = standInSqlite();
     databases.forEach((database, index) => {
       writeRollbackDatabase(files, database);
       sqlite.set(database, [answerRow({ id: sessionId(`d${index}`) })]);
     });
-    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const finder = await knownFinder(sqlite);
+    // Each run of sqlite3 takes 600 ms, 1.2 seconds a profile, and is stopped at its timeout.
+    sqlite.slowly({ clock, takesMs: 600 });
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, finder });
     expect(READ_BUDGET_MS).toBe(5_000);
     expect(READ_BUDGET_MS * 2).toBeLessThan(POLL_DEADLINE_MS);
 
@@ -838,9 +855,10 @@ describe("the reads of a poll", () => {
     const { files, sqlite } = hermesHome();
     files.mkdir(`${ROOT}/profiles/${PROFILE}`);
     const clock = handClock();
+    const finder = await knownFinder(sqlite);
     // The default profile is read in 4 seconds, and the coder profile's probe is cut short at 5.
     sqlite.slowly({ clock, takesMs: 2_000 });
-    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, finder });
     const { polled, took } = await pollWithin(adapter, sqlite, clock);
     expect(took).toBe(READ_BUDGET_MS);
     expect(polled.health).toMatchObject({
@@ -1070,8 +1088,9 @@ describe("the reads of a poll", () => {
     async (_slowness, takesMs, asked) => {
       const { files, sqlite } = hermesHome([answerRow({ id: A })], null);
       const clock = handClock();
+      const finder = await knownFinder(sqlite);
       sqlite.slowly({ clock, takesMs });
-      const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+      const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, finder });
       const seen: string[][] = [];
       for (let poll = 0; poll < 7; poll += 1) {
         const { polled, took, runs } = await pollWithin(adapter, sqlite, clock);
@@ -1176,9 +1195,10 @@ describe("the reads of a poll", () => {
     const { files, sqlite } = hermesHome();
     files.mkdir(`${ROOT}/profiles/${PROFILE}`);
     const clock = handClock();
+    const finder = await knownFinder(sqlite);
     // Each run takes 2 seconds, so a read takes 4, and both databases change before every poll.
     sqlite.slowly({ clock, takesMs: 2_000 });
-    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now });
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, finder });
     const queried: (string | null)[][] = [];
     for (let poll = 0; poll < 4; poll += 1) {
       writeRollbackDatabase(files, DEFAULT_DATABASE);
@@ -1364,4 +1384,80 @@ test("what Hermes Agent can report, in the words of the design, each reason shor
   expect(createHermesAgentAdapter({ env: {}, homeDir: HOME, platform: "win32" }).capabilities).toBe(
     HERMES_AGENT_CAPABILITIES,
   );
+});
+
+describe("a switch to WAL mode while a profile is read", () => {
+  test("with only a sqlite3 that fails Hermes Agent's test, the read is dropped: the profile keeps its last read and its sessions, is read first on the next poll, and is then not read, with why", async () => {
+    const files = memoryFiles();
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    let race = false;
+    const sqlite = standInSqlite(
+      {
+        [DEFAULT_DATABASE]: [answerRow({ id: A })],
+        [PROFILE_DATABASE]: [answerRow({ id: B, title: "Write the notes" })],
+      },
+      {
+        onRun: (database, query) => {
+          if (!race || database !== PROFILE_DATABASE || query !== SESSIONS_QUERY) return;
+          race = false;
+          // Hermes Agent switches the coder profile's database to WAL mode as it is read, and keeps it open.
+          files.rewrite(PROFILE_DATABASE, databaseHeader("wal"), { mtimeMs: NOW + 1 });
+          files.write(`${PROFILE_DATABASE}-wal`, "frames");
+          files.write(`${PROFILE_DATABASE}-shm`, "index");
+        },
+      },
+    );
+    sqlite.install("/usr/bin/sqlite3", "3.51.0");
+    const adapter = hermesAgentAdapterFor(files, sqlite);
+    const shown = (sessions: { id: string }[]) => sessions.map((session) => session.id).sort();
+    const both = [`hermes-agent:coder/${B}`, `hermes-agent:default/${A}`];
+    expect(shown((await adapter.poll()).sessions)).toEqual(both);
+
+    // Both databases change, and the coder profile's is switched as its sessions are asked for.
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    writeRollbackDatabase(files, PROFILE_DATABASE);
+    race = true;
+    const dropped = await adapter.poll();
+    expect(dropped.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(dropped.health.parts).toEqual({
+      "hermes-agent:default/": BASIS,
+      "hermes-agent:coder/": BASIS,
+    });
+    expect(shown(dropped.sessions)).toEqual(both);
+
+    const from = files.calls.length;
+    const next = await adapter.poll();
+    const looked = files.calls
+      .slice(from)
+      .filter((call) => call.method === "lstat" && call.path.endsWith("state.db"))
+      .map((call) => call.path);
+    expect(looked[0]).toBe(PROFILE_DATABASE);
+    // Now a live -wal, which no sqlite3 found may read.
+    expect(fact(next.health, "sqlite3 for a live -wal")).toBe(
+      "none trusted: /usr/bin/sqlite3 3.51.0 fails Hermes Agent's WAL-reset test",
+    );
+    expect(next.health.detail).toContain("coder");
+    expect(shown(next.sessions)).toEqual([`hermes-agent:default/${A}`]);
+  });
+
+  test("with a sqlite3 that passes the test, the same switch keeps the read", async () => {
+    const files = memoryFiles();
+    writeRollbackDatabase(files, DEFAULT_DATABASE);
+    const sqlite = standInSqlite(
+      { [DEFAULT_DATABASE]: [answerRow({ id: A })] },
+      {
+        onRun: (_database, query) => {
+          if (query !== SESSIONS_QUERY) return;
+          files.rewrite(DEFAULT_DATABASE, databaseHeader("wal"), { mtimeMs: NOW + 1 });
+          files.write(`${DEFAULT_DATABASE}-wal`, "frames");
+          files.write(`${DEFAULT_DATABASE}-shm`, "index");
+        },
+      },
+    );
+    const polled = await hermesAgentAdapterFor(files, sqlite).poll();
+    expect(polled.health).toMatchObject({ state: "ok", detail: HEALTHY });
+    expect(polled.sessions.map((session) => session.id)).toEqual([`hermes-agent:default/${A}`]);
+  });
 });

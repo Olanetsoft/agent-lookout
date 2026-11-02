@@ -17,6 +17,7 @@ import { every } from "../words.ts";
 import {
   createDatabaseReader,
   RETRY_MS,
+  standsOver,
   type DatabaseRead,
   type DatabaseReader,
   type DatabaseState,
@@ -213,7 +214,7 @@ type RootFrom = "agent-lookout" | "default";
 /** A profile that was not read on a poll, and why. */
 interface NotRead {
   profile: string;
-  state: Exclude<DatabaseState, "read" | "missing" | "out-of-time" | "not-on-windows">;
+  state: Exclude<DatabaseState, "read" | "missing" | "out-of-time" | "switched" | "not-on-windows">;
   vulnerable?: { path: string; version: SqliteVersion | null };
 }
 
@@ -529,7 +530,10 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
         readers.set(profile, reader);
       }
       const read = await reader.read(checkedAt, time);
-      if (read.state === "out-of-time") {
+      // Cut short, or dropped as Hermes Agent switched it to WAL mode under a
+      // sqlite3 that fails the test: the last read stands, and this profile is
+      // read first on the next poll.
+      if (standsOver(read.state)) {
         keep(profile);
         continue;
       }
@@ -550,7 +554,8 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
           parts[profilePrefix(profile)] = BASIS;
           continue;
         case "out-of-time":
-          // Never kept: a read cut short leaves the last one in its place.
+        case "switched":
+          // Never kept: a read that stands over leaves the last one in its place.
           continue;
         case "not-on-windows":
           return result("unavailable", WINDOWS_DETAIL, "not on Windows", checkedAt);

@@ -36,15 +36,21 @@ import {
  * Hermes Agent holds. Then:
  *
  * - rollback-journal mode, with no `-wal` beside it: read with a shared lock,
- *   waiting up to a second for a commit to end, with any `sqlite3`.
+ *   waiting up to a second for a commit to end, with a `sqlite3` that passes
+ *   Hermes Agent's test for the WAL-reset bug when one is found, else the
+ *   first found.
  * - WAL mode with no `-wal`, or an empty one: read as a file nothing changes,
- *   with any `sqlite3`.
+ *   with the same `sqlite3`.
  * - WAL mode with a `-wal` that holds something and its `-shm`: read with the
  *   `-wal`, the `-shm` opened read-only, only with a `sqlite3` that passes
  *   Hermes Agent's test for the WAL-reset bug.
  * - such a `-wal` without its `-shm`, or either not an ordinary file: not read.
  * - a `-wal` beside a rollback-journal database, or a header that is neither:
  *   not read.
+ *
+ * A read made with a `sqlite3` that fails the test, as none that passes was
+ * found, during which the database went to WAL mode or its `-wal` came to
+ * hold something, is dropped (`switched`), and the last read stands.
  *
  * An empty `state.db` is taken as none: SQLite would delete a `-wal` beside it.
  *
@@ -108,6 +114,9 @@ export function headerMode(bytes: Uint8Array): HeaderMode {
  * unsupported        its tables are not laid out as Hermes Agent v0.21.6 and later lay them out
  * out-of-time        the time for reading ran out, or cut a run of `sqlite3` short, before it
  *                    answered: nothing is known of it, and the last read stands until the next
+ * switched           read with a `sqlite3` that fails the WAL-reset test, as none that passes was
+ *                    found, and Hermes Agent switched it to WAL mode, or wrote to its `-wal`, while
+ *                    it was read: what was read is dropped, and the last read stands until the next
  * not-on-windows     nothing is read on Windows
  */
 export type DatabaseState =
@@ -119,6 +128,7 @@ export type DatabaseState =
   | "vulnerable-sqlite"
   | "unsupported"
   | "out-of-time"
+  | "switched"
   | "not-on-windows";
 
 export interface DatabaseRead {
@@ -132,8 +142,8 @@ export interface DatabaseRead {
 export interface DatabaseReader {
   /**
    * The rows, asked for again only when the database changed, a failed read
-   * is due again, or the last was cut short. Each run of `sqlite3` runs within
-   * the `time` given, unlimited when none is. Never throws.
+   * is due again, or the last was cut short or dropped. Each run of `sqlite3`
+   * runs within the `time` given, unlimited when none is. Never throws.
    */
   read(at: number, time?: ReadTime): Promise<DatabaseRead>;
 }
@@ -148,6 +158,13 @@ interface Files {
 const NONE: readonly HermesRow[] = [];
 
 const CUT_SHORT: DatabaseRead = { state: "out-of-time", rows: NONE };
+
+const SWITCHED: DatabaseRead = { state: "switched", rows: NONE };
+
+/** Whether a read learned nothing, so the last read stands and the next poll reads again. */
+export function standsOver(state: DatabaseState): boolean {
+  return state === "out-of-time" || state === "switched";
+}
 
 /** Whether the `-wal` is an ordinary file that holds something, so the database is read with it. */
 function walHolds(files: Files): boolean {
@@ -253,7 +270,7 @@ export function createDatabaseReader(options: {
 
     const next = await ask(files, time);
     // Nothing was learned, so the last read stands, and the next read asks again.
-    if (next.state === "out-of-time") return next;
+    if (standsOver(next.state)) return next;
     last = { ...next, files, at };
     return next;
   }
@@ -282,10 +299,14 @@ export function createDatabaseReader(options: {
       way = "with-wal";
     }
 
-    const picked = await finder.pick(way === "with-wal" ? "wal-safe" : "any", time);
+    // Every read is made with a sqlite3 that passes the WAL-reset test when one
+    // is found, so a database Hermes Agent switches to WAL mode between the
+    // look at its header and the open is still read safely. Only a live -wal
+    // must have one: anything else falls back to the first found.
+    const picked = await finder.pick("wal-safe", time);
     if (picked.kind === "out-of-time") return CUT_SHORT;
     if (picked.kind === "none") return { state: "no-sqlite", rows: NONE };
-    if (picked.kind === "vulnerable") {
+    if (picked.kind === "vulnerable" && way === "with-wal") {
       return {
         state: "vulnerable-sqlite",
         rows: NONE,
@@ -293,6 +314,36 @@ export function createDatabaseReader(options: {
       };
     }
     const binary = picked.path;
+    const read = await askWith(binary, way, time);
+    // With one that fails the test, a database that went to WAL mode, or whose
+    // -wal took a commit, while it was read is one that sqlite3 should not have
+    // read: what it read is dropped, and the next poll reads it again.
+    if (picked.kind === "vulnerable" && !standsOver(read.state) && (await walCame(way))) {
+      return SWITCHED;
+    }
+    return read;
+  }
+
+  /**
+   * Whether, since the look before a read, the database has gone to WAL mode
+   * or its -wal has come to hold something: looked at again with `lstat`, and
+   * the header read again only when `state.db` changed. Anything that cannot
+   * be looked at counts as having changed.
+   */
+  async function walCame(way: DatabaseMode): Promise<boolean> {
+    try {
+      const wal = await beside(`${file}-wal`);
+      if (wal !== null && (way === "rollback" || wal.kind !== "file" || wal.size > 0)) return true;
+      if (way !== "rollback") return false;
+      const database = await io.lstat(file);
+      return database.kind !== "file" || (await modeOf(database)) !== "rollback";
+    } catch {
+      return true;
+    }
+  }
+
+  /** Runs the probe, then the query of the sessions, with one sqlite3 and one way of opening the database. */
+  async function askWith(binary: string, way: DatabaseMode, time: ReadTime): Promise<DatabaseRead> {
     /** Whether the probe had its whole 5 seconds, as the first run of a poll has. */
     let probeWhole = false;
     const probe = await runWithin(time, (timeoutMs) => {
