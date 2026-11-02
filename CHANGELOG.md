@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.16 - 2026-11-02
+
+Qwen Code sessions show what they last said, the Mac app's Keep awake card says which sessions keep the Mac awake right now, Hermes Agent's databases are read more safely, and a few things you meet with the keyboard or on a phone work as they should.
 
 ### Added
 
