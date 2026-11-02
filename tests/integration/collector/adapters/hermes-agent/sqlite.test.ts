@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -40,6 +41,10 @@ describe.skipIf(process.platform === "win32")("the adapter's own finder", () => 
         "echo '3.53.0 2026-04-09 11:41:38 0000000000000000000000000000000000000000000000000000000000000000 (64-bit)'",
       ].join("\n"),
     );
+    // A program written moments ago can take seconds to start the first time
+    // on a busy machine, more than the 5 seconds a version gets, so it is
+    // started once first, with no limit. The run asked below writes over it.
+    execFileSync(stub);
     const finder = createSqliteFinder({ locations: [stub] });
     expect(await finder.pick("wal-safe")).toEqual({
       kind: "found",

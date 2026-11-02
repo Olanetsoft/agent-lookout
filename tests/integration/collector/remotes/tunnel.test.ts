@@ -22,7 +22,9 @@ import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/r
 // end with SIGTERM, POSIX signals: Windows has none of them.
 const posixTest = test.skipIf(process.platform === "win32");
 
-const WAIT = { timeout: 8_000, interval: 20 };
+// The stand-in ssh is a Node program: on a heavily loaded machine its first
+// start alone can take seconds, so this waits well past that.
+const WAIT = { timeout: 20_000, interval: 20 };
 
 // Each test writes a stand-in ssh of its own, and on a busy Mac one written
 // moments ago can take seconds to start the first time, while macOS checks it.

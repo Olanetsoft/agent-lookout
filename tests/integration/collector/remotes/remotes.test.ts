@@ -9,7 +9,9 @@ import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/r
 // Windows: it takes ssh's first argument, -N, for an option of its own.
 const posixTest = test.skipIf(process.platform === "win32");
 
-const WAIT = { timeout: 8_000, interval: 50 };
+// The stand-in ssh is a Node program: on a heavily loaded machine its first
+// start alone can take seconds, so this waits well past that.
+const WAIT = { timeout: 20_000, interval: 50 };
 
 describe("createRemotes", () => {
   test("with no machine named, there is nothing to poll and no ssh is looked for", async () => {
