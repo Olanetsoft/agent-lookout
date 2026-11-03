@@ -9,6 +9,7 @@ import type { TmuxPane } from "@collector/tmux/panes";
 import {
   BASIS,
   ELSEWHERE_NOTE,
+  NEEDS_YOU_NOTE,
   NEWER_FORMAT_NOTE,
   NO_CHAT_AFTER_MS,
   NO_CHAT_NOTE,
@@ -381,6 +382,92 @@ describe("reading the sessions", () => {
     expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "idle", statusSince: NOW });
   });
 
+  test("needs you while Qwen Code asks a question, and works again once it is answered", async () => {
+    const files = memoryFiles();
+    addSession(files, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+
+    files.append(
+      chatPath(QWEN_DIR, ID),
+      lifecycleLine(NOW - 40_000, "started") +
+        lifecycleLine(NOW - 30_000, "ended") +
+        assistantLine(NOW - 30_000, { asks: "ask_user_question" }),
+      { mtimeMs: NOW + 1 },
+    );
+    clock.advance(2_000);
+    const asked = await adapter.poll();
+    expect(asked.sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - 30_000,
+    });
+    expect(asked.health.detail).toBe(healthy());
+    expect(JSON.stringify(asked).toLowerCase()).not.toContain("placeholder");
+
+    // With no newer line, a poll later is the same wait, at the same time.
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 30_000,
+    });
+
+    files.append(
+      chatPath(QWEN_DIR, ID),
+      toolResultLine(NOW, "success", { tool: "ask_user_question" }),
+      {
+        mtimeMs: NOW + 2,
+      },
+    );
+    clock.advance(2_000);
+    const answered = (await adapter.poll()).sessions[0];
+    expect(answered).toMatchObject({ status: "working", statusSince: NOW });
+    expect(answered).not.toHaveProperty("waitingReason");
+  });
+
+  test("a plan to approve needs you too, and a declined one is idle", async () => {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      lines: [
+        promptLine(NOW - MINUTE),
+        lifecycleLine(NOW - 30_000, "ended"),
+        assistantLine(NOW - 30_000, { asks: "exit_plan_mode" }),
+      ],
+    });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+    });
+    files.append(
+      chatPath(QWEN_DIR, ID),
+      toolResultLine(NOW, "cancelled", { tool: "exit_plan_mode" }),
+      {
+        mtimeMs: NOW + 1,
+      },
+    );
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "idle", statusSince: NOW });
+  });
+
+  test("a tool's approval writes nothing, so its session stays working", async () => {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      lines: [promptLine(NOW - MINUTE), assistantLine(NOW - 30_000, { calls: 1 })],
+    });
+    const adapter = qwenCodeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "working",
+      statusSince: NOW - MINUTE,
+    });
+  });
+
   test("carries the token counts of its newest reply that has them, read as the chat file grows", async () => {
     const files = memoryFiles();
     addSession(files, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
@@ -530,6 +617,9 @@ describe("reading the sessions", () => {
   test("carries its own declaration, and says where it looks", () => {
     const adapter = qwenCodeAdapterFor(memoryFiles());
     expect(adapter.capabilities).toBe(QWEN_CODE_CAPABILITIES);
+    expect(NEEDS_YOU_NOTE).toBe(
+      "A Qwen Code session shows as needing you while Qwen Code 0.25.1 or newer asks you a question or to approve a plan. Qwen Code does not record a wait for a tool's approval, so a session waiting for one shows as working.",
+    );
     expect(adapter.lookingIn).toBe("Looking for Qwen Code sessions in ~/.qwen/sessions.");
   });
 });
@@ -868,6 +958,41 @@ describe("closed sessions", () => {
     const result = await adapter.poll();
     expect(result.health.detail).toContain(OLDER_QWEN_NOTE);
     expect(result.sessions.map((session) => session.status)).toEqual(["finished"]);
+  });
+
+  test("a session whose Qwen Code crashes while it asks is finished, and needs you no more", async () => {
+    const { files, clock, processes, adapter } = setUp();
+    files.append(
+      chatPath(QWEN_DIR, ID),
+      lifecycleLine(NOW - 30_000, "ended") +
+        assistantLine(NOW - 30_000, { asks: "ask_user_question" }),
+      { mtimeMs: NOW + 1 },
+    );
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    processes.stop(41001);
+    clock.advance(2_000);
+    const [closed] = (await adapter.poll()).sessions;
+    expect(closed).toMatchObject({ status: "finished", statusSince: NOW + 2_000, alive: false });
+    expect(closed).not.toHaveProperty("waitingReason");
+  });
+
+  test("a record a crash left behind while it asked is finished at the first poll", async () => {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41005,
+      sessionId: sessionIdOf(5),
+      startedAt: NOW - 3 * 60 * MINUTE,
+      lines: [
+        promptLine(NOW - 2 * 60 * MINUTE),
+        lifecycleLine(NOW - 2 * 60 * MINUTE + 5 * SECOND, "ended"),
+        assistantLine(NOW - 2 * 60 * MINUTE + 5 * SECOND, { asks: "exit_plan_mode" }),
+      ],
+      mtimeMs: NOW - 2 * 60 * MINUTE + 5 * SECOND,
+    });
+    const adapter = qwenCodeAdapterFor(files, { isAlive: () => false });
+    const [leftBehind] = (await adapter.poll()).sessions;
+    expect(leftBehind).toMatchObject({ status: "finished", alive: false });
+    expect(leftBehind).not.toHaveProperty("waitingReason");
   });
 
   test("a record a crash left behind is finished from its last write, at the first poll only", async () => {

@@ -320,9 +320,9 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "A request that fails for good, and some replies stopped with Esc, such as between retries, show as working until the next prompt.",
   },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "Qwen Code does not record approval waits, so a session waiting for you shows as working.",
+      "While Qwen Code 0.25.1 or newer asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
   },
   finished: {
     level: "partly",
@@ -353,7 +353,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "Qwen Code records no approval waits, so there is nothing to answer from here, by hand or by a permission rule.",
+      "Agent Lookout never connects to a Qwen Code session's socket, and Qwen Code records no wait for a tool's approval.",
   },
 };
 

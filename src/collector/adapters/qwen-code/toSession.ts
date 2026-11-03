@@ -76,7 +76,9 @@ export interface QwenCodeSessionInput {
  *
  * - The status comes from the end of its chat file and when its process
  *   registered it, or moved to it with /clear or /resume (`mapQwenCodeStatus`).
- *   It is never "needs-you" or "failed".
+ *   It is "needs-you", with the reason "question", while Qwen Code 0.25.1 or
+ *   newer asks a question or asks for a plan's approval, and never "failed".
+ *   It never has a `waitingText`: what Qwen Code asks is never kept.
  * - Its name is the title Qwen Code gave it, or the one set with /rename,
  *   then its folder's name, then its id. What was typed is never used.
  * - Its folder is the one its record names now, which /cd moves on.
@@ -92,7 +94,7 @@ export interface QwenCodeSessionInput {
 export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   const { entry, chat, now } = input;
   const liveSince = plausibleTime(input.tookOverAt ?? entry.startedAt, now);
-  const { status, since } = mapQwenCodeStatus(chat?.fold ?? null, liveSince);
+  const { status, since, waitingReason } = mapQwenCodeStatus(chat?.fold ?? null, liveSince);
   const startedAt = plausibleTime(chat?.firstAt ?? null, now) ?? liveSince;
   let statusSince = plausibleTime(since, now);
   if (
@@ -108,6 +110,7 @@ export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   const session: Session = {
     ...base(entry, chat?.fold.title ?? null, startedAt),
     status,
+    ...(waitingReason === undefined ? {} : { waitingReason }),
     statusSince,
     alive: true,
     stale: isStale({ status, statusSince }, now),
@@ -139,13 +142,15 @@ export function withJump(
 /**
  * A session that was listed open and whose process has gone, or let it go, since `closedAt`.
  * When its process runs on, as after /clear or /resume, it names no process: that one has not ended.
+ * A wait it was in ends with it: it keeps no reason for one.
  */
 export function closedQwenCodeSession(
   session: Session,
   closedAt: number,
   processRunsOn = false,
 ): Session {
-  const closed: Session = { ...session, status: "finished", statusSince: closedAt, stale: false };
+  const { waitingReason: _waited, ...open } = session;
+  const closed: Session = { ...open, status: "finished", statusSince: closedAt, stale: false };
   if (!processRunsOn) return { ...closed, alive: false };
   const { pid: _pid, alive: _alive, ...rest } = closed;
   return rest;

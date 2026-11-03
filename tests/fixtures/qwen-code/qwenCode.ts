@@ -166,8 +166,14 @@ export function userLine(
 }
 
 export interface AssistantFields extends LineFields {
-  /** How many tools the reply calls. */
+  /** How many tools the reply calls, each `run_shell_command`. */
   calls?: number;
+  /**
+   * A tool the reply calls after those, with an input in that tool's shape:
+   * `ask_user_question` and `exit_plan_mode` ask the person, and any other
+   * name is called with a command.
+   */
+  asks?: string;
   /** A reply with no `message`, as Qwen Code writes when a response had none. */
   noMessage?: boolean;
   subtype?: string;
@@ -209,14 +215,37 @@ export const OPENAI_USAGE = {
   cachedContentTokenCount: 1800,
 } as const;
 
+/**
+ * What the model gives a tool, in the shape Qwen Code's tools take at v0.25.1
+ * (`askUserQuestion.ts`, `exitPlanMode.ts`): the question, its choices and the
+ * plan are words that must never leave the file.
+ */
+export function callInputOf(tool: string): Record<string, unknown> {
+  if (tool === "ask_user_question") {
+    return {
+      questions: [
+        {
+          question: PRIVATE_WORDS,
+          header: "Placeholder",
+          options: [
+            { label: PRIVATE_WORDS, description: PRIVATE_WORDS },
+            { label: `${PRIVATE_WORDS} too`, description: PRIVATE_WORDS },
+          ],
+          multiSelect: false,
+        },
+      ],
+    };
+  }
+  if (tool === "exit_plan_mode") return { plan: PRIVATE_WORDS };
+  return { command: PRIVATE_WORDS };
+}
+
 /** A whole reply, with its thought, its text, the tools it calls and its token counts. */
 export function assistantLine(time: number, fields: AssistantFields = {}): string {
-  const calls = Array.from({ length: fields.calls ?? 0 }, (_, index) => ({
-    functionCall: {
-      id: `call-${index + 1}`,
-      name: "run_shell_command",
-      args: { command: PRIVATE_WORDS },
-    },
+  const names = Array.from({ length: fields.calls ?? 0 }, () => "run_shell_command");
+  if (fields.asks !== undefined) names.push(fields.asks);
+  const calls = names.map((name, index) => ({
+    functionCall: { id: `call-${index + 1}`, name, args: callInputOf(name) },
   }));
   return lineOf({
     ...baseOf("assistant", time, fields),
@@ -240,12 +269,20 @@ export function assistantLine(time: number, fields: AssistantFields = {}): strin
   });
 }
 
+export interface ToolResultFields extends LineFields {
+  /** The tool the result is for, `run_shell_command` unless said. */
+  tool?: string;
+  /** The call's id, `call-1` unless said. */
+  callId?: string;
+}
+
 /** A tool's result, with its output and what was shown of it. */
 export function toolResultLine(
   time: number,
   status: "success" | "error" | "cancelled" = "success",
-  fields: LineFields = {},
+  fields: ToolResultFields = {},
 ): string {
+  const callId = fields.callId ?? "call-1";
   return lineOf({
     ...baseOf("tool_result", time, fields),
     message: {
@@ -253,14 +290,14 @@ export function toolResultLine(
       parts: [
         {
           functionResponse: {
-            id: "call-1",
-            name: "run_shell_command",
+            id: callId,
+            name: fields.tool ?? "run_shell_command",
             response: { output: PRIVATE_WORDS },
           },
         },
       ],
     },
-    toolCallResult: { callId: "call-1", status, resultDisplay: PRIVATE_WORDS },
+    toolCallResult: { callId, status, resultDisplay: PRIVATE_WORDS },
   });
 }
 

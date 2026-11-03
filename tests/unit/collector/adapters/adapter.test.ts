@@ -605,7 +605,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OPENCODE_CAPABILITIES.answer.level).toBe("no");
   });
 
-  test("Qwen Code: no line of its chat files makes a session need you, fail or finish", () => {
+  test("Qwen Code: only a reply that asks you a question or for a plan's approval makes a session need you, and no line fails or finishes one", () => {
     const records: QwenCodeRecord[] = [
       { type: "user", at: NOW - 60_000 },
       { type: "user", subtype: "notification", at: NOW - 60_000 },
@@ -625,22 +625,43 @@ describe("each declaration agrees with what its adapter does", () => {
       },
       { type: "summary", at: NOW - 20_000 },
     ];
-    const mapped = statuses(
-      records.flatMap((first) =>
-        records.flatMap((second) =>
-          [true, false].map(
-            (whole) =>
-              mapQwenCodeStatus(
-                [first, second].reduce(foldQwenCodeRecord, startQwenCodeFold(whole)),
-                NOW - 90_000,
-              ).status,
+    const asking: QwenCodeRecord[] = [
+      {
+        type: "assistant",
+        at: NOW - 50_000,
+        message: true,
+        calls: true,
+        waitsOn: "ask_user_question",
+      },
+      {
+        type: "assistant",
+        at: NOW - 50_000,
+        message: true,
+        calls: true,
+        waitsOn: "exit_plan_mode",
+      },
+    ];
+    const pairsOf = (lines: QwenCodeRecord[]) =>
+      statuses(
+        lines.flatMap((first) =>
+          lines.flatMap((second) =>
+            [true, false].map(
+              (whole) =>
+                mapQwenCodeStatus(
+                  [first, second].reduce(foldQwenCodeRecord, startQwenCodeFold(whole)),
+                  NOW - 90_000,
+                ).status,
+            ),
           ),
         ),
-      ),
+      );
+    // A reply that calls any other tool, as one waiting for its approval, is working.
+    expect(pairsOf(records)).toEqual(new Set(["working", "idle", "unknown"]));
+    expect(pairsOf([...records, ...asking])).toEqual(
+      new Set(["working", "needs-you", "idle", "unknown"]),
     );
-    expect(mapped).toEqual(new Set(["working", "idle", "unknown"]));
     expect(QWEN_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
-    expect(QWEN_CODE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES["needs-you"].level).toBe("partly");
     expect(QWEN_CODE_CAPABILITIES.failed.level).toBe("no");
     expect(QWEN_CODE_CAPABILITIES.finished.level).toBe("partly");
   });

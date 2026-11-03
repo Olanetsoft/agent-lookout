@@ -145,7 +145,11 @@ describe("recordOf", () => {
       userLine(NOW, "mid_turn_user_message"),
       userLine(NOW, "cron"),
       assistantLine(NOW, { calls: 1 }),
+      assistantLine(NOW, { asks: "ask_user_question" }),
+      assistantLine(NOW, { calls: 1, asks: "exit_plan_mode" }),
       toolResultLine(NOW),
+      toolResultLine(NOW, "success", { tool: "ask_user_question", callId: "call-2" }),
+      toolResultLine(NOW, "cancelled", { tool: "exit_plan_mode", callId: "call-2" }),
       apiResponseLine(NOW),
       compressionLine(NOW, 1_000),
       snapshotLine(NOW),
@@ -153,10 +157,65 @@ describe("recordOf", () => {
     ];
     for (const line of lines) {
       const kept = JSON.stringify(recordOf(lineOf(line)));
-      expect(kept).not.toContain("placeholder");
+      expect(kept.toLowerCase()).not.toContain("placeholder");
+      expect(kept).not.toContain("call-");
       expect(kept).not.toContain("demo-project");
       expect(kept).not.toContain("main");
       expect(kept).not.toContain("demo-model");
+    }
+  });
+
+  test.each(["ask_user_question", "exit_plan_mode"])(
+    "keeps the name of %s, a tool that asks the person, and nothing else of its call",
+    (tool) => {
+      const asking = { type: "assistant", at: NOW, message: true, calls: true, waitsOn: tool };
+      expect(recordOf(lineOf(assistantLine(NOW, { asks: tool })))).toEqual({
+        ...asking,
+        tokens: GEMINI_TOKENS,
+      });
+      // Beside other calls of the same reply.
+      expect(recordOf(lineOf(assistantLine(NOW, { calls: 2, asks: tool, usage: null })))).toEqual(
+        asking,
+      );
+    },
+  );
+
+  test("of two tools that ask, keeps the first the reply calls", () => {
+    const parts = [
+      { functionCall: { id: "call-1", name: "exit_plan_mode", args: { plan: PRIVATE_WORDS } } },
+      { functionCall: { id: "call-2", name: "ask_user_question", args: {} } },
+    ];
+    expect(recordOf(lineOf(assistantLine(NOW, { parts, usage: null })))).toMatchObject({
+      waitsOn: "exit_plan_mode",
+    });
+  });
+
+  test("compares a call's name exactly, so no other name, spelling or text asks", () => {
+    for (const name of [
+      "AskUserQuestion",
+      "ExitPlanMode",
+      "ASK_USER_QUESTION",
+      " ask_user_question",
+      "exit_plan_mode ",
+      "mcp__demo__ask_user_question",
+      "run_shell_command",
+      ["ask_user_question"],
+      { name: "exit_plan_mode" },
+    ]) {
+      const parts = [{ functionCall: { id: "call-1", name, args: {} } }];
+      const record = recordOf(lineOf(assistantLine(NOW, { parts, usage: null })));
+      expect(record).toEqual({ type: "assistant", at: NOW, message: true, calls: true });
+    }
+    // A reply that names the tools in its text calls nothing.
+    const said = recordOf(
+      lineOf(assistantLine(NOW, { says: "ask_user_question exit_plan_mode", usage: null })),
+    );
+    expect(said).toEqual({ type: "assistant", at: NOW, message: true });
+  });
+
+  test("skips a subagent's line that asks, so it never begins a wait", () => {
+    for (const tool of ["ask_user_question", "exit_plan_mode"]) {
+      expect(recordOf(lineOf(assistantLine(NOW, { asks: tool, sidechain: true })))).toBeNull();
     }
   });
 
@@ -469,6 +528,98 @@ describe("createChatReader", () => {
     files.forget();
     await readNow(files, reader);
     expect(files.opened()).toEqual([FILE]);
+  });
+});
+
+describe("a question or a plan Qwen Code asks you, read from the file", () => {
+  test("needs you from the line that asks, and works again once its results are written", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        lifecycleLine(NOW - 58_000, "started"),
+        lifecycleLine(NOW - 50_000, "ended"),
+        assistantLine(NOW - 50_000, { asks: "ask_user_question" }),
+      ),
+    );
+    const reader = createChatReader(files.io);
+    const asked = await readNow(files, reader);
+    expect(mapQwenCodeStatus(asked.fold, NOW - 120_000)).toEqual({
+      status: "needs-you",
+      since: NOW - 50_000,
+      waitingReason: "question",
+    });
+    expect(JSON.stringify(asked).toLowerCase()).not.toContain("placeholder");
+
+    files.append(
+      FILE,
+      toolResultLine(NOW - 10_000, "success", { tool: "ask_user_question" }) +
+        lifecycleLine(NOW - 9_000, "started"),
+      { mtimeMs: NOW + 1 },
+    );
+    expect(mapQwenCodeStatus((await readNow(files, reader)).fold, NOW - 120_000)).toEqual({
+      status: "working",
+      since: NOW - 10_000,
+    });
+  });
+
+  test("a plan declined, or Esc in its prompt, is idle once its stopped result is written", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        lifecycleLine(NOW - 58_000, "started"),
+        lifecycleLine(NOW - 50_000, "ended"),
+        assistantLine(NOW - 50_000, { asks: "exit_plan_mode" }),
+      ),
+    );
+    const reader = createChatReader(files.io);
+    expect(mapQwenCodeStatus((await readNow(files, reader)).fold, NOW - 120_000)).toMatchObject({
+      status: "needs-you",
+      since: NOW - 50_000,
+    });
+    files.append(FILE, toolResultLine(NOW - 10_000, "cancelled", { tool: "exit_plan_mode" }), {
+      mtimeMs: NOW + 1,
+    });
+    expect(mapQwenCodeStatus((await readNow(files, reader)).fold, NOW - 120_000)).toEqual({
+      status: "idle",
+      since: NOW - 10_000,
+    });
+  });
+
+  test("a reply that asks with no request's end before it, as Qwen Code before 0.25.1 writes, is working", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        assistantLine(NOW - 50_000, { asks: "ask_user_question" }),
+      ),
+    );
+    expect(mapQwenCodeStatus((await readNow(files)).fold, NOW - 120_000)).toEqual({
+      status: "working",
+      since: NOW - 60_000,
+    });
+  });
+
+  test("a subagent's line that asks changes nothing of the session's own status", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        assistantLine(NOW - 55_000, { calls: 1 }),
+        lifecycleLine(NOW - 52_000, "started"),
+        lifecycleLine(NOW - 50_000, "ended"),
+        assistantLine(NOW - 50_000, { asks: "ask_user_question", sidechain: true }),
+      ),
+    );
+    expect(mapQwenCodeStatus((await readNow(files)).fold, NOW - 120_000)).toEqual({
+      status: "working",
+      since: NOW - 60_000,
+    });
   });
 });
 

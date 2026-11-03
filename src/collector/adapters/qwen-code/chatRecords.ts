@@ -1,9 +1,11 @@
 import {
   foldQwenCodeRecord,
+  QWEN_CODE_WAIT_TOOLS,
   startQwenCodeFold,
   type QwenCodeFold,
   type QwenCodeLifecycle,
   type QwenCodeRecord,
+  type QwenCodeWaitTool,
 } from "../../../core/mapping/qwen-code/qwenCodeMapping.ts";
 import type { TokenCounts } from "../../../core/sessions/session.ts";
 import { sessionName } from "../../../core/text.ts";
@@ -20,18 +22,19 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  *
  * - of a `user` line, whether it is a notification stamped as a turn's first line;
  * - of an `assistant` line, whether it holds a reply, whether that calls a
- *   tool, and the reply's token counts, three numbers worked out from its
- *   `usageMetadata` (`usageCountsOf`);
+ *   tool, which of the two tools that wait for the person it calls, by name
+ *   alone (`waitToolOf`), and the reply's token counts, three numbers worked
+ *   out from its `usageMetadata` (`usageCountsOf`);
  * - of a `tool_result` line, whether the call was stopped or declined;
  * - of a `request_lifecycle` event, whether a request started or ended, how it
  *   ended and whether a subagent made it;
  * - of a `custom_title` line, the title;
  * - whether a line belongs to a Managed Session log.
  *
- * Nothing else is kept: no prompt, reply, thought, tool input or output, folder
- * or branch. Each line is parsed and dropped at once, and only what it says is
- * folded in (`qwenCodeMapping.ts`). A line a subagent wrote into the file is
- * skipped.
+ * Nothing else is kept: no prompt, reply, thought, tool input, call id or
+ * output, folder or branch. Each line is parsed and dropped at once, and only
+ * what it says is folded in (`qwenCodeMapping.ts`). A line a subagent wrote
+ * into the file is skipped.
  *
  * Every read is bounded. The first reads at most the last 8 MiB, and drops the
  * line it cut into. Each one after reads only what was appended since, at most
@@ -112,6 +115,24 @@ function callsATool(message: Record<string, unknown>): boolean {
   );
 }
 
+/**
+ * The first tool a reply calls that waits for the person, `ask_user_question`
+ * or `exit_plan_mode`, or undefined. A call's name is compared exactly with
+ * each, and what is kept is the list's own word, never the line's. Nothing
+ * else of a call is read: not its id, nor its input.
+ */
+function waitToolOf(message: Record<string, unknown>): QwenCodeWaitTool | undefined {
+  const { parts } = message;
+  if (!Array.isArray(parts)) return undefined;
+  for (const part of parts) {
+    if (!isRecord(part) || !isRecord(part.functionCall)) continue;
+    const { name } = part.functionCall;
+    const tool = QWEN_CODE_WAIT_TOOLS.find((known) => known === name);
+    if (tool !== undefined) return tool;
+  }
+  return undefined;
+}
+
 /** A whole number of tokens: zero or more, and small enough to be exact. */
 function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -188,7 +209,11 @@ export function recordOf(line: string): QwenCodeRecord | null {
     case "assistant":
       if (isRecord(value.message)) {
         record.message = true;
-        if (callsATool(value.message)) record.calls = true;
+        if (callsATool(value.message)) {
+          record.calls = true;
+          const waitsOn = waitToolOf(value.message);
+          if (waitsOn !== undefined) record.waitsOn = waitsOn;
+        }
       }
       if (value.usageMetadata !== undefined) record.tokens = usageCountsOf(value.usageMetadata);
       break;

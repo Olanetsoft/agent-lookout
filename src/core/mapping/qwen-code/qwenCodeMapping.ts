@@ -2,13 +2,26 @@
 // today and a browser or desktop host later share one mapping.
 //
 // Qwen Code writes one line for each prompt, each whole reply, each batch of
-// tool results and many events of its own, and nothing while it waits for an
-// approval. So a Qwen Code session is working, idle or unknown here, and never
-// "needs-you" or "failed". Built from Qwen Code's source at v0.25.1 and not yet
-// checked on a machine running it. See docs/adapters/qwen-code.md for where
-// each value comes from.
+// tool results and many events of its own, and nothing while it waits for a
+// tool's approval. A question it asks, or a plan it asks the person to
+// approve, is a call to a tool of its own: the reply that calls it is written
+// before Qwen Code asks, and its result once the person answers. So a Qwen
+// Code session is needs-you while Qwen Code 0.25.1 or newer asks one of
+// those, and otherwise working, idle or unknown, never "failed". Built from
+// Qwen Code's source at v0.25.1 and not yet checked on a machine running it.
+// See docs/adapters/qwen-code.md for where each value comes from.
 
-import type { SessionStatus, TokenCounts } from "../../sessions/session.ts";
+import type { SessionStatus, TokenCounts, WaitingReason } from "../../sessions/session.ts";
+
+/**
+ * The tools a reply calls that wait for the person before any of the reply's
+ * calls runs: a question, `ask_user_question`, and a plan to approve,
+ * `exit_plan_mode`, as `core/tools/tool-names.ts` names them at v0.25.1. A
+ * call to any other tool, one that waits for its approval among them, is work.
+ */
+export const QWEN_CODE_WAIT_TOOLS = ["ask_user_question", "exit_plan_mode"] as const;
+
+export type QwenCodeWaitTool = (typeof QWEN_CODE_WAIT_TOOLS)[number];
 
 /**
  * The little the adapter keeps of one line of a chat file, and nothing else:
@@ -30,6 +43,12 @@ export interface QwenCodeRecord {
   message?: true;
   /** An `assistant` line whose reply calls a tool. */
   calls?: true;
+  /**
+   * An `assistant` line whose reply calls a tool that waits for the person:
+   * the first such tool's name, the list's own word. Nothing else of the call
+   * is kept.
+   */
+  waitsOn?: QwenCodeWaitTool;
   /**
    * An `assistant` line's token counts, from its `usageMetadata`: null when
    * they could not be right. Left out when the line has no `usageMetadata`.
@@ -60,6 +79,8 @@ export interface QwenCodeLifecycle {
  * prompt             a turn began: a prompt, a scheduled prompt, a goal's turn or a sent notification
  * activity           something typed while a turn runs
  * calls              a reply that calls tools
+ * question           a reply that asks the person a question, `ask_user_question`
+ * plan-approval      a reply that asks the person to approve a plan, `exit_plan_mode`
  * results            the results of those calls, none of them stopped
  * request            a request of the session's own to the model began, and has not ended
  * cancelled-results  results of which one or more was stopped or declined
@@ -74,6 +95,8 @@ export type QwenCodeEvent =
   | "prompt"
   | "activity"
   | "calls"
+  | "question"
+  | "plan-approval"
   | "results"
   | "request"
   | "cancelled-results"
@@ -91,6 +114,14 @@ const WORKING_EVENTS: ReadonlySet<QwenCodeEvent> = new Set([
   "results",
   "request",
 ]);
+
+const NEEDS_YOU_EVENTS: ReadonlySet<QwenCodeEvent> = new Set(["question", "plan-approval"]);
+
+/** The event a reply that calls tools is, by the tool it waits on, if any. */
+const WAIT_EVENT: Record<QwenCodeWaitTool, QwenCodeEvent> = {
+  ask_user_question: "question",
+  exit_plan_mode: "plan-approval",
+};
 
 const IDLE_EVENTS: ReadonlySet<QwenCodeEvent> = new Set([
   "cancelled-results",
@@ -126,6 +157,11 @@ export interface QwenCodeFold {
   batchCancelled: boolean;
   /** While a request of the session's own is the newest event: the event before it, and that event's time. */
   beforeRequest: { event: QwenCodeEvent | null; eventAt: number | null } | null;
+  /**
+   * Whether a request of the session's own has ended, other than stopped,
+   * since the newest reply. Only a reply that comes then can begin a wait.
+   */
+  requestEnded: boolean;
   /** The newest title. */
   title: string | null;
   /** Whether a line says this is a Managed Session log. */
@@ -148,14 +184,16 @@ export function startQwenCodeFold(whole: boolean): QwenCodeFold {
     sinceSeen: false,
     batchCancelled: false,
     beforeRequest: null,
+    requestEnded: false,
     title: null,
     managed: false,
     tokens: null,
   };
 }
 
-function statusOf(event: QwenCodeEvent): "working" | "idle" | "unknown" {
+function statusOf(event: QwenCodeEvent): "working" | "needs-you" | "idle" | "unknown" {
   if (WORKING_EVENTS.has(event)) return "working";
+  if (NEEDS_YOU_EVENTS.has(event)) return "needs-you";
   if (IDLE_EVENTS.has(event)) return "idle";
   return "unknown";
 }
@@ -174,14 +212,16 @@ function withEvent(fold: QwenCodeFold, event: QwenCodeEvent, at: number | null):
  * A request of the session's own that ended well, or failed, says nothing
  * more: the event before it stands again. A request after a reply, as Qwen
  * Code's check of who speaks next makes, leaves the session idle. An idle
- * stretch that comes back begins when the request ended.
+ * stretch that comes back begins when the request ended. The event before it
+ * is never a wait: a request that starts during one is not folded.
  */
 function afterRequest(fold: QwenCodeFold, at: number | null): QwenCodeFold {
   const before = fold.beforeRequest;
   if (fold.event !== "request" || before === null) return fold;
   const back = { ...fold, event: before.event, eventAt: before.eventAt, beforeRequest: null };
   if (before.event === null) return { ...back, since: null, sinceSeen: false };
-  return statusOf(before.event) === "working" ? back : { ...back, since: at, sinceSeen: true };
+  if (statusOf(before.event) === "working") return back;
+  return { ...back, since: at, sinceSeen: true };
 }
 
 /** The event a `user` line is, if any. */
@@ -200,26 +240,32 @@ function userEvent(record: QwenCodeRecord): QwenCodeEvent | null {
  * Folds one line into what the lines before it said. Pure: the fold given is
  * not changed.
  *
- * | Line                                              | Event             | Status  |
- * | ------------------------------------------------- | ----------------- | ------- |
- * | `user` with no subtype, `cron`, `goal_runtime`    | prompt            | working |
- * | `user` `notification` stamped `deliveredTurn`     | prompt            | working |
- * | `user` `mid_turn_user_message`                    | activity          | working |
- * | any other `user` line                             | none              |         |
- * | `assistant` whose reply calls a tool              | calls             | working |
- * | `assistant` with a reply and no call              | reply             | idle    |
- * | `assistant` too long to read whole                | oversized-reply   | unknown |
- * | `assistant` with a subtype, or with no reply      | none              |         |
- * | `assistant` right after a request stopped with Esc | none             |         |
- * | `tool_result`, none stopped since the calls       | results           | working |
- * | `tool_result`, one or more stopped since the calls | cancelled-results | idle   |
- * | `request_lifecycle` `started`                     | request           | working |
- * | `request_lifecycle` `ended` `cancelled`           | cancelled         | idle    |
- * | `request_lifecycle` `ended` any other way         | the one before    |         |
- * | `system` `rewind`                                 | rewind            | idle    |
- * | `system` `turn_result`                            | turn-end          | idle    |
- * | any other `system` line                           | none              |         |
- * | a line of any other type                          | unknown-type      | unknown |
+ * | Line                                               | Event             | Status    |
+ * | -------------------------------------------------- | ----------------- | --------- |
+ * | `user` with no subtype, `cron`, `goal_runtime`     | prompt            | working   |
+ * | `user` `notification` stamped `deliveredTurn`      | prompt            | working   |
+ * | `user` `mid_turn_user_message`                     | activity          | working   |
+ * | any other `user` line                              | none              |           |
+ * | `assistant` whose reply calls `ask_user_question`, | question          | needs-you |
+ * |   after a request that ended, not stopped          |                   |           |
+ * | `assistant` whose reply calls `exit_plan_mode`,    | plan-approval     | needs-you |
+ * |   after a request that ended, not stopped          |                   |           |
+ * | `assistant` whose reply calls any other tool, or   | calls             | working   |
+ * |   one of those two with no such request before it  |                   |           |
+ * | `assistant` with a reply and no call               | reply             | idle      |
+ * | `assistant` too long to read whole                 | oversized-reply   | unknown   |
+ * | `assistant` with a subtype, or with no reply       | none              |           |
+ * | `assistant` right after a request stopped with Esc | none              |           |
+ * | `tool_result`, none stopped since the calls        | results           | working   |
+ * | `tool_result`, one or more stopped since the calls | cancelled-results | idle      |
+ * | `request_lifecycle` `started`                      | request           | working   |
+ * | `request_lifecycle` `started` during a wait        | none              |           |
+ * | `request_lifecycle` `ended` `cancelled`            | cancelled         | idle      |
+ * | `request_lifecycle` `ended` any other way          | the one before    |           |
+ * | `system` `rewind`                                  | rewind            | idle      |
+ * | `system` `turn_result`                             | turn-end          | idle      |
+ * | any other `system` line                            | none              |           |
+ * | a line of any other type                           | unknown-type      | unknown   |
  *
  * Only the session's own requests count: a subagent's, and every other event
  * Qwen Code records, change nothing. A request that ended well or failed puts
@@ -230,7 +276,23 @@ function userEvent(record: QwenCodeRecord): QwenCodeEvent | null {
  * An `assistant` line right after a request stopped with Esc is the part of
  * the reply Qwen Code had when it stopped, written after the stop. It changes
  * nothing, even when that part calls a tool: no tool runs, and the turn is
- * over.
+ * over. So it never begins a wait either.
+ *
+ * A reply that calls `ask_user_question` or `exit_plan_mode`, alone or beside
+ * other calls, waits for the person: Qwen Code shows the question or the plan
+ * and runs none of the reply's calls until it is answered. The wait lasts
+ * until a newer line says anything: the results, written once every call of
+ * the reply has ended, and stopped ones when the person declined or pressed
+ * Esc. A line a subagent wrote is never folded, so it never begins one.
+ *
+ * Such a reply begins a wait only after a request of the session's own that
+ * ended, and was not stopped, with no reply between them. From 0.25.1 Qwen
+ * Code writes the end of each request before the reply to it. Before 0.25.1
+ * it writes no request, and from 0.24.0 Esc after part of a reply writes that
+ * part with nothing before it that says it was stopped. A call in that part
+ * never runs, and no line tells it from one that asks, so such a reply is
+ * "calls" there. Qwen Code writes no request of the session's own while it
+ * asks, so one that starts then leaves the wait as it was.
  *
  * Results that include a stopped call are idle because Esc while tools run
  * ends the turn, whichever calls finished first. When only a declined call
@@ -258,10 +320,17 @@ export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): 
       if (record.subtype !== undefined) return next;
       if (record.oversized) next = { ...next, tokens: null };
       else if (record.tokens !== undefined) next = { ...next, tokens: record.tokens };
+      // A reply answers the request that ended before it, if one did.
+      const answers = next.requestEnded;
+      next = { ...next, requestEnded: false };
       // The part of a reply stopped with Esc, written after the stop.
       if (next.event === "cancelled") return next;
       if (record.oversized) return withEvent(next, "oversized-reply", at);
-      if (record.calls) return withEvent({ ...next, batchCancelled: false }, "calls", at);
+      if (record.calls) {
+        const event =
+          record.waitsOn === undefined || !answers ? "calls" : WAIT_EVENT[record.waitsOn];
+        return withEvent({ ...next, batchCancelled: false }, event, at);
+      }
       if (record.message) return withEvent(next, "reply", at);
       return next;
     }
@@ -284,6 +353,8 @@ export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): 
         return next;
       }
       if (lifecycle.phase === "started") {
+        next = { ...next, requestEnded: false };
+        if (next.event !== null && statusOf(next.event) === "needs-you") return next;
         const beforeRequest =
           next.event === "request"
             ? next.beforeRequest
@@ -291,9 +362,9 @@ export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): 
         return withEvent({ ...next, beforeRequest }, "request", at);
       }
       if (lifecycle.outcome === "cancelled") {
-        return withEvent({ ...next, beforeRequest: null }, "cancelled", at);
+        return withEvent({ ...next, beforeRequest: null, requestEnded: false }, "cancelled", at);
       }
-      return afterRequest(next, at);
+      return afterRequest({ ...next, requestEnded: true }, at);
     }
     default:
       return withEvent(next, "unknown-type", at);
@@ -308,6 +379,8 @@ export interface QwenCodeStatus {
   status: SessionStatus;
   /** When the status began, when the lines say. */
   since: number | null;
+  /** Present only when the status is "needs-you". */
+  waitingReason?: WaitingReason;
 }
 
 /**
@@ -324,20 +397,24 @@ export interface QwenCodeStatus {
  * 3. No line that says anything in a file read from its middle: unknown.
  * 4. A newest event from before the session registered, left by an earlier
  *    Qwen Code that resumed it or stopped mid-turn: idle since it registered.
- * 5. A prompt, activity, calls, results or a request as the newest event:
+ * 5. A question or a plan to approve as the newest event: needs-you, with
+ *    the reason "question", since the line that asked. Both are questions put
+ *    to the person: the plan's is "Would you like to proceed?".
+ * 6. A prompt, activity, calls, results or a request as the newest event:
  *    working. A request that fails for good writes nothing more, and nor does
  *    Esc while Qwen Code waits to retry, so its session stays working until
  *    the next prompt.
- * 6. A reply, results with a stopped call, a rewind, a turn's end or a
+ * 7. A reply, results with a stopped call, a rewind, a turn's end or a
  *    stopped request: idle.
- * 7. Anything else: unknown.
+ * 8. Anything else: unknown.
  *
- * It never returns "needs-you", "failed" or "finished": Qwen Code writes
- * nothing while it waits for an approval, writes no line when a request has
- * failed for good, and a closed session is decided from the list of running
- * sessions. A working session's time is when its stretch of work began, or
- * null when that is not in what was read. An idle session's is never before
- * it registered.
+ * It never returns "failed" or "finished": Qwen Code writes no line when a
+ * request has failed for good, and a closed session is decided from the list
+ * of running sessions. Nor "needs-you" for a tool's approval, which Qwen Code
+ * does not write: that session is working. A waiting session's time is the
+ * line that asked, which stays the same while the wait lasts. A working
+ * session's time is when its stretch of work began, or null when that is not
+ * in what was read. An idle session's is never before it registered.
  */
 export function mapQwenCodeStatus(
   fold: QwenCodeFold | null,
@@ -353,6 +430,7 @@ export function mapQwenCodeStatus(
   if (fold.event === null) return { status: "unknown", since: null };
   if (!registered(fold.eventAt)) return { status: "idle", since: liveSince };
   const status = statusOf(fold.event);
+  if (status === "needs-you") return { status, since: fold.eventAt, waitingReason: "question" };
   if (status === "working") return { status, since: fold.sinceSeen ? fold.since : null };
   if (status === "idle") {
     const { since } = fold;
