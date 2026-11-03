@@ -56,3 +56,6 @@ export function geminiCliAdapterFor(files: MemoryFiles, options: GeminiCliAdapte
 /** What a healthy poll says, for a sessions folder written as people see it. */
 export const healthy = (tmp = "~/.gemini/tmp") =>
   `Sessions are read from the files Gemini CLI saves in ${tmp}. ${NEEDS_YOU_NOTE} ${FILES_ONLY_NOTE} ${UNCHECKED_NOTE}`;
+
+/** What Sources says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ = "end of a session's file, while its details are open";

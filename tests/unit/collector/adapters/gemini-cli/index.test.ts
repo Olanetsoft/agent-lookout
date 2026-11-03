@@ -12,6 +12,7 @@ import {
 } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import type { FileInfo, ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { ANSWER_AGAIN_MS, createTailLimits } from "@collector/messages/tailReader";
 import {
   chatFile,
   chatName,
@@ -39,6 +40,8 @@ import {
   PROJECT,
   projectRootPath,
   resumedToolRoundAsOf063,
+  rewindLine,
+  SECOND,
   sessionAsOf063,
   sessionIdOf,
   setLine,
@@ -58,6 +61,7 @@ import {
   geminiCliAdapterFor,
   handClock,
   healthy,
+  LAST_MESSAGE_READ,
   memoryFiles,
 } from "@tests/support/adapters/geminiCliAdapter";
 
@@ -170,6 +174,7 @@ describe("reading the sessions", () => {
       { label: "Read", value: "every 2 seconds" },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
       { label: "Programs run", value: "None" },
+      { label: "Last message read", value: LAST_MESSAGE_READ },
     ]);
     expect(basis).toBe("files");
     const byId = new Map(sessions.map((session) => [session.id, session]));
@@ -664,5 +669,275 @@ describe("what is kept between polls", () => {
       [idOf(ids.idle), idOf(ids.working)].sort(),
     );
     expect(back.map((session) => session.cwd)).toEqual([moved, moved]);
+  });
+});
+
+describe("what a session last said", () => {
+  const sessionId = sessionIdOf("08");
+  const SAID = idOf(sessionId);
+  const began = NOW - 20 * MINUTE;
+  const FILE = chatPath(chatName(began, sessionId));
+  const [prompt = "", answered = "", batch = "", result = ""] = ["81", "82", "83", "84"].map(
+    messageIdOf,
+  );
+
+  /** A session whose newest reply with text is followed by one that only calls a tool, and its result. */
+  function saying(options: Parameters<typeof geminiCliAdapterFor>[1] = {}) {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    files.write(projectRootPath(), PROJECT);
+    files.write(
+      FILE,
+      chatFile([
+        headerLine({ sessionId, startTime: began }),
+        contextLine(began + 100),
+        userLine(prompt, NOW - 2 * MINUTE),
+        geminiLine(answered, NOW - MINUTE, { content: "The reply." }),
+        geminiLine(batch, NOW - 30 * SECOND, {
+          content: "",
+          toolCalls: [toolCall("success", NOW - 25 * SECOND)],
+        }),
+        toolResultLine(result, NOW - 20 * SECOND),
+        updatedLine(NOW - 20 * SECOND),
+      ]),
+      { mtimeMs: NOW - 20 * SECOND },
+    );
+    const adapter = geminiCliAdapterFor(files, { now: clock.now, ...options });
+    return { clock, files, adapter };
+  }
+
+  test("is the newest reply's text for a listed session, read from its file only when asked", async () => {
+    const { adapter, files } = saying();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    await adapter.poll();
+    files.forget();
+    const answer = await adapter.lastMessage(SAID);
+    expect(answer).toEqual({ message: { text: "The reply.", cut: false } });
+    expect(JSON.stringify(answer)).not.toContain(PRIVATE_WORDS);
+    expect(files.opened()).toEqual([FILE]);
+    files.forget();
+    await expect(adapter.lastMessage(idOf(sessionIdOf("09")))).resolves.toBeNull();
+    await expect(adapter.lastMessage(`codex:${sessionId}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a poll reads the session files as it does with the reader off, and puts no message on a session", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    const [onResult] = [await on.adapter.poll(), await off.adapter.poll()];
+    expect(on.files.count("openRegular")).toBeGreaterThan(0);
+    expect(on.files.count("openRegular")).toBe(off.files.count("openRegular"));
+    expect(on.files.reads).toEqual(off.files.reads);
+    expect(JSON.stringify(onResult?.sessions)).not.toContain("The reply.");
+  });
+
+  test("a poll after an ask puts nothing of the reply on a session", async () => {
+    const { adapter, clock } = saying();
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    clock.advance(2 * SECOND);
+    const next = await adapter.poll();
+    expect(next.sessions.map((session) => session.id)).toContain(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+    expect(JSON.stringify(next)).not.toContain("The reply.");
+  });
+
+  test("Sources says it reads the end of a session's file while its details are open", async () => {
+    const { adapter } = saying();
+    expect((await adapter.poll()).health.watching).toContainEqual({
+      label: "Last message read",
+      value: "end of a session's file, while its details are open",
+    });
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: "off" }, "AGENT_LOOKOUT_WAITING_TEXT"],
+  ])("with %j, is off by that setting, and no file is opened for it", async (env, setting) => {
+    const { adapter, files } = saying({ env });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({ label: "Last message read", value: "Off" });
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: null,
+      reason: "off",
+      setting,
+    });
+    expect(files.calls).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("a reply Gemini CLI takes back is not shown once its $rewindTo is written", async () => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    files.append(
+      FILE,
+      chatFile([
+        userLine(messageIdOf("85"), NOW - 10 * SECOND),
+        geminiLine(messageIdOf("86"), NOW - 5 * SECOND, { content: "A reply taken back." }),
+      ]),
+    );
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "A reply taken back.", cut: false },
+    });
+
+    files.append(FILE, chatFile([rewindLine(messageIdOf("85")), updatedLine(NOW)]));
+    clock.advance(ANSWER_AGAIN_MS);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("of two files of one session, is read from the one it was listed from, the one active last", async () => {
+    const { adapter, clock, files } = saying();
+    const older = chatPath(chatName(began, sessionId, 1));
+    files.write(
+      older,
+      chatFile([
+        headerLine({ sessionId, startTime: began }),
+        geminiLine(messageIdOf("87"), NOW - 10 * MINUTE, { content: "An older copy." }),
+        updatedLine(NOW - 10 * MINUTE),
+      ]),
+    );
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(files.opened()).toEqual([FILE]);
+
+    // The other is written to later, and the next poll lists the session from it.
+    files.append(
+      older,
+      chatFile([geminiLine(messageIdOf("88"), NOW, { content: "The copy goes on." })]),
+    );
+    clock.advance(2 * SECOND);
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The copy goes on.", cut: false },
+    });
+    expect(files.opened()).toEqual([older]);
+  });
+
+  test("never reads a subagent's file, though it holds a newer reply", async () => {
+    const { adapter, files } = saying();
+    const subagent = chatPath(`${sessionId}/agent-0001.jsonl`);
+    files.write(
+      subagent,
+      chatFile([
+        headerLine({ sessionId: "agent-0001", kind: "subagent" }),
+        geminiLine(messageIdOf("89"), NOW, { content: PRIVATE_WORDS }),
+      ]),
+    );
+    await adapter.poll();
+    files.forget();
+    const answer = await adapter.lastMessage(SAID);
+    expect(answer).toEqual({ message: { text: "The reply.", cut: false } });
+    expect(JSON.stringify(answer)).not.toContain(PRIVATE_WORDS);
+    expect(files.opened()).toEqual([FILE]);
+  });
+
+  test("keeps none once the session leaves the list, or after a poll that cannot list the sessions", async () => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    files.fail(TMP_DIR);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).health.state).toBe("error");
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    // Listed again, it is read again.
+    files.heal(TMP_DIR);
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+
+    // A day after its last update, it has left the list, and nothing of it is kept or read.
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions.map((session) => session.id)).not.toContain(SAID);
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a session whose file could not be read this poll is not listed, and not read until a poll lists it", async () => {
+    const { adapter, clock, files } = saying();
+    await adapter.poll();
+    files.fail(FILE);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions.map((session) => session.id)).not.toContain(SAID);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    files.heal(FILE);
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("is dropped, and nothing may be read, after a poll that throws, and is read again once a poll lists the session", async () => {
+    const clock = handClock(NOW);
+    let broken = false;
+    // A clock that throws once, as nothing in a poll is expected to.
+    const now = () => {
+      if (broken) {
+        broken = false;
+        throw new Error("A stand-in that throws.");
+      }
+      return clock.now();
+    };
+    const { adapter, files } = saying({ now });
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    broken = true;
+    clock.advance(SECOND);
+    const failed = await adapter.poll();
+    expect(failed.health.state).toBe("error");
+    expect(failed.health.detail).toBe(
+      "Something unexpected went wrong while reading Gemini CLI sessions.",
+    );
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("counts its reads against the limits the collector shares", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const { adapter } = saying({ lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await adapter.lastMessage(SAID);
+    expect(asked).toBe(1);
   });
 });

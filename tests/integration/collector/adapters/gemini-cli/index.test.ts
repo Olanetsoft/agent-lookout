@@ -1,5 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFile, cp, lstat, readdir, readFile, readlink, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  cp,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,14 +21,22 @@ import { createGeminiCliAdapter } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  chatFile,
+  chatName,
   geminiLine,
+  headerLine,
   HOME,
   ids,
   messageIdOf,
+  MINUTE,
   NOW,
   PRIVATE_WORDS,
   PROJECT,
+  SECOND,
+  sessionIdOf,
+  SLUG,
   updatedLine,
+  userLine,
 } from "@tests/fixtures/gemini-cli/geminiCli";
 import { handClock } from "@tests/support/adapters/geminiCliAdapter";
 import { tempDir } from "@tests/support/node/tempFiles";
@@ -216,4 +236,127 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
       statusSince: NOW,
     });
   });
+});
+
+describe("what a session last said, read from the real files", () => {
+  /** A session file whose newest reply says this, written as Gemini CLI writes one. */
+  const sessionLines = (sessionId: string, says: string) =>
+    chatFile([
+      headerLine({ sessionId, startTime: NOW - 10 * MINUTE }),
+      userLine(messageIdOf("91"), NOW - 2 * MINUTE),
+      geminiLine(messageIdOf("92"), NOW - MINUTE, { content: says }),
+      updatedLine(NOW - MINUTE),
+    ]);
+
+  /**
+   * A session listed by a poll, with another session's file, a subagent's file
+   * of its own and a log beside it, and a clock the test moves.
+   */
+  async function listedSession() {
+    const home = await tempDir();
+    const id = sessionIdOf("21");
+    const project = path.join(home, "tmp", SLUG);
+    const chats = path.join(project, "chats");
+    await mkdir(path.join(chats, id), { recursive: true });
+    await writeFile(path.join(project, ".project_root"), PROJECT);
+    const file = path.join(chats, chatName(NOW - 10 * MINUTE, id));
+    await writeFile(file, sessionLines(id, "A reply of its own."));
+    // Another session's file, which that session's ask alone may open.
+    const other = path.join(chats, chatName(NOW - 5 * MINUTE, sessionIdOf("22")));
+    await writeFile(other, sessionLines(sessionIdOf("22"), PRIVATE_WORDS));
+    // A subagent's file of the session, and the project's log, which are never opened.
+    const subagent = path.join(chats, id, "agent-0001.jsonl");
+    await writeFile(
+      subagent,
+      chatFile([
+        headerLine({ sessionId: "agent-0001", kind: "subagent" }),
+        geminiLine(messageIdOf("93"), NOW, { content: PRIVATE_WORDS }),
+      ]),
+    );
+    const log = path.join(project, "logs.json");
+    await writeFile(log, JSON.stringify([{ message: PRIVATE_WORDS }]));
+    let at = NOW;
+    const { io, calls } = recordingIo();
+    const adapter = createGeminiCliAdapter({
+      env: { AGENT_LOOKOUT_GEMINI_CLI_HOME: home },
+      homeDir: HOME,
+      now: () => at,
+      io,
+    });
+    const { sessions } = await adapter.poll();
+    const said = geminiCliSessionId(SLUG, id);
+    expect(sessions.map((session) => session.id)).toContain(said);
+    return {
+      file,
+      never: [other, subagent, log],
+      calls,
+      ask: () => adapter.lastMessage(said),
+      later: () => (at += SECOND),
+    };
+  }
+
+  test("is the newest reply's text, read from the session's own file when asked, and from no other file", async () => {
+    const { file, never, calls, ask } = await listedSession();
+    calls.length = 0;
+    const answer = await ask();
+    expect(answer).toEqual({ message: { text: "A reply of its own.", cut: false } });
+    expect(JSON.stringify(answer)).not.toContain(PRIVATE_WORDS);
+    // The adapter joins its paths as the system does, so on Windows with its own separator.
+    expect(calls.filter((call) => call.method === "openRegular").map((call) => call.path)).toEqual([
+      path.normalize(file),
+    ]);
+    for (const target of never) expect(calls.filter((call) => call.path === target)).toEqual([]);
+  });
+
+  test("is unreadable once a link is put in its file's place after the poll listed it, and is never read through", async () => {
+    const elsewhere = path.join(await tempDir(), "elsewhere.jsonl");
+    await writeFile(elsewhere, sessionLines(sessionIdOf("21"), "PRIVATE-ELSEWHERE reply"));
+    const { file, calls, ask, later } = await listedSession();
+
+    // Put there before the first ask.
+    await rm(file);
+    await symlink(elsewhere, file);
+    const linked = await ask();
+    expect(linked).toEqual({ message: null, reason: "unreadable" });
+
+    // Read as a file, then a link put in its place.
+    await rm(file);
+    await writeFile(file, sessionLines(sessionIdOf("21"), "A reply of its own."));
+    later();
+    await expect(ask()).resolves.toEqual({ message: { text: "A reply of its own.", cut: false } });
+    await rm(file);
+    await symlink(elsewhere, file);
+    later();
+    const swapped = await ask();
+    expect(swapped).toEqual({ message: null, reason: "unreadable" });
+    expect(JSON.stringify([linked, swapped])).not.toContain("PRIVATE-ELSEWHERE");
+    expect(calls.filter((call) => call.path === elsewhere)).toEqual([]);
+  });
+
+  // Windows keeps no named pipes among files.
+  test.skipIf(process.platform === "win32")(
+    "is unreadable once a named pipe is put in its file's place after the poll listed it, and does not wait on it",
+    async () => {
+      const { file, ask, later } = await listedSession();
+      const started = Date.now();
+
+      // Opening a pipe for reading waits for a writer. Nobody will ever write to this one.
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+
+      await rm(file);
+      await writeFile(file, sessionLines(sessionIdOf("21"), "A reply of its own."));
+      later();
+      await expect(ask()).resolves.toEqual({
+        message: { text: "A reply of its own.", cut: false },
+      });
+      await rm(file);
+      execFileSync("mkfifo", [file]);
+      later();
+      await expect(ask()).resolves.toEqual({ message: null, reason: "unreadable" });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    },
+    8_000,
+  );
 });
