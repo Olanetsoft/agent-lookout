@@ -1,10 +1,22 @@
 import { describe, expect, test } from "vitest";
 
-import { createDatabaseReader, RETRY_MS } from "@collector/adapters/opencode/database";
-import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
+import { MAX_OUTPUT_BYTES } from "@collector/adapters/antigravity/app/summaries";
+import {
+  createDatabaseReader,
+  QUESTION_OUTPUT_BYTES,
+  RETRY_MS,
+} from "@collector/adapters/opencode/database";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
+import {
+  PROBE_QUERY,
+  SESSIONS_QUERY,
+  sqliteArguments,
+} from "@collector/adapters/opencode/sessionRows";
+import { isMissing } from "@collector/files/readOnlyIo";
 import {
   answerRow,
   DATABASE,
+  lastTextJson,
   NOW,
   probeJson,
   SECOND,
@@ -347,4 +359,137 @@ test("a reader that throws inside answers a failed read, and reads afresh after"
   sqlite.throw(false);
   files.append(WAL, "more");
   expect((await reader.read(NOW + SECOND)).state).toBe("read");
+});
+
+describe("one more question, asked with askOnce", () => {
+  const QUESTION = lastTextQuery(A) ?? "";
+
+  /** The open database, with sqlite3 answering the question of A's last text. */
+  function asking() {
+    const opened = openDatabase();
+    opened.sqlite.said(A, lastTextJson(["The reply."]));
+    return opened;
+  }
+
+  test("opens the database just as the poll's read does, and reads at most 256 KB of what sqlite3 prints", async () => {
+    const { files, sqlite, reader } = asking();
+    const read = await reader.askOnce(QUESTION, null);
+    expect(read).toMatchObject({ unchanged: false, stdout: lastTextJson(["The reply."]) });
+    expect(files.calls).toEqual([
+      { method: "lstat", path: DATABASE },
+      { method: "lstat", path: WAL },
+      { method: "lstat", path: SHM },
+    ]);
+    expect(sqlite.runs).toEqual([
+      {
+        binary: "/usr/bin/sqlite3",
+        args: sqliteArguments(DATABASE, "with-wal", QUESTION),
+        timeoutMs: undefined,
+        maxOutputBytes: QUESTION_OUTPUT_BYTES,
+      },
+    ]);
+    expect(QUESTION_OUTPUT_BYTES).toBeLessThan(MAX_OUTPUT_BYTES);
+
+    // The poll's read opens it the same way.
+    await reader.read(NOW);
+    expect(new Set(sqlite.runs.map((run) => run.args.slice(0, -1).join(" ")))).toEqual(
+      new Set([sqliteArguments(DATABASE, "with-wal", "").slice(0, -1).join(" ")]),
+    );
+  });
+
+  test("with an empty -wal, or none, opens it as a file nothing changes, as the poll's read does", async () => {
+    const { files, sqlite, reader } = asking();
+    files.write(WAL, "");
+    await reader.askOnce(QUESTION, null);
+    files.remove(WAL);
+    files.remove(SHM);
+    await reader.askOnce(QUESTION, null);
+    expect(sqlite.runs.map((run) => run.args.at(-2))).toEqual([
+      `file:${DATABASE}?mode=ro&immutable=1`,
+      `file:${DATABASE}?mode=ro&immutable=1`,
+    ]);
+  });
+
+  test("asks nothing while the database and its -wal are as they were, and asks again once either changed", async () => {
+    const { files, sqlite, reader } = asking();
+    const first = await reader.askOnce(QUESTION, null);
+    const again = await reader.askOnce(QUESTION, first.stamp);
+    expect(again).toEqual({ unchanged: true, stamp: first.stamp });
+    expect(sqlite.runs).toHaveLength(1);
+
+    // A -shm that changes alone is no change.
+    files.append(SHM, "more");
+    expect((await reader.askOnce(QUESTION, first.stamp)).unchanged).toBe(true);
+    files.append(WAL, "more");
+    expect((await reader.askOnce(QUESTION, first.stamp)).unchanged).toBe(false);
+    const later = await reader.askOnce(QUESTION, null);
+    files.write(DATABASE, "another database");
+    expect((await reader.askOnce(QUESTION, later.stamp)).unchanged).toBe(false);
+    expect(sqlite.runs).toHaveLength(4);
+  });
+
+  test("changes nothing the poll's read keeps, so the poll still asks only when the database changes", async () => {
+    const { sqlite, reader } = asking();
+    await reader.read(NOW);
+    await reader.askOnce(QUESTION, null);
+    await reader.read(NOW + SECOND);
+    expect(sqlite.queries()).toHaveLength(1);
+    expect(sqlite.probes()).toHaveLength(1);
+  });
+
+  test("rejects with the error lstat gave when there is no database, and runs nothing", async () => {
+    const files = memoryFiles();
+    const sqlite = standInSqlite();
+    const error: unknown = await readerFor(files, sqlite)
+      .askOnce(QUESTION, null)
+      .catch((caught: unknown) => caught);
+    expect(isMissing(error)).toBe(true);
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("rejects, with nothing run, for an empty database, one that is not an ordinary file, files beside it that are not safe, or no sqlite3", async () => {
+    const empty = asking();
+    empty.files.write(DATABASE, "");
+    const link = asking();
+    link.files.special(DATABASE);
+    const noShm = asking();
+    noShm.files.remove(SHM);
+    const oddWal = asking();
+    oddWal.files.special(WAL);
+    const noSqlite = asking();
+    noSqlite.sqlite.there(false);
+    for (const [name, { reader, sqlite }] of Object.entries({
+      empty,
+      link,
+      noShm,
+      oddWal,
+      noSqlite,
+    })) {
+      const error: unknown = await reader
+        .askOnce(QUESTION, null)
+        .catch((caught: unknown) => caught);
+      expect(error, name).toBeInstanceOf(Error);
+      expect(isMissing(error), name).toBe(false);
+      expect(sqlite.runs, name).toEqual([]);
+    }
+  });
+
+  test("rejects when sqlite3 does not answer, as when it times out or prints more than its cap", async () => {
+    const { sqlite, reader } = asking();
+    sqlite.fail();
+    await expect(reader.askOnce(QUESTION, null)).rejects.toThrow(
+      "sqlite3 could not read OpenCode's database.",
+    );
+    expect(sqlite.runs).toHaveLength(1);
+  });
+
+  test("looks at nothing and runs nothing on Windows", async () => {
+    const { files, sqlite } = asking();
+    files.forget();
+    await expect(readerFor(files, sqlite, "win32").askOnce(QUESTION, null)).rejects.toThrow(
+      "OpenCode's database is not read on Windows.",
+    );
+    expect(files.calls).toEqual([]);
+    expect(sqlite.runs).toEqual([]);
+  });
 });

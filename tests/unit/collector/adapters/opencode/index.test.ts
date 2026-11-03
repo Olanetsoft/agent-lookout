@@ -2,13 +2,14 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import type { DatabaseReader } from "@collector/adapters/opencode/database";
+import { createDatabaseReader, type DatabaseReader } from "@collector/adapters/opencode/database";
 import {
   BASIS,
   BASIS_CLOSED,
   BASIS_WITHOUT_PROCESSES,
   COMMAND_SHOWN,
   createOpencodeAdapter,
+  LAST_MESSAGE_READ,
   NEEDS_YOU_NOTE,
   NO_SQLITE_ADVICE,
   OPENCODE_2_NOTE,
@@ -22,14 +23,20 @@ import {
   UNKNOWN_MESSAGE_NOTE,
   WINDOWS_DETAIL,
 } from "@collector/adapters/opencode/index";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
+import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
+import { createTailLimits } from "@collector/messages/tailReader";
 import {
   answerRow,
   DATA_HOME,
   DATABASE,
+  DAY,
   HOME,
+  lastTextJson,
   MINUTE,
   NOW,
   probeJson,
+  SECOND,
   sessionId,
 } from "@tests/fixtures/opencode/opencode";
 import {
@@ -53,6 +60,7 @@ function watching(
   read: string,
   commandRun = "when the database changes",
   processCheckRun = "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no OpenCode",
+  lastMessageRead = LAST_MESSAGE_READ,
 ) {
   return [
     { label: "Data folder", value: "~/.local/share/opencode" },
@@ -62,6 +70,7 @@ function watching(
     { label: "Command run", value: commandRun },
     { label: "Process check", value: "ps -A -o comm=" },
     { label: "Process check run", value: processCheckRun },
+    { label: "Last message read", value: lastMessageRead },
   ];
 }
 
@@ -450,6 +459,7 @@ describe("when the database cannot be read", () => {
   test("poll() never throws", async () => {
     const reader: DatabaseReader = {
       read: () => Promise.reject(new Error("A reader that throws.")),
+      askOnce: () => Promise.reject(new Error("A reader that throws.")),
     };
     const files = memoryFiles();
     files.mkdir(DATA_HOME);
@@ -467,5 +477,216 @@ describe("when the database cannot be read", () => {
       detail: "Something unexpected went wrong while reading OpenCode sessions.",
     });
     expect(sessions).toEqual([]);
+  });
+});
+
+describe("what a session last said", () => {
+  const SAID = `opencode:${A}`;
+
+  /** An open OpenCode with A and B listed, and sqlite3 ready to say what each last said. */
+  function saying(options: Parameters<typeof opencodeAdapterFor>[2] = {}) {
+    const clock = handClock(NOW);
+    const { files, sqlite } = openOpencode([answerRow({ id: A }), answerRow({ id: B })]);
+    sqlite.said(A, lastTextJson(["The reply."]));
+    sqlite.said(B, lastTextJson(["Another reply."]));
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, ...options });
+    return { clock, files, sqlite, adapter };
+  }
+
+  test("is the newest reply's text for a listed session, asked of the database only when asked", async () => {
+    const { adapter, files, sqlite } = saying();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+    await adapter.poll();
+    expect(sqlite.questions()).toEqual([]);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(sqlite.questions().map((run) => run.args.at(-1))).toEqual([lastTextQuery(A)]);
+
+    files.forget();
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(`opencode:${sessionId("c3")}`)).resolves.toBeNull();
+    await expect(adapter.lastMessage(`codex:${A}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+    expect(sqlite.runs).toHaveLength(before);
+  });
+
+  test("a poll asks the database what it asks with the reader off, and puts no message on a session", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    const onResult = await on.adapter.poll();
+    await off.adapter.poll();
+    expect(on.sqlite.runs.length).toBeGreaterThan(0);
+    expect(on.sqlite.runs).toEqual(off.sqlite.runs);
+    expect(on.files.calls).toEqual(off.files.calls);
+    expect(JSON.stringify(onResult.sessions)).not.toContain("The reply.");
+    await on.adapter.lastMessage(SAID);
+    // A poll after an ask asks no question either.
+    on.clock.advance(SECOND);
+    await on.adapter.poll();
+    expect(on.sqlite.questions()).toHaveLength(1);
+  });
+
+  test("Sources says it asks for a session's newest reply while its details are open", async () => {
+    const { adapter } = saying();
+    expect((await adapter.poll()).health.watching).toContainEqual({
+      label: "Last message read",
+      value: "a session's newest reply, with sqlite3, while its details are open",
+    });
+    expect(LAST_MESSAGE_READ).toBe(
+      "a session's newest reply, with sqlite3, while its details are open",
+    );
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: "off" }, "AGENT_LOOKOUT_WAITING_TEXT"],
+  ])("with %j, is off by that setting, and nothing is asked for it", async (env, setting) => {
+    const { adapter, files, sqlite } = saying({ env });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({ label: "Last message read", value: "Off" });
+    files.forget();
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: null,
+      reason: "off",
+      setting,
+    });
+    expect(files.calls).toEqual([]);
+    expect(sqlite.runs).toHaveLength(before);
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("on Windows, Sources says it is not read there, and no session is listed to be read", async () => {
+    const { adapter, sqlite } = saying({ platform: "win32" });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({
+      label: "Last message read",
+      value: "not read on Windows",
+    });
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("with OpenCode keeping its sessions in memory, nothing is listed, so nothing is asked", async () => {
+    const { adapter, sqlite } = saying({ env: { OPENCODE_DB: ":memory:" } });
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a session shown as finished, with no OpenCode program running, is still read until it leaves the list", async () => {
+    const processes = standInProcesses({ ok: true, running: false });
+    const { adapter, clock, sqlite } = saying({ processes });
+    const closed = await adapter.poll();
+    expect(closed.sessions.find((session) => session.id === SAID)?.status).toBe("finished");
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+
+    // A day on, it has left the list, and nothing of it is kept or asked.
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toHaveLength(before);
+  });
+
+  test("keeps none, and lets none be asked, after a poll that cannot read the database, until a poll lists the session again", async () => {
+    const { adapter, clock, files, sqlite } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    sqlite.fail();
+    files.append(WAL, "more frames");
+    clock.advance(SECOND);
+    const failed = await adapter.poll();
+    expect(failed.health.state).toBe("error");
+    expect(failed.sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toHaveLength(before);
+
+    sqlite.fail(false);
+    files.append(WAL, "and more");
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions.map((session) => session.id)).toContain(SAID);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("is dropped, and nothing may be asked, after a poll that throws, and is read again once a poll lists the session", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A })]);
+    sqlite.said(A, lastTextJson(["The reply."]));
+    const real = createDatabaseReader({
+      file: DATABASE,
+      io: files.io,
+      platform: "darwin",
+      run: sqlite.run,
+      find: sqlite.find,
+    });
+    let broken = false;
+    const reader: DatabaseReader = {
+      read: (at) => (broken ? Promise.reject(new Error("A reader that throws.")) : real.read(at)),
+      askOnce: (question, known) => real.askOnce(question, known),
+    };
+    const clock = handClock(NOW);
+    const adapter = opencodeAdapterFor(files, sqlite, { reader, now: clock.now });
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    broken = true;
+    clock.advance(SECOND);
+    const failed = await adapter.poll();
+    expect(failed.health.detail).toBe(
+      "Something unexpected went wrong while reading OpenCode sessions.",
+    );
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+
+    broken = false;
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+  });
+
+  test("counts its asks against the limits the collector shares, and a poll counts none", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const { adapter } = saying({ lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await adapter.lastMessage(SAID);
+    expect(asked).toBe(1);
+    await adapter.lastMessage(`opencode:${B}`);
+    expect(asked).toBe(2);
+  });
+
+  test("of the database's three questions, a poll asks only its own two, and the details only the session's", async () => {
+    const { adapter, sqlite } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    await adapter.lastMessage(`opencode:${B}`);
+    expect(sqlite.runs.map((run) => run.args.at(-1))).toEqual([
+      PROBE_QUERY,
+      SESSIONS_QUERY,
+      lastTextQuery(A),
+      lastTextQuery(B),
+    ]);
   });
 });

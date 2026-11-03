@@ -1,6 +1,10 @@
 import type { LastMessageResponse } from "../../core/api.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../files/readOnlyIo.ts";
-import { readTranscriptTail, type TranscriptStamp } from "../files/transcriptTail.ts";
+import {
+  readTranscriptTail,
+  type TailRead,
+  type TranscriptStamp,
+} from "../files/transcriptTail.ts";
 
 /**
  * How long an answer is given again from memory, without the transcript being
@@ -25,7 +29,7 @@ export const KEEP_MS = 15_000;
 export type LastMessageAnswer = LastMessageResponse | "busy";
 
 /** What is kept of one session, from the first time it is asked for until it is dropped. */
-interface Kept {
+interface Kept<Stamp> {
   /** What names its transcript, from the poll it was first asked for under, or null when nothing does. */
   key: string | null;
   /** Where its transcript is, or null before it was looked for and when it was not found. */
@@ -33,7 +37,7 @@ interface Kept {
   /** When it was last looked for, or null before that. */
   lookedAt: number | null;
   /** The file as it was when its end was last read, and the answer made from it, or null before that. */
-  last: { stamp: TranscriptStamp; answer: LastMessageResponse } | null;
+  last: { stamp: Stamp; answer: LastMessageResponse } | null;
   /** The last answer, or null before the first. */
   answer: LastMessageResponse | null;
   /** When the transcript was last looked at for that answer. */
@@ -48,7 +52,9 @@ interface Kept {
  * The limits readers share: the reads of the last second, and the sessions
  * each reader keeps. The collector gives one to every agent's reader, so that
  * together they read at most four transcripts a second and keep at most eight
- * sessions.
+ * sessions. A reader that asks a database in place of reading a file, as
+ * OpenCode's does, counts each time it looks at the database as one of those
+ * reads.
  */
 export interface TailLimits {
   /** Whether a transcript may be read now, counted as one of the second's reads when it may. */
@@ -158,18 +164,31 @@ function runLater(run: () => void, ms: number): void {
   setTimeout(run, ms).unref();
 }
 
+export interface EndReaderOptions<Target, Stamp> extends Omit<TailReaderOptions<Target>, "io"> {
+  /**
+   * Reads the end of the transcript `find` gave for the session `target`
+   * names, or says it is as it was when `known` was read, and then reads
+   * nothing. It rejects for a transcript that is not there with the error
+   * that says so, which `isMissing` knows, and for anything else that cannot
+   * be read with any other.
+   */
+  readEnd(file: string, known: Stamp | null, target: Target): Promise<TailRead<Stamp>>;
+}
+
 /**
  * Reads what a session last said from the end of its transcript when it is
  * asked for, and only then: no poll opens a transcript for this. The rules
- * are the same for every agent that has one; only where its transcript is
- * and what its lines mean are the agent's own, `find` and `answerFrom`.
+ * are the same for every agent that has one; only where its transcript is,
+ * how its end is read and what its lines mean are the agent's own, `find`,
+ * `readEnd` and `answerFrom`. `createTailReader` reads the end of a file of
+ * the session's own. OpenCode, which keeps every session in one database,
+ * asks the database instead (`src/collector/adapters/opencode/lastMessages.ts`).
  *
  * - Only a session the last `keep` listed is read. The path comes from what
  *   the adapter read for it, through `find`, never from a request. A listed
  *   session with no target is answered `not-found` without a file being
  *   touched.
- * - The end of the file is read with `readTranscriptTail`, at most 256 KB, by
- *   position, and not again while the file is unchanged.
+ * - Its end is read through `readEnd`, and not again while it is unchanged.
  * - An answer is given again from memory for a second. Asks for one session
  *   while its transcript is being read share that read.
  * - At most four transcripts are read in a second, for every session
@@ -180,15 +199,16 @@ function runLater(run: () => void, ms: number): void {
  *   15 seconds after each was last asked for, or until a poll does not list
  *   the session.
  */
-export function createTailReader<Target>(options: TailReaderOptions<Target>): TailReader<Target> {
-  const io = options.io ?? nodeIo;
+export function createEndReader<Target, Stamp>(
+  options: EndReaderOptions<Target, Stamp>,
+): TailReader<Target> {
   const now = options.now ?? Date.now;
   const later = options.later ?? runLater;
   const lookAgainMs = options.lookAgainMs ?? 0;
   const keyOf = (target: Target) => (options.keyOf ? options.keyOf(target) : null);
   /** Null for a listed session whose transcript cannot be named. */
   const listed = new Map<string, Target | null>();
-  const kept = new Map<string, Kept>();
+  const kept = new Map<string, Kept<Stamp>>();
   const limits = options.limits ?? createTailLimits();
   limits.share(kept);
   /** Whether a drop of what has been kept too long is set to run. */
@@ -216,14 +236,18 @@ export function createTailReader<Target>(options: TailReaderOptions<Target>): Ta
     );
   }
 
-  async function check(entry: Kept, target: Target, at: number): Promise<LastMessageResponse> {
+  async function check(
+    entry: Kept<Stamp>,
+    target: Target,
+    at: number,
+  ): Promise<LastMessageResponse> {
     try {
       if (entry.file === null) {
         entry.lookedAt = at;
         entry.file = await options.find(target);
         if (entry.file === null) return NOT_FOUND;
       }
-      const read = await readTranscriptTail(entry.file, io, entry.last?.stamp ?? null);
+      const read = await options.readEnd(entry.file, entry.last?.stamp ?? null, target);
       // As it was when its end was last read, which is the only stamp ever
       // passed: the answer made then stands.
       if (read.unchanged) return entry.last?.answer ?? UNREADABLE;
@@ -319,4 +343,18 @@ export function createTailReader<Target>(options: TailReaderOptions<Target>): Ta
       return kept.size;
     },
   };
+}
+
+/**
+ * The reader of last messages for an agent that writes each session to a
+ * file of its own, as every agent but OpenCode does: `createEndReader`,
+ * reading the end of that file with `readTranscriptTail`, at most its last
+ * 256 KB, by position, and not again while the file is unchanged.
+ */
+export function createTailReader<Target>(options: TailReaderOptions<Target>): TailReader<Target> {
+  const io = options.io ?? nodeIo;
+  return createEndReader<Target, TranscriptStamp>({
+    ...options,
+    readEnd: (file, known) => readTranscriptTail(file, io, known),
+  });
 }

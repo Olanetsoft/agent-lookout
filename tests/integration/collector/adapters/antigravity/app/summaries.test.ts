@@ -8,6 +8,7 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   createSummariesReader,
   findSqlite,
+  MAX_OUTPUT_BYTES,
   runSqlite,
   SQLITE_TIMEOUT_MS,
   sqliteArguments,
@@ -180,6 +181,39 @@ describe.skipIf(process.platform === "win32")("runSqlite, against stand-in progr
   test("stops a program that prints far more than a list of chats", async () => {
     expect(await runSqlite("/usr/bin/yes", [])).toEqual({ ok: false });
   });
+
+  test("stops a program that prints more than a smaller cap it is given, and never allows more than 4 MiB", async () => {
+    const words = "x".repeat(2_000);
+    expect(await runSqlite("/bin/echo", [words], undefined, 1_000)).toEqual({ ok: false });
+    expect(await runSqlite("/bin/echo", [words], undefined, 4_000)).toEqual({
+      ok: true,
+      stdout: `${words}\n`,
+    });
+    // A cap above 4 MiB is 4 MiB: a program that prints 5 MiB and ends is
+    // stopped, and one that prints 3 MiB is not.
+    const zeros = (mebibytes: number) => ["-c", String(mebibytes * 1024 * 1024), "/dev/zero"];
+    expect(await runSqlite("/usr/bin/head", zeros(5), undefined, 64 * MAX_OUTPUT_BYTES)).toEqual({
+      ok: false,
+    });
+    expect(
+      await runSqlite("/usr/bin/head", zeros(3), undefined, 64 * MAX_OUTPUT_BYTES),
+    ).toMatchObject({ ok: true });
+  });
+
+  test("starts nothing for a cap under a byte", async () => {
+    const dir = await tempDir();
+    const started = path.join(dir, "started");
+    const stub = await writeStub('touch "$1"');
+    // Started once first, with no limit, as in the test of a timeout under a millisecond.
+    execFileSync(stub, [path.join(dir, "warmed")]);
+    for (const cap of [0, 0.5, -1, Number.NaN]) {
+      expect(await runSqlite(stub, [started], undefined, cap), String(cap)).toEqual({ ok: false });
+    }
+    await expect(lstat(started)).rejects.toMatchObject({ code: "ENOENT" });
+    // Given a cap of a byte, the same program runs.
+    expect(await runSqlite(stub, [started], undefined, 1)).toEqual({ ok: true, stdout: "" });
+    expect((await lstat(started)).isFile()).toBe(true);
+  }, 30_000);
 
   test("stops a program that does not answer in 5 seconds", async () => {
     const started = Date.now();

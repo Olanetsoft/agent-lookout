@@ -1,11 +1,12 @@
 import path from "node:path";
 
 /**
- * The two questions Agent Lookout asks OpenCode's database, `opencode.db`,
- * and how their answers are read. Both are fixed text: nothing from a file,
- * a request or a setting is ever put into them, and the cut-off time is
+ * The two questions Agent Lookout asks OpenCode's database, `opencode.db`, on
+ * a poll, and how their answers are read. Both are fixed text: nothing from a
+ * file, a request or a setting is ever put into them, and the cut-off time is
  * worked out inside SQLite. They are asked with the system's `sqlite3`
- * (`database.ts`), which prints each row as JSON.
+ * (`database.ts`), which prints each row as JSON. The one question no poll
+ * asks, of what a session last said, is in `lastMessages.ts`.
  *
  * The first, the probe, asks only for the names of the tables and of the
  * columns of `session` and `session_v2`, so that the second is asked only of
@@ -157,7 +158,7 @@ export interface Schema {
 }
 
 /** The rows of what `sqlite3 -json` printed: an array of objects, or nothing for no rows. Null for anything else. */
-function jsonRows(stdout: string): Record<string, unknown>[] | null {
+export function jsonRows(stdout: string): Record<string, unknown>[] | null {
   if (stdout.trim() === "") return [];
   let rows: unknown;
   try {

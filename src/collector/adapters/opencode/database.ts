@@ -1,5 +1,6 @@
 import { findSqlite, runSqlite, type RunSqlite } from "../antigravity/app/summaries.ts";
 import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { TRANSCRIPT_TAIL_BYTES } from "../../files/transcriptTail.ts";
 import {
   PROBE_QUERY,
   readSchema,
@@ -51,6 +52,11 @@ import {
  * again on the next change, or 10 seconds later. The probe of the tables is
  * asked each time before them, so a table OpenCode adds is seen.
  *
+ * What a session last said is asked with `askOnce`, which no poll calls: the
+ * same three `lstat`s, the same choice of address, the same `sqlite3`,
+ * arguments and timeout, and one question, with at most 256 KB of what it
+ * prints read (`lastMessages.ts`).
+ *
  * This was built from OpenCode's source at v1.19.0, and has not yet been
  * checked on a computer running OpenCode.
  */
@@ -80,9 +86,37 @@ export interface DatabaseRead {
   opencode2: boolean;
 }
 
+/**
+ * The database and its `-wal` as `lstat` saw them when one question was
+ * asked, so it is asked again only once one of them has changed.
+ */
+export interface DatabaseStamp {
+  database: FileInfo;
+  wal: FileInfo | null;
+}
+
+/** What one question asked with `askOnce` found: the files as they were, or what `sqlite3` printed. */
+export type QuestionRead =
+  | { unchanged: true; stamp: DatabaseStamp }
+  | { unchanged: false; stamp: DatabaseStamp; stdout: string };
+
+/** The most of what `sqlite3` prints for a question asked with `askOnce`: 256 KB, as much as is read of a transcript's end. */
+export const QUESTION_OUTPUT_BYTES = TRANSCRIPT_TAIL_BYTES;
+
 export interface DatabaseReader {
   /** The sessions, asked for again only when the database changed, or a failed read is due again. Never throws. */
   read(at: number): Promise<DatabaseRead>;
+  /**
+   * Asks the database one fixed question, opened just as `read` opens it,
+   * and reads at most 256 KB of what `sqlite3` prints. When the database and
+   * its `-wal` are as `known` says, nothing is asked, and it says so. It
+   * rejects with the error `lstat` gave when there is no database, which
+   * `isMissing` knows, and with another when it is not read for any other
+   * reason: on Windows, when the database is not an ordinary file or is
+   * empty, when the files beside it are not safe to read, when no `sqlite3`
+   * is found, and when `sqlite3` does not answer.
+   */
+  askOnce(question: string, known: DatabaseStamp | null): Promise<QuestionRead>;
 }
 
 /** The three files, as `lstat` saw them this poll. */
@@ -91,6 +125,12 @@ interface Files {
   wal: FileInfo | null;
   shm: FileInfo | null;
 }
+
+/** What one look at the three files found: the files, or why the database is not read. */
+type Look =
+  | { files: Files }
+  | { state: "missing" | "not-safe"; error: unknown }
+  | { state: "not-on-windows" };
 
 const NONE: readonly SessionRow[] = [];
 
@@ -130,22 +170,23 @@ export function createDatabaseReader(options: {
     }
   }
 
-  async function read(at: number): Promise<DatabaseRead> {
-    if (platform === "win32") {
-      return { state: "not-on-windows", rows: NONE, opencode2: false };
-    }
+  /**
+   * The three files with `lstat`, as every read looks at them first, or why
+   * the database is not read: there is none, it is empty or not an ordinary
+   * file, or the files beside it are not safe to read.
+   */
+  async function look(): Promise<Look> {
+    if (platform === "win32") return { state: "not-on-windows" };
     let database: FileInfo;
     try {
       database = await io.lstat(file);
-    } catch {
-      last = null;
-      return { state: "missing", rows: NONE, opencode2: false };
+    } catch (error) {
+      return { state: "missing", error };
     }
     // SQLite deletes the -wal beside an empty database as it opens it, so an
     // empty one is not read.
     if (database.kind !== "file" || database.size === 0) {
-      last = null;
-      return { state: "missing", rows: NONE, opencode2: false };
+      return { state: "missing", error: new Error("OpenCode's database is empty or not a file.") };
     }
     const files: Files = {
       database,
@@ -157,9 +198,27 @@ export function createDatabaseReader(options: {
         (files.wal.kind !== "file" || (walHolds(files) && files.shm === null))) ||
       (files.shm !== null && files.shm.kind !== "file")
     ) {
-      last = null;
-      return { state: "not-safe", rows: NONE, opencode2: false };
+      return {
+        state: "not-safe",
+        error: new Error("The files beside OpenCode's database are not safe to read."),
+      };
     }
+    return { files };
+  }
+
+  /** The address the database is opened at: as a whole file nothing changes, unless its -wal holds something. */
+  function modeOf(files: Files): DatabaseMode {
+    // An empty -wal holds nothing, so the database is read as a file nothing changes.
+    return walHolds(files) ? "with-wal" : "whole";
+  }
+
+  async function read(at: number): Promise<DatabaseRead> {
+    const looked = await look();
+    if (!("files" in looked)) {
+      if (looked.state !== "not-on-windows") last = null;
+      return { state: looked.state, rows: NONE, opencode2: false };
+    }
+    const { files } = looked;
 
     const unchanged =
       last !== null && same(last.files.database, files.database) && same(last.files.wal, files.wal);
@@ -181,8 +240,7 @@ export function createDatabaseReader(options: {
   async function ask(files: Files): Promise<DatabaseRead> {
     const binary = await find();
     if (binary === null) return { state: "no-sqlite", rows: NONE, opencode2: false };
-    // An empty -wal holds nothing, so the database is read as a file nothing changes.
-    const mode: DatabaseMode = walHolds(files) ? "with-wal" : "whole";
+    const mode = modeOf(files);
     const probe = await run(binary, sqliteArguments(file, mode, PROBE_QUERY));
     const found: Schema | null = probe.ok ? readSchema(probe.stdout) : null;
     if (found === null) return { state: "failed", rows: NONE, opencode2: false };
@@ -203,6 +261,29 @@ export function createDatabaseReader(options: {
         last = null;
         return { state: "failed", rows: NONE, opencode2: false };
       }
+    },
+    async askOnce(question, known) {
+      const looked = await look();
+      if (!("files" in looked)) {
+        throw looked.state === "not-on-windows"
+          ? new Error("OpenCode's database is not read on Windows.")
+          : looked.error;
+      }
+      const { files } = looked;
+      const stamp: DatabaseStamp = { database: files.database, wal: files.wal };
+      if (known !== null && same(known.database, stamp.database) && same(known.wal, stamp.wal)) {
+        return { unchanged: true, stamp };
+      }
+      const binary = await find();
+      if (binary === null) throw new Error("No sqlite3 was found to read OpenCode's database.");
+      const answer = await run(
+        binary,
+        sqliteArguments(file, modeOf(files), question),
+        undefined,
+        QUESTION_OUTPUT_BYTES,
+      );
+      if (!answer.ok) throw new Error("sqlite3 could not read OpenCode's database.");
+      return { unchanged: false, stamp, stdout: answer.stdout };
     },
   };
 }
