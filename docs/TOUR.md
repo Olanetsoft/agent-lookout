@@ -316,8 +316,8 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 - `registry.ts` reads the records named `<pid>.json` or `<pid>-<8 hex>.json`, keeps five fields of each and whether it was written on Linux, leaves out a Linux record on a Mac or Windows, and lists only terminal sessions. Each record also holds a token for sending to the session, which is dropped with the parsed record.
 - Whether each process runs is asked with signal 0, which sends it nothing. Of two records of one session, the newest whose process runs is kept.
-- `transcriptFile.ts` finds each session's chat file, `projects/<folder>/chats/<id>.jsonl`, and `chatRecords.ts` reads its last 8 MiB, then only what was added. It keeps a few marks of each line and the title, and drops the content at once.
-- `qwenCodeMapping.ts` folds those marks in order. A prompt, a reply that calls tools, their results or a request to the model under way is working. A reply that calls none, or a stopped tool or request, is idle. An approval prompt writes nothing, so a session that waits shows as working.
+- `transcriptFile.ts` finds each session's chat file, `projects/<folder>/chats/<id>.jsonl`, and `chatRecords.ts` reads its last 8 MiB, then only what was added. It keeps a few marks of each line, the title and three token counts of a reply, and drops the content at once.
+- `qwenCodeMapping.ts` folds those marks in order. A prompt, a reply that calls tools, their results or a request to the model under way is working. A reply that calls none, or a stopped tool or request, is idle. An approval prompt writes nothing, so a session that waits shows as working. It also keeps the token counts of the newest reply that has them (#184).
 - `finishedSessions.ts` shows a session whose record or process has gone as finished for a day, from the poll that found it so.
 - `lastMessages.ts` reads what a session last said, the text of its newest reply that is not a thought, from the end of the chat file the adapter last found, only when it is asked for, as [A session's last message](#a-sessions-last-message) says (#187). No poll reads it.
 
@@ -381,7 +381,7 @@ In short:
 - **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Gemini CLI** reports Quiet for, and working and idle in part, since a reply with text whose tool waits or runs shows as idle. Names only once Gemini CLI saves a title. Never needs you, finished or failed. No Jump, tokens, Stop or Answer.
 - **OpenCode** reports working and idle, finished once `ps` shows no OpenCode program, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Never needs you, and no Quiet for, Jump, tokens, Stop or Answer.
-- **Qwen Code** reports Quiet for, and working, idle and finished in part. Never needs you or failed. No Jump, tokens, Stop or Answer.
+- **Qwen Code** reports Quiet for and tokens, and working, idle and finished in part. Never needs you or failed. No Jump, Stop or Answer.
 - **Hermes Agent** reports working and idle from its turn leases, needs you for a question at once and for an approval 10 to 70 seconds late, finished when Hermes Agent ends a session, and failed for the errors it records, on macOS and Linux. Names are its titles. No Quiet for, Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
@@ -579,13 +579,14 @@ It is the one read that waits on a file, so the handler answers it the way it an
 
 **Why.** #55: a session that has used most of its context is about to need you. The agents already write these counts to their own files, so showing them keeps to what was measured. No price is shown, and there are no totals: one figure, the newest reply's.
 
-**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only, released in 0.2.10. The second slice gives a Claude Code session's counts with its last message, from the same end of its transcript, while its details are open. They are never put on the session, so `GET /api/sessions` does not have them. The third slice gives the Antigravity CLI's and Antigravity's, from the end of the transcript each poll already reads, on the session as Codex's are.
+**Where it stands.** Pull request #83 (6149e10, merged 8 October) is the first slice, for Codex only, released in 0.2.10. The second slice gives a Claude Code session's counts with its last message, from the same end of its transcript, while its details are open. They are never put on the session, so `GET /api/sessions` does not have them. The third slice gives the Antigravity CLI's and Antigravity's, from the end of the transcript each poll already reads, on the session as Codex's are. Issue #184 gives Qwen Code's, from the same read of the chat file that gives its status, on the session too.
 
 **Where it is.**
 
-- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the Antigravity transcript reader, the Claude Code adapter's reader of last messages, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
+- `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` is the one check every reader makes: the Codex adapter, the Antigravity transcript reader, the Qwen Code chat reader, the Claude Code adapter's reader of last messages, the reader of another machine and the page. `input` must be above 0, since 0 is a reset, as after Codex compacts a conversation. `cached`, when present, is no more than `input`. Counts that could not be right are no counts.
 - `src/collector/adapters/codex/rolloutFile.ts` finds the newest `token_count` line and keeps only the three numbers in `info.last_token_usage`. It drops `total_token_usage`, the model's context window and `rate_limits`, which holds your plan and credits.
 - `src/collector/adapters/antigravity/shared/transcriptFile.ts` keeps only `input_tokens`, `cache_read_tokens` and `output_tokens` from the newest reply's line, for both Antigravity sources. [adapters/antigravity.md](adapters/antigravity.md#token-counts) has how they map.
+- `src/collector/adapters/qwen-code/chatRecords.ts` takes three numbers from each reply's `usageMetadata`, and `qwenCodeMapping.ts` keeps the newest reply's: `promptTokenCount` as the input, `cachedContentTokenCount` as the cached part, and `totalTokenCount` less `promptTokenCount` as the output, since only that counts the reasoning once for every provider. [adapters/qwen-code.md](adapters/qwen-code.md#token-counts) has how they map.
 - `src/collector/adapters/claude-code/transcript/lastUsage.ts` takes the counts of a Claude Code session's newest reply from the bytes read for its last message. [adapters/claude-code.md](adapters/claude-code.md) has the fields.
 - `src/collector/remotes/remoteSessions.ts` passes on the counts another machine sends.
 - On the page: `src/dashboard/components/panels/TokensFact.tsx` and `src/dashboard/lib/tokens/tokenWords.ts`.

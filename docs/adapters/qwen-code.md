@@ -98,15 +98,66 @@ Each line is one record, appended and never rewritten (`core/utils/jsonl-utils.t
 Kept of each line: its type, subtype and time, and
 
 - of a `user` line, whether it is a notification stamped `deliveredTurn`, the first line of a turn Qwen Code went on to send (`core/services/chatRecordingService.ts:420-448`);
-- of an `assistant` line, whether it holds a reply and whether that calls a tool;
+- of an `assistant` line, whether it holds a reply and whether that calls a tool, and three numbers worked out from its `usageMetadata`, the reply's [token counts](#token-counts);
 - of a `tool_result` line, whether `toolCallResult.status` is `cancelled`;
 - of a `ui_telemetry` line with a `request_lifecycle` event, its `phase`, its `outcome` and whether a subagent made it (`core/telemetry/request-lifecycle.ts:15-46`);
 - of a `custom_title` line, the title (`core/services/chatRecordingService.ts:3305-3335`);
 - whether the line belongs to a Managed Session log.
 
-Never kept by a poll: the prompt, the reply, its thoughts, a tool's input and output, `cwd`, `gitBranch`, token counts, or any other field. Each line is parsed and dropped at once. A line a subagent wrote, `isSidechain: true`, is skipped. The text of a session's newest reply is read only when it is asked for, as [Last message](#last-message) says.
+Never kept by a poll: the prompt, the reply, its thoughts, a tool's input and output, `cwd`, `gitBranch`, `model`, the rest of `usageMetadata`, or any other field. Each line is parsed and dropped at once. A line a subagent wrote, `isSidechain: true`, is skipped. The text of a session's newest reply is read only when it is asked for, as [Last message](#last-message) says.
 
 Every read is bounded. The first reads at most the last 8 MiB and drops the line it cut into. Each one after reads only what was appended, at most 8 MiB at once. A line still being written is left for the next read. A line over 4 MiB is not parsed: its type, subtype and time are read from its first 64 KiB. A file that shrank or was replaced is read again from its end.
+
+## Token counts
+
+A session's details give the token counts of its newest reply. They come from the same read of the chat file that gives the status, and no file is opened or read for them that is not read for it.
+
+### Where Qwen Code writes them
+
+`recordAssistantTurn` writes the reply's usage as `usageMetadata` on its `assistant` line, after its `message` (`core/services/chatRecordingService.ts:2774-2810`, the field at `:470-471`), in the shape of Gemini's `GenerateContentResponseUsageMetadata`. In `packages/core` and `packages/cli` it is called only from `core/core/llm-chat.ts`, at most once for each reply the model gives:
+
+- The usage is that of the last chunk of the reply's stream that had one, not a sum (`processStreamResponse`, `:5927`, `:6106-6107`).
+- Five of its counts are made numbers by `coerceUsageCount` (`:535-545`, `:6120-6148`): `promptTokenCount`, `totalTokenCount`, `candidatesTokenCount`, `cachedContentTokenCount` and `thoughtsTokenCount`. One the provider did not send, or sent negative or not finite, is written as 0. The line holds the provider's usage with those five over it (`:6716-6718`).
+- A reply stopped with Esc is written with the usage that had come by then, or none (`:6246-6254`). The part written when Esc comes between tries has none (`:5149-5155`).
+
+What each provider puts in them, from the converter each auth type uses (`createContentGenerator` in `core/core/contentGenerator.ts:530-606`):
+
+| Provider                                                                                                                               | `promptTokenCount`                                                                                                                | `cachedContentTokenCount` | `candidatesTokenCount` | `thoughtsTokenCount`                                           | `totalTokenCount`                       |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------- | -------------------------------------------------------------- | --------------------------------------- |
+| OpenAI-compatible, `openai` and `qwen-oauth` (`core/core/openaiContentGenerator/converter.ts:2085-2135` and `:1479-1528`)              | `prompt_tokens`                                                                                                                   | `cached_tokens`, else 0   | `completion_tokens`    | `reasoning_tokens`, else an estimate from the reasoning's text | `total_tokens`, else 0                  |
+| OpenAI Responses, `openai-responses` (`makeFinalResponse`, `core/core/openaiResponsesContentGenerator/responses-converter.ts:490-518`) | `input_tokens`                                                                                                                    | `cached_tokens`, else 0   | `output_tokens`        | `reasoning_tokens`, else 0                                     | `total_tokens`                          |
+| Anthropic, `anthropic` (`buildAnthropicUsageMetadata`, `core/core/anthropicContentGenerator/usage.ts:44-75`)                           | the input, the cache reads and the cache writes together, or the input alone when it looks as if it holds the cache reads already | the cache reads           | `output_tokens`        | none, so 0                                                     | the prompt and `output_tokens` together |
+| Gemini, `gemini` and `vertex-ai` (`generateContentStream`, `core/core/llm-content-generator/llm-content-generator.ts:309-322`)         | Gemini's own                                                                                                                      | Gemini's own              | Gemini's own           | Gemini's own                                                   | Gemini's own                            |
+
+`qwen-oauth`, Qwen Code's own sign-in, uses the OpenAI-compatible converter: `QwenContentGenerator` extends `OpenAIContentGenerator` (`core/qwen/qwenContentGenerator.ts:25`).
+
+What the providers' own fields mean:
+
+- OpenAI's `cached_tokens` are "present in the prompt", `total_tokens` is "prompt + completion", and reasoning tokens are "counted in the total completion tokens" (`CompletionUsage` in the `openai` package 5.11.0, which Qwen Code 0.25.1 pins, `resources/completions.d.ts:85-146`). In its Responses API, `cached_tokens` and `reasoning_tokens` are breakdowns of `input_tokens` and `output_tokens` (`ResponseUsage`, `resources/responses/responses.d.ts:3452-3494`).
+- Anthropic's `output_tokens` includes the reply's thinking, as for [Claude Code](claude-code.md).
+- Gemini's `promptTokenCount` includes the cached content, and its `totalTokenCount` is "the sum of `prompt_token_count`, `candidates_token_count`, `tool_use_prompt_token_count`, and `thoughts_token_count`" (`GenerateContentResponseUsageMetadata` in `@google/genai` 2.6.0, which Qwen Code 0.25.1 pins, `dist/genai.d.ts:4875-4898`). So its candidates leave the thoughts out. At 0.25.1, `packages/core` and `packages/cli` name no tool of Gemini's own, such as Google Search, and no `toolUsePromptTokenCount`.
+
+So, as the providers define their fields, `promptTokenCount` is the whole prompt, cached part included, for every provider. `candidatesTokenCount` counts the reasoning for every provider but Gemini, which counts it in `thoughtsTokenCount` alone: adding the two would count an OpenAI-compatible reply's reasoning twice. `totalTokenCount` less `promptTokenCount` is what the reply wrote, reasoning included, for each of them, and it is how Qwen Code itself works out a reply's output from the file when a session is resumed (`ResumeTokenCountsAccumulator` in `core/services/session-resume-token-counts.ts:22-34`, through `getUsageOutputTokenCountForPromptEstimate` in `core/services/tokenEstimation.ts:130-147`).
+
+### What is shown
+
+| Shown  | From                                      |
+| ------ | ----------------------------------------- |
+| In     | `promptTokenCount`                        |
+| Cached | `cachedContentTokenCount`                 |
+| Out    | `totalTokenCount` less `promptTokenCount` |
+
+`usageCountsOf` in `chatRecords.ts` works out these three numbers from a reply's line, reads `candidatesTokenCount` only to check them and keeps nothing more of it, `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` checks them, and `foldQwenCodeRecord` in `qwenCodeMapping.ts` keeps those of the newest reply.
+
+- The counted line is the newest `assistant` line with no subtype that has `usageMetadata`. A subagent's line, `isSidechain: true`, is skipped as every line a subagent wrote is. A line with a subtype, a `system` line and a `user` line are never counted.
+- A newer reply with no `usageMetadata` changes nothing, as a Codex reply with no token count line does: the counts stay those of the newest reply that has them. Qwen Code writes none for a reply stopped with Esc before the provider sent its usage, which an OpenAI-compatible provider sends after the reply's last part (`core/core/openaiContentGenerator/converter.ts:2037-2040`), or for a provider that sends none. A session whose replies have none shows a dash.
+- A reply stopped with Esc after usage came is counted with what had come. Its status is still idle, as the [Status](#status) table says.
+- Counts that could not be right give a dash, never an older reply's: a `usageMetadata` that is not an object; a `promptTokenCount` or `totalTokenCount` that is missing, negative or not a whole number; a `promptTokenCount` of 0, which Qwen Code writes for a provider that sent a total alone; a `totalTokenCount` smaller than `promptTokenCount` and `candidatesTokenCount` together, as the 0 Qwen Code writes for a provider that sent no total; a `candidatesTokenCount` that is negative or not a whole number; or a cached part that is negative, not a whole number or larger than the prompt. The dash lasts until the next reply with counts.
+- A reply too long to read whole, over 4 MiB, gives a dash too, until the next reply with counts: its `usageMetadata` comes after its `message`, past the part that is read.
+- A provider that reports no cached count gets a `cachedContentTokenCount` of 0, so the details say none of the input came from a cache.
+- Nothing is summed: there are no totals. A compression or `/rewind` changes nothing: the counts stay those of the newest reply in the file.
+
+Not yet checked on a computer running Qwen Code: that the lines hold the counts as the source above writes them, for any provider. To check, run a session with each provider you use, and compare, for its newest reply, the five counts of its line's `usageMetadata`, and only those, with what its details show.
 
 ## Last message
 
@@ -116,7 +167,7 @@ What a session last said is read only when `GET /api/sessions/last-message` asks
 - At most the last 256 KB are read, opened without following a link and without waiting on a pipe. The first line of that end, which the read cut into, is not read.
 - The model's reply is an `assistant` line whose `message` is the reply as the model gave it, a `role` of `model` and a list of `parts`, as the status reads it above. A part with `text` is what the reply says, unless it is marked `thought: true`, the model's thinking. A part with a `functionCall` calls a tool. That a reply's text parts make one answer joined with nothing between, as the model's parts do, is taken from that shape and not yet checked on a machine running Qwen Code.
 - So the text is that of the newest `assistant` line with no subtype and no `isSidechain: true` whose parts hold text that is not a thought: those parts' text, joined with nothing between. A reply that only calls tools, or only thinks, is passed over for the one before it. A prompt, a thought, a tool's call, a tool's result, a system line and a subagent's line are never taken. Only a line that names `"assistant"` is parsed, and only by its own `type`, so a reply quoted in a prompt is never taken.
-- It is made fit to show as every last message is, and at most its last 2,000 characters are kept, in memory, for at most 15 seconds after the last ask, with no token counts. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and the Sources card then says Last message read: Off.
+- It is made fit to show as every last message is, and at most its last 2,000 characters are kept, in memory, for at most 15 seconds after the last ask. The answer has no token counts: a session's are on the session already, from the poll's read. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and the Sources card then says Last message read: Off.
 
 ## What it never reads
 
@@ -180,6 +231,7 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - **Folder:** the record's `cwd`, which `/cd` changes.
 - **Started:** the chat file's first line, when the file was read from its start. Otherwise when the process registered the session, or when `/clear` or `/resume` moved the process to it, if Agent Lookout saw that happen.
 - **Quiet for:** the chat file's modified time from the `lstat` on each poll. Every line Qwen Code adds moves it on. A session with no chat file has none.
+- **Tokens:** the counts of the newest reply that has them, as [Token counts](#token-counts) says. A record a crash left behind has none: its chat file is not read.
 - **App:** Terminal.
 - **Process:** the record's `pid`, with no Jump, Stop or link.
 
@@ -200,9 +252,11 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - Never listed: `qwen -p` runs, which never register (`docs/users/features/commands.md:770`); Qwen Code before 0.21.14; sessions an editor or Qwen Code's server drives; sessions in a container, on a Mac or Windows; and sessions under a folder Agent Lookout's own environment does not name.
 - Chats moved by `advanced.runtimeOutputDir`, or with chat recording off, show as idle, and after ten minutes the Sources view says no chat file was found.
 - Managed Session logs show as unknown.
-- After `/rewind`, Last message can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, it is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop.
+- After `/rewind`, Last message and Tokens can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, it is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop.
 - After `/clear` or `/resume` made before Agent Lookout started, the session is idle since its process registered, which can be long before, until its next prompt, so it can show as stale at once. After such a `/clear`, Started is that time too until the new session writes its first line. Started is also when the process registered for a chat file over 8 MiB, which is read from its middle.
 - On Linux, a record written in a container is listed, and its pid is checked on this computer.
+- Tokens show a dash while the newest reply with counts is further back than the 8 MiB read of the chat file, and after a reply too long to read whole, until the next reply with counts.
+- Tokens show a dash for an OpenAI-compatible provider that sends no `total_tokens`.
 
 ## What breaks when Qwen Code changes
 
@@ -217,6 +271,8 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 | A new line type                                       | Sessions show as unknown until their next line                                                                                                            | `src/core/mapping/qwen-code/qwenCodeMapping.ts` |
 | `custom_title` changes                                | Sessions are named after their folder                                                                                                                     | `chatRecords.ts`                                |
 | A reply's `parts`, or how a thought is marked, change | Last message shows nothing, or shows a thought                                                                                                            | `lastMessages.ts`                               |
+| `usageMetadata` moves or its counts are renamed       | Tokens is a dash in every Qwen Code session's details                                                                                                     | `chatRecords.ts`                                |
+| A provider's counts come to mean something else       | Out leaves out the reasoning or counts it twice, or In shows less than the context in use                                                                 | `chatRecords.ts`                                |
 | `QWEN_HOME` or `QWEN_RUNTIME_DIR` mean something else | Qwen Code is not found, or found empty                                                                                                                    | `index.ts`                                      |
 
-To check a new Qwen Code version, read `core/services/session-registry.ts`, `core/services/chatRecordingService.ts`, `core/telemetry/request-lifecycle.ts`, `core/utils/paths.ts`, `core/config/storage.ts` and `docs/users/features/cross-session-protocol.md` at its tag. Then run a session in a terminal, and compare the dashboard with `qwen sessions ps` on a machine where nothing else reads the list.
+To check a new Qwen Code version, read `core/services/session-registry.ts`, `core/services/chatRecordingService.ts`, `core/telemetry/request-lifecycle.ts`, `core/utils/paths.ts`, `core/config/storage.ts` and `docs/users/features/cross-session-protocol.md` at its tag, and for the token counts `processStreamResponse` in `core/core/llm-chat.ts` and the converters named in [Token counts](#token-counts). Then run a session in a terminal, and compare the dashboard with `qwen sessions ps` on a machine where nothing else reads the list.

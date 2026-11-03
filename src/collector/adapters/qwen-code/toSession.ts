@@ -82,6 +82,8 @@ export interface QwenCodeSessionInput {
  *   start, and otherwise when its process registered it or moved to it.
  * - Its last write is its chat file's modified time: every line Qwen Code
  *   adds moves it on. Without a chat file it has none.
+ * - Its tokens are the counts of its newest reply that has them, from the
+ *   same read of its chat file (`usageCountsOf` in `chatRecords.ts`).
  * - It has its process's id, and no link, Jump or Stop.
  */
 export function qwenCodeSession(input: QwenCodeSessionInput): Session {
@@ -109,6 +111,8 @@ export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   };
   const writtenAt = writtenAtOf(input.writtenAt, startedAt, now);
   if (writtenAt !== null) session.lastWriteAt = writtenAt;
+  const tokens = chat?.fold.tokens;
+  if (tokens) session.tokens = { ...tokens };
   return session;
 }
 

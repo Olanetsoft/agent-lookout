@@ -177,7 +177,37 @@ export interface AssistantFields extends LineFields {
   parts?: unknown[];
   /** Marks the line as one a subagent wrote into the file. */
   sidechain?: boolean;
+  /** The reply's `usageMetadata` in place of `GEMINI_USAGE`, or null for a reply with none. */
+  usage?: unknown;
 }
+
+/**
+ * A reply's `usageMetadata` as Qwen Code writes it for Gemini's own API: the
+ * prompt counts its cached part, the candidates leave the thoughts out, and
+ * the total is the prompt, the candidates and the thoughts together. Its
+ * counts are 1,200 in, 600 of them cached, and 100 out.
+ */
+export const GEMINI_USAGE = {
+  promptTokenCount: 1200,
+  candidatesTokenCount: 80,
+  thoughtsTokenCount: 20,
+  totalTokenCount: 1300,
+  cachedContentTokenCount: 600,
+} as const;
+
+/**
+ * The same for an OpenAI-compatible provider, as Qwen Code's own sign-in
+ * uses: the candidates are `completion_tokens`, which count the reasoning,
+ * and the total is the prompt and the candidates together. Its counts are
+ * 2,400 in, 1,800 of them cached, and 150 out.
+ */
+export const OPENAI_USAGE = {
+  promptTokenCount: 2400,
+  candidatesTokenCount: 150,
+  thoughtsTokenCount: 40,
+  totalTokenCount: 2550,
+  cachedContentTokenCount: 1800,
+} as const;
 
 /** A whole reply, with its thought, its text, the tools it calls and its token counts. */
 export function assistantLine(time: number, fields: AssistantFields = {}): string {
@@ -205,13 +235,7 @@ export function assistantLine(time: number, fields: AssistantFields = {}): strin
             ],
           },
         }),
-    usageMetadata: {
-      promptTokenCount: 1200,
-      candidatesTokenCount: 80,
-      thoughtsTokenCount: 20,
-      totalTokenCount: 1300,
-      cachedContentTokenCount: 600,
-    },
+    ...(fields.usage === null ? {} : { usageMetadata: fields.usage ?? GEMINI_USAGE }),
     contextWindowSize: 128000,
   });
 }

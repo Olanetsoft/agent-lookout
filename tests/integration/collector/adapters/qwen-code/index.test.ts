@@ -134,7 +134,7 @@ async function snapshotOf(root: string): Promise<Record<string, string>> {
 }
 
 describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out", () => {
-  test("lists each terminal session with its status, name and folder, and a crash's leftover as finished", async () => {
+  test("lists each terminal session with its status, name, folder and token counts, and a crash's leftover as finished", async () => {
     const home = await makeQwenHome();
     const result = await adapterFor(home).poll();
     expect(result.health).toMatchObject({
@@ -155,6 +155,8 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
         startedAt: Date.UTC(2026, 9, 1, 11, 31),
         statusSince: Date.UTC(2026, 9, 1, 11, 31),
         lastWriteAt: WRITTEN.working,
+        // Counted as Qwen Code writes them for Gemini's own API: 1,300 in all, less the prompt.
+        tokens: { input: 1200, cached: 600, output: 100 },
         pid: fixture.working.pid,
         alive: true,
       },
@@ -168,6 +170,9 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
         startedAt: Date.UTC(2026, 9, 1, 10, 1),
         statusSince: Date.UTC(2026, 9, 1, 10, 2, 0, 1),
         lastWriteAt: WRITTEN.idle,
+        // The newest of its two replies, counted as Qwen Code writes them for an
+        // OpenAI-compatible provider, whose candidates already count the reasoning.
+        tokens: { input: 2400, cached: 1800, output: 150 },
         pid: fixture.idle.pid,
         alive: true,
       },

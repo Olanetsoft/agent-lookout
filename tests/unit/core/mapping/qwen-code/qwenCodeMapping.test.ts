@@ -421,3 +421,70 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
     expect([...seen].sort()).toEqual(["idle", "unknown", "working"]);
   });
 });
+
+describe("foldQwenCodeRecord, the newest reply's token counts", () => {
+  const first = { input: 1200, cached: 600, output: 100 };
+  const second = { input: 2400, cached: 1800, output: 150 };
+  const counted = (
+    s: number,
+    tokens: QwenCodeRecord["tokens"],
+    extra: Partial<QwenCodeRecord> = {},
+  ) => ({ ...reply(s), tokens, ...extra }) as QwenCodeRecord;
+
+  test("are none before any reply has them", () => {
+    expect(startQwenCodeFold(true).tokens).toBeNull();
+    expect(fold([prompt(0), reply(1), calls(2)]).tokens).toBeNull();
+  });
+
+  test("are the newest reply's, whether it calls a tool or not", () => {
+    expect(fold([prompt(0), counted(1, first)]).tokens).toEqual(first);
+    expect(
+      fold([prompt(0), counted(1, first), counted(2, second, { calls: true })]).tokens,
+    ).toEqual(second);
+  });
+
+  test("a newer reply with none leaves them, and one that could not be right takes them away", () => {
+    expect(fold([counted(1, first), reply(2)]).tokens).toEqual(first);
+    expect(fold([counted(1, first), counted(2, null)]).tokens).toBeNull();
+    expect(fold([counted(1, first), counted(2, null), counted(3, second)]).tokens).toEqual(second);
+  });
+
+  test("a reply too long to read whole takes them away, since its counts are not read", () => {
+    const oversized: QwenCodeRecord = { type: "assistant", at: at(2), oversized: true };
+    expect(fold([counted(1, first), oversized]).tokens).toBeNull();
+  });
+
+  test("a line with a subtype, and every line that is not a reply, leaves them as they were", () => {
+    const others: QwenCodeRecord[] = [
+      counted(2, second, { subtype: "realtime_message" }),
+      { ...prompt(2), tokens: second },
+      { ...result(2), tokens: second },
+      { ...system(2, "chat_compression"), tokens: second },
+      { ...system(2, "rewind"), tokens: null },
+      lifecycle(2, "started"),
+      { type: "summary", at: at(2), tokens: second },
+    ];
+    for (const record of others) {
+      expect(fold([counted(1, first), record]).tokens).toEqual(first);
+    }
+  });
+
+  test("the part of a reply stopped with Esc gives its counts, and the session stays idle", () => {
+    const stopped = fold([
+      prompt(0),
+      counted(1, first),
+      prompt(2),
+      lifecycle(3, "started"),
+      lifecycle(4, "ended", "cancelled"),
+      counted(5, second, { calls: true }),
+    ]);
+    expect(stopped.tokens).toEqual(second);
+    expect(mapQwenCodeStatus(stopped, LIVE_SINCE).status).toBe("idle");
+  });
+
+  test("the fold given is not changed", () => {
+    const before = fold([counted(1, first)]);
+    foldQwenCodeRecord(before, counted(2, second));
+    expect(before.tokens).toEqual(first);
+  });
+});

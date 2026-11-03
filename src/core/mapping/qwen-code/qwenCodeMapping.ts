@@ -8,11 +8,12 @@
 // checked on a machine running it. See docs/adapters/qwen-code.md for where
 // each value comes from.
 
-import type { SessionStatus } from "../../sessions/session.ts";
+import type { SessionStatus, TokenCounts } from "../../sessions/session.ts";
 
 /**
  * The little the adapter keeps of one line of a chat file, and nothing else:
- * no prompt, reply, thought, tool input or output, folder or branch.
+ * no prompt, reply, thought, tool input or output, folder or branch, and of a
+ * reply's `usageMetadata` three numbers alone.
  */
 export interface QwenCodeRecord {
   /** `user`, `assistant`, `tool_result` or `system`, or another word a newer Qwen Code writes. */
@@ -29,6 +30,11 @@ export interface QwenCodeRecord {
   message?: true;
   /** An `assistant` line whose reply calls a tool. */
   calls?: true;
+  /**
+   * An `assistant` line's token counts, from its `usageMetadata`: null when
+   * they could not be right. Left out when the line has no `usageMetadata`.
+   */
+  tokens?: TokenCounts | null;
   /** A `tool_result` line for a call that was stopped or declined. */
   cancelled?: true;
   /** A `ui_telemetry` line about one request to the model. */
@@ -124,6 +130,12 @@ export interface QwenCodeFold {
   title: string | null;
   /** Whether a line says this is a Managed Session log. */
   managed: boolean;
+  /**
+   * The token counts of the session's newest reply that has them. Null before
+   * any, when that reply's could not be right, or when a reply too long to
+   * read whole came after it.
+   */
+  tokens: TokenCounts | null;
 }
 
 /** Nothing folded yet: `whole` says whether the lines start at the file's start. */
@@ -138,6 +150,7 @@ export function startQwenCodeFold(whole: boolean): QwenCodeFold {
     beforeRequest: null,
     title: null,
     managed: false,
+    tokens: null,
   };
 }
 
@@ -223,6 +236,12 @@ function userEvent(record: QwenCodeRecord): QwenCodeEvent | null {
  * ends the turn, whichever calls finished first. When only a declined call
  * was among them, Qwen Code goes on, and its next request, written from
  * 0.25.1, or a reply that calls a tool shows the session as working again.
+ *
+ * An `assistant` line with no subtype that has token counts gives the
+ * session's counts, the part of a reply stopped with Esc among them, and one
+ * whose counts could not be right gives none. One with no counts leaves them
+ * as they were. One too long to read whole gives none: its counts come after
+ * its reply, past what is read of it. No other line changes them.
  */
 export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): QwenCodeFold {
   let next = fold;
@@ -237,6 +256,8 @@ export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): 
     }
     case "assistant": {
       if (record.subtype !== undefined) return next;
+      if (record.oversized) next = { ...next, tokens: null };
+      else if (record.tokens !== undefined) next = { ...next, tokens: record.tokens };
       // The part of a reply stopped with Esc, written after the stop.
       if (next.event === "cancelled") return next;
       if (record.oversized) return withEvent(next, "oversized-reply", at);

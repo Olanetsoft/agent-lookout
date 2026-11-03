@@ -645,7 +645,16 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(QWEN_CODE_CAPABILITIES.finished.level).toBe("partly");
   });
 
-  test("Qwen Code: a session has its process and the time of its last write, and no tokens, jump or stop", () => {
+  test("Qwen Code: a session has its process, the time of its last write and its newest reply's token counts, and no jump or stop", () => {
+    const records: QwenCodeRecord[] = [
+      { type: "user", at: NOW - 30_000 },
+      {
+        type: "assistant",
+        at: NOW - 20_000,
+        message: true,
+        tokens: { input: 2_000, cached: 800, output: 64 },
+      },
+    ];
     const session = qwenCodeSession({
       entry: {
         pid: 41001,
@@ -656,7 +665,7 @@ describe("each declaration agrees with what its adapter does", () => {
         linux: false,
       },
       chat: {
-        fold: foldQwenCodeRecord(startQwenCodeFold(true), { type: "user", at: NOW - 30_000 }),
+        fold: records.reduce(foldQwenCodeRecord, startQwenCodeFold(true)),
         firstAt: NOW - 30_000,
       },
       writtenAt: NOW - 10_000,
@@ -664,13 +673,13 @@ describe("each declaration agrees with what its adapter does", () => {
     });
     expect(session.lastWriteAt).toBe(NOW - 10_000);
     expect(session.pid).toBe(41001);
-    expect(session).not.toHaveProperty("tokens");
+    expect(session.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
     expect(session).not.toHaveProperty("jump");
     expect(session).not.toHaveProperty("stop");
     expect(session).not.toHaveProperty("ask");
     expect(session.links).toEqual({});
     expect(QWEN_CODE_CAPABILITIES["quiet-for"].level).toBe("yes");
-    expect(QWEN_CODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.tokens.level).toBe("yes");
     expect(QWEN_CODE_CAPABILITIES.names.level).toBe("partly");
     expect(QWEN_CODE_CAPABILITIES.jump.level).toBe("no");
     expect(QWEN_CODE_CAPABILITIES.stop.level).toBe("no");
