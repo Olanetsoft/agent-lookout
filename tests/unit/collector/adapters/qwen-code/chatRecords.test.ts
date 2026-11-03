@@ -199,12 +199,12 @@ describe("usageCountsOf", () => {
     ).toEqual({ input: 5000, cached: 4800, output: 300 });
   });
 
-  test("a cached part of 0 is kept, and one that is not there is left out", () => {
-    expect(usageCountsOf({ ...OPENAI_USAGE, cachedContentTokenCount: 0 })).toEqual({
-      input: 2400,
-      cached: 0,
-      output: 150,
-    });
+  test("a cached part of 0, or one that is not there, is left out", () => {
+    // Qwen Code writes 0 for a provider that sent no cached count, so a 0 is
+    // not taken to mean that none of the input came from a cache.
+    const zero = usageCountsOf({ ...OPENAI_USAGE, cachedContentTokenCount: 0 });
+    expect(zero).toEqual({ input: 2400, output: 150 });
+    expect(zero).not.toHaveProperty("cached");
     const { cachedContentTokenCount: _cached, ...uncached } = OPENAI_USAGE;
     expect(usageCountsOf(uncached)).toEqual({ input: 2400, output: 150 });
   });
@@ -621,6 +621,19 @@ describe("the newest reply's token counts", () => {
 
     files.append(FILE, assistantLine(NOW - 20_000, { usage: OPENAI_USAGE }), { mtimeMs: NOW + 1 });
     expect((await readNow(files, reader)).fold.tokens).toEqual(OPENAI_TOKENS);
+  });
+
+  test("a line too long to read whole that is not a reply, as a long compression, leaves them as they were", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        assistantLine(NOW - 50_000, { usage: OPENAI_USAGE }),
+        compressionLine(NOW - 40_000, LINE_LIMIT_BYTES + 10),
+      ),
+    );
+    expect((await readNow(files)).fold.tokens).toEqual(OPENAI_TOKENS);
   });
 
   test("keeps the three numbers and nothing else of the line or its usage", async () => {

@@ -454,6 +454,18 @@ describe("foldQwenCodeRecord, the newest reply's token counts", () => {
     expect(fold([counted(1, first), oversized]).tokens).toBeNull();
   });
 
+  test("a line too long to read whole that is not a reply with no subtype leaves them as they were", () => {
+    const long: QwenCodeRecord[] = [
+      { type: "system", subtype: "chat_compression", at: at(2), oversized: true },
+      { type: "tool_result", at: at(2), oversized: true },
+      { type: "user", at: at(2), oversized: true },
+      { type: "assistant", subtype: "realtime_message", at: at(2), oversized: true },
+    ];
+    for (const record of long) {
+      expect(fold([counted(1, first), record]).tokens).toEqual(first);
+    }
+  });
+
   test("a line with a subtype, and every line that is not a reply, leaves them as they were", () => {
     const others: QwenCodeRecord[] = [
       counted(2, second, { subtype: "realtime_message" }),

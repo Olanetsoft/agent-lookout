@@ -135,7 +135,10 @@ function isCount(value: unknown): value is number {
  * for each of them. So:
  *
  * - input is `promptTokenCount`;
- * - cached is `cachedContentTokenCount`;
+ * - cached is `cachedContentTokenCount`, left out when it is 0: Qwen Code
+ *   writes 0 for a provider that sent no cached count (`?? 0` in its
+ *   converters, and `coerceUsageCount`), and the line cannot tell that from a
+ *   cache that held none;
  * - output is `totalTokenCount` less `promptTokenCount`, which is how Qwen
  *   Code itself works out a reply's output from the file when a session is
  *   resumed (`getUsageOutputTokenCountForPromptEstimate`).
@@ -156,7 +159,7 @@ export function usageCountsOf(usage: unknown): TokenCounts | null {
   if (!isCount(input) || !isCount(total)) return null;
   const output = total - input;
   if (candidates !== undefined && (!isCount(candidates) || candidates > output)) return null;
-  return tokenCountsOf({ input, cached, output });
+  return tokenCountsOf({ input, cached: cached === 0 ? undefined : cached, output });
 }
 
 /**

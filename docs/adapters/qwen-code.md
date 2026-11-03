@@ -144,7 +144,7 @@ So, as the providers define their fields, `promptTokenCount` is the whole prompt
 | Shown  | From                                      |
 | ------ | ----------------------------------------- |
 | In     | `promptTokenCount`                        |
-| Cached | `cachedContentTokenCount`                 |
+| Cached | `cachedContentTokenCount`, unless 0       |
 | Out    | `totalTokenCount` less `promptTokenCount` |
 
 `usageCountsOf` in `chatRecords.ts` works out these three numbers from a reply's line, reads `candidatesTokenCount` only to check them and keeps nothing more of it, `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` checks them, and `foldQwenCodeRecord` in `qwenCodeMapping.ts` keeps those of the newest reply.
@@ -154,7 +154,7 @@ So, as the providers define their fields, `promptTokenCount` is the whole prompt
 - A reply stopped with Esc after usage came is counted with what had come. Its status is still idle, as the [Status](#status) table says.
 - Counts that could not be right give a dash, never an older reply's: a `usageMetadata` that is not an object; a `promptTokenCount` or `totalTokenCount` that is missing, negative or not a whole number; a `promptTokenCount` of 0, which Qwen Code writes for a provider that sent a total alone; a `totalTokenCount` smaller than `promptTokenCount` and `candidatesTokenCount` together, as the 0 Qwen Code writes for a provider that sent no total; a `candidatesTokenCount` that is negative or not a whole number; or a cached part that is negative, not a whole number or larger than the prompt. The dash lasts until the next reply with counts.
 - A reply too long to read whole, over 4 MiB, gives a dash too, until the next reply with counts: its `usageMetadata` comes after its `message`, past the part that is read.
-- A provider that reports no cached count gets a `cachedContentTokenCount` of 0, so the details say none of the input came from a cache.
+- A `cachedContentTokenCount` of 0 is left out, and the details say only Newest reply: Qwen Code writes 0 for a provider that sent no cached count (`?? 0` in its converters, `coerceUsageCount` in `llm-chat.ts`), and the line cannot tell that from a cache that held none.
 - Nothing is summed: there are no totals. A compression or `/rewind` changes nothing: the counts stay those of the newest reply in the file.
 
 Not yet checked on a computer running Qwen Code: that the lines hold the counts as the source above writes them, for any provider. To check, run a session with each provider you use, and compare, for its newest reply, the five counts of its line's `usageMetadata`, and only those, with what its details show.
@@ -252,7 +252,7 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - Never listed: `qwen -p` runs, which never register (`docs/users/features/commands.md:770`); Qwen Code before 0.21.14; sessions an editor or Qwen Code's server drives; sessions in a container, on a Mac or Windows; and sessions under a folder Agent Lookout's own environment does not name.
 - Chats moved by `advanced.runtimeOutputDir`, or with chat recording off, show as idle, and after ten minutes the Sources view says no chat file was found.
 - Managed Session logs show as unknown.
-- After `/rewind`, Last message and Tokens can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, it is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop.
+- After `/rewind`, Last message and Tokens can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, Last message is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop. Tokens are that part's counts only when the provider's usage had come before the stop, and otherwise stay as they were, as [Token counts](#token-counts) says.
 - After `/clear` or `/resume` made before Agent Lookout started, the session is idle since its process registered, which can be long before, until its next prompt, so it can show as stale at once. After such a `/clear`, Started is that time too until the new session writes its first line. Started is also when the process registered for a chat file over 8 MiB, which is read from its middle.
 - On Linux, a record written in a container is listed, and its pid is checked on this computer.
 - Tokens show a dash while the newest reply with counts is further back than the 8 MiB read of the chat file, and after a reply too long to read whole, until the next reply with counts.
