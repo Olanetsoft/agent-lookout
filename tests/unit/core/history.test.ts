@@ -34,7 +34,7 @@ test("each status is counted, and the total includes the ones with no count of t
   });
 });
 
-test("a stale session is not counted as idle, as the tiles do not count it, but is in the total", () => {
+test("a stale session is not counted as idle, as the counts row counts it under Stale, but is in the total", () => {
   const sessions = [
     makeSession({ id: "claude-code:1", status: "idle" }),
     makeSession({ id: "claude-code:2", status: "idle", stale: true }),

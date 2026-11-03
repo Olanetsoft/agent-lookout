@@ -66,7 +66,7 @@ function Row({
 }) {
   const jump = useJump(session);
   return (
-    <div data-slot='row' className='flex w-96 items-center gap-2 p-10'>
+    <div data-slot='row' className='flex items-center gap-2' style={{ width: 384, padding: 40 }}>
       <span className='flex-1'>{session.name}</span>
       <JumpNote session={session} jump={jump} />
       <Jump session={session} jump={jump} variant={variant} size={size} />

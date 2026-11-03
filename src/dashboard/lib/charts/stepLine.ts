@@ -15,12 +15,12 @@ import { POLL_GAP_MS } from "@core/waits/measured";
 /** A span narrower than this, in drawing units, is not worth drawing. */
 const MIN_SPAN = 0.75;
 
-export interface SparkSample {
+export interface StepSample {
   at: number;
   value: number;
 }
 
-export interface SparkWindow {
+export interface StepWindow {
   /** Epoch milliseconds at the left edge. */
   start: number;
   /** Epoch milliseconds at the right edge: the present. */
@@ -39,7 +39,7 @@ export interface StepFrame {
   ceiling?: number;
 }
 
-export interface SparkSpan {
+export interface StepSpan {
   x: number;
   width: number;
 }
@@ -50,16 +50,16 @@ export interface StepRun {
   from: number;
   to: number;
   /** In time order. */
-  samples: SparkSample[];
+  samples: StepSample[];
 }
 
-export interface SparkGeometry {
+export interface StepGeometry {
   /** One open path per continuous run of samples. */
   lines: string[];
   /** The same runs closed down to the floor, for a faint fill. */
   areas: string[];
   /** Stretches of the window with no measurement. */
-  unmeasured: SparkSpan[];
+  unmeasured: StepSpan[];
   /** Lowest and highest value in the window, or null when nothing was measured. */
   range: { min: number; max: number } | null;
   /** The measured stretches, for reading the value at a point in time. */
@@ -75,10 +75,10 @@ function round(value: number): number {
 
 /** The step line of `samples` over `window`, drawn inside `frame`. */
 export function buildSteps(
-  samples: readonly SparkSample[],
-  window: SparkWindow,
+  samples: readonly StepSample[],
+  window: StepWindow,
   frame: StepFrame,
-): SparkGeometry {
+): StepGeometry {
   const { start, end } = window;
   const gapMs = window.gapMs ?? DEFAULT_GAP_MS;
   const span = end - start;
@@ -110,7 +110,7 @@ export function buildSteps(
     round(frame.bottom - (Math.min(value, ceiling) / ceiling) * (frame.bottom - frame.top));
 
   // Split into runs wherever the gap between two samples is too long to bridge.
-  const groups: SparkSample[][] = [];
+  const groups: StepSample[][] = [];
   for (const sample of inWindow) {
     const group = groups[groups.length - 1];
     const previous = group?.[group.length - 1];
@@ -120,7 +120,7 @@ export function buildSteps(
 
   const lines: string[] = [];
   const areas: string[] = [];
-  const covered: SparkSpan[] = [];
+  const covered: StepSpan[] = [];
   const runs: StepRun[] = [];
 
   groups.forEach((group, index) => {
@@ -151,7 +151,7 @@ export function buildSteps(
   });
 
   // Everything the runs do not cover was not measured.
-  const unmeasured: SparkSpan[] = [];
+  const unmeasured: StepSpan[] = [];
   let cursor = frame.left;
   for (const piece of covered) {
     if (piece.x - cursor >= MIN_SPAN) {
@@ -170,7 +170,7 @@ export function buildSteps(
  * The count at a point in time: the latest sample at or before it, inside a
  * measured run. Null means that moment was not measured, which is not zero.
  */
-export function readAt(runs: readonly StepRun[], at: number): SparkSample | null {
+export function readAt(runs: readonly StepRun[], at: number): StepSample | null {
   for (const run of runs) {
     if (at < run.from || at > run.to) continue;
     // Binary search for the last sample at or before `at`.
@@ -178,7 +178,7 @@ export function readAt(runs: readonly StepRun[], at: number): SparkSample | null
     let high = run.samples.length - 1;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      if ((run.samples[middle] as SparkSample).at <= at) low = middle;
+      if ((run.samples[middle] as StepSample).at <= at) low = middle;
       else high = middle - 1;
     }
     // Before the run's first sample, in the stretch held back to the left edge,

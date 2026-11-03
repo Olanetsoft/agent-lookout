@@ -24,7 +24,7 @@ import {
   uncovered,
   type Span,
 } from "@dashboard/lib/charts/measured";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/stepLine";
 import { buildTimeline, TIMELINE_WINDOW_MS } from "@dashboard/lib/charts/timeline";
 
 /** What decided where the period starts. */

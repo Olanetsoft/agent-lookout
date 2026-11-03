@@ -1,5 +1,6 @@
 // Loaded before every browser test, so Tailwind utilities, the colour tokens and
-// the bundled fonts resolve exactly as they do in the app.
+// the bundled fonts resolve exactly as they do in the app. The stylesheet reads
+// no file in tests/, so a class that only a test names makes no rule.
 import "@dashboard/styles/index.css";
 
 import { beforeEach } from "vitest";

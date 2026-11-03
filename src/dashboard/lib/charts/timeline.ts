@@ -40,7 +40,7 @@ import { needsYou } from "@core/waits/answeredWaits";
 import type { TrackSegment } from "@dashboard/components/ui/charts/StatusTrack";
 import { measuredSpans, pollRuns, uncovered, type Span } from "@dashboard/lib/charts/measured";
 import { groupSessions, isAnswered } from "@dashboard/lib/sessions/sessions";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/stepLine";
 
 /** The timeline covers the last hour. */
 export const TIMELINE_WINDOW_MS = 60 * 60 * 1000;

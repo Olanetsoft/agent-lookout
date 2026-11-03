@@ -28,7 +28,7 @@ function renderButton(
   tooltip?: string,
 ) {
   return render(
-    <div className='p-10'>
+    <div style={{ padding: 40 }}>
       <CopyButton
         text={TEXT}
         copy={copy}

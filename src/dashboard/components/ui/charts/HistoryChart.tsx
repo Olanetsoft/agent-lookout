@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { formatClock, formatClockMinutes } from "@dashboard/lib/format";
 import { countAxis, timeTicks } from "@dashboard/lib/charts/historyChart";
-import { buildSteps, readAt, type SparkSample } from "@dashboard/lib/charts/sparkline";
+import { buildSteps, readAt, type StepSample } from "@dashboard/lib/charts/stepLine";
 import { cn } from "@dashboard/lib/utils";
 
 /** The line's colour. Needs you is drawn in the lamp's edge, which holds its contrast in both themes. */
@@ -23,7 +23,7 @@ const BAND_LABEL_ROOM = 104;
 const KEY_STEP = 1 / 60;
 
 interface HistoryChartProps {
-  samples: readonly SparkSample[];
+  samples: readonly StepSample[];
   /** Left edge of the window, epoch milliseconds. */
   start: number;
   /** Right edge of the window: the present. */

@@ -17,7 +17,7 @@ import {
   type HistoryWindowId,
 } from "@dashboard/lib/charts/historyChart";
 import { countNeedingYou } from "@dashboard/lib/sessions/sessions";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/stepLine";
 
 interface MetricCopy {
   title: string;
