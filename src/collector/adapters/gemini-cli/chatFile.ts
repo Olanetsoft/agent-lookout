@@ -42,6 +42,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  *
  * No other text is kept: not a prompt, a reply, a thought, a tool's arguments or
  * result, `displayContent`, `memoryScratchpad`, `directories` or `projectHash`.
+ * What a session last said is read apart from this, from the end of the file,
+ * only when the route asks for it and never by a poll (`lastMessages.ts`).
  * A line that does not parse is passed over, as Gemini CLI passes it over. A
  * line of a kind Gemini CLI 0.64.0 does not write makes the status unknown.
  *

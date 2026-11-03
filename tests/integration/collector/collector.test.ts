@@ -7,6 +7,7 @@ import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import type { Adapter } from "@collector/adapters/adapter";
 import { createCodexAdapter, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
+import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import { createCollector } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
@@ -47,6 +48,14 @@ import {
   transcriptPath as agyTranscriptPath,
 } from "@tests/fixtures/antigravity";
 import { prompt, said, transcript } from "@tests/fixtures/claudeTranscript";
+import {
+  chatFile as geminiChatFile,
+  chatName as geminiChatName,
+  geminiLine as geminiReplyLine,
+  headerLine as geminiHeaderLine,
+  messageIdOf as geminiMessageId,
+  userLine as geminiPromptLine,
+} from "@tests/fixtures/gemini-cli/geminiCli";
 import {
   assistantLine as qwenReplyLine,
   chatPath as qwenChatPath,
@@ -2263,7 +2272,7 @@ describe("the last messages of every agent, under one set of limits", () => {
     );
   }
 
-  test("Claude Code, Codex, the Antigravity CLI, Antigravity and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
     // Two live Claude Code sessions, in this test's own process and the one that started it.
     const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
     const claudeHome = await makeClaudeHome({
@@ -2302,6 +2311,26 @@ describe("the last messages of every agent, under one set of limits", () => {
     for (const [index, id] of app.entries()) {
       await putConversation(appHome, id, `Antigravity reply ${index + 1}.`);
     }
+    // Two Gemini CLI sessions in one project, each begun a minute after the other.
+    const gemini = ["00000000-0000-4000-8000-0000000000b1", "00000000-0000-4000-8000-0000000000b2"];
+    const geminiHome = await tempDir();
+    const geminiProject = path.join(geminiHome, "tmp", "demo-project");
+    await mkdir(geminiProject, { recursive: true });
+    await writeFile(path.join(geminiProject, ".project_root"), "/Users/example/code/demo-api");
+    for (const [index, id] of gemini.entries()) {
+      const began = NOW - (30 - index) * MINUTE;
+      await put(
+        path.join(geminiProject, "chats", geminiChatName(began, id)),
+        geminiChatFile([
+          geminiHeaderLine({ sessionId: id, startTime: began }),
+          geminiPromptLine(geminiMessageId("c1"), NOW - 2 * MINUTE),
+          geminiReplyLine(geminiMessageId("c2"), NOW - MINUTE, {
+            content: `Gemini CLI reply ${index + 1}.`,
+          }),
+        ]),
+        NOW - MINUTE,
+      );
+    }
     // Two live Qwen Code sessions, in the same two processes as Claude Code's.
     const qwen = ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"];
     const qwenHome = await tempDir();
@@ -2335,7 +2364,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: cliHome,
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: appHome,
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
-        AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
+        AGENT_LOOKOUT_GEMINI_CLI_HOME: geminiHome,
         AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
         AGENT_LOOKOUT_QWEN_HOME: qwenHome,
         AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
@@ -2361,6 +2390,7 @@ describe("the last messages of every agent, under one set of limits", () => {
       codex: codex.map((id) => `codex:${id}`),
       cli: cli.map((id) => `antigravity-cli:${id}`),
       app: app.map((id) => `antigravity-app:${id}`),
+      gemini: gemini.map((id) => geminiCliSessionId("demo-project", id)),
       qwen: qwen.map((id) => `qwen-code:${id}`),
     };
     const listed = collector.poller.getSnapshot().sessions.map((session) => session.id);
@@ -2394,35 +2424,50 @@ describe("the last messages of every agent, under one set of limits", () => {
     expect(
       await asked([
         sessions.qwen[0],
+        sessions.gemini[0],
         sessions.claude[1],
         sessions.codex[1],
         sessions.cli[1],
         sessions.app[1],
       ]),
-    ).toEqual([{ busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }, { busy: "1" }]);
+    ).toEqual([
+      { busy: "1" },
+      { busy: "1" },
+      { busy: "1" },
+      { busy: "1" },
+      { busy: "1" },
+      { busy: "1" },
+    ]);
 
     // A second later, four more are read, and eight are kept.
     at += 1_000;
     expect(
-      await asked([sessions.qwen[0], sessions.claude[1], sessions.codex[1], sessions.cli[1]]),
+      await asked([sessions.qwen[0], sessions.gemini[0], sessions.claude[1], sessions.codex[1]]),
     ).toEqual([
       "Qwen Code reply 1.",
+      "Gemini CLI reply 1.",
       "Claude Code reply 2.",
       "Codex reply 2.",
-      "Antigravity CLI reply 2.",
     ]);
     expect(kept()).toBe(8);
 
     // Each session more makes room by dropping the one asked for least
     // recently, whichever agent's it is, so eight are kept between them all.
-    at += 1_000;
-    for (const [id, text] of [
-      [sessions.app[1], "Antigravity reply 2."],
-      [sessions.qwen[1], "Qwen Code reply 2."],
-      [sessions.codex[2], "Codex reply 3."],
+    // Four are read a second.
+    for (const second of [
+      [
+        [sessions.cli[1], "Antigravity CLI reply 2."],
+        [sessions.app[1], "Antigravity reply 2."],
+        [sessions.qwen[1], "Qwen Code reply 2."],
+        [sessions.gemini[1], "Gemini CLI reply 2."],
+      ],
+      [[sessions.codex[2], "Codex reply 3."]],
     ] as const) {
-      expect(await ask(id ?? "")).toBe(text);
-      expect(kept()).toBe(8);
+      at += 1_000;
+      for (const [id, text] of second) {
+        expect(await ask(id ?? "")).toBe(text);
+        expect(kept()).toBe(8);
+      }
     }
   });
 });

@@ -11,11 +11,14 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createChatFileReader, type ChatFileState } from "./chatFile.ts";
 import { createChatLister } from "./chats.ts";
+import { createGeminiCliLastMessages } from "./lastMessages.ts";
 import { createProjectLister } from "./projects.ts";
 import { geminiCliSession, lastActivity, SOURCE_ID } from "./toSession.ts";
 
@@ -157,6 +160,21 @@ export interface GeminiCliAdapterOptions {
   recheckMs?: number;
   /** How often, at most, `tmp/` and each folder of session files are listed again. Defaults to 30 seconds. */
   listRefreshMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Gemini CLI adapter, which reads what its sessions last said when asked. */
+export interface GeminiCliAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /**
@@ -180,6 +198,13 @@ export interface GeminiCliAdapterOptions {
  * names its project's folder too. Two files of one id in one project are listed
  * once, from the one active last, as Gemini CLI's own list shows them.
  *
+ * What a session last said is read from the end of the file the last poll
+ * listed it from, but only when `lastMessage` is asked for it, which the
+ * route does while a page has the session's details open, and only for a
+ * session the last poll listed (`lastMessages.ts`). No poll reads it, and it
+ * is never put on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so
+ * does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * Gemini CLI not being installed costs nothing: when `tmp/` is missing, the
  * adapter says so and looks again only once a minute, with a single `stat`.
  * Someone who sets `AGENT_LOOKOUT_GEMINI_CLI_HOME` means that folder: if it
@@ -188,7 +213,7 @@ export interface GeminiCliAdapterOptions {
  * Built from Gemini CLI's source at v0.64.0, and not yet checked against a
  * machine running it.
  */
-export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): Adapter {
+export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): GeminiCliAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -204,6 +229,18 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
   const projects = createProjectLister({ tmpDir, io, refreshMs: options.listRefreshMs });
   const chats = createChatLister({ io, refreshMs: options.listRefreshMs });
   const reader = createChatFileReader(io);
+  // What a session last said, read only when it is asked for. With either
+  // setting off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createGeminiCliLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
+  /** What Sources says of the last-message read: when it reads the end of a session's file, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null ? "end of a session's file, while its details are open" : "Off";
+  /** The file this poll listed each session from, by its id: the only file its last message is read from. */
+  let listedFiles = new Map<string, string>();
 
   /** When `tmp/` was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -216,6 +253,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
       { label: "Read", value: read },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
       { label: "Programs run", value: "None" },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -307,7 +345,14 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
     /** The file to show for each session, by project and id: a session saved twice has more than one. */
     const chosen = new Map<
       string,
-      { state: ChatFileState; slug: string; cwd: string | null; at: number; writtenAt: number }
+      {
+        state: ChatFileState;
+        slug: string;
+        cwd: string | null;
+        at: number;
+        writtenAt: number;
+        file: string;
+      }
     >();
     for (const ref of [...listing.refs].sort((a, b) => (a.path < b.path ? -1 : 1))) {
       let state: ChatFileState;
@@ -336,15 +381,19 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
           cwd: ref.project.cwd,
           at,
           writtenAt: ref.info.mtimeMs,
+          file: ref.path,
         });
       }
     }
     reader.keepOnly(read);
 
     const sessions: Session[] = [];
-    for (const { state, slug, cwd, writtenAt } of chosen.values()) {
+    for (const { state, slug, cwd, writtenAt, file } of chosen.values()) {
       const session = geminiCliSession({ state, slug, cwd, writtenAt, now: checkedAt });
-      if (session) sessions.push(session);
+      if (session) {
+        sessions.push(session);
+        listedFiles.set(session.id, file);
+      }
     }
 
     let detail = `Sessions are read from the files Gemini CLI saves in ${tmpName}. ${alwaysNotes}`;
@@ -360,11 +409,23 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
     capabilities: GEMINI_CLI_CAPABILITIES,
     lookingIn: `Looking for Gemini CLI sessions in ${tmpName}.`,
     async poll() {
+      listedFiles = new Map();
       try {
-        return await poll();
+        const answer = await poll();
+        // The sessions whose last message may be asked for until the next poll,
+        // each with the file it was listed from. A poll that could not list
+        // them lists none, so none may be asked for.
+        lastMessages?.keep(
+          new Map<string, string | null>(
+            answer.sessions.map(({ id }) => [id, listedFiles.get(id) ?? null]),
+          ),
+        );
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Gemini CLI sessions.",
@@ -372,6 +433,15 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): A
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

@@ -562,6 +562,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "not found" },
         { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
         { label: "Programs run", value: "None" },
+        {
+          label: "Last message read",
+          value: "end of a session's file, while its details are open",
+        },
       ],
       capabilities: GEMINI_CLI_CAPABILITIES,
       checkedAt,
