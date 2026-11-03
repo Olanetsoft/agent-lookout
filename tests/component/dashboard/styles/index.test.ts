@@ -14,12 +14,15 @@ import {
 import { startAtTop } from "@tests/support/browser/browser";
 import { preferReducedMotion } from "@tests/support/browser/media";
 import { contrastOf } from "@tests/support/browser/pixels";
+import "@tests/support/browser/unusedClasses.css";
+import unusedClassesCss from "@tests/support/browser/unusedClasses.css?raw";
 
 // The stylesheet, src/dashboard/styles/index.css, read as the app reads it: the
 // colour tokens in both themes, the ground and the glass they make, the contrast
 // every word keeps on that glass with the light behind it, the bundled fonts and
 // motion. Every value is read from the real stylesheet, so changing a token
-// there is checked here.
+// there is checked here. Each class it checks is one that src/ uses, or one
+// that unusedClasses.css gives Tailwind, checked with probeUnused.
 
 type Theme = "dark" | "light";
 
@@ -147,6 +150,23 @@ function probe(className: string, parent: Element = document.body): HTMLElement 
   parent.append(element);
   onTestFinished(() => element.remove());
   return element;
+}
+
+/** The class names unusedClasses.css gives Tailwind, which nothing in src/ uses. */
+const UNUSED_CLASSES = new Set(
+  [...unusedClassesCss.matchAll(/@source inline\("([^"]*)"\)/g)].flatMap((match) =>
+    (match[1] ?? "").split(" "),
+  ),
+);
+
+/**
+ * A probe with one class that nothing in src/ uses. The stylesheet reads no file
+ * in tests/, so the class must be one unusedClasses.css gives Tailwind, or a
+ * check that it makes no rule would pass whatever the stylesheet said.
+ */
+function probeUnused(className: string): HTMLElement {
+  expect(UNUSED_CLASSES, `${className} is not in unusedClasses.css`).toContain(className);
+  return probe(className);
 }
 
 afterEach(() => {
@@ -515,13 +535,19 @@ test("night is the default, with no data-theme set", () => {
 });
 
 test("the dark variant follows data-theme", () => {
-  const element = probe("text-ink-muted dark:text-status-working");
+  const element = probeUnused("dark:text-status-working");
+  element.classList.add("text-ink-muted");
 
   applyTheme("dark");
   expect(getComputedStyle(element).color).toBe("rgb(169, 188, 212)");
   applyTheme("light");
   expect(getComputedStyle(element).color).toBe("rgb(91, 86, 79)");
   expect(getComputedStyle(document.documentElement).colorScheme).toBe("light");
+});
+
+test("a class only the tests name makes no rule, because the stylesheet does not read tests/", () => {
+  // This file names w-[397px], and nothing in src/ does.
+  expect(getComputedStyle(probe("w-[397px]")).width).not.toBe("397px");
 });
 
 test("the retired tokens are gone, the navy surfaces among them", () => {
@@ -533,7 +559,7 @@ test("the retired tokens are gone, the navy surfaces among them", () => {
   }
   // Nor do their classes paint anything.
   for (const old of ["bg-surface", "bg-rail", "bg-page", "bg-surface-band", "bg-tint-needs-you"]) {
-    expect(getComputedStyle(probe(old)).backgroundColor, old).toBe("rgba(0, 0, 0, 0)");
+    expect(getComputedStyle(probeUnused(old)).backgroundColor, old).toBe("rgba(0, 0, 0, 0)");
   }
 });
 
@@ -581,17 +607,19 @@ test("where the mask cannot be composited, the rim is a plain inset 1px highligh
 });
 
 test("the corners are the system's own, and the old ones produce nothing", () => {
+  // Each is a class the app uses. Its chrome and tube classes round only the
+  // top corners, so the top left corner is read.
   const corners: Record<string, string> = {
     "rounded-panel": "24px",
-    "rounded-chrome": "22px",
+    "rounded-t-chrome": "22px",
     "rounded-inner": "14px",
     "rounded-row": "10px",
     "rounded-capsule": "999px",
-    "rounded-tube": "6px",
+    "rounded-t-tube": "6px",
     "rounded-bar": "4px",
   };
   for (const [name, value] of Object.entries(corners)) {
-    expect(getComputedStyle(probe(name)).borderRadius, name).toBe(value);
+    expect(getComputedStyle(probe(name)).borderTopLeftRadius, name).toBe(value);
   }
   for (const old of [
     "rounded-control",
@@ -602,7 +630,7 @@ test("the corners are the system's own, and the old ones produce nothing", () =>
     "rounded-lg",
     "rounded-xl",
   ]) {
-    expect(getComputedStyle(probe(old)).borderRadius, old).toBe("0px");
+    expect(getComputedStyle(probeUnused(old)).borderRadius, old).toBe("0px");
   }
 });
 
@@ -635,7 +663,7 @@ test("the type scale is the system's own, the hero's name and wait come down a s
 
   // Tailwind's own sizes are switched off: they inherit the body's 14px.
   for (const old of ["text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl"]) {
-    expect(getComputedStyle(probe(old)).fontSize, old).toBe("14px");
+    expect(getComputedStyle(probeUnused(old)).fontSize, old).toBe("14px");
   }
 });
 
@@ -664,7 +692,7 @@ test("the layout's sizes: the rail, the header, the window inset, a control, the
   expect(getComputedStyle(probe("block w-waited-name")).width).toBe("104px");
   // The old sizes are gone.
   for (const old of ["h-tile", "h-row-lit", "w-edge-lit"]) {
-    const style = getComputedStyle(probe(`block ${old}`));
+    const style = getComputedStyle(probeUnused(old));
     expect([style.height, style.width].includes("116px") || style.height === "60px", old).toBe(
       false,
     );
@@ -877,8 +905,8 @@ describe("motion", () => {
     expect(spinner.animationName).toBe("spin-loader");
     expect(parseFloat(spinner.animationDuration)).toBeLessThan(0.001);
     expect(spinner.animationIterationCount).toBe("1");
-    // A transition, such as the switch's sliding thumb, takes no time.
-    const thumb = getComputedStyle(probe("transition-transform duration-220"));
-    expect(parseFloat(thumb.transitionDuration)).toBeLessThan(0.001);
+    // A transition, such as a row's fill on hover, takes no time.
+    const fade = getComputedStyle(probe("transition-colors duration-120"));
+    expect(parseFloat(fade.transitionDuration)).toBeLessThan(0.001);
   });
 });

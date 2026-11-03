@@ -6,7 +6,7 @@
 import type { HistoryResponse } from "@core/api";
 import { historySince } from "@core/history";
 import type { HistoryPoint } from "@core/sessions/session";
-import type { SparkSample } from "@dashboard/lib/charts/sparkline";
+import type { StepSample } from "@dashboard/lib/charts/stepLine";
 
 const MINUTE = 60_000;
 
@@ -14,7 +14,7 @@ const MINUTE = 60_000;
 export type HistoryMetric = "needsYou" | "working" | "idle";
 
 /** One count out of every history point, as samples for a line. */
-export function samplesOf(points: readonly HistoryPoint[], metric: HistoryMetric): SparkSample[] {
+export function samplesOf(points: readonly HistoryPoint[], metric: HistoryMetric): StepSample[] {
   return points.map((point) => ({ at: point.at, value: point[metric] }));
 }
 

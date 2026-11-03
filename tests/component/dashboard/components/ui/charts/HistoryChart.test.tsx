@@ -44,7 +44,7 @@ test("a history chart draws both axes, hatches unmeasured time and reads out the
   expect(texts('[data-part="time-tick"]')).toEqual(["17:50", "17:55"]);
 
   // The first third was not measured: hatched and labelled, with no line through it.
-  // The hatch is the one a sparkline uses, drawn under the plot.
+  // The hatch is the one the timeline and the Last hour chart use, drawn under the plot.
   const band = chart.element().querySelector('[data-part="unmeasured"]') as HTMLElement;
   const line = svg.querySelector('[data-part="line"]') as SVGPathElement;
   expect(band.classList.contains("unmeasured-hatch")).toBe(true);

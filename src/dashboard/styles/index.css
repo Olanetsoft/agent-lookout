@@ -36,10 +36,12 @@
  * name classes to explain them, often without the guard they are used with, so
  * reading them would add rules the app never uses: the lamp's breathing without
  * its reduced-motion guard, for one. They are not read. Nor is the landing page
- * in site/, which has a stylesheet of its own.
+ * in site/, which has a stylesheet of its own. Nor are the tests, which name
+ * classes to check them, some of which the app never uses.
  */
 @source not "../../../docs";
 @source not "../../../site";
+@source not "../../../tests";
 
 /*
  * Fonts are bundled with the app. Nothing is fetched from the network. Only the

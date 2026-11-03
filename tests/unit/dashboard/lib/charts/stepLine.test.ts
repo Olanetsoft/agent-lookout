@@ -3,15 +3,15 @@ import { expect, test } from "vitest";
 import {
   buildSteps,
   readAt,
-  type SparkSample,
-  type SparkWindow,
-} from "@dashboard/lib/charts/sparkline";
+  type StepSample,
+  type StepWindow,
+} from "@dashboard/lib/charts/stepLine";
 
 /** A drawing 120 by 30, with 3 units of room above and below the line. */
-const SPARK_WIDTH = 120;
-const SPARK_HEIGHT = 30;
-const buildSparkline = (samples: readonly SparkSample[], window: SparkWindow) =>
-  buildSteps(samples, window, { left: 0, right: SPARK_WIDTH, top: 3, bottom: SPARK_HEIGHT - 3 });
+const WIDTH = 120;
+const HEIGHT = 30;
+const buildLine = (samples: readonly StepSample[], window: StepWindow) =>
+  buildSteps(samples, window, { left: 0, right: WIDTH, top: 3, bottom: HEIGHT - 3 });
 
 const START = 1_700_000_000_000;
 const MINUTE = 60_000;
@@ -26,16 +26,16 @@ function polls(from: number, to: number, value: (at: number) => number) {
 }
 
 test("with no samples the whole window is unmeasured and no line is drawn", () => {
-  const geometry = buildSparkline([], WINDOW);
+  const geometry = buildLine([], WINDOW);
 
   expect(geometry.lines).toEqual([]);
-  expect(geometry.unmeasured).toEqual([{ x: 0, width: SPARK_WIDTH }]);
+  expect(geometry.unmeasured).toEqual([{ x: 0, width: WIDTH }]);
   expect(geometry.range).toBeNull();
 });
 
 test("time before the first sample is unmeasured, not a line at zero", () => {
   // The collector started 5 minutes ago: the first 10 of 15 minutes have no data.
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     polls(START + 10 * MINUTE, END, () => 2),
     WINDOW,
   );
@@ -47,7 +47,7 @@ test("time before the first sample is unmeasured, not a line at zero", () => {
 });
 
 test("a full window has no unmeasured span and the line runs edge to edge", () => {
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     polls(START, END, () => 1),
     WINDOW,
   );
@@ -55,22 +55,22 @@ test("a full window has no unmeasured span and the line runs edge to edge", () =
   expect(geometry.unmeasured).toEqual([]);
   expect(geometry.lines).toHaveLength(1);
   expect(geometry.lines[0]).toMatch(/^M0 /);
-  expect(geometry.lines[0]).toMatch(new RegExp(`H${SPARK_WIDTH}$`));
+  expect(geometry.lines[0]).toMatch(new RegExp(`H${WIDTH}$`));
 });
 
 test("the window ends at the present: a recent last sample is held up to the right edge", () => {
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     polls(START, END - 3_000, () => 1),
     WINDOW,
   );
 
-  expect(geometry.lines[0]).toMatch(new RegExp(`H${SPARK_WIDTH}$`));
+  expect(geometry.lines[0]).toMatch(new RegExp(`H${WIDTH}$`));
   expect(geometry.unmeasured).toEqual([]);
 });
 
 test("when samples stop well before the present, the tail is unmeasured", () => {
   // Data for the first 10 minutes, then nothing: the collector stopped answering.
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     polls(START, START + 10 * MINUTE, () => 1),
     WINDOW,
   );
@@ -80,7 +80,7 @@ test("when samples stop well before the present, the tail is unmeasured", () => 
 });
 
 test("a long gap between samples splits the line and is marked unmeasured", () => {
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     [...polls(START, START + 5 * MINUTE, () => 1), ...polls(START + 10 * MINUTE, END, () => 1)],
     WINDOW,
   );
@@ -90,19 +90,19 @@ test("a long gap between samples splits the line and is marked unmeasured", () =
 });
 
 test("a count of zero sits on the floor and a higher count rises above it", () => {
-  const floor = buildSparkline(
+  const floor = buildLine(
     polls(START, END, () => 0),
     WINDOW,
   );
-  const stepped = buildSparkline(
+  const stepped = buildLine(
     polls(START, END, (at) => (at < START + 5 * MINUTE ? 0 : 3)),
     WINDOW,
   );
 
   const yOf = (path: string) => Number(/^M[\d.]+ ([\d.]+)/.exec(path)?.[1]);
   const floorY = yOf(floor.lines[0] ?? "");
-  expect(floorY).toBeGreaterThan(SPARK_HEIGHT / 2);
-  expect(floorY).toBeLessThan(SPARK_HEIGHT);
+  expect(floorY).toBeGreaterThan(HEIGHT / 2);
+  expect(floorY).toBeLessThan(HEIGHT);
   // The stepped line starts on the same floor and then steps up to a smaller y.
   expect(yOf(stepped.lines[0] ?? "")).toBe(floorY);
   expect(stepped.lines[0]).toMatch(/H40V3H120$/);
@@ -110,7 +110,7 @@ test("a count of zero sits on the floor and a higher count rises above it", () =
 });
 
 test("a value only adds to the path when it changes", () => {
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     polls(START, END, () => 4),
     WINDOW,
   );
@@ -120,7 +120,7 @@ test("a value only adds to the path when it changes", () => {
 });
 
 test("samples outside the window are ignored", () => {
-  const geometry = buildSparkline(
+  const geometry = buildLine(
     [
       { at: START - MINUTE, value: 9 },
       ...polls(START, END, () => 1),
@@ -182,7 +182,7 @@ test("without a ceiling, a steady count is drawn at the top whatever its size", 
 });
 
 test("the count at a moment is the latest sample at or before it", () => {
-  const { runs } = buildSparkline(
+  const { runs } = buildLine(
     polls(START, END, (at) => (at < START + 5 * MINUTE ? 0 : 3)),
     WINDOW,
   );
@@ -195,7 +195,7 @@ test("the count at a moment is the latest sample at or before it", () => {
 });
 
 test("a moment that was not measured reads as null, never as zero", () => {
-  const { runs } = buildSparkline(
+  const { runs } = buildLine(
     [
       ...polls(START + 2 * MINUTE, START + 5 * MINUTE, () => 2),
       ...polls(START + 10 * MINUTE, END - MINUTE, () => 1),
@@ -216,7 +216,7 @@ test("a moment that was not measured reads as null, never as zero", () => {
 test("a reading in the stretch held to an edge is the nearest sample", () => {
   // The first sample is 3 seconds in and the last is 3 seconds from the end: both
   // are close enough for the line to reach the edges.
-  const { runs } = buildSparkline(
+  const { runs } = buildLine(
     polls(START + 3_000, END - 3_000, () => 2),
     WINDOW,
   );

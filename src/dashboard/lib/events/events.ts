@@ -9,7 +9,7 @@ import { historySince } from "@core/history";
 import { isStatusEvent, type Session, type SessionEvent } from "@core/sessions/session";
 import { needsYou } from "@core/waits/answeredWaits";
 import type { MarkKind } from "@dashboard/components/ui/status/StatusMark";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/stepLine";
 
 export interface LogEntry {
   event: SessionEvent;

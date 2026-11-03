@@ -24,7 +24,7 @@ import {
   uncovered,
   type Span,
 } from "@dashboard/lib/charts/measured";
-import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/sparkline";
+import { DEFAULT_GAP_MS } from "@dashboard/lib/charts/stepLine";
 
 const MINUTE = 60_000;
 

@@ -1,0 +1,23 @@
+/*
+ * Class names the stylesheet's test checks that nothing in src/ uses. The app's
+ * stylesheet does not read tests/, so Tailwind is given them here. Only
+ * tests/component/dashboard/styles/index.test.ts loads this file.
+ *
+ * It takes the theme and the variants of src/dashboard/styles/index.css by
+ * reference, so it repeats none of that stylesheet's rules. It adds only the
+ * rules Tailwind makes for the names below, in the same utilities layer.
+ */
+@reference "@dashboard/styles/index.css";
+
+@layer utilities {
+  @tailwind utilities source(none);
+}
+
+/* The dark variant. No component uses it: the theme changes through the tokens. */
+@source inline("dark:text-status-working");
+
+/* Names the system switched off or retired. None of them makes a rule. */
+@source inline("bg-surface bg-rail bg-page bg-surface-band bg-tint-needs-you");
+@source inline("rounded-control rounded-card rounded-xs rounded-sm rounded-md rounded-lg rounded-xl");
+@source inline("text-xs text-sm text-base text-lg text-xl text-2xl");
+@source inline("h-tile h-row-lit w-edge-lit");
