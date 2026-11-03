@@ -38,7 +38,7 @@ import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { createQwenCodeAdapter, QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
-import { qwenCodeSession } from "@collector/adapters/qwen-code/toSession";
+import { qwenCodeSession, withJump } from "@collector/adapters/qwen-code/toSession";
 import {
   createStatusFileAdapter,
   STATUS_FILE_CAPABILITIES,
@@ -645,7 +645,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(QWEN_CODE_CAPABILITIES.finished.level).toBe("partly");
   });
 
-  test("Qwen Code: a session has its process, the time of its last write and its newest reply's token counts, and no jump or stop", () => {
+  test("Qwen Code: a session has its process, the time of its last write and its newest reply's token counts, a jump only for a pane or a tab, and no stop", () => {
     const records: QwenCodeRecord[] = [
       { type: "user", at: NOW - 30_000 },
       {
@@ -678,10 +678,15 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(session).not.toHaveProperty("stop");
     expect(session).not.toHaveProperty("ask");
     expect(session.links).toEqual({});
+    // Jump is added once its process is found in a tmux pane or a tab, and never as a link.
+    expect(withJump(session, { pid: 4100, id: "%3", place: "work:0.1" }, undefined).jump).toEqual({
+      kind: "tmux",
+      place: "work:0.1",
+    });
     expect(QWEN_CODE_CAPABILITIES["quiet-for"].level).toBe("yes");
     expect(QWEN_CODE_CAPABILITIES.tokens.level).toBe("yes");
     expect(QWEN_CODE_CAPABILITIES.names.level).toBe("partly");
-    expect(QWEN_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(QWEN_CODE_CAPABILITIES.jump.level).toBe("partly");
     expect(QWEN_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(QWEN_CODE_CAPABILITIES.answer.level).toBe("no");
   });

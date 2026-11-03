@@ -3,6 +3,8 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { createTailLimits } from "@collector/messages/tailReader";
+import type { TerminalTab } from "@collector/terminal/terminalTabs";
+import type { TmuxPane } from "@collector/tmux/panes";
 
 import {
   BASIS,
@@ -47,6 +49,7 @@ import {
   memoryFiles,
   qwenCodeAdapterFor,
   standInProcesses,
+  standInStarts,
   watching,
   type MemoryFiles,
 } from "@tests/support/adapters/qwenCodeAdapter";
@@ -528,6 +531,222 @@ describe("reading the sessions", () => {
     const adapter = qwenCodeAdapterFor(memoryFiles());
     expect(adapter.capabilities).toBe(QWEN_CODE_CAPABILITIES);
     expect(adapter.lookingIn).toBe("Looking for Qwen Code sessions in ~/.qwen/sessions.");
+  });
+});
+
+describe("Jump", () => {
+  const REGISTERED = NOW - 30 * MINUTE;
+  const pane: TmuxPane = { pid: 4100, id: "%3", place: "api-rate-limits:0.1" };
+  const tab: TerminalTab = { app: "iTerm2", tty: "/dev/ttys007" };
+
+  /** A stand-in for the collector's pane finder: it knows some panes, and writes down who it was asked about. */
+  function knownPanes(panes: Record<number, TmuxPane>) {
+    const looked: number[][] = [];
+    return {
+      looked,
+      look: async (asked: readonly number[]) => {
+        looked.push([...asked].sort());
+      },
+      paneOf: (pid: number) => panes[pid],
+    };
+  }
+
+  /** The same for the tab finder. */
+  function knownTabs(tabs: Record<number, TerminalTab>) {
+    const looked: number[][] = [];
+    return {
+      looked,
+      look: async (asked: readonly number[]) => {
+        looked.push([...asked].sort());
+      },
+      tabOf: (pid: number) => tabs[pid],
+    };
+  }
+
+  /** Two open sessions, registered half an hour ago, each with a prompt. */
+  function twoSessions() {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41001,
+      sessionId: sessionIdOf(1),
+      startedAt: REGISTERED,
+      lines: [promptLine(NOW - MINUTE, { sessionId: sessionIdOf(1) })],
+    });
+    addSession(files, {
+      pid: 41004,
+      sessionId: sessionIdOf(4),
+      startedAt: REGISTERED,
+      lines: [promptLine(NOW - MINUTE, { sessionId: sessionIdOf(4) })],
+    });
+    return files;
+  }
+
+  /** Both sessions' processes, started a moment before they registered. */
+  const ownStarts = () => standInStarts({ 41001: REGISTERED - 2_000, 41004: REGISTERED - 2_000 });
+
+  const jumps = (sessions: { id: string; jump?: unknown }[]) =>
+    sessions.map((session) => [session.id, session.jump]);
+
+  test("a session whose process runs in a pane is given the place, and the pane's id stays here", async () => {
+    const panes = knownPanes({ 41004: pane });
+    const ps = ownStarts();
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      panes,
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(panes.looked).toEqual([[41001, 41004]]);
+    expect(jumps(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, undefined],
+      [`qwen-code:${sessionIdOf(4)}`, { kind: "tmux", place: "api-rate-limits:0.1" }],
+    ]);
+    expect(JSON.stringify(sessions)).not.toContain("%3");
+    // ps was asked when the process in the pane started, and about no other.
+    expect(ps.runs).toEqual([[41004]]);
+  });
+
+  test("a session in a tab of Terminal or iTerm2 is given the app, and one in a pane is reached through tmux", async () => {
+    const panes = knownPanes({ 41001: pane });
+    const terminals = knownTabs({ 41001: { app: "Terminal", tty: "/dev/ttys004" }, 41004: tab });
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      panes,
+      terminals,
+      readProcessStarts: ownStarts().read,
+    }).poll();
+
+    expect(terminals.looked).toEqual(panes.looked);
+    expect(jumps(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, { kind: "tmux", place: "api-rate-limits:0.1" }],
+      [`qwen-code:${sessionIdOf(4)}`, { kind: "terminal", app: "iTerm2", place: "iTerm2" }],
+    ]);
+    expect(JSON.stringify(sessions)).not.toContain("ttys");
+  });
+
+  test("a process that started after its session's record was written has no Jump: another program was given the pid", async () => {
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE, 41004: REGISTERED - 2_000 });
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      panes: knownPanes({ 41001: pane }),
+      terminals: knownTabs({ 41004: tab }),
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(jumps(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, undefined],
+      [`qwen-code:${sessionIdOf(4)}`, { kind: "terminal", app: "iTerm2", place: "iTerm2" }],
+    ]);
+    // It is listed as it was.
+    expect(sessions[0]).toMatchObject({ status: "working", pid: 41001, alive: true });
+  });
+
+  test("when ps cannot say when a process started, its session has no Jump", async () => {
+    const ps = ownStarts();
+    ps.fails = true;
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      panes: knownPanes({ 41001: pane }),
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(sessions.every((session) => session.jump === undefined)).toBe(true);
+  });
+
+  test("ps is asked about the processes found in a pane or a tab, at most once in 30 seconds", async () => {
+    const ps = ownStarts();
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(twoSessions(), {
+      now: clock.now,
+      panes: knownPanes({ 41001: pane }),
+      terminals: knownTabs({}),
+      readProcessStarts: ps.read,
+    });
+    for (let polls = 0; polls < 10; polls += 1) {
+      await adapter.poll();
+      clock.advance(2_000);
+    }
+    expect(ps.runs).toEqual([[41001]]);
+  });
+
+  test("a session whose process has ended is finished with no Jump, and its process is not asked about again", async () => {
+    const files = twoSessions();
+    const processes = standInProcesses([41001, 41004]);
+    const clock = handClock();
+    const panes = knownPanes({ 41001: pane, 41004: pane });
+    const terminals = knownTabs({});
+    const adapter = qwenCodeAdapterFor(files, {
+      now: clock.now,
+      isAlive: processes.isAlive,
+      panes,
+      terminals,
+      readProcessStarts: ownStarts().read,
+    });
+    await adapter.poll();
+
+    processes.stop(41001);
+    clock.advance(2_000);
+    const { sessions } = await adapter.poll();
+    expect(sessions).toMatchObject([
+      { id: `qwen-code:${sessionIdOf(4)}`, status: "working", jump: { kind: "tmux" } },
+      { id: `qwen-code:${sessionIdOf(1)}`, status: "finished", alive: false },
+    ]);
+    expect(sessions[1]).not.toHaveProperty("jump");
+
+    processes.stop(41004);
+    clock.advance(2_000);
+    const closed = await adapter.poll();
+    expect(closed.sessions.map((session) => session.jump)).toEqual([undefined, undefined]);
+    expect(panes.looked).toEqual([[41001, 41004], [41004], []]);
+    expect(terminals.looked).toEqual(panes.looked);
+  });
+
+  test("a poll that lists no session tells the finders it has no process to ask about", async () => {
+    const files = twoSessions();
+    const clock = handClock();
+    const panes = knownPanes({ 41001: pane });
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now, panes });
+    await adapter.poll();
+
+    files.fail(SESSIONS);
+    clock.advance(2_000);
+    expect((await adapter.poll()).health.state).toBe("error");
+    expect(panes.looked).toEqual([[41001, 41004], []]);
+  });
+
+  test("a poll that throws tells the finders it has no process to ask about", async () => {
+    const panes = knownPanes({ 41001: pane });
+    const terminals = knownTabs({});
+    const result = await qwenCodeAdapterFor(twoSessions(), {
+      isAlive: () => {
+        throw new Error("boom");
+      },
+      panes,
+      terminals,
+    }).poll();
+
+    expect(result.health.state).toBe("error");
+    expect(panes.looked).toEqual([[]]);
+    expect(terminals.looked).toEqual([[]]);
+  });
+
+  test("without a finder no pane or tab is looked for, ps is not asked, and the sessions are as they were", async () => {
+    const ps = ownStarts();
+    const without = await qwenCodeAdapterFor(twoSessions(), { readProcessStarts: ps.read }).poll();
+    const withFinders = await qwenCodeAdapterFor(twoSessions(), {
+      panes: knownPanes({}),
+      terminals: knownTabs({}),
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(withFinders.sessions).toEqual(without.sessions);
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("the health of the source says nothing of Jump, found or not", async () => {
+    const found = await qwenCodeAdapterFor(twoSessions(), {
+      panes: knownPanes({ 41001: pane }),
+      readProcessStarts: ownStarts().read,
+    }).poll();
+    const without = await qwenCodeAdapterFor(twoSessions()).poll();
+
+    expect(found.health).toEqual(without.health);
   });
 });
 

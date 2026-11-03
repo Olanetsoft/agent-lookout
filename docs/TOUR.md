@@ -312,7 +312,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/qwen-code/`, with the status mapping in `src/core/mapping/qwen-code/qwenCodeMapping.ts`. [adapters/qwen-code.md](adapters/qwen-code.md) is the full reference. It came from #30.
 
-**Why files.** Qwen Code documents a list of its running sessions for other programs to read, one small JSON file per session in `~/.qwen/sessions`. Its own `qwen sessions ps` deletes the records whose process has gone, so running it would write in Qwen Code's folder, and its hooks need a change to its settings. So the adapter reads files alone, and runs no program.
+**Why files.** Qwen Code documents a list of its running sessions for other programs to read, one small JSON file per session in `~/.qwen/sessions`. Its own `qwen sessions ps` deletes the records whose process has gone, so running it would write in Qwen Code's folder, and its hooks need a change to its settings. So the adapter reads files alone, and runs no program of Qwen Code's. For Jump it shares the tmux and `ps` looks of Claude Code's adapter, and asks `ps` when a process found in a pane or a tab started.
 
 **The pieces.**
 
@@ -322,6 +322,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `qwenCodeMapping.ts` folds those marks in order. A prompt, a reply that calls tools, their results or a request to the model under way is working. A reply that calls none, or a stopped tool or request, is idle. An approval prompt writes nothing, so a session that waits shows as working. It also keeps the token counts of the newest reply that has them (#184).
 - `finishedSessions.ts` shows a session whose record or process has gone as finished for a day, from the poll that found it so.
 - `lastMessages.ts` reads what a session last said, the text of its newest reply that is not a thought, from the end of the chat file the adapter last found, only when it is asked for, as [A session's last message](#a-sessions-last-message) says (#187). No poll reads it.
+- On each poll the adapter gives its open sessions' process IDs to the tmux pane finder and the Terminal tab finder it shares with Claude Code's adapter, for [Jump](#jump) (#186). `processCheck.ts` then asks `ps` when each process found in a pane or a tab started, and only one that started by its record's `startedAt`, give or take a minute, gets a `jump`, since a later one was given the pid after a crash.
 
 **How sure it is.** It was built from Qwen Code's source at v0.25.1 and has not yet been checked on a machine running Qwen Code. The card says so (`UNCHECKED_NOTE`).
 
@@ -383,7 +384,7 @@ In short:
 - **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
 - **Gemini CLI** reports Quiet for, and working and idle in part, since a reply with text whose tool waits or runs shows as idle. Names only once Gemini CLI saves a title. Never needs you, finished or failed. No Jump, tokens, Stop or Answer.
 - **OpenCode** reports working and idle, finished once `ps` shows no OpenCode program, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Never needs you, and no Quiet for, Jump, tokens, Stop or Answer.
-- **Qwen Code** reports Quiet for and tokens, and working, idle and finished in part. Never needs you or failed. No Jump, Stop or Answer.
+- **Qwen Code** reports Quiet for and tokens, and working, idle and finished in part. Never needs you or failed. Jump only in tmux and in a tab of Terminal or iTerm2. No Stop or Answer.
 - **Hermes Agent** reports working and idle from its turn leases, needs you for a question at once and for an approval 10 to 70 seconds late, finished when Hermes Agent ends a session, and failed for the errors it records, on macOS and Linux. Names are its titles. No Quiet for, Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
@@ -1207,6 +1208,7 @@ Thirteen files call `actionRefusalFor`:
 **In tmux, Jump selects the pane (51f2e05).**
 
 - `createPaneFinder` in `src/collector/tmux/paneFinder.ts` runs `tmux list-panes` (`LIST_PANES_ARGS`) and `ps`. `paneOfProcess` then walks up from the session's process to the process tmux started in a pane.
+- The Claude Code and Qwen Code adapters each ask through an `asker()` of their own, and a look is for the processes of both, so neither adapter's look drops the other's (#186).
 - It looks once when there is a process to ask about, then every 30 seconds. When a new process appears it looks sooner, but never within 5 seconds of the last look. Each look starts a program, so looks are kept rare.
 - `selectPane` in `selectPane.ts` runs only fixed commands with a pane ID that passed `isPaneId`: `select-window`, `select-pane`, `display-message`, `list-clients`, and `switch-client` for each client that is showing another session.
 - `findTmuxBinary` also searches `TMUX_LOCATIONS`, because an app opened from the Finder does not get the shell's `PATH`.

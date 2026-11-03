@@ -15,14 +15,20 @@ import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
 import type { TailLimits } from "../../messages/tailReader.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
+import type { ReadProcessStarts } from "../../processes/processStart.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
+import type { TabAsker } from "../../terminal/tabFinder.ts";
+import type { TerminalTab } from "../../terminal/terminalTabs.ts";
+import type { PaneAsker } from "../../tmux/paneFinder.ts";
+import type { TmuxPane } from "../../tmux/panes.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createChatReader, type ChatState } from "./chatRecords.ts";
 import { createFinishedSessions } from "./finishedSessions.ts";
 import { createQwenCodeLastMessages } from "./lastMessages.ts";
+import { createRecordProcessCheck } from "./processCheck.ts";
 import { oneForEachSession, readRegistry, SESSIONS_DIR, type RegistryEntry } from "./registry.ts";
-import { leftBehindQwenCodeSession, qwenCodeSession, SOURCE_ID } from "./toSession.ts";
+import { leftBehindQwenCodeSession, qwenCodeSession, SOURCE_ID, withJump } from "./toSession.ts";
 import { createChatFinder, PROJECTS_DIR } from "./transcriptFile.ts";
 
 /** The variable that replaces Qwen Code's folders, for Agent Lookout alone. */
@@ -89,12 +95,14 @@ export const UNKNOWN_NOTE =
  * - Failed never: each failed try is recorded, but not when Qwen Code gives up.
  * - Its name is the title Qwen Code gives a session, which needs its fast
  *   model, or the one set with /rename.
- * - No Jump: the tmux and Terminal finders look for Claude Code's processes only.
+ * - Jump is a pane for tmux, and a tab for Terminal or iTerm2 on a Mac, found
+ *   for its process by the finders Claude Code's sessions are found with. It
+ *   is given only once `ps` says the process is the one that wrote the
+ *   session's record (`processCheck.ts`). Windows has no tmux and no Terminal.
  * - Quiet for is the chat file's own modified time, moved on by every line.
  * - Tokens are the counts of the newest reply that has them, from the same
  *   read of the chat file (`usageCountsOf` in `chatRecords.ts`).
- * - No Stop: Qwen Code records no start time for its process on a Mac or
- *   Windows, so the process cannot be confirmed before it is stopped.
+ * - No Stop: Agent Lookout stops Claude Code sessions only so far.
  * - No Answer: there is no approval wait recorded to answer.
  */
 export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
@@ -124,16 +132,15 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "The title Qwen Code gives a session, or one set with /rename. Until then, or without its fast model, the folder's name.",
   },
   jump: {
-    level: "no",
+    level: "partly",
     reason:
-      "Agent Lookout looks for tmux panes and Terminal tabs only for Claude Code sessions so far.",
+      "In tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in another terminal or on Windows.",
   },
   "quiet-for": { level: "yes" },
   tokens: { level: "yes" },
   stop: {
     level: "no",
-    reason:
-      "Qwen Code records no process start time on a Mac or Windows, so its process cannot be confirmed before a stop.",
+    reason: "Agent Lookout stops Claude Code sessions only so far.",
   },
   answer: {
     level: "no",
@@ -222,6 +229,24 @@ export interface QwenCodeAdapterOptions {
    * readers. The collector passes one for them all. Left out, it has its own.
    */
   lastMessageLimits?: TailLimits;
+  /**
+   * Finds the tmux pane each open session's process runs in, so that Jump can
+   * select it. The collector passes an asker of the finder the jump route acts
+   * with. Left out, no pane is looked for and tmux is never run.
+   */
+  panes?: PaneAsker;
+  /**
+   * Finds the Terminal or iTerm2 tab each open session's process runs in, for
+   * a session in no tmux pane. The collector passes an asker of the finder the
+   * jump route reads. Left out, no tab is looked for.
+   */
+  terminals?: TabAsker;
+  /**
+   * Reads when processes started, to confirm that the process found in a pane
+   * or a tab is the one that wrote its session's record. Defaults to asking
+   * `ps`, which is asked only about a process found in one.
+   */
+  readProcessStarts?: ReadProcessStarts;
 }
 
 /** The Qwen Code adapter, which reads what its sessions last said when asked. */
@@ -236,8 +261,9 @@ export interface QwenCodeAdapter extends Adapter {
 
 /**
  * Finds Qwen Code sessions on this machine from the files Qwen Code keeps,
- * with nothing installed, no setting changed and no program run. Built from
- * Qwen Code's source at v0.25.1 and not yet checked on a machine running it.
+ * with nothing installed, no setting changed and no Qwen Code program run.
+ * Built from Qwen Code's source at v0.25.1 and not yet checked on a machine
+ * running it.
  *
  * It reads two things, both read-only:
  *
@@ -262,6 +288,12 @@ export interface QwenCodeAdapter extends Adapter {
  * names another session, shows as finished for 24 hours
  * (`finishedSessions.ts`). Its status is working, idle, finished or unknown,
  * never "needs-you": Qwen Code does not write approval waits to its files.
+ *
+ * An open session whose process runs inside a tmux pane, or else in a tab of
+ * Terminal or iTerm2, is given a `jump` that names the place, when the adapter
+ * is handed something to find panes or tabs with, as the Claude Code adapter
+ * is. Before that, `ps` is asked when the process started, to be sure it is
+ * the one that wrote the session's record and not one given its pid since.
  *
  * Qwen Code not being installed costs nothing: when neither folder is there,
  * the adapter says so and looks again only once a minute, with two `stat`s.
@@ -289,6 +321,7 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   const finder = createChatFinder({ projectsDir, io, platform, rescanMs: options.rescanMs });
   const reader = createChatReader(io);
   const finished = createFinishedSessions();
+  const processCheck = createRecordProcessCheck(options.readProcessStarts, now);
   // What a session last said, read only when it is asked for. With either
   // setting off, no file is opened for it.
   const lastMessagesOff = lastMessageStoppedBy(env);
@@ -309,6 +342,8 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   let listedFiles: ReadonlyMap<string, string | null> = new Map();
   /** The chat files this poll found, by session id, or null for an open session with none. */
   let foundFiles = new Map<string, string | null>();
+  /** The record of each session this poll found open, by the session's id in the model. */
+  let openRecords = new Map<string, RegistryEntry>();
 
   /** When the folders were last found missing. Null while they are there, or before the first look. */
   let absentAt: number | null = null;
@@ -506,6 +541,7 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
       }
       const session = qwenCodeSession({ entry, chat, writtenAt, tookOverAt, now: checkedAt });
       foundFiles.set(session.id, file ?? null);
+      openRecords.set(session.id, entry);
       open.push(session);
     }
     holders = held;
@@ -535,6 +571,41 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
     return result("ok", detail, every(pollIntervalMs), checkedAt, [...open, ...closed]);
   }
 
+  /** Tells the finders which processes to look for: this poll's open sessions', and no other. */
+  async function lookFor(pids: readonly number[]): Promise<void> {
+    await Promise.all([options.panes?.look(pids), options.terminals?.look(pids)]);
+  }
+
+  /**
+   * The sessions of a poll, each open one whose process runs inside a tmux
+   * pane, or else in a tab of Terminal or iTerm2, with the place Jump reaches
+   * it in, once `ps` says the process is the one that wrote its record. A poll
+   * that lists no open session tells the finders so, and they forget its
+   * processes.
+   */
+  async function withJumps(answer: AdapterResult): Promise<AdapterResult> {
+    if (!options.panes && !options.terminals) return answer;
+    const records = [...openRecords.values()];
+    await lookFor([...new Set(records.map((entry) => entry.pid))]);
+
+    const places = new Map<RegistryEntry, { pane?: TmuxPane; tab?: TerminalTab }>();
+    for (const entry of records) {
+      const pane = options.panes?.paneOf(entry.pid);
+      const tab = pane ? undefined : options.terminals?.tabOf(entry.pid);
+      if (pane || tab) places.set(entry, { pane, tab });
+    }
+    if (places.size === 0) return answer;
+    const confirmed = await processCheck.confirmed([...places.keys()]);
+    return {
+      ...answer,
+      sessions: answer.sessions.map((session) => {
+        const entry = openRecords.get(session.id);
+        const place = entry && confirmed.has(entry) ? places.get(entry) : undefined;
+        return place ? withJump(session, place.pane, place.tab) : session;
+      }),
+    };
+  }
+
   return {
     id: SOURCE_ID,
     label: LABEL,
@@ -542,8 +613,9 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
     lookingIn: `Looking for Qwen Code sessions in ${sessionsName}.`,
     async poll() {
       foundFiles = new Map();
+      openRecords = new Map();
       try {
-        const answer = await poll();
+        const answer = await withJumps(await poll());
         // The sessions whose last message may be asked for until the next poll.
         // One that could not list them lists none, so none may be asked for,
         // but the files known for them stand for the next poll that can.
@@ -554,8 +626,9 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
         // answer, and the person sees a sentence, not a stack trace. It lists no
-        // session, so no last message is kept either.
+        // session, so no last message is kept either, and no process is looked for.
         lastMessages?.forget();
+        await lookFor([]);
         return result(
           "error",
           "Something unexpected went wrong while reading Qwen Code sessions.",

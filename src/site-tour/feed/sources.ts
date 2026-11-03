@@ -340,16 +340,15 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "The title Qwen Code gives a session, or one set with /rename. Until then, or without its fast model, the folder's name.",
   },
   jump: {
-    level: "no",
+    level: "partly",
     reason:
-      "Agent Lookout looks for tmux panes and Terminal tabs only for Claude Code sessions so far.",
+      "In tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in another terminal or on Windows.",
   },
   "quiet-for": { level: "yes" },
   tokens: { level: "yes" },
   stop: {
     level: "no",
-    reason:
-      "Qwen Code records no process start time on a Mac or Windows, so its process cannot be confirmed before a stop.",
+    reason: "Agent Lookout stops Claude Code sessions only so far.",
   },
   answer: {
     level: "no",

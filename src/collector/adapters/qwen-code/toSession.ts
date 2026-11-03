@@ -4,6 +4,8 @@ import type { Session, SourceId, Surface } from "../../../core/sessions/session.
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import type { TerminalTab } from "../../terminal/terminalTabs.ts";
+import type { TmuxPane } from "../../tmux/panes.ts";
 import type { ChatState } from "./chatRecords.ts";
 import { TERMINAL_KIND, type RegistryEntry } from "./registry.ts";
 
@@ -84,7 +86,8 @@ export interface QwenCodeSessionInput {
  *   adds moves it on. Without a chat file it has none.
  * - Its tokens are the counts of its newest reply that has them, from the
  *   same read of its chat file (`usageCountsOf` in `chatRecords.ts`).
- * - It has its process's id, and no link, Jump or Stop.
+ * - It has its process's id, and no link or Stop. Its Jump is added by
+ *   `withJump`, once the adapter has found where its process runs.
  */
 export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   const { entry, chat, now } = input;
@@ -113,6 +116,23 @@ export function qwenCodeSession(input: QwenCodeSessionInput): Session {
   if (writtenAt !== null) session.lastWriteAt = writtenAt;
   const tokens = chat?.fold.tokens;
   if (tokens) session.tokens = { ...tokens };
+  return session;
+}
+
+/**
+ * The session with the place Jump reaches it in: the tmux pane its process was
+ * found in, or else its tab of Terminal or iTerm2, as for Claude Code. A session
+ * in tmux is reached through tmux, even when tmux runs in a tab. Only the
+ * place's name goes to the dashboard: the pane's id and the tab's terminal stay
+ * with the collector.
+ */
+export function withJump(
+  session: Session,
+  pane: TmuxPane | undefined,
+  tab: TerminalTab | undefined,
+): Session {
+  if (pane) return { ...session, jump: { kind: "tmux", place: pane.place } };
+  if (tab) return { ...session, jump: { kind: "terminal", app: tab.app, place: tab.app } };
   return session;
 }
 

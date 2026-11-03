@@ -20,13 +20,27 @@ export interface PaneFinderOptions {
   soonestMs?: number;
 }
 
-export interface PaneFinder {
+/** One adapter's way to ask the finder about its sessions' processes. */
+export interface PaneAsker {
   /**
-   * Looks for the pane of each of these processes, when a look is due. It
-   * never throws and never rejects. A look that fails finds no pane.
+   * Says which processes this asker wants panes for, in place of the ones it
+   * named before, and looks for the pane of each process every asker names,
+   * when a look is due. It never throws and never rejects. A look that fails
+   * finds no pane.
    */
   look(pids: readonly number[]): Promise<void>;
   /** The pane the last look found this process in, if it found one. */
+  paneOf(pid: number): TmuxPane | undefined;
+}
+
+export interface PaneFinder {
+  /**
+   * A new asker. Each adapter that has sessions in terminals asks through one
+   * of its own, so a look one of them asks for never drops the processes
+   * another named.
+   */
+  asker(): PaneAsker;
+  /** The pane the last look found this process in, if it found one, whichever asker named it. */
   paneOf(pid: number): TmuxPane | undefined;
   /** Makes the next look due, for when tmux has said that what was found is out of date. */
   lookAgain(): void;
@@ -38,6 +52,12 @@ export interface PaneFinder {
  * A look runs `tmux list-panes` once and, only when that lists a pane, `ps`
  * once for every process's parent. A process is in a pane when it, or one of
  * its ancestors, is the process tmux started in that pane.
+ *
+ * Each adapter names its own processes through an asker of its own. A look is
+ * for the processes every asker named at its latest look, all at once, so two
+ * adapters cost no more than one, and a process no asker names any more is
+ * forgotten. A look already under way is waited for, so each asker knows what
+ * it found.
  *
  * Each look starts a program, so looks are seldom: one when there is first a
  * process to ask about, one every 30 seconds after that, and one sooner, though
@@ -56,16 +76,27 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
   /** The processes the last look asked about, whether or not it found them a pane. */
   let asked = new Set<number>();
   let found = new Map<number, TmuxPane>();
+  /** The processes each asker named at its latest look. */
+  const named = new Map<object, ReadonlySet<number>>();
+  /** The look being made, while one is. */
+  let underWay: Promise<void> | null = null;
 
-  function due(pids: readonly number[], at: number): boolean {
+  /** Every process some asker names. */
+  function wanted(): Set<number> {
+    const pids = new Set<number>();
+    for (const own of named.values()) for (const pid of own) pids.add(pid);
+    return pids;
+  }
+
+  function due(pids: ReadonlySet<number>, at: number): boolean {
     // A clock that was set back starts the beat again.
     if (lookedAt === null || at < lookedAt) return true;
     const since = at - lookedAt;
     if (since >= intervalMs) return true;
-    return since >= soonestMs && pids.some((pid) => !asked.has(pid));
+    return since >= soonestMs && [...pids].some((pid) => !asked.has(pid));
   }
 
-  async function find(pids: readonly number[]): Promise<Map<number, TmuxPane>> {
+  async function find(pids: ReadonlySet<number>): Promise<Map<number, TmuxPane>> {
     const panes = new Map<number, TmuxPane>();
     const listed = await run(LIST_PANES_ARGS);
     if (!listed.ok) return panes;
@@ -84,24 +115,48 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
     return panes;
   }
 
-  return {
-    async look(pids) {
-      if (pids.length === 0) {
-        found = new Map();
-        asked = new Set();
-        return;
-      }
-      const at = now();
-      if (!due(pids, at)) return;
-      lookedAt = at;
-      asked = new Set(pids);
+  async function look(asker: object, pids: readonly number[]): Promise<void> {
+    named.set(asker, new Set(pids));
+    while (underWay !== null) await underWay;
+
+    // A process no asker names any more is forgotten: its pane, and that it
+    // was asked about, so one that is named again counts as one that has
+    // turned up.
+    const pidsNow = wanted();
+    for (const pid of found.keys()) {
+      if (!pidsNow.has(pid)) found.delete(pid);
+    }
+    for (const pid of asked) {
+      if (!pidsNow.has(pid)) asked.delete(pid);
+    }
+    if (pidsNow.size === 0) return;
+    const at = now();
+    if (!due(pidsNow, at)) return;
+    lookedAt = at;
+    asked = pidsNow;
+    const looking = (async () => {
       try {
-        found = await find(pids);
+        found = await find(pidsNow);
       } catch {
         found = new Map();
       }
+    })();
+    underWay = looking;
+    try {
+      await looking;
+    } finally {
+      if (underWay === looking) underWay = null;
+    }
+  }
+
+  const paneOf = (pid: number) => found.get(pid);
+
+  return {
+    asker() {
+      const asker = {};
+      return { look: (pids) => look(asker, pids), paneOf };
     },
-    paneOf: (pid) => found.get(pid),
+    paneOf,
     lookAgain() {
       lookedAt = null;
     },

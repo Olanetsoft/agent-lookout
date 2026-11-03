@@ -85,17 +85,19 @@ To find the `claude` binary, Agent Lookout reads the `PATH` environment variable
 
 ### `ps`
 
-A registry file can outlive a crashed session, and the system can later give its process ID to another program. To catch that, Agent Lookout runs `ps -o pid=,lstart= -p <pids>`, which prints when each of those processes started, and compares the answer with the `procStart` that the registry file recorded. A file whose process started at another time is not shown as a session. One run covers several processes, and each process is asked about at most once every 30 seconds. `ps` is run directly from `/usr/bin` or `/bin`, never through a shell, and never on Windows. On Windows, which has no `ps` and where Claude Code records no start time Agent Lookout can compare, nothing is compared: a file whose process ID has been given to another program shows as a session until that program ends.
+A registry file can outlive a crashed session, and the system can later give its process ID to another program. To catch that, Agent Lookout runs `ps -o pid=,lstart= -p <pids>`, which prints when each of those processes started, and compares the answer with the `procStart` that the registry file recorded. A file whose process started at another time is not shown as a session. One run covers several processes. It runs again after 30 seconds, and sooner when another session's registry file appears. `ps` is run directly from `/usr/bin` or `/bin`, never through a shell, and never on Windows. On Windows, which has no `ps` and where Claude Code records no start time Agent Lookout can compare, nothing is compared: a file whose process ID has been given to another program shows as a session until that program ends.
+
+Qwen Code records no start time for its process on a Mac or Windows. For a Qwen Code session whose process Agent Lookout has found in a tmux pane or a tab of Terminal or iTerm2, it runs the same `ps -o pid=,lstart= -p <pids>`, and compares when each of those processes started with the `startedAt` of the session's record, when Qwen Code wrote down that the process had registered the session. A process that started more than a minute after that was given the process ID since, so its session gets no Jump button. One run covers every such process. It runs again after 30 seconds, and sooner when another such process is found in a pane or a tab. Nothing is asked for a Qwen Code session found in no pane or tab.
 
 ### `tmux`
 
-A Claude Code session that runs inside tmux gets a Jump button, and for that Agent Lookout has to know which pane the session's process is in. While at least one Claude Code session is running, it runs:
+A Claude Code or Qwen Code session that runs inside tmux gets a Jump button, and for that Agent Lookout has to know which pane the session's process is in. While at least one Claude Code or Qwen Code session is running, it runs:
 
 ```sh
 tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'
 ```
 
-It runs this when it first has a session to ask about and every 30 seconds after that. It runs it sooner when a new session's process appears, though never within 5 seconds of the last run, and once more after a Jump has found its pane gone or tmux stopped. For every pane of the tmux server it reads five things: the ID of the process tmux started in the pane, the pane's ID, the numbers of its window and of the pane, and the name of its tmux session. It reads nothing a pane shows, and no pane's title, command or folder. With no Claude Code session running, it does not run tmux.
+It runs this when it first has a session to ask about and every 30 seconds after that. It runs it sooner when a new session's process appears, though never within 5 seconds of the last run, and once more after a Jump has found its pane gone or tmux stopped. For every pane of the tmux server it reads five things: the ID of the process tmux started in the pane, the pane's ID, the numbers of its window and of the pane, and the name of its tmux session. It reads nothing a pane shows, and no pane's title, command or folder. With no Claude Code or Qwen Code session running, it does not run tmux. One run serves the sessions of both.
 
 When tmux lists at least one pane, Agent Lookout also runs `ps -A -o pid=,ppid=`, which prints the ID of every process on this machine and the ID of its parent, and nothing else about any of them. It follows each session's process up through its parents until it reaches a pane's process. The list of processes is dropped as soon as that is done.
 
@@ -114,13 +116,13 @@ tmux is started directly, never through a shell, with stdin closed and a 2 secon
 
 ### Terminal and iTerm2
 
-On a Mac, a Claude Code session that runs in a tab of Terminal or iTerm2 gets a Jump button, and for that Agent Lookout has to know which app the session's process runs in and which terminal it has. When a Claude Code session's process appears, it runs:
+On a Mac, a Claude Code or Qwen Code session that runs in a tab of Terminal or iTerm2 gets a Jump button, and for that Agent Lookout has to know which app the session's process runs in and which terminal it has. When a Claude Code or Qwen Code session's process appears, it runs:
 
 ```sh
 ps -A -o pid=,ppid=,tty=,comm=
 ```
 
-That prints four things about every process on this machine: its ID, its parent's ID, its terminal, such as `ttys004`, and the name its program gives itself, which for an app is the path of its program, such as `/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal`, and for a shell can be `-zsh`. It asks for no other argument, no owner and no environment. Agent Lookout follows each new session's process up through its parents, looking for Terminal's program or iTerm2's, and keeps two things about the session: which of the two apps it is in, and the session's own terminal, such as `/dev/ttys004`. The rest of the list is dropped as soon as that is done. One run covers every session that appeared since the last, and it runs no more than once every 5 seconds. A session is asked about once for as long as its process runs, and once more after a Jump has found its tab closed. With no Claude Code session running, it does not run this.
+That prints four things about every process on this machine: its ID, its parent's ID, its terminal, such as `ttys004`, and the name its program gives itself, which for an app is the path of its program, such as `/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal`, and for a shell can be `-zsh`. It asks for no other argument, no owner and no environment. Agent Lookout follows each new session's process up through its parents, looking for Terminal's program or iTerm2's, and keeps two things about the session: which of the two apps it is in, and the session's own terminal, such as `/dev/ttys004`. The rest of the list is dropped as soon as that is done. One run covers every session that appeared since the last, and it runs no more than once every 5 seconds. A session is asked about once for as long as its process runs, and once more after a Jump has found its tab closed. With no Claude Code or Qwen Code session running, it does not run this.
 
 For a session found in a tab, the dashboard is sent the app's name, `Terminal` or `iTerm2`, to show on the Jump button. The terminal stays in the server, in memory.
 
@@ -346,6 +348,8 @@ Agent Lookout reads Qwen Code's list of running sessions in its own folder: the 
 When neither `sessions/` in its own folder nor `projects/` in its runtime folder is there, Agent Lookout looks for them again once a minute, or on every poll when `AGENT_LOOKOUT_QWEN_HOME` names the folder, and reads nothing else for Qwen Code.
 
 Every 2 seconds it lists `sessions/` and opens each file named `<pid>.json` or `<pid>-<8 hex>.json`, as an ordinary file of 64 KiB or less, following no link. Of each it keeps the process's ID, the session's ID, its folder, when it began, its kind and whether it was written on Linux. Each record also holds `ipcToken`, a token that lets a program send messages to the session, and `ipcPath`, the socket they go to. Both are in memory only while the record is parsed, and are dropped with it: never kept, logged, sent or used. Agent Lookout never connects to the socket. It asks whether each process exists with a signal-0 check, which sends it nothing.
+
+For Jump, it looks for each such session's process in tmux, and in Terminal and iTerm2, as it does for a Claude Code session, as [`tmux`](#tmux) and [Terminal and iTerm2](#terminal-and-iterm2) describe, and asks `ps` when a process found in a pane or a tab started, as [`ps`](#ps) describes. The dashboard is sent only the place's name, as for Claude Code.
 
 For each session in a terminal whose process exists, it looks up `projects/<folder>/chats/<session ID>.jsonl` with one `lstat`, which does not follow a link, and reads it as an ordinary file: the last 8 MiB the first time, then only what was added, at most 8 MiB at once, when its size or modified time changes. A line over 4 MiB is not parsed: its type, subtype and time are read from its first 64 KiB. When the file is not in the folder named for the session's folder, it lists `projects/` and looks up the same name in each folder's `chats/`, at most every 30 seconds for each session. At the first poll, for a record whose process has gone, it looks up when that session's file last changed, without opening it.
 

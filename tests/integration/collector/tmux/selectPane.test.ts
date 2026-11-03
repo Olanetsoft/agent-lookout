@@ -80,7 +80,7 @@ describe.skipIf(tmux === null || process.platform === "win32")(
       expect(await showing(server)).toEqual({ "checkout-flow": "1.0", "docs-site": "0.0" });
 
       const finder = createPaneFinder({ run: server.run });
-      await finder.look([sleeping, process.pid]);
+      await finder.asker().look([sleeping, process.pid]);
       expect(finder.paneOf(sleeping)).toEqual(shell);
       // This test's own process is in no pane of that server.
       expect(finder.paneOf(process.pid)).toBeUndefined();
@@ -127,7 +127,7 @@ describe.skipIf(tmux === null || process.platform === "win32")(
 
       expect(await selectPane(shell.id, server.run)).toEqual({ ok: false, reason: "tmux-stopped" });
       const finder = createPaneFinder({ run: server.run });
-      await finder.look([sleeping]);
+      await finder.asker().look([sleeping]);
       expect(finder.paneOf(sleeping)).toBeUndefined();
       expect((await server.run(["list-sessions"])).ok).toBe(false);
     });

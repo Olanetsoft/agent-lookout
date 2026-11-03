@@ -24,7 +24,7 @@ Then open http://127.0.0.1:4777. You need Node.js 22.12 or newer, on macOS, Linu
 
 - **See every session on one page,** with each one's status, folder and branch.
 - **See who needs you first.** The Needs you panel lists the sessions waiting for you, longest wait first, with the reason, such as Waiting for permission. For Claude Code it also shows what the session asks, such as `Run: npm test`.
-- **Answer or jump to a Claude Code session.** With Agent Lookout's plugin, Allow and Deny answer its permission prompt from the page. Jump opens the session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac.
+- **Answer or jump to a Claude Code session.** With Agent Lookout's plugin, Allow and Deny answer its permission prompt from the page. Jump opens the session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac. Jump reaches a Qwen Code session in tmux or a Terminal or iTerm2 tab too.
 - **Let your agents ask.** `agent-lookout mcp` is a read-only MCP server that an agent can ask which sessions are running and which need you. [For your agents](GUIDE.md#for-your-agents) shows how to add it.
 
 Some of this depends on your system: on Windows, Jump reaches VS Code only, and there is no Stop, Allow or Deny. [What works on each system](../README.md#supported-agents-and-systems) has the full table.
@@ -38,7 +38,8 @@ Every agent's sessions appear on the page with their status. What else each one 
 | Claude Code                                                     | Yes, with what it asks                                                  | With Agent Lookout's plugin | In VS Code, tmux, Terminal or iTerm2 |
 | Antigravity and the Antigravity CLI                             | While it asks you to approve a step                                     | No                          | No                                   |
 | Hermes Agent                                                    | While it asks you a question, and 10 to 70 seconds late for an approval | No                          | No                                   |
-| Codex, Mistral Vibe, Gemini CLI, OpenCode and Qwen Code         | No: a waiting session shows as working, or as idle in Gemini CLI        | No                          | No                                   |
+| Codex, Mistral Vibe, Gemini CLI and OpenCode                    | No: a waiting session shows as working, or as idle in Gemini CLI        | No                          | No                                   |
+| Qwen Code                                                       | No: a waiting session shows as working                                  | No                          | In tmux, Terminal or iTerm2          |
 | Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                            | No                          | No                                   |
 
 On Windows, OpenCode's and Hermes Agent's sessions are not read, and the Antigravity app never shows as needing you. On Linux, all three need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
@@ -56,7 +57,7 @@ Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent support was built
 ## Next steps
 
 - [Quickstart](quickstart.md): start it with npx, see your sessions, and jump to a Claude Code session that waits for you.
-- [Jump to a session's window](guide-jump-to-window.md): set up Jump for Claude Code sessions in VS Code, tmux, and Terminal or iTerm2 on a Mac, and fix it when it fails.
+- [Jump to a session's window](guide-jump-to-window.md): set up Jump for Claude Code sessions in VS Code, tmux, and Terminal or iTerm2 on a Mac, and for Qwen Code sessions in tmux and Terminal or iTerm2, and fix it when it fails.
 
 ## Get help
 

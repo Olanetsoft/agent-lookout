@@ -1,5 +1,6 @@
 // Stand-ins for Claude Code sessions' processes, for the integration tests of
-// Stop and of the clean-up: small Node programs this test starts itself, that
+// Stop and of the clean-up, and for a Qwen Code session's process in those of
+// Jump: small Node programs this test starts itself, that
 // do nothing but wait. Each is the test's own child, and is ended, if it is
 // still running, when the test that started it finishes. No test signals any
 // process it did not start.

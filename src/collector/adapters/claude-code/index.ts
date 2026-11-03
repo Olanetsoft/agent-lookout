@@ -19,8 +19,8 @@ import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
-import type { TabFinder } from "../../terminal/tabFinder.ts";
-import type { PaneFinder } from "../../tmux/paneFinder.ts";
+import type { TabAsker } from "../../terminal/tabFinder.ts";
+import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import {
@@ -222,16 +222,16 @@ export interface ClaudeCodeAdapterOptions {
   readProcessStarts?: ReadProcessStarts;
   /**
    * Finds the tmux pane each live session's process runs in, so that Jump can
-   * select it. The collector passes the one it also acts with. Left out, no
-   * pane is looked for and tmux is never run.
+   * select it. The collector passes an asker of the finder it also acts with.
+   * Left out, no pane is looked for and tmux is never run.
    */
-  panes?: Pick<PaneFinder, "look" | "paneOf">;
+  panes?: PaneAsker;
   /**
    * Finds the Terminal or iTerm2 tab each live session's process runs in, for
-   * a session in no tmux pane. The collector passes the one the jump route
-   * reads. Left out, no tab is looked for and `ps` is not asked.
+   * a session in no tmux pane. The collector passes an asker of the finder
+   * the jump route reads. Left out, no tab is looked for and `ps` is not asked.
    */
-  terminals?: Pick<TabFinder, "look" | "tabOf">;
+  terminals?: TabAsker;
   /**
    * Told, after each poll, which sessions can be stopped and what each is
    * stopped by, and asks for the command to be run again at the next poll
