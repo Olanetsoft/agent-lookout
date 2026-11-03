@@ -28,6 +28,7 @@ import {
   lifecycleLine,
   MINUTE,
   NOW,
+  OPENAI_USAGE,
   PRIVATE_TOKEN,
   PRIVATE_WORDS,
   PROJECT,
@@ -290,6 +291,7 @@ describe("reading the sessions", () => {
         startedAt: NOW - 60 * MINUTE,
         statusSince: NOW - 59 * MINUTE,
         lastWriteAt: NOW - 59 * MINUTE,
+        tokens: { input: 1200, cached: 600, output: 100 },
         pid: 41004,
         alive: true,
         links: {},
@@ -374,6 +376,49 @@ describe("reading the sessions", () => {
     files.append(chatPath(QWEN_DIR, ID), toolResultLine(NOW, "cancelled"), { mtimeMs: NOW + 2 });
     clock.advance(2_000);
     expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "idle", statusSince: NOW });
+  });
+
+  test("carries the token counts of its newest reply that has them, read as the chat file grows", async () => {
+    const files = memoryFiles();
+    addSession(files, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]).not.toHaveProperty("tokens");
+
+    files.append(chatPath(QWEN_DIR, ID), assistantLine(NOW - 50_000, { calls: 1 }), {
+      mtimeMs: NOW + 1,
+    });
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual({
+      input: 1200,
+      cached: 600,
+      output: 100,
+    });
+
+    // A subagent's reply, and a reply cut short with no counts, leave them as they were.
+    files.append(
+      chatPath(QWEN_DIR, ID),
+      chatFile(
+        toolResultLine(NOW - 40_000),
+        assistantLine(NOW - 35_000, { sidechain: true, usage: OPENAI_USAGE }),
+        assistantLine(NOW - 30_000, { usage: null }),
+      ),
+      { mtimeMs: NOW + 2 },
+    );
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual({
+      input: 1200,
+      cached: 600,
+      output: 100,
+    });
+
+    files.append(chatPath(QWEN_DIR, ID), assistantLine(NOW - 20_000, { usage: OPENAI_USAGE }), {
+      mtimeMs: NOW + 3,
+    });
+    clock.advance(2_000);
+    const result = await adapter.poll();
+    expect(result.sessions[0]?.tokens).toEqual({ input: 2400, cached: 1800, output: 150 });
+    expect(JSON.stringify(result)).not.toContain("placeholder");
   });
 
   test("a session whose chat file says nothing it reads is unknown, and the Sources view says so", async () => {

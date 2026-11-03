@@ -91,8 +91,8 @@ export function lastSaidInChat(tail: string, fromStart: boolean): string | null 
 
 /**
  * The answer the end of a chat file gives, made fit to show. Nothing of the
- * tail is kept, and the answer carries no token counts, which Agent Lookout
- * does not read for Qwen Code.
+ * tail is kept, and the answer carries no token counts: a Qwen Code session's
+ * are on the session already, read by the poll (`chatRecords.ts`).
  */
 export function answerFrom(tail: string, fromStart: boolean): LastMessageResponse {
   const shown = messageText(lastSaidInChat(tail, fromStart));

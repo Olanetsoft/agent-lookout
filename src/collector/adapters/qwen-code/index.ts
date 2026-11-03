@@ -91,7 +91,8 @@ export const UNKNOWN_NOTE =
  *   model, or the one set with /rename.
  * - No Jump: the tmux and Terminal finders look for Claude Code's processes only.
  * - Quiet for is the chat file's own modified time, moved on by every line.
- * - No tokens yet: they are in the chat file, and not read.
+ * - Tokens are the counts of the newest reply that has them, from the same
+ *   read of the chat file (`usageCountsOf` in `chatRecords.ts`).
  * - No Stop: Qwen Code records no start time for its process on a Mac or
  *   Windows, so the process cannot be confirmed before it is stopped.
  * - No Answer: there is no approval wait recorded to answer.
@@ -128,7 +129,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "Agent Lookout looks for tmux panes and Terminal tabs only for Claude Code sessions so far.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "Agent Lookout does not read Qwen Code's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason:

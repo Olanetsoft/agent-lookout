@@ -345,7 +345,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "Agent Lookout looks for tmux panes and Terminal tabs only for Claude Code sessions so far.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "Agent Lookout does not read Qwen Code's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason:

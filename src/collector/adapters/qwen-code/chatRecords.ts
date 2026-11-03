@@ -5,7 +5,9 @@ import {
   type QwenCodeLifecycle,
   type QwenCodeRecord,
 } from "../../../core/mapping/qwen-code/qwenCodeMapping.ts";
+import type { TokenCounts } from "../../../core/sessions/session.ts";
 import { sessionName } from "../../../core/text.ts";
+import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
@@ -17,7 +19,9 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * almost nothing is kept: of each line, its type, subtype and time, and
  *
  * - of a `user` line, whether it is a notification stamped as a turn's first line;
- * - of an `assistant` line, whether it holds a reply and whether that calls a tool;
+ * - of an `assistant` line, whether it holds a reply, whether that calls a
+ *   tool, and the reply's token counts, three numbers worked out from its
+ *   `usageMetadata` (`usageCountsOf`);
  * - of a `tool_result` line, whether the call was stopped or declined;
  * - of a `request_lifecycle` event, whether a request started or ended, how it
  *   ended and whether a subagent made it;
@@ -33,7 +37,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * line it cut into. Each one after reads only what was appended since, at most
  * 8 MiB at once, and a line still being written is left for the next. A line
  * over 4 MiB is not parsed: its type, subtype and time are read from its first
- * 64 KiB. A file that shrank, or was replaced, is read again from the end.
+ * 64 KiB, and a reply's token counts, which come after the reply, are not read.
+ * A file that shrank, or was replaced, is read again from the end.
  *
  * Built from Qwen Code's source at v0.25.1 and not yet checked on a machine
  * running it.
@@ -107,6 +112,56 @@ function callsATool(message: Record<string, unknown>): boolean {
   );
 }
 
+/** A whole number of tokens: zero or more, and small enough to be exact. */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * A reply's token counts from its `usageMetadata`, through the one check every
+ * reader of token counts makes (`tokenCountsOf`), or null when they could not
+ * be right.
+ *
+ * Qwen Code writes the usage its provider reported for the reply, in the
+ * shape of Gemini's usage metadata, with `promptTokenCount`,
+ * `candidatesTokenCount`, `thoughtsTokenCount`, `totalTokenCount` and
+ * `cachedContentTokenCount` made numbers, 0 for one the provider did not send
+ * (`processStreamResponse` in `llm-chat.ts` at v0.25.1). As the providers
+ * define their fields, `promptTokenCount` is the whole prompt, cached part
+ * included, for every provider. But `candidatesTokenCount` already counts the
+ * reasoning for OpenAI-compatible providers and Anthropic, and leaves it to
+ * `thoughtsTokenCount` for Gemini's own API, so adding the two would count
+ * reasoning twice. `totalTokenCount` is the prompt and all the output together
+ * for each of them. So:
+ *
+ * - input is `promptTokenCount`;
+ * - cached is `cachedContentTokenCount`, left out when it is 0: Qwen Code
+ *   writes 0 for a provider that sent no cached count (`?? 0` in its
+ *   converters, and `coerceUsageCount`), and the line cannot tell that from a
+ *   cache that held none;
+ * - output is `totalTokenCount` less `promptTokenCount`, which is how Qwen
+ *   Code itself works out a reply's output from the file when a session is
+ *   resumed (`getUsageOutputTokenCountForPromptEstimate`).
+ *
+ * The prompt and the total must both be whole numbers, and the total at least
+ * the prompt and `candidatesTokenCount` together: a total of 0, written for a
+ * provider that sent none, gives no counts. Only these three numbers are taken
+ * out of the line; the rest of `usageMetadata` is dropped with it.
+ */
+export function usageCountsOf(usage: unknown): TokenCounts | null {
+  if (!isRecord(usage)) return null;
+  const {
+    promptTokenCount: input,
+    cachedContentTokenCount: cached,
+    candidatesTokenCount: candidates,
+    totalTokenCount: total,
+  } = usage;
+  if (!isCount(input) || !isCount(total)) return null;
+  const output = total - input;
+  if (candidates !== undefined && (!isCount(candidates) || candidates > output)) return null;
+  return tokenCountsOf({ input, cached: cached === 0 ? undefined : cached, output });
+}
+
 /**
  * The kept fields of one line, or null for a line that is not a record, or
  * one a subagent wrote.
@@ -135,6 +190,7 @@ export function recordOf(line: string): QwenCodeRecord | null {
         record.message = true;
         if (callsATool(value.message)) record.calls = true;
       }
+      if (value.usageMetadata !== undefined) record.tokens = usageCountsOf(value.usageMetadata);
       break;
     case "tool_result":
       if (isRecord(value.toolCallResult) && value.toolCallResult.status === "cancelled") {

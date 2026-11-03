@@ -348,8 +348,9 @@ export interface TokenCounts {
   /** The part of `input` read from a cache. Left out when the agent did not record it. */
   cached?: number;
   /**
-   * What the reply wrote. Codex and Claude Code count its reasoning in it;
-   * whether the Antigravity sources count a reply's thinking is not known.
+   * What the reply wrote. Codex, Claude Code and Qwen Code count its
+   * reasoning in it; whether the Antigravity sources count a reply's thinking
+   * is not known.
    */
   output: number;
 }

@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- A Qwen Code session's details give the token counts of its newest reply, as Codex and Antigravity sessions' do, such as `2,400 in, 150 out`, with how much of the input came from a cache when Qwen Code wrote more than 0 for it, since it writes 0 for a provider that sent none. Agent Lookout reads them from the same read of the session's chat file that gives its status, and keeps three numbers of the reply's `usageMetadata` and nothing else of the line. Out is what the reply wrote, its reasoning included, counted once whichever provider Qwen Code uses. A subagent's reply is never the one counted, and a newer reply that has no counts, such as one stopped with Esc before the provider sent them, leaves the counts as they were. What each agent can report, in Sources, says Yes for Qwen Code's Tokens. `GET /api/sessions` gives them as `tokens`, and no event, history, email, post, push, `agent-lookout mcp` answer or `agent-lookout status` holds them. This was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it (#184).
+
 ## 0.2.16 - 2026-11-02
 
 Qwen Code sessions show what they last said, the Mac app's Keep awake card says which sessions keep the Mac awake right now, Hermes Agent's databases are read more safely, and a few things you meet with the keyboard or on a phone work as they should.

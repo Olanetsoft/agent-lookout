@@ -190,6 +190,27 @@ describe("qwenCodeSession", () => {
     expect(session).toMatchObject({ status: "idle", stale: true });
   });
 
+  test("carries the token counts of its newest reply that has them, and none without", () => {
+    const tokens = { input: 2400, cached: 1800, output: 150 };
+    const counted = (time: number): QwenCodeRecord => ({ ...reply(time), tokens });
+    const session = qwenCodeSession({
+      entry: entry(),
+      chat: chat([prompt(NOW - 10 * MINUTE), counted(NOW - 9 * MINUTE), reply(NOW - 8 * MINUTE)]),
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "idle", tokens });
+    // A copy: the fold's own counts are not handed on.
+    expect(session.tokens).not.toBe(tokens);
+
+    const without = (state: ChatState | null) =>
+      qwenCodeSession({ entry: entry(), chat: state, now: NOW });
+    expect(without(null)).not.toHaveProperty("tokens");
+    expect(without(chat([prompt(NOW - MINUTE), reply(NOW - 30_000)]))).not.toHaveProperty("tokens");
+    expect(
+      without(chat([counted(NOW - MINUTE), { ...reply(NOW - 30_000), tokens: null }])),
+    ).not.toHaveProperty("tokens");
+  });
+
   test("a record of another kind is in no known app", () => {
     expect(
       qwenCodeSession({ entry: entry({ kind: "headless" }), chat: null, now: NOW }).surface,
@@ -207,6 +228,17 @@ describe("closedQwenCodeSession", () => {
       alive: false,
       stale: false,
     });
+  });
+
+  test("keeps the token counts it had when it closed", () => {
+    const tokens = { input: 1200, cached: 600, output: 100 };
+    const open = qwenCodeSession({
+      entry: entry(),
+      chat: chat([prompt(NOW - MINUTE), { ...reply(NOW - 30_000), tokens }]),
+      now: NOW,
+    });
+    expect(closedQwenCodeSession(open, NOW + 2_000).tokens).toEqual(tokens);
+    expect(closedQwenCodeSession(open, NOW + 2_000, true).tokens).toEqual(tokens);
   });
 
   test("names no process when its process runs on with another session", () => {
@@ -242,5 +274,9 @@ describe("leftBehindQwenCodeSession", () => {
     const session = leftBehindQwenCodeSession(entry(), undefined, NOW);
     expect(session.statusSince).toBe(NOW - 30 * MINUTE);
     expect(session).not.toHaveProperty("lastWriteAt");
+  });
+
+  test("has no token counts: its chat file is not read", () => {
+    expect(leftBehindQwenCodeSession(entry(), NOW - 20 * MINUTE, NOW)).not.toHaveProperty("tokens");
   });
 });
