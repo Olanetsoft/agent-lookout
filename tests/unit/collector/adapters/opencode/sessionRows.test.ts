@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   MAX_SESSIONS,
+  MESSAGES_FOR_TOKENS,
   PROBE_QUERY,
   QUERY_WINDOW_MS,
   readSchema,
@@ -60,10 +61,10 @@ describe("the two questions", () => {
     expect(uses.length).toBeGreaterThan(0);
     for (const use of uses) {
       expect(use, use).toMatch(
-        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|tool|auto|metadata\.providerExecuted|metadata\.compaction_continue|state\.status|state\.metadata\.interrupted)'$/,
+        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|tool|auto|metadata\.providerExecuted|metadata\.compaction_continue|state\.status|state\.metadata\.interrupted|tokens\.(input|output|reasoning|cache\.read|cache\.write|total))'$/,
       );
     }
-    for (const alias of ["m", "p", "u", "q"]) {
+    for (const alias of ["m", "p", "u", "q", "y", "r"]) {
       expect(SESSIONS_QUERY, alias).toContain(`CASE WHEN json_valid(${alias}.data) THEN`);
     }
     // A title and a folder are cut inside SQLite, so long ones cannot fill the answer.
@@ -73,6 +74,32 @@ describe("the two questions", () => {
     expect(SESSIONS_QUERY).toContain(`* 1000 - ${QUERY_WINDOW_MS}`);
     expect(SESSIONS_QUERY).toContain(`LIMIT ${MAX_SESSIONS}`);
     expect(QUERY_WINDOW_MS).toBe(48 * 60 * 60 * 1000);
+  });
+
+  test("read the six token counts of the newest reply that ended with some among the session's own newest 10 messages, each only as a whole number", () => {
+    // Each count is a fixed path of the counted reply's data, printed only
+    // once json_valid says it is JSON and json_type that the count is a whole
+    // number, so nothing longer than a number can come of them.
+    for (const [field, name] of [
+      ["input", "r_input"],
+      ["output", "r_output"],
+      ["reasoning", "r_reasoning"],
+      ["cache.read", "r_cache_read"],
+      ["cache.write", "r_cache_write"],
+      ["total", "r_total"],
+    ]) {
+      expect(SESSIONS_QUERY, name).toContain(
+        `CASE WHEN json_valid(r.data) THEN CASE WHEN json_type(r.data, '$.tokens.${field}') IS 'integer' THEN json_extract(r.data, '$.tokens.${field}') END END AS ${name}`,
+      );
+    }
+    expect(SESSIONS_QUERY.match(/json_extract\(r\.data/g)).toHaveLength(6);
+    // The reply counted is a step of the session's own that ended with a
+    // prompt counted above 0, newest first, and no further back than its 10th
+    // newest message.
+    expect(MESSAGES_FOR_TOKENS).toBe(10);
+    expect(SESSIONS_QUERY).toContain(
+      "LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id AND (y.time_created, y.id) >= (coalesce((SELECT z.time_created FROM message z WHERE z.session_id = s.id ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET 9), 0), coalesce((SELECT z.id FROM message z WHERE z.session_id = s.id ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET 9), '')) AND CASE WHEN json_valid(y.data) THEN json_extract(y.data, '$.role') IS 'assistant' AND json_type(y.data, '$.time.completed') IS 'integer' AND (json_extract(y.data, '$.tokens.input') > 0 OR json_extract(y.data, '$.tokens.cache.read') > 0 OR json_extract(y.data, '$.tokens.cache.write') > 0) ELSE 0 END ORDER BY y.time_created DESC, y.id DESC LIMIT 1)",
+    );
   });
 
   test("the probe asks only for the names of tables and columns", () => {
@@ -170,6 +197,7 @@ describe("readSessionRows", () => {
           partsUpdatedAt: NOW - MINUTE,
         },
         userCreatedAt: NOW - 3 * MINUTE,
+        tokens: null,
       },
     ]);
   });
@@ -275,5 +303,86 @@ describe("readSessionRows", () => {
       shell: undefined,
     });
     expect(fieldsOf({ m_id: messageId("b1") })?.role).toBe("assistant");
+  });
+});
+
+describe("the token counts of the newest reply that ended with some", () => {
+  /** The counts kept of a row whose counted reply has these `$.tokens`, as sqlite3 prints them. */
+  function tokensOf(counts: {
+    input?: unknown;
+    output?: unknown;
+    reasoning?: unknown;
+    read?: unknown;
+    write?: unknown;
+    total?: unknown;
+  }) {
+    const [row] =
+      readSessionRows(
+        sqliteJson([
+          answerRow({
+            id: A,
+            r_input: counts.input ?? null,
+            r_output: counts.output ?? null,
+            r_reasoning: counts.reasoning ?? null,
+            r_cache_read: counts.read ?? null,
+            r_cache_write: counts.write ?? null,
+            r_total: counts.total ?? null,
+          }),
+        ]),
+      ) ?? [];
+    return row?.tokens;
+  }
+
+  test("a reply with counts: In is the prompt, Out what it wrote, and no cached part when none came from a cache", () => {
+    expect(
+      tokensOf({ input: 1200, output: 300, reasoning: 0, read: 0, write: 0, total: 1500 }),
+    ).toEqual({ input: 1200, output: 300 });
+  });
+
+  test("In holds what was read from a cache and what was written to one, and Cached only what was read", () => {
+    expect(
+      tokensOf({ input: 200, output: 100, reasoning: 0, read: 1800, write: 400, total: 2500 }),
+    ).toEqual({ input: 2400, cached: 1800, output: 100 });
+  });
+
+  test("the reasoning, which OpenCode keeps apart from the output, is counted once in Out", () => {
+    expect(
+      tokensOf({ input: 1000, output: 300, reasoning: 200, read: 0, write: 0, total: 1500 }),
+    ).toEqual({ input: 1000, output: 500 });
+  });
+
+  test("a total is not needed, as OpenCode writes none when its provider sent no total", () => {
+    expect(tokensOf({ input: 1000, output: 300, reasoning: 0, read: 500, write: 0 })).toEqual({
+      input: 1500,
+      cached: 500,
+      output: 300,
+    });
+  });
+
+  test("a row with no counts printed has none, and nor has one whose counts are all 0", () => {
+    expect(tokensOf({})).toBeNull();
+    expect(tokensOf({ input: 0, output: 0, reasoning: 0, read: 0, write: 0 })).toBeNull();
+  });
+
+  test("counts that could not be right are none, never a guess", () => {
+    const right = { input: 1000, output: 300, reasoning: 0, read: 0, write: 0, total: 1300 };
+    expect(tokensOf(right)).toEqual({ input: 1000, output: 300 });
+    // One of the five missing, below 0, a fraction, not a number or too large to be exact.
+    for (const field of ["input", "output", "reasoning", "read", "write"] as const) {
+      for (const wrong of [null, -1, 1.5, "1000", Number.MAX_SAFE_INTEGER + 2]) {
+        expect(tokensOf({ ...right, [field]: wrong }), `${field} ${String(wrong)}`).toBeNull();
+      }
+    }
+    // A total smaller than In and Out together: OpenCode raised a count below 0 to 0.
+    expect(tokensOf({ ...right, total: 1299 })).toBeNull();
+    expect(tokensOf({ ...right, input: 0, read: 1500, total: 1300 })).toBeNull();
+    // A larger total, as a provider can send, leaves them as they are.
+    expect(tokensOf({ ...right, total: 1400 })).toEqual({ input: 1000, output: 300 });
+    // No prompt is no count: a reply is always given one.
+    expect(tokensOf({ ...right, input: 0, total: 300 })).toBeNull();
+    // Counts too large to be exact once added up.
+    expect(
+      tokensOf({ ...right, input: Number.MAX_SAFE_INTEGER, read: 1, total: undefined }),
+    ).toBeNull();
   });
 });

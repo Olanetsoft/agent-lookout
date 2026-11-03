@@ -60,7 +60,10 @@ export interface OpencodeSessionInput {
  * - The app is not known: the database names no program.
  * - There is no last write: OpenCode keeps every session in one file, so no
  *   file's modified time says when one session was last written.
- * - There is no pid, Jump, Stop, link or token count.
+ * - Its tokens are the counts of its newest reply that ended with some, from
+ *   the same read of the database (`replyTokensOf` in `sessionRows.ts`),
+ *   when they could be right.
+ * - There is no pid, Jump, Stop or link.
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
   const { row, open, now } = input;
@@ -83,7 +86,7 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
     },
     now,
   );
-  return {
+  const session: Session = {
     id,
     source: SOURCE_ID,
     surface: "unknown",
@@ -97,4 +100,6 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
+  if (row.tokens) session.tokens = { ...row.tokens };
+  return session;
 }

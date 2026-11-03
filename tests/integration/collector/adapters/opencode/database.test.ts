@@ -8,6 +8,8 @@ import { describe, expect, onTestFinished, test } from "vitest";
 import { findSqlite, runSqlite } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/opencode/database";
 import {
+  MAX_SESSIONS,
+  MESSAGES_FOR_TOKENS,
   PROBE_QUERY,
   SESSIONS_QUERY,
   sqliteArguments,
@@ -96,7 +98,10 @@ async function makeDatabase(rows: string[]): Promise<{ dir: string; file: string
   const dir = path.join(await tempDir(), "opencode");
   const file = path.join(dir, "opencode.db");
   await mkdir(dir, { recursive: true });
-  execFileSync(sqlite as string, [file, ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows].join("\n")]);
+  // On stdin, since Linux takes no argument longer than 128 KB, and some of these are longer.
+  execFileSync(sqlite as string, [file], {
+    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows].join("\n"),
+  });
   // The SQLite of macOS keeps the two files once the database is closed; others remove them.
   await rm(`${file}-wal`, { force: true });
   await rm(`${file}-shm`, { force: true });
@@ -614,6 +619,265 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     const before = await snapshotOf(dir);
     expect((await readNow(missing)).state).toBe("failed");
     expect(await snapshotOf(dir)).toEqual(before);
+  });
+
+  test("each session has the token counts of its newest reply that ended with some, from its own messages alone", async () => {
+    const now = Date.now();
+    const at = (minutes: number) => now - minutes * MINUTE;
+    const C = sessionId("c3");
+    const D = sessionId("d4");
+    const E = sessionId("e5");
+    const F = sessionId("f6");
+    const CHILD = sessionId("g7");
+    /** OpenCode's counts of one step, as `getUsage` writes them. */
+    const counts = (input: number, output: number, reasoning: number, read = 0, write = 0) => ({
+      total: input + output + reasoning + read + write,
+      input,
+      output,
+      reasoning,
+      cache: { read, write },
+    });
+    /** A prompt of the person's. */
+    const prompt = (id: string, suffix: string, minutes: number) =>
+      messageRow({
+        id: messageId(suffix),
+        sessionId: id,
+        createdAt: at(minutes),
+        data: userData(at(minutes)),
+      });
+    /** A step of a reply with these counts, ended unless `ended` is false. */
+    const step = (
+      id: string,
+      suffix: string,
+      minutes: number,
+      tokens: Record<string, unknown>,
+      ended = true,
+    ) =>
+      messageRow({
+        id: messageId(suffix),
+        sessionId: id,
+        createdAt: at(minutes),
+        data: assistantData({
+          createdAt: at(minutes),
+          ...(ended ? { completedAt: at(minutes), finish: "stop" } : {}),
+          tokens,
+        }),
+      });
+    const NONE = counts(0, 0, 0);
+    const { file } = await makeDatabase([
+      // A reply with counts, some of its prompt read from a cache and some
+      // written to one, and some reasoning.
+      sessionRow({ id: A, updatedAt: at(9) }),
+      prompt(A, "a1u", 10),
+      step(A, "a1a", 9, counts(200, 80, 20, 1800, 400)),
+      // A reply still under way, after a newer prompt and an older reply of two
+      // steps that ended: the counts are the newer step's.
+      sessionRow({ id: B, updatedAt: at(1) }),
+      prompt(B, "b1u", 8),
+      step(B, "b1a", 7, counts(1000, 50, 0, 3000)),
+      step(B, "b2a", 6, counts(1200, 60, 0, 3000)),
+      prompt(B, "b3u", 2),
+      step(B, "b3a", 1, NONE, false),
+      // The newest reply ended before its provider sent any counts, as after
+      // Esc, and then a command was run with !, a step with no counts of its
+      // own: OpenCode wrote 0 for each of both, so the counts are the older reply's.
+      sessionRow({ id: C, updatedAt: at(2) }),
+      prompt(C, "c1u", 6),
+      step(C, "c1a", 5, counts(900, 40, 0)),
+      prompt(C, "c2u", 4),
+      step(C, "c2a", 3, NONE),
+      prompt(C, "c3u", 2),
+      messageRow({
+        id: messageId("c3a"),
+        sessionId: C,
+        createdAt: at(2),
+        data: assistantData({ createdAt: at(2), completedAt: at(2), tokens: NONE }),
+      }),
+      partRow({
+        id: partId("c3a"),
+        messageId: messageId("c3a"),
+        sessionId: C,
+        createdAt: at(2),
+        data: toolData({ status: "completed", tool: "bash" }),
+      }),
+      // A subagent's session, written after the session that started it: its
+      // replies are never counted for that session.
+      sessionRow({ id: D, updatedAt: at(2) }),
+      prompt(D, "d1u", 5),
+      step(D, "d1a", 4, counts(700, 30, 0)),
+      sessionRow({ id: CHILD, parentId: D, updatedAt: at(1) }),
+      prompt(CHILD, "g1u", 3),
+      step(CHILD, "g1a", 1, counts(5000, 500, 0)),
+      // The newest message's data is not JSON: it is passed over.
+      sessionRow({ id: E, updatedAt: at(1) }),
+      prompt(E, "e1u", 5),
+      step(E, "e1a", 4, counts(600, 25, 0)),
+      `INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (${text(messageId("e2a"))}, ${text(E)}, ${at(1)}, ${at(1)}, ${text("not json")});`,
+      // Counts that could not be right, which are none rather than an older
+      // reply's: a count that is text, and a total smaller than its parts.
+      sessionRow({ id: F, updatedAt: at(1) }),
+      prompt(F, "f1u", 7),
+      step(F, "f1a", 6, counts(800, 35, 0)),
+      prompt(F, "f2u", 5),
+      step(F, "f2a", 4, { ...counts(600, 25, 0), input: "600" }),
+      sessionRow({ id: sessionId("h8"), updatedAt: at(1) }),
+      prompt(sessionId("h8"), "h1u", 7),
+      step(sessionId("h8"), "h1a", 6, counts(800, 35, 0)),
+      prompt(sessionId("h8"), "h2u", 5),
+      step(sessionId("h8"), "h2a", 4, { ...counts(600, 25, 0), total: 600 }),
+      // The newest reply's whole prompt was read from a cache, or written to
+      // one, so its input is 0: it is still the one counted.
+      sessionRow({ id: sessionId("j1"), updatedAt: at(1) }),
+      prompt(sessionId("j1"), "j1u", 6),
+      step(sessionId("j1"), "j1a", 5, counts(500, 20, 0)),
+      prompt(sessionId("j1"), "j2u", 4),
+      step(sessionId("j1"), "j2a", 3, counts(0, 50, 0, 3000)),
+      sessionRow({ id: sessionId("k2"), updatedAt: at(1) }),
+      prompt(sessionId("k2"), "k1u", 6),
+      step(sessionId("k2"), "k1a", 5, counts(500, 20, 0)),
+      prompt(sessionId("k2"), "k2u", 4),
+      step(sessionId("k2"), "k2a", 3, counts(0, 40, 0, 0, 2000)),
+      // The newest reply has output but no prompt count above 0, as from a
+      // provider that sends no prompt counts: it is passed over, and the
+      // counts are the older reply's.
+      sessionRow({ id: sessionId("l3"), updatedAt: at(1) }),
+      prompt(sessionId("l3"), "l1u", 6),
+      step(sessionId("l3"), "l1a", 5, counts(1000, 100, 0)),
+      prompt(sessionId("l3"), "l2u", 4),
+      step(sessionId("l3"), "l2a", 3, counts(0, 50, 0)),
+      // A session whose only reply has no tokens at all.
+      sessionRow({ id: sessionId("i9"), updatedAt: at(1) }),
+      messageRow({
+        id: messageId("i1a"),
+        sessionId: sessionId("i9"),
+        createdAt: at(2),
+        data: { role: "assistant", time: { created: at(2), completed: at(2) }, finish: "stop" },
+      }),
+    ]);
+    const read = await readNow(file, now);
+    expect(read.state).toBe("read");
+    const tokens = Object.fromEntries(read.rows.map((row) => [row.id, row.tokens]));
+    expect(tokens).toEqual({
+      [A]: { input: 2400, cached: 1800, output: 100 },
+      [B]: { input: 4200, cached: 3000, output: 60 },
+      [C]: { input: 900, output: 40 },
+      [D]: { input: 700, output: 30 },
+      [E]: { input: 600, output: 25 },
+      [F]: null,
+      [sessionId("h8")]: null,
+      [sessionId("i9")]: null,
+      [sessionId("j1")]: { input: 3000, cached: 3000, output: 50 },
+      [sessionId("k2")]: { input: 2000, output: 40 },
+      [sessionId("l3")]: { input: 1000, output: 100 },
+    });
+  });
+
+  test("the reply counted is no further back than the session's 10th newest message", async () => {
+    const now = Date.now();
+    const at = (minutes: number) => now - minutes * MINUTE;
+    /**
+     * A session whose one reply that ended has these prompts after it, none of
+     * them answered yet. With `tied`, the first prompt was written in the same
+     * millisecond as the reply, and its id is ordered after the reply's.
+     */
+    function waiting(id: string, suffix: string, prompts: number, tied = false): string[] {
+      return [
+        sessionRow({ id, updatedAt: at(1) }),
+        messageRow({
+          id: messageId(`${suffix}a`),
+          sessionId: id,
+          createdAt: at(30),
+          data: assistantData({ createdAt: at(30), completedAt: at(30), finish: "stop" }),
+        }),
+        ...Array.from({ length: prompts }, (_, index) => {
+          const createdAt = tied && index === 0 ? at(30) : at(20 - index);
+          return messageRow({
+            id: messageId(`${suffix}u${index}`),
+            sessionId: id,
+            createdAt,
+            data: userData(createdAt),
+          });
+        }),
+      ];
+    }
+    const C = sessionId("c3");
+    expect(messageId("ca") < messageId("cu0")).toBe(true);
+    const { file } = await makeDatabase([
+      ...waiting(A, "a", MESSAGES_FOR_TOKENS - 1),
+      ...waiting(B, "b", MESSAGES_FOR_TOKENS),
+      // The reply is the 11th newest, though the 10th was written in the same millisecond.
+      ...waiting(C, "c", MESSAGES_FOR_TOKENS, true),
+    ]);
+    const read = await readNow(file, now);
+    const tokens = Object.fromEntries(read.rows.map((row) => [row.id, row.tokens]));
+    expect(tokens).toEqual({ [A]: { input: 10, output: 20 }, [B]: null, [C]: null });
+  });
+
+  test("the walk back to the counted reply uses OpenCode's index of a session's messages, and stops at the 10th newest", async () => {
+    const { file } = await makeDatabase([]);
+    const plan = execFileSync(sqlite as string, ["-init", "/dev/null", "-batch", file], {
+      input: `EXPLAIN QUERY PLAN ${SESSIONS_QUERY};`,
+      encoding: "utf8",
+    });
+    // The newest messages, newest first, from the index, bounded below by the
+    // 10th newest's time and id.
+    expect(plan).toMatch(
+      /SEARCH y USING INDEX message_session_time_created_id_idx \(session_id=\? AND \(time_created,id\)>\(\?,\?\)\)/,
+    );
+    // The 10th newest is found from the index alone, without reading any message's data.
+    expect(plan).toMatch(
+      /SEARCH z USING COVERING INDEX message_session_time_created_id_idx \(session_id=\?\)/,
+    );
+    expect(plan).toMatch(/SEARCH r USING INDEX sqlite_autoindex_message_1 \(id=\?\)/);
+  });
+
+  test("a count that is text is never printed, and the counts of 200 sessions add little to the answer", async () => {
+    const now = Date.now();
+    const ids = Array.from({ length: MAX_SESSIONS }, (_, index) => sessionId(`t${index}`));
+    const longest = 2 ** 53 - 1;
+    const { file } = await makeDatabase([
+      ...ids.flatMap((id, index) => [
+        sessionRow({ id, updatedAt: now - MINUTE }),
+        messageRow({
+          id: messageId(`t${index}`),
+          sessionId: id,
+          createdAt: now - MINUTE,
+          data: assistantData({
+            createdAt: now - MINUTE,
+            completedAt: now - MINUTE,
+            finish: "stop",
+            // The first session's counts are words, and every other's as long as a count gets.
+            tokens:
+              index === 0
+                ? {
+                    total: PRIVATE_WORDS,
+                    input: PRIVATE_WORDS,
+                    output: { note: PRIVATE_WORDS },
+                    reasoning: [PRIVATE_WORDS],
+                    cache: { read: PRIVATE_WORDS, write: PRIVATE_WORDS },
+                  }
+                : {
+                    total: longest,
+                    input: longest,
+                    output: longest,
+                    reasoning: longest,
+                    cache: { read: longest, write: longest },
+                  },
+          }),
+        }),
+      ]),
+    ]);
+    const printed = await answers(file, "whole");
+    expect(printed).not.toContain(PRIVATE_WORDS);
+    // Six numbers of 16 digits, and their names, for each session but the first:
+    // under 200 bytes a session, against the 4 MiB sqlite3 may print in all.
+    const counted = printed.match(/"r_[a-z_]+":\d+/g) ?? [];
+    expect(counted).toHaveLength(6 * (MAX_SESSIONS - 1));
+    expect(counted.join(",").length).toBeLessThan(MAX_SESSIONS * 200);
+    expect(printed.length).toBeLessThan(512 * 1024);
+    const read = await readNow(file, now);
+    expect(read.rows).toHaveLength(MAX_SESSIONS);
+    expect(read.rows.every((row) => row.tokens === null)).toBe(true);
   });
 
   test("a folder whose name has a space, a question mark and a percent sign in it is read", async () => {

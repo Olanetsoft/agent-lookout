@@ -171,6 +171,8 @@ export interface AssistantFields {
   error?: string;
   finish?: string;
   parentId?: string;
+  /** Its `tokens`, as OpenCode writes them once its provider sends its usage. Left out, 10 in and 20 out, with no reasoning and nothing cached. */
+  tokens?: Record<string, unknown>;
 }
 
 /** A step of a reply: an assistant message's `data`. */
@@ -188,7 +190,7 @@ export function assistantData(fields: AssistantFields): Record<string, unknown> 
     agent: "build",
     path: { cwd: FOLDER, root: FOLDER },
     cost: 0,
-    tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+    tokens: fields.tokens ?? { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
     structured: { note: PRIVATE_WORDS },
   };
   if (fields.error !== undefined)
@@ -353,9 +355,18 @@ export interface AnswerRow {
   m_shell?: unknown;
   p_updated?: unknown;
   u_created?: unknown;
+  r_input?: unknown;
+  r_output?: unknown;
+  r_reasoning?: unknown;
+  r_cache_read?: unknown;
+  r_cache_write?: unknown;
+  r_total?: unknown;
 }
 
-/** A row of the answer for a session whose newest step ended the turn a minute before `NOW`. */
+/**
+ * A row of the answer for a session whose newest step ended the turn a minute
+ * before `NOW`, with no token counts printed.
+ */
 export function answerRow(fields: AnswerRow): Record<string, unknown> {
   return {
     directory: FOLDER,
@@ -373,6 +384,12 @@ export function answerRow(fields: AnswerRow): Record<string, unknown> {
     m_shell: 0,
     p_updated: NOW - MINUTE,
     u_created: NOW - 3 * MINUTE,
+    r_input: null,
+    r_output: null,
+    r_reasoning: null,
+    r_cache_read: null,
+    r_cache_write: null,
+    r_total: null,
     ...fields,
   };
 }

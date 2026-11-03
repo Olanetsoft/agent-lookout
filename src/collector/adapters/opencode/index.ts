@@ -135,7 +135,8 @@ export const WINDOWS_DETAIL =
  * - No Jump, Stop or Answer: the database names no process or terminal.
  * - No Quiet for: every session is in one file, so no file's modified time
  *   says when one was last written.
- * - No Tokens yet.
+ * - Tokens are the counts of the newest reply that ended with some, from the
+ *   same read of the database (`replyTokensOf` in `sessionRows.ts`).
  */
 export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
@@ -169,7 +170,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "OpenCode keeps every session in one database, so no file shows when one session was last written.",
   },
-  tokens: { level: "no", reason: "Agent Lookout does not read OpenCode's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "OpenCode's database names no process that Agent Lookout could confirm and stop.",

@@ -1,5 +1,8 @@
 import path from "node:path";
 
+import type { TokenCounts } from "../../../core/sessions/session.ts";
+import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
+
 /**
  * The two questions Agent Lookout asks OpenCode's database, `opencode.db`, on
  * a poll, and how their answers are read. Both are fixed text: nothing from a
@@ -16,12 +19,13 @@ import path from "node:path";
  * written in the last 48 hours, for its id, folder, title and two times, and
  * for a few short fields of its newest message: its times, its role, when it
  * ended, the name of its error and why it ended, how many of its tool parts
- * OpenCode would wait on, whether its one tool part is the shell's, and when
+ * OpenCode would wait on, whether its one tool part is the shell's, when
  * the newest user message began, passing over the two prompts OpenCode
- * writes after it compacts a session on its own. Never the text of a
- * message or a part, a tool's input or output, `SELECT *` or a whole `data`
- * value. Each answer is checked field by field, and a row whose id is not one
- * OpenCode makes is dropped.
+ * writes after it compacts a session on its own, and the six token counts of
+ * the newest reply that ended with some. Never the text of a message or a
+ * part, a tool's input or output, `SELECT *` or a whole `data` value. Each
+ * answer is checked field by field, and a row whose id is not one OpenCode
+ * makes is dropped.
  *
  * This was built from OpenCode's source at v1.19.0, and has not yet been
  * checked on a computer running OpenCode.
@@ -61,6 +65,71 @@ const OPENCODE_OWN_PART = [
 ].join(" ");
 
 /**
+ * How many of a session's newest messages, by `time_created` and `id`, are
+ * looked through for its newest reply with token counts.
+ */
+export const MESSAGES_FOR_TOKENS = 10;
+
+/**
+ * Whether a message `y` is a step of a reply that ended with token counts: an
+ * `assistant` message whose `$.time.completed` is a whole number, as OpenCode
+ * writes the time a step ended, and whose prompt OpenCode counted above 0, in
+ * `$.tokens.input`, `$.tokens.cache.read` or `$.tokens.cache.write`. OpenCode
+ * writes 0 for each count of a step no usage came for: one stopped before it
+ * came, a command run with `!` and a command's subtask handed to a subagent.
+ * 1 when it is such a step, else 0 or null.
+ */
+const COUNTED_STEP = [
+  "CASE WHEN json_valid(y.data) THEN json_extract(y.data, '$.role') IS 'assistant'",
+  "AND json_type(y.data, '$.time.completed') IS 'integer'",
+  "AND (json_extract(y.data, '$.tokens.input') > 0 OR json_extract(y.data, '$.tokens.cache.read') > 0",
+  "OR json_extract(y.data, '$.tokens.cache.write') > 0) ELSE 0 END",
+].join(" ");
+
+/** One column of the 10th newest message of session `s`, by `time_created` and `id`, or null when it has fewer. */
+const TENTH_NEWEST = (column: "time_created" | "id") =>
+  `(SELECT z.${column} FROM message z WHERE z.session_id = s.id` +
+  ` ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET ${MESSAGES_FOR_TOKENS - 1})`;
+
+/**
+ * The newest message of session `s` that is a step that ended with token
+ * counts, among its newest 10 by `time_created` and `id`, joined as `r`. The
+ * 10th newest's `time_created` and `id`, together, bound the walk back
+ * through the session's messages, which `message_session_time_created_id_idx`
+ * gives newest first and which stops at the first such step, so no more than
+ * 10 messages are read, even when some were written in the same millisecond
+ * as the 10th. With fewer than 10, every one is looked at: OpenCode's times
+ * are never below 0, and no id is below the empty text.
+ */
+const COUNTED_REPLY = [
+  "LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id",
+  `AND (y.time_created, y.id) >= (coalesce(${TENTH_NEWEST("time_created")}, 0), coalesce(${TENTH_NEWEST("id")}, ''))`,
+  `AND ${COUNTED_STEP} ORDER BY y.time_created DESC, y.id DESC LIMIT 1)`,
+].join(" ");
+
+/**
+ * The six token counts of `r`, as fixed paths of its `$.tokens`, each printed
+ * only when it is a whole number, so nothing longer than a number can come of
+ * them.
+ */
+const REPLY_COUNTS = (
+  [
+    ["input", "r_input"],
+    ["output", "r_output"],
+    ["reasoning", "r_reasoning"],
+    ["cache.read", "r_cache_read"],
+    ["cache.write", "r_cache_write"],
+    ["total", "r_total"],
+  ] as const
+)
+  .map(
+    ([field, name]) =>
+      `CASE WHEN json_valid(r.data) THEN CASE WHEN json_type(r.data, '$.tokens.${field}') IS 'integer'` +
+      ` THEN json_extract(r.data, '$.tokens.${field}') END END AS ${name}`,
+  )
+  .join(", ");
+
+/**
  * Each root session of OpenCode 1.x that is not archived, written in the last
  * 48 hours, with the fields of its newest message. A tool part is counted as
  * OpenCode counts the ones it waits on: not one its model's provider ran
@@ -72,6 +141,11 @@ const OPENCODE_OWN_PART = [
  * on its own, or the text it adds to go on after one. A user message with a
  * part of the person's beside such a part is kept. Those marks, and the
  * tool's name, are only tested inside SQLite: nothing of them is printed.
+ * The token counts are those of the newest step that ended with counts
+ * among the session's own newest 10 messages (`COUNTED_REPLY`), so a reply
+ * under way, or one that ended with none, leaves the counts of the one
+ * before it. A subagent's messages are in a session of its own, and never
+ * counted.
  *
  * Each `data` is read only once `json_valid` says it is JSON, so one row that
  * is not gives null fields rather than failing the whole answer. A title and
@@ -100,10 +174,12 @@ export const SESSIONS_QUERY = [
   "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
   `AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND ${OPENCODE_OWN_PART})`,
   `AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT ${OPENCODE_OWN_PART}))`,
-  "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created",
+  "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created,",
+  REPLY_COUNTS,
   "FROM session s",
   "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id",
   "ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
+  COUNTED_REPLY,
   "WHERE s.parent_id IS NULL AND s.time_archived IS NULL",
   `AND s.time_updated >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${QUERY_WINDOW_MS}`,
   `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
@@ -280,6 +356,53 @@ export interface SessionRow {
    * summary, a prompt sent again after an overflow, and a plan's approval.
    */
   userCreatedAt: number | null;
+  /**
+   * The token counts of its newest reply that ended with some, among its
+   * newest 10 messages, or null when there are none that could be right.
+   */
+  tokens: TokenCounts | null;
+}
+
+/** A count of tokens: a whole number, 0 or more. Null for anything else. */
+function tokenCount(value: unknown): number | null {
+  const whole = wholeNumber(value);
+  return whole !== null && whole >= 0 ? whole : null;
+}
+
+/**
+ * The token counts of a session's newest reply that ended with some, as
+ * `TokenCounts` means them, from the six counts the query printed of its
+ * `$.tokens`. Null when they could not be right. OpenCode works them out
+ * from the provider's usage, leaving out of `input` what was read from a
+ * cache or written to one, and out of `output` the reasoning, which it keeps
+ * in `reasoning` (`getUsage` in OpenCode's
+ * `packages/opencode/src/session/session.ts`). So:
+ *
+ * - In is `input`, `cache.read` and `cache.write` together: the whole prompt.
+ * - Cached is `cache.read`, unless it is 0, which OpenCode also writes for a
+ *   provider that sent none.
+ * - Out is `output` and `reasoning` together, so the reasoning counts once.
+ *
+ * Each of the five must be a whole number, 0 or more. `total`, when it is a
+ * whole number, must be no smaller than In and Out together: OpenCode writes
+ * there the provider's whole prompt and output added up, and a smaller one
+ * means OpenCode raised a count that came out below 0 to 0. `tokenCountsOf`
+ * then checks the three.
+ */
+function replyTokensOf(row: Record<string, unknown>): TokenCounts | null {
+  const input = tokenCount(row.r_input);
+  const output = tokenCount(row.r_output);
+  const reasoning = tokenCount(row.r_reasoning);
+  const read = tokenCount(row.r_cache_read);
+  const write = tokenCount(row.r_cache_write);
+  if (input === null || output === null || reasoning === null || read === null || write === null) {
+    return null;
+  }
+  const prompt = input + read + write;
+  const written = output + reasoning;
+  const total = wholeNumber(row.r_total);
+  if (total !== null && total < prompt + written) return null;
+  return tokenCountsOf({ input: prompt, cached: read === 0 ? undefined : read, output: written });
 }
 
 /**
@@ -317,6 +440,7 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
       updatedAt: wholeNumber(row.time_updated),
       message,
       userCreatedAt: wholeNumber(row.u_created),
+      tokens: replyTokensOf(row),
     });
   }
   return sessions;
