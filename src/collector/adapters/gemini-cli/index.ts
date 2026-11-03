@@ -78,7 +78,8 @@ export const UNKNOWN_NOTE =
  * - Its name is the title Gemini CLI saves at a later start in the same folder.
  * - No Jump: the files name no process or terminal.
  * - Quiet for is the file's own modified time, moved on by every line.
- * - No tokens yet.
+ * - Tokens are the counts of the newest reply left that has them, from the
+ *   same read of the session file (`summaryCountsOf` in `chatFile.ts`).
  * - No Stop and no Answer: there is no process to confirm, and no wait to answer.
  */
 export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
@@ -113,7 +114,7 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
       "Gemini CLI's files name no process or terminal, and it documents no link that opens a session.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "Agent Lookout does not read Gemini CLI's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "Gemini CLI's files name no process that Agent Lookout could confirm and stop.",

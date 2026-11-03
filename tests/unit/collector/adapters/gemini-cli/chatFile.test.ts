@@ -7,6 +7,7 @@ import {
   readHeaderLine,
   readLine,
   readLongLine,
+  summaryCountsOf,
 } from "@collector/adapters/gemini-cli/chatFile";
 import {
   at,
@@ -19,13 +20,16 @@ import {
   ids,
   messageIdOf,
   MINUTE,
+  MODEL,
   noticeLine,
   NOW,
   patchLine,
   PRIVATE_WORDS,
+  REPLY_COUNTS,
   rewindLine,
   setLine,
   titleLine,
+  tokensOf,
   toolCall,
   toolResultLine,
   updatedLine,
@@ -347,6 +351,7 @@ describe("what is kept of each line", () => {
           note: false,
         },
         toolCalls: { allCancelled: true, lastAt: NOW },
+        tokens: REPLY_COUNTS,
       },
     });
   });
@@ -421,5 +426,250 @@ describe("the shape of a message's content", () => {
     expect(readLine(contextLine(NOW), otherIds())).toMatchObject({
       message: { id: ENVIRONMENT_CONTEXT_ID, type: "user" },
     });
+  });
+});
+
+describe("a reply's token counts", () => {
+  test.each<[string, unknown, unknown]>([
+    [
+      "the prompt, its cached part and the output with the thoughts",
+      tokensOf({ input: 1_200, cached: 600, output: 80, thoughts: 40 }),
+      { input: 1_200, cached: 600, output: 120 },
+    ],
+    [
+      "thoughts counted once, as the total counts them",
+      tokensOf({ input: 500, output: 0, thoughts: 300 }),
+      { input: 500, output: 300 },
+    ],
+    [
+      "a cached part of 0, which Gemini CLI writes for none sent, left out",
+      tokensOf({ input: 500, output: 20, thoughts: 0 }),
+      { input: 500, output: 20 },
+    ],
+    [
+      "the tool-use prompt, which is neither, in the total alone",
+      tokensOf({ input: 500, output: 20, thoughts: 10, tool: 70 }),
+      { input: 500, output: 30 },
+    ],
+    [
+      "a total larger than its parts",
+      tokensOf({ input: 500, output: 20, thoughts: 0, total: 900 }),
+      { input: 500, output: 20 },
+    ],
+    [
+      "no thoughts or tool, as older lines may have",
+      { input: 500, output: 20, cached: 100, total: 520 },
+      { input: 500, cached: 100, output: 20 },
+    ],
+    [
+      "only the three numbers, whatever else is there",
+      { ...tokensOf(), model: MODEL, costUSD: 1, note: PRIVATE_WORDS },
+      REPLY_COUNTS,
+    ],
+  ])("are %s", (_name, tokens, counts) => {
+    expect(summaryCountsOf(tokens)).toEqual(counts);
+  });
+
+  test.each([
+    ["missing", undefined],
+    ["null, as Gemini CLI writes for a reply whose stream sent no usage", null],
+  ])("are not there when `tokens` is %s", (_name, tokens) => {
+    expect(summaryCountsOf(tokens)).toBeUndefined();
+  });
+
+  test.each<[string, unknown]>([
+    ["not an object", 125],
+    ["a list", [100, 20]],
+    ["a prompt of 0", tokensOf({ input: 0 })],
+    ["a total of 0, written when the API sent none", tokensOf({ total: 0 })],
+    [
+      "a total smaller than its parts",
+      tokensOf({ input: 100, output: 20, thoughts: 5, total: 124 }),
+    ],
+    [
+      "a total smaller than its parts with the tool-use prompt",
+      tokensOf({ input: 100, output: 20, thoughts: 5, tool: 10, total: 130 }),
+    ],
+    ["a prompt that is not a whole number", tokensOf({ input: 10.5 })],
+    ["a negative output", tokensOf({ output: -1 })],
+    ["an output that is text", { ...tokensOf(), output: "20" }],
+    ["no total", { input: 100, output: 20, cached: 0 }],
+    ["thoughts that are not a number", { ...tokensOf(), thoughts: "5" }],
+    ["a negative tool-use prompt", { ...tokensOf(), tool: -5 }],
+    ["a cached part larger than the prompt", tokensOf({ input: 100, cached: 101 })],
+    ["a cached part that is not a whole number", tokensOf({ cached: 1.5 })],
+  ])("could not be right with %s, and give none", (_name, tokens) => {
+    expect(summaryCountsOf(tokens)).toBeNull();
+  });
+
+  test("are read from a reply's line, and from no other message's", () => {
+    const tokens = tokensOf({ input: 300, cached: 100, output: 10, thoughts: 2 });
+    expect(readLine(geminiLine("g1", NOW, { tokens }), otherIds())).toMatchObject({
+      message: { tokens: { input: 300, cached: 100, output: 12 } },
+    });
+    const prompt = JSON.parse(userLine("u1", NOW)) as Record<string, unknown>;
+    const record = readLine(JSON.stringify({ ...prompt, tokens }), otherIds());
+    expect(record).toMatchObject({ kind: "message", message: { type: "user" } });
+    expect(record).not.toHaveProperty("message.tokens");
+    // A reply with none, or with `null` as Gemini CLI writes then, has none.
+    expect(readLine(geminiLine("g2", NOW, { tokens: null }), otherIds())).not.toHaveProperty(
+      "message.tokens",
+    );
+    expect(readLine(geminiLine("g3", NOW, { tokens: undefined }), otherIds())).not.toHaveProperty(
+      "message.tokens",
+    );
+  });
+
+  test("are not known for a reply too long to read, whose counts come after its content", () => {
+    const line = geminiLine("g1", NOW, { content: "z".repeat(1_000) });
+    expect(readLongLine(line.slice(0, 512), otherIds())).toMatchObject({
+      message: { id: "g1", type: "gemini", tokens: null },
+    });
+    expect(readLongLine(userLine("u1", NOW).slice(0, 512), otherIds())).not.toHaveProperty(
+      "message.tokens",
+    );
+  });
+
+  test("are the newest reply's, read with the status, and nothing else of it is kept", async () => {
+    const files = memoryFiles();
+    files.write(FILE, workingSession());
+    const reader = createChatFileReader(files.io);
+    expect(await readIt(files, reader)).not.toHaveProperty("tokens");
+
+    files.append(
+      FILE,
+      chatFile([
+        geminiLine(messageIdOf("02"), NOW - 50_000, {
+          tokens: tokensOf({ input: 1_200, cached: 600, output: 80, thoughts: 40 }),
+        }),
+        updatedLine(NOW - 50_000),
+      ]),
+    );
+    const state = await readIt(files, reader);
+    expect(state.tokens).toEqual({ input: 1_200, cached: 600, output: 120 });
+    expect(Object.keys(state.tokens ?? {}).sort()).toEqual(["cached", "input", "output"]);
+    const kept = JSON.stringify(state);
+    expect(kept).not.toContain(PRIVATE_WORDS);
+    expect(kept).not.toContain(MODEL);
+    expect(kept).not.toContain("thoughts");
+    expect(kept).not.toContain("total");
+  });
+
+  test("of a reply still being written are taken only once its line has ended", async () => {
+    const files = memoryFiles();
+    files.write(FILE, chatFile([headerLine(), userLine(messageIdOf("01"), NOW - 2 * MINUTE)]));
+    files.append(FILE, chatFile([geminiLine(messageIdOf("02"), NOW - MINUTE)]));
+    const reader = createChatFileReader(files.io);
+    expect((await readIt(files, reader)).tokens).toEqual(REPLY_COUNTS);
+
+    files.append(FILE, chatFile([userLine(messageIdOf("03"), NOW - 40_000)]));
+    const reply = geminiLine(messageIdOf("04"), NOW - 30_000, {
+      tokens: tokensOf({ input: 900, output: 30, thoughts: 0 }),
+    });
+    files.append(FILE, reply.slice(0, reply.length - 40));
+    expect((await readIt(files, reader)).tokens).toEqual(REPLY_COUNTS);
+    files.append(FILE, `${reply.slice(reply.length - 40)}\n`);
+    expect((await readIt(files, reader)).tokens).toEqual({ input: 900, output: 30 });
+  });
+
+  test("are none after a reply too long to read, until a newer reply has them", async () => {
+    const files = memoryFiles();
+    files.write(FILE, chatFile([headerLine(), geminiLine(messageIdOf("00"), NOW - 2 * MINUTE)]));
+    const reader = createChatFileReader(files.io);
+    expect((await readIt(files, reader)).tokens).toEqual(REPLY_COUNTS);
+    files.append(
+      FILE,
+      chatFile([
+        userLine(messageIdOf("01"), NOW - MINUTE),
+        geminiLine(messageIdOf("02"), NOW - 50_000, { content: "z".repeat(LINE_LIMIT_BYTES) }),
+      ]),
+    );
+    expect(await readIt(files, reader)).not.toHaveProperty("tokens");
+    files.append(
+      FILE,
+      chatFile([
+        userLine(messageIdOf("03"), NOW - 40_000),
+        geminiLine(messageIdOf("04"), NOW - 30_000),
+      ]),
+    );
+    expect((await readIt(files, reader)).tokens).toEqual(REPLY_COUNTS);
+  });
+
+  test("are none after a $patch too long to read, which may take the newest reply back, until a newer reply has them", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile([
+        headerLine(),
+        userLine(messageIdOf("01"), NOW - 4 * MINUTE),
+        geminiLine(messageIdOf("02"), NOW - 3 * MINUTE),
+        userLine(messageIdOf("03"), NOW - 2 * MINUTE),
+        geminiLine(messageIdOf("04"), NOW - MINUTE, {
+          tokens: tokensOf({ input: 900, output: 90, thoughts: 0 }),
+        }),
+      ]),
+    );
+    const reader = createChatFileReader(files.io);
+    expect((await readIt(files, reader)).tokens).toEqual({ input: 900, output: 90 });
+
+    // As Gemini CLI writes one, `updates` first, here long with a tool's result.
+    const result = "z".repeat(LINE_LIMIT_BYTES);
+    const update = { id: messageIdOf("02"), toolCalls: [{ id: "call-0001", result }] };
+    const removeIds = [messageIdOf("03"), messageIdOf("04")];
+    files.append(FILE, chatFile([patchLine({ updates: [update], removeIds })]));
+    const state = await readIt(files, reader);
+    expect(state).not.toHaveProperty("tokens");
+    expect(state.status).toEqual({ status: "unknown", since: null });
+
+    files.append(
+      FILE,
+      chatFile([
+        userLine(messageIdOf("05"), NOW - 30_000),
+        geminiLine(messageIdOf("06"), NOW - 20_000, {
+          tokens: tokensOf({ input: 2_000, output: 40, thoughts: 0 }),
+        }),
+      ]),
+    );
+    expect((await readIt(files, reader)).tokens).toEqual({ input: 2_000, output: 40 });
+  });
+
+  test("of a long file read from part way are none while a $patch may have moved an older reply last", async () => {
+    const files = memoryFiles();
+    const notices = Array.from({ length: 9 * 1024 }, (_, index) => filler(index));
+    files.write(
+      FILE,
+      chatFile([
+        headerLine(),
+        userLine(messageIdOf("01"), NOW - 10 * MINUTE),
+        geminiLine(messageIdOf("02"), NOW - 9 * MINUTE, {
+          tokens: tokensOf({ input: 7, output: 7, thoughts: 0 }),
+        }),
+        ...notices,
+        userLine(messageIdOf("03"), NOW - 2 * MINUTE),
+        geminiLine(messageIdOf("04"), NOW - MINUTE),
+      ]),
+    );
+    const reader = createChatFileReader(files.io);
+    expect((await readIt(files, reader)).tokens).toEqual(REPLY_COUNTS);
+
+    // The older reply, before the end that was read, is put after the newest.
+    files.append(
+      FILE,
+      chatFile([
+        patchLine({ orderIds: [messageIdOf("03"), messageIdOf("04"), messageIdOf("02")] }),
+      ]),
+    );
+    expect(await readIt(files, reader)).not.toHaveProperty("tokens");
+
+    files.append(
+      FILE,
+      chatFile([
+        userLine(messageIdOf("05"), NOW - 30_000),
+        geminiLine(messageIdOf("06"), NOW - 20_000, {
+          tokens: tokensOf({ input: 2_000, output: 40, thoughts: 0 }),
+        }),
+      ]),
+    );
+    expect((await readIt(files, reader)).tokens).toEqual({ input: 2_000, output: 40 });
   });
 });

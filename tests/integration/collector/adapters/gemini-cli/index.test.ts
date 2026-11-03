@@ -29,6 +29,7 @@ import {
   ids,
   messageIdOf,
   MINUTE,
+  MODEL,
   NOW,
   PRIVATE_WORDS,
   PROJECT,
@@ -109,7 +110,7 @@ function adapterFor(home: string, io: ReadOnlyIo = nodeIo, now = () => NOW) {
 }
 
 describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out", () => {
-  test("lists the working and the idle session, with their names and folder, and nothing private", async () => {
+  test("lists the working and the idle session, with their names, folder and token counts, and nothing private", async () => {
     const home = await copyOfHome();
     const result = await adapterFor(home).poll();
     expect(result.health).toMatchObject({ id: "gemini-cli", state: "ok" });
@@ -126,9 +127,14 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
         name: "Tidy the demo readme",
         cwd: PROJECT,
         status: "idle",
+        // Its reply's prompt and cached part, and its output with its 40 tokens of thoughts.
+        tokens: { input: 1200, cached: 600, output: 120 },
       }),
     ]);
+    // The working session has no reply yet.
+    expect(sessions[0]).not.toHaveProperty("tokens");
     expect(JSON.stringify(result)).not.toContain(PRIVATE_WORDS);
+    expect(JSON.stringify(result)).not.toContain(MODEL);
   });
 
   test("opens only each project's .project_root and session files, and lists only tmp/ and chats/", async () => {

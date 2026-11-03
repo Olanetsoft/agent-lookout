@@ -133,7 +133,15 @@ describe("geminiCliSession", () => {
     expect(session).not.toHaveProperty("pid");
     expect(session).not.toHaveProperty("alive");
     expect(session).not.toHaveProperty("jump");
-    expect(session).not.toHaveProperty("tokens");
+  });
+
+  test("carries the token counts of its newest reply, a copy of them, and none when there are none", () => {
+    const tokens = { input: 1_200, cached: 600, output: 120 };
+    const state = stateWith({ tokens });
+    const session = sessionOf(state);
+    expect(session.tokens).toEqual(tokens);
+    expect(session.tokens).not.toBe(state.tokens);
+    expect(sessionOf(stateWith())).not.toHaveProperty("tokens");
   });
 });
 

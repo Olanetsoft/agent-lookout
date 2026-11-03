@@ -87,6 +87,8 @@ export interface GeminiCliSessionInput {
  *   status has none, and a time before the session began is not known.
  * - The last write is the file's modified time. A time that could not be
  *   right, or that is before the session began, is not known.
+ * - Its tokens are the counts of its newest reply left that has them, from
+ *   the same read of the file (`newestGeminiCliTokens`).
  * - It runs in a terminal. There is no pid, no `alive` and no link: Gemini
  *   CLI's files name no process.
  */
@@ -129,5 +131,6 @@ export function geminiCliSession(input: GeminiCliSessionInput): Session | null {
   const beforeStart =
     writtenAt !== null && startedAt !== null && writtenAt < startedAt - WRITE_ORDER_SLACK_MS;
   if (writtenAt !== null && !beforeStart) session.lastWriteAt = writtenAt;
+  if (state.tokens) session.tokens = { ...state.tokens };
   return session;
 }
