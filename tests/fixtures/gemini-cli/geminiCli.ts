@@ -174,10 +174,43 @@ export function toolCall(status: string, time: number, callId = "call-0001") {
   };
 }
 
+/**
+ * A reply's `tokens` as Gemini CLI writes them from the Gemini API's usage
+ * (`recordMessageTokens`), with 0 for a count the API did not send. The total
+ * is the sum of the others but `cached`, as the API gives it, unless a test
+ * gives its own.
+ */
+export function tokensOf(
+  fields: Partial<
+    Record<"input" | "output" | "cached" | "thoughts" | "tool" | "total", number>
+  > = {},
+) {
+  const { input = 100, output = 20, cached = 0, thoughts = 5, tool = 0 } = fields;
+  return {
+    input,
+    output,
+    cached,
+    thoughts,
+    tool,
+    total: fields.total ?? input + output + thoughts + tool,
+  };
+}
+
+/** The `tokens` every reply has unless a test gives it others. */
+export const REPLY_TOKENS = tokensOf();
+
+/** What the adapter shows for `REPLY_TOKENS`: the prompt, and the output with the thoughts. */
+export const REPLY_COUNTS = { input: 100, output: 25 } as const;
+
+/** The model a reply names, which the adapter never keeps. */
+export const MODEL = "gemini-placeholder";
+
 export interface GeminiFields {
   /** The visible text, or "" for a reply that was only calls for tools, or a list of parts. */
   content?: unknown;
   toolCalls?: ReturnType<typeof toolCall>[];
+  /** The reply's `tokens`: `REPLY_TOKENS` unless given. `null` as Gemini CLI writes for none, and `undefined` for no field. */
+  tokens?: unknown;
 }
 
 /** A reply of the model. */
@@ -191,8 +224,8 @@ export function geminiLine(id: string, time: number, fields: GeminiFields = {}):
     thoughts: [
       { subject: "Placeholder", description: PRIVATE_WORDS, timestamp: at(time - SECOND) },
     ],
-    tokens: { input: 100, output: 20, cached: 0, thoughts: 5, tool: 0, total: 125 },
-    model: "gemini-placeholder",
+    tokens: "tokens" in fields ? fields.tokens : REPLY_TOKENS,
+    model: MODEL,
     ...(toolCalls ? { toolCalls } : {}),
   });
 }

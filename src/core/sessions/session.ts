@@ -348,7 +348,7 @@ export interface TokenCounts {
   /** The part of `input` read from a cache. Left out when the agent did not record it. */
   cached?: number;
   /**
-   * What the reply wrote. Codex, Claude Code, Qwen Code and OpenCode count
+   * What the reply wrote. Codex, Claude Code, Gemini CLI, Qwen Code and OpenCode count
    * its reasoning in it; whether the Antigravity sources count a reply's
    * thinking is not known.
    */
@@ -448,10 +448,10 @@ export interface Session {
   /**
    * The token counts of the session's newest reply, as its agent recorded them:
    * see `TokenCounts`. Present only when the agent recorded counts that could
-   * be right, which today a Codex session's file, an Antigravity CLI or
-   * Antigravity session's transcript, a Qwen Code session's chat file and
-   * OpenCode's database give here. A Claude Code session's come only in the
-   * answer of `GET /api/sessions/last-message`.
+   * be right, which today a Codex or Gemini CLI session's file, an
+   * Antigravity CLI or Antigravity session's transcript, a Qwen Code
+   * session's chat file and OpenCode's database give here. A Claude Code
+   * session's come only in the answer of `GET /api/sessions/last-message`.
    * Shown in the session's details alone: never copied into an event, the
    * history, an email, a webhook post, a push, an MCP answer or
    * `agent-lookout status`.

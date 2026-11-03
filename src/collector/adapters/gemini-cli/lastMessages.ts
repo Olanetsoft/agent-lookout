@@ -224,8 +224,8 @@ export function lastSaidInSessionFile(tail: string, fromStart: boolean): string 
 
 /**
  * The answer the end of a session file gives, made fit to show. Nothing of
- * the tail is kept, and the answer carries no token counts, which Agent
- * Lookout does not read for Gemini CLI.
+ * the tail is kept, and the answer carries no token counts: a session's are
+ * on the session already, from the poll's read of its file.
  */
 export function answerFrom(tail: string, fromStart: boolean): LastMessageResponse {
   const shown = messageText(lastSaidInSessionFile(tail, fromStart));

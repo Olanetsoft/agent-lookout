@@ -257,7 +257,7 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
       "Gemini CLI's files name no process or terminal, and it documents no link that opens a session.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "Agent Lookout does not read Gemini CLI's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "Gemini CLI's files name no process that Agent Lookout could confirm and stop.",

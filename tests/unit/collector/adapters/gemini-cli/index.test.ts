@@ -31,6 +31,7 @@ import {
   messageIdOf,
   messagesAsOf063,
   MINUTE,
+  MODEL,
   noticeLine,
   NOW,
   OTHER_PROJECT,
@@ -39,6 +40,7 @@ import {
   PRIVATE_WORDS,
   PROJECT,
   projectRootPath,
+  REPLY_COUNTS,
   resumedToolRoundAsOf063,
   rewindLine,
   SECOND,
@@ -49,6 +51,7 @@ import {
   SLUG,
   titleLine,
   TMP_DIR,
+  tokensOf,
   toolCall,
   toolResultLine,
   toolRoundAsOf063,
@@ -585,6 +588,174 @@ describe("a session as Gemini CLI 0.44 to 0.63 wrote it, with $set of messages",
       status: "idle",
       statusSince: NOW - 30 * 1_000,
     });
+  });
+});
+
+describe("a session's token counts", () => {
+  const sessionId = sessionIdOf("06");
+  const COUNTED = idOf(sessionId);
+  const began = NOW - 20 * MINUTE;
+  const FILE = chatPath(chatName(began, sessionId));
+  const OLDER = tokensOf({ input: 1_200, cached: 600, output: 80, thoughts: 40 });
+  const NEWER = tokensOf({ input: 2_000, output: 50, thoughts: 0 });
+
+  /** A session of two turns, each reply with counts of its own. */
+  function counting() {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    files.write(projectRootPath(), PROJECT);
+    files.write(
+      FILE,
+      chatFile([
+        headerLine({ sessionId, startTime: began }),
+        contextLine(began + 100),
+        userLine(messageIdOf("61"), NOW - 10 * MINUTE),
+        geminiLine(messageIdOf("62"), NOW - 9 * MINUTE, { tokens: OLDER }),
+        updatedLine(NOW - 9 * MINUTE),
+        userLine(messageIdOf("63"), NOW - 5 * MINUTE),
+        geminiLine(messageIdOf("64"), NOW - 4 * MINUTE, { tokens: NEWER }),
+        updatedLine(NOW - 4 * MINUTE),
+      ]),
+      { mtimeMs: NOW - 4 * MINUTE },
+    );
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    /** Adds lines, then polls a poll later, and gives the session's counts. */
+    const after = async (lines: string[], mtimeMs: number) => {
+      files.append(FILE, chatFile(lines), { mtimeMs });
+      clock.advance(2 * SECOND);
+      return (await adapter.poll()).sessions.find((session) => session.id === COUNTED)?.tokens;
+    };
+    return { files, adapter, after };
+  }
+
+  test("are those of its newest reply, from the poll's read of its file, and nothing else of it", async () => {
+    const { files, adapter } = counting();
+    const { sessions } = await adapter.poll();
+    expect(sessions.find((session) => session.id === COUNTED)?.tokens).toEqual({
+      input: 2_000,
+      output: 50,
+    });
+    // The poll opens the session's file and its folder's .project_root, nothing else.
+    expect(files.opened().sort()).toEqual([FILE, projectRootPath()].sort());
+    const kept = JSON.stringify(sessions);
+    expect(kept).not.toContain(PRIVATE_WORDS);
+    expect(kept).not.toContain(MODEL);
+    expect(kept).not.toContain("thoughts");
+  });
+
+  test("of a session with no reply yet, are not there", async () => {
+    const { sessions } = await geminiCliAdapterFor(withSessions()).poll();
+    expect(sessions.find((session) => session.id === idOf(ids.working))).not.toHaveProperty(
+      "tokens",
+    );
+    expect(sessions.find((session) => session.id === idOf(ids.idle))?.tokens).toEqual(REPLY_COUNTS);
+  });
+
+  test("stay as they were after a newer reply with none, and are none after one whose could not be right", async () => {
+    const { adapter, after } = counting();
+    await adapter.poll();
+    // Gemini CLI writes `null` for a reply whose stream sent no usage.
+    expect(
+      await after(
+        [
+          userLine(messageIdOf("65"), NOW - 3 * MINUTE),
+          geminiLine(messageIdOf("66"), NOW - 2 * MINUTE, { tokens: null }),
+        ],
+        NOW - 2 * MINUTE,
+      ),
+    ).toEqual({ input: 2_000, output: 50 });
+    expect(
+      await after(
+        [
+          userLine(messageIdOf("67"), NOW - 90 * SECOND),
+          geminiLine(messageIdOf("68"), NOW - MINUTE, { tokens: tokensOf({ total: 0 }) }),
+        ],
+        NOW - MINUTE,
+      ),
+    ).toBeUndefined();
+    expect(
+      await after(
+        [
+          userLine(messageIdOf("69"), NOW - 50 * SECOND),
+          geminiLine(messageIdOf("70"), NOW - 40 * SECOND, { tokens: OLDER }),
+        ],
+        NOW - 40 * SECOND,
+      ),
+    ).toEqual({ input: 1_200, cached: 600, output: 120 });
+  });
+
+  test("come from the line that writes the newest reply again with them", async () => {
+    const { adapter, after } = counting();
+    await adapter.poll();
+    const reply = messageIdOf("66");
+    expect(
+      await after(
+        [
+          userLine(messageIdOf("65"), NOW - 3 * MINUTE),
+          geminiLine(reply, NOW - 2 * MINUTE, { tokens: null }),
+          // `recordMessageTokens`, when the newest message is a reply with none.
+          geminiLine(reply, NOW - 2 * MINUTE, { tokens: OLDER }),
+        ],
+        NOW - 2 * MINUTE,
+      ),
+    ).toEqual({ input: 1_200, cached: 600, output: 120 });
+  });
+
+  test("are never those of a reply a $rewindTo took back, as /rewind writes", async () => {
+    const { adapter, after } = counting();
+    await adapter.poll();
+    expect(await after([rewindLine(messageIdOf("63"))], NOW - MINUTE)).toEqual({
+      input: 1_200,
+      cached: 600,
+      output: 120,
+    });
+  });
+
+  test("are never those of a reply a $patch took back, as a declined tool can write", async () => {
+    const { adapter, after } = counting();
+    await adapter.poll();
+    expect(await after([patchLine({ removeIds: [messageIdOf("64")] })], NOW - MINUTE)).toEqual({
+      input: 1_200,
+      cached: 600,
+      output: 120,
+    });
+    expect(
+      await after(
+        [patchLine({ removeIds: [messageIdOf("61"), messageIdOf("62"), messageIdOf("63")] })],
+        NOW - 30 * SECOND,
+      ),
+    ).toBeUndefined();
+  });
+
+  test("are never read from a subagent's file, though it holds a newer reply with counts", async () => {
+    const { files, adapter } = counting();
+    const subagentFolder = chatPath(`${sessionId}/agent-0001.jsonl`);
+    const subagentFile = chatPath(chatName(NOW - MINUTE, sessionIdOf("07")));
+    const theirs = tokensOf({ input: 777, output: 7, thoughts: 0 });
+    for (const [file, id] of [
+      [subagentFolder, "agent-0001"],
+      [subagentFile, sessionIdOf("07")],
+    ] as const) {
+      files.write(
+        file,
+        chatFile([
+          headerLine({ sessionId: id, startTime: NOW - MINUTE, kind: "subagent" }),
+          geminiLine(messageIdOf("79"), NOW, { tokens: theirs }),
+        ]),
+      );
+    }
+    const { sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.tokens)).toEqual([{ input: 2_000, output: 50 }]);
+    expect(JSON.stringify(sessions)).not.toContain("777");
+    expect(files.opened()).not.toContain(subagentFolder);
+  });
+
+  test("are not in what a session last said", async () => {
+    const { adapter } = counting();
+    await adapter.poll();
+    const answer = await adapter.lastMessage(COUNTED);
+    expect(answer).toMatchObject({ message: { cut: false } });
+    expect(answer).not.toHaveProperty("tokens");
   });
 });
 

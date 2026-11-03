@@ -6,12 +6,13 @@ import {
   ENVIRONMENT_CONTEXT_ID,
   mapGeminiCliStatus,
   MAX_KEPT_MESSAGES,
+  newestGeminiCliTokens,
   replayGeminiCliRecords,
   type GeminiCliContent,
   type GeminiCliMessage,
   type GeminiCliRecord,
 } from "@core/mapping/gemini-cli/geminiCliMapping";
-import type { SessionStatus } from "@core/sessions/session";
+import type { SessionStatus, TokenCounts } from "@core/sessions/session";
 
 const T = Date.UTC(2026, 9, 1, 11, 0, 0);
 
@@ -584,5 +585,209 @@ describe("replaying a session file by Gemini CLI's own rules", () => {
     // A rewind to the dropped one clears the list, as Gemini CLI's reader does for an id it does not hold.
     applyGeminiCliRecord(replay, rewind("m0"));
     expect(replay.messages.size).toBe(0);
+  });
+});
+
+describe("newestGeminiCliTokens, the counts of the newest reply left that has them", () => {
+  const FIRST: TokenCounts = { input: 1_000, cached: 400, output: 60 };
+  const SECOND: TokenCounts = { input: 1_500, output: 90 };
+  /** A reply with these counts, or null for counts that could not be right. */
+  const counted = (id: string, at: number, tokens: TokenCounts | null): GeminiCliRecord => {
+    const record = reply(id, at) as Extract<GeminiCliRecord, { kind: "message" }>;
+    return { kind: "message", message: { ...record.message, tokens } };
+  };
+  const tokensOf = (records: GeminiCliRecord[], fromStart = true) =>
+    newestGeminiCliTokens(replayGeminiCliRecords(records, fromStart));
+  const twoTurns = [
+    header(),
+    prompt("p1", T + 60_000),
+    counted("g1", T + 70_000, FIRST),
+    prompt("p2", T + 80_000),
+    counted("g2", T + 90_000, SECOND),
+  ];
+
+  test("are the newest reply's", () => {
+    expect(tokensOf(twoTurns)).toEqual(SECOND);
+    expect(tokensOf([header(), prompt("p1", T + 60_000)])).toBeNull();
+  });
+
+  test("stay those of the reply before when a newer one has none", () => {
+    expect(tokensOf([...twoTurns, prompt("p3", T + 100_000), reply("g3", T + 110_000)])).toEqual(
+      SECOND,
+    );
+  });
+
+  test("are none when the newest reply's could not be right, never an older reply's", () => {
+    expect(tokensOf([...twoTurns, counted("g3", T + 110_000, null)])).toBeNull();
+  });
+
+  test("are none after a line of a kind not known, until a newer reply has them", () => {
+    // As the collector keeps a `$patch` too long to read, which may have taken the newest reply back.
+    const unknownLine: GeminiCliRecord = {
+      kind: "message",
+      message: { id: "\u0000other:1", type: "other", at: null, content: null, toolCalls: null },
+    };
+    const after = [...twoTurns, unknownLine];
+    expect(tokensOf(after)).toBeNull();
+    expect(tokensOf([...after, prompt("p3", T + 100_000), reply("g3", T + 110_000)])).toBeNull();
+    expect(
+      tokensOf([...after, prompt("p3", T + 100_000), counted("g3", T + 110_000, FIRST)]),
+    ).toEqual(FIRST);
+    // One before the newest reply changes nothing.
+    expect(tokensOf([...twoTurns.slice(0, 3), unknownLine, ...twoTurns.slice(3)])).toEqual(SECOND);
+    // A message of a type Gemini CLI 0.64.0 does not write, read whole, is passed over.
+    expect(tokensOf([...twoTurns, message("x1", "other", T + 100_000)])).toEqual(SECOND);
+  });
+
+  test("come from a line that writes a reply again with them, where it stands", () => {
+    // As `recordMessageTokens` writes the newest reply again when it had none.
+    expect(tokensOf([...twoTurns.slice(0, 4), reply("g2", T + 90_000)])).toEqual(FIRST);
+    expect(
+      tokensOf([
+        ...twoTurns.slice(0, 4),
+        reply("g2", T + 90_000),
+        counted("g2", T + 90_000, SECOND),
+      ]),
+    ).toEqual(SECOND);
+  });
+
+  test("are never those of a message that is not a reply", () => {
+    const record = prompt("p3", T + 100_000) as Extract<GeminiCliRecord, { kind: "message" }>;
+    const prompted: GeminiCliRecord = {
+      kind: "message",
+      message: { ...record.message, tokens: { input: 9, output: 9 } },
+    };
+    expect(tokensOf([...twoTurns, prompted])).toEqual(SECOND);
+  });
+
+  test("are never a reply's that a $rewindTo took back", () => {
+    expect(tokensOf([...twoTurns, rewind("p2")])).toEqual(FIRST);
+    expect(tokensOf([...twoTurns, rewind("g2")])).toEqual(FIRST);
+    // An id the list does not hold drops every message, as Gemini CLI's reader does.
+    expect(tokensOf([...twoTurns, rewind("not-held")])).toBeNull();
+  });
+
+  test("are never a reply's that a $patch took back, and follow the order it gives", () => {
+    expect(tokensOf([...twoTurns, patch({ removeIds: ["p2", "g2"] })])).toEqual(FIRST);
+    expect(tokensOf([...twoTurns, patch({ orderIds: ["p1", "g1"] })])).toEqual(FIRST);
+    // A change of content keeps the counts.
+    expect(tokensOf([...twoTurns, patch({ updates: [{ id: "g2", content: SHAPE }] })])).toEqual(
+      SECOND,
+    );
+  });
+
+  test("come from a $set's messages, which replace the list", () => {
+    const set: GeminiCliRecord = {
+      kind: "set",
+      reattach: false,
+      messages: [
+        (prompt("p9", T) as Extract<GeminiCliRecord, { kind: "message" }>).message,
+        (counted("g9", T + 1, FIRST) as Extract<GeminiCliRecord, { kind: "message" }>).message,
+      ],
+    };
+    expect(tokensOf([...twoTurns, set])).toEqual(FIRST);
+  });
+
+  describe("when the replay began inside the file", () => {
+    test("are the newest reply's it holds", () => {
+      expect(tokensOf(twoTurns.slice(1), false)).toEqual(SECOND);
+    });
+
+    test("are none while a $patch may have moved a message it never saw after that reply", () => {
+      const moved = [...twoTurns.slice(1), patch({ orderIds: ["p1", "g1", "p2", "g2", "old"] })];
+      expect(tokensOf(moved, false)).toBeNull();
+      // The status reads as it did.
+      expect(statusOf(moved, false)).toEqual(statusOf(twoTurns.slice(1), false));
+      // A reply after it is the newest.
+      expect(tokensOf([...moved, prompt("p3", T + 100_000)], false)).toBeNull();
+      expect(
+        tokensOf([...moved, prompt("p3", T + 100_000), counted("g3", T + 110_000, FIRST)], false),
+      ).toEqual(FIRST);
+      // So is one the patch put after it.
+      expect(
+        tokensOf([...twoTurns.slice(1), patch({ orderIds: ["old", "p2", "g2"] })], false),
+      ).toEqual(SECOND);
+      // A $set of messages leaves nothing it never saw.
+      const set: GeminiCliRecord = {
+        kind: "set",
+        reattach: false,
+        messages: [
+          (counted("g9", T + 1, FIRST) as Extract<GeminiCliRecord, { kind: "message" }>).message,
+        ],
+      };
+      expect(tokensOf([...moved, set, patch({ orderIds: ["g9", "old"] })], false)).toEqual(FIRST);
+    });
+
+    test("stay none for a reply the $patch left out, which stays before the message it never saw", () => {
+      const moved = [...twoTurns.slice(1), patch({ orderIds: ["old", "p2", "g2"] })];
+      expect(tokensOf(moved, false)).toEqual(SECOND);
+      expect(tokensOf([...moved, rewind("p2")], false)).toBeNull();
+      expect(tokensOf([...moved, patch({ removeIds: ["p2", "g2"] })], false)).toBeNull();
+    });
+
+    test("stay none for the replies before a rewind to a message after the one it never saw", () => {
+      const moved = [...twoTurns.slice(1), patch({ orderIds: ["p1", "g1", "old", "p2", "g2"] })];
+      expect(tokensOf(moved, false)).toEqual(SECOND);
+      expect(tokensOf([...moved, rewind("p2")], false)).toBeNull();
+    });
+
+    test("an id named twice moves to the place it is first named", () => {
+      const twice = patch({ orderIds: ["p1", "g1", "old", "p2", "g2", "old"] });
+      expect(tokensOf([...twoTurns.slice(1), twice], false)).toEqual(SECOND);
+    });
+
+    test("come back when a $set of messages with the same ids replaces the list", () => {
+      const held = twoTurns.slice(1);
+      const moved = [...held, patch({ orderIds: ["p1", "g1", "p2", "g2", "old"] })];
+      expect(tokensOf(moved, false)).toBeNull();
+      const set: GeminiCliRecord = {
+        kind: "set",
+        reattach: false,
+        messages: held.map(
+          (record) => (record as Extract<GeminiCliRecord, { kind: "message" }>).message,
+        ),
+      };
+      expect(tokensOf([...moved, set], false)).toEqual(SECOND);
+    });
+
+    test("are a reply's written under the id of one that left the list", () => {
+      const moved = [...twoTurns.slice(1), patch({ orderIds: ["p1", "g1", "p2", "g2", "old"] })];
+      const again = counted("g2", T + 120_000, SECOND);
+      expect(tokensOf([...moved, again], false)).toBeNull();
+      expect(tokensOf([...moved, patch({ removeIds: ["g2"] }), again], false)).toEqual(SECOND);
+      expect(tokensOf([...moved, rewind("g2"), again], false)).toEqual(SECOND);
+      expect(tokensOf([...moved, rewind("not-held"), again], false)).toEqual(SECOND);
+    });
+  });
+
+  test("a $patch that names an id the list does not hold moves nothing when every line was read", () => {
+    expect(tokensOf([...twoTurns, patch({ orderIds: ["p1", "g1", "p2", "g2", "gone"] })])).toEqual(
+      SECOND,
+    );
+  });
+
+  test("once the cap dropped a message, a $patch may move it after the newest reply", () => {
+    const replay = emptyGeminiCliReplay(true);
+    for (let index = 0; index < MAX_KEPT_MESSAGES; index += 1) {
+      applyGeminiCliRecord(replay, prompt(`m${index}`, T + index));
+    }
+    applyGeminiCliRecord(replay, counted("g1", T + MAX_KEPT_MESSAGES, FIRST));
+    expect(replay.messages.has("m0")).toBe(false);
+    expect(newestGeminiCliTokens(replay)).toEqual(FIRST);
+    applyGeminiCliRecord(replay, patch({ orderIds: ["g1", "m0"] }));
+    expect(newestGeminiCliTokens(replay)).toBeNull();
+  });
+
+  test("once the cap dropped a reply a message never seen stands after, one written under its id counts", () => {
+    const replay = emptyGeminiCliReplay(false);
+    applyGeminiCliRecord(replay, counted("g0", T, FIRST));
+    applyGeminiCliRecord(replay, patch({ orderIds: ["g0", "old"] }));
+    expect(newestGeminiCliTokens(replay)).toBeNull();
+    for (let index = 0; index < MAX_KEPT_MESSAGES; index += 1) {
+      applyGeminiCliRecord(replay, prompt(`m${index}`, T + index));
+    }
+    expect(replay.messages.has("g0")).toBe(false);
+    applyGeminiCliRecord(replay, counted("g0", T + MAX_KEPT_MESSAGES, SECOND));
+    expect(newestGeminiCliTokens(replay)).toEqual(SECOND);
   });
 });

@@ -502,7 +502,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GEMINI_CLI_CAPABILITIES["working-and-idle"].level).toBe("partly");
   });
 
-  test("Gemini CLI: a session has the time of its last write, and no tokens, jump, stop or link", () => {
+  test("Gemini CLI: a session has the time of its last write and its newest reply's token counts, and no jump, stop or link", () => {
     const session = geminiCliSession({
       state: {
         header: {
@@ -515,6 +515,7 @@ describe("each declaration agrees with what its adapter does", () => {
         updatedAt: NOW - 30_000,
         messageAt: NOW - 30_000,
         toolAt: null,
+        tokens: { input: 2_000, cached: 800, output: 64 },
         skipped: 0,
       },
       slug: "demo",
@@ -523,13 +524,13 @@ describe("each declaration agrees with what its adapter does", () => {
       now: NOW,
     });
     expect(session?.lastWriteAt).toBe(NOW - 10_000);
-    expect(session).not.toHaveProperty("tokens");
+    expect(session?.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
     expect(session).not.toHaveProperty("jump");
     expect(session).not.toHaveProperty("stop");
     expect(session).not.toHaveProperty("pid");
     expect(session?.links).toEqual({});
     expect(GEMINI_CLI_CAPABILITIES["quiet-for"].level).toBe("yes");
-    expect(GEMINI_CLI_CAPABILITIES.tokens.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.tokens.level).toBe("yes");
     expect(GEMINI_CLI_CAPABILITIES.names.level).toBe("partly");
     expect(GEMINI_CLI_CAPABILITIES.jump.level).toBe("no");
     expect(GEMINI_CLI_CAPABILITIES.stop.level).toBe("no");

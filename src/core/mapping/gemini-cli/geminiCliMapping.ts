@@ -7,16 +7,17 @@
 // `$patch` changes, removes or reorders messages, and `$set` changes the
 // session's details, or with `messages` replaces the whole list. This module
 // replays the small records the collector keeps of each line by the same rules,
-// and reads a status from what is left. Gemini CLI writes nothing while a tool
-// waits for approval or runs, and no mark when a session ends, so a session is
-// working, idle or unknown here, never "needs-you" or "finished". See
-// docs/adapters/gemini-cli.md for where each value comes from.
+// and reads a status, and the newest reply's token counts, from what is left.
+// Gemini CLI writes nothing while a tool waits for approval or runs, and no
+// mark when a session ends, so a session is working, idle or unknown here,
+// never "needs-you" or "finished". See docs/adapters/gemini-cli.md for where
+// each value comes from.
 //
 // Built from Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts), and not yet checked
 // against a machine running it.
 
-import type { SessionStatus } from "../../sessions/session.ts";
+import type { SessionStatus, TokenCounts } from "../../sessions/session.ts";
 
 /**
  * The id Gemini CLI gives the message it starts every session with, which
@@ -72,10 +73,19 @@ export interface GeminiCliMessage {
   type: GeminiCliMessageType | "other";
   /** When the message was made, in epoch milliseconds. Null when it is not a time. */
   at: number | null;
-  /** Null when the line was too long to parse, and only its first bytes were read. */
+  /**
+   * Null when the line was too long to parse, and only its first bytes were
+   * read, or when it is a line of a kind not known.
+   */
   content: GeminiCliContent | null;
   /** A reply's tool calls. Null when it has none. */
   toolCalls: GeminiCliToolCalls | null;
+  /**
+   * A reply's token counts, from its `tokens`: null when they could not be
+   * right, or when the line was too long to read them. Left out for a message
+   * that is not a reply, and for a reply that has none.
+   */
+  tokens?: TokenCounts | null;
 }
 
 /** A change a `$patch` makes to one message. Only the content's shape is kept. */
@@ -124,6 +134,19 @@ export interface GeminiCliReplay {
   messages: Map<string, GeminiCliMessage>;
   /** Whether the replay began at the file's first line, so nothing before it was missed. */
   fromStart: boolean;
+  /**
+   * Whether the list holds every message the file still has: the replay began
+   * at the file's first line, or a `$set` replaced the list since, and none was
+   * dropped for the cap. When it does not, a `$patch` can move a message it
+   * never saw in among those it holds.
+   */
+  holdsAll: boolean;
+  /**
+   * The ids of messages held that a message the replay never saw may stand
+   * after, as a `$patch` moved it there. A reply among them is never taken for
+   * the newest with counts, since that one may be newer.
+   */
+  shadowed: Set<string>;
   /** Null until a record that says how the session stands. */
   lastEvent: GeminiCliEvent | null;
   /**
@@ -149,6 +172,8 @@ export function emptyGeminiCliReplay(fromStart: boolean): GeminiCliReplay {
   return {
     messages: new Map(),
     fromStart,
+    holdsAll: fromStart,
+    shadowed: new Set(),
     lastEvent: null,
     settledAt: null,
     settling: false,
@@ -198,6 +223,16 @@ function newestStatusId(messages: ReadonlyMap<string, GeminiCliMessage>): string
 }
 
 /**
+ * A line of a kind not known, kept in the list in its place: one read whole
+ * that is not taken for any of Gemini CLI's lines, or one too long to parse
+ * whose first bytes do not say what it is, such as a long `$patch`. What it did
+ * to the list is not known: it may have taken back a reply, or added one.
+ */
+function isUnknownLine(message: GeminiCliMessage): boolean {
+  return message.type === "other" && message.content === null;
+}
+
+/**
  * A reply's tool results as Gemini CLI writes them again, as a user message of
  * id `<reply's id>_response`, when it rebuilds the history of a session it
  * takes up again or rewinds (`convertSessionToClientHistory`). It is an old
@@ -218,11 +253,14 @@ function saysHowItStands(replay: GeminiCliReplay, message: GeminiCliMessage): bo
 }
 
 /** Drops the oldest messages until no more than the cap are kept. */
-function cap(messages: Map<string, GeminiCliMessage>): void {
+function cap(replay: GeminiCliReplay): void {
+  const { messages } = replay;
   while (messages.size > MAX_KEPT_MESSAGES) {
     const oldest = messages.keys().next().value;
     if (oldest === undefined) return;
     messages.delete(oldest);
+    replay.shadowed.delete(oldest);
+    replay.holdsAll = false;
   }
 }
 
@@ -235,7 +273,7 @@ function rollback(replay: GeminiCliReplay): void {
 /** Adds a message, or replaces the one with its id where it stands. */
 function put(replay: GeminiCliReplay, message: GeminiCliMessage): void {
   replay.messages.set(message.id, message);
-  cap(replay.messages);
+  cap(replay);
 }
 
 /**
@@ -252,6 +290,8 @@ function replaceAll(replay: GeminiCliReplay, messages: readonly GeminiCliMessage
   const before = newestStatusId(replay.messages);
   const held = new Set(replay.messages.keys());
   replay.messages.clear();
+  replay.shadowed.clear();
+  replay.holdsAll = true;
   for (const message of messages) put(replay, message);
   const after = newestStatus(replay.messages);
   if (after !== null && replay.fromStart && !held.has(after.id) && saysHowItStands(replay, after)) {
@@ -259,6 +299,42 @@ function replaceAll(replay: GeminiCliReplay, messages: readonly GeminiCliMessage
   } else if (before !== null && !replay.messages.has(before)) {
     rollback(replay);
   }
+}
+
+/**
+ * Moves the messages `orderIds` names to the end, in that order, each to the
+ * place its id is first named, as Gemini CLI's reader does. When the list does
+ * not hold every message, an id it does not hold may be a message the replay
+ * never saw, which moves there too: every message held that would then be
+ * before it is shadowed.
+ */
+function reorder(replay: GeminiCliReplay, orderIds: readonly string[]): void {
+  const named = new Set<string>();
+  const moved: GeminiCliMessage[] = [];
+  /** The messages moved since the last one the replay never saw. */
+  let since: string[] = [];
+  let unseen = false;
+  for (const id of orderIds) {
+    if (named.has(id)) continue;
+    named.add(id);
+    const message = replay.messages.get(id);
+    if (message) {
+      moved.push(message);
+      since.push(id);
+    } else if (!replay.holdsAll) {
+      unseen = true;
+      for (const before of since) replay.shadowed.add(before);
+      since = [];
+    }
+  }
+  if (unseen) {
+    // Those not named stay first, before every message moved.
+    for (const id of replay.messages.keys()) {
+      if (!named.has(id)) replay.shadowed.add(id);
+    }
+  }
+  for (const message of moved) replay.messages.delete(message.id);
+  for (const message of moved) replay.messages.set(message.id, message);
 }
 
 /**
@@ -280,6 +356,12 @@ function replaceAll(replay: GeminiCliReplay, messages: readonly GeminiCliMessage
  * The first `$set` with a `lastUpdated` after a rollback or a re-attach says
  * when the session has been idle since. Taking a session up again, or
  * rewinding it, Gemini CLI writes the copies, then a `$patch`, then that `$set`.
+ *
+ * In a replay that does not hold every message, an id in a `$patch`'s
+ * `orderIds` that it does not hold may be a message it never saw: the messages
+ * held that would be before it are shadowed, and none of their replies is
+ * taken for the newest with counts (`newestGeminiCliTokens`). It changes no
+ * status.
  */
 export function applyGeminiCliRecord(replay: GeminiCliReplay, record: GeminiCliRecord): void {
   switch (record.kind) {
@@ -304,10 +386,14 @@ export function applyGeminiCliRecord(replay: GeminiCliReplay, record: GeminiCliR
         let found = false;
         for (const id of [...replay.messages.keys()]) {
           if (id === record.id) found = true;
-          if (found) replay.messages.delete(id);
+          if (found) {
+            replay.messages.delete(id);
+            replay.shadowed.delete(id);
+          }
         }
       } else {
         replay.messages.clear();
+        replay.shadowed.clear();
       }
       if (newest !== null && !replay.messages.has(newest)) rollback(replay);
       return;
@@ -320,16 +406,11 @@ export function applyGeminiCliRecord(replay: GeminiCliReplay, record: GeminiCliR
           replay.messages.set(update.id, { ...message, content: update.content });
         }
       }
-      for (const id of record.removeIds) replay.messages.delete(id);
-      if (record.orderIds !== null) {
-        const moved: GeminiCliMessage[] = [];
-        for (const id of record.orderIds) {
-          const message = replay.messages.get(id);
-          if (message && !moved.includes(message)) moved.push(message);
-        }
-        for (const message of moved) replay.messages.delete(message.id);
-        for (const message of moved) replay.messages.set(message.id, message);
+      for (const id of record.removeIds) {
+        replay.messages.delete(id);
+        replay.shadowed.delete(id);
       }
+      if (record.orderIds !== null) reorder(replay, record.orderIds);
       if (newest !== null && !replay.messages.has(newest)) rollback(replay);
       return;
     }
@@ -379,6 +460,29 @@ export interface GeminiCliStatus {
     /** The newest prompt's time, as a tool's result would give it. */
     workingSince: number | null;
   };
+}
+
+/**
+ * The token counts of the newest reply left in the list that has any, as
+ * Gemini CLI's own `hydrate` takes a session's last counts from its file
+ * (`packages/core/src/telemetry/uiTelemetry.ts`): a reply with none, as Gemini
+ * CLI writes one whose stream sent no usage, is passed over for the one before
+ * it. A reply a `$rewindTo` or a `$patch` took back is gone from the list, so
+ * it is never the one. Null when no reply left has counts, when the newest
+ * that has them could not be right or was too long to read, when a message
+ * the replay never saw may stand after it, and when a line of a kind not known
+ * comes after it: that line may have taken it back.
+ */
+export function newestGeminiCliTokens(replay: GeminiCliReplay): TokenCounts | null {
+  const messages = [...replay.messages.values()];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message === undefined) continue;
+    if (isUnknownLine(message)) return null;
+    if (message.type !== "gemini" || message.tokens === undefined) continue;
+    return replay.shadowed.has(message.id) ? null : message.tokens;
+  }
+  return null;
 }
 
 /** Working since the newest prompt, when nothing written after it is of a kind that hides when the turn began. */

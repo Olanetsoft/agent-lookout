@@ -3,6 +3,7 @@ import {
   emptyGeminiCliReplay,
   GEMINI_CLI_MESSAGE_TYPES,
   mapGeminiCliStatus,
+  newestGeminiCliTokens,
   type GeminiCliContent,
   type GeminiCliMessage,
   type GeminiCliMessageType,
@@ -12,6 +13,8 @@ import {
   type GeminiCliToolCalls,
   type GeminiCliUpdate,
 } from "../../../core/mapping/gemini-cli/geminiCliMapping.ts";
+import type { TokenCounts } from "../../../core/sessions/session.ts";
+import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
@@ -34,14 +37,17 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * - From a message: its `id`, `type` and `timestamp`, the shape of its content
  *   (`GeminiCliContent`: whether it is "", asks for a tool, answers one, is
  *   only thoughts, or begins as a note Gemini CLI writes itself), and for a
- *   reply whether every tool call was cancelled and when the newest ended.
+ *   reply whether every tool call was cancelled and when the newest ended, and
+ *   three numbers worked out from its `tokens`, the reply's token counts
+ *   (`summaryCountsOf`).
  * - From a `$rewindTo`, its id. From a `$patch`, the ids it changes, removes
  *   and reorders, and the shape of any new content.
  * - From a `$set`, its `lastUpdated`, its title, whether it sets `sessionId`,
  *   and its `messages` taken as messages are.
  *
  * No other text is kept: not a prompt, a reply, a thought, a tool's arguments or
- * result, `displayContent`, `memoryScratchpad`, `directories` or `projectHash`.
+ * result, `displayContent`, `memoryScratchpad`, `directories`, `projectHash`
+ * or a reply's `model`, nor the rest of its `tokens`.
  * What a session last said is read apart from this, from the end of the file,
  * only when the route asks for it and never by a poll (`lastMessages.ts`).
  * A line that does not parse is passed over, as Gemini CLI passes it over. A
@@ -52,8 +58,10 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * of 1 MiB, up to 64 MiB. A file that grew by more, or was replaced or
  * rewritten, is read again as on its first read. A line longer than 8 MiB is
  * not parsed: it is told apart from its first 512 bytes alone, and if those do
- * not say what it is, the status is unknown. A last line that is still being
- * written is left for the next read.
+ * not say what it is, the status is unknown, and so are the token counts until
+ * a newer reply has them, as it may have taken back a reply. A reply's line
+ * that long gives no token counts: they come after its content. A last line
+ * that is still being written is left for the next read.
  */
 
 /** The longest line parsed, and the most of a file's end read on its first read. */
@@ -142,6 +150,12 @@ export interface ChatFileState {
   messageAt: number | null;
   /** The newest time a tool call ended, of the last reply written with tool calls. */
   toolAt: number | null;
+  /**
+   * The token counts of the newest reply left that has them
+   * (`newestGeminiCliTokens`). Left out when there are none, or none that
+   * could be right.
+   */
+  tokens?: TokenCounts;
   /** How many lines did not parse and were passed over. */
   skipped: number;
 }
@@ -212,6 +226,54 @@ function toolCallsOf(value: unknown): GeminiCliToolCalls | null {
   };
 }
 
+/** A whole number of tokens: zero or more, and small enough to be exact. */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * A reply's token counts from its `tokens`, through the one check every
+ * reader of token counts makes (`tokenCountsOf`). Undefined when the reply
+ * has none: Gemini CLI writes `null` for a reply whose stream sent no usage.
+ * Null when they could not be right.
+ *
+ * `tokens` is Gemini CLI's `TokensSummary`, the usage the Gemini API sent for
+ * the reply, with 0 for a count it did not send (`recordMessageTokens` in
+ * `chatRecordingService.ts` at v0.64.0): `input` is `promptTokenCount`,
+ * `output` `candidatesTokenCount`, `cached` `cachedContentTokenCount`,
+ * `thoughts` `thoughtsTokenCount`, `tool` `toolUsePromptTokenCount` and
+ * `total` `totalTokenCount`. As the Gemini API defines them, the prompt
+ * includes its cached part, the candidates leave the thinking out, and the
+ * total is the prompt, the candidates, the tool-use prompt and the thoughts
+ * together. So:
+ *
+ * - input is `input`;
+ * - cached is `cached`, left out when it is 0: Gemini CLI writes 0 for a count
+ *   the API did not send, and the line cannot tell that from a cache that held
+ *   none;
+ * - output is `output` and `thoughts` together: what the reply wrote, its
+ *   thinking counted once.
+ *
+ * `input`, `output` and `total` must be whole numbers, `thoughts` and `tool`
+ * too when they are there, and `total` at least `input`, `output`, `thoughts`
+ * and `tool` together: a `total` of 0, written when the API sent none, gives
+ * no counts. Only the three numbers are taken; the rest of `tokens` is
+ * dropped with the line.
+ */
+export function summaryCountsOf(tokens: unknown): TokenCounts | null | undefined {
+  if (tokens === undefined || tokens === null) return undefined;
+  if (!isRecord(tokens)) return null;
+  const { input, output, cached, thoughts = 0, tool = 0, total } = tokens;
+  if (!isCount(input) || !isCount(output) || !isCount(total)) return null;
+  if (!isCount(thoughts) || !isCount(tool)) return null;
+  if (total < input + output + thoughts + tool) return null;
+  return tokenCountsOf({
+    input,
+    cached: cached === 0 ? undefined : cached,
+    output: output + thoughts,
+  });
+}
+
 function messageType(value: unknown): GeminiCliMessageType | "other" {
   return (GEMINI_CLI_MESSAGE_TYPES as readonly unknown[]).includes(value)
     ? (value as GeminiCliMessageType)
@@ -223,13 +285,18 @@ function messageOf(value: Record<string, unknown>): GeminiCliMessage | null {
   const id = idOf(value.id);
   if (id === null) return null;
   const type = messageType(value.type);
-  return {
+  const message: GeminiCliMessage = {
     id,
     type,
     at: parseGeminiTime(value.timestamp),
     content: contentShapeOf(value.content),
     toolCalls: type === "gemini" ? toolCallsOf(value.toolCalls) : null,
   };
+  if (type === "gemini") {
+    const tokens = summaryCountsOf(value.tokens);
+    if (tokens !== undefined) message.tokens = tokens;
+  }
+  return message;
 }
 
 /** Whether a parsed line is a message, as Gemini CLI's reader tells: a string `id` and no `$patch`. */
@@ -347,8 +414,9 @@ export function readLine(line: string, otherId: () => string): GeminiCliRecord |
 
 /**
  * What a line too long to parse says, from its first bytes alone: a message as
- * the recorder writes one, whose content is then not known, or a `$set` that
- * replaces every message with ones not known. Anything else is not known.
+ * the recorder writes one, whose content is then not known, nor a reply's
+ * token counts, which come after it, or a `$set` that replaces every message
+ * with ones not known. Anything else is not known.
  */
 export function readLongLine(prefix: string, otherId: () => string): GeminiCliRecord {
   const unknown: GeminiCliMessage = {
@@ -361,16 +429,15 @@ export function readLongLine(prefix: string, otherId: () => string): GeminiCliRe
   const message = MESSAGE_PREFIX.exec(prefix);
   if (message) {
     const [, id = "", timestamp, type] = message;
-    return {
-      kind: "message",
-      message: {
-        id,
-        type: messageType(type),
-        at: parseGeminiTime(timestamp),
-        content: null,
-        toolCalls: null,
-      },
+    const kept: GeminiCliMessage = {
+      id,
+      type: messageType(type),
+      at: parseGeminiTime(timestamp),
+      content: null,
+      toolCalls: null,
     };
+    if (kept.type === "gemini") kept.tokens = null;
+    return { kind: "message", message: kept };
   }
   if (SET_MESSAGES_PREFIX.test(prefix)) {
     return { kind: "set", reattach: false, messages: [unknown] };
@@ -505,6 +572,8 @@ function stateOf(cached: Cached): ChatFileState {
     skipped: cached.skipped,
   };
   if (replay.summary !== undefined) state.summary = replay.summary;
+  const tokens = newestGeminiCliTokens(replay);
+  if (tokens !== null) state.tokens = tokens;
   return state;
 }
 
