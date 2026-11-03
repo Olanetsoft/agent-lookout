@@ -22,7 +22,9 @@ import unusedClassesCss from "@tests/support/browser/unusedClasses.css?raw";
 // every word keeps on that glass with the light behind it, the bundled fonts and
 // motion. Every value is read from the real stylesheet, so changing a token
 // there is checked here. Each class it checks is one that src/ uses, or one
-// that unusedClasses.css gives Tailwind, checked with probeUnused.
+// that unusedClasses.css gives Tailwind, checked with probeUnused. One class,
+// w-[397px], is in neither, on purpose: its test shows that the stylesheet does
+// not read tests/.
 
 type Theme = "dark" | "light";
 

@@ -1,7 +1,10 @@
 /*
- * Class names the stylesheet's test checks that nothing in src/ uses. The app's
- * stylesheet does not read tests/, so Tailwind is given them here. Only
- * tests/component/dashboard/styles/index.test.ts loads this file.
+ * Class names the stylesheet's test checks with probeUnused, which nothing in
+ * src/ uses. The app's stylesheet does not read tests/, so Tailwind is given
+ * them here. The test also checks w-[397px], which nothing in src/ uses either,
+ * and it is left out of this file on purpose, to show that the stylesheet does
+ * not read tests/. Only tests/component/dashboard/styles/index.test.ts loads
+ * this file.
  *
  * It takes the theme and the variants of src/dashboard/styles/index.css by
  * reference, so it repeats none of that stylesheet's rules. It adds only the
