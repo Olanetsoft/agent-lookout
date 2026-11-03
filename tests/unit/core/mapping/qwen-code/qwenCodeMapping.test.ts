@@ -6,6 +6,7 @@ import {
   startQwenCodeFold,
   type QwenCodeFold,
   type QwenCodeRecord,
+  type QwenCodeWaitTool,
 } from "@core/mapping/qwen-code/qwenCodeMapping";
 import type { SessionStatus } from "@core/sessions/session";
 
@@ -31,6 +32,11 @@ const calls = (s: number): QwenCodeRecord => ({
   at: at(s),
   message: true,
   calls: true,
+});
+/** A reply whose calls include one that asks the person: a question unless said. */
+const asks = (s: number, tool: QwenCodeWaitTool = "ask_user_question"): QwenCodeRecord => ({
+  ...calls(s),
+  waitsOn: tool,
 });
 const reply = (s: number): QwenCodeRecord => ({ type: "assistant", at: at(s), message: true });
 const result = (s: number, cancelled = false): QwenCodeRecord => ({
@@ -72,6 +78,12 @@ describe("foldQwenCodeRecord, a line at a time", () => {
       "working",
     ],
     ["a reply that calls tools", calls(0), "working"],
+    ["a reply that asks a question, with no request before it", asks(0), "working"],
+    [
+      "a reply that asks to approve a plan, with no request before it",
+      asks(0, "exit_plan_mode"),
+      "working",
+    ],
     ["a reply with no call", reply(0), "idle"],
     ["results", result(0), "working"],
     ["a stopped result", result(0, true), "idle"],
@@ -88,6 +100,16 @@ describe("foldQwenCodeRecord, a line at a time", () => {
   ])("%s alone is %s", (_name, record, status) => {
     expect(statusOf([record]).status).toBe(status);
   });
+
+  test.each<[string, QwenCodeWaitTool]>([
+    ["a question", "ask_user_question"],
+    ["a plan to approve", "exit_plan_mode"],
+  ])(
+    "a reply that asks %s, right after a request of its own that ended, needs you",
+    (_name, tool) => {
+      expect(statusOf([lifecycle(0, "ended", "success"), asks(0, tool)]).status).toBe("needs-you");
+    },
+  );
 
   test.each<[string, QwenCodeRecord]>([
     [
@@ -393,11 +415,13 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
     expect(statusOf([calls(1), result(2)], false)).toEqual({ status: "working", since: null });
   });
 
-  test("never says a session needs you, failed or finished", () => {
+  test("never says a session failed or finished, and needs you only while a line that asks stands", () => {
     const records: QwenCodeRecord[] = [
       prompt(0),
       { type: "user", subtype: "notification", at: at(0) },
       calls(1),
+      asks(1),
+      asks(1, "exit_plan_mode"),
       reply(1),
       result(1),
       result(1, true),
@@ -413,12 +437,192 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
     for (const first of records) {
       for (const second of records) {
         for (const whole of [true, false]) {
-          seen.add(statusOf([first, second], whole).status);
-          seen.add(statusOf([first, second], whole, at(600)).status);
+          for (const liveSince of [LIVE_SINCE, at(600)]) {
+            const mapped = statusOf([first, second], whole, liveSince);
+            seen.add(mapped.status);
+            if (mapped.status === "needs-you") {
+              expect([first, second].some((record) => record.waitsOn !== undefined)).toBe(true);
+              expect(mapped.waitingReason).toBe("question");
+            } else {
+              expect(mapped).not.toHaveProperty("waitingReason");
+            }
+          }
         }
       }
     }
-    expect([...seen].sort()).toEqual(["idle", "unknown", "working"]);
+    expect([...seen].sort()).toEqual(["idle", "needs-you", "unknown", "working"]);
+  });
+});
+
+describe("mapQwenCodeStatus, while Qwen Code asks you", () => {
+  const waiting = (s: number) => ({ status: "needs-you", since: at(s), waitingReason: "question" });
+  /** A request of the session's own, then the reply to it that asks, as Qwen Code 0.25.1 writes them. */
+  const asked = (s: number, tool: QwenCodeWaitTool = "ask_user_question"): QwenCodeRecord[] => [
+    lifecycle(s - 1, "started"),
+    lifecycle(s, "ended", "success"),
+    asks(s, tool),
+  ];
+
+  test("a question asked and answered: needs you since the line that asked, then working, then idle", () => {
+    const lines = [
+      prompt(0),
+      lifecycle(1, "started"),
+      lifecycle(4, "ended", "success"),
+      asks(4),
+      result(30),
+      lifecycle(31, "started"),
+      lifecycle(33, "ended", "success"),
+      reply(33),
+    ];
+    expect(statusOf(lines.slice(0, 4))).toEqual(waiting(4));
+    expect(statusOf(lines.slice(0, 5))).toEqual({ status: "working", since: at(30) });
+    expect(statusOf(lines.slice(0, 6))).toEqual({ status: "working", since: at(30) });
+    expect(statusOf(lines)).toEqual({ status: "idle", since: at(33) });
+  });
+
+  test.each(["success", "error", "interrupted", undefined])(
+    "a reply that asks right after a request of its own that ended with %s needs you",
+    (outcome) => {
+      expect(
+        statusOf([prompt(0), lifecycle(1, "started"), lifecycle(4, "ended", outcome), asks(4)]),
+      ).toEqual(waiting(4));
+    },
+  );
+
+  test("a reply that asks with no request of its own ended since the reply before it begins no wait", () => {
+    // As Qwen Code before 0.25.1 writes every reply: no request comes before it.
+    expect(statusOf([prompt(0), asks(5)])).toEqual({ status: "working", since: at(0) });
+    expect(statusOf([prompt(0), asks(5, "exit_plan_mode")])).toEqual({
+      status: "working",
+      since: at(0),
+    });
+    // A request still under way, a subagent's that ended, or one an earlier reply answered.
+    expect(statusOf([prompt(0), lifecycle(1, "started"), asks(4)])).toEqual({
+      status: "working",
+      since: at(0),
+    });
+    expect(
+      statusOf([
+        prompt(0),
+        lifecycle(1, "started", undefined, true),
+        lifecycle(4, "ended", "success", true),
+        asks(4),
+      ]),
+    ).toEqual({ status: "working", since: at(0) });
+    expect(statusOf([prompt(0), ...asked(4).slice(0, 2), calls(4), result(5), asks(6)])).toEqual({
+      status: "working",
+      since: at(0),
+    });
+    // The request's end written after the reply, which Qwen Code does not do, begins none either.
+    expect(
+      statusOf([prompt(0), lifecycle(1, "started"), asks(4), lifecycle(4, "ended", "success")]),
+    ).toEqual({ status: "working", since: at(0) });
+  });
+
+  test.each<QwenCodeWaitTool>(["ask_user_question", "exit_plan_mode"])(
+    "before 0.25.1, a reply calling %s that Esc cut short shows as working until the next prompt",
+    (tool) => {
+      // Qwen Code 0.24.0 to 0.25.0 writes the part it had, with no stopped request before it.
+      const stopped = [prompt(0), asks(3, tool)];
+      expect(statusOf(stopped)).toEqual({ status: "working", since: at(0) });
+      expect(statusOf([...stopped, prompt(600)])).toEqual({ status: "working", since: at(600) });
+    },
+  );
+
+  test("a plan asked for and approved: needs you, with the reason question, then working", () => {
+    const lines = [prompt(0), ...asked(5, "exit_plan_mode")];
+    expect(statusOf(lines)).toEqual(waiting(5));
+    expect(statusOf([...lines, result(20)])).toEqual({ status: "working", since: at(20) });
+  });
+
+  test.each<QwenCodeWaitTool>(["ask_user_question", "exit_plan_mode"])(
+    "declining %s, or Esc in its prompt, writes stopped results: idle",
+    (tool) => {
+      expect(statusOf([prompt(0), ...asked(5, tool), result(20, true)])).toEqual({
+        status: "idle",
+        since: at(20),
+      });
+      // Beside another call of the same reply, which ran once the person answered.
+      expect(statusOf([prompt(0), ...asked(5, tool), result(20), result(20, true)])).toEqual({
+        status: "idle",
+        since: at(20),
+      });
+    },
+  );
+
+  test.each<QwenCodeWaitTool>(["ask_user_question", "exit_plan_mode"])(
+    "a reply calling %s that Esc cut short begins no wait",
+    (tool) => {
+      const stopped = [prompt(0), lifecycle(1, "started"), lifecycle(3, "ended", "cancelled")];
+      expect(statusOf([...stopped, asks(3, tool)])).toEqual({ status: "idle", since: at(3) });
+    },
+  );
+
+  test("a tool's approval still shows as working: a reply that calls no tool that asks", () => {
+    expect(statusOf([prompt(0), calls(5)])).toEqual({ status: "working", since: at(0) });
+    expect(statusOf([prompt(0), ...asked(5), result(9), calls(12)])).toEqual({
+      status: "working",
+      since: at(9),
+    });
+  });
+
+  test("lines that say nothing, a subagent's among them, leave the wait and its time as they were", () => {
+    const lines = [
+      prompt(0),
+      ...asked(5),
+      { type: "system", subtype: "custom_title", at: at(6), title: "Fix the tests" },
+      system(7, "chat_compression"),
+      { type: "system", subtype: "ui_telemetry", at: at(8) },
+      { type: "user", subtype: "notification", at: at(9) },
+      lifecycle(10, "started", undefined, true),
+      lifecycle(12, "ended", "success", true),
+    ] satisfies QwenCodeRecord[];
+    expect(statusOf(lines)).toEqual(waiting(5));
+  });
+
+  test("a request of its own that starts during the wait leaves the wait and its time as they were", () => {
+    const lines = [prompt(0), ...asked(5), lifecycle(8, "started")];
+    expect(statusOf(lines)).toEqual(waiting(5));
+    expect(statusOf([...lines, lifecycle(9, "ended", "success")])).toEqual(waiting(5));
+    expect(statusOf([...lines, lifecycle(9, "ended", "success"), result(20)])).toEqual({
+      status: "working",
+      since: at(20),
+    });
+  });
+
+  test("a newer line that says something ends the wait", () => {
+    expect(statusOf([prompt(0), ...asked(5), prompt(10)])).toEqual({
+      status: "working",
+      since: at(10),
+    });
+    expect(statusOf([prompt(0), ...asked(5), system(10, "rewind")])).toEqual({
+      status: "idle",
+      since: at(10),
+    });
+    expect(statusOf([prompt(0), ...asked(5), lifecycle(10, "ended", "cancelled")]).status).toBe(
+      "idle",
+    );
+    expect(statusOf([prompt(0), ...asked(5), { type: "summary", at: at(10) }])).toEqual({
+      status: "unknown",
+      since: null,
+    });
+  });
+
+  test("a question an earlier process left open, as one resumed, is idle since the session registered", () => {
+    const liveSince = at(600);
+    expect(statusOf([prompt(0), ...asked(5)], true, liveSince)).toEqual({
+      status: "idle",
+      since: liveSince,
+    });
+    expect(statusOf([prompt(0), ...asked(5, "exit_plan_mode")], false, liveSince)).toEqual({
+      status: "idle",
+      since: liveSince,
+    });
+  });
+
+  test("a file read from its middle still has the time of the line that asked", () => {
+    expect(statusOf([lifecycle(5, "ended", "success"), asks(5)], false)).toEqual(waiting(5));
+    expect(statusOf([calls(1), result(2), ...asked(5)], false)).toEqual(waiting(5));
   });
 });
 

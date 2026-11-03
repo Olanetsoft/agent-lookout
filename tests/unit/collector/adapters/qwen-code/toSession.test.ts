@@ -35,6 +35,16 @@ function chat(records: QwenCodeRecord[], whole = true): ChatState {
 
 const prompt = (time: number): QwenCodeRecord => ({ type: "user", at: time });
 const reply = (time: number): QwenCodeRecord => ({ type: "assistant", at: time, message: true });
+/** The end of a request of the session's own, then the reply to it, which asks the person a question. */
+const asks = (time: number): QwenCodeRecord[] => [
+  {
+    type: "system",
+    subtype: "ui_telemetry",
+    at: time,
+    lifecycle: { phase: "ended", outcome: "success", subagent: false },
+  },
+  { type: "assistant", at: time, message: true, calls: true, waitsOn: "ask_user_question" },
+];
 const title = (text: string): QwenCodeRecord => ({
   type: "system",
   subtype: "custom_title",
@@ -212,6 +222,51 @@ describe("qwenCodeSession", () => {
     ).not.toHaveProperty("tokens");
   });
 
+  test("needs you while Qwen Code asks, with the reason question, since the line that asked, and no text", () => {
+    const session = qwenCodeSession({
+      entry: entry(),
+      chat: chat([prompt(NOW - 10 * MINUTE), ...asks(NOW - 4 * MINUTE)]),
+      writtenAt: NOW - 4 * MINUTE,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - 4 * MINUTE,
+      alive: true,
+      stale: false,
+    });
+    expect(session).not.toHaveProperty("waitingText");
+    expect(session).not.toHaveProperty("waitingDetail");
+  });
+
+  test("has no reason for a wait when it does not need you", () => {
+    for (const state of [
+      chat([prompt(NOW - MINUTE)]),
+      chat([prompt(NOW - MINUTE), reply(NOW - 30_000)]),
+      chat([
+        prompt(NOW - MINUTE),
+        ...asks(NOW - 50_000),
+        { type: "tool_result", at: NOW - 30_000 },
+      ]),
+      null,
+    ]) {
+      expect(qwenCodeSession({ entry: entry(), chat: state, now: NOW })).not.toHaveProperty(
+        "waitingReason",
+      );
+    }
+  });
+
+  test("a question an earlier process left open is no wait: idle since the session registered", () => {
+    const session = qwenCodeSession({
+      entry: entry(),
+      chat: chat([prompt(NOW - DAY), ...asks(NOW - DAY + MINUTE)]),
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "idle", statusSince: NOW - 30 * MINUTE });
+    expect(session).not.toHaveProperty("waitingReason");
+  });
+
   test("a record of another kind is in no known app", () => {
     expect(
       qwenCodeSession({ entry: entry({ kind: "headless" }), chat: null, now: NOW }).surface,
@@ -266,6 +321,22 @@ describe("closedQwenCodeSession", () => {
     });
     expect(closedQwenCodeSession(open, NOW + 2_000).tokens).toEqual(tokens);
     expect(closedQwenCodeSession(open, NOW + 2_000, true).tokens).toEqual(tokens);
+  });
+
+  test("a session that closes while it waits is finished, with no reason for the wait", () => {
+    const open = qwenCodeSession({
+      entry: entry(),
+      chat: chat([prompt(NOW - MINUTE), ...asks(NOW - 30_000)]),
+      now: NOW,
+    });
+    expect(open.waitingReason).toBe("question");
+    for (const closed of [
+      closedQwenCodeSession(open, NOW + 2_000),
+      closedQwenCodeSession(open, NOW + 2_000, true),
+    ]) {
+      expect(closed).toMatchObject({ status: "finished", statusSince: NOW + 2_000 });
+      expect(closed).not.toHaveProperty("waitingReason");
+    }
   });
 
   test("names no process when its process runs on with another session", () => {

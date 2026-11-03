@@ -53,7 +53,7 @@ const LABEL = "Qwen Code";
 
 /** Said whenever Qwen Code is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "Qwen Code does not record approval waits in its files, so a Qwen Code session that is waiting for you shows as working.";
+  "A Qwen Code session shows as needing you while Qwen Code 0.25.1 or newer asks you a question or to approve a plan. Qwen Code does not record a wait for a tool's approval, so a session waiting for one shows as working.";
 
 /** Said whenever Qwen Code is watched, until Agent Lookout has been checked against it. */
 export const UNCHECKED_NOTE =
@@ -88,7 +88,12 @@ export const UNKNOWN_NOTE =
  *   a request that fails for good writes nothing that ends the turn, and
  *   neither does Esc while Qwen Code waits to retry or before its first
  *   request, nor, before 0.25.1, may Esc at any time.
- * - Needs you never: an approval prompt writes nothing to the files.
+ * - Needs you while Qwen Code 0.25.1 or newer asks a question or for a plan's
+ *   approval, from the reply that calls `ask_user_question` or
+ *   `exit_plan_mode` until a newer line that says something, most often its
+ *   results. Before 0.25.1 such a reply shows as working: Qwen Code writes no
+ *   request before it, so it cannot be told from one Esc cut short. A tool's
+ *   approval writes nothing to the files, so it shows as working.
  * - Finished is a session Agent Lookout saw open whose process has gone, or
  *   let it go, as /clear and /resume do, and a record a crash left behind
  *   (`finishedSessions.ts`).
@@ -103,7 +108,8 @@ export const UNKNOWN_NOTE =
  * - Tokens are the counts of the newest reply that has them, from the same
  *   read of the chat file (`usageCountsOf` in `chatRecords.ts`).
  * - No Stop: Agent Lookout stops Claude Code sessions only so far.
- * - No Answer: there is no approval wait recorded to answer.
+ * - No Answer: Agent Lookout never connects to a session's socket, and a
+ *   tool's approval is not recorded.
  */
 export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
@@ -112,9 +118,9 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
       "A request that fails for good, and some replies stopped with Esc, such as between retries, show as working until the next prompt.",
   },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "Qwen Code does not record approval waits, so a session waiting for you shows as working.",
+      "While Qwen Code 0.25.1 or newer asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
   },
   finished: {
     level: "partly",
@@ -145,7 +151,7 @@ export const QWEN_CODE_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "Qwen Code records no approval waits, so there is nothing to answer from here, by hand or by a permission rule.",
+      "Agent Lookout never connects to a Qwen Code session's socket, and Qwen Code records no wait for a tool's approval.",
   },
 };
 
@@ -286,8 +292,10 @@ export interface QwenCodeAdapter extends Adapter {
  * Whether a session's process runs is asked with signal 0, which sends
  * nothing. A session whose process has gone, or whose record has gone or
  * names another session, shows as finished for 24 hours
- * (`finishedSessions.ts`). Its status is working, idle, finished or unknown,
- * never "needs-you": Qwen Code does not write approval waits to its files.
+ * (`finishedSessions.ts`). Its status is needs-you while Qwen Code 0.25.1 or
+ * newer asks a question or for a plan's approval, working, idle, finished or
+ * unknown. A wait for a tool's approval is working: Qwen Code does not write
+ * it.
  *
  * An open session whose process runs inside a tmux pane, or else in a tab of
  * Terminal or iTerm2, is given a `jump` that names the place, when the adapter

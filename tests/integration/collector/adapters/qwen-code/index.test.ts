@@ -28,6 +28,7 @@ import {
   chatPath,
   fixture,
   HOME,
+  lifecycleLine,
   MINUTE,
   NEVER_OPENED,
   NOW,
@@ -372,6 +373,64 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     await mkdir(home);
     await adapterFor(home).poll();
     expect(await readdir(home)).toEqual([]);
+  });
+});
+
+describe("a question or a plan Qwen Code asks you, read from the real files", () => {
+  const { sessionId } = fixture.working;
+  const id = `qwen-code:${sessionId}`;
+
+  async function asking(tool: string) {
+    const home = await makeQwenHome();
+    const file = path.join(home, CHATS, `${sessionId}.jsonl`);
+    const clock = handClock();
+    const adapter = adapterFor(home, { now: clock.now });
+    const poll = async () => {
+      clock.advance(2_000);
+      return (await adapter.poll()).sessions.find((session) => session.id === id);
+    };
+    expect((await poll())?.status).toBe("working");
+    // The working session's tools end, and the reply to its next request asks.
+    await appendFile(
+      file,
+      toolResultLine(NOW - 25 * MINUTE, "success", { sessionId }) +
+        lifecycleLine(NOW - 25 * MINUTE, "started", { sessionId }) +
+        lifecycleLine(NOW - 24 * MINUTE, "ended", { sessionId }) +
+        assistantLine(NOW - 24 * MINUTE, { sessionId, asks: tool }),
+    );
+    return { file, adapter, poll };
+  }
+
+  test("needs you from the reply that asks a question until its result, and lets nothing of the question out", async () => {
+    const { file, adapter, poll } = await asking("ask_user_question");
+    const asked = await poll();
+    expect(asked).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - 24 * MINUTE,
+    });
+    expect(asked).not.toHaveProperty("waitingText");
+    const said = JSON.stringify(await adapter.poll());
+    expect(said).not.toContain(PRIVATE_WORDS);
+    expect(said).not.toContain("call-");
+
+    await appendFile(
+      file,
+      toolResultLine(NOW - 20 * MINUTE, "success", { sessionId, tool: "ask_user_question" }),
+    );
+    const answered = await poll();
+    expect(answered).toMatchObject({ status: "working", statusSince: NOW - 20 * MINUTE });
+    expect(answered).not.toHaveProperty("waitingReason");
+  });
+
+  test("needs you while it asks to approve a plan, and is idle once the plan is declined", async () => {
+    const { file, poll } = await asking("exit_plan_mode");
+    expect(await poll()).toMatchObject({ status: "needs-you", waitingReason: "question" });
+    await appendFile(
+      file,
+      toolResultLine(NOW - 20 * MINUTE, "cancelled", { sessionId, tool: "exit_plan_mode" }),
+    );
+    expect(await poll()).toMatchObject({ status: "idle", statusSince: NOW - 20 * MINUTE });
   });
 });
 
