@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.17 - 2026-11-03
+
+Gemini CLI and OpenCode sessions show what they last said, and Qwen Code sessions give the token counts of their newest reply.
 
 ### Added
 
