@@ -94,10 +94,17 @@ SELECT s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000)
     AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END
     AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND <own>)
       AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT <own>))
-    ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created
+    ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created,
+  <count of input> AS r_input, <count of output> AS r_output,
+  <count of reasoning> AS r_reasoning, <count of cache.read> AS r_cache_read,
+  <count of cache.write> AS r_cache_write, <count of total> AS r_total
 FROM session s
 LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id
   ORDER BY x.time_created DESC, x.id DESC LIMIT 1)
+LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id
+  AND y.time_created >= coalesce((SELECT z.time_created FROM message z WHERE z.session_id = s.id
+    ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET 9), 0)
+  AND <counted step> ORDER BY y.time_created DESC, y.id DESC LIMIT 1)
 WHERE s.parent_id IS NULL AND s.time_archived IS NULL
   AND s.time_updated >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 172800000
 ORDER BY s.time_updated DESC LIMIT 200
@@ -111,24 +118,41 @@ CASE WHEN json_valid(q.data) THEN (json_extract(q.data, '$.type') IS 'compaction
   OR json_type(q.data, '$.metadata.compaction_continue') IS 'true' ELSE 0 END
 ```
 
+`<counted step>`, whether a message is a step of a reply that ended with token counts, as [Token counts](#token-counts) says, is:
+
+```sql
+CASE WHEN json_valid(y.data) THEN json_extract(y.data, '$.role') IS 'assistant'
+  AND json_type(y.data, '$.time.completed') IS 'integer'
+  AND (json_extract(y.data, '$.tokens.input') > 0 OR json_extract(y.data, '$.tokens.cache.read') > 0
+    OR json_extract(y.data, '$.tokens.cache.write') > 0) ELSE 0 END
+```
+
+and `<count of field>`, one of the counted step's six counts, is:
+
+```sql
+CASE WHEN json_valid(r.data) THEN CASE WHEN json_type(r.data, '$.tokens.<field>') IS 'integer'
+  THEN json_extract(r.data, '$.tokens.<field>') END END
+```
+
 The tables and fields are those of `packages/core/src/session/sql.ts`, and the JSON shapes those of `packages/schema/src/v1/session.ts`. Every `time_*` column holds milliseconds.
 
-| Field                                          | Holds                                                                                                                                                                    |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `session.id`                                   | `ses_` and 26 characters. A row whose id does not match `^ses[0-9A-Za-z_-]{1,64}$` is dropped                                                                            |
-| `session.directory`                            | The session's folder. Kept when it is an absolute path of at most 4,096 characters with no control or format character. An old session may have an empty one             |
-| `session.title`                                | The session's title. `New session - <time>` and `Child session - <time>` are OpenCode's placeholders, kept as no title (`isDefaultTitle` in `session.ts`)                |
-| `session.time_created`, `time_updated`         | When it began, and when its row was last written: at each prompt, and after each step, when OpenCode writes the session's summary                                        |
-| `session.parent_id`, `time_archived`           | Set for a subagent's session and for an archived one, which are left out                                                                                                 |
-| The newest message, by `time_created` and `id` | Its times, and from its `data`: `$.role`, `user` or `assistant`; `$.time.completed`, set once an assistant step ends; `$.error.name`; and `$.finish`, why the step ended |
-| `m_tools`                                      | How many of that message's tool parts OpenCode would wait on before it ends the turn (`hasToolCalls` in `packages/opencode/src/session/prompt.ts`)                       |
-| `m_shell`                                      | 1 when that message's one tool part is the shell's, `bash`, as for a command the person runs with `!` (`shellImpl` in `prompt.ts`), else 0                               |
-| `p_updated`                                    | The newest `time_updated` of that message's parts                                                                                                                        |
-| `u_created`                                    | When the newest `user` message began, passing over one whose parts are all a compaction OpenCode made on its own or the text it adds after one                           |
+| Field                                          | Holds                                                                                                                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session.id`                                   | `ses_` and 26 characters. A row whose id does not match `^ses[0-9A-Za-z_-]{1,64}$` is dropped                                                                                                                                                                |
+| `session.directory`                            | The session's folder. Kept when it is an absolute path of at most 4,096 characters with no control or format character. An old session may have an empty one                                                                                                 |
+| `session.title`                                | The session's title. `New session - <time>` and `Child session - <time>` are OpenCode's placeholders, kept as no title (`isDefaultTitle` in `session.ts`)                                                                                                    |
+| `session.time_created`, `time_updated`         | When it began, and when its row was last written: at each prompt, and after each step, when OpenCode writes the session's summary                                                                                                                            |
+| `session.parent_id`, `time_archived`           | Set for a subagent's session and for an archived one, which are left out                                                                                                                                                                                     |
+| The newest message, by `time_created` and `id` | Its times, and from its `data`: `$.role`, `user` or `assistant`; `$.time.completed`, set once an assistant step ends; `$.error.name`; and `$.finish`, why the step ended                                                                                     |
+| `m_tools`                                      | How many of that message's tool parts OpenCode would wait on before it ends the turn (`hasToolCalls` in `packages/opencode/src/session/prompt.ts`)                                                                                                           |
+| `m_shell`                                      | 1 when that message's one tool part is the shell's, `bash`, as for a command the person runs with `!` (`shellImpl` in `prompt.ts`), else 0                                                                                                                   |
+| `p_updated`                                    | The newest `time_updated` of that message's parts                                                                                                                                                                                                            |
+| `u_created`                                    | When the newest `user` message began, passing over one whose parts are all a compaction OpenCode made on its own or the text it adds after one                                                                                                               |
+| `r_input` to `r_total`                         | From the `data` of the newest step that ended with token counts, among the newest 10 messages: `$.tokens.input`, `$.tokens.output`, `$.tokens.reasoning`, `$.tokens.cache.read`, `$.tokens.cache.write` and `$.tokens.total` ([Token counts](#token-counts)) |
 
-`$.metadata.providerExecuted` and `$.state.metadata.interrupted` are tested inside SQLite, for the count: a tool the model's provider ran itself, and one OpenCode marked as cut off when it cleaned up a step, are not waited on. So are a tool part's `$.tool`, for `m_shell`, and a prompt's parts' `$.type`, `$.auto` and `$.metadata.compaction_continue`, for `u_created`. Nothing of any of them is printed. A role, error name or reason longer than 64 characters, or with a control character in it, is kept as a field of the wrong type, so no long text is kept.
+`$.metadata.providerExecuted` and `$.state.metadata.interrupted` are tested inside SQLite, for the count: a tool the model's provider ran itself, and one OpenCode marked as cut off when it cleaned up a step, are not waited on. So are a tool part's `$.tool`, for `m_shell`, a prompt's parts' `$.type`, `$.auto` and `$.metadata.compaction_continue`, for `u_created`, and a message's `$.role` and `$.time.completed`, for which step's counts are read. Nothing of any of them is printed. Of `$.tokens`, the three counts of a prompt are tested to pick that step too, and the six counts are printed for that step alone. A role, error name or reason longer than 64 characters, or with a control character in it, is kept as a field of the wrong type, so no long text is kept.
 
-Each `data` is read only once `json_valid` says it is JSON. A message whose `data` is not gives empty fields, which show as unknown, and a part whose `data` is not is not counted, rather than one row failing the whole read. The title is cut to 1,000 characters and the folder to 4,097 inside SQLite, so long ones cannot push the answer past 4 MiB, and a folder longer than 4,096 is still dropped.
+Each `data` is read only once `json_valid` says it is JSON. A message whose `data` is not gives empty fields, which show as unknown, and a part whose `data` is not is not counted, rather than one row failing the whole read. The title is cut to 1,000 characters and the folder to 4,097 inside SQLite, so long ones cannot push the answer past 4 MiB, and a folder longer than 4,096 is still dropped. Each count is printed only when `json_type` says it is a whole number, so a count that is text, an object or a list prints nothing, and the six add at most about 200 bytes a session, about 40 KB for 200 sessions.
 
 ## Which sessions are listed
 
@@ -137,7 +161,7 @@ Each `data` is read only once `json_valid` says it is JSON. A message whose `dat
 - Their own row written in the last 48 hours, by SQLite's clock, the newest 200.
 - Then each for 24 hours after the newest of its row's `time_updated`, its newest message's and that message's parts'. A time ahead of the clock counts as it is, so a clock set back hides no session.
 
-The name is the title, else the folder's name, else the session's id. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop, no token counts and no `lastWriteAt`.
+The name is the title, else the folder's name, else the session's id. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop and no `lastWriteAt`. Its `tokens` are the counts of its newest reply that has them, as [Token counts](#token-counts) says.
 
 ## Open or closed
 
@@ -179,6 +203,75 @@ From each root session's newest message, by `time_created` and `id`:
 - A session is never shown as needing you.
 
 The status time of a working session is when the newest `user` message began, which is mostly the person's prompt that starts the turn; else when the newest message began; else when the session did. The two prompts OpenCode writes itself when it compacts a session on its own are passed over, though OpenCode writes the message of each before its part, so a read that falls in between counts it until the next read. Three others it writes are not told apart from the person's, so the time moves to them: the one that asks for a subtask's summary after a command run as a subtask, a prompt it sends again after it compacts a session whose context overflowed (`prompt.ts`, `compaction.ts`), and, with OpenCode's experimental plan mode, the one it writes when the person approves a plan (`packages/opencode/src/tool/plan.ts`). For an idle, failed or finished session it is when the newest step ended, or else the newest time anything of the session was written. An unknown session has none.
+
+## Token counts
+
+A session's details give the token counts of its newest reply that has them. They come from the sessions query each poll asks, so nothing is read for them that a poll does not read, and no question is asked for them alone.
+
+### Where OpenCode writes them
+
+From OpenCode's source at v1.19.0, whose line numbers these are. At v1.19.5 the code named here is the same, and so are the versions of the AI SDK packages it pins.
+
+- Each step of a reply is an `assistant` message of its own, made with every count 0 (`runLoop` in `packages/opencode/src/session/prompt.ts:1186-1199`). Each step is one call of the model: `streamText` is given no `stopWhen` (`packages/opencode/src/session/llm.ts:280`), so the AI SDK makes one step. A command run with `!` (`shellImpl`, `prompt.ts:489-502`) and a command's subtask handed to a subagent (`handleSubtask`, `prompt.ts:268-282`) are `assistant` messages made the same way, which no model call fills in.
+- When the step's usage comes, in its `step-finish`, OpenCode sets the message's `tokens` to what `getUsage` works out and saves the message (`packages/opencode/src/session/processor.ts:435-470`, `ctx.assistantMessage.tokens = usage.tokens` at `:459`). It sets `time.completed` later, when it cleans up the step, however it ends (`cleanup`, `processor.ts:553-610`, at `:609`). So a step under way can have its counts and no `time.completed`, and a step stopped before its usage came, as with Esc, ends with every count 0.
+- A message's `tokens` is `{ total?, input, output, reasoning, cache: { read, write } }`, with `total` the one that can be left out (`Assistant` in `packages/schema/src/v1/session.ts:472-481`).
+
+`getUsage`, in `packages/opencode/src/session/session.ts:338-405`, works them out from the usage the step's provider sent:
+
+| Count         | What `getUsage` writes                                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`       | `inputTokens` less `cacheReadInputTokens` and `cacheWriteInputTokens` (`:364`): the prompt, but for what was read from a cache or written to one                        |
+| `cache.read`  | `cacheReadInputTokens` (`:345`)                                                                                                                                         |
+| `cache.write` | `cacheWriteInputTokens`, or, when the usage has none, the `cacheCreationInputTokens` an Anthropic, Vertex, Bedrock or Venice provider puts in its metadata (`:346-359`) |
+| `output`      | `outputTokens` less `reasoningTokens` (`:371`): what the reply wrote, but for its reasoning                                                                             |
+| `reasoning`   | `reasoningTokens` (`:343`)                                                                                                                                              |
+| `total`       | `totalTokens`, as it is, and none when the usage has none (`:366`)                                                                                                      |
+
+A count the usage does not hold is 0 (`?? 0`), and one that is not finite, or comes out below 0 after the taking away, is 0 (`safe`, `:339-340`). The comment above `input` says that AI SDK v6 counts the cached tokens in `inputTokens` for every provider (`:361-363`).
+
+The usage comes from the AI SDK, `ai` 6.0.168 at v1.19.0. OpenCode's `usage` takes its step usage's `inputTokens`, `outputTokens`, `totalTokens`, `outputTokenDetails.reasoningTokens`, `inputTokenDetails.cacheReadTokens` and `inputTokenDetails.cacheWriteTokens` (`packages/opencode/src/session/llm/ai-sdk.ts:45-64`). The AI SDK takes `inputTokens` and `outputTokens` from the provider's `inputTokens.total` and `outputTokens.total`, and makes `totalTokens` the two added up (`asLanguageModelUsage` in `ai` 6.0.168). With OpenCode's experimental native runtime on (`flags.experimentalNativeLlm`, `llm.ts:226`), it comes instead from OpenCode's own `@opencode-ai/llm`, whose `Usage` has the same meaning: `inputTokens` with the cache's reads and writes in it, `outputTokens` with the reasoning in it, and `totalTokens` the provider's total or the two added up (`packages/llm/src/schema/events.ts:7-74`).
+
+What each provider's package, at the version OpenCode 1.19.0 pins, puts in them:
+
+| Provider                                                                                     | `inputTokens.total`                                                                  | `cacheRead`                       | `cacheWrite`                          | `outputTokens.total`                                     | `reasoning`                                                  |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| Anthropic (`convertAnthropicMessagesUsage` in `@ai-sdk/anthropic` 3.0.111)                   | `input_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` together | `cache_read_input_tokens`, else 0 | `cache_creation_input_tokens`, else 0 | `output_tokens`, the thinking in it                      | `output_tokens_details.thinking_tokens` when sent, else none |
+| Amazon Bedrock (`convertBedrockUsage` in `@ai-sdk/amazon-bedrock` 4.0.166)                   | `inputTokens`, `cacheReadInputTokens` and `cacheWriteInputTokens` together           | `cacheReadInputTokens`, else 0    | `cacheWriteInputTokens`, else 0       | `outputTokens`                                           | none                                                         |
+| OpenAI chat (`convertOpenAIChatUsage` in `@ai-sdk/openai` 3.0.88)                            | `prompt_tokens`                                                                      | `cached_tokens`, else 0           | `cache_write_tokens` when sent        | `completion_tokens`                                      | `reasoning_tokens`, else 0                                   |
+| OpenAI Responses (`convertOpenAIResponsesUsage` in `@ai-sdk/openai` 3.0.88)                  | `input_tokens`                                                                       | `cached_tokens`, else 0           | `cache_write_tokens` when sent        | `output_tokens`                                          | `reasoning_tokens`, else 0                                   |
+| OpenAI-compatible (`convertOpenAICompatibleChatUsage` in `@ai-sdk/openai-compatible` 2.0.41) | `prompt_tokens`                                                                      | `cached_tokens`, else 0           | none                                  | `completion_tokens`                                      | `reasoning_tokens`, else 0                                   |
+| Google (`convertGoogleGenerativeAIUsage` in `@ai-sdk/google` 3.0.73)                         | `promptTokenCount`                                                                   | `cachedContentTokenCount`, else 0 | none                                  | `candidatesTokenCount` and `thoughtsTokenCount` together | `thoughtsTokenCount`, else 0                                 |
+
+When Anthropic lists a reply's `iterations` and none is a fallback, its `input_tokens` and `output_tokens` there are those of its `compaction` and `message` iterations added up. OpenCode patches some of these packages (`patches/` in its repository), and no patch changes how usage is read.
+
+So, for each of them, `input`, `cache.read` and `cache.write` together are the whole prompt, the provider's `inputTokens.total`, and `output` and `reasoning` together are everything the reply wrote, its `outputTokens.total`, with the reasoning in it once: `output` leaves the reasoning out when the provider counts it apart, and holds it when the provider does not, as Anthropic without `thinking_tokens` and Bedrock, with `reasoning` 0. `total` is the two added up. OpenCode's own sidebar counts the context in use the same way, as the five added up, for the newest `assistant` message whose `output` is above 0 (`packages/tui/src/feature-plugins/sidebar/context.tsx:20-29`).
+
+### What is shown
+
+| Shown  | From the counted step's `$.tokens`               |
+| ------ | ------------------------------------------------ |
+| In     | `input`, `cache.read` and `cache.write` together |
+| Cached | `cache.read`, unless 0                           |
+| Out    | `output` and `reasoning` together                |
+
+`replyTokensOf` in `sessionRows.ts` works out these three, and `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` checks them.
+
+- What was written to a cache counts in In, and not in Cached. It is part of the prompt the reply was given, which the provider read whole and then kept, and none of it was read from a cache. Anthropic's and Bedrock's packages count it in `inputTokens.total`, OpenCode's sidebar counts it in the context, and the Claude Code and [Qwen Code](qwen-code.md#token-counts) adapters count it in In too.
+- A `cache.read` of 0 is left out, and the details say only Newest reply: each package above writes 0 for a provider that sent none, and so does `getUsage` for a usage with none (`?? 0`), so the message cannot tell that from a cache that held none.
+- The counted step is the newest `assistant` message of the session's own, among its newest 10 by `time_created` and `id`, whose `$.time.completed` is a whole number and whose `$.tokens.input`, `$.tokens.cache.read` or `$.tokens.cache.write` is above 0 (`COUNTED_STEP` in `sessionRows.ts`). A subagent works in a session of its own, so its steps are never counted for the session that started it.
+- A step under way has no `$.time.completed`, even once its counts are written, so it leaves the counts of the step before it.
+- A step `/undo` took back is still counted until the next prompt, or command run with `!`, removes it: unlike the last-message question, the sessions query reads nothing of `revert`, so the counts can be those of a reply after the one Last message shows.
+- A step that ended with no prompt count above 0, its `input`, `cache.read` and `cache.write` each 0, missing or below 0, is passed over even when its `output` is above 0, and the counts stay those of the step before it. A step that ended with every count 0 is one, and OpenCode's sidebar passes over those too: a step stopped before its provider sent its usage, as with Esc, or failed before it, a command run with `!`, a command's subtask handed to a subagent, and every step of a provider that sends no usage, for which the details show a dash. So is a step of a provider that sends what a reply wrote but no prompt counts: `getUsage` writes 0 for a count the usage does not hold, so its `output` is above 0 and its three prompt counts are 0, and OpenCode's sidebar counts it. `getUsage` never leaves a prompt count out, or writes one below 0.
+- A compaction's summary is a step with counts of its own, so once OpenCode compacts a session, the counts are the summary's until the next step ends. Its In is the conversation it was given to sum up.
+- Once a step is counted, counts that could not be right give a dash, never an older step's: one of the five that is missing, not a whole number or below 0; a `total` smaller than In and Out together, which means `getUsage` raised a count that came out below 0 to 0, as when a provider's parts add up to more than its whole; or counts too large to add up exactly. SQLite holds text above every number, so a step whose `input` is text is counted, and gives a dash. A `total` that is missing, as OpenCode writes none when the usage has none, is not needed.
+- Nothing is summed: there are no totals. The session's own `tokens_*` columns, which OpenCode adds each step's counts to (`packages/core/src/session/projector.ts:99-103`), are never read.
+- When no step with counts is among the session's newest 10 messages, as after ten prompts sent with no reply between them, the details show a dash.
+
+### What they cost
+
+They are read inside the sessions query, so they cost no run of `sqlite3` of their own, and like the rest of it they are read only when the database or its `-wal` changed. For each session asked for, the query walks back through its messages, newest first, with `message_session_time_created_id_idx` on `session_id`, `time_created` and `id`, and stops at the first counted step. It never walks past the 10th newest, by `time_created` and `id`, which it finds in that index alone, without reading a message. So it reads the `data` of at most 10 messages a session, most often one or two, however long the session, even when several were written in the same millisecond as the 10th. Then it reads the counted message once more by its id. It prints six numbers a session at most, each only when `json_type` says it is a whole number: about 200 bytes a session at most, about 40 KB for the 200 sessions it asks for at most, against the 4 MiB `sqlite3` may print. `tests/integration/collector/adapters/opencode/database.test.ts` checks with the real `sqlite3` that the walk uses that index, bounded by the 10th newest's time and id, and how much the counts add to the answer.
+
+Not yet checked on a computer running OpenCode: that its messages hold the counts as the source above writes them, for any provider. To check, run a session with each provider you use, and compare, for its newest reply, the five counts of its message's `$.tokens`, and only those, with what its details show. In and Out added up should be what OpenCode's sidebar shows under Context.
 
 ## Last message
 
@@ -236,7 +329,7 @@ CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') IS 'text'
   AND trim(json_extract(p.data, '$.text'), char(32, 9, 10, 13)) != '' ELSE 0 END
 ```
 
-It prints one `reply` row, with how many text parts the reply has, none when no reply among the session's newest 100 messages has text, and whether the session has more than 100 messages. Then a `text` row for each text part needed for the reply's last 4,000 characters, numbered in the order of their ids, with its last 4,000 characters, and `cut` 1 when that left some of it out. So what it prints stays under 256 KB however long the reply: at most 2,000 `text` rows, since each part adds at least 2 to `after`, of under 8,000 characters in all, which come to under 175 KB even when `sqlite3` writes every character as six bytes, as it writes a control character. Of `data` it prints only `$.text` of those parts. `$.role`, `$.summary`, `$.type`, `$.synthetic` and `$.ignored` are tested inside SQLite, and nothing of them is printed. Of `session` it prints nothing: `$.messageID` of `revert` is only compared, inside SQLite, with the ids of the session's own messages. `answerFrom` joins the parts with a line break and makes the text fit to show as every last message is, at most its last 2,000 characters, with `cut` when the question or the cut to 2,000 left the start out. No reply with text is `nothing-yet`, or `too-far-back` when the session has more than 100 messages. No database is `not-found`. One that cannot be read, a `sqlite3` that is not found or does not answer, or an answer that is not this question's, is `unreadable`. The answer has no token counts. `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and the Sources card then says Last message read: Off. On Windows it says not read on Windows.
+It prints one `reply` row, with how many text parts the reply has, none when no reply among the session's newest 100 messages has text, and whether the session has more than 100 messages. Then a `text` row for each text part needed for the reply's last 4,000 characters, numbered in the order of their ids, with its last 4,000 characters, and `cut` 1 when that left some of it out. So what it prints stays under 256 KB however long the reply: at most 2,000 `text` rows, since each part adds at least 2 to `after`, of under 8,000 characters in all, which come to under 175 KB even when `sqlite3` writes every character as six bytes, as it writes a control character. Of `data` it prints only `$.text` of those parts. `$.role`, `$.summary`, `$.type`, `$.synthetic` and `$.ignored` are tested inside SQLite, and nothing of them is printed. Of `session` it prints nothing: `$.messageID` of `revert` is only compared, inside SQLite, with the ids of the session's own messages. `answerFrom` joins the parts with a line break and makes the text fit to show as every last message is, at most its last 2,000 characters, with `cut` when the question or the cut to 2,000 left the start out. No reply with text is `nothing-yet`, or `too-far-back` when the session has more than 100 messages. No database is `not-found`. One that cannot be read, a `sqlite3` that is not found or does not answer, or an answer that is not this question's, is `unreadable`. The answer has no token counts: a session's are on the session, from the poll's read ([Token counts](#token-counts)). `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops it, and the Sources card then says Last message read: Off. On Windows it says not read on Windows.
 
 What was checked in OpenCode's source at v1.19.0, and not yet on a computer running OpenCode:
 
@@ -269,7 +362,9 @@ Not checked on a computer running OpenCode: that the text looks as OpenCode show
 - OpenCode 2's sessions, in `session_v2`, are not read yet. When the probe finds that table, the card says so. OpenCode 1.x has its own `session_message` table since v1.14.34, so that table alone does not mean OpenCode 2.
 - A subagent's session is not listed, and its work does not show on the session that started it.
 - A session whose own row was last written more than 48 hours ago is not asked for.
-- No token counts yet.
+- Token counts are those of the newest step with counts among the session's newest 10 messages. When there is none there, as after ten prompts sent with no reply between them, the details show a dash.
+- A step stopped before its provider sent its usage, as with Esc, is passed over, so the details show the counts of the step before it.
+- After `/undo`, the token counts can be those of a step it took back, until the next prompt, or command run with `!`, removes it: the sessions query reads nothing of `revert`, so they can be of a newer reply than Last message shows.
 - While a reply is written, OpenCode saves its words only once each text part ends, so Last message shows the reply before it, or the parts of this one that have ended, until then.
 - After Esc, Last message is the part of the reply OpenCode had when it stopped, which it saves as it cleans up the step (`cleanup` in `processor.ts`, which runs however the step ends).
 - A reply further back than the session's newest 100 messages is not looked for, and Last message says it is further back.
@@ -280,7 +375,7 @@ Not checked on a computer running OpenCode: that the text looks as OpenCode show
 
 - **Files:** `auth.json` and `mcp-auth.json`, which hold keys and sign-ins; everything in OpenCode's state folder, `~/.local/state/opencode`, such as `locks/`, `kv.json`, `model.json`, `password`, `server.json` and `service.json`; everything in its config folder, `~/.config/opencode`, `service.json` among it; `log/`, `storage/`, `snapshot/`, `tool-output/` and `plans/`; `opencode-<channel>.db`; and, for the adapter itself, any file but the three database files. A session's own folder is looked in for a git repository, as every session's is, and OpenCode makes its worktrees in `worktree/` in its data folder, so a session run in one has its folder there. Only its `.git` file is read there, then `HEAD` and `commondir` in the git folder that file names, and with `AGENT_LOOKOUT_PULL_REQUESTS=on` the repository's `config` and its remote's `HEAD`, as [PRIVACY.md](../../PRIVACY.md#git-repositories) describes.
 - **Tables:** every one but `session`, `message` and `part`, and the names in `sqlite_master` and of the columns of `session` and `session_v2`. So never `event`, `event_sequence`, `account`, `control_account`, `credential`, `session_share`, `permission`, `project`, `todo`, `workspace` or `kv`.
-- **Columns:** no `SELECT *` and no whole `data`. Never `share_url`, `summary_*`, `metadata`, `permission`, `model`, `agent`, `cost` or `tokens_*` of `session`, and of its `revert` only `$.messageID`, which the last-message question compares with message ids inside SQLite and never prints, and no text of a message or a part but the `$.text` of the reply's text parts that the last-message question prints: never a prompt's `$.text`, a `reasoning` part's, a tool's `$.state.input`, `$.state.output` or `$.state.error`, `$.system`, or `$.summary`, which that question only tests inside SQLite for `true`.
+- **Columns:** no `SELECT *` and no whole `data`. Never `share_url`, `summary_*`, `metadata`, `permission`, `model`, `agent`, `cost` or `tokens_*` of `session`, nothing of a message's `data` but the fields above, so never its `$.cost`, its `$.modelID` or its `$.providerID`, and of its `revert` only `$.messageID`, which the last-message question compares with message ids inside SQLite and never prints, and no text of a message or a part but the `$.text` of the reply's text parts that the last-message question prints: never a prompt's `$.text`, a `reasoning` part's, a tool's `$.state.input`, `$.state.output` or `$.state.error`, `$.system`, or `$.summary`, which that question only tests inside SQLite for `true`.
 - **Programs:** no `opencode` command, no git command and no request to OpenCode's server. `ps` is asked for the name of each process's program alone, never its arguments.
 
 ## What breaks when OpenCode changes
@@ -298,5 +393,6 @@ Not checked on a computer running OpenCode: that the text looks as OpenCode show
 | The placeholder title changes                                                                                             | New sessions are named by the placeholder, not the folder                | `sessionRows.ts`                               |
 | A text part's `$.text`, `$.synthetic` or `$.ignored`, a summary's `$.summary`, or `revert`'s `$.messageID`, changes shape | Last message shows nothing, or text OpenCode does not show as the reply  | `lastMessages.ts`                              |
 | `session` loses `revert`, or `part` loses `id`, the columns only the last-message question asks for                       | Last message says the transcript could not be read                       | `lastMessages.ts`                              |
+| A message's `$.tokens` changes shape, or `getUsage` counts `input`, `output` or `reasoning` another way                   | The details show a dash, or counts that are wrong                        | `sessionRows.ts`                               |
 
-To check a new OpenCode version, read at its tag `packages/core/src/session/sql.ts`, `packages/core/src/session/projector.ts`, `packages/schema/src/v1/session.ts`, `packages/core/src/database/database.ts`, `packages/core/src/global.ts`, `packages/opencode/src/session/processor.ts`, `prompt.ts` and `compaction.ts`, `isDefaultTitle` in `packages/opencode/src/session/session.ts`, the program's name in `packages/opencode/script/build.ts`, and, for Last message, `parts` and `page` in `packages/opencode/src/session/message-v2.ts`, `text-start` and `text-end` in `processor.ts`, `packages/opencode/src/session/revert.ts`, and "Copy last assistant message" and `messagesBeforeRevert` in `packages/tui/src/routes/session/index.tsx`. Then compare the dashboard with OpenCode's own list of sessions, with a turn running, waiting for approval, stopped with Esc, ended on an error, and after OpenCode quits, and note what `ps -A -o comm=` prints for it, started each way it is installed. Compare Last message with what OpenCode shows of the newest reply, with one text part and with several, and after `/undo`.
+To check a new OpenCode version, read at its tag `packages/core/src/session/sql.ts`, `packages/core/src/session/projector.ts`, `packages/schema/src/v1/session.ts`, `packages/core/src/database/database.ts`, `packages/core/src/global.ts`, `packages/opencode/src/session/processor.ts`, `prompt.ts` and `compaction.ts`, `isDefaultTitle` in `packages/opencode/src/session/session.ts`, for the token counts `getUsage` there, `step-finish` and `cleanup` in `processor.ts`, `usage` in `packages/opencode/src/session/llm/ai-sdk.ts`, `Usage` in `packages/llm/src/schema/events.ts` and the version of `ai` and of each `@ai-sdk` package it pins, the program's name in `packages/opencode/script/build.ts`, and, for Last message, `parts` and `page` in `packages/opencode/src/session/message-v2.ts`, `text-start` and `text-end` in `processor.ts`, `packages/opencode/src/session/revert.ts`, and "Copy last assistant message" and `messagesBeforeRevert` in `packages/tui/src/routes/session/index.tsx`. Then compare the dashboard with OpenCode's own list of sessions, with a turn running, waiting for approval, stopped with Esc, ended on an error, and after OpenCode quits, and note what `ps -A -o comm=` prints for it, started each way it is installed. Compare Last message with what OpenCode shows of the newest reply, with one text part and with several, and after `/undo`, and the token counts as [Token counts](#token-counts) says.

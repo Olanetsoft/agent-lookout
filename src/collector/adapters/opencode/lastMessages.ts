@@ -197,7 +197,8 @@ function replyOf(
 /**
  * The answer what `sqlite3` printed for `lastTextQuery` gives, made fit to
  * show. Nothing of what it printed is kept, and the answer carries no token
- * counts, which Agent Lookout does not read for OpenCode.
+ * counts: an OpenCode session's are on the session already, read by the poll
+ * (`sessionRows.ts`).
  */
 export function answerFrom(stdout: string): LastMessageResponse {
   const reply = replyOf(stdout);

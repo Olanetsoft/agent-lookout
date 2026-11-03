@@ -44,6 +44,36 @@ describe("opencodeSession", () => {
     }
   });
 
+  test("a session has the token counts of its newest reply that ended, and none when they could not be right", () => {
+    const counted = row({
+      r_input: 200,
+      r_output: 100,
+      r_reasoning: 20,
+      r_cache_read: 1800,
+      r_cache_write: 400,
+      r_total: 2520,
+    });
+    expect(opencodeSession({ row: counted, open: true, now: NOW })?.tokens).toEqual({
+      input: 2400,
+      cached: 1800,
+      output: 120,
+    });
+    // Closed, a session keeps them, as every field it was read with.
+    expect(opencodeSession({ row: counted, open: false, now: NOW })?.tokens).toEqual({
+      input: 2400,
+      cached: 1800,
+      output: 120,
+    });
+    const wrong = row({
+      r_input: 200,
+      r_output: -1,
+      r_reasoning: 0,
+      r_cache_read: 0,
+      r_cache_write: 0,
+    });
+    expect(opencodeSession({ row: wrong, open: true, now: NOW })).not.toHaveProperty("tokens");
+  });
+
   test("a session OpenCode works on is working since the person last wrote", () => {
     const session = opencodeSession({
       row: row({ m_completed: null, m_finish: null }),

@@ -70,7 +70,18 @@ function rows(now: number): string[] {
     ...step(
       IDLE,
       "a1a",
-      assistantData({ createdAt: at(5), completedAt: at(5), finish: "stop" }),
+      assistantData({
+        createdAt: at(5),
+        completedAt: at(5),
+        finish: "stop",
+        tokens: {
+          total: 2520,
+          input: 200,
+          output: 100,
+          reasoning: 20,
+          cache: { read: 1800, write: 400 },
+        },
+      }),
       5,
     ),
     // Working: still the title OpenCode gives a new session, a turn that
@@ -89,7 +100,23 @@ function rows(now: number): string[] {
       14,
     ),
     ...step(WORKING, "b2u", userData(at(2)), 2),
-    ...step(WORKING, "b2a", assistantData({ createdAt: at(1) }), 1),
+    // Its step has its counts, as OpenCode writes them when the provider sends
+    // them, but has not ended, so they are not the ones shown.
+    ...step(
+      WORKING,
+      "b2a",
+      assistantData({
+        createdAt: at(1),
+        tokens: {
+          total: 5500,
+          input: 5000,
+          output: 500,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      }),
+      1,
+    ),
     partRow({
       id: partId("b2t"),
       messageId: messageId("b2a"),
@@ -97,12 +124,17 @@ function rows(now: number): string[] {
       createdAt: at(1),
       data: toolData({ status: "running" }),
     }),
-    // Failed: its reply ended on an error.
+    // Failed: its reply ended on an error, before its provider sent any token counts.
     sessionRow({ id: FAILED, title: "Write the notes", createdAt: at(40), updatedAt: at(10) }),
     ...step(
       FAILED,
       "c3a",
-      assistantData({ createdAt: at(10), completedAt: at(10), error: "APIError" }),
+      assistantData({
+        createdAt: at(10),
+        completedAt: at(10),
+        error: "APIError",
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
       10,
     ),
     // A subagent's session, an archived one and one not written for three days are left out.
@@ -152,10 +184,10 @@ async function makeHome(now: number): Promise<{ home: string; file: string }> {
   await mkdir(path.join(home, "log"), { recursive: true });
   await writeFile(path.join(home, "log", "opencode.log"), `Placeholder. ${PRIVATE_WORDS}\n`);
   const file = path.join(home, "opencode.db");
-  execFileSync(sqlite as string, [
-    file,
-    ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows(now)].join("\n"),
-  ]);
+  // On stdin, since Linux takes no argument longer than 128 KB.
+  execFileSync(sqlite as string, [file], {
+    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows(now)].join("\n"),
+  });
   await rm(`${file}-wal`, { force: true });
   await rm(`${file}-shm`, { force: true });
   return { home, file };
@@ -274,6 +306,15 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
       statusSince: now - 2 * MINUTE,
       startedAt: now - 20 * MINUTE,
     });
+    // The token counts of each session's newest reply that ended: the working
+    // one's are those of the reply before its step under way, and the failed
+    // one's reply ended before any came.
+    const tokens = [
+      [`opencode:${WORKING}`, { input: 10, output: 20 }],
+      [`opencode:${IDLE}`, { input: 2400, cached: 1800, output: 120 }],
+      [`opencode:${FAILED}`, undefined],
+    ];
+    expect(open.sessions.map((session) => [session.id, session.tokens])).toEqual(tokens);
 
     // OpenCode quits, leaving its -wal full: no OpenCode program runs, so
     // every session but the failed one is finished.
@@ -286,6 +327,7 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
       [`opencode:${IDLE}`, "finished"],
       [`opencode:${FAILED}`, "failed"],
     ]);
+    expect(closed.sessions.map((session) => [session.id, session.tokens])).toEqual(tokens);
 
     // Nothing of what was written, and no secret, reaches what the adapter says.
     for (const said of [JSON.stringify(open), JSON.stringify(closed)]) {

@@ -301,7 +301,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "OpenCode keeps every session in one database, so no file shows when one session was last written.",
   },
-  tokens: { level: "no", reason: "Agent Lookout does not read OpenCode's token counts yet." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason: "OpenCode's database names no process that Agent Lookout could confirm and stop.",

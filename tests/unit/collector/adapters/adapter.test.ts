@@ -568,7 +568,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OPENCODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
   });
 
-  test("OpenCode: a session has no time of its last write, no tokens, jump, stop or link, and its title for a name", () => {
+  test("OpenCode: a session has its newest finished reply's token counts, no time of its last write, jump, stop or link, and its title for a name", () => {
     const session = opencodeSession({
       row: {
         id: "ses_000000000000000000000000a1",
@@ -588,17 +588,19 @@ describe("each declaration agrees with what its adapter does", () => {
           partsUpdatedAt: NOW - 10_000,
         },
         userCreatedAt: NOW - 40_000,
+        tokens: { input: 2_000, cached: 800, output: 64 },
       },
       open: true,
       now: NOW,
     });
     expect(session).toMatchObject({ status: "working", name: "Rename the helper" });
-    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "ask"]) {
+    expect(session?.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
+    for (const absent of ["lastWriteAt", "jump", "stop", "pid", "ask"]) {
       expect(session, absent).not.toHaveProperty(absent);
     }
     expect(session?.links).toEqual({});
     expect(OPENCODE_CAPABILITIES["quiet-for"].level).toBe("no");
-    expect(OPENCODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(OPENCODE_CAPABILITIES.tokens.level).toBe("yes");
     expect(OPENCODE_CAPABILITIES.names.level).toBe("yes");
     expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");
