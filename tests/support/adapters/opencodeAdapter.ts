@@ -1,10 +1,10 @@
 // The OpenCode adapter, cut off from this machine, for the tests that share
 // it: the same file system held in memory that the Codex tests use, a
-// stand-in for `sqlite3` that answers the probe and the sessions query with
-// what the test gives it and keeps every argument list it was given, a
-// stand-in for what `ps` says of OpenCode, and an adapter built from them
-// with a clock the test moves by hand. Nothing here touches a real file or
-// runs a program.
+// stand-in for `sqlite3` that answers the probe, the sessions query and the
+// question of a session's last text with what the test gives it and keeps
+// every argument list it was given, a stand-in for what `ps` says of
+// OpenCode, and an adapter built from them with a clock the test moves by
+// hand. Nothing here touches a real file or runs a program.
 
 import type { SqliteAnswer } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/opencode/database";
@@ -13,6 +13,7 @@ import {
   opencodeDatabaseFor,
   type OpencodeAdapterOptions,
 } from "@collector/adapters/opencode/index";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import type { ProcessAnswer } from "@collector/adapters/opencode/processes";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
 import { HOME, NOW, probeJson, sqliteJson } from "@tests/fixtures/opencode/opencode";
@@ -20,10 +21,20 @@ import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapter
 
 export { handClock, memoryFiles, type MemoryFiles };
 
+/** One run of the stand-in `sqlite3`: the program, its arguments, and the timeout and cap on what it prints it was given. */
+export interface SqliteRun {
+  binary: string;
+  args: readonly string[];
+  timeoutMs: number | undefined;
+  maxOutputBytes: number | undefined;
+}
+
 /**
- * A stand-in for `sqlite3`: what the probe prints and the rows the sessions
- * query prints, which the test changes, every argument list it was given, and
- * a way to make it fail, or not be there at all.
+ * A stand-in for `sqlite3`: what the probe prints, the rows the sessions
+ * query prints and what the question of each session's last text prints,
+ * which the test changes, every argument list it was given, and a way to make
+ * it fail, or not be there at all. A question it was not given an answer for
+ * fails.
  */
 export function standInSqlite(initial: Record<string, unknown>[] = []) {
   let rows: Record<string, unknown>[] | string = initial;
@@ -31,16 +42,26 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
   let failing = false;
   let throwing = false;
   let found = true;
-  const runs: { binary: string; args: readonly string[] }[] = [];
+  /** What the question of each session's last text prints, by the question itself. */
+  const lastTexts = new Map<string, string>();
+  const runs: SqliteRun[] = [];
   return {
-    async run(binary: string, args: readonly string[]): Promise<SqliteAnswer> {
-      runs.push({ binary, args });
+    async run(
+      binary: string,
+      args: readonly string[],
+      timeoutMs?: number,
+      maxOutputBytes?: number,
+    ): Promise<SqliteAnswer> {
+      runs.push({ binary, args, timeoutMs, maxOutputBytes });
       if (throwing) throw new Error("A stand-in that throws.");
       if (failing) return { ok: false };
-      if (args.at(-1) === PROBE_QUERY) return { ok: true, stdout: probe };
-      if (args.at(-1) === SESSIONS_QUERY) {
+      const question = args.at(-1) ?? "";
+      if (question === PROBE_QUERY) return { ok: true, stdout: probe };
+      if (question === SESSIONS_QUERY) {
         return { ok: true, stdout: typeof rows === "string" ? rows : sqliteJson(rows) };
       }
+      const said = lastTexts.get(question);
+      if (said !== undefined) return { ok: true, stdout: said };
       return { ok: false };
     },
     async find(): Promise<string | null> {
@@ -66,11 +87,20 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
     there(next: boolean) {
       found = next;
     },
+    /** What the question of this session's last text prints from now on, by OpenCode's own id for it. */
+    said(sessionId: string, stdout: string) {
+      const question = lastTextQuery(sessionId);
+      if (question === null) throw new Error(`Not an id OpenCode makes: ${sessionId}`);
+      lastTexts.set(question, stdout);
+    },
     runs,
     /** The runs that asked for the sessions. */
     queries: () => runs.filter((run) => run.args.at(-1) === SESSIONS_QUERY),
     /** The runs that asked for the tables. */
     probes: () => runs.filter((run) => run.args.at(-1) === PROBE_QUERY),
+    /** The runs that asked anything but those two: the questions of a session's last text. */
+    questions: () =>
+      runs.filter((run) => run.args.at(-1) !== SESSIONS_QUERY && run.args.at(-1) !== PROBE_QUERY),
   };
 }
 

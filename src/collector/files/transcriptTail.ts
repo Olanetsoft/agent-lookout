@@ -21,12 +21,16 @@ export interface TranscriptStamp {
   ino: number;
 }
 
-export type TailRead =
+/**
+ * What one read of a transcript's end found. `Stamp` is what tells the next
+ * read whether it changed: for a file, its size, modified time and identity.
+ */
+export type TailRead<Stamp = TranscriptStamp> =
   /** The file is as it was. Nothing was read. */
-  | { unchanged: true; stamp: TranscriptStamp }
+  | { unchanged: true; stamp: Stamp }
   | {
       unchanged: false;
-      stamp: TranscriptStamp;
+      stamp: Stamp;
       /** The end of the file, decoded. */
       tail: string;
       /** Whether that is the whole file, so its first line is whole too. */

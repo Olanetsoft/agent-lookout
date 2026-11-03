@@ -64,7 +64,7 @@ export const SQLITE_TIMEOUT_MS = 5_000;
 export const RETRY_MS = 60_000;
 
 /** Far more than a list of every chat's id and folder, and a ceiling on what is read. */
-const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+export const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 /** The longest folder kept. */
 const MAX_FOLDER_LENGTH = 4096;
@@ -144,27 +144,36 @@ export function readFolders(stdout: string): Map<string, string> | null {
 /** What one run of `sqlite3` printed, or `ok: false` when it did not answer. */
 export type SqliteAnswer = { ok: true; stdout: string } | { ok: false };
 
-/** Runs `sqlite3` with these arguments, within a timeout when one is given. Tests pass their own. */
+/**
+ * Runs `sqlite3` with these arguments, within a timeout when one is given, and
+ * printing no more than a cap when one is given. Tests pass their own.
+ */
 export type RunSqlite = (
   binary: string,
   args: readonly string[],
   timeoutMs?: number,
+  maxOutputBytes?: number,
 ) => Promise<SqliteAnswer>;
 
 /**
  * Starts one `sqlite3` directly, with no shell between, stdin closed and a
  * timeout: `SQLITE_TIMEOUT_MS`, or a shorter one when given, never a longer.
  * A timeout under a millisecond starts nothing and answers `ok: false`, since
- * `execFile` takes 0 as no timeout at all. Never rejects.
+ * `execFile` takes 0 as no timeout at all. What it prints is capped the same
+ * way: at `MAX_OUTPUT_BYTES`, or less when given, never more, and a program
+ * that prints more is stopped and answers `ok: false`. A cap under a byte
+ * starts nothing. Never rejects.
  */
 export function runSqlite(
   binary: string,
   args: readonly string[],
   timeoutMs: number = SQLITE_TIMEOUT_MS,
+  maxOutputBytes: number = MAX_OUTPUT_BYTES,
 ): Promise<SqliteAnswer> {
   // Also true of NaN.
-  if (!(timeoutMs >= 1)) return Promise.resolve({ ok: false });
+  if (!(timeoutMs >= 1) || !(maxOutputBytes >= 1)) return Promise.resolve({ ok: false });
   const timeout = Math.min(SQLITE_TIMEOUT_MS, Math.ceil(timeoutMs));
+  const maxBuffer = Math.min(MAX_OUTPUT_BYTES, Math.floor(maxOutputBytes));
   return new Promise((resolve) => {
     try {
       const child = execFile(
@@ -173,7 +182,7 @@ export function runSqlite(
         {
           env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
           timeout,
-          maxBuffer: MAX_OUTPUT_BYTES,
+          maxBuffer,
           encoding: "utf8",
           windowsHide: true,
         },

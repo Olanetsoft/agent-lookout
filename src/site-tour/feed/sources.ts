@@ -592,6 +592,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           value:
             "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no OpenCode",
         },
+        {
+          label: "Last message read",
+          value: "a session's newest reply, with sqlite3, while its details are open",
+        },
       ],
       capabilities: OPENCODE_CAPABILITIES,
       checkedAt,

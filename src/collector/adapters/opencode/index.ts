@@ -10,10 +10,13 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createDatabaseReader, type DatabaseReader } from "./database.ts";
+import { createOpencodeLastMessages } from "./lastMessages.ts";
 import {
   createOpencodeProcessReader,
   OPENCODE_TABLE_ARGS,
@@ -21,7 +24,7 @@ import {
   type OpencodeProcessReader,
   type ProcessAnswer,
 } from "./processes.ts";
-import { DATABASE_FILE, type SessionRow } from "./sessionRows.ts";
+import { DATABASE_FILE, SESSION_ID, type SessionRow } from "./sessionRows.ts";
 import { isListed, lastActivity, opencodeSession, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that replaces OpenCode's data folder, for Agent Lookout alone. */
@@ -178,8 +181,12 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
-/** The command, as Sources shows it: its two questions are fixed text. */
+/** The command, as Sources shows it: its questions are fixed text. */
 export const COMMAND_SHOWN = "sqlite3 -init /dev/null -batch -json <database> <fixed query>";
+
+/** What Sources says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ =
+  "a session's newest reply, with sqlite3, while its details are open";
 
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface OpencodeAdapterOptions {
@@ -203,6 +210,21 @@ export interface OpencodeAdapterOptions {
   pollIntervalMs?: number;
   /** How long a missing data folder is believed missing before one more look. Defaults to a minute. */
   recheckMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The OpenCode adapter, which reads what its sessions last said when asked. */
+export interface OpencodeAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** Where the data folder was named. */
@@ -228,6 +250,13 @@ type HomeFrom = "agent-lookout" | "default";
  * finished or unknown, never "needs-you": OpenCode keeps its approval waits
  * and its questions in memory.
  *
+ * What a session last said is asked of the database with one more fixed
+ * question, but only when `lastMessage` is asked for it, which the route does
+ * while a page has the session's details open, and only for a session the
+ * last poll listed (`lastMessages.ts`). No poll asks it, and it is never put
+ * on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so does
+ * `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * OpenCode not being installed costs nothing: when its data folder is
  * missing, the adapter says so and looks again only once a minute, with a
  * single `stat`, and runs neither `sqlite3` nor `ps`.
@@ -240,7 +269,7 @@ type HomeFrom = "agent-lookout" | "default";
  * This was built from OpenCode's source at v1.19.0, and has not yet been
  * checked on a computer running OpenCode.
  */
-export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Adapter {
+export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): OpencodeAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -259,6 +288,25 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
   const reader =
     options.reader ??
     (database === null ? null : createDatabaseReader({ file: database, io, platform }));
+  // What a session last said, asked only when it is asked for. With either
+  // setting off, nothing is asked for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null && reader !== null && database !== null
+      ? createOpencodeLastMessages({
+          reader,
+          database,
+          now,
+          limits: options.lastMessageLimits,
+        })
+      : null;
+  /** What Sources says of the last-message read: when it asks, Off, or not on Windows. */
+  const lastMessageRead =
+    lastMessagesOff !== null
+      ? "Off"
+      : platform === "win32"
+        ? "not read on Windows"
+        : LAST_MESSAGE_READ;
 
   /** When the data folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -287,6 +335,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
       { label: "Command run", value: commandRun },
       { label: "Process check", value: `ps ${OPENCODE_TABLE_ARGS.join(" ")}` },
       { label: "Process check run", value: processCheckRun },
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -486,10 +535,19 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
     lookingIn: `Looking for OpenCode sessions in ${databaseName}.`,
     async poll() {
       try {
-        return await poll();
+        const answer = await poll();
+        // The sessions whose last message may be asked for until the next
+        // poll, each with OpenCode's own id for it. A poll that could not read
+        // the database lists none, so none may be asked for.
+        lastMessages?.keep(
+          new Map(answer.sessions.map((session) => [session.id, rawIdOf(session.id)])),
+        );
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no last message is kept either.
+        lastMessages?.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading OpenCode sessions.",
@@ -498,5 +556,27 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ada
         );
       }
     },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
+    },
   };
+}
+
+/**
+ * OpenCode's own id for a session this adapter listed, from its id in the
+ * session model, `opencode:<id>`, or null for any other, and for one that is
+ * not an id OpenCode makes, which is then answered `not-found` with nothing
+ * asked.
+ */
+function rawIdOf(id: string): string | null {
+  const prefix = `${SOURCE_ID}:`;
+  if (!id.startsWith(prefix)) return null;
+  const raw = id.slice(prefix.length);
+  return SESSION_ID.test(raw) ? raw : null;
 }

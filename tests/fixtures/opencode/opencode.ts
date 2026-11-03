@@ -96,6 +96,12 @@ export interface SessionFields {
   updatedAt?: number;
   parentId?: string;
   archivedAt?: number;
+  /**
+   * The id of the prompt `/undo` went back to, for the `revert` OpenCode
+   * writes then, with words that stand for the files it changed back.
+   * Left out, `revert` is null, as with no undo in effect.
+   */
+  undoneFrom?: string;
 }
 
 /** A session's row, with words that stand for what was written in every column the adapter must not read. */
@@ -112,7 +118,14 @@ export function sessionRow(fields: SessionFields): string {
     share_url: `https://example.com/share/${PRIVATE_WORDS}`,
     summary_diffs: JSON.stringify([{ file: PRIVATE_WORDS }]),
     metadata: JSON.stringify({ note: PRIVATE_WORDS }),
-    revert: JSON.stringify({ messageID: PRIVATE_WORDS }),
+    revert:
+      fields.undoneFrom === undefined
+        ? null
+        : JSON.stringify({
+            messageID: fields.undoneFrom,
+            snapshot: "demo-snapshot",
+            diff: PRIVATE_WORDS,
+          }),
     permission: JSON.stringify([{ pattern: PRIVATE_WORDS }]),
     agent: "build",
     model: JSON.stringify({ id: "demo-model", providerID: "demo-provider" }),
@@ -251,6 +264,41 @@ export function toolData(fields: ToolFields): Record<string, unknown> {
 export function sqliteJson(rows: readonly Record<string, unknown>[]): string {
   if (rows.length === 0) return "";
   return `[${rows.map((row) => JSON.stringify(row)).join(",\n")}]\n`;
+}
+
+export interface LastTextOptions {
+  /** How many text parts the reply has, when more than are printed. */
+  parts?: number;
+  /** Whether the session has more than the 100 messages looked through. */
+  more?: boolean;
+  /** Which of the printed parts had their start cut off. */
+  cut?: readonly boolean[];
+}
+
+/**
+ * What `sqlite3 -json` prints for the question of a session's last text: one
+ * `reply` row, then a `text` row for each of these parts, in order. With no
+ * parts, no reply among the newest messages had text.
+ */
+export function lastTextJson(texts: readonly string[], options: LastTextOptions = {}): string {
+  return sqliteJson([
+    {
+      kind: "reply",
+      parts: options.parts ?? texts.length,
+      more: options.more ? 1 : 0,
+      n: null,
+      cut: null,
+      text: null,
+    },
+    ...texts.map((text, index) => ({
+      kind: "text",
+      parts: null,
+      more: null,
+      n: index + 1,
+      cut: options.cut?.[index] ? 1 : 0,
+      text,
+    })),
+  ]);
 }
 
 /** What the probe prints for OpenCode 1.19.0's tables, with `session_v2` beside them or alone. */

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { appendFile, mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
@@ -6,13 +7,14 @@ import path from "node:path";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import type { Adapter } from "@collector/adapters/adapter";
+import { findSqlite } from "@collector/adapters/antigravity/app/summaries";
 import { createCodexAdapter, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import { createCollector } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
 import { createSmtpSender } from "@collector/email/smtpSender";
-import type { TailReaderOptions } from "@collector/messages/tailReader";
+import type { EndReaderOptions, TailReaderOptions } from "@collector/messages/tailReader";
 import { createCollectorSettings } from "@collector/settings/collectorSettings";
 import { readSettingsSetup } from "@collector/settings/settingsFile";
 import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
@@ -57,6 +59,16 @@ import {
   userLine as geminiPromptLine,
 } from "@tests/fixtures/gemini-cli/geminiCli";
 import {
+  assistantData as opencodeStep,
+  messageId as opencodeMessageId,
+  messageRow as opencodeMessageRow,
+  partId as opencodePartId,
+  partRow as opencodePartRow,
+  SCHEMA as OPENCODE_SCHEMA,
+  sessionId as opencodeSessionId,
+  sessionRow as opencodeSessionRow,
+} from "@tests/fixtures/opencode/opencode";
+import {
   assistantLine as qwenReplyLine,
   chatPath as qwenChatPath,
   promptLine as qwenPromptLine,
@@ -97,7 +109,9 @@ import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/r
 
 /**
  * Every reader of last messages made, by any adapter, so a test can count the
- * sessions they keep between them. Each is the real one, untouched.
+ * sessions they keep between them: those made with `createTailReader`, and
+ * OpenCode's, made with `createEndReader`. Each is the real one,
+ * untouched.
  */
 const readersMade = vi.hoisted(() => [] as { readonly size: number }[]);
 vi.mock("@collector/messages/tailReader", async (importOriginal) => {
@@ -106,6 +120,11 @@ vi.mock("@collector/messages/tailReader", async (importOriginal) => {
     ...actual,
     createTailReader: <Target>(options: TailReaderOptions<Target>) => {
       const reader = actual.createTailReader(options);
+      readersMade.push(reader);
+      return reader;
+    },
+    createEndReader: <Target, Stamp>(options: EndReaderOptions<Target, Stamp>) => {
+      const reader = actual.createEndReader(options);
       readersMade.push(reader);
       return reader;
     },
@@ -2272,7 +2291,36 @@ describe("the last messages of every agent, under one set of limits", () => {
     );
   }
 
-  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+  /**
+   * OpenCode's database, laid out as OpenCode 1.19.0's is, with a session for
+   * each id whose newest reply says `OpenCode reply <n>.`, written now, since
+   * the sessions query counts its 48 hours by SQLite's own clock.
+   */
+  function putOpencodeDatabase(sqlite: string, home: string, ids: readonly string[]) {
+    const written = Date.now();
+    const rows = ids.flatMap((id, index) => {
+      const reply = opencodeMessageId(`r${index}`);
+      return [
+        opencodeSessionRow({ id, updatedAt: written }),
+        opencodeMessageRow({
+          id: reply,
+          sessionId: id,
+          createdAt: written,
+          data: opencodeStep({ createdAt: written, completedAt: written, finish: "stop" }),
+        }),
+        opencodePartRow({
+          id: opencodePartId(`r${index}`),
+          messageId: reply,
+          sessionId: id,
+          createdAt: written,
+          data: { type: "text", text: `OpenCode reply ${index + 1}.` },
+        }),
+      ];
+    });
+    execFileSync(sqlite, [path.join(home, "opencode.db"), [OPENCODE_SCHEMA, ...rows].join("\n")]);
+  }
+
+  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
     // Two live Claude Code sessions, in this test's own process and the one that started it.
     const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
     const claudeHome = await makeClaudeHome({
@@ -2351,6 +2399,12 @@ describe("the last messages of every agent, under one set of limits", () => {
         ].join(""),
       );
     }
+    // Two OpenCode sessions, in its database, wherever a sqlite3 is found to
+    // read it. On Windows, and with none, OpenCode is left out.
+    const sqlite = process.platform === "win32" ? null : await findSqlite();
+    const opencode = sqlite === null ? [] : [opencodeSessionId("a1"), opencodeSessionId("a2")];
+    const opencodeHome = await tempDir();
+    if (sqlite !== null) putOpencodeDatabase(sqlite, opencodeHome, opencode);
 
     let at = NOW;
     const made = readersMade.length;
@@ -2365,7 +2419,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: appHome,
         AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_GEMINI_CLI_HOME: geminiHome,
-        AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_OPENCODE_HOME: opencodeHome,
         AGENT_LOOKOUT_QWEN_HOME: qwenHome,
         AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
@@ -2392,9 +2446,12 @@ describe("the last messages of every agent, under one set of limits", () => {
       app: app.map((id) => `antigravity-app:${id}`),
       gemini: gemini.map((id) => geminiCliSessionId("demo-project", id)),
       qwen: qwen.map((id) => `qwen-code:${id}`),
+      opencode: opencode.map((id) => `opencode:${id}`),
     };
     const listed = collector.poller.getSnapshot().sessions.map((session) => session.id);
     expect(listed).toEqual(expect.arrayContaining(Object.values(sessions).flat()));
+    /** What is given, or nothing where OpenCode is left out. */
+    const withOpencode = <T>(...given: T[]): T[] => (sessions.opencode.length > 0 ? given : []);
 
     const ask = async (id: string) => {
       const response = await request(port, `${LAST_MESSAGE_PATH}?id=${encodeURIComponent(id)}`);
@@ -2421,23 +2478,16 @@ describe("the last messages of every agent, under one set of limits", () => {
       "Antigravity CLI reply 1.",
       "Antigravity reply 1.",
     ]);
-    expect(
-      await asked([
-        sessions.qwen[0],
-        sessions.gemini[0],
-        sessions.claude[1],
-        sessions.codex[1],
-        sessions.cli[1],
-        sessions.app[1],
-      ]),
-    ).toEqual([
-      { busy: "1" },
-      { busy: "1" },
-      { busy: "1" },
-      { busy: "1" },
-      { busy: "1" },
-      { busy: "1" },
-    ]);
+    const busy = [
+      sessions.qwen[0],
+      sessions.gemini[0],
+      ...withOpencode(sessions.opencode[0]),
+      sessions.claude[1],
+      sessions.codex[1],
+      sessions.cli[1],
+      sessions.app[1],
+    ];
+    expect(await asked(busy)).toEqual(busy.map(() => ({ busy: "1" })));
 
     // A second later, four more are read, and eight are kept.
     at += 1_000;
@@ -2454,17 +2504,18 @@ describe("the last messages of every agent, under one set of limits", () => {
     // Each session more makes room by dropping the one asked for least
     // recently, whichever agent's it is, so eight are kept between them all.
     // Four are read a second.
-    for (const second of [
-      [
-        [sessions.cli[1], "Antigravity CLI reply 2."],
-        [sessions.app[1], "Antigravity reply 2."],
-        [sessions.qwen[1], "Qwen Code reply 2."],
-        [sessions.gemini[1], "Gemini CLI reply 2."],
-      ],
-      [[sessions.codex[2], "Codex reply 3."]],
-    ] as const) {
+    const more = [
+      ...withOpencode([sessions.opencode[0], "OpenCode reply 1."] as const),
+      [sessions.cli[1], "Antigravity CLI reply 2."],
+      [sessions.app[1], "Antigravity reply 2."],
+      [sessions.qwen[1], "Qwen Code reply 2."],
+      [sessions.gemini[1], "Gemini CLI reply 2."],
+      [sessions.codex[2], "Codex reply 3."],
+      ...withOpencode([sessions.opencode[1], "OpenCode reply 2."] as const),
+    ] as const;
+    for (let start = 0; start < more.length; start += 4) {
       at += 1_000;
-      for (const [id, text] of second) {
+      for (const [id, text] of more.slice(start, start + 4)) {
         expect(await ask(id ?? "")).toBe(text);
         expect(kept()).toBe(8);
       }
