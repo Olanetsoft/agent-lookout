@@ -66,7 +66,7 @@ Not using Claude Code? Do step 1, then read [Using another agent](#using-another
 
 ## Using another agent
 
-After step 1, start your agent and send it a prompt. Within a few seconds its session appears in the Sessions list, with no setup. Only Antigravity and the Antigravity CLI also show in Needs you, while they ask you to approve a step. The others show a session that waits for you as working, and none of them has Jump. [Supported agents](introduction.md#supported-agents) lists what each one shows, and what differs on Windows and Linux.
+After step 1, start your agent and send it a prompt. Within a few seconds its session appears in the Sessions list, with no setup. Antigravity and the Antigravity CLI also show in Needs you while they ask you to approve a step, and Hermes Agent while it asks you a question or, late, waits for your approval. The others show a session that waits for you as working, or as idle in Gemini CLI. Of them only Qwen Code has Jump, in tmux and in a tab of Terminal or iTerm2. [Supported agents](introduction.md#supported-agents) lists what each one shows, and what differs on Windows and Linux.
 
 To see Needs you without Claude Code, write a status file by hand. It makes a test session that waits for you. Run this in another terminal on macOS or Linux:
 
@@ -85,7 +85,7 @@ The `pid` is that terminal's, so the session also leaves the page if you close t
 
 ## Next steps
 
-- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches a Claude Code session in each app, and what to do when it fails.
+- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches a Claude Code or Qwen Code session in each app, and what to do when it fails.
 - [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt): install the Claude Code plugin to answer with Allow and Deny from the page.
 - [Introduction](introduction.md): what Agent Lookout does, and what it leaves alone.
 - [GitHub issues](https://github.com/Olanetsoft/agent-lookout/issues): ask a question or report a problem.

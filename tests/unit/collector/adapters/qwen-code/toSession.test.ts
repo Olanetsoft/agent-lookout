@@ -6,6 +6,7 @@ import {
   closedQwenCodeSession,
   leftBehindQwenCodeSession,
   qwenCodeSession,
+  withJump,
 } from "@collector/adapters/qwen-code/toSession";
 import {
   foldQwenCodeRecord,
@@ -215,6 +216,32 @@ describe("qwenCodeSession", () => {
     expect(
       qwenCodeSession({ entry: entry({ kind: "headless" }), chat: null, now: NOW }).surface,
     ).toBe("unknown");
+  });
+});
+
+describe("withJump", () => {
+  const open = () => qwenCodeSession({ entry: entry(), chat: null, now: NOW });
+  const pane = { pid: 4100, id: "%3", place: "api-rate-limits:0.1" };
+  const tab = { app: "Terminal", tty: "/dev/ttys004" } as const;
+
+  test("a session in a pane is reached through tmux, by the place's name alone", () => {
+    const session = withJump(open(), pane, tab);
+    expect(session.jump).toEqual({ kind: "tmux", place: "api-rate-limits:0.1" });
+    expect(JSON.stringify(session)).not.toContain("%3");
+    expect(JSON.stringify(session)).not.toContain("ttys004");
+  });
+
+  test("a session in a tab only is reached through its app", () => {
+    expect(withJump(open(), undefined, tab).jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+  });
+
+  test("a session in neither is as it was", () => {
+    expect(withJump(open(), undefined, undefined)).toEqual(open());
+    expect(open()).not.toHaveProperty("jump");
   });
 });
 

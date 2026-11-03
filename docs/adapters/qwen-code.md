@@ -10,12 +10,12 @@ The code is in `src/collector/adapters/qwen-code/`, and the status mapping is in
 
 ## How it reads Qwen Code, and why
 
-The adapter needs nothing installed and changes nothing: no hooks, no settings, no program run, no network. It reads two things, both read-only:
+The adapter needs nothing installed and changes nothing: no hooks, no settings, no Qwen Code program run, no network. It reads two things, both read-only:
 
 - the list of running sessions in `<qwen home>/sessions/`, which Qwen Code documents for other programs to read (`docs/users/features/cross-session-protocol.md:22-131`);
 - each listed session's chat file, `<runtime>/projects/<folder>/chats/<session id>.jsonl`.
 
-It asks whether each session's process runs with signal 0, which tests a process and sends it nothing.
+It asks whether each session's process runs with signal 0, which tests a process and sends it nothing. For [Jump](#jump) it also asks tmux and `ps` where the process runs, and `ps` when it started.
 
 Qwen Code has other ways in, and none of them can be used that way:
 
@@ -233,7 +233,15 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - **Quiet for:** the chat file's modified time from the `lstat` on each poll. Every line Qwen Code adds moves it on. A session with no chat file has none.
 - **Tokens:** the counts of the newest reply that has them, as [Token counts](#token-counts) says. A record a crash left behind has none: its chat file is not read.
 - **App:** Terminal.
-- **Process:** the record's `pid`, with no Jump, Stop or link.
+- **Process:** the record's `pid`, with no Stop or link. Jump is in [Jump](#jump).
+
+## Jump
+
+An open session whose process runs inside a tmux pane, or else in a tab of Terminal or iTerm2 on a Mac, gets a Jump button, as a Claude Code session does. The record's `pid` is the process. The Qwen Code adapter asks the same pane finder and tab finder as the Claude Code adapter, each through an asker of its own, and one look serves both: `tmux -u list-panes -a` and `ps -A -o pid=,ppid=` for a pane, `ps -A -o pid=,ppid=,tty=,comm=` for a tab, as [PRIVACY.md](../../PRIVACY.md#tmux) lists. A pane comes before a tab.
+
+A record can outlive a crashed session, and its pid can go to another program, which may run in a pane or a tab of its own. Qwen Code writes a start token, `procStart`, only on Linux, and in its own form, so on a Mac or Windows there is no start time to compare. But `startedAt` is the clock's time when the process wrote the record (`core/services/session-registry.ts:482`), and that process held the pid then. So for each process found in a pane or a tab, the adapter asks `ps -o pid=,lstart= -p <pids>` when it started, every 30 seconds, and sooner when another process is found in a pane or a tab (`processCheck.ts`). A process that started no later than `startedAt`, give or take a minute for Linux's `ps`, which works the time out again from the clock, was running when the record was written, and two running processes never share a pid, so it is the session's. One that started later was given the pid since, and its session gets no Jump. When `ps` gives no time, the session gets none either, and nor does one whose `startedAt` is more than a minute ahead of the clock, since that time may not have come yet.
+
+`AGENT_LOOKOUT_TMUX=off` and `AGENT_LOOKOUT_TERMINAL_JUMP=off` turn each part off, for Qwen Code as for Claude Code. Windows has no tmux and no Terminal, so there no Qwen Code session has Jump.
 
 ## Versions
 
@@ -248,13 +256,14 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 - A request that fails for good shows as working until the next prompt: Qwen Code records each failed try, and nothing when it gives up. So can a reply stopped with Esc. Before 0.24.0, Esc writes nothing. From 0.24.0, Esc after any part of a reply writes that part (`core/core/llm-chat.ts:6218-6259`), which shows as idle unless it calls a tool, and an Esc before the first part writes nothing. From 0.25.1, Esc during a request also writes a stopped request first, and the session shows as idle whatever the part holds. But Esc while Qwen Code waits to retry a failed try writes nothing, since no request is open then (`core/utils/retry.ts:171-195`), and nor may Esc before a turn's first request starts, as while Qwen Code compacts the chat. Those show as working until the next prompt on 0.25.1 too.
 - Before 0.25.1, a session where you declined one call of several shows as idle until Qwen Code's next reply.
 - Closed sessions are shown only while Agent Lookout runs, and records a crash left at its start.
-- After a crash, another process can take the pid. The closed session then shows as open, with the status its chat file last gave, often working, since a crash tends to come mid-turn. That can last as long as the process that took the pid runs, and come back each time the pid is given out again while the record is left. On a Mac or Windows, with no start time to compare, Qwen Code keeps a record whose pid runs (`core/utils/process-liveness.ts:201-210`). On Linux, a Qwen Code that lists its sessions, as `qwen sessions ps` does, removes the record sooner. It does not once the computer has restarted: Qwen Code leaves alone a record from before the restart (`core/services/session-registry.ts:756-760`).
+- After a crash, another process can take the pid. The closed session then shows as open, with the status its chat file last gave, often working, since a crash tends to come mid-turn. It has no Jump, since that process started after the record was written. That can last as long as the process that took the pid runs, and come back each time the pid is given out again while the record is left. On a Mac or Windows, with no start time to compare, Qwen Code keeps a record whose pid runs (`core/utils/process-liveness.ts:201-210`). On Linux, a Qwen Code that lists its sessions, as `qwen sessions ps` does, removes the record sooner. It does not once the computer has restarted: Qwen Code leaves alone a record from before the restart (`core/services/session-registry.ts:756-760`).
 - Never listed: `qwen -p` runs, which never register (`docs/users/features/commands.md:770`); Qwen Code before 0.21.14; sessions an editor or Qwen Code's server drives; sessions in a container, on a Mac or Windows; and sessions under a folder Agent Lookout's own environment does not name.
 - Chats moved by `advanced.runtimeOutputDir`, or with chat recording off, show as idle, and after ten minutes the Sources view says no chat file was found.
 - Managed Session logs show as unknown.
 - After `/rewind`, Last message and Tokens can be a reply the rewind took back, until the session replies again: the reply's line stays in the file. After Esc, Last message is the part of the reply Qwen Code had when it stopped, which Qwen Code writes after the stop. Tokens are that part's counts only when the provider's usage had come before the stop, and otherwise stay as they were, as [Token counts](#token-counts) says.
 - After `/clear` or `/resume` made before Agent Lookout started, the session is idle since its process registered, which can be long before, until its next prompt, so it can show as stale at once. After such a `/clear`, Started is that time too until the new session writes its first line. Started is also when the process registered for a chat file over 8 MiB, which is read from its middle.
-- On Linux, a record written in a container is listed, and its pid is checked on this computer.
+- After the clock is set back, a session whose `startedAt` is then more than a minute ahead of it has no Jump until the clock catches up. On Linux, a session also has no Jump once the clock is set forward by more than a minute while it runs, since `ps` then gives a start after its `startedAt`, until the clock is set back or the session is restarted.
+- On Linux, a record written in a container is listed, and its pid is checked on this computer. If a process here has the same pid, started before the record was written and runs in a tmux pane, the session's Jump selects that pane.
 - Tokens show a dash while the newest reply with counts is further back than the 8 MiB read of the chat file, and after a reply too long to read whole, until the next reply with counts.
 - Tokens show a dash for an OpenAI-compatible provider that sends no `total_tokens`.
 
@@ -274,5 +283,6 @@ At the first poll, a record whose process has already gone, as a crash leaves, i
 | `usageMetadata` moves or its counts are renamed       | Tokens is a dash in every Qwen Code session's details                                                                                                     | `chatRecords.ts`                                |
 | A provider's counts come to mean something else       | Out leaves out the reasoning or counts it twice, or In shows less than the context in use                                                                 | `chatRecords.ts`                                |
 | `QWEN_HOME` or `QWEN_RUNTIME_DIR` mean something else | Qwen Code is not found, or found empty                                                                                                                    | `index.ts`                                      |
+| `startedAt` is no longer when the record was written  | Sessions in a pane or a tab have no Jump, or one that took a crashed session's pid has one                                                                | `processCheck.ts`                               |
 
 To check a new Qwen Code version, read `core/services/session-registry.ts`, `core/services/chatRecordingService.ts`, `core/telemetry/request-lifecycle.ts`, `core/utils/paths.ts`, `core/config/storage.ts` and `docs/users/features/cross-session-protocol.md` at its tag, and for the token counts `processStreamResponse` in `core/core/llm-chat.ts` and the converters named in [Token counts](#token-counts). Then run a session in a terminal, and compare the dashboard with `qwen sessions ps` on a machine where nothing else reads the list.

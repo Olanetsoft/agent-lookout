@@ -169,7 +169,8 @@ export interface CollectorOptions {
   /**
    * Reads when processes started, to tell a Claude Code session's process from
    * another that has since been given its pid, and again, with nothing
-   * remembered, before a session is stopped. Defaults to asking `ps`. Tests
+   * remembered, before a session is stopped, and to confirm a Qwen Code
+   * session's process before it is given Jump. Defaults to asking `ps`. Tests
    * pass their own, so that, with `readProcesses`, the collector runs no `ps`.
    */
   readProcessStarts?: ReadProcessStarts;
@@ -347,8 +348,9 @@ export function createCollector(options: CollectorOptions): Collector {
     keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory,
     ledger,
   );
-  // The panes the Claude Code adapter finds are the ones the jump route selects,
-  // so the two share one finder and one way of running tmux.
+  // The panes the Claude Code and Qwen Code adapters find are the ones the jump
+  // route selects, so they share one finder and one way of running tmux. Each
+  // adapter asks through an asker of its own, so neither drops the other's.
   const tmux = options.tmux ?? createTmuxRunner({ env });
   // A table a test hands in stands in for every `ps` the finders run: the pane
   // finder reads each process's parent from it.
@@ -358,7 +360,7 @@ export function createCollector(options: CollectorOptions): Collector {
     readParents: readProcesses && (async () => parentsIn(await readProcesses())),
     now,
   });
-  // The same for the tabs of Terminal and iTerm2: the adapter finds them and
+  // The same for the tabs of Terminal and iTerm2: the adapters find them and
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
@@ -477,8 +479,8 @@ export function createCollector(options: CollectorOptions): Collector {
       env: options.env,
       now,
       pollIntervalMs: intervalMs,
-      panes,
-      terminals: tabs,
+      panes: panes.asker(),
+      terminals: tabs.asker(),
       readProcessStarts: options.readProcessStarts,
       stops: stopTargets,
       platform,
@@ -520,6 +522,9 @@ export function createCollector(options: CollectorOptions): Collector {
       pollIntervalMs: intervalMs,
       platform,
       lastMessageLimits,
+      panes: panes.asker(),
+      terminals: tabs.asker(),
+      readProcessStarts: options.readProcessStarts,
     }),
     createHermesAgentAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),

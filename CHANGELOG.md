@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- Jump works for a Qwen Code session in tmux and in a tab of Terminal or iTerm2 on a Mac, as it does for Claude Code: it selects the session's pane, or brings its tab forward. Agent Lookout finds the place from the process ID in the session's record, with the same look at tmux and `ps` that serves Claude Code's sessions, so neither agent's sessions lose their Jump while the other's are listed. Qwen Code records no start time for its process on a Mac or Windows, so before it gives a session Jump, Agent Lookout asks `ps` when the process started, every 30 seconds, and sooner when another process is found in a pane or a tab. A session whose process started more than a minute after Qwen Code recorded it, as one given a crashed session's process ID does, gets none. `AGENT_LOOKOUT_TMUX=off` and `AGENT_LOOKOUT_TERMINAL_JUMP=off` turn it off for Qwen Code too, and What each agent can report, in Sources, says Partly for Qwen Code's Jump. This was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it (#186).
+
 ## 0.2.17 - 2026-11-03
 
 Gemini CLI and OpenCode sessions show what they last said, and Qwen Code sessions give the token counts of their newest reply.

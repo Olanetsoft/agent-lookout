@@ -1,4 +1,6 @@
-import { writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -8,12 +10,14 @@ import { createCollector } from "@collector/collector";
 import { MAX_JUMP_BODY_BYTES } from "@collector/jumpRoute";
 import { focusTabArgs, ITERM_SCRIPT, TERMINAL_SCRIPT } from "@collector/terminal/focusTab";
 import { TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFinder";
-import { PANE_LOOK_INTERVAL_MS } from "@collector/tmux/paneFinder";
+import { PANE_LOOK_INTERVAL_MS, PANE_LOOK_SOONEST_MS } from "@collector/tmux/paneFinder";
 import { LIST_CLIENTS_ARGS, describePaneArgs } from "@collector/tmux/selectPane";
 import { JUMP_INTERVAL_MS } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import { lstart } from "@tests/fixtures/antigravity";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
+import { registryRecord as qwenRecord, sessionIdOf } from "@tests/fixtures/qwen-code/qwenCode";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import {
@@ -32,6 +36,7 @@ import {
   TIMED_OUT,
   type ProcessRow,
 } from "@tests/support/node/terminal";
+import { startStandIn } from "@tests/support/node/standIns";
 import { fakeTmux } from "@tests/support/node/tmux";
 
 const T0 = 1_700_000_100_000;
@@ -62,6 +67,35 @@ function registry(): Record<string, string> {
   };
 }
 
+/** When the Qwen Code session's process registered it, as its record says. */
+const QWEN_REGISTERED = T0 - 30 * 60_000;
+const QWEN_ID = sessionIdOf(21);
+const QWEN_SESSION = `qwen-code:${QWEN_ID}`;
+
+/** The soonest both finders look again for a process that has turned up. */
+const SOONEST_MS = Math.max(PANE_LOOK_SOONEST_MS, TAB_LOOK_SOONEST_MS);
+
+/** A Qwen Code folder that lists one session in a terminal, whose process is `pid`. */
+async function qwenHome(pid: number): Promise<string> {
+  const home = await tempDir();
+  await mkdir(path.join(home, "sessions"));
+  await writeFile(
+    path.join(home, "sessions", `${pid}.json`),
+    qwenRecord({ pid, sessionId: QWEN_ID, kind: "tui", startedAt: QWEN_REGISTERED }),
+  );
+  return home;
+}
+
+/** A process in a tab of the app of its own: the app, a login and a shell on the tab's terminal. */
+function inTabOf(app: string, pid: number): ProcessRow[] {
+  return [
+    [700, 1, "??", app],
+    [701, 700, "ttys009", "/usr/bin/login"],
+    [702, 701, "ttys009", "-zsh"],
+    [pid, 702, "ttys009", "node"],
+  ];
+}
+
 /**
  * The processes `ps` would list with both sessions in one tab of the app: the
  * app, a login and a shell on the tab's terminal, this test's parent, the
@@ -81,19 +115,28 @@ function inOneTab(app: string): ProcessRow[] {
 /**
  * The collector as every host builds it, with its real Claude Code adapter
  * reading a folder of the test's own, a tmux that runs nothing: it lists one
- * pane, whose process is this test's, and writes down what it is asked, a
- * table of processes of the test's own, and an osascript that runs nothing and
- * writes down what it is asked. Served over real HTTP on a free loopback port.
+ * pane, whose process is this test's, and any more a test names, and writes
+ * down what it is asked, a table of processes of the test's own, a `ps` of
+ * start times that says each process started when a test says, by default a
+ * moment before the Qwen Code session's record was written, and an osascript
+ * that runs nothing and writes down what it is asked. Served over real HTTP on
+ * a free loopback port.
  */
-async function serve(env: Record<string, string> = {}, processes: ProcessRow[] = []) {
+async function serve(
+  env: Record<string, string> = {},
+  processes: ProcessRow[] = [],
+  more: { panes?: string[]; startedAt?: number } = {},
+) {
   const tmux = fakeTmux({
-    panes: [`${process.pid} %7 2 1 checkout-flow`],
+    panes: [`${process.pid} %7 2 1 checkout-flow`, ...(more.panes ?? [])],
     where: "$0 2 1 checkout-flow",
     clients: ["$0 /dev/ttys003", "$4 /dev/ttys004"],
   });
   const osascript = fakeOsascript();
   const ps = fakeProcesses(processes);
   const clock = { now: T0 };
+  const startedAt = more.startedAt ?? QWEN_REGISTERED - 2_000;
+  const starts: number[][] = [];
   const collector = createCollector({
     version: "9.9.9-test",
     env: {
@@ -115,34 +158,118 @@ async function serve(env: Record<string, string> = {}, processes: ProcessRow[] =
     tmux: tmux.run,
     osascript: osascript.run,
     readProcesses: ps.read,
+    readProcessStarts: async (pids) => {
+      starts.push([...pids]);
+      return new Map(pids.map((pid) => [pid, lstart(startedAt)]));
+    },
     now: () => clock.now,
   });
   const port = await listen(createServer(collector.handler));
   await collector.poller.pollOnce();
 
-  /** The request the dashboard's page makes, changed as a test says. */
   const jump = (sessionId: unknown = SESSION, options: TestRequest = {}) =>
-    request(port, "/api/jump", {
-      method: "POST",
-      body: JSON.stringify({ sessionId }),
-      ...options,
-      headers: {
-        Origin: `http://localhost:${port}`,
-        "Content-Type": "application/json",
-        "X-Agent-Lookout-Action": "jump",
-        ...options.headers,
-      },
-    });
+    jumpRequest(port, sessionId, options);
   const sessions = async () =>
     (await request(port, "/api/sessions")).json<SessionsSnapshot>().sessions;
   /** What tmux was asked after the first look for panes. */
   const asked = () => tmux.ran.slice(1);
 
-  return { port, tmux, osascript, ps, clock, collector, jump, sessions, asked };
+  return { port, tmux, osascript, ps, starts, clock, collector, jump, sessions, asked };
+}
+
+/** The request the dashboard's page makes for a jump, changed as a test says. */
+function jumpRequest(port: number, sessionId: unknown, options: TestRequest = {}) {
+  return request(port, "/api/jump", {
+    method: "POST",
+    body: JSON.stringify({ sessionId }),
+    ...options,
+    headers: {
+      Origin: `http://localhost:${port}`,
+      "Content-Type": "application/json",
+      "X-Agent-Lookout-Action": "jump",
+      ...options.headers,
+    },
+  });
 }
 
 const named = (sessions: Session[], name: string) =>
   sessions.find((session) => session.name === name);
+
+// The stand-in tmux is a POSIX sh script, and tmux is never run on Windows.
+const posixTest = test.skipIf(process.platform === "win32");
+
+/**
+ * A stand-in `tmux`, alone in a folder of its own, that leaves a mark each time
+ * it is started and, asked for its panes, lists these. A program written
+ * moments ago can take seconds to start the first time on a busy machine, more
+ * than the 2 seconds tmux is given, so it is started once here, with no limit,
+ * and the mark that leaves is removed.
+ */
+async function stubTmux(panes: string[]): Promise<{ bin: string; mark: string }> {
+  const folder = await tempDir();
+  const bin = path.join(folder, "bin");
+  const mark = path.join(folder, "ran");
+  await mkdir(bin);
+  const file = path.join(bin, "tmux");
+  const listed = panes.map((pane) => `  echo '${pane}'`).join("\n");
+  await writeFile(
+    file,
+    `#!/bin/sh\n: > '${mark}'\nif [ "$2" = list-panes ]; then\n${listed}\nfi\n`,
+  );
+  await chmod(file, 0o755);
+  execFileSync(file);
+  await rm(mark);
+  return { bin, mark };
+}
+
+/**
+ * The collector as every host builds it, with the Claude Code sessions of
+ * `serve` and, given a pid, a Qwen Code session whose process it is, and with
+ * tmux run as the collector runs it, found on a `PATH` that holds only a
+ * stand-in. That lists a pane for this test's process and one for the Qwen
+ * Code session's. Polled twice, a look for a process that turned up apart, so
+ * both adapters' processes are looked for.
+ */
+async function serveStubTmux(env: Record<string, string>, qwenPid?: number) {
+  const panes = [`${process.pid} %7 2 1 checkout-flow`];
+  if (qwenPid !== undefined) panes.push(`${qwenPid} %8 0 0 search-indexing`);
+  const tmux = await stubTmux(panes);
+  const clock = { now: T0 };
+  const collector = createCollector({
+    version: "9.9.9-test",
+    env: {
+      AGENT_LOOKOUT_HISTORY: "off",
+      AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+      AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
+      AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+      AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
+      AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+      AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
+      AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
+      AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+      AGENT_LOOKOUT_QWEN_HOME: qwenPid === undefined ? await tempDir() : await qwenHome(qwenPid),
+      AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
+      AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
+      PATH: tmux.bin,
+      ...env,
+    },
+    notifier: fakeSystemNotifier(),
+    osascript: fakeOsascript().run,
+    readProcesses: fakeProcesses().read,
+    readProcessStarts: async (pids) =>
+      new Map(pids.map((pid) => [pid, lstart(QWEN_REGISTERED - 2_000)])),
+    now: () => clock.now,
+  });
+  const port = await listen(createServer(collector.handler));
+  await collector.poller.pollOnce();
+  clock.now += SOONEST_MS;
+  await collector.poller.pollOnce();
+
+  const sessions = async () =>
+    (await request(port, "/api/sessions")).json<SessionsSnapshot>().sessions;
+  const jump = (sessionId: string) => jumpRequest(port, sessionId);
+  return { mark: tmux.mark, sessions, jump };
+}
 
 describe("what the dashboard is told", () => {
   test("a session whose process runs in a pane names the place, and the pane's id stays with the collector", async () => {
@@ -202,36 +329,34 @@ describe("what the dashboard is told", () => {
     expect(new Set(server.tmux.names())).toEqual(new Set(["list-panes"]));
   });
 
-  test("with AGENT_LOOKOUT_TMUX off, the tmux on this machine is never run and no session has a jump", async () => {
-    const collector = createCollector({
-      version: "9.9.9-test",
-      env: {
-        AGENT_LOOKOUT_HISTORY: "off",
-        AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
-        AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(registry()),
-        AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
-        AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
-        AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
-        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
-        AGENT_LOOKOUT_GEMINI_CLI_HOME: await tempDir(),
-        AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
-        AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
-        AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
-        AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
-        AGENT_LOOKOUT_TMUX: "off",
-      },
-      notifier: fakeSystemNotifier(),
-      osascript: fakeOsascript().run,
-      readProcesses: fakeProcesses().read,
-      now: () => T0,
-    });
-    const port = await listen(createServer(collector.handler));
-    await collector.poller.pollOnce();
-    const { sessions } = (await request(port, "/api/sessions")).json<SessionsSnapshot>();
+  posixTest(
+    "with AGENT_LOOKOUT_TMUX off, the tmux on this machine is never run and no session has a jump",
+    async () => {
+      const server = await serveStubTmux({ AGENT_LOOKOUT_TMUX: "off" });
+      const sessions = await server.sessions();
 
-    expect(sessions.map((session) => session.name).sort()).toEqual(["checkout-flow", "docs-site"]);
-    for (const session of sessions) expect(session).not.toHaveProperty("jump");
-  });
+      expect(sessions.map((session) => session.name).sort()).toEqual([
+        "checkout-flow",
+        "docs-site",
+      ]);
+      for (const session of sessions) expect(session).not.toHaveProperty("jump");
+      expect((await server.jump(SESSION)).status).toBe(404);
+      expect(existsSync(server.mark)).toBe(false);
+    },
+  );
+
+  posixTest(
+    "without it, the same collector runs the tmux on its PATH, and the session in a pane has a jump",
+    async () => {
+      const server = await serveStubTmux({});
+
+      expect(named(await server.sessions(), "checkout-flow")?.jump).toEqual({
+        kind: "tmux",
+        place: "checkout-flow:2.1",
+      });
+      expect(existsSync(server.mark)).toBe(true);
+    },
+  );
 });
 
 describe("POST /api/jump", () => {
@@ -504,6 +629,181 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
     expect((await server.jump(ELSEWHERE)).status).toBe(404);
     expect(server.osascript.ran).toEqual([]);
   });
+});
+
+// Each test starts a stand-in whose start time `ps` gives, and Windows has no
+// `ps`. Agent Lookout gives a Qwen Code session no Jump on Windows.
+describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code session", () => {
+  /**
+   * The collector with a Qwen Code session whose process is a stand-in this
+   * test starts, beside the Claude Code sessions, polled again once a look
+   * for a process that turned up is due: the two adapters look at once, so
+   * the one that names its process second waits for the next look.
+   */
+  async function serveQwen(
+    env: Record<string, string> = {},
+    processes: (pid: number) => ProcessRow[] = () => [],
+    more: { inPane?: boolean; startedAt?: number } = {},
+  ) {
+    const standIn = await startStandIn();
+    const server = await serve(
+      { AGENT_LOOKOUT_QWEN_HOME: await qwenHome(standIn.pid), ...env },
+      processes(standIn.pid),
+      {
+        panes: more.inPane === false ? [] : [`${standIn.pid} %8 0 0 search-indexing`],
+        startedAt: more.startedAt,
+      },
+    );
+    server.clock.now += SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    return { ...server, standIn };
+  }
+
+  const qwenOf = (sessions: Session[]) => sessions.find((session) => session.id === QWEN_SESSION);
+
+  test("a session whose process runs in a pane names the place, and Claude Code's keep theirs", async () => {
+    const server = await serveQwen();
+    const sessions = await server.sessions();
+
+    expect(qwenOf(sessions)).toMatchObject({ source: "qwen-code", pid: server.standIn.pid });
+    expect(qwenOf(sessions)?.jump).toEqual({ kind: "tmux", place: "search-indexing:0.0" });
+    expect(named(sessions, "checkout-flow")?.jump).toEqual({
+      kind: "tmux",
+      place: "checkout-flow:2.1",
+    });
+
+    // Over a beat of polls, both keep their place, and tmux is asked on the beat alone.
+    const looks = server.tmux.names().length;
+    for (let polls = 0; polls < 12; polls += 1) {
+      server.clock.now += 2_000;
+      await server.collector.poller.pollOnce();
+    }
+    server.clock.now = T0 + SOONEST_MS + PANE_LOOK_INTERVAL_MS;
+    await server.collector.poller.pollOnce();
+    const later = await server.sessions();
+    expect(qwenOf(later)?.jump).toEqual({ kind: "tmux", place: "search-indexing:0.0" });
+    expect(named(later, "checkout-flow")?.jump).toEqual({
+      kind: "tmux",
+      place: "checkout-flow:2.1",
+    });
+    expect(server.tmux.names().length).toBe(looks + 1);
+  });
+
+  test("Jump selects the session's pane, and then a Claude Code session's", async () => {
+    const server = await serveQwen();
+    server.tmux.where = "$1 0 0 search-indexing";
+    const before = server.tmux.ran.length;
+    const response = await server.jump(QWEN_SESSION);
+
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({ ok: true, kind: "tmux", place: "search-indexing:0.0" });
+    expect(server.tmux.ran.slice(before)).toEqual([
+      ["select-window", "-t", "%8"],
+      ["select-pane", "-t", "%8"],
+      describePaneArgs("%8"),
+      [...LIST_CLIENTS_ARGS],
+      ["switch-client", "-c", "/dev/ttys003", "-t", "%8"],
+      ["switch-client", "-c", "/dev/ttys004", "-t", "%8"],
+    ]);
+
+    server.clock.now += JUMP_INTERVAL_MS;
+    server.tmux.where = "$0 2 1 checkout-flow";
+    expect((await server.jump()).json()).toEqual({
+      ok: true,
+      kind: "tmux",
+      place: "checkout-flow:2.1",
+    });
+  });
+
+  test("a session in a tab of Terminal is given the app, and Jump brings the tab forward", async () => {
+    const server = await serveQwen({}, (pid) => inTabOf(TERMINAL_PATH, pid), { inPane: false });
+
+    expect(qwenOf(await server.sessions())?.jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    const response = await server.jump(QWEN_SESSION);
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    expect(server.osascript.ran).toEqual([focusTabArgs({ app: "Terminal", tty: "/dev/ttys009" })]);
+  });
+
+  test("a process that started after the session's record was written has no jump, and Jump finds no pane", async () => {
+    const server = await serveQwen({}, () => [], { startedAt: T0 - 60_000 });
+
+    expect(qwenOf(await server.sessions())).toMatchObject({ pid: server.standIn.pid });
+    expect(qwenOf(await server.sessions())).not.toHaveProperty("jump");
+    // ps was asked when the process in the pane started.
+    expect(server.starts).toContainEqual([server.standIn.pid]);
+
+    const response = await server.jump(QWEN_SESSION);
+    expect(response.status).toBe(404);
+    expect(new Set(server.tmux.names())).toEqual(new Set(["list-panes"]));
+  });
+
+  test("a session whose process has ended has no jump, and Jump finds no pane", async () => {
+    const server = await serveQwen();
+    expect(qwenOf(await server.sessions())?.jump).toMatchObject({ kind: "tmux" });
+
+    process.kill(server.standIn.pid, "SIGTERM");
+    await server.standIn.exited;
+    server.clock.now += 2_000;
+    await server.collector.poller.pollOnce();
+
+    const ended = qwenOf(await server.sessions());
+    expect(ended).toMatchObject({ status: "finished", alive: false });
+    expect(ended).not.toHaveProperty("jump");
+    const before = server.tmux.ran.length;
+    expect((await server.jump(QWEN_SESSION)).status).toBe(404);
+    expect(server.tmux.ran.slice(before)).toEqual([]);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, a session in a tab has no jump, and osascript is not run", async () => {
+    const server = await serveQwen(
+      { AGENT_LOOKOUT_TERMINAL_JUMP: "off" },
+      (pid) => inTabOf(TERMINAL_PATH, pid),
+      { inPane: false },
+    );
+
+    expect(qwenOf(await server.sessions())).toBeDefined();
+    expect(qwenOf(await server.sessions())).not.toHaveProperty("jump");
+    expect((await server.jump(QWEN_SESSION)).status).toBe(404);
+    expect(server.osascript.ran).toEqual([]);
+  });
+
+  posixTest(
+    "with AGENT_LOOKOUT_TMUX off, the tmux on this machine is never run and the session has no jump",
+    async () => {
+      const standIn = await startStandIn();
+      const server = await serveStubTmux({ AGENT_LOOKOUT_TMUX: "off" }, standIn.pid);
+      const sessions = await server.sessions();
+
+      expect(qwenOf(sessions)).toMatchObject({ source: "qwen-code", alive: true });
+      for (const session of sessions) expect(session).not.toHaveProperty("jump");
+      expect((await server.jump(QWEN_SESSION)).status).toBe(404);
+      expect(existsSync(server.mark)).toBe(false);
+    },
+  );
+
+  posixTest(
+    "without it, the same collector runs the tmux on its PATH, and the session has its pane",
+    async () => {
+      const standIn = await startStandIn();
+      const server = await serveStubTmux({}, standIn.pid);
+
+      expect(qwenOf(await server.sessions())?.jump).toEqual({
+        kind: "tmux",
+        place: "search-indexing:0.0",
+      });
+      expect(existsSync(server.mark)).toBe(true);
+    },
+  );
 });
 
 describe("what POST /api/jump refuses", () => {

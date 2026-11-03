@@ -1,9 +1,9 @@
 ---
 title: Jump to a session's window
-description: Press Jump to go from the dashboard to the VS Code window, tmux pane, or Terminal or iTerm2 tab a Claude Code session runs in.
+description: Press Jump to go from the dashboard to the VS Code window, tmux pane, or Terminal or iTerm2 tab a Claude Code or Qwen Code session runs in.
 ---
 
-The Jump button is in the Needs you panel, in the Sessions list or on a session's card on the board, and in a session's details. Only Claude Code sessions have it. For another agent, such as Codex or Gemini CLI, switch to its session yourself. Jump never sends keys or text to a session.
+The Jump button is in the Needs you panel, in the Sessions list or on a session's card on the board, and in a session's details. Claude Code and Qwen Code sessions have it. For another agent, such as Codex or Gemini CLI, switch to its session yourself. Jump never sends keys or text to a session.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="../site/assets/features/jump-stop-day-1000.webp">
@@ -20,11 +20,11 @@ Find where your session runs:
 | A tmux pane                                | Yes   | Yes   | No      |
 | A tab of Terminal or iTerm2                | Yes   | No    | No      |
 
-A session in the Claude Code desktop app has no button. Nor does one in another terminal, such as Warp or Ghostty, unless it runs inside tmux there. A session on another machine has none. A session whose process has ended has none either, unless it is in VS Code.
+A Qwen Code session has the button in a tmux pane and in a tab of Terminal or iTerm2, as a Claude Code session does. A session in the Claude Code desktop app has no button. Nor does one in another terminal, such as Warp or Ghostty, unless it runs inside tmux there. A session on another machine has none. A session whose process has ended has none either, unless it is in VS Code.
 
 ## Terminal or iTerm2 on a Mac
 
-You need Claude Code running directly in the tab. A session inside tmux is reached through tmux, even when tmux runs in a Terminal tab. A session inside another program that makes its own terminal, such as `script`, gets no button.
+You need Claude Code or Qwen Code running directly in the tab. A session inside tmux is reached through tmux, even when tmux runs in a Terminal tab. A session inside another program that makes its own terminal, such as `script`, gets no button.
 
 1. Open a Terminal tab, and start Claude Code in your project folder:
 
@@ -32,6 +32,8 @@ You need Claude Code running directly in the tab. A session inside tmux is reach
    cd ~/code/storefront
    claude
    ```
+
+   For Qwen Code, run `qwen` instead of `claude`.
 
 2. Open another tab, and start Agent Lookout. The first time, npm asks `Ok to proceed? (y)`. Press Enter.
 
@@ -52,7 +54,7 @@ To change the answer later, open System Settings, then Privacy & Security, then 
 
 You need macOS or Linux, and Agent Lookout started where the `tmux` command reaches the session's server: inside that server, or outside tmux for the default server. A session in another server, such as one started with `tmux -L`, gets no button.
 
-1. Start a tmux session in your project folder, and start Claude Code in its first window:
+1. Start a tmux session in your project folder, and start Claude Code in its first window, or Qwen Code with `qwen`:
 
    ```bash
    cd ~/code/storefront
@@ -67,7 +69,7 @@ You need macOS or Linux, and Agent Lookout started where the `tmux` command reac
    ```
 
 3. Open `http://127.0.0.1:4777` in your browser, and point at the session's Jump button. It reads `tmux, checkout-flow:0.0`: the tmux session's name, then the window's and the pane's numbers, as your tmux counts them.
-4. Press Jump. The row says "Selected in tmux", and your terminal shows Claude Code's window again, with its pane selected. Jump does not bring your terminal app to the front, so switch to it yourself.
+4. Press Jump. The row says "Selected in tmux", and your terminal shows the session's window again, with its pane selected. Jump does not bring your terminal app to the front, so switch to it yourself.
 
 A terminal attached to another tmux session of the same server switches to the pane's session too. With no terminal attached, you see the pane when you next attach.
 
@@ -87,9 +89,9 @@ Here Jump is a link your browser opens, `vscode://anthropic.claude-code/open?ses
 
 ### No Jump button
 
-- **Symptom:** A Claude Code session that runs in tmux, in VS Code or in a Terminal or iTerm2 tab has no Jump button.
-- **Cause:** Agent Lookout found no window it can reach. In tmux, the session runs in a server Agent Lookout does not reach, such as one started with `tmux -L`, or the default server while Agent Lookout runs inside another one. In a Terminal or iTerm2 tab, Claude Code runs inside another program that makes its own terminal, such as `script`. In VS Code, Agent Lookout cannot read the session registry at `~/.claude/sessions`, so it cannot tell which app the session runs in. A session that has just started is also a few seconds without its button. With `AGENT_LOOKOUT_TMUX` or `AGENT_LOOKOUT_TERMINAL_JUMP` set to `off`, that part finds nothing.
-- **Fix:** For tmux, run the `list-panes` command above. If the session's pane is not listed, start Agent Lookout where `tmux` reaches the session's server. For Terminal or iTerm2, start Claude Code directly in the tab. For VS Code, start Agent Lookout with your own `HOME`, on the computer where VS Code runs. If you set `AGENT_LOOKOUT_CLAUDE_HOME`, point it at the Claude Code folder that holds `sessions`.
+- **Symptom:** A Claude Code session that runs in tmux, in VS Code or in a Terminal or iTerm2 tab has no Jump button, or a Qwen Code session in tmux or in a tab has none.
+- **Cause:** Agent Lookout found no window it can reach. In tmux, the session runs in a server Agent Lookout does not reach, such as one started with `tmux -L`, or the default server while Agent Lookout runs inside another one. In a Terminal or iTerm2 tab, the agent runs inside another program that makes its own terminal, such as `script`. In VS Code, Agent Lookout cannot read the session registry at `~/.claude/sessions`, so it cannot tell which app the session runs in. A Qwen Code session gets the button only once `ps` says its process started by the time Qwen Code recorded the session, give or take a minute, so one whose process ID another program has taken since a crash has none. A session that has just started is also a few seconds without its button. With `AGENT_LOOKOUT_TMUX` or `AGENT_LOOKOUT_TERMINAL_JUMP` set to `off`, that part finds nothing.
+- **Fix:** For tmux, run the `list-panes` command above. If the session's pane is not listed, start Agent Lookout where `tmux` reaches the session's server. For Terminal or iTerm2, start Claude Code or Qwen Code directly in the tab. For VS Code, start Agent Lookout with your own `HOME`, on the computer where VS Code runs. If you set `AGENT_LOOKOUT_CLAUDE_HOME`, point it at the Claude Code folder that holds `sessions`.
 
 ### "No tmux pane found" or "No tab found"
 
@@ -111,7 +113,7 @@ Here Jump is a link your browser opens, `vscode://anthropic.claude-code/open?ses
 
 ## How it works
 
-Agent Lookout reads Claude Code's session registry, `~/.claude/sessions`. Each file names the app a session was started from, in its `entrypoint`. A session started by the VS Code extension gets its link from that. For a session whose process runs, Agent Lookout follows the process up through its parents. It stops at the process tmux started in a pane or, on macOS, at the Terminal or iTerm2 program. A pane comes before a tab, and on the page a VS Code link comes before both. A press selects the pane by its own ID, or runs `osascript` with a fixed script that brings the tab forward.
+Agent Lookout reads Claude Code's session registry, `~/.claude/sessions`. Each file names the app a session was started from, in its `entrypoint`. A session started by the VS Code extension gets its link from that. For a session whose process runs, Agent Lookout follows the process up through its parents. It stops at the process tmux started in a pane or, on macOS, at the Terminal or iTerm2 program. For Qwen Code it reads the list of running sessions Qwen Code keeps in `~/.qwen/sessions`, whose records name each session's process, follows the process the same way, and asks `ps` when that process started, to be sure it is the one that wrote the record. A pane comes before a tab, and on the page a VS Code link comes before both. A press selects the pane by its own ID, or runs `osascript` with a fixed script that brings the tab forward.
 
 To turn off the tmux part, set `AGENT_LOOKOUT_TMUX=off`. To turn off the tab part, set `AGENT_LOOKOUT_TERMINAL_JUMP=off`. Nothing turns off the VS Code link.
 
