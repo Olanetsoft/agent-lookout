@@ -32,6 +32,7 @@ import {
   MINUTE,
   NOW,
   OPENAI_USAGE,
+  PID_NAMESPACE,
   PRIVATE_TOKEN,
   PRIVATE_WORDS,
   PROJECT,
@@ -41,6 +42,7 @@ import {
   registryRecord,
   SECOND,
   sessionIdOf,
+  startToken,
   titleLine,
   toolResultLine,
 } from "@tests/fixtures/qwen-code/qwenCode";
@@ -51,6 +53,7 @@ import {
   qwenCodeAdapterFor,
   standInProcesses,
   standInStarts,
+  standInTokens,
   watching,
   type MemoryFiles,
 } from "@tests/support/adapters/qwenCodeAdapter";
@@ -73,6 +76,9 @@ function addSession(
     lines?: string[];
     mtimeMs?: number;
     name?: string;
+    /** The start token and namespace a record written on Linux carries. */
+    procStart?: string;
+    pidNs?: number;
   },
 ) {
   files.write(
@@ -82,6 +88,8 @@ function addSession(
       sessionId: options.sessionId,
       startedAt: options.startedAt ?? NOW - 30 * MINUTE,
       kind: options.kind ?? "tui",
+      procStart: options.procStart,
+      pidNs: options.pidNs,
     }),
   );
   if (options.lines) {
@@ -691,7 +699,23 @@ describe("Jump", () => {
       [`qwen-code:${sessionIdOf(4)}`, { kind: "tmux", place: "api-rate-limits:0.1" }],
     ]);
     expect(JSON.stringify(sessions)).not.toContain("%3");
-    // ps was asked when the process in the pane started, and about no other.
+    // On a Mac, ps was asked when each open session's process started, in one
+    // run, and that answer serves Jump too.
+    expect(ps.runs).toEqual([[41001, 41004]]);
+  });
+
+  test("on Linux, ps is asked about the process found in a pane, and about no other", async () => {
+    const ps = ownStarts();
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      platform: "linux",
+      panes: knownPanes({ 41004: pane }),
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(jumps(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, undefined],
+      [`qwen-code:${sessionIdOf(4)}`, { kind: "tmux", place: "api-rate-limits:0.1" }],
+    ]);
     expect(ps.runs).toEqual([[41004]]);
   });
 
@@ -712,7 +736,7 @@ describe("Jump", () => {
     expect(JSON.stringify(sessions)).not.toContain("ttys");
   });
 
-  test("a process that started after its session's record was written has no Jump: another program was given the pid", async () => {
+  test("a process that started after its session's record was written was given the pid: on a Mac the session is finished, with no Jump", async () => {
     const ps = standInStarts({ 41001: NOW - 5 * MINUTE, 41004: REGISTERED - 2_000 });
     const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
       panes: knownPanes({ 41001: pane }),
@@ -721,10 +745,25 @@ describe("Jump", () => {
     }).poll();
 
     expect(jumps(sessions)).toEqual([
-      [`qwen-code:${sessionIdOf(1)}`, undefined],
       [`qwen-code:${sessionIdOf(4)}`, { kind: "terminal", app: "iTerm2", place: "iTerm2" }],
+      [`qwen-code:${sessionIdOf(1)}`, undefined],
     ]);
-    // It is listed as it was.
+    expect(sessions[1]).toMatchObject({ status: "finished", pid: 41001, alive: false });
+  });
+
+  test("on Linux, a process ps says started after its record was written has no Jump, and its session is as its token says", async () => {
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE, 41004: REGISTERED - 2_000 });
+    const { sessions } = await qwenCodeAdapterFor(twoSessions(), {
+      platform: "linux",
+      panes: knownPanes({ 41001: pane, 41004: pane }),
+      readProcessStarts: ps.read,
+    }).poll();
+
+    expect(jumps(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, undefined],
+      [`qwen-code:${sessionIdOf(4)}`, { kind: "tmux", place: "api-rate-limits:0.1" }],
+    ]);
+    // These records have no token, so it is listed as it was.
     expect(sessions[0]).toMatchObject({ status: "working", pid: 41001, alive: true });
   });
 
@@ -739,10 +778,27 @@ describe("Jump", () => {
     expect(sessions.every((session) => session.jump === undefined)).toBe(true);
   });
 
-  test("ps is asked about the processes found in a pane or a tab, at most once in 30 seconds", async () => {
+  test("on a Mac, ps is asked about every open session's process, at most once in 30 seconds", async () => {
     const ps = ownStarts();
     const clock = handClock();
     const adapter = qwenCodeAdapterFor(twoSessions(), {
+      now: clock.now,
+      panes: knownPanes({ 41001: pane }),
+      terminals: knownTabs({}),
+      readProcessStarts: ps.read,
+    });
+    for (let polls = 0; polls < 10; polls += 1) {
+      expect(jumps((await adapter.poll()).sessions)[0]?.[1]).toMatchObject({ kind: "tmux" });
+      clock.advance(2_000);
+    }
+    expect(ps.runs).toEqual([[41001, 41004]]);
+  });
+
+  test("on Linux, ps is asked about the processes found in a pane or a tab, at most once in 30 seconds", async () => {
+    const ps = ownStarts();
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(twoSessions(), {
+      platform: "linux",
       now: clock.now,
       panes: knownPanes({ 41001: pane }),
       terminals: knownTabs({}),
@@ -816,17 +872,32 @@ describe("Jump", () => {
     expect(terminals.looked).toEqual([[]]);
   });
 
-  test("without a finder no pane or tab is looked for, ps is not asked, and the sessions are as they were", async () => {
-    const ps = ownStarts();
-    const without = await qwenCodeAdapterFor(twoSessions(), { readProcessStarts: ps.read }).poll();
-    const withFinders = await qwenCodeAdapterFor(twoSessions(), {
-      panes: knownPanes({}),
-      terminals: knownTabs({}),
-      readProcessStarts: ps.read,
-    }).poll();
+  test("without a finder no pane or tab is looked for, and the sessions are as they were", async () => {
+    for (const platform of ["darwin", "linux"] as const) {
+      const ps = ownStarts();
+      const without = await qwenCodeAdapterFor(twoSessions(), {
+        platform,
+        readProcessStarts: ps.read,
+      }).poll();
+      const withFinders = await qwenCodeAdapterFor(twoSessions(), {
+        platform,
+        panes: knownPanes({}),
+        terminals: knownTabs({}),
+        readProcessStarts: ps.read,
+      }).poll();
 
-    expect(withFinders.sessions).toEqual(without.sessions);
-    expect(ps.runs).toEqual([]);
+      expect(withFinders.sessions, platform).toEqual(without.sessions);
+      // On a Mac ps still tells each open session's process, once for each
+      // adapter. On Linux it is asked only for Jump.
+      expect(ps.runs, platform).toEqual(
+        platform === "darwin"
+          ? [
+              [41001, 41004],
+              [41001, 41004],
+            ]
+          : [],
+      );
+    }
   });
 
   test("the health of the source says nothing of Jump, found or not", async () => {
@@ -1032,6 +1103,270 @@ describe("closed sessions", () => {
     expect((await adapter.poll()).sessions.map((session) => session.id)).toEqual([
       `qwen-code:${sessionIdOf(5)}`,
     ]);
+  });
+});
+
+describe("a record whose pid another program was given", () => {
+  const REGISTERED = NOW - 30 * MINUTE;
+  const asked = (ask: string) => [
+    promptLine(NOW - 2 * MINUTE),
+    lifecycleLine(NOW - MINUTE, "ended"),
+    assistantLine(NOW - MINUTE, { asks: ask }),
+  ];
+
+  /** Two sessions written on Linux, at pids 41001 and 41004, each with its start token. */
+  function linuxSessions(more: { pidNs?: number } = {}) {
+    const files = memoryFiles();
+    for (const [pid, n, ticks] of [
+      [41001, 1, 500],
+      [41004, 4, 900],
+    ] as const) {
+      addSession(files, {
+        pid,
+        sessionId: sessionIdOf(n),
+        startedAt: REGISTERED,
+        procStart: startToken(ticks),
+        pidNs: more.pidNs ?? PID_NAMESPACE,
+        lines: [promptLine(NOW - MINUTE, { sessionId: sessionIdOf(n) })],
+      });
+    }
+    return files;
+  }
+
+  const onLinux = (tokens: ReturnType<typeof standInTokens>, more: object = {}) => ({
+    platform: "linux" as const,
+    readStartTokens: tokens.read,
+    readPidNamespace: async () => PID_NAMESPACE,
+    ...more,
+  });
+
+  const statuses = (sessions: { id: string; status: string; alive?: boolean }[]) =>
+    sessions.map((session) => [session.id, session.status, session.alive]);
+
+  test("on Linux, a session whose process has its token is open, and one whose pid another program has is finished", async () => {
+    const tokens = standInTokens({ 41001: startToken(500), 41004: startToken(77_000) });
+    const { sessions } = await qwenCodeAdapterFor(linuxSessions(), onLinux(tokens)).poll();
+
+    expect(statuses(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, "working", true],
+      [`qwen-code:${sessionIdOf(4)}`, "finished", false],
+    ]);
+    // One read for both, and only the records' own pids.
+    expect(tokens.reads).toEqual([[41001, 41004]]);
+  });
+
+  test("on Linux, a token from before the computer restarted is another process's", async () => {
+    const restarted = startToken(500, "00000000-0000-4000-8000-00000000b002");
+    const tokens = standInTokens({ 41001: restarted, 41004: startToken(900) });
+    const { sessions } = await qwenCodeAdapterFor(linuxSessions(), onLinux(tokens)).poll();
+
+    expect(statuses(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(4)}`, "working", true],
+      [`qwen-code:${sessionIdOf(1)}`, "finished", false],
+    ]);
+  });
+
+  test("on Linux, a token that cannot be read keeps the session open, as Qwen Code keeps its record", async () => {
+    const tokens = standInTokens({ 41004: startToken(900) });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(linuxSessions(), onLinux(tokens, { now: clock.now }));
+    expect(statuses((await adapter.poll()).sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, "working", true],
+      [`qwen-code:${sessionIdOf(4)}`, "working", true],
+    ]);
+
+    tokens.fails = true;
+    clock.advance(30 * SECOND);
+    expect((await adapter.poll()).sessions.map((session) => session.status)).toEqual([
+      "working",
+      "working",
+    ]);
+    expect(tokens.reads).toHaveLength(2);
+  });
+
+  test("on Linux, a session seen open is finished once its pid goes to another program, and stays finished", async () => {
+    const files = linuxSessions();
+    const tokens = standInTokens({ 41001: startToken(500), 41004: startToken(900) });
+    const processes = standInProcesses([41001, 41004]);
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(
+      files,
+      onLinux(tokens, { now: clock.now, isAlive: processes.isAlive }),
+    );
+    await adapter.poll();
+
+    // Qwen Code crashes, so its record stays, and later another program gets its pid.
+    processes.stop(41001);
+    clock.advance(2_000);
+    const closed = await adapter.poll();
+    expect(closed.sessions[1]).toMatchObject({ status: "finished", statusSince: NOW + 2_000 });
+
+    processes.start(41001);
+    tokens.tokens.set(41001, startToken(64_000));
+    clock.advance(30 * SECOND);
+    const later = await adapter.poll();
+    expect(statuses(later.sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(4)}`, "working", true],
+      [`qwen-code:${sessionIdOf(1)}`, "finished", false],
+    ]);
+    expect(later.sessions[1]).toMatchObject({ statusSince: NOW + 2_000 });
+  });
+
+  test("on Linux, the tokens are read only for records whose pid runs, at most once in 30 seconds", async () => {
+    const tokens = standInTokens({ 41001: startToken(500) });
+    const clock = handClock();
+    const adapter = qwenCodeAdapterFor(
+      linuxSessions(),
+      onLinux(tokens, { now: clock.now, isAlive: (pid: number) => pid === 41001 }),
+    );
+    for (let polls = 0; polls < 10; polls += 1) {
+      await adapter.poll();
+      clock.advance(2_000);
+    }
+    expect(tokens.reads).toEqual([[41001]]);
+  });
+
+  test("on Linux, a record from another pid namespace is not listed, and the Sources view says so", async () => {
+    const tokens = standInTokens({ 41001: startToken(500), 41004: startToken(900) });
+    const container = await qwenCodeAdapterFor(
+      linuxSessions({ pidNs: 4026532001 }),
+      onLinux(tokens),
+    ).poll();
+    expect(container.sessions).toEqual([]);
+    expect(container.health.detail).toBe(`${healthy()} ${ELSEWHERE_NOTE}`);
+    expect(tokens.reads).toEqual([]);
+
+    // While Agent Lookout's own namespace cannot be read, none is left out.
+    const unread = await qwenCodeAdapterFor(
+      linuxSessions({ pidNs: 4026532001 }),
+      onLinux(tokens, { readPidNamespace: async () => null }),
+    ).poll();
+    expect(unread.sessions.map((session) => session.status)).toEqual(["working", "working"]);
+  });
+
+  test("on Linux, a record that names no namespace and has no token is checked with signal 0 alone", async () => {
+    const files = memoryFiles();
+    addSession(files, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
+    const tokens = standInTokens({ 41001: startToken(500) });
+    const { sessions } = await qwenCodeAdapterFor(files, onLinux(tokens)).poll();
+
+    expect(statuses(sessions)).toEqual([[`qwen-code:${ID}`, "working", true]]);
+    expect(tokens.reads).toEqual([]);
+  });
+
+  test.each(["ask_user_question", "exit_plan_mode"])(
+    "a session that crashed while it asked, with %s, and whose pid another program has, is finished, on Linux and on a Mac",
+    async (ask) => {
+      const files = memoryFiles();
+      addSession(files, {
+        pid: 41001,
+        sessionId: ID,
+        startedAt: REGISTERED,
+        procStart: startToken(500),
+        pidNs: PID_NAMESPACE,
+        lines: asked(ask),
+        mtimeMs: NOW - MINUTE,
+      });
+      const tokens = standInTokens({ 41001: startToken(64_000) });
+      const linux = await qwenCodeAdapterFor(files, onLinux(tokens)).poll();
+
+      const mac = memoryFiles();
+      addSession(mac, {
+        pid: 41001,
+        sessionId: ID,
+        startedAt: REGISTERED,
+        lines: asked(ask),
+        mtimeMs: NOW - MINUTE,
+      });
+      const ps = standInStarts({ 41001: NOW - 5 * MINUTE });
+      const darwin = await qwenCodeAdapterFor(mac, { readProcessStarts: ps.read }).poll();
+
+      for (const { sessions } of [linux, darwin]) {
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0]).toMatchObject({
+          status: "finished",
+          statusSince: NOW - MINUTE,
+          alive: false,
+        });
+        expect(sessions[0]).not.toHaveProperty("waitingReason");
+      }
+    },
+  );
+
+  test("a record found to be another program's stays finished while its pid runs, though a later check cannot answer", async () => {
+    // On Linux, by its token.
+    const tokens = standInTokens({ 41001: startToken(500), 41004: startToken(64_000) });
+    const linuxClock = handClock();
+    const linux = qwenCodeAdapterFor(linuxSessions(), onLinux(tokens, { now: linuxClock.now }));
+    // On a Mac, by when ps says its process started.
+    const mac = memoryFiles();
+    addSession(mac, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE });
+    const macClock = handClock();
+    const darwin = qwenCodeAdapterFor(mac, { now: macClock.now, readProcessStarts: ps.read });
+
+    const before = [(await linux.poll()).sessions, (await darwin.poll()).sessions];
+    tokens.fails = true;
+    ps.fails = true;
+    linuxClock.advance(30 * SECOND);
+    macClock.advance(30 * SECOND);
+    const after = [(await linux.poll()).sessions, (await darwin.poll()).sessions];
+
+    expect(after).toEqual(before);
+    expect(after.flat().filter((session) => session.status === "finished")).toHaveLength(2);
+    expect(tokens.reads).toHaveLength(2);
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  test("on a Mac, a session ps says started by its record's time is open, one that started after is finished, and one ps cannot tell is open", async () => {
+    const files = memoryFiles();
+    for (const n of [1, 4, 6]) {
+      addSession(files, {
+        pid: 41000 + n,
+        sessionId: sessionIdOf(n),
+        startedAt: REGISTERED,
+        lines: [promptLine(NOW - MINUTE, { sessionId: sessionIdOf(n) })],
+      });
+    }
+    const ps = standInStarts({ 41001: REGISTERED - 2 * SECOND, 41004: REGISTERED + 10 * MINUTE });
+    const { sessions } = await qwenCodeAdapterFor(files, { readProcessStarts: ps.read }).poll();
+
+    expect(statuses(sessions)).toEqual([
+      [`qwen-code:${sessionIdOf(1)}`, "working", true],
+      [`qwen-code:${sessionIdOf(6)}`, "working", true],
+      [`qwen-code:${sessionIdOf(4)}`, "finished", false],
+    ]);
+    expect(ps.runs).toEqual([[41001, 41004, 41006]]);
+
+    // With no answer from ps, every session stays as signal 0 says.
+    ps.fails = true;
+    const failed = await qwenCodeAdapterFor(files, { readProcessStarts: ps.read }).poll();
+    expect(failed.sessions.map((session) => session.status)).toEqual([
+      "working",
+      "working",
+      "working",
+    ]);
+  });
+
+  test("on Windows nothing is compared: a session whose pid runs is open, and neither ps nor /proc is asked", async () => {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      startedAt: REGISTERED,
+      lines: asked("ask_user_question"),
+    });
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE });
+    const tokens = standInTokens({ 41001: startToken(64_000) });
+    const { sessions } = await qwenCodeAdapterFor(files, {
+      platform: "win32",
+      readProcessStarts: ps.read,
+      readStartTokens: tokens.read,
+    }).poll();
+
+    expect(sessions).toMatchObject([{ status: "needs-you", alive: true }]);
+    expect(ps.runs).toEqual([]);
+    expect(tokens.reads).toEqual([]);
   });
 });
 

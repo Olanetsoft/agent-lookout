@@ -14,8 +14,13 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
 import type { TailLimits } from "../../messages/tailReader.ts";
+import {
+  createPidNamespaceRead,
+  type ReadPidNamespace,
+  type ReadStartTokens,
+} from "../../processes/linuxProcesses.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
-import type { ReadProcessStarts } from "../../processes/processStart.ts";
+import type { ReadProcessStarts, StartMatch } from "../../processes/processStart.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { TabAsker } from "../../terminal/tabFinder.ts";
 import type { TerminalTab } from "../../terminal/terminalTabs.ts";
@@ -26,7 +31,11 @@ import { every } from "../words.ts";
 import { createChatReader, type ChatState } from "./chatRecords.ts";
 import { createFinishedSessions } from "./finishedSessions.ts";
 import { createQwenCodeLastMessages } from "./lastMessages.ts";
-import { createRecordProcessCheck } from "./processCheck.ts";
+import {
+  createRecordProcessCheck,
+  createRecordTokenCheck,
+  type RecordProcessCheck,
+} from "./processCheck.ts";
 import { oneForEachSession, readRegistry, SESSIONS_DIR, type RegistryEntry } from "./registry.ts";
 import { leftBehindQwenCodeSession, qwenCodeSession, SOURCE_ID, withJump } from "./toSession.ts";
 import { createChatFinder, PROJECTS_DIR } from "./transcriptFile.ts";
@@ -71,7 +80,7 @@ export const NO_CHAT_NOTE =
 export const NEWER_FORMAT_NOTE =
   "A Qwen Code newer than this Agent Lookout lists a session in a format it does not read, so that session is not shown.";
 
-/** Said, on a Mac or Windows, when a record was written by a process on Linux. */
+/** Said when a record was written on Linux and is read on a Mac or Windows, or on Linux comes from another pid namespace. */
 export const ELSEWHERE_NOTE =
   "A Qwen Code session that runs in a container is not listed: its process cannot be checked from here.";
 
@@ -96,7 +105,10 @@ export const UNKNOWN_NOTE =
  *   approval writes nothing to the files, so it shows as working.
  * - Finished is a session Agent Lookout saw open whose process has gone, or
  *   let it go, as /clear and /resume do, and a record a crash left behind
- *   (`finishedSessions.ts`).
+ *   (`finishedSessions.ts`). A process with the record's pid that is not the
+ *   one that wrote it counts as gone: on Linux by the start token Qwen Code
+ *   writes, and on a Mac by when `ps` says it started (`processCheck.ts`).
+ *   Windows has neither, so there it counts as the record's.
  * - Failed never: each failed try is recorded, but not when Qwen Code gives up.
  * - Its name is the title Qwen Code gives a session, which needs its fast
  *   model, or the one set with /rename.
@@ -211,6 +223,27 @@ export function qwenFolders(env: NodeJS.ProcessEnv, homeDir: string): QwenFolder
   };
 }
 
+/**
+ * What tells, on each poll, whether the process with each open record's pid
+ * is the one that wrote it: the start tokens in `/proc` on Linux, and on a Mac
+ * the same `ps` that confirms a process before Jump, so one run serves both.
+ * Null on Windows, which has neither, and on any other system.
+ */
+function liveCheckFor(
+  platform: NodeJS.Platform,
+  startCheck: RecordProcessCheck,
+  readStartTokens: ReadStartTokens | undefined,
+  now: () => number,
+): RecordProcessCheck | null {
+  if (platform === "linux") return createRecordTokenCheck(readStartTokens, now);
+  if (platform === "darwin") return startCheck;
+  return null;
+}
+
+/** What tells one record's process from another's: its pid, when it registered, and its start token. */
+const reusedKey = (entry: RegistryEntry) =>
+  `${entry.pid} ${entry.startedAt} ${entry.procStart ?? ""}`;
+
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface QwenCodeAdapterOptions {
   env?: NodeJS.ProcessEnv;
@@ -248,11 +281,21 @@ export interface QwenCodeAdapterOptions {
    */
   terminals?: TabAsker;
   /**
-   * Reads when processes started, to confirm that the process found in a pane
-   * or a tab is the one that wrote its session's record. Defaults to asking
-   * `ps`, which is asked only about a process found in one.
+   * Reads when processes started, to confirm that the process with a
+   * record's pid is the one that wrote the record: on a Mac for every open
+   * session, and elsewhere for one whose process is found in a pane or a tab,
+   * before it is given Jump. Defaults to asking `ps`, which is never asked on
+   * Windows.
    */
   readProcessStarts?: ReadProcessStarts;
+  /**
+   * Reads, on Linux, the start token of the process with each open record's
+   * pid, to compare with the one the record holds. Defaults to reading
+   * `/proc`, which is read only on Linux.
+   */
+  readStartTokens?: ReadStartTokens;
+  /** Reads, on Linux, the pid namespace Agent Lookout runs in. Defaults to `/proc/self/ns/pid`. */
+  readPidNamespace?: ReadPidNamespace;
 }
 
 /** The Qwen Code adapter, which reads what its sessions last said when asked. */
@@ -290,18 +333,24 @@ export interface QwenCodeAdapter extends Adapter {
  * does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
  *
  * Whether a session's process runs is asked with signal 0, which sends
- * nothing. A session whose process has gone, or whose record has gone or
- * names another session, shows as finished for 24 hours
- * (`finishedSessions.ts`). Its status is needs-you while Qwen Code 0.25.1 or
- * newer asks a question or for a plan's approval, working, idle, finished or
- * unknown. A wait for a tool's approval is working: Qwen Code does not write
- * it.
+ * nothing. Then, every 30 seconds, whether the process with the pid is the one
+ * that wrote the record: on Linux by comparing the record's start token with
+ * that process's, read from `/proc`, and on a Mac by asking `ps` when it
+ * started (`processCheck.ts`). On Linux a record from another pid namespace,
+ * as one written in a container, is not listed. A session whose process has
+ * gone, or was not the record's, or whose record has gone or names another
+ * session, shows as finished for 24 hours (`finishedSessions.ts`). Its status
+ * is needs-you while Qwen Code 0.25.1 or newer asks a question or for a plan's
+ * approval, working, idle, finished or unknown. A wait for a tool's approval
+ * is working: Qwen Code does not write it.
  *
  * An open session whose process runs inside a tmux pane, or else in a tab of
  * Terminal or iTerm2, is given a `jump` that names the place, when the adapter
  * is handed something to find panes or tabs with, as the Claude Code adapter
  * is. Before that, `ps` is asked when the process started, to be sure it is
- * the one that wrote the session's record and not one given its pid since.
+ * the one that wrote the session's record and not one given its pid since. On
+ * a Mac that is the same answer, from the same run of `ps`, that keeps the
+ * session open.
  *
  * Qwen Code not being installed costs nothing: when neither folder is there,
  * the adapter says so and looks again only once a minute, with two `stat`s.
@@ -329,7 +378,9 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   const finder = createChatFinder({ projectsDir, io, platform, rescanMs: options.rescanMs });
   const reader = createChatReader(io);
   const finished = createFinishedSessions();
-  const processCheck = createRecordProcessCheck(options.readProcessStarts, now);
+  const startCheck = createRecordProcessCheck(options.readProcessStarts, now);
+  const liveCheck = liveCheckFor(platform, startCheck, options.readStartTokens, now);
+  const pidNamespace = options.readPidNamespace ?? createPidNamespaceRead();
   // What a session last said, read only when it is asked for. With either
   // setting off, no file is opened for it.
   const lastMessagesOff = lastMessageStoppedBy(env);
@@ -352,6 +403,8 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   let foundFiles = new Map<string, string | null>();
   /** The record of each session this poll found open, by the session's id in the model. */
   let openRecords = new Map<string, RegistryEntry>();
+  /** This poll's answer, for each record whose pid runs, to whether the process with it wrote it. */
+  let recordMatches = new Map<RegistryEntry, StartMatch>();
 
   /** When the folders were last found missing. Null while they are there, or before the first look. */
   let absentAt: number | null = null;
@@ -363,6 +416,12 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   let holders = new Map<number, { entry: RegistryEntry; seenAt: number }>();
   /** Which process /clear or /resume moved to each session, and when, as `qwenCodeSession` takes it, by session id. */
   const tookOver = new Map<string, { pid: number; at: number }>();
+  /**
+   * The records whose pid the check found another program had, by `reusedKey`,
+   * while that pid runs. Their own process has ended, so a later check that
+   * cannot answer does not bring their session back.
+   */
+  let reused = new Set<string>();
 
   function watching(read: string): SourceFact[] {
     return [
@@ -479,7 +538,8 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
     }
 
     const notes = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
-    const registry = await readRegistry(sessionsDir, io, platform, parsed);
+    const ownPidNs = platform === "linux" ? await pidNamespace() : null;
+    const registry = await readRegistry(sessionsDir, io, platform, parsed, ownPidNs);
     if (!registry.readable) {
       if (!registry.missing) {
         return result(
@@ -523,7 +583,21 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
     const gone: RegistryEntry[] = [];
     const held = new Map<number, { entry: RegistryEntry; seenAt: number }>();
     let noChat = false;
-    for (const { entry, alive } of oneForEachSession(registry.entries, isAlive)) {
+    // Signal 0 says whether each record's pid runs. A process with it that the
+    // check says is not the one that wrote the record was given the pid since,
+    // and the record's own process has gone.
+    const runs = new Map(registry.entries.map((entry) => [entry, isAlive(entry.pid)] as const));
+    const running = registry.entries.filter((entry) => runs.get(entry));
+    recordMatches = liveCheck ? await liveCheck.matches(running) : new Map();
+    const stillReused = new Set<string>();
+    for (const entry of running) {
+      const key = reusedKey(entry);
+      if (recordMatches.get(entry) === "different" || reused.has(key)) stillReused.add(key);
+    }
+    reused = stillReused;
+    const ownProcessRuns = (_pid: number, entry: RegistryEntry) =>
+      runs.get(entry) === true && !reused.has(reusedKey(entry));
+    for (const { entry, alive } of oneForEachSession(registry.entries, ownProcessRuns)) {
       if (!alive) {
         gone.push(entry);
         continue;
@@ -587,9 +661,9 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
   /**
    * The sessions of a poll, each open one whose process runs inside a tmux
    * pane, or else in a tab of Terminal or iTerm2, with the place Jump reaches
-   * it in, once `ps` says the process is the one that wrote its record. A poll
-   * that lists no open session tells the finders so, and they forget its
-   * processes.
+   * it in, once `ps` says the process is the one that wrote its record. On a
+   * Mac that is this poll's own answer for every open record. A poll that
+   * lists no open session tells the finders so, and they forget its processes.
    */
   async function withJumps(answer: AdapterResult): Promise<AdapterResult> {
     if (!options.panes && !options.terminals) return answer;
@@ -603,12 +677,13 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
       if (pane || tab) places.set(entry, { pane, tab });
     }
     if (places.size === 0) return answer;
-    const confirmed = await processCheck.confirmed([...places.keys()]);
+    const matches =
+      liveCheck === startCheck ? recordMatches : await startCheck.matches([...places.keys()]);
     return {
       ...answer,
       sessions: answer.sessions.map((session) => {
         const entry = openRecords.get(session.id);
-        const place = entry && confirmed.has(entry) ? places.get(entry) : undefined;
+        const place = entry && matches.get(entry) === "same" ? places.get(entry) : undefined;
         return place ? withJump(session, place.pane, place.tab) : session;
       }),
     };
@@ -622,6 +697,7 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
     async poll() {
       foundFiles = new Map();
       openRecords = new Map();
+      recordMatches = new Map();
       try {
         const answer = await withJumps(await poll());
         // The sessions whose last message may be asked for until the next poll.

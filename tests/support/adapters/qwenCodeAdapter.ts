@@ -2,9 +2,9 @@
 // it: the same file system held in memory that the Codex tests use, a
 // stand-in for signal 0 that says which processes run, which the test
 // changes, and writes down every pid it was asked about, a stand-in for the
-// `ps` that says when each process started, and an adapter built from them
-// with a clock the test moves by hand. Nothing here touches a real file or a
-// real process.
+// `ps` that says when each process started, one for the start tokens Linux
+// keeps in `/proc`, and an adapter built from them with a clock the test
+// moves by hand. Nothing here touches a real file or a real process.
 
 import {
   createQwenCodeAdapter,
@@ -12,6 +12,7 @@ import {
   UNCHECKED_NOTE,
   type QwenCodeAdapterOptions,
 } from "@collector/adapters/qwen-code/index";
+import type { ReadStartTokens } from "@collector/processes/linuxProcesses";
 import type { ReadProcessStarts } from "@collector/processes/processStart";
 import { lstart } from "@tests/fixtures/antigravity";
 import { HOME, NOW } from "@tests/fixtures/qwen-code/qwenCode";
@@ -65,10 +66,37 @@ export function standInStarts(started: Record<number, number> = {}) {
 }
 
 /**
+ * A stand-in for the start tokens read from `/proc` on Linux: each process's
+ * token, which the test changes, and the pids of each read. A process it has
+ * no token for is left out, as one whose `stat` could not be read.
+ */
+export function standInTokens(tokens: Record<number, string> = {}) {
+  const known = new Map(Object.entries(tokens).map(([pid, token]) => [Number(pid), token]));
+  const reads: number[][] = [];
+  const stand = {
+    tokens: known,
+    reads,
+    fails: false,
+    read: (async (pids) => {
+      reads.push([...pids]);
+      if (stand.fails) throw new Error("/proc could not be read");
+      const found = new Map<number, string>();
+      for (const pid of pids) {
+        const token = known.get(pid);
+        if (token !== undefined) found.set(pid, token);
+      }
+      return found;
+    }) satisfies ReadStartTokens,
+  };
+  return stand;
+}
+
+/**
  * An adapter that reads only the stand-in files, on a Mac's rules for folder
- * names, with every process running unless the test says otherwise, and a
- * `ps` that knows no start time. With nothing in `env` it looks in `~/.qwen`,
- * which is `QWEN_DIR` from the fixtures.
+ * names, with every process running unless the test says otherwise, a `ps`
+ * that knows no start time, and on Linux no start token and no pid namespace.
+ * With nothing in `env` it looks in `~/.qwen`, which is `QWEN_DIR` from the
+ * fixtures.
  */
 export function qwenCodeAdapterFor(files: MemoryFiles, options: QwenCodeAdapterOptions = {}) {
   return createQwenCodeAdapter({
@@ -79,6 +107,8 @@ export function qwenCodeAdapterFor(files: MemoryFiles, options: QwenCodeAdapterO
     isAlive: () => true,
     platform: "darwin",
     readProcessStarts: async () => new Map(),
+    readStartTokens: async () => new Map(),
+    readPidNamespace: async () => null,
     ...options,
   });
 }

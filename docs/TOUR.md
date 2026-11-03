@@ -312,7 +312,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/qwen-code/`, with the status mapping in `src/core/mapping/qwen-code/qwenCodeMapping.ts`. [adapters/qwen-code.md](adapters/qwen-code.md) is the full reference. It came from #30.
 
-**Why files.** Qwen Code documents a list of its running sessions for other programs to read, one small JSON file per session in `~/.qwen/sessions`. Its own `qwen sessions ps` deletes the records whose process has gone, so running it would write in Qwen Code's folder, and its hooks need a change to its settings. So the adapter reads files alone, and runs no program of Qwen Code's. For Jump it shares the tmux and `ps` looks of Claude Code's adapter, and asks `ps` when a process found in a pane or a tab started.
+**Why files.** Qwen Code documents a list of its running sessions for other programs to read, one small JSON file per session in `~/.qwen/sessions`. Its own `qwen sessions ps` deletes the records whose process has gone, so running it would write in Qwen Code's folder, and its hooks need a change to its settings. So the adapter reads files alone, and runs no program of Qwen Code's. For Jump it shares the tmux and `ps` looks of Claude Code's adapter. To tell a session's process from another program given its pid after a crash, it compares the record's start token with the process's own from `/proc` on Linux, and asks `ps` when the process started on a Mac, an answer that serves Jump too (#183). On Linux it asks `ps` that only about a process found in a pane.
 
 **The pieces.**
 
