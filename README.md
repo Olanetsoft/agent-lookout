@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and Pi sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi and Kimi Code sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -67,6 +67,7 @@ Any other agent can show up by writing one small file per session. [Your own age
 | Cline           | Partly    | No     | Yes       | No     | No     | No     |
 | Goose           | No        | No     | No        | No     | No     | No     |
 | Pi              | No        | No     | No        | No     | No     | No     |
+| Kimi Code       | Partly    | No     | Partly    | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -86,6 +87,8 @@ Cline support reads the sessions of its newer runtime, in `~/.cline/data/session
 Goose support reads its database, `~/.local/share/goose/sessions/sessions.db`, on macOS and Linux. A session shows as unknown while a Goose program runs and as finished once none does, as nothing ties a session to a process. It was built from its source at v1.57.0 and has not yet been checked on a computer running it.
 
 Pi support reads its session files, in `~/.pi/agent/sessions`. A session shows as unknown while a `pi` program runs and as finished once none does, as nothing ties a session to a process. On Windows it stays unknown. It was built from its source at v1.5.0 and has not yet been checked on a computer running it.
+
+Kimi Code support reads `~/.kimi-code`. A session shows as working from the lock Kimi Code keeps while it is busy, and as idle only once Agent Lookout has seen it busy, while that process runs. It was built from its source at 2.4.1 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

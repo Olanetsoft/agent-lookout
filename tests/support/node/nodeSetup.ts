@@ -23,6 +23,7 @@ import {
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
+  EMPTY_KIMI_CODE_HOME,
   EMPTY_OPENCODE_HOME,
   EMPTY_QWEN_HOME,
   EMPTY_VIBE_SESSION_DIR,
@@ -123,6 +124,13 @@ mkdirSync(EMPTY_PI_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_PI_HOME = EMPTY_PI_HOME;
 delete process.env.PI_CODING_AGENT_DIR;
 delete process.env.PI_CODING_AGENT_SESSION_DIR;
+
+// Nor does one read Kimi Code's folder, `~/.kimi-code` or the one `KIMI_CODE_HOME`
+// names: the adapter is pointed at an empty folder, and Kimi Code's own variable
+// is dropped. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_KIMI_CODE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_KIMI_CODE_HOME = EMPTY_KIMI_CODE_HOME;
+delete process.env.KIMI_CODE_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

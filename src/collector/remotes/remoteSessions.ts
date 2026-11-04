@@ -68,6 +68,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["cline", ["files"]],
   ["goose", ["database", "database-closed", "database-without-processes"]],
   ["pi", ["files", "files-closed", "files-without-processes"]],
+  ["kimi-code", ["files"]],
   ["status-files", ["files"]],
 ]);
 

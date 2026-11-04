@@ -11,6 +11,7 @@ import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
+import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
@@ -29,6 +30,9 @@ const PRIVACY = fileURLToPath(new URL("../../../../PRIVACY.md", import.meta.url)
 const CLINE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/cline.md", import.meta.url));
 const GOOSE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/goose.md", import.meta.url));
 const PI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/pi.md", import.meta.url));
+const KIMI_CODE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/kimi-code.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -47,6 +51,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Cline", CLINE_CAPABILITIES],
   ["Goose", GOOSE_CAPABILITIES],
   ["Pi", PI_CAPABILITIES],
+  ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -211,6 +216,42 @@ test("PRIVACY.md and the Pi notes name what is read and from which version", asy
   for (const text of [section, notes]) {
     expect(text).toContain("~/.pi/agent/sessions");
     for (const field of ["id", "cwd", "timestamp", "version", "session_info", "ps -A -o comm="]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Kimi Code notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(KIMI_CODE_NOTES, "utf8");
+  const start = privacy.indexOf("### Kimi Code's files");
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  expect(start).toBeGreaterThan(-1);
+  expect(section).toContain("built from Kimi Code's source at 2.4.1");
+  expect(notes).toContain("2.4.1");
+
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.kimi-code",
+      "session_index.jsonl",
+      "locks/sessions",
+      "state.json",
+      "wire.jsonl",
+      "sessionId",
+      "sessionDir",
+      "workDir",
+      "startedAt",
+      "cwd",
+      "createdAt",
+      "updatedAt",
+      "lastTurnReason",
+      "archived",
+      "titleKind",
+      "isCustomTitle",
+      "interaction.request",
+      "interaction.resolved",
+      "ps -o pid=,lstart= -p <pids>",
+    ]) {
       expect(text).toContain(field);
     }
   }

@@ -157,6 +157,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
       AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
       AGENT_LOOKOUT_PI_HOME: await tempDir(),
+      AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -178,7 +179,7 @@ const HERMES_STATE = process.platform === "win32" ? "unavailable" : "ok";
 const GOOSE_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and Pi, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi and Kimi Code, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -194,6 +195,7 @@ describe("createCollector", () => {
       ["cline", "Cline", "ok"],
       ["goose", "Goose", GOOSE_STATE],
       ["pi", "Pi", "ok"],
+      ["kimi-code", "Kimi Code", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -233,6 +235,7 @@ describe("createCollector", () => {
       { id: "cline", state: "ok" },
       { id: "goose", state: GOOSE_STATE },
       { id: "pi", state: "ok" },
+      { id: "kimi-code", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -363,6 +366,7 @@ describe("createCollector", () => {
           AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
           AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
           AGENT_LOOKOUT_PI_HOME: await tempDir(),
+          AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
           AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
           AGENT_LOOKOUT_TMUX: "off",
           AGENT_LOOKOUT_STOP: "off",
@@ -402,6 +406,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
         AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
         AGENT_LOOKOUT_PI_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -478,6 +483,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
         AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
         AGENT_LOOKOUT_PI_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2488,6 +2494,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
         AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
         AGENT_LOOKOUT_PI_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
@@ -2761,6 +2768,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
         AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
         AGENT_LOOKOUT_PI_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -2995,6 +3003,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "cline",
       "goose",
       "pi",
+      "kimi-code",
       "status-files",
       "remote:",
     ]);

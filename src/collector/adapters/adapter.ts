@@ -73,6 +73,9 @@ export interface AdapterResult {
    *   finished.
    * - `files-without-processes`: the same while `ps` cannot say, when no session
    *   can be shown as finished.
+   *
+   * The Kimi Code adapter has one, `files`: its list of sessions, its folder of
+   * locks and each session's files.
    */
   basis?: string;
 }

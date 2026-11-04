@@ -290,6 +290,7 @@ test.each([
       "Cline",
       "Goose",
       "Pi",
+      "Kimi Code",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -307,6 +308,7 @@ test.each([
       "Yes",
       "Partly",
       "Yes",
+      "No",
       "No",
       "No",
       "No",
