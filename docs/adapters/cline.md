@@ -32,13 +32,13 @@ Cline has other ways in, and none of them can be used that way:
 
 ## What it reads
 
-| Path                           | How                                                                                                            | How often                                                                             |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `<sessions folder>/`           | Listed                                                                                                         | Every poll, and once a minute while it is missing                                     |
-| `<id>/<id>.json`, the manifest | One `lstat`                                                                                                    | Every poll for a session shown or a new folder, and once a minute for every other one |
-| The same file                  | Opened read-only when written in the last day or its session is still shown, and read whole when 1 MiB or less | When its size, modified time or identity changes                                      |
-| `<id>/`                        | One `lstat`, to see that it is a folder and not a link                                                         | Before a manifest is opened                                                           |
-| `<id>/<id>.messages.json`      | One `lstat`, for its modified time. Never opened                                                               | Every poll, for a session whose manifest says it is open                              |
+| Path                           | How                                                                                                            | How often                                                                                                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `<sessions folder>/`           | Listed                                                                                                         | Every poll, and once a minute while it is missing                                                                         |
+| `<id>/<id>.json`, the manifest | One `lstat`                                                                                                    | Every poll for a session shown, a new folder or a manifest written in the last day, and once a minute for every other one |
+| The same file                  | Opened read-only when written in the last day or its session is still shown, and read whole when 1 MiB or less | When its size, modified time or identity changes                                                                          |
+| `<id>/`                        | One `lstat`, to see that it is a folder and not a link                                                         | Before a manifest is opened                                                                                               |
+| `<id>/<id>.messages.json`      | One `lstat`, for its modified time. Never opened                                                               | Every poll, for a session whose manifest says it is open                                                                  |
 
 Every other manifest is looked up once a minute because Cline keeps every session it ever ran, so that folder can hold thousands. A manifest last written over a day ago is not opened unless its session is still shown.
 
@@ -69,22 +69,23 @@ A person who uses `--config` can start Agent Lookout with `CLINE_DIR` set to the
 
 `<id>/<id>.json` is JSON, two spaces to a level, written with `writeFileSync` (`core/session/stores/session-manifest-store.ts:112-119`), so in place and not through a temporary file. A read can catch one half written. What was last read of that file then stands in for one poll.
 
-Cline makes a session's manifest at its first prompt, and for a forked or restored session as it starts (`core/runtime/host/local-runtime-host.ts:2437-2462`). The desktop app also makes one for each session it imports from Claude Code, Codex or OpenCode, already `completed`, with pid 0 and the times that session had there (`core/services/session-import/service.ts:325-345`). A session opened with no prompt has none, so it is not listed until its first prompt. After that, the runtime reads the manifest, changes it and writes it whole each time the status, the title or the session's other details change (`core/runtime/host/local-runtime-host.ts:1933-1969`).
+Cline makes a session's manifest at its first prompt, and for a forked or restored session as it starts (`core/runtime/host/local-runtime-host.ts:2437-2462`). The desktop app also makes one for each session it imports from Claude Code, Codex or OpenCode, already `completed`, with pid 0 and the times that session had there (`core/services/session-import/service.ts:325-345`), and [Imported sessions](#imported-sessions) says which of those are listed. A session opened with no prompt has none, so it is not listed until its first prompt. After that, the runtime reads the manifest, changes it and writes it whole each time the status, the title or the session's other details change (`core/runtime/host/local-runtime-host.ts:1933-1969`).
 
-| Field                                                                                                             | Meaning                                                                                                                      | Kept                                          |
-| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `version`                                                                                                         | `1`. A higher one is left out, and the Sources view says so                                                                  | Read, not kept                                |
-| `session_id`                                                                                                      | The session's id. It must be the folder's name                                                                               | Yes                                           |
-| `pid`                                                                                                             | `process.pid` of the process that hosts the session, which can be the hub's                                                  | Yes, when it is a positive whole number       |
-| `started_at`                                                                                                      | When the session began, as an ISO time                                                                                       | Yes, when it is one                           |
-| `ended_at`                                                                                                        | When it ended, as an ISO time. Left out while it is open                                                                     | Yes, when it is one                           |
-| `status`                                                                                                          | [Status](#status)                                                                                                            | Yes, when it is text of 32 characters or less |
-| `cwd`                                                                                                             | The session's folder                                                                                                         | Yes, when it is an absolute path              |
-| `metadata.title`                                                                                                  | Its title. By default the first line of its first prompt                                                                     | No: dropped with the parsed file              |
-| `prompt`                                                                                                          | The first prompt, in full                                                                                                    | No: dropped with the parsed file              |
-| `metadata`, but for `title`                                                                                       | Among much else the mode, the git state, `totalCost`, `usage` and `aggregateUsage`. A hub session's can hold a system prompt | No: dropped with the parsed file              |
-| `source`, `exit_code`, `interactive`, `provider`, `model`                                                         | The app, how it ended, and the model it used                                                                                 | No                                            |
-| `workspace_root`, `team_name`, `enable_tools`, `enable_spawn`, `enable_teams`, `messages_path`, `compaction_path` | Its settings and where its other files are. No path in a manifest is ever opened                                             | No                                            |
+| Field                                                                                                             | Meaning                                                                                                                                                           | Kept                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `version`                                                                                                         | `1`. A higher one is left out, and the Sources view says so                                                                                                       | Read, not kept                                                                                |
+| `session_id`                                                                                                      | The session's id. It must be the folder's name                                                                                                                    | Yes                                                                                           |
+| `pid`                                                                                                             | `process.pid` of the process that hosts the session, which can be the hub's                                                                                       | Yes, when it is a positive whole number                                                       |
+| `started_at`                                                                                                      | When the session began, as an ISO time                                                                                                                            | Yes, when it is one                                                                           |
+| `ended_at`                                                                                                        | When it ended, as an ISO time. Left out while it is open                                                                                                          | Yes, when it is one                                                                           |
+| `status`                                                                                                          | [Status](#status)                                                                                                                                                 | Yes, when it is text of 32 characters or less                                                 |
+| `cwd`                                                                                                             | The session's folder                                                                                                                                              | Yes, when it is an absolute path                                                              |
+| `metadata.title`                                                                                                  | Its title. By default the first line of its first prompt                                                                                                          | No: dropped with the parsed file                                                              |
+| `prompt`                                                                                                          | The first prompt, in full                                                                                                                                         | No: dropped with the parsed file                                                              |
+| `metadata.importedFrom.importedAt`                                                                                | When the desktop app imported the session, as an ISO time                                                                                                         | Read, not kept: only whether the session was [imported and never resumed](#imported-sessions) |
+| `metadata`, but for `title` and `importedFrom.importedAt`                                                         | Among much else the mode, the git state, where an imported session came from, `totalCost`, `usage` and `aggregateUsage`. A hub session's can hold a system prompt | No: dropped with the parsed file                                                              |
+| `source`, `exit_code`, `interactive`, `provider`, `model`                                                         | The app, how it ended, and the model it used                                                                                                                      | No                                                                                            |
+| `workspace_root`, `team_name`, `enable_tools`, `enable_spawn`, `enable_teams`, `messages_path`, `compaction_path` | Its settings and where its other files are. No path in a manifest is ever opened                                                                                  | No                                                                                            |
 
 `session_id` that is not the folder's name, a `version` that is not a number or is below 1, and a file that is not a JSON object make the whole file unusable, and its session is not listed. Any other bad value is treated as none: a pid that is not a positive whole number, a time that is not an ISO time with a zone, a folder that is not an absolute path or holds a control character. A time before 2020, or more than a minute ahead of the clock, is treated as none too.
 
@@ -96,9 +97,34 @@ A session's id in Agent Lookout is `cline:<session id>`.
 
 ## Which sessions are listed
 
-A session is first listed when its manifest was written in the last 24 hours, by that time alone. Once it is listed, it stays for 24 hours after its manifest or, while that says it is open, its messages file was last written, and one that is working or needs you stays for as long as its process runs, so a wait left over a weekend does not drop out.
+A session is first listed when its manifest was written in the last 24 hours, by that time alone, unless it was [imported and never resumed](#imported-sessions). Once it is listed, it stays for 24 hours after its manifest or, while that says it is open, its messages file was last written, and one that is working or needs you stays for as long as its process runs, so a wait left over a weekend does not drop out.
 
 Cline never removes a session's folder by itself, so a look through every folder is what finds a session that was written again. A new folder is found on the next poll. A session last written over a day ago that is opened again is found by the next look, within a minute.
+
+### Imported sessions
+
+A session the desktop app imported from Claude Code, Codex or OpenCode and you never resumed is not listed. It did not run in Cline, and its times are the ones it had in that tool. Without this rule a bulk import lists every imported session as finished for a day, and one Agent Lookout also lists under that tool shows twice.
+
+An import writes the manifest with `completed`, pid 0 and the session's times in that tool, then its messages, and last adds `metadata.importedFrom`, which holds the tool, the session's id, file and model there, and `importedAt`, the time of the import (`core/services/session-import/service.ts:325-366`).
+
+So `metadata.importedFrom` is the mark of an import. It does not say whether the session was resumed, and neither does pid 0:
+
+- A resume keeps the manifest it finds, with its mark, its pid 0 and its `started_at` (`core/runtime/host/local-runtime-host.ts:628-650`, `:780-786`).
+- A fork copies the mark with the rest of `metadata` (`core/session/fork-metadata.ts:1-29`, `apps/cli/src/runtime/interactive/fork/metadata.ts:21-25`).
+
+What a resume changes is `status` and `ended_at`. The first turn writes `running` and removes `ended_at`, and when the session ends Cline writes a status and a new `ended_at` (`core/runtime/host/local-runtime-host.ts:2032`, `:2744-2773`). So a session is left out when all of these hold:
+
+- `status` is `completed`.
+- `metadata.importedFrom.importedAt` is an ISO time.
+- `ended_at` is an ISO time no later than `importedAt`.
+
+The `ended_at` an import writes is the session's last time in the other tool, which comes before the import. One written after a resume comes after it.
+
+Anything else is listed, because a session wrongly left out is worse than one shown twice. That covers a manifest with no mark, a mark of the wrong type, and an `ended_at` that is missing, is not a time or is later than `importedAt`, so a fork that has ended is listed too.
+
+Opening an imported session and sending it nothing is not a resume. That can rewrite `metadata`, but `status` and `ended_at` stay, and closing it writes no status (`core/runtime/host/local-runtime-host.ts:1468-1471`), so the session stays left out. So does one you only rename.
+
+Of `metadata`, only `importedFrom.importedAt` is read. For a session left out, nothing is kept but that answer. For any other, nothing of `metadata` is kept.
 
 ## Status
 
@@ -185,7 +211,10 @@ None. The process can be the hub, which many sessions share and which is in no t
 - A session last written over a day ago that is opened again takes up to a minute to appear.
 - A manifest over 1 MiB is not read, so that session is not listed.
 - A manifest that could not be opened, as on a read error or a permission problem, is not tried again until it is next written or Agent Lookout restarts. Its session is not listed until then, and one that was listed leaves the list as one that ended.
-- A session the desktop app imports from Claude Code, Codex or OpenCode is listed as a finished Cline session for a day after the import, with the start and status times it had in that tool. One Agent Lookout also lists under that tool shows twice.
+- A session the desktop app imported and you resumed keeps pid 0, so it shows as unknown while it is open, with the start time it had in the tool it came from, and Cline's own check of dead sessions can write it as failed while it runs (`core/session/services/persistence-service.ts:430-431`). One Agent Lookout also lists under that tool shows twice.
+- An imported session whose end in the other tool is later than the import, as with a clock that ran ahead, is listed as a finished Cline session for a day after the import.
+- A poll that lands between an import's first write and its last lists that session as finished for one poll, and Events shows it appear and end, because the mark is written last.
+- A resumed session that ended as `completed` is left out if the clock was set back so far that its new `ended_at` is no later than `importedAt`.
 - A session shown whose folder is moved and replaced by a link to it stays listed, with the times of the files behind the link, until its manifest next changes.
 - A session of the older VS Code extension is not listed, and nor is one in a folder `cline --config` or `cline --data-dir` names, or one on a remote runtime.
 - A session opened with no prompt is not listed until its first prompt, since it has no manifest yet.
@@ -201,20 +230,23 @@ Everything here is read from the source, so each of these is for a person with C
 3. That a real manifest stays well under 1 MiB, and how long a large pasted prompt makes one.
 4. That a killed process leaves `running` behind, and that the next `cline` rewrites it as `failed`.
 5. Which VS Code builds write to this folder: the extension's source at this tag starts sessions through the runtime, and a build that runs the older code does not.
+6. That the desktop app's import leaves `metadata.importedFrom` in the manifest, and that a resume in the desktop app and in the CLI changes `status` and `ended_at` as [Imported sessions](#imported-sessions) says.
 
 ## What breaks when Cline changes
 
-| Change in Cline                                          | What the dashboard shows                                                          |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `version` goes above 1                                   | No Cline sessions, and the Sources view names a newer format                      |
-| The folder layout or the file names change               | No Cline sessions, or Cline is not found                                          |
-| A new word in `status`                                   | Those sessions show as unknown, and the Sources view says so                      |
-| Something else writes `pending`, such as a queued prompt | Such a session shows as needing you while it waits for nothing of yours           |
-| The approval wrapper stops writing `pending`             | A session that waits for an approval shows as working                             |
-| `pid` moves or stops being the host's                    | An open session shows as finished, or as unknown                                  |
-| `started_at` stops being when the session began          | On a Mac, sessions show as finished while they run, or a crash's leftover as open |
-| Manifests start to hold more than 1 MiB as a rule        | Those sessions are not listed, and the Sources view says so                       |
-| The messages file moves or stops being rewritten         | A working session looks quiet                                                     |
-| Cline's variables for its folders change                 | Cline is not found, or found empty                                                |
+| Change in Cline                                                | What the dashboard shows                                                           |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `version` goes above 1                                         | No Cline sessions, and the Sources view names a newer format                       |
+| The folder layout or the file names change                     | No Cline sessions, or Cline is not found                                           |
+| A new word in `status`                                         | Those sessions show as unknown, and the Sources view says so                       |
+| Something else writes `pending`, such as a queued prompt       | Such a session shows as needing you while it waits for nothing of yours            |
+| The approval wrapper stops writing `pending`                   | A session that waits for an approval shows as working                              |
+| `pid` moves or stops being the host's                          | An open session shows as finished, or as unknown                                   |
+| `started_at` stops being when the session began                | On a Mac, sessions show as finished while they run, or a crash's leftover as open  |
+| Manifests start to hold more than 1 MiB as a rule              | Those sessions are not listed, and the Sources view says so                        |
+| The messages file moves or stops being rewritten               | A working session looks quiet                                                      |
+| Cline's variables for its folders change                       | Cline is not found, or found empty                                                 |
+| `metadata.importedFrom.importedAt` moves or stops being a time | Imported sessions are listed as finished Cline sessions for a day after the import |
+| A session's end stops moving `ended_at` past `importedAt`      | A resumed session is left out once it ends                                         |
 
-To check a new Cline version, read `core/session/models/session-manifest.ts`, `core/session/stores/session-manifest-store.ts`, `core/services/session-artifacts.ts`, `core/services/session-data.ts`, `shared/session/records.ts`, `shared/storage/paths.ts`, `core/runtime/host/local-runtime-host.ts` (search for `markTurnPending` and `updateStatus`) and `core/session/services/persistence-service.ts`, then update `UNCHECKED_NOTE` in `src/collector/adapters/cline/index.ts` and the first paragraphs here.
+To check a new Cline version, read `core/session/models/session-manifest.ts`, `core/session/stores/session-manifest-store.ts`, `core/services/session-artifacts.ts`, `core/services/session-data.ts`, `core/services/session-import/service.ts`, `shared/session/records.ts`, `shared/storage/paths.ts`, `core/runtime/host/local-runtime-host.ts` (search for `markTurnPending` and `updateStatus`) and `core/session/services/persistence-service.ts`, then update `UNCHECKED_NOTE` in `src/collector/adapters/cline/index.ts` and the first paragraphs here.

@@ -18,6 +18,8 @@ import {
   ended,
   HOME,
   HOUR,
+  IMPORTED_AT,
+  imported,
   manifestFile,
   manifestText,
   messagesFile,
@@ -28,6 +30,7 @@ import {
   PRIVATE_SYSTEM_PROMPT,
   PRIVATE_WORDS,
   PROJECT,
+  resumed,
   SECOND,
   SESSIONS_DIR,
   sessionIdOf,
@@ -600,6 +603,111 @@ describe("what is listed", () => {
   });
 });
 
+describe("a session Cline's desktop app imported", () => {
+  test.each(["darwin", "linux", "win32"] as const)(
+    "is not listed on %s, and nothing on the card is wrong",
+    async (platform) => {
+      const result = await clineAdapterFor(setUp(imported), { platform }).poll();
+      expect(result.sessions).toEqual([]);
+      expect(result.health.state).toBe("ok");
+      expect(result.health.detail).toBe(healthy());
+    },
+  );
+
+  test("is listed from its first turn after a resume, and stays once that ends", async () => {
+    const clock = handClock();
+    const files = setUp(imported);
+    const adapter = clineAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions).toEqual([]);
+
+    // A resume keeps pid 0, so there is no process to ask about.
+    clock.advance(2 * SECOND);
+    files.rewrite(manifestFile(ID), manifestText(ID, resumed), { mtimeMs: clock.now() });
+    expect((await adapter.poll()).sessions).toEqual([
+      expect.objectContaining({ id: `cline:${ID}`, status: "unknown" }),
+    ]);
+
+    clock.advance(MINUTE);
+    const endedAt = clock.now();
+    files.rewrite(
+      manifestFile(ID),
+      manifestText(ID, { ...imported, ...ended("completed", endedAt) }),
+      {
+        mtimeMs: endedAt,
+      },
+    );
+    expect((await adapter.poll()).sessions).toEqual([
+      expect.objectContaining({ status: "finished", statusSince: endedAt }),
+    ]);
+  });
+
+  test.each([
+    ["completed", "finished"],
+    ["failed", "failed"],
+  ])(
+    "an end after the import keeps a session listed from the first poll: %s",
+    async (status, shown) => {
+      const files = setUp({ ...imported, ...ended(status, IMPORTED_AT + MINUTE) });
+      expect((await clineAdapterFor(files).poll()).sessions[0]?.status).toBe(shown);
+    },
+  );
+
+  test("a new title does not list it", async () => {
+    const clock = handClock();
+    const files = setUp(imported);
+    const adapter = clineAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+
+    clock.advance(2 * SECOND);
+    const metadata = { ...imported.metadata, title: "renamed" };
+    files.rewrite(manifestFile(ID), manifestText(ID, { ...imported, metadata }), {
+      mtimeMs: clock.now(),
+    });
+    expect((await adapter.poll()).sessions).toEqual([]);
+  });
+
+  test("one resumed over a day after the import is found within a minute", async () => {
+    const clock = handClock();
+    const files = setUp(imported, NOW - 3 * DAY);
+    const adapter = clineAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(files.opened()).toEqual([]);
+
+    clock.advance(2 * SECOND);
+    files.rewrite(manifestFile(ID), manifestText(ID, resumed), { mtimeMs: clock.now() });
+    clock.advance(SWEEP_MS);
+    expect((await adapter.poll()).sessions[0]?.id).toBe(`cline:${ID}`);
+  });
+
+  test("a manifest with no mark is listed, as a session this adapter cannot tell", async () => {
+    const files = setUp({ ...imported, metadata: { title: "demo task" } });
+    expect((await clineAdapterFor(files).poll()).sessions[0]?.status).toBe("finished");
+  });
+
+  test("a mark of the wrong type is listed, as a session this adapter cannot tell", async () => {
+    const files = setUp({ ...imported, metadata: { importedFrom: "codex" } });
+    expect((await clineAdapterFor(files).poll()).sessions[0]?.status).toBe("finished");
+  });
+
+  test("one a poll caught before its mark leaves the list once the mark is written", async () => {
+    const clock = handClock();
+    const { importedFrom: _writtenLast, ...firstWrite } = imported.metadata;
+    const files = setUp({ ...imported, metadata: firstWrite });
+    const adapter = clineAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions).toHaveLength(1);
+
+    clock.advance(2 * SECOND);
+    files.rewrite(manifestFile(ID), manifestText(ID, imported), { mtimeMs: clock.now() });
+    expect((await adapter.poll()).sessions).toEqual([]);
+  });
+
+  test("one of a newer format is left out, and the card says so", async () => {
+    const { health, sessions } = await clineAdapterFor(setUp({ ...imported, version: 2 })).poll();
+    expect(sessions).toEqual([]);
+    expect(health.detail).toContain(NEWER_FORMAT_NOTE);
+  });
+});
+
 describe("what a poll costs", () => {
   test("with a session shown, a listing, two lookups, signal 0 and no opening", async () => {
     const processes = standInProcesses([PID]);
@@ -617,6 +725,16 @@ describe("what a poll costs", () => {
 
   test("a session that ended is looked up alone", async () => {
     const files = setUp(ended("completed", NOW - MINUTE));
+    const adapter = clineAdapterFor(files);
+    await adapter.poll();
+    files.forget();
+    await adapter.poll();
+    expect(files.count("lstat")).toBe(1);
+    expect(files.count("openRegular")).toBe(0);
+  });
+
+  test("an imported session left out is looked up alone, and opened only when it changes", async () => {
+    const files = setUp(imported);
     const adapter = clineAdapterFor(files);
     await adapter.poll();
     files.forget();

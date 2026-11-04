@@ -94,3 +94,36 @@ export const ended = (status: string, at: number) => ({
   ended_at: iso(at),
   exit_code: status === "failed" ? 1 : 0,
 });
+
+/** When the fixture's imported session was imported. */
+export const IMPORTED_AT = NOW - HOUR;
+
+/** The mark an import leaves in `metadata`, for a session from another tool. */
+export const importMark = {
+  tool: "codex",
+  sourceSessionId: "demo-source-session",
+  sourcePath: `${HOME}/.codex/sessions/demo-rollout.jsonl`,
+  importedAt: iso(IMPORTED_AT),
+  sourceProvider: "demo-provider",
+  sourceModel: "demo-model",
+};
+
+/**
+ * The fields of a session as Cline's desktop app leaves it once it is imported
+ * (`services/session-import/service.ts`): `completed`, with pid 0, the times it
+ * had in the other tool, and the mark.
+ */
+export const imported = {
+  source: "desktop",
+  pid: 0,
+  started_at: iso(IMPORTED_AT - 3 * HOUR),
+  ...ended("completed", IMPORTED_AT - 2 * HOUR),
+  metadata: {
+    title: "demo imported task",
+    sessionHistoryOrigin: { mode: "import", trigger: "codex" },
+    importedFrom: importMark,
+  },
+};
+
+/** The same session in its first turn after a resume: the mark and pid 0 stay, `ended_at` goes. */
+export const resumed = { ...imported, status: "running", ended_at: undefined, exit_code: null };

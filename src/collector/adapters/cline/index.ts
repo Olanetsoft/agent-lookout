@@ -237,20 +237,21 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  *
  * Cline's CLI, its desktop app and the VS Code builds that run the same runtime
  * write one manifest for each session, `<sessions folder>/<id>/<id>.json`, and
- * this adapter reads those (`manifests.ts`). The older VS Code extension's
- * tasks, in the editor's own storage, are not read. Cline's database of
- * sessions, its hub and its messages files are never opened.
+ * this adapter reads those (`manifests.ts`). A session the desktop app imported
+ * is left out until a turn runs in it. The older VS Code extension's tasks, in
+ * the editor's own storage, are not read. Cline's database of sessions, its hub
+ * and its messages files are never opened.
  *
  * Cline keeps every session it ever ran there, so a poll lists the folder, then
- * looks up only the sessions it shows and any new folder, with one `lstat` each.
- * Every other manifest is looked up once a minute, and a manifest last written
- * over a day ago is opened only for a session still shown. A manifest is opened
- * only when it changes.
+ * looks up only the sessions it shows, any new folder and any manifest written
+ * in the last day, with one `lstat` each. Every other manifest is looked up once
+ * a minute, and a manifest last written over a day ago is opened only for a
+ * session still shown. A manifest is opened only when it changes.
  * So a session is first listed by its manifest's time alone, when that is within
- * 24 hours. Once listed, it stays for 24 hours after its manifest or, while that
- * says it is open, its messages file was last written, and for as long as it
- * works or waits and its process runs. An open session left idle for a day leaves
- * the list until its manifest is written.
+ * 24 hours, unless it was imported and never resumed. Once listed, it stays for
+ * 24 hours after its manifest or, while that says it is open, its messages file
+ * was last written, and for as long as it works or waits and its process runs. An
+ * open session left idle for a day leaves the list until its manifest is written.
  *
  * Whether a session's process runs is asked with signal 0, which sends nothing,
  * only for a session whose manifest says it is open. A crash leaves such a

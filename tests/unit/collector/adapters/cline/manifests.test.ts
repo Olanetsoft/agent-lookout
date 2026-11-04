@@ -7,6 +7,11 @@ import {
   parseManifest,
 } from "@collector/adapters/cline/manifests";
 import {
+  ended,
+  HOUR,
+  IMPORTED_AT,
+  imported,
+  importMark,
   manifestFile,
   manifestText,
   messagesFile,
@@ -16,6 +21,7 @@ import {
   PRIVATE_SYSTEM_PROMPT,
   PRIVATE_WORDS,
   PROJECT,
+  resumed,
   SESSIONS_DIR,
   sessionIdOf,
   STARTED_AT,
@@ -139,6 +145,113 @@ describe("parseManifest", () => {
   });
 });
 
+describe("parseManifest of a session the desktop app imported", () => {
+  const withMark = (importedFrom: unknown) => ({
+    ...imported,
+    metadata: { ...imported.metadata, importedFrom },
+  });
+
+  test.each(["darwin", "linux", "win32"] as const)(
+    "one never resumed is named on %s, with nothing kept of it",
+    (platform) => {
+      expect(parse(imported, platform)).toBe("never-resumed");
+    },
+  );
+
+  test("a new title is not a resume", () => {
+    const renamed = { ...imported.metadata, title: "renamed" };
+    expect(parse({ ...imported, metadata: renamed })).toBe("never-resumed");
+  });
+
+  test("an end at the moment of the import is the import's own", () => {
+    expect(parse({ ...imported, ...ended("completed", IMPORTED_AT) })).toBe("never-resumed");
+  });
+
+  test.each([
+    ["in its first turn", resumed],
+    ["idle after a turn", { ...resumed, status: "idle" }],
+    ["waiting for an approval", { ...resumed, status: "pending" }],
+    ["ended after the import", { ...imported, ...ended("completed", IMPORTED_AT + 1) }],
+    ["stopped after the import", { ...imported, ...ended("cancelled", IMPORTED_AT + HOUR) }],
+    ["failed after the import", { ...imported, ...ended("failed", IMPORTED_AT + HOUR) }],
+  ])("one resumed is read as any session: %s", (_case, changes) => {
+    expect(parse(changes)).toMatchObject({ sessionId: ID, pid: null, status: changes.status });
+  });
+
+  test("nothing of the mark is kept of one resumed", () => {
+    expect(parse(resumed)).toEqual({
+      sessionId: ID,
+      pid: null,
+      status: "running",
+      cwd: PROJECT,
+      startedAt: IMPORTED_AT - 3 * HOUR,
+      endedAt: null,
+    });
+  });
+
+  test.each([
+    ["open, with the process that forked it", { pid: PID, status: "idle", ended_at: undefined }],
+    ["ended after the import", { pid: PID, ...ended("completed", IMPORTED_AT + HOUR) }],
+  ])("a fork, which copies the mark, is read as any session: %s", (_case, changes) => {
+    expect(parse({ ...imported, ...changes })).toMatchObject({ pid: PID, status: changes.status });
+  });
+
+  test.each([
+    ["no metadata", undefined],
+    ["null", null],
+    ["a word", "imported"],
+    ["a list", [importMark]],
+    ["no mark", { title: "demo task" }],
+    [
+      "only the origin an import writes first",
+      {
+        title: imported.metadata.title,
+        sessionHistoryOrigin: imported.metadata.sessionHistoryOrigin,
+      },
+    ],
+  ])("a manifest with metadata of %s is read as any session", (_case, metadata) => {
+    expect(parse({ ...imported, metadata })).toMatchObject({ status: "completed" });
+  });
+
+  test.each([
+    ["a word", "codex"],
+    ["a number", 3],
+    ["a list", [importMark]],
+    ["null", null],
+    ["empty", {}],
+    ["with no time", { ...importMark, importedAt: undefined }],
+    ["with a time as a number", { ...importMark, importedAt: IMPORTED_AT }],
+    ["with a time as words", { ...importMark, importedAt: "yesterday" }],
+    ["with a time and no zone", { ...importMark, importedAt: "2026-10-01T11:00:00" }],
+  ])("a mark that is %s is no mark", (_case, importedFrom) => {
+    expect(parse(withMark(importedFrom))).toMatchObject({ status: "completed" });
+  });
+
+  test.each([
+    ["none", undefined],
+    ["a number", 1_790_000_000_000],
+    ["words", "yesterday"],
+    ["a time with no zone", "2026-09-30T09:00:00"],
+  ])("an end that is %s cannot say, so the session is read as any", (_case, value) => {
+    expect(parse({ ...imported, ended_at: value })).toMatchObject({ status: "completed" });
+  });
+
+  test.each(["cancelled", "failed"])(
+    "%s is not what an import writes, whatever its end",
+    (status) => {
+      expect(parse({ ...imported, status })).toMatchObject({ status });
+    },
+  );
+
+  test("a newer format is named before the mark is looked at", () => {
+    expect(parse({ ...imported, version: 2 })).toBe("newer");
+  });
+
+  test("another session's manifest is no manifest, mark or not", () => {
+    expect(parseManifest(manifestText(sessionIdOf(2), imported), ID, "darwin")).toBeNull();
+  });
+});
+
 describe("createManifestReader", () => {
   async function setUp(content = manifestText(ID), mtimeMs = NOW) {
     const files = memoryFiles(() => NOW);
@@ -194,6 +307,24 @@ describe("createManifestReader", () => {
     expect(await over.read()).toEqual({ state: "too-large" });
     expect(over.files.reads).toEqual([]);
     expect(over.files.openHandles()).toBe(0);
+  });
+
+  test("a session imported and never resumed is remembered, and not opened again", async () => {
+    const { files, read } = await setUp(manifestText(ID, imported));
+    expect(await read()).toEqual({ state: "never-resumed" });
+    expect(await read()).toEqual({ state: "never-resumed" });
+    expect(files.opened()).toEqual([FILE]);
+  });
+
+  test("a session resumed is read when its manifest changes, with its status from then", async () => {
+    const { files, read } = await setUp(manifestText(ID, imported));
+    await read();
+    files.rewrite(FILE, manifestText(ID, resumed), { mtimeMs: NOW + 1_000 });
+    expect(await read()).toMatchObject({
+      state: "ok",
+      manifest: { status: "running" },
+      statusWrittenAt: NOW + 1_000,
+    });
   });
 
   test("a manifest caught half written keeps what was read before, once", async () => {

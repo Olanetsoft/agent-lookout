@@ -158,7 +158,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 - OpenCode lists a root session anything of which was written in the last day, by the times in its rows.
 - Qwen Code counts a closed session from the poll that found it closed, or, for a record a crash left behind, from when its chat file was last written (`finishedSessions.ts`).
 - Hermes Agent lists a conversation anything of which was written in the last day, by the times in its rows.
-- Cline first lists a session whose manifest was written in the last day, keeps it for a day after its manifest or, while that says it is open, its messages file was last written, and keeps one that works or waits for as long as its process runs.
+- Cline first lists a session whose manifest was written in the last day, unless the desktop app imported it and it was never resumed, keeps it for a day after its manifest or, while that says it is open, its messages file was last written, and keeps one that works or waits for as long as its process runs.
 - Goose lists a session for a day after Goose last wrote it.
 - Pi lists a session for a day after its file was last written.
 - Kimi Code lists a session for a day after its `state.json` was last written, and for as long as a process that runs holds its lock or last held it.
@@ -378,7 +378,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **How it works.**
 
-- `index.ts` works out the folder as Cline does, lists it on every poll, and looks up only the manifests of the sessions it shows and of any new folder. Every other manifest is looked up once a minute, since Cline keeps every session it ever ran.
+- `index.ts` works out the folder as Cline does, lists it on every poll, and looks up only the manifests of the sessions it shows and of any new folder, and any other written in the last day. Every other manifest is looked up once a minute, since Cline keeps every session it ever ran.
 - `manifests.ts` opens a manifest only when it changed, and was written in the last day or belongs to a session still shown, without following a link, reads it only when it is 1 MiB or less, and keeps the id, pid, status, folder and two times. The first prompt and the title are in the same file, and go with the parsed text. A manifest caught half written keeps what was read before, once.
 - `clineMapping.ts` turns the status and whether the process runs into a session's status. `running`, `idle` and `pending` hold only while the process runs, so a crash left behind is finished, and a manifest with no pid is unknown.
 - `toSession.ts` makes the session, `cline:<session id>`, named after its folder.
