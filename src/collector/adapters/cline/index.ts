@@ -244,7 +244,8 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * Cline keeps every session it ever ran there, so a poll lists the folder, then
  * looks up only the sessions it shows and any new folder, with one `lstat` each.
  * Every other manifest is looked up once a minute, and a manifest last written
- * over a day ago is never opened. A manifest is opened only when it changes.
+ * over a day ago is opened only for a session still shown. A manifest is opened
+ * only when it changes.
  * So a session is first listed by its manifest's time alone, when that is within
  * 24 hours. Once listed, it stays for 24 hours after its manifest or, while that
  * says it is open, its messages file was last written, and for as long as it

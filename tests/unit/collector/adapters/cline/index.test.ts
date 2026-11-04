@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import {
@@ -148,6 +150,30 @@ describe("with no Cline", () => {
     expect(health.detail).toContain(UNCHECKED_NOTE);
     expect(health.watching).toContainEqual({ label: "Read", value: "not found" });
     expect(sessions).toEqual([]);
+    await adapter.poll();
+    expect(files.count("readdir")).toBe(2);
+  });
+
+  test("a CLINE_DIR with no folder there is Cline not found, and is looked for once a minute", async () => {
+    const files = memoryFiles(() => NOW);
+    const clock = handClock();
+    const adapter = clineAdapterFor(files, { env: { CLINE_DIR: "/tmp/one" }, now: clock.now });
+    const sessionsDir = path.resolve("/tmp/one/data/sessions");
+
+    const { health, sessions } = await adapter.poll();
+    expect(health).toMatchObject({
+      state: "unavailable",
+      detail: `Cline was not found: there is no ${sessionsDir} folder. Agent Lookout looks again every minute.`,
+    });
+    expect(health.watching).toContainEqual({ label: "Sessions folder", value: sessionsDir });
+    expect(health).not.toHaveProperty("advice");
+    expect(sessions).toEqual([]);
+
+    clock.advance(RECHECK_MS - 1);
+    await adapter.poll();
+    expect(files.count("readdir")).toBe(1);
+
+    clock.advance(1);
     await adapter.poll();
     expect(files.count("readdir")).toBe(2);
   });

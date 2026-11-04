@@ -390,7 +390,7 @@ Every 2 seconds it:
 
 - lists that folder;
 - looks up, with `lstat` and without opening it, `<session ID>/<session ID>.json`, the session's manifest, for each session it shows and each new folder, and once a minute for every other folder there. A folder's name must be letters, digits, `.`, `_` and `-`;
-- opens a manifest, read-only, when it has changed and was written in the last day. It opens it only when the session's folder is a real folder, without following a link at the manifest's name and without waiting on a pipe, and reads it only when the open file is an ordinary file of 1 MiB or less. A manifest last written over a day ago is not opened;
+- opens a manifest, read-only, when it has changed and either was written in the last day or belongs to a session still shown. It opens it only when the session's folder is a real folder, without following a link at the manifest's name and without waiting on a pipe, and reads it only when the open file is an ordinary file of 1 MiB or less. A manifest last written over a day ago is not opened unless its session is still shown;
 - looks up, with `lstat` and without opening it, `<session ID>/<session ID>.messages.json`, for each session whose manifest says it is open, for when it was last changed. That file holds the whole conversation, and it is never opened. Its time says how long a working session has been [quiet](docs/GUIDE.md#quiet-for);
 - asks, with a signal-0 check, which sends it nothing, whether the process a manifest names exists, for each session whose manifest says it is open. On a Mac it also asks `ps` when that process started, as [`ps`](#ps) says.
 
