@@ -26,6 +26,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - A wait that ends when Antigravity closes now ends there, in Waits and the Events log. A chat that needed you when the app closed could go to finished with no event, so Waits went on counting it for as long as the app stayed closed, and Events never showed the wait ending. If the chat still waits when the app opens, that is a wait of its own, and the time closed counts for neither (#251).
 
+- A Gemini CLI session no longer looks quiet while a subagent it started works. A subagent writes to a file of its own, and the session writes nothing to its file while it waits, so its [Quiet for](docs/GUIDE.md#quiet-for) kept growing as if it had stopped. It now goes by the newest of the session's file and its subagents' files, in `chats/<session ID>/` in either of Gemini CLI's folders, and Keep awake counts those writes too. Agent Lookout only looks up when those files were last changed, for the sessions it lists, and never opens them. Sources says so. This was built from Gemini CLI's source at v0.64.0 and has not yet been checked on a machine running it (#178).
+
 ## 0.2.17 - 2026-11-03
 
 Gemini CLI and OpenCode sessions show what they last said, and Qwen Code sessions give the token counts of their newest reply.

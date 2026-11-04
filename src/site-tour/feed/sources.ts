@@ -561,6 +561,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Seatbelt sessions folder", value: "~/.cache/.gemini/tmp" },
         { label: "Read", value: "not found" },
         { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
+        {
+          label: "Subagent files",
+          value: "chats/<session id>/*.jsonl, looked up and never opened",
+        },
         { label: "Programs run", value: "None" },
         {
           label: "Last message read",

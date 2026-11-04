@@ -20,6 +20,7 @@ import { createChatFileReader, type ChatFileState } from "./chatFile.ts";
 import { createChatLister } from "./chats.ts";
 import { createGeminiCliLastMessages } from "./lastMessages.ts";
 import { createProjectLister, type Project, type ProjectLister } from "./projects.ts";
+import { createSubagentWrites, subagentFolder } from "./subagentWrites.ts";
 import { geminiCliSession, lastActivity, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that names Gemini CLI's folder, the one that holds `tmp/`, for Agent Lookout alone. */
@@ -51,6 +52,9 @@ export const RECHECK_MS = 60_000;
 export const BASIS = "files";
 
 const LABEL = "Gemini CLI";
+
+/** What Sources says of a subagent's files. */
+export const SUBAGENT_FILES = "chats/<session id>/*.jsonl, looked up and never opened";
 
 /** Said whenever Gemini CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
@@ -85,7 +89,8 @@ export const UNKNOWN_NOTE =
  *   text begins, and `gemini -p` records no error at all.
  * - Its name is the title Gemini CLI saves at a later start in the same folder.
  * - No Jump: the files name no process or terminal.
- * - Quiet for is the file's own modified time, moved on by every line.
+ * - Quiet for is the newest modified time of the session's file and its
+ *   subagents' files, each moved on by every line (`subagentWrites.ts`).
  * - Tokens are the counts of the newest reply left that has them, from the
  *   same read of the session file (`summaryCountsOf` in `chatFile.ts`).
  * - No Stop and no Answer: there is no process to confirm, and no wait to answer.
@@ -225,6 +230,11 @@ export interface GeminiCliAdapter extends Adapter {
    * that check none is kept once its session has left the list.
    */
   readonly lastMessagesKept: number;
+  /**
+   * How many sessions' subagent folders it keeps file names for, in memory. For
+   * the tests that check none is kept once its session has left the list.
+   */
+  readonly subagentFoldersKept: number;
 }
 
 /**
@@ -239,6 +249,9 @@ export interface GeminiCliAdapter extends Adapter {
  *   `.project_root`, for the folder the project is for (`projects.ts`).
  * - Each project's `chats/`, listed, and the session files in it written to in
  *   the last day (`chats.ts`, `chatFile.ts`).
+ * - The folder of each session it lists, `chats/<session id>/`, listed, for when
+ *   the session's subagents last wrote, from their files' modified times. Those
+ *   files are never opened (`subagentWrites.ts`).
  *
  * On a Mac it reads them in two folders: Gemini CLI's own, and the one it
  * keeps its sessions in under macOS Seatbelt, `~/.cache/.gemini`
@@ -248,9 +261,10 @@ export interface GeminiCliAdapter extends Adapter {
  *
  * A session is listed for 24 hours after its last update. Its status is
  * working, idle, failed or unknown, never "needs-you" or "finished": Gemini
- * CLI writes nothing while a tool waits for approval or runs, and nothing when
- * a session ends. A subagent's own file is never listed. Two projects can each
- * hold a session of one id, which `--session-id` allows, so a session's id
+ * CLI writes nothing to a session's file while a tool waits for approval or
+ * runs, and nothing when a session ends. A subagent's own file is never listed,
+ * and its writes move nothing but its session's last write. Two projects can
+ * each hold a session of one id, which `--session-id` allows, so a session's id
  * names its project's folder too. Two files of one id in one project of one
  * folder are listed once, from the one active last, as Gemini CLI's own list
  * shows them.
@@ -301,6 +315,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
 
   const chats = createChatLister({ io, refreshMs: options.listRefreshMs });
   const reader = createChatFileReader(io);
+  const subagents = createSubagentWrites({ io, refreshMs: options.listRefreshMs });
   // What a session last said, read only when it is asked for. With either
   // setting off, no file is opened for it.
   const lastMessagesOff = lastMessageStoppedBy(env);
@@ -331,6 +346,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
       ...seatbelt,
       { label: "Read", value: read },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
+      { label: "Subagent files", value: SUBAGENT_FILES },
       { label: "Programs run", value: "None" },
       { label: "Last message read", value: lastMessageRead },
     ];
@@ -473,6 +489,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
         at: number;
         writtenAt: number;
         file: string;
+        subagentDir: string;
       }
     >();
     for (const ref of [...listing.refs].sort((a, b) => (a.path < b.path ? -1 : 1))) {
@@ -503,15 +520,31 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
           at,
           writtenAt: ref.info.mtimeMs,
           file: ref.path,
+          subagentDir: subagentFolder(ref.project.dir, header.sessionId),
         });
       }
     }
     reader.keepOnly(read);
 
+    // Only the folders of the sessions this poll lists. A subagent's writes count
+    // as its session's, since the session writes nothing while it waits on one.
+    const subagentWrites = await subagents.newest(
+      [...chosen.values()].map(({ subagentDir }) => subagentDir),
+      checkedAt,
+    );
+
     const sessions: Session[] = [];
-    for (const { state, project, writtenAt, file } of chosen.values()) {
+    for (const { state, project, writtenAt, file, subagentDir } of chosen.values()) {
       const { slug, seatbelt, cwd } = project;
-      const session = geminiCliSession({ state, slug, seatbelt, cwd, writtenAt, now: checkedAt });
+      const session = geminiCliSession({
+        state,
+        slug,
+        seatbelt,
+        cwd,
+        writtenAt,
+        subagentWrittenAt: subagentWrites.get(subagentDir),
+        now: checkedAt,
+      });
       if (session) {
         sessions.push(session);
         listedFiles.set(session.id, file);
@@ -544,12 +577,16 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
             answer.sessions.map(({ id }) => [id, listedFiles.get(id) ?? null]),
           ),
         );
+        // A poll that could not list them never asks for a subagent's folder, so
+        // what is kept of those goes here.
+        if (answer.sessions.length === 0) subagents.forget();
         return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
         // answer, and the person sees a sentence, not a stack trace. It lists no
-        // session, so no last message is kept either.
+        // session, so no last message or subagent's file name is kept either.
         lastMessages?.forget();
+        subagents.forget();
         return result(
           "error",
           "Something unexpected went wrong while reading Gemini CLI sessions.",
@@ -566,6 +603,9 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
     },
     get lastMessagesKept() {
       return lastMessages?.size ?? 0;
+    },
+    get subagentFoldersKept() {
+      return subagents.size;
     },
   };
 }

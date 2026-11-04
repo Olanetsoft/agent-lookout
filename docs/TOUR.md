@@ -279,11 +279,12 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 - `projects.ts` lists `tmp/`, one folder for each project, and reads each one's `.project_root`, one line naming the folder the project is for.
 - `chats.ts` lists each project's `chats/` when its time moves, or every 30 seconds, and looks up the `session-*.jsonl` files written in the last day. It never looks into a subagent's folder.
+- `subagentWrites.ts` looks into that folder, `chats/<session id>/`, for each session a poll lists, on the same rule, for when its subagents last wrote, which Quiet for goes by when it is newer than the session's own file. It opens none of their files.
 - `chatFile.ts` reads a session file's first line, then at most its last 8 MiB, then only what was added, and turns each line into a small record of ids, kinds, times and a few facts, such as whether a message calls a tool, and three token counts of a reply. It keeps no text but the session's title. A line longer than 8 MiB is told apart from its first 512 bytes, or is unknown.
 - `geminiCliMapping.ts` replays the records by Gemini CLI's own rules, since a later line can replace, take back or reorder messages, and maps the newest message that says how the session stands to working, idle, failed or unknown. It also takes the token counts of the newest reply left that has them (#177).
 - `lastMessages.ts` reads what a session last said from the end of its file, only when the route asks, as [A session's last message](#a-sessions-last-message) says.
 
-**Statuses.** A prompt, a tool's result or a reply that only calls tools is working. A reply with text, an error of another kind, or a prompt Gemini CLI took back is idle. The error of a failed request is failed. Gemini CLI writes nothing while a tool waits or runs, and a tool call only once it ends, so a session waiting for approval after a reply with text shows as idle. With no lock or end mark, nothing is ever finished: a session leaves the list a day after its last update.
+**Statuses.** A prompt, a tool's result or a reply that only calls tools is working. A reply with text, an error of another kind, or a prompt Gemini CLI took back is idle. The error of a failed request is failed. Gemini CLI writes nothing to a session's file while a tool waits or runs, and a tool call only once it ends, so a session waiting for approval after a reply with text shows as idle. With no lock or end mark, nothing is ever finished: a session leaves the list a day after its last update.
 
 **How sure it is.** It was built from Gemini CLI 0.64.0's source and has not yet been checked on a machine running it. The card says so (`UNCHECKED_NOTE`).
 

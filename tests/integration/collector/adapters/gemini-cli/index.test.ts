@@ -11,6 +11,7 @@ import {
   realpath,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -24,6 +25,7 @@ import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
   chatFile,
   chatName,
+  DAY,
   geminiLine,
   headerLine,
   HOME,
@@ -39,6 +41,7 @@ import {
   SLUG,
   updatedLine,
   userLine,
+  workingSession,
 } from "@tests/fixtures/gemini-cli/geminiCli";
 import { handClock } from "@tests/support/adapters/geminiCliAdapter";
 import { tempDir } from "@tests/support/node/tempFiles";
@@ -102,6 +105,9 @@ async function snapshotOf(root: string): Promise<Record<string, string>> {
   return found;
 }
 
+/** Sets a file's modified time. */
+const writeTime = (file: string, ms: number) => utimes(file, new Date(ms), new Date(ms));
+
 function adapterFor(home: string, io: ReadOnlyIo = nodeIo, now = () => NOW) {
   return createGeminiCliAdapter({
     env: { AGENT_LOOKOUT_GEMINI_CLI_HOME: home },
@@ -139,7 +145,7 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
     expect(JSON.stringify(result)).not.toContain(MODEL);
   });
 
-  test("opens only each project's .project_root and session files, and lists only tmp/ and chats/", async () => {
+  test("opens only each project's .project_root and session files, and lists only tmp/, chats/ and a listed session's subagent folder", async () => {
     const home = await copyOfHome();
     const { io, calls } = recordingIo();
     const clock = handClock(NOW);
@@ -157,11 +163,18 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
       ].sort(),
     );
     const listed = calls.filter((call) => call.method === "readdir").map((call) => call.path);
-    expect(listed.sort()).toEqual([path.join(home, "tmp"), chats].sort());
+    const subagents = path.join(chats, ids.working);
+    expect(listed.sort()).toEqual([path.join(home, "tmp"), chats, subagents].sort());
 
     // Looked at, and never opened: the session file of the format before 0.39.
     const older = path.join(chats, "session-2026-09-20T08-00-00000000.json");
     expect(calls.filter((call) => call.path === older)).toEqual([{ method: "lstat", path: older }]);
+    // Looked at, and never opened: the subagent's file of the session that is working.
+    const agent = path.join(subagents, "agent-0001.jsonl");
+    expect(calls.filter((call) => call.path === agent)).toEqual([{ method: "lstat", path: agent }]);
+    expect(calls.filter((call) => call.path === path.join(chats, ids.idle))).toEqual([
+      { method: "lstat", path: path.join(chats, ids.idle) },
+    ]);
     // Gemini CLI's own folders are looked at for a .project_root alone, and passed over.
     for (const own of ["bin", "background-processes"]) {
       const dir = path.join(home, "tmp", own);
@@ -192,8 +205,6 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
       `${path.sep}logs${path.sep}`,
       `${path.sep}memory`,
       ".tmp-123",
-      // The subagent's folder of the working session.
-      path.join(chats, ids.working),
       "antigravity",
     ]) {
       expect(
@@ -243,6 +254,143 @@ describe("the Gemini CLI adapter, on a folder laid out as Gemini CLI lays it out
       status: "idle",
       statusSince: NOW,
     });
+  });
+});
+
+describe("a subagent's writes, from the real files", () => {
+  const AGENT = "11111111-1111-4111-8111-111111111111";
+  const session = sessionIdOf("61");
+  const NEVER_OPENED = "placeholder: must never be opened\n";
+
+  /** A temporary home with one working session, whose own file was last written ten minutes ago. */
+  async function homeWithSession() {
+    const home = await tempDir();
+    const project = path.join(home, "tmp", SLUG);
+    const chats = path.join(project, "chats");
+    await mkdir(chats, { recursive: true });
+    await writeFile(path.join(project, ".project_root"), `${PROJECT}\n`);
+    const file = path.join(chats, chatName(NOW - 30 * MINUTE, session));
+    await writeFile(file, workingSession(session, NOW - 30 * MINUTE));
+    await writeTime(file, NOW - 10 * MINUTE);
+    return { home, chats, subagents: path.join(chats, session) };
+  }
+
+  /** Writes a subagent's file with this modified time. */
+  async function writeAgent(subagents: string, name: string, writtenAt: number) {
+    await mkdir(subagents, { recursive: true });
+    const file = path.join(subagents, name);
+    await writeFile(file, NEVER_OPENED);
+    await writeTime(file, writtenAt);
+    return file;
+  }
+
+  const lastWrite = async (home: string, io: ReadOnlyIo = nodeIo) => {
+    const { sessions } = await adapterFor(home, io).poll();
+    expect(sessions).toHaveLength(1);
+    return sessions[0]?.lastWriteAt;
+  };
+
+  test("a subagent newer than the session's file gives its last write", async () => {
+    const { home, subagents } = await homeWithSession();
+    await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+    expect(await lastWrite(home)).toBe(NOW - 5 * SECOND);
+  });
+
+  test("a subagent older than the session's file does not", async () => {
+    const { home, subagents } = await homeWithSession();
+    await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 20 * MINUTE);
+    expect(await lastWrite(home)).toBe(NOW - 10 * MINUTE);
+  });
+
+  test("with no subagent, it is the session's file", async () => {
+    const { home } = await homeWithSession();
+    expect(await lastWrite(home)).toBe(NOW - 10 * MINUTE);
+  });
+
+  test("a link in the folder is not followed, however new what it points to", async () => {
+    const { home, subagents } = await homeWithSession();
+    const outside = path.join(await tempDir(), "elsewhere.jsonl");
+    await writeFile(outside, NEVER_OPENED);
+    await writeTime(outside, NOW - 5 * SECOND);
+    await mkdir(subagents);
+    await symlink(outside, path.join(subagents, `${AGENT}.jsonl`));
+    const { io, calls } = recordingIo();
+    expect(await lastWrite(home, io)).toBe(NOW - 10 * MINUTE);
+    expect(calls.filter((call) => call.path === outside)).toEqual([]);
+  });
+
+  // Windows makes a link to a folder only with rights a test does not have.
+  test.skipIf(process.platform === "win32")(
+    "a link in the folder's place is not followed",
+    async () => {
+      const { home, subagents } = await homeWithSession();
+      const outside = await tempDir();
+      await writeAgent(outside, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+      await symlink(outside, subagents);
+      const { io, calls } = recordingIo();
+      expect(await lastWrite(home, io)).toBe(NOW - 10 * MINUTE);
+      expect(calls.filter((call) => call.method === "readdir" && call.path === subagents)).toEqual(
+        [],
+      );
+    },
+  );
+
+  test("the folder of a session not listed is not looked at", async () => {
+    const { home, chats, subagents } = await homeWithSession();
+    await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+    const older = sessionIdOf("62");
+    const file = path.join(chats, chatName(NOW - 3 * DAY, older));
+    await writeFile(file, workingSession(older, NOW - 3 * DAY));
+    await writeTime(file, NOW - 2 * DAY);
+    const otherFolder = path.join(chats, older);
+    await writeAgent(otherFolder, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+    const { io, calls } = recordingIo();
+    await lastWrite(home, io);
+    expect(calls.filter((call) => call.path.startsWith(otherFolder))).toEqual([]);
+  });
+
+  test("no subagent's file is opened, or changed, and only the session is listed", async () => {
+    const { home, subagents } = await homeWithSession();
+    const agent = await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+    const before = await snapshotOf(home);
+    const { io, calls } = recordingIo();
+    const clock = handClock(NOW);
+    const adapter = adapterFor(home, io, clock.now);
+    for (let poll = 0; poll < 3; poll += 1) {
+      expect((await adapter.poll()).sessions.map(({ id }) => id)).toEqual([
+        geminiCliSessionId(SLUG, session),
+      ]);
+      clock.advance(2 * SECOND);
+    }
+    expect(new Set(calls.filter((call) => call.path === agent).map((call) => call.method))).toEqual(
+      new Set(["lstat"]),
+    );
+    expect(calls.filter((call) => call.method === "openRegular" && call.path === agent)).toEqual(
+      [],
+    );
+    expect(await snapshotOf(home)).toEqual(before);
+  });
+
+  test("works for a session in the folder Gemini CLI keeps under macOS Seatbelt", async () => {
+    const realHome = await tempDir();
+    const project = path.join(realHome, ".cache", ".gemini", "tmp", SLUG);
+    const chats = path.join(project, "chats");
+    await mkdir(chats, { recursive: true });
+    await writeFile(path.join(project, ".project_root"), `${PROJECT}\n`);
+    const file = path.join(chats, chatName(NOW - 30 * MINUTE, session));
+    await writeFile(file, workingSession(session, NOW - 30 * MINUTE));
+    await writeTime(file, NOW - 10 * MINUTE);
+    await writeAgent(path.join(chats, session), `${AGENT}.jsonl`, NOW - 5 * SECOND);
+    const adapter = createGeminiCliAdapter({
+      env: {},
+      homeDir: realHome,
+      now: () => NOW,
+      platform: "darwin",
+    });
+    const { sessions } = await adapter.poll();
+    expect(sessions.map(({ id, lastWriteAt }) => ({ id, lastWriteAt }))).toEqual([
+      { id: geminiCliSessionId(SLUG, session, true), lastWriteAt: NOW - 5 * SECOND },
+    ]);
   });
 });
 
