@@ -28,6 +28,7 @@ import { PS_TABLE_ARGS } from "../../processes/processTable.ts";
 import { TAB_LOOK_SOONEST_MS, type TabAsker } from "../../terminal/tabFinder.ts";
 import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
+import { paneFacts } from "../paneFacts.ts";
 import { every } from "../words.ts";
 import {
   createFeedReader,
@@ -228,8 +229,9 @@ export interface ClaudeCodeAdapterOptions {
   readProcessStarts?: ReadProcessStarts;
   /**
    * Finds the tmux pane each live session's process runs in, so that Jump can
-   * select it. The collector passes an asker of the finder it also acts with.
-   * Left out, no pane is looked for and tmux is never run.
+   * select it. The collector passes an asker of the finder it also acts with,
+   * which also says whether it has asked. Left out, no pane is looked for and
+   * tmux is never run.
    */
   panes?: PaneAsker;
   /**
@@ -470,14 +472,15 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const oddStatus = `a session in the registry at ${registryName} has a status Agent Lookout does not know`;
 
   /**
-   * What Sources says of `ps` for a session's start time, its tab and a stop:
-   * what is run, and how often, or "not run" until something has asked. Saying
-   * so runs nothing: the start check, the tab finder and the stop targets each
-   * say whether they have asked. The `ps` the pane finder runs goes with
-   * tmux, which no card lists.
+   * What Sources says of `ps` for a session's start time, its pane, its tab
+   * and a stop, and of tmux: what is run, and how often, or "not run" until
+   * something has asked. Saying so runs nothing: the start check, the pane
+   * finder, the tab finder and the stop targets each say whether they have
+   * asked.
    *
    * - The start check runs at a poll, for a session whose file records a start
    *   time. On Windows `ps` is never run, so signal 0 is all there is.
+   * - The pane finder asks only where tmux is (`paneFacts`).
    * - The tab finder asks only on a Mac, the one system with Terminal or iTerm2.
    * - A stop asks twice at the moment of acting, from a route, and only where
    *   sessions can be stopped.
@@ -495,6 +498,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           ? `${every(START_CHECK_TTL_MS)} while a session's process runs, and sooner when another appears`
           : "not run",
       },
+      ...paneFacts(options.panes, platform),
       ...(tabs
         ? [
             { label: "Tab check", value: `ps ${PS_TABLE_ARGS.join(" ")}` },

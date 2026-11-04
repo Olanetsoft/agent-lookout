@@ -13,7 +13,9 @@ import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
 import { createTabFinder } from "@collector/terminal/tabFinder";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
+import { createPaneFinder } from "@collector/tmux/paneFinder";
 import type { TmuxPane } from "@collector/tmux/panes";
+import { createTmuxRunner, tmuxInstalled } from "@collector/tmux/program";
 import type { SourceFact } from "@core/sessions/session";
 import { HOME, ids, pids, registryFile, registryFiles } from "@tests/fixtures/claudeCode";
 import {
@@ -26,6 +28,13 @@ import {
   watching,
   WITHHELD,
 } from "@tests/support/adapters/claudeCodeAdapter";
+import {
+  PANE_CHECK,
+  PANE_CHECK_RUN,
+  PANE_PARENT_CHECK,
+  PANE_PARENT_CHECK_RUN,
+  standInPaneFinder,
+} from "@tests/support/node/tmux";
 import { asWritten } from "@tests/support/paths";
 
 // The adapter with every outside thing handed in: the registry folder is a
@@ -124,7 +133,11 @@ describe("tmux panes", () => {
     readFile: async (file) => registryFiles[path.basename(file)] ?? "",
   };
 
-  /** A stand-in for the collector's finder: it knows one pane, and writes down who it was asked about. */
+  /**
+   * A stand-in for the collector's finder: it knows one pane, and writes down
+   * who it was asked about. It says tmux is not there, which keeps the rows
+   * about panes off the card.
+   */
   function knownPanes(panes: Record<number, TmuxPane>) {
     const looked: number[][] = [];
     return {
@@ -133,6 +146,9 @@ describe("tmux panes", () => {
         looked.push([...asked].sort());
       },
       paneOf: (pid: number) => panes[pid],
+      installed: () => false,
+      asked: () => false,
+      parentsAsked: () => false,
     };
   }
 
@@ -209,7 +225,7 @@ describe("tmux panes", () => {
     expect((await without.poll()).sessions).toEqual((await withFinder.poll()).sessions);
   });
 
-  test("the health of the source says nothing of tmux, found or not", async () => {
+  test("without tmux, the health of the source is the same with a pane finder or without one", async () => {
     const a = await adapterFor("/Users/example/elsewhere", {
       registryIo,
       run: fails("stopped with exit code 1"),
@@ -221,6 +237,24 @@ describe("tmux panes", () => {
     }).poll();
 
     expect(a.health).toEqual(b.health);
+  });
+
+  test("with tmux, the state and detail of the source are the same with a pane finder or without one", async () => {
+    const a = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      run: fails("stopped with exit code 1"),
+      panes: { ...knownPanes({ [pids.busy]: pane }), installed: () => true },
+      platform: "darwin",
+    }).poll();
+    const b = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      run: fails("stopped with exit code 1"),
+      platform: "darwin",
+    }).poll();
+
+    expect(a.health.watching).not.toEqual(b.health.watching);
+    expect(a.health.state).toBe(b.health.state);
+    expect(a.health.detail).toBe(b.health.detail);
   });
 });
 
@@ -269,6 +303,9 @@ describe("Terminal and iTerm2 tabs", () => {
       },
       paneOf: (pid: number): TmuxPane | undefined =>
         pid === pids.question ? { pid: 4100, id: "%3", place: "search-indexing:0.1" } : undefined,
+      installed: () => false,
+      asked: () => false,
+      parentsAsked: () => false,
     };
     const { sessions } = await adapterFor("/Users/example/elsewhere", {
       registryIo,
@@ -669,6 +706,257 @@ describe("what Sources says of ps", () => {
     const { health } = await adapter.poll();
     expect(health.state).toBe("error");
     expect(processRowsIn(health.watching)).toEqual(rows);
+  });
+});
+
+describe("what Sources says of tmux", () => {
+  /** The fixtures' registry folder, held in memory. */
+  const registryIo: RegistryIo = {
+    readdir: async () => Object.keys(registryFiles),
+    readFile: async (file) => registryFiles[path.basename(file)] ?? "",
+  };
+
+  /** No session anywhere: an empty registry folder, and a command that lists none. */
+  const noSessions = {
+    registryIo: { readdir: async () => [], readFile: async () => "" },
+    run: prints("[]"),
+  };
+
+  /** One pane, and every process in the fixtures run by the process tmux started in it. */
+  const PANE = "4301 %1 0 0 checkout-flow";
+  const parents = new Map(Object.values(pids).map((pid) => [pid, 4301]));
+
+  /** The pane finder the collector builds, on a clock a test moves. */
+  function standIns(
+    more: { isInstalled?: () => Promise<boolean>; parents?: Map<number, number> } = {},
+  ) {
+    const clock = { now };
+    const found = standInPaneFinder({
+      panes: [PANE],
+      parents,
+      now: () => clock.now,
+      ...more,
+    });
+    return { clock, ...found };
+  }
+
+  function adapterOn(
+    platform: NodeJS.Platform,
+    processes: ReturnType<typeof standIns>,
+    options: Parameters<typeof adapterFor>[1] = {},
+  ) {
+    const windows = platform === "win32";
+    return adapterFor(windows ? "C:\\Users\\example\\elsewhere" : "/Users/example/elsewhere", {
+      registryIo,
+      platform,
+      now: () => processes.clock.now,
+      panes: processes.finder.asker(),
+      ...(windows && { homeDir: "C:\\Users\\example" }),
+      ...options,
+    });
+  }
+
+  /** The rows of a card that are about panes. */
+  const paneRowsIn = (rows: SourceFact[] | undefined) =>
+    rows?.filter((fact) => fact.label.startsWith("Pane "));
+  const paneRows = async (adapter: ReturnType<typeof adapterFor>) =>
+    paneRowsIn((await adapter.poll()).health.watching);
+
+  const NOT_RUN = [
+    { label: "Pane check", value: PANE_CHECK },
+    { label: "Pane check run", value: "not run" },
+    { label: "Pane parent check", value: PANE_PARENT_CHECK },
+    { label: "Pane parent check run", value: "not run" },
+  ];
+  const RAN = [
+    { label: "Pane check", value: PANE_CHECK },
+    { label: "Pane check run", value: PANE_CHECK_RUN },
+    { label: "Pane parent check", value: PANE_PARENT_CHECK },
+    { label: "Pane parent check run", value: PANE_PARENT_CHECK_RUN },
+  ];
+
+  test.each(["darwin", "linux"] as const)(
+    "on %s it lists tmux and its ps as not run while no session has asked, and nothing has run",
+    async (platform) => {
+      const processes = standIns();
+      expect(await paneRows(adapterOn(platform, processes, noSessions))).toEqual(NOT_RUN);
+      expect(processes.tmux.ran).toEqual([]);
+      expect(processes.ps.runs).toBe(0);
+    },
+  );
+
+  test.each(["darwin", "linux"] as const)(
+    "on %s the first run shows on the poll that made it, and stays once the sessions have gone",
+    async (platform) => {
+      let files: Record<string, string> = {};
+      const adapter = adapterOn(platform, standIns(), {
+        run: prints("[]"),
+        registryIo: {
+          readdir: async () => Object.keys(files),
+          readFile: async (file) => files[path.basename(file)] ?? "",
+        },
+      });
+      expect(await paneRows(adapter)).toEqual(NOT_RUN);
+
+      files = registryFiles;
+      expect(await paneRows(adapter)).toEqual(RAN);
+
+      files = {};
+      expect(await paneRows(adapter)).toEqual(RAN);
+    },
+  );
+
+  test("it says the same whether or not a session was found in a pane", async () => {
+    const found = await adapterOn("linux", standIns()).poll();
+    const notFound = await adapterOn("linux", standIns({ parents: new Map() })).poll();
+
+    expect(found.sessions.some((session) => session.jump !== undefined)).toBe(true);
+    expect(notFound.sessions.some((session) => session.jump !== undefined)).toBe(false);
+    expect(found.health).toEqual(notFound.health);
+  });
+
+  test("they come after the start check and before the look for a tab", async () => {
+    const processes = standIns();
+    const { health } = await adapterOn("darwin", processes, {
+      terminals: createTabFinder({
+        env: {},
+        homeDir: HOME,
+        readProcesses: async () => new Map(),
+      }).asker(),
+    }).poll();
+
+    expect(health.watching?.map((fact) => fact.label).slice(4, 10)).toEqual([
+      "Process check",
+      "Process check run",
+      "Pane check",
+      "Pane check run",
+      "Pane parent check",
+      "Pane parent check run",
+    ]);
+  });
+
+  test("on Windows, which has neither, it lists neither, whatever it is handed", async () => {
+    const processes = standIns();
+    const { health } = await adapterOn("win32", processes).poll();
+
+    expect(paneRowsIn(health.watching)).toEqual([]);
+    expect(JSON.stringify(health.watching)).not.toMatch(/tmux|\bps\b/);
+  });
+
+  test("with no tmux server running it says tmux has run, and its ps has not", async () => {
+    const processes = standIns();
+    processes.tmux.down = "no server running on /tmp/tmux-501/default";
+
+    expect(await paneRows(adapterOn("linux", processes))).toEqual([
+      { label: "Pane check", value: PANE_CHECK },
+      { label: "Pane check run", value: PANE_CHECK_RUN },
+      { label: "Pane parent check", value: PANE_PARENT_CHECK },
+      { label: "Pane parent check run", value: "not run" },
+    ]);
+    expect(processes.ps.runs).toBe(0);
+  });
+
+  test.each(["darwin", "linux"] as const)(
+    "on %s without tmux it says nothing of it, and ps is not asked",
+    async (platform) => {
+      const processes = standIns({ isInstalled: async () => false });
+      processes.tmux.panes = [];
+
+      expect(await paneRows(adapterOn(platform, processes))).toEqual([]);
+      expect(await paneRows(adapterOn(platform, processes, noSessions))).toEqual([]);
+      expect(processes.ps.runs).toBe(0);
+    },
+  );
+
+  test("with AGENT_LOOKOUT_TMUX off it says nothing of tmux, which is not even looked for", async () => {
+    const env = { AGENT_LOOKOUT_TMUX: "off", PATH: "/opt/homebrew/bin" };
+    const looked: string[] = [];
+    const isExecutable = async (candidate: string) => {
+      looked.push(candidate);
+      return true;
+    };
+    const adapter = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      platform: "darwin",
+      panes: createPaneFinder({
+        run: createTmuxRunner({ env, isExecutable, platform: "darwin" }),
+        isInstalled: () => tmuxInstalled({ env, isExecutable, platform: "darwin" }),
+        readParents: async () => {
+          throw new Error("ps must not be asked");
+        },
+      }).asker(),
+    });
+
+    expect(await paneRows(adapter)).toEqual([]);
+    expect(looked).toEqual([]);
+  });
+
+  test("AGENT_LOOKOUT_TERMINAL_JUMP is for tabs alone, so with it off tmux runs and the card says so", async () => {
+    const env = { AGENT_LOOKOUT_TERMINAL_JUMP: "off" };
+    const processes = standIns({
+      isInstalled: () => tmuxInstalled({ env, isExecutable: async () => true, platform: "darwin" }),
+    });
+    let tables = 0;
+    const adapter = adapterOn("darwin", processes, {
+      terminals: createTabFinder({
+        env,
+        homeDir: HOME,
+        readProcesses: async () => {
+          tables += 1;
+          return new Map();
+        },
+      }).asker(),
+    });
+
+    expect(await paneRows(adapter)).toEqual(RAN);
+    expect(processes.tmux.names()).toEqual(["list-panes"]);
+    expect(processes.ps.runs).toBe(1);
+    expect(tables).toBe(0);
+  });
+
+  test("the rows add no run of tmux or ps: one of each in 30 seconds, and nothing asks between polls", async () => {
+    const processes = standIns();
+    const adapter = adapterOn("linux", processes);
+
+    for (let polled = 0; polled < 15; polled += 1) {
+      await adapter.poll();
+      processes.clock.now += 2_000;
+    }
+    expect(processes.tmux.ran).toHaveLength(1);
+    expect(processes.ps.runs).toBe(1);
+
+    await adapter.poll();
+    expect(processes.tmux.ran).toHaveLength(2);
+    expect(processes.ps.runs).toBe(2);
+  });
+
+  test("a look made for another adapter's process leaves this card's rows at not run", async () => {
+    const processes = standIns();
+    await processes.finder.asker().look([pids.idle]);
+    expect(processes.tmux.ran).toHaveLength(1);
+
+    expect(await paneRows(adapterOn("darwin", processes, noSessions))).toEqual(NOT_RUN);
+    expect(processes.tmux.ran).toHaveLength(1);
+  });
+
+  test("with no pane finder it says nothing of tmux", async () => {
+    expect(await paneRows(adapterOn("darwin", standIns(), { panes: undefined }))).toEqual([]);
+  });
+
+  test("a poll that goes wrong gives the same rows", async () => {
+    let broken = false;
+    const adapter = adapterOn("darwin", standIns(), {
+      isAlive: () => {
+        if (broken) throw new Error("Not expected.");
+        return true;
+      },
+    });
+    const rows = await paneRows(adapter);
+
+    broken = true;
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(paneRowsIn(health.watching)).toEqual(rows);
   });
 });
 

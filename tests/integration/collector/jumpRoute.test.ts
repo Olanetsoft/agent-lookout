@@ -14,7 +14,7 @@ import { TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFinder";
 import { PANE_LOOK_INTERVAL_MS, PANE_LOOK_SOONEST_MS } from "@collector/tmux/paneFinder";
 import { LIST_CLIENTS_ARGS, describePaneArgs } from "@collector/tmux/selectPane";
 import { JUMP_INTERVAL_MS } from "@core/api";
-import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import type { Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { lstart } from "@tests/fixtures/antigravity";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
@@ -38,7 +38,13 @@ import {
   type ProcessRow,
 } from "@tests/support/node/terminal";
 import { startStandIn } from "@tests/support/node/standIns";
-import { fakeTmux } from "@tests/support/node/tmux";
+import {
+  fakeTmux,
+  PANE_CHECK,
+  PANE_CHECK_RUN,
+  PANE_PARENT_CHECK,
+  PANE_PARENT_CHECK_RUN,
+} from "@tests/support/node/tmux";
 
 const T0 = 1_700_000_100_000;
 
@@ -177,11 +183,35 @@ async function serve(
     jumpRequest(port, sessionId, options);
   const sessions = async () =>
     (await request(port, "/api/sessions")).json<SessionsSnapshot>().sessions;
+  const sources = async () =>
+    (await request(port, "/api/sessions")).json<SessionsSnapshot>().sources;
   /** What tmux was asked after the first look for panes. */
   const asked = () => tmux.ran.slice(1);
 
-  return { port, tmux, osascript, ps, starts, clock, collector, jump, sessions, asked };
+  return { port, tmux, osascript, ps, starts, clock, collector, jump, sessions, sources, asked };
 }
+
+/** What a source's card says of tmux and its `ps`. */
+const paneRowsOf = (sources: readonly SourceHealth[], id: string) =>
+  sources
+    .find((source) => source.id === id)
+    ?.watching?.filter((fact) => fact.label.startsWith("Pane "));
+
+/** The rows of a card whose sessions tmux and `ps` have been asked about. */
+const RAN = [
+  { label: "Pane check", value: PANE_CHECK },
+  { label: "Pane check run", value: PANE_CHECK_RUN },
+  { label: "Pane parent check", value: PANE_PARENT_CHECK },
+  { label: "Pane parent check run", value: PANE_PARENT_CHECK_RUN },
+];
+
+/** The rows of a card whose sessions neither has been asked about. */
+const NOT_RUN = [
+  { label: "Pane check", value: PANE_CHECK },
+  { label: "Pane check run", value: "not run" },
+  { label: "Pane parent check", value: PANE_PARENT_CHECK },
+  { label: "Pane parent check run", value: "not run" },
+];
 
 /** The request the dashboard's page makes for a jump, changed as a test says. */
 function jumpRequest(port: number, sessionId: unknown, options: TestRequest = {}) {
@@ -273,8 +303,10 @@ async function serveStubTmux(env: Record<string, string>, qwenPid?: number) {
 
   const sessions = async () =>
     (await request(port, "/api/sessions")).json<SessionsSnapshot>().sessions;
+  const sources = async () =>
+    (await request(port, "/api/sessions")).json<SessionsSnapshot>().sources;
   const jump = (sessionId: string) => jumpRequest(port, sessionId);
-  return { mark: tmux.mark, sessions, jump };
+  return { mark: tmux.mark, sessions, sources, jump };
 }
 
 describe("what the dashboard is told", () => {
@@ -361,6 +393,54 @@ describe("what the dashboard is told", () => {
         place: "checkout-flow:2.1",
       });
       expect(existsSync(server.mark)).toBe(true);
+    },
+  );
+
+  posixTest(
+    "with AGENT_LOOKOUT_TMUX off, no card lists tmux, and with it on Claude Code's says it ran",
+    async () => {
+      const off = await serveStubTmux({ AGENT_LOOKOUT_TMUX: "off" });
+      expect(paneRowsOf(await off.sources(), "claude-code")).toEqual([]);
+      expect(paneRowsOf(await off.sources(), "qwen-code")).toEqual([]);
+
+      const on = await serveStubTmux({});
+      expect(paneRowsOf(await on.sources(), "claude-code")).toEqual(RAN);
+      expect(paneRowsOf(await on.sources(), "qwen-code")).toEqual(NOT_RUN);
+    },
+  );
+
+  posixTest(
+    "each card says what was asked for its own sessions, and reading it adds no run",
+    async () => {
+      const server = await serve();
+      const looks = server.tmux.ran.length;
+      const reads = server.ps.runs;
+
+      expect(paneRowsOf(await server.sources(), "claude-code")).toEqual(RAN);
+      expect(paneRowsOf(await server.sources(), "qwen-code")).toEqual(NOT_RUN);
+      expect(server.tmux.ran).toHaveLength(looks);
+      expect(server.ps.runs).toBe(reads);
+    },
+  );
+
+  posixTest(
+    "with no session both cards say not run, and looking for tmux starts nothing",
+    async () => {
+      const server = await serveStubTmux({ AGENT_LOOKOUT_CLAUDE_HOME: await tempDir() });
+
+      expect(paneRowsOf(await server.sources(), "claude-code")).toEqual(NOT_RUN);
+      expect(paneRowsOf(await server.sources(), "qwen-code")).toEqual(NOT_RUN);
+      expect(existsSync(server.mark)).toBe(false);
+    },
+  );
+
+  posixTest(
+    "with AGENT_LOOKOUT_TERMINAL_JUMP off tmux still runs, so the card still says so",
+    async () => {
+      const server = await serve({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+
+      expect(server.tmux.names()).toEqual(["list-panes"]);
+      expect(paneRowsOf(await server.sources(), "claude-code")).toEqual(RAN);
     },
   );
 });
@@ -693,6 +773,19 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
       place: "checkout-flow:2.1",
     });
     expect(server.tmux.names().length).toBe(looks + 1);
+  });
+
+  test("both cards say tmux ran for their sessions, from one look at each beat", async () => {
+    const server = await serveQwen();
+    const looks = server.tmux.names().length;
+
+    server.clock.now += 2_000;
+    await server.collector.poller.pollOnce();
+    const sources = await server.sources();
+
+    expect(paneRowsOf(sources, "claude-code")).toEqual(RAN);
+    expect(paneRowsOf(sources, "qwen-code")).toEqual(RAN);
+    expect(server.tmux.names()).toHaveLength(looks);
   });
 
   test("Jump selects the session's pane, and then a Claude Code session's", async () => {

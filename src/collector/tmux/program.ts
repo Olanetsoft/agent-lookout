@@ -101,6 +101,19 @@ export interface TmuxRunnerOptions {
   platform?: NodeJS.Platform;
 }
 
+/** The binary a run would start: none on Windows, or when `AGENT_LOOKOUT_TMUX` is `off`. */
+async function binaryToRun(options: TmuxRunnerOptions): Promise<string | null> {
+  const { env } = options;
+  const platform = options.platform ?? process.platform;
+  if (env[TMUX_ENV]?.trim().toLowerCase() === "off" || platform === "win32") return null;
+  return findTmuxBinary(env, options.isExecutable, platform);
+}
+
+/** Whether a run would start tmux, which looks for the program and starts nothing. */
+export async function tmuxInstalled(options: TmuxRunnerOptions): Promise<boolean> {
+  return (await binaryToRun(options)) !== null;
+}
+
 /**
  * What the collector runs tmux with.
  *
@@ -109,14 +122,9 @@ export interface TmuxRunnerOptions {
  * anything started on Windows, or when `AGENT_LOOKOUT_TMUX` is `off`.
  */
 export function createTmuxRunner(options: TmuxRunnerOptions): RunTmux {
-  const { env } = options;
-  const off = env[TMUX_ENV]?.trim().toLowerCase() === "off";
-  const platform = options.platform ?? process.platform;
-
   return async (args) => {
-    if (off || platform === "win32") return NOT_RUN;
-    const binary = await findTmuxBinary(env, options.isExecutable, platform);
+    const binary = await binaryToRun(options);
     if (binary === null) return NOT_RUN;
-    return runTmuxBinary(binary, args, { env, timeoutMs: options.timeoutMs });
+    return runTmuxBinary(binary, args, { env: options.env, timeoutMs: options.timeoutMs });
   };
 }

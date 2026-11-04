@@ -13,6 +13,12 @@ export const PANE_LOOK_SOONEST_MS = 5_000;
 
 export interface PaneFinderOptions {
   run: RunTmux;
+  /**
+   * Whether a run would start tmux, which looks for the program and starts
+   * nothing. Left out, it would, since a test's `run` answers whatever it is
+   * asked.
+   */
+  isInstalled?: () => Promise<boolean>;
   /** Reads each process's parent. Defaults to asking `ps` for that and nothing more. */
   readParents?: ReadProcessParents;
   now?: () => number;
@@ -31,6 +37,24 @@ export interface PaneAsker {
   look(pids: readonly number[]): Promise<void>;
   /** The pane the last look found this process in, if it found one. */
   paneOf(pid: number): TmuxPane | undefined;
+  /**
+   * Whether tmux was there at the latest 30 second search for its program,
+   * which a look by any asker can make, and not until there has been one. With
+   * no `isInstalled`, always true. Sources reads this, and reading it runs
+   * nothing.
+   */
+  installed(): boolean;
+  /**
+   * Whether tmux has been started for a process this asker named, at its own
+   * look or another's. Sources reads this, and reading it runs nothing.
+   */
+  asked(): boolean;
+  /**
+   * Whether `ps` has been asked for a process this asker named. Only a look
+   * whose tmux lists a pane asks it. Sources reads this, and reading it runs
+   * nothing.
+   */
+  parentsAsked(): boolean;
 }
 
 export interface PaneFinder {
@@ -64,9 +88,17 @@ export interface PaneFinder {
  * never within 5 seconds of the last, when a process has turned up since. With
  * no process to ask about, nothing is run. When tmux is not installed, has no
  * server running or fails, no pane is known, and that is not an error.
+ *
+ * One run serves every asker, so `asked` and `parentsAsked` cannot say whose
+ * process caused it. They say whose processes it was for: every asker that
+ * named one, and no asker that named none. tmux's program is looked for once
+ * every 30 seconds, by the first look asked for after that, so that an asker
+ * can say whether tmux is there. That starts nothing, and needs no process.
+ * It is looked for again just before each run, so that `asked` goes by what
+ * that run does and not by a search up to 30 seconds old.
  */
 export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
-  const { run } = options;
+  const { run, isInstalled } = options;
   const readParents = options.readParents ?? readProcessParentsWithPs;
   const now = options.now ?? Date.now;
   const intervalMs = options.intervalMs ?? PANE_LOOK_INTERVAL_MS;
@@ -78,8 +110,29 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
   let found = new Map<number, TmuxPane>();
   /** The processes each asker named at its latest look. */
   const named = new Map<object, ReadonlySet<number>>();
+  /** The askers whose processes tmux has been started for. */
+  const askedFor = new Set<object>();
+  /** The askers whose processes `ps` has been asked for. */
+  const parentsAskedFor = new Set<object>();
   /** The look being made, while one is. */
   let underWay: Promise<void> | null = null;
+
+  /** Whether tmux was there at the latest 30 second search for it. */
+  let installed = isInstalled === undefined;
+  let searchedAt: number | null = null;
+  let search: Promise<boolean> = Promise.resolve(installed);
+
+  /** Looks for tmux's program, when that is due, and says what the latest search found. */
+  function searched(): Promise<boolean> {
+    if (isInstalled === undefined) return search;
+    const at = now();
+    // A clock that was set back starts the beat again.
+    if (searchedAt === null || at < searchedAt || at - searchedAt >= intervalMs) {
+      searchedAt = at;
+      search = isInstalled().catch(() => false);
+    }
+    return search;
+  }
 
   /** Every process some asker names. */
   function wanted(): Set<number> {
@@ -96,8 +149,13 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
     return since >= soonestMs && [...pids].some((pid) => !asked.has(pid));
   }
 
-  async function find(pids: ReadonlySet<number>): Promise<Map<number, TmuxPane>> {
+  async function find(
+    pids: ReadonlySet<number>,
+    askers: readonly object[],
+  ): Promise<Map<number, TmuxPane>> {
     const panes = new Map<number, TmuxPane>();
+    const there = isInstalled === undefined || (await isInstalled().catch(() => false));
+    if (there) for (const asker of askers) askedFor.add(asker);
     const listed = await run(LIST_PANES_ARGS);
     if (!listed.ok) return panes;
 
@@ -107,6 +165,7 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
     }
     if (panesByPid.size === 0) return panes;
 
+    for (const asker of askers) parentsAskedFor.add(asker);
     const parents = await readParents();
     for (const pid of pids) {
       const pane = paneOfProcess(pid, parents, panesByPid);
@@ -117,6 +176,7 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
 
   async function look(asker: object, pids: readonly number[]): Promise<void> {
     named.set(asker, new Set(pids));
+    installed = await searched();
     while (underWay !== null) await underWay;
 
     // A process no asker names any more is forgotten: its pane, and that it
@@ -134,9 +194,10 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
     if (!due(pidsNow, at)) return;
     lookedAt = at;
     asked = pidsNow;
+    const askers = [...named].filter(([, own]) => own.size > 0).map(([other]) => other);
     const looking = (async () => {
       try {
-        found = await find(pidsNow);
+        found = await find(pidsNow, askers);
       } catch {
         found = new Map();
       }
@@ -154,7 +215,13 @@ export function createPaneFinder(options: PaneFinderOptions): PaneFinder {
   return {
     asker() {
       const asker = {};
-      return { look: (pids) => look(asker, pids), paneOf };
+      return {
+        look: (pids) => look(asker, pids),
+        paneOf,
+        installed: () => installed,
+        asked: () => askedFor.has(asker),
+        parentsAsked: () => parentsAskedFor.has(asker),
+      };
     },
     paneOf,
     lookAgain() {
