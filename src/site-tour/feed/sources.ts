@@ -550,14 +550,15 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card when Gemini CLI is not installed: its folder is looked for, and nothing more.
+      // The adapter's card on a Mac without Gemini CLI: its two folders are looked for, and nothing more.
       id: "gemini-cli",
       label: "Gemini CLI",
       state: "unavailable",
       detail:
-        "Gemini CLI was not found: there is no ~/.gemini/tmp folder. Agent Lookout looks again every minute.",
+        "Gemini CLI was not found: there is no ~/.gemini/tmp or ~/.cache/.gemini/tmp folder. Agent Lookout looks again every minute.",
       watching: [
         { label: "Sessions folder", value: "~/.gemini/tmp" },
+        { label: "Seatbelt sessions folder", value: "~/.cache/.gemini/tmp" },
         { label: "Read", value: "not found" },
         { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
         { label: "Programs run", value: "None" },

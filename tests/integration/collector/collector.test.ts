@@ -329,6 +329,44 @@ describe("createCollector", () => {
     expect(snapshot.sessions.filter((found) => found.git !== undefined)).toHaveLength(2);
   });
 
+  test.each(["darwin", "linux"] as const)(
+    "on %s, Gemini CLI's folder kept under macOS Seatbelt is looked for only on a Mac",
+    async (platform) => {
+      // Gemini CLI's own home folder is a temporary one, so both of its folders are in it.
+      const collector = createCollector({
+        version: "9.9.9-test",
+        platform,
+        env: {
+          AGENT_LOOKOUT_HISTORY: "off",
+          AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
+          AGENT_LOOKOUT_CLAUDE_HOME: await makeClaudeHome(),
+          AGENT_LOOKOUT_CODEX_HOME: await tempDir(),
+          AGENT_LOOKOUT_ANTIGRAVITY_HOME: await tempDir(),
+          AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: await tempDir(),
+          AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
+          GEMINI_CLI_HOME: await tempDir(),
+          AGENT_LOOKOUT_OPENCODE_HOME: await tempDir(),
+          AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
+          AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
+          AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
+          AGENT_LOOKOUT_TMUX: "off",
+          AGENT_LOOKOUT_STOP: "off",
+          AGENT_LOOKOUT_ANSWER: "off",
+        },
+        notifier: fakeSystemNotifier(),
+        now: () => NOW,
+      });
+      onTestFinished(() => collector.stop());
+      await collector.poller.pollOnce();
+      const card = collector.poller
+        .getSnapshot()
+        .sources.find((source) => source.id === "gemini-cli");
+      expect(card?.watching?.some((fact) => fact.label === "Seatbelt sessions folder")).toBe(
+        platform === "darwin",
+      );
+    },
+  );
+
   test("a session in a folder of status files made after it started is logged as appearing", async () => {
     const folder = path.join(await tempDir(), "sessions");
     const clock = { now: Date.now() };

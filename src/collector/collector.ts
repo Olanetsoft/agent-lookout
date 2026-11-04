@@ -324,7 +324,10 @@ export function createCollector(options: CollectorOptions): Collector {
   if (settings.rulesProblemAtStart !== null) warn(settings.rulesProblemAtStart);
   const memoryEvents = createEventStore();
   const memoryHistory = createHistoryStore();
-  const historySetup = readHistorySetup(env);
+  const platform = options.platform ?? process.platform;
+  // The system says which folders the adapters read, so the fingerprint of
+  // those folders in the history's writer lock is worked out for it too.
+  const historySetup = readHistorySetup(env, undefined, platform);
   const keeper = historySetup.on
     ? createHistoryKeeper({
         dir: historySetup.dir,
@@ -364,7 +367,6 @@ export function createCollector(options: CollectorOptions): Collector {
   // the jump route brings them forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
-  const platform = options.platform ?? process.platform;
   // What each Claude Code session is stopped by: the adapter finds it, and the
   // routes that stop sessions act on it. With AGENT_LOOKOUT_STOP off there are
   // neither the targets nor the routes, and nor are there on Windows, which
@@ -507,6 +509,7 @@ export function createCollector(options: CollectorOptions): Collector {
       env: options.env,
       now,
       pollIntervalMs: intervalMs,
+      platform,
       lastMessageLimits,
     }),
     createOpencodeAdapter({

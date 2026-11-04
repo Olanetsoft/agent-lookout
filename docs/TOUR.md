@@ -34,7 +34,7 @@ flowchart LR
     ag["Antigravity CLI<br/>~/.gemini/antigravity-cli, ps"]
     aa["Antigravity<br/>~/.gemini/antigravity, ps, sqlite3"]
     mv["Mistral Vibe<br/>~/.vibe/logs/session"]
-    gc["Gemini CLI<br/>~/.gemini/tmp session files"]
+    gc["Gemini CLI<br/>~/.gemini/tmp and ~/.cache/.gemini/tmp session files"]
     oc["OpenCode<br/>~/.local/share/opencode, sqlite3, ps"]
     qw["Qwen Code<br/>~/.qwen sessions and chat files"]
     ha["Hermes Agent<br/>~/.hermes state.db, sqlite3"]
@@ -104,7 +104,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 **A session** has:
 
-- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, `opencode:<session id>`, `qwen-code:<session id>`, `hermes-agent:<profile>/<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
+- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, with `.seatbelt` after it for a session in `~/.cache/.gemini`, `opencode:<session id>`, `qwen-code:<session id>`, `hermes-agent:<profile>/<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
 - its `source`, the app it runs in (`surface`) and a `name`
 - its folder, `cwd`, and `project`, the folder's last part (`projectOf` in `src/core/sessions/project.ts`)
 - a `status`, and when it started and last changed status (`startedAt`, `statusSince`)
@@ -273,7 +273,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/gemini-cli/`, with the replay and the status mapping in `src/core/mapping/gemini-cli/geminiCliMapping.ts`. [adapters/gemini-cli.md](adapters/gemini-cli.md) is the full reference. It is the first slice of #17.
 
-**Why it reads files alone.** Gemini CLI documents no listing of every project's sessions for another program: `gemini --list-sessions` lists one project's, and starting Gemini CLI writes under its folder. Its hooks need a change to its settings. So the adapter runs no program. It reads `~/.gemini/tmp`, or `tmp/` in the folder `AGENT_LOOKOUT_GEMINI_CLI_HOME` names, or in `.gemini` under Gemini CLI's own `GEMINI_CLI_HOME`.
+**Why it reads files alone.** Gemini CLI documents no listing of every project's sessions for another program: `gemini --list-sessions` lists one project's, and starting Gemini CLI writes under its folder. Its hooks need a change to its settings. So the adapter runs no program. It reads `~/.gemini/tmp`, or `tmp/` in the folder `AGENT_LOOKOUT_GEMINI_CLI_HOME` names, or in `.gemini` under Gemini CLI's own `GEMINI_CLI_HOME`. On a Mac, without `AGENT_LOOKOUT_GEMINI_CLI_HOME`, it reads `tmp/` in `.cache/.gemini` in the same home folder too, `~/.cache/.gemini/tmp` unless `GEMINI_CLI_HOME` is set, where Gemini CLI keeps its sessions under macOS Seatbelt.
 
 **The pieces.**
 

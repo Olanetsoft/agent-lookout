@@ -40,8 +40,10 @@ export function folderTimes(io: ReadOnlyIo) {
 }
 
 /**
- * An adapter that reads only the stand-in files. With nothing in `env` it
- * looks in `~/.gemini`, which is `GEMINI_DIR` from the fixtures.
+ * An adapter that reads only the stand-in files, on a Mac unless the test
+ * names another system. With nothing in `env` it looks in `~/.gemini`, which
+ * is `GEMINI_DIR` from the fixtures, and in `~/.cache/.gemini`, which is
+ * `SEATBELT_DIR`.
  */
 export function geminiCliAdapterFor(files: MemoryFiles, options: GeminiCliAdapterOptions = {}) {
   return createGeminiCliAdapter({
@@ -49,12 +51,16 @@ export function geminiCliAdapterFor(files: MemoryFiles, options: GeminiCliAdapte
     homeDir: HOME,
     now: () => NOW,
     io: files.io,
+    platform: "darwin",
     ...options,
   });
 }
 
-/** What a healthy poll says, for a sessions folder written as people see it. */
-export const healthy = (tmp = "~/.gemini/tmp") =>
+/** Both folders of sessions on a Mac, as people see them. */
+export const BOTH_FOLDERS = "~/.gemini/tmp, and in ~/.cache/.gemini/tmp under macOS Seatbelt";
+
+/** What a healthy poll says, for the folders of sessions read, written as people see them. */
+export const healthy = (tmp = BOTH_FOLDERS) =>
   `Sessions are read from the files Gemini CLI saves in ${tmp}. ${NEEDS_YOU_NOTE} ${FILES_ONLY_NOTE} ${UNCHECKED_NOTE}`;
 
 /** What Sources says of the last-message read while it is on. */
