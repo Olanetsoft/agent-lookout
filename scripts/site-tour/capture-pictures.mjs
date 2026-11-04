@@ -153,8 +153,8 @@ const FEATURES = [
   { name: "allow-deny", scene: "Allow or Deny", step: 0, height: 800 },
   { name: "notifications", scene: "Settings", step: 0, height: 1000 },
   { name: "jump-stop", scene: "Stop", step: 0, height: 800, pressed: true, alone: true },
-  // With the rows of Hermes Agent, Cline and Goose, the card is taller than its clip in a 1440-wide window.
-  { name: "agents", scene: "Sources", step: 2, width: 1520, height: 1000 },
+  // With the rows of Hermes Agent, Cline, Goose and Pi, the card is taller than its clip in a 1520-wide window.
+  { name: "agents", scene: "Sources", step: 2, width: 1560, height: 1000 },
 ];
 
 /**
@@ -332,6 +332,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Hermes Agent",
         "Cline",
         "Goose",
+        "Pi",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

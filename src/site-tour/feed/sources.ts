@@ -6,9 +6,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline and Goose,
- * none of the nine installed here, and status files. Then the other machine, connected
- * over SSH.
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and
+ * Pi, none of the ten installed here, and status files. Then the other machine,
+ * connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -495,6 +495,45 @@ export const GOOSE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const PI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason:
+      "Nothing ties a Pi session to a process, so a turn a crash cut off looks like one under way.",
+  },
+  "needs-you": {
+    level: "no",
+    reason: "Pi asks for no approval, and nothing on disk says it waits for your next prompt.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Every session at once, when ps shows no pi program, on macOS and Linux. Pi writes no end to one.",
+  },
+  failed: { level: "no", reason: "Pi writes a failed turn inside a message, which is not parsed." },
+  names: {
+    level: "partly",
+    reason: "One you or an extension gave the session, else the folder's. Pi gives it none itself.",
+  },
+  jump: { level: "no", reason: "A Pi session's file names no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Pi session never shows as working.",
+  },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on the line with its text, which is not parsed.",
+  },
+  stop: {
+    level: "no",
+    reason: "A Pi session's file names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Pi, so it cannot send an answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -831,6 +870,26 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Pi is not installed: its folder is looked for, and nothing more.
+      id: "pi",
+      label: "Pi",
+      state: "unavailable",
+      detail:
+        "Pi was not found: there is no ~/.pi/agent/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.pi/agent/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no pi",
+        },
+      ],
+      capabilities: PI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -868,6 +927,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Hermes Agent there", value: "Not found" },
         { label: "Cline there", value: "Not found" },
         { label: "Goose there", value: "Not found" },
+        { label: "Pi there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

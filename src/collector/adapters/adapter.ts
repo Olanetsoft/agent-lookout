@@ -65,6 +65,14 @@ export interface AdapterResult {
    *   is finished.
    * - `database-without-processes`: the same while `ps` cannot say, when no
    *   session can be shown as finished.
+   *
+   * The Pi adapter has three:
+   * - `files`: Pi's session files, read while `ps` shows a `pi` program running.
+   *   The usual one.
+   * - `files-closed`: the same while `ps` shows none, when every session is
+   *   finished.
+   * - `files-without-processes`: the same while `ps` cannot say, when no session
+   *   can be shown as finished.
    */
   basis?: string;
 }

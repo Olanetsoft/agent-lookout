@@ -13,6 +13,7 @@ import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import {
@@ -27,6 +28,7 @@ const README = fileURLToPath(new URL("../../../../README.md", import.meta.url));
 const PRIVACY = fileURLToPath(new URL("../../../../PRIVACY.md", import.meta.url));
 const CLINE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/cline.md", import.meta.url));
 const GOOSE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/goose.md", import.meta.url));
+const PI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/pi.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -44,6 +46,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Cline", CLINE_CAPABILITIES],
   ["Goose", GOOSE_CAPABILITIES],
+  ["Pi", PI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -187,6 +190,27 @@ test("PRIVACY.md and the Goose notes name what is read and from which version", 
       "messages",
       "ps -A -o comm=",
     ]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Pi notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(PI_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const pi = line("For Pi, Agent Lookout reads");
+  expect(pi).toContain("built from Pi's source at v1.5.0");
+  expect(pi).not.toContain("Goose");
+  expect(pi).toContain("`ps`");
+  expect(notes).toContain("v1.5.0");
+
+  const start = privacy.indexOf("### Pi's files");
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    expect(text).toContain("~/.pi/agent/sessions");
+    for (const field of ["id", "cwd", "timestamp", "version", "session_info", "ps -A -o comm="]) {
       expect(text).toContain(field);
     }
   }

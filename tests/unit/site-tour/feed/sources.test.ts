@@ -14,6 +14,7 @@ import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
@@ -38,6 +39,7 @@ import { gooseAdapterFor } from "@tests/support/adapters/goose/gooseAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
+import { piAdapterFor } from "@tests/support/adapters/pi/piAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
 import { fakeTmux } from "@tests/support/node/tmux";
 
@@ -59,6 +61,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.HERMES_AGENT_CAPABILITIES).toEqual(HERMES_AGENT_CAPABILITIES);
   expect(tour.CLINE_CAPABILITIES).toEqual(CLINE_CAPABILITIES);
   expect(tour.GOOSE_CAPABILITIES).toEqual(GOOSE_CAPABILITIES);
+  expect(tour.PI_CAPABILITIES).toEqual(PI_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -76,6 +79,7 @@ test("this computer's sources come in the collector's order", () => {
     "hermes-agent",
     "cline",
     "goose",
+    "pi",
     "status-files",
   ]);
 });
@@ -233,6 +237,18 @@ test("Goose's card is the one its adapter shows on a computer without it", async
   expect(sessions).toEqual([]);
 });
 
+test("Pi's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = piAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "pi")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -299,6 +315,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: GOOSE_CAPABILITIES,
         },
         {
+          id: "pi",
+          label: "Pi",
+          state: "unavailable",
+          capabilities: PI_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -337,7 +359,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set(["Goose"]);
+const NOT_ON_THE_PAGE_YET = new Set(["Goose", "Pi"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

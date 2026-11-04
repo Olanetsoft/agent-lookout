@@ -18,6 +18,7 @@ import { createGooseAdapter } from "./adapters/goose/index.ts";
 import { createHermesAgentAdapter } from "./adapters/hermes-agent/index.ts";
 import { createMistralVibeAdapter } from "./adapters/mistral-vibe/index.ts";
 import { createOpencodeAdapter } from "./adapters/opencode/index.ts";
+import { createPiAdapter } from "./adapters/pi/index.ts";
 import { createQwenCodeAdapter } from "./adapters/qwen-code/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
 import {
@@ -105,7 +106,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -114,7 +115,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_VIBE_SESSION_DIR`, `AGENT_LOOKOUT_GEMINI_CLI_HOME`,
    * `AGENT_LOOKOUT_OPENCODE_HOME`, `AGENT_LOOKOUT_QWEN_HOME`,
    * `AGENT_LOOKOUT_HERMES_HOME`, `AGENT_LOOKOUT_CLINE_HOME`,
-   * `AGENT_LOOKOUT_GOOSE_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
+   * `AGENT_LOOKOUT_GOOSE_HOME`, `AGENT_LOOKOUT_PI_HOME` and
+   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
    */
@@ -544,6 +546,7 @@ export function createCollector(options: CollectorOptions): Collector {
       readProcessStarts: options.readProcessStarts,
     }),
     createGooseAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    createPiAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

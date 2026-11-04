@@ -25,6 +25,8 @@ export type RemoteSourceId = `remote:${string}`;
  * that run it, whose sessions are read from the manifest it keeps for each.
  * `goose` is Goose, in its command and its desktop app, whose sessions are read
  * from its database.
+ * `pi` is Pi, the coding agent `pi`, whose sessions are read from the file it
+ * keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -38,6 +40,7 @@ export type SourceId =
   | "hermes-agent"
   | "cline"
   | "goose"
+  | "pi"
   | "status-files"
   | RemoteSourceId;
 

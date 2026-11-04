@@ -3,7 +3,7 @@ title: Introduction
 description: Agent Lookout shows the coding agent sessions on your machine on one page, with the ones waiting on you first.
 ---
 
-Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline and Goose sessions running on your machine.
+Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and Pi sessions running on your machine.
 
 When you run several coding agents at once, one of them often stops to ask you something while you are looking at another. Agent Lookout finds their sessions with no setup, shows them on one page, and puts the ones waiting on you first, for the agents that report a wait. Any other agent can show up too, by writing a small [status file](GUIDE.md#your-own-agents).
 
@@ -41,14 +41,15 @@ Every agent's sessions appear on the page with their status. What else each one 
 | Mistral Vibe                                                    | While it waits for your approval or an answer                            | No                          | No                                   |
 | Cline                                                           | While it waits for your approval of a tool                               | No                          | No                                   |
 | Goose                                                           | No: a session shows as unknown while Goose runs                          | No                          | No                                   |
+| Pi                                                              | No: a session shows as unknown while Pi runs                             | No                          | No                                   |
 | Qwen Code                                                       | From Qwen Code 0.25.1, while it asks you a question or to approve a plan | No                          | In tmux, Terminal or iTerm2          |
 | OpenCode                                                        | While OpenCode 1.x asks you a question or to approve a plan              | No                          | No                                   |
 | Codex and Gemini CLI                                            | No: a waiting session shows as working, or as idle in Gemini CLI         | No                          | No                                   |
 | Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                             | No                          | No                                   |
 
-On Windows, OpenCode's, Hermes Agent's and Goose's sessions are not read, and the Antigravity app never shows as needing you. On Linux, all four need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
+On Windows, OpenCode's, Hermes Agent's and Goose's sessions are not read, a Pi session stays unknown, and the Antigravity app never shows as needing you. On Linux, OpenCode, Hermes Agent, Goose and the Antigravity app need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
 
-Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline and Goose support was built from their source and has not yet been checked on a machine running them. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
+Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and Pi support was built from their source and has not yet been checked on a machine running them. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
 
 ## Privacy
 

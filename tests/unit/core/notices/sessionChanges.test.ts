@@ -760,6 +760,7 @@ describe("over a long run of snapshots", () => {
     "hermes-agent": [],
     cline: [],
     goose: [],
+    pi: [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

@@ -15,6 +15,7 @@
     "hermes-agent",
     "cline",
     "goose",
+    "pi",
     "mcp",
     "mcp-server",
     "tmux",

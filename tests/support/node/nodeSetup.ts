@@ -19,6 +19,7 @@ import {
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_CLINE_HOME,
   EMPTY_GOOSE_HOME,
+  EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
@@ -113,6 +114,15 @@ delete process.env.CLINE_SESSION_DATA_DIR;
 mkdirSync(EMPTY_GOOSE_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_GOOSE_HOME = EMPTY_GOOSE_HOME;
 delete process.env.GOOSE_PATH_ROOT;
+
+// Nor does one read Pi's folder, `~/.pi/agent` or the ones `PI_CODING_AGENT_DIR`
+// and `PI_CODING_AGENT_SESSION_DIR` name: the adapter is pointed at an empty
+// folder, and Pi's own variables are dropped. A test of the adapter names a folder
+// of its own.
+mkdirSync(EMPTY_PI_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_PI_HOME = EMPTY_PI_HOME;
+delete process.env.PI_CODING_AGENT_DIR;
+delete process.env.PI_CODING_AGENT_SESSION_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

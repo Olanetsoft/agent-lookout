@@ -68,10 +68,10 @@ async function distFolder(withPage: boolean): Promise<string> {
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
- * Cline and Goose folders, an empty folder of status files and tmux turned off,
+ * Cline, Goose and Pi folders, an empty folder of status files and tmux turned off,
  * on a free port. The poller runs in this process, so anything less would read the real
  * `~/.claude`, `~/.codex`, `~/.vibe`, `~/.gemini`, `~/.local/share/opencode`,
- * `~/.qwen`, `~/.hermes`, `~/.cline`, `~/.local/share/goose` and
+ * `~/.qwen`, `~/.hermes`, `~/.cline`, `~/.local/share/goose`, `~/.pi` and
  * `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
@@ -86,6 +86,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const hermesHome = await tempDir();
   const clineHome = await tempDir();
   const gooseHome = await tempDir();
+  const piHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -100,6 +101,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     hermesHome,
     clineHome,
     gooseHome,
+    piHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -114,6 +116,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_HERMES_HOME: hermesHome,
       AGENT_LOOKOUT_CLINE_HOME: clineHome,
       AGENT_LOOKOUT_GOOSE_HOME: gooseHome,
+      AGENT_LOOKOUT_PI_HOME: piHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -186,6 +189,7 @@ describe("the standalone host", () => {
       hermesHome,
       clineHome,
       gooseHome,
+      piHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -312,6 +316,13 @@ describe("the standalone host", () => {
                 value:
                   process.platform === "win32" ? "not run on Windows" : "when the database changes",
               },
+            ]),
+          },
+          {
+            id: "pi",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(piHome, "sessions") },
             ]),
           },
           {
