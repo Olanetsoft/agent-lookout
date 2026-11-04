@@ -277,7 +277,7 @@ A record outlives a session that crashed, and the system can give its pid to ano
 
 ## Fields
 
-- **Name:** the title Qwen Code gave the session, or the one set with `/rename`, then the folder's name, then the id. The newest `custom_title` wins. What was typed is never used, and neither is the record's `name`.
+- **Name:** the title Qwen Code's fast model wrote for the session (`core/services/sessionTitle.ts:38-57`), or the one set with `/rename`, then the folder's name, then the id. The newest `custom_title` wins. A model's title can echo what was asked, but what was typed is never used itself, and neither is the record's `name`.
 - **Folder:** the record's `cwd`, which `/cd` changes.
 - **Started:** the chat file's first line, when the file was read from its start. Otherwise when the process registered the session, or when `/clear` or `/resume` moved the process to it, if Agent Lookout saw that happen.
 - **Quiet for:** the chat file's modified time from the `lstat` on each poll. Every line Qwen Code adds moves it on. A session with no chat file has none.

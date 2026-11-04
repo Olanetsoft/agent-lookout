@@ -254,7 +254,7 @@ Of a callback the adapter keeps its id, which ties its result to it, its kind an
 
 ## Names, folders and apps
 
-A session is named by its title, then its folder's name, then its id. Never by `preview`, the first thing you asked, which Vibe shows in its place when it has no title. With `[session_logging] generate_titles = false`, Vibe gives no title, so the folder names it. The folder is `session_metadata.cwd`, which Vibe rewrites when a session moves, as into a worktree.
+A session is named by its title, then its folder's name, then its id. Never by `preview`, the first thing you asked, which Vibe shows in its place when it has no title. A title is one a model writes in the background (`harness/…/vibe/_title.py`), or one set with `/rename`, so it can echo what was asked. With `[session_logging] generate_titles = false`, Vibe gives no title, so the folder names it. The folder is `session_metadata.cwd`, which Vibe rewrites when a session moves, as into a worktree.
 
 The files do not say whether a session runs in the terminal, an editor, the app server for ACP or the desktop app, so no app is shown. There is no Jump, Stop or pid: the process that holds a lease can hold many sessions' leases, as an app server does.
 

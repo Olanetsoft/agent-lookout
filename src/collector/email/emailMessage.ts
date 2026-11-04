@@ -28,7 +28,8 @@ import { EMAIL_TO_ENV } from "./emailSettings.ts";
  * session is asking, as the dashboard shows it, which can hold a command, a web
  * address or a file's full path. It is never in the subject. Nothing else goes
  * in it: no folder path, no prompt, none of the agent's own words, no link of
- * Agent Lookout's own and no markup.
+ * Agent Lookout's own and no markup. The session's name is the agent's own
+ * title, though, which can echo what was first asked: PRIVACY.md says how.
  *
  * The time rules add two more. A reminder of a long wait, and each repeat of
  * it, is the email of a wait, with a subject that says how long it has waited. A summary of quiet

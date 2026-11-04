@@ -214,7 +214,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 - **The session files**, which Codex calls rollouts: `sessions/YYYY/MM/DD/rollout-*.jsonl`. On each poll, `rollouts.ts` lists only today's and yesterday's folders. It lists every folder only while a session Codex has open is not found, and then at most every 30 seconds (`INDEX_REFRESH_MS`), or after 5 seconds for a session Codex has only just opened (`INDEX_PROMPT_REFRESH_MS`). `rolloutFile.ts` reads the first `session_meta` line, the last line that says a turn started or ended, and the newest `token_count` line. It reads within 2 MiB of the start and 8 MiB of the end, and after that only what was added. What a session last said is read from the end of the same file only when it is asked for (`lastMessages.ts`), as [A session's last message](#a-sessions-last-message) says.
 - **The lock folder** `thread-writer-locks/`, listed and never opened, for which sessions a Codex program has open (`writerLocks.ts`).
-- **`session_index.jsonl`**, for the names people give sessions (`sessionIndex.ts`).
+- **`session_index.jsonl`**, for the names of sessions (`sessionIndex.ts`).
 
 Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`, so a link, a pipe or a folder is never read.
 

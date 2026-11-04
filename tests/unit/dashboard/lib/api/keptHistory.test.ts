@@ -76,7 +76,7 @@ describe("the card's words", () => {
     expect(words.explanation.join(" ")).toContain("8 days after the day ends");
     expect(words.explanation.join(" ")).toContain("more than 20 MB");
     expect(words.explanation[0]).toBe(
-      "The Events log and the counts behind the charts are written to this folder every few seconds, so they are still there when Agent Lookout starts again. It holds no prompt and nothing a waiting session is asking.",
+      "The Events log and the counts behind the charts are written to this folder every few seconds, so they are still there when Agent Lookout starts again. Beyond each session's name, it holds no prompt and nothing a waiting session is asking.",
     );
   });
 

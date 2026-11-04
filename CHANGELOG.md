@@ -10,6 +10,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - After one failed read of a Mistral Vibe session's lease, as when Agent Lookout is out of file handles, a session whose Vibe then goes no longer stays as working until it leaves the list. The failed read was remembered until the file changed, and the file does not change once Vibe has gone, so nothing asked whether its process still ran. A lease that cannot be read is now tried again every 30 seconds, and a session whose Vibe went shows as finished at the first read that works (#271).
 
+### Changed
+
+- PRIVACY.md and the guide now say plainly what a session's name can hold. An email, a webhook post or a push holds no prompt, but it holds the session's name, which is the agent's own title and can echo what you first asked. [What a session's name can hold](PRIVACY.md#what-a-sessions-name-can-hold) says how for each agent: most titles are a model's, while Hermes Agent's is the first line of your first message until a model's takes its place, and stays so when that call fails or is turned off. No session's name changes (#270)
+
 ## 0.2.18 - 2026-11-04
 
 Cline and OpenCode 2 sessions show, OpenCode 1.x, Qwen Code and Mistral Vibe sessions show when they ask you a question, and Jump reaches Qwen Code sessions.
