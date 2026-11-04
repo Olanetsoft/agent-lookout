@@ -10,15 +10,25 @@ import type { ChatFileState } from "./chatFile.ts";
 
 export const SOURCE_ID: SourceId = "gemini-cli";
 
+/** What ends the id of a session read from the folder Gemini CLI keeps under macOS Seatbelt. */
+export const SEATBELT_ID_END = ".seatbelt";
+
 /**
  * A session's id in Agent Lookout: Gemini CLI's own id, then a dot and a short
  * hash of the project's folder in `tmp/`, since two projects can each hold a
  * session of one id. The hash keeps the id the same from poll to poll without
- * writing the project's name into the history. Gemini CLI's ids hold no dot.
+ * writing the project's name into the history. Gemini CLI's ids hold no dot,
+ * and nor does the hash.
+ *
+ * A session in the folder Gemini CLI keeps under macOS Seatbelt,
+ * `~/.cache/.gemini`, has `.seatbelt` after that, since each folder has its
+ * own projects, and the same project folder name can be in both. So the id of
+ * a session in `~/.gemini` has one dot after `gemini-cli:` and that of one in
+ * `~/.cache/.gemini` has two: the two are never the same.
  */
-export function geminiCliSessionId(slug: string, sessionId: string): string {
+export function geminiCliSessionId(slug: string, sessionId: string, seatbelt = false): string {
   const project = createHash("sha256").update(slug).digest("hex").slice(0, 8);
-  return `${SOURCE_ID}:${sessionId}.${project}`;
+  return `${SOURCE_ID}:${sessionId}.${project}${seatbelt ? SEATBELT_ID_END : ""}`;
 }
 
 /**
@@ -65,6 +75,8 @@ export interface GeminiCliSessionInput {
    * one id, which `--session-id` allows, so it is part of the session's id.
    */
   slug: string;
+  /** Whether the session was read from the folder Gemini CLI keeps under macOS Seatbelt. Part of its id. */
+  seatbelt?: boolean;
   /** The folder the session's project is for, from its `.project_root`. */
   cwd: string | null;
   /** The file's modified time, as the `lstat` made before reading it gave it. */
@@ -79,8 +91,8 @@ export interface GeminiCliSessionInput {
  *   idle or unknown, never "needs-you", "finished" or "failed". A batch of tool
  *   calls that ended less than `BATCH_GRACE_MS` ago is working since the newest
  *   prompt, as its tools' results will be.
- * - The id is the project's folder in `tmp/` and the session's own id, which
- *   stay the same from poll to poll.
+ * - The id is the project's folder in `tmp/`, the session's own id and which
+ *   of Gemini CLI's folders it is in, which stay the same from poll to poll.
  * - The name is the title Gemini CLI saved, then the folder's name, then the
  *   id. A prompt is never used as a name.
  * - The status time is that of the line the status comes from. An unknown
@@ -95,7 +107,7 @@ export interface GeminiCliSessionInput {
 export function geminiCliSession(input: GeminiCliSessionInput): Session | null {
   const { state, slug, cwd, now } = input;
   if (state.header === null) return null;
-  const id = geminiCliSessionId(slug, state.header.sessionId);
+  const id = geminiCliSessionId(slug, state.header.sessionId, input.seatbelt === true);
   const project = projectOf(cwd);
   const { status, since } = statusAt(state.status, now);
 

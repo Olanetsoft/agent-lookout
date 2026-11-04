@@ -64,7 +64,6 @@ test("the fingerprint of the folders sessions are read from names none of them, 
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: "/Users/example/.gemini/antigravity-cli",
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: "/Users/example/.gemini/antigravity",
         AGENT_LOOKOUT_VIBE_SESSION_DIR: "/Users/example/.vibe/logs/session",
-        AGENT_LOOKOUT_GEMINI_CLI_HOME: "/Users/example/.gemini",
         AGENT_LOOKOUT_OPENCODE_HOME: "/Users/example/.local/share/opencode",
         AGENT_LOOKOUT_QWEN_HOME: "/Users/example/.qwen",
       },
@@ -122,4 +121,21 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   ];
   for (const other of others) expect(other).not.toBe(defaults);
   expect(others.join(" ")).not.toContain("empty");
+});
+
+test("on a Mac the fingerprint holds Gemini CLI's folder kept under macOS Seatbelt, which AGENT_LOOKOUT_GEMINI_CLI_HOME stops reading", () => {
+  const mac = sourcesFingerprint({}, HOME, "darwin");
+  const linux = sourcesFingerprint({}, HOME, "linux");
+  const named = { AGENT_LOOKOUT_GEMINI_CLI_HOME: "/Users/example/.gemini" };
+  // Elsewhere only ~/.gemini is read, so naming it outright is the same folders.
+  expect(sourcesFingerprint(named, HOME, "linux")).toBe(linux);
+  // On a Mac, naming it leaves ~/.cache/.gemini unread, so the copy sees other sessions.
+  expect(sourcesFingerprint(named, HOME, "darwin")).not.toBe(mac);
+  // Gemini CLI's own variable moves both folders: naming the home folder is the same.
+  expect(sourcesFingerprint({ GEMINI_CLI_HOME: "/Users/example" }, HOME, "darwin")).toBe(mac);
+  expect(sourcesFingerprint({ GEMINI_CLI_HOME: "/Volumes/work" }, HOME, "darwin")).not.toBe(mac);
+  // The history's setup works it out for the system it is given.
+  expect(readHistorySetup({}, HOME, "darwin")).toMatchObject({ sources: mac });
+  expect(readHistorySetup({}, HOME, "linux")).toMatchObject({ sources: linux });
+  expect(mac).not.toBe(linux);
 });

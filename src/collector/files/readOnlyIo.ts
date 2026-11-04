@@ -25,8 +25,9 @@ export interface OpenFile {
 /**
  * Everything Agent Lookout does to the file system where another program keeps
  * its files: the Codex adapter in `~/.codex`, the Gemini CLI adapter in
- * `~/.gemini/tmp`, the status-file adapter in the folder of status files, and
- * the branch finder in each session's repository.
+ * `~/.gemini/tmp` and, on a Mac, `~/.cache/.gemini/tmp`, the status-file
+ * adapter in the folder of status files, and the branch finder in each
+ * session's repository.
  * Every method reads: there is none that writes, creates, renames, locks or
  * deletes. Tests replace it with a stand-in that counts the calls.
  */

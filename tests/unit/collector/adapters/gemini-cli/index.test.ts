@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -6,13 +7,17 @@ import { LINE_LIMIT_BYTES } from "@collector/adapters/gemini-cli/chatFile";
 import {
   GEMINI_CLI_CAPABILITIES,
   geminiCliFolder,
+  geminiCliSeatbeltFolder,
   OLDER_FORMAT_NOTE,
   RECHECK_MS,
   UNKNOWN_NOTE,
 } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
+import { createEventStore } from "@collector/eventStore";
 import type { FileInfo, ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createHistoryStore } from "@collector/historyStore";
 import { ANSWER_AGAIN_MS, createTailLimits } from "@collector/messages/tailReader";
+import { createPoller } from "@collector/poller";
 import {
   chatFile,
   chatName,
@@ -43,6 +48,8 @@ import {
   REPLY_COUNTS,
   resumedToolRoundAsOf063,
   rewindLine,
+  SEATBELT_DIR,
+  SEATBELT_TMP_DIR,
   SECOND,
   sessionAsOf063,
   sessionIdOf,
@@ -67,6 +74,7 @@ import {
   LAST_MESSAGE_READ,
   memoryFiles,
 } from "@tests/support/adapters/geminiCliAdapter";
+import { asWritten } from "@tests/support/paths";
 
 /** A session's id in Agent Lookout: its project's folder in tmp/ and its own id. */
 const idOf = (sessionId: string, slug = SLUG) => geminiCliSessionId(slug, sessionId);
@@ -100,7 +108,9 @@ describe("where it looks", () => {
 
   test("says where it looks before its first poll", () => {
     const adapter = geminiCliAdapterFor(memoryFiles());
-    expect(adapter.lookingIn).toBe("Looking for Gemini CLI sessions in ~/.gemini/tmp.");
+    expect(adapter.lookingIn).toBe(
+      "Looking for Gemini CLI sessions in ~/.gemini/tmp and ~/.cache/.gemini/tmp.",
+    );
     expect(adapter.capabilities).toBe(GEMINI_CLI_CAPABILITIES);
   });
 });
@@ -117,7 +127,7 @@ describe("when Gemini CLI is not there", () => {
       label: "Gemini CLI",
       state: "unavailable",
       detail:
-        "Gemini CLI was not found: there is no ~/.gemini/tmp folder. Agent Lookout looks again every minute.",
+        "Gemini CLI was not found: there is no ~/.gemini/tmp or ~/.cache/.gemini/tmp folder. Agent Lookout looks again every minute.",
     });
     expect(sessions).toEqual([]);
 
@@ -144,7 +154,7 @@ describe("when Gemini CLI is not there", () => {
       env: { GEMINI_CLI_HOME: "/Volumes/work" },
     });
     expect((await adapter.poll()).health.detail).toBe(
-      `Gemini CLI was not found: GEMINI_CLI_HOME is set, and there is no ${path.resolve("/Volumes/work/.gemini/tmp")} folder. Agent Lookout looks again every minute.`,
+      `Gemini CLI was not found: GEMINI_CLI_HOME is set, and there is no ${path.resolve("/Volumes/work/.gemini/tmp")} or ${path.resolve("/Volumes/work/.cache/.gemini/tmp")} folder. Agent Lookout looks again every minute.`,
     );
   });
 
@@ -174,6 +184,7 @@ describe("reading the sessions", () => {
     expect(health).toMatchObject({ state: "ok", detail: healthy() });
     expect(health.watching).toEqual([
       { label: "Sessions folder", value: "~/.gemini/tmp" },
+      { label: "Seatbelt sessions folder", value: "~/.cache/.gemini/tmp" },
       { label: "Read", value: "every 2 seconds" },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
       { label: "Programs run", value: "None" },
@@ -351,7 +362,7 @@ describe("reading the sessions", () => {
     const { health, sessions } = await adapter.poll();
     expect(health.state).toBe("error");
     expect(health.detail).toBe(
-      "Gemini CLI sessions could not be read: the folder ~/.gemini/tmp could not be looked at.",
+      "Gemini CLI sessions could not be read: the folder ~/.gemini/tmp could not be looked at, and the folder ~/.cache/.gemini/tmp could not be looked at.",
     );
     expect(sessions).toEqual([]);
 
@@ -1110,5 +1121,413 @@ describe("what a session last said", () => {
     expect(asked).toBe(0);
     await adapter.lastMessage(SAID);
     expect(asked).toBe(1);
+  });
+});
+
+describe("the folder Gemini CLI keeps under macOS Seatbelt", () => {
+  const homeSession = sessionIdOf("31");
+  const seatbeltSession = sessionIdOf("32");
+  const seatbeltFile = chatPath(
+    chatName(NOW - 30 * MINUTE, seatbeltSession),
+    SLUG,
+    SEATBELT_TMP_DIR,
+  );
+
+  /** A session's id when it was read from ~/.cache/.gemini. */
+  const seatbeltIdOf = (sessionId: string, slug = SLUG) =>
+    geminiCliSessionId(slug, sessionId, true);
+
+  /** The id a session in ~/.gemini had before this folder was read, worked out here as it was then. */
+  const idAsBefore = (sessionId: string, slug = SLUG) =>
+    `gemini-cli:${sessionId}.${createHash("sha256").update(slug).digest("hex").slice(0, 8)}`;
+
+  /** The Seatbelt folder's session: idle after a reply that says this. */
+  const seatbeltLines = (says = "The reply under Seatbelt.") =>
+    chatFile([
+      headerLine({ sessionId: seatbeltSession, startTime: NOW - 30 * MINUTE }),
+      userLine(messageIdOf("33"), NOW - 3 * MINUTE),
+      geminiLine(messageIdOf("34"), NOW - 2 * MINUTE, { content: says }),
+      updatedLine(NOW - 2 * MINUTE),
+    ]);
+
+  /** A working session in ~/.gemini and an idle one in ~/.cache/.gemini, in a project folder of the same name in each. */
+  function inBoth(files = memoryFiles()) {
+    files.write(projectRootPath(), PROJECT);
+    files.write(chatPath(chatName(NOW - 10 * MINUTE, homeSession)), workingSession(homeSession));
+    files.write(projectRootPath(SLUG, SEATBELT_TMP_DIR), PROJECT);
+    files.write(seatbeltFile, seatbeltLines());
+    return files;
+  }
+
+  const sorted = (sessions: readonly { id: string }[]) =>
+    [...sessions].sort((a, b) => (a.id < b.id ? -1 : 1));
+
+  test("is ~/.cache/.gemini, or .cache/.gemini in Gemini CLI's own GEMINI_CLI_HOME, on a Mac alone, and none with AGENT_LOOKOUT_GEMINI_CLI_HOME set", () => {
+    expect(geminiCliSeatbeltFolder({}, HOME, "darwin")).toBe(path.resolve(SEATBELT_DIR));
+    expect(geminiCliSeatbeltFolder({ GEMINI_CLI_HOME: "/Volumes/work" }, HOME, "darwin")).toBe(
+      path.resolve("/Volumes/work/.cache/.gemini"),
+    );
+    expect(
+      geminiCliSeatbeltFolder({ AGENT_LOOKOUT_GEMINI_CLI_HOME: GEMINI_DIR }, HOME, "darwin"),
+    ).toBeNull();
+    expect(geminiCliSeatbeltFolder({}, HOME, "linux")).toBeNull();
+    expect(geminiCliSeatbeltFolder({}, HOME, "win32")).toBeNull();
+  });
+
+  test("on a Mac, the sessions in both folders are listed with no setting, and those in ~/.gemini keep their ids", async () => {
+    const adapter = geminiCliAdapterFor(inBoth());
+    const { health, sessions } = await adapter.poll();
+    expect(health).toMatchObject({ state: "ok", detail: healthy() });
+    expect(sorted(sessions)).toEqual([
+      expect.objectContaining({
+        id: idAsBefore(homeSession),
+        cwd: PROJECT,
+        status: "working",
+      }),
+      expect.objectContaining({
+        id: `${idAsBefore(seatbeltSession)}.seatbelt`,
+        cwd: PROJECT,
+        status: "idle",
+        statusSince: NOW - 2 * MINUTE,
+      }),
+    ]);
+    expect(idOf(homeSession)).toBe(idAsBefore(homeSession));
+    expect(seatbeltIdOf(seatbeltSession)).toBe(`${idAsBefore(seatbeltSession)}.seatbelt`);
+  });
+
+  test("a project folder of the same name in both, with a session of one id in each, as --session-id allows, gives two sessions whose ids differ", async () => {
+    const files = memoryFiles();
+    const shared = "review";
+    files.write(projectRootPath(), PROJECT);
+    files.write(projectRootPath(SLUG, SEATBELT_TMP_DIR), OTHER_PROJECT);
+    files.write(
+      chatPath(chatName(NOW - 30 * MINUTE, shared)),
+      idleSession(shared, NOW - 30 * MINUTE),
+    );
+    files.write(
+      chatPath(chatName(NOW - 10 * MINUTE, shared), SLUG, SEATBELT_TMP_DIR),
+      workingSession(shared, NOW - 10 * MINUTE),
+    );
+    // A second file of the Seatbelt folder's session, older, which is not listed apart.
+    files.write(
+      chatPath(chatName(NOW - 10 * MINUTE, shared, 9), SLUG, SEATBELT_TMP_DIR),
+      idleSession(shared, NOW - 3 * HOUR),
+    );
+    const adapter = geminiCliAdapterFor(files);
+    const first = await adapter.poll();
+    expect(sorted(first.sessions)).toEqual([
+      expect.objectContaining({ id: idOf(shared), cwd: PROJECT, status: "idle" }),
+      expect.objectContaining({ id: seatbeltIdOf(shared), cwd: OTHER_PROJECT, status: "working" }),
+    ]);
+    expect(idOf(shared)).not.toBe(seatbeltIdOf(shared));
+    // Each keeps its id from poll to poll.
+    expect(sorted((await adapter.poll()).sessions).map((session) => session.id)).toEqual([
+      idOf(shared),
+      seatbeltIdOf(shared),
+    ]);
+  });
+
+  test("with sessions in both folders, a poll where nothing changed opens nothing and lists no folder", async () => {
+    const files = inBoth();
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.forget();
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions).toHaveLength(2);
+    expect(files.opened()).toEqual([]);
+    expect(files.count("readdir")).toBe(0);
+  });
+
+  test("with only ~/.cache/.gemini/tmp there, Gemini CLI is found and its sessions listed", async () => {
+    const files = memoryFiles();
+    files.write(projectRootPath(SLUG, SEATBELT_TMP_DIR), PROJECT);
+    files.write(seatbeltFile, seatbeltLines());
+    const { health, sessions } = await geminiCliAdapterFor(files).poll();
+    expect(health).toMatchObject({ state: "ok", detail: healthy() });
+    expect(sessions.map((session) => session.id)).toEqual([seatbeltIdOf(seatbeltSession)]);
+  });
+
+  test("with neither there, Gemini CLI is not found, both are looked for once a minute, and one that comes is found", async () => {
+    const files = memoryFiles();
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail:
+        "Gemini CLI was not found: there is no ~/.gemini/tmp or ~/.cache/.gemini/tmp folder. Agent Lookout looks again every minute.",
+    });
+    expect(files.calls).toEqual([
+      { method: "stat", path: TMP_DIR },
+      { method: "stat", path: SEATBELT_TMP_DIR },
+    ]);
+
+    files.forget();
+    clock.advance(RECHECK_MS - 1);
+    expect((await adapter.poll()).health.state).toBe("unavailable");
+    expect(files.calls).toEqual([]);
+
+    files.write(projectRootPath(SLUG, SEATBELT_TMP_DIR), PROJECT);
+    files.write(seatbeltFile, seatbeltLines());
+    clock.advance(1);
+    const found = await adapter.poll();
+    expect(found.health.state).toBe("ok");
+    expect(found.sessions.map((session) => session.id)).toEqual([seatbeltIdOf(seatbeltSession)]);
+  });
+
+  test("while ~/.gemini/tmp is there and ~/.cache/.gemini/tmp is not, the second costs one stat a poll", async () => {
+    const files = withSessions();
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    for (let poll = 0; poll < 2; poll += 1) {
+      files.forget();
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions).toHaveLength(2);
+      expect(files.calls.filter((call) => call.path.startsWith(SEATBELT_DIR))).toEqual([
+        { method: "stat", path: SEATBELT_TMP_DIR },
+      ]);
+    }
+  });
+
+  test("with AGENT_LOOKOUT_GEMINI_CLI_HOME set, only the folder it names is read, as Gemini CLI's own", async () => {
+    const files = inBoth();
+    const own = geminiCliAdapterFor(files, { env: { AGENT_LOOKOUT_GEMINI_CLI_HOME: GEMINI_DIR } });
+    const { health, sessions } = await own.poll();
+    expect(sessions.map((session) => session.id)).toEqual([idOf(homeSession)]);
+    expect(health.detail).toBe(healthy("~/.gemini/tmp"));
+    expect(health.watching?.map((fact) => fact.label)).not.toContain("Seatbelt sessions folder");
+    expect(own.lookingIn).toBe("Looking for Gemini CLI sessions in ~/.gemini/tmp.");
+    expect(files.calls.filter((call) => call.path.startsWith(SEATBELT_DIR))).toEqual([]);
+
+    // Named, the Seatbelt folder is read alone, and its sessions' ids are as they were with the setting before.
+    files.forget();
+    const named = geminiCliAdapterFor(files, {
+      env: { AGENT_LOOKOUT_GEMINI_CLI_HOME: SEATBELT_DIR },
+    });
+    expect((await named.poll()).sessions.map((session) => session.id)).toEqual([
+      idOf(seatbeltSession),
+    ]);
+    expect(files.calls.filter((call) => call.path.startsWith(GEMINI_DIR))).toEqual([]);
+  });
+
+  test.each(["linux", "win32"] as const)("on %s, only ~/.gemini is read", async (platform) => {
+    const files = inBoth();
+    const adapter = geminiCliAdapterFor(files, { platform });
+    const { health, sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.id)).toEqual([idOf(homeSession)]);
+    expect(health.detail).toBe(healthy("~/.gemini/tmp"));
+    expect(adapter.lookingIn).toBe("Looking for Gemini CLI sessions in ~/.gemini/tmp.");
+    expect(files.calls.filter((call) => call.path.startsWith(SEATBELT_DIR))).toEqual([]);
+
+    // Not found names ~/.gemini alone.
+    const none = await geminiCliAdapterFor(memoryFiles(), { platform }).poll();
+    expect(none.health.detail).toBe(
+      "Gemini CLI was not found: there is no ~/.gemini/tmp folder. Agent Lookout looks again every minute.",
+    );
+  });
+
+  test("what a session in ~/.cache/.gemini last said is read from its own file there, and only when asked", async () => {
+    const files = inBoth();
+    const adapter = geminiCliAdapterFor(files);
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(seatbeltIdOf(seatbeltSession))).resolves.toEqual({
+      message: { text: "The reply under Seatbelt.", cut: false },
+    });
+    expect(files.opened()).toEqual([seatbeltFile]);
+    // The id it would have in ~/.gemini names no session listed.
+    files.forget();
+    await expect(adapter.lastMessage(idOf(seatbeltSession))).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+  });
+
+  test("a folder that is there and cannot be read makes the poll an error that says which, though the other was read", async () => {
+    const files = inBoth();
+    const adapter = geminiCliAdapterFor(files);
+    expect((await adapter.poll()).sessions).toHaveLength(2);
+
+    files.fail(SEATBELT_TMP_DIR);
+    const looked = await adapter.poll();
+    expect(looked.health).toMatchObject({
+      state: "error",
+      detail:
+        "Gemini CLI sessions could not be read: the folder ~/.cache/.gemini/tmp could not be looked at.",
+    });
+    expect(looked.health.watching).toContainEqual({ label: "Read", value: "cannot be read" });
+    expect(looked.sessions).toEqual([]);
+    // A poll that lists no session leaves none whose last message may be read.
+    files.forget();
+    await expect(adapter.lastMessage(idOf(homeSession))).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    // Gemini CLI's own folder that cannot be looked at is named the same way.
+    files.heal(SEATBELT_TMP_DIR);
+    files.fail(TMP_DIR);
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "error",
+      detail:
+        "Gemini CLI sessions could not be read: the folder ~/.gemini/tmp could not be looked at.",
+    });
+
+    // There, but it cannot be listed, and with the other that cannot be looked at, both are named.
+    const unlisted: ReadOnlyIo = {
+      ...files.io,
+      readdir: (dir) =>
+        asWritten(dir) === SEATBELT_TMP_DIR
+          ? Promise.reject(Object.assign(new Error("Refused."), { code: "EACCES" }))
+          : files.io.readdir(dir),
+    };
+    expect((await geminiCliAdapterFor(files, { io: unlisted }).poll()).health).toMatchObject({
+      state: "error",
+      detail:
+        "Gemini CLI sessions could not be read: the folder ~/.gemini/tmp could not be looked at, and the folder ~/.cache/.gemini/tmp could not be listed.",
+    });
+    files.heal(TMP_DIR);
+    expect((await geminiCliAdapterFor(files, { io: unlisted }).poll()).health).toMatchObject({
+      state: "error",
+      detail:
+        "Gemini CLI sessions could not be read: the folder ~/.cache/.gemini/tmp could not be listed.",
+    });
+
+    // Once both can be read, both folders' sessions are listed again.
+    const again = await adapter.poll();
+    expect(again.health).toMatchObject({ state: "ok", detail: healthy() });
+    expect(sorted(again.sessions).map((session) => session.id)).toEqual([
+      idOf(homeSession),
+      seatbeltIdOf(seatbeltSession),
+    ]);
+
+    // With the other missing, a folder that cannot be read is an error, as before.
+    files.remove(TMP_DIR);
+    files.fail(SEATBELT_TMP_DIR);
+    expect((await geminiCliAdapterFor(files).poll()).health).toMatchObject({
+      state: "error",
+      detail:
+        "Gemini CLI sessions could not be read: the folder ~/.cache/.gemini/tmp could not be looked at.",
+    });
+  });
+
+  test("a folder that cannot be read for one poll ends no session in it, and brings none back", async () => {
+    const files = inBoth();
+    let failNext = false;
+    // Listing ~/.cache/.gemini/tmp fails once, as when too many files are open.
+    const io: ReadOnlyIo = {
+      ...files.io,
+      readdir: (dir) => {
+        if (failNext && asWritten(dir) === SEATBELT_TMP_DIR) {
+          failNext = false;
+          return Promise.reject(Object.assign(new Error("Too many."), { code: "EMFILE" }));
+        }
+        return files.io.readdir(dir);
+      },
+    };
+    const events = createEventStore();
+    const history = createHistoryStore();
+    const adapter = geminiCliAdapterFor(files, { io, listRefreshMs: 0 });
+    const poller = createPoller({ adapters: [adapter], events, history, now: () => NOW });
+    const states: string[] = [];
+    for (let poll = 0; poll < 3; poll += 1) {
+      failNext = poll === 1;
+      states.push((await poller.pollOnce()).sources[0]?.state ?? "none");
+    }
+    expect(states).toEqual(["ok", "error", "ok"]);
+    expect(events.list()).toEqual([]);
+    // The poll that could not read it is left out of the history, not drawn with fewer sessions.
+    expect(history.list(Infinity, NOW).map((point) => point.total)).toEqual([2, 2]);
+  });
+
+  test("the two folders made one by a link are read once, as Gemini CLI's own", async () => {
+    const files = withSessions();
+    // ~/.cache/.gemini/tmp a link to ~/.gemini/tmp: the same folder, and the same path once links are followed.
+    const followed = (target: string) => {
+      const written = asWritten(target);
+      return written === SEATBELT_TMP_DIR || written.startsWith(`${SEATBELT_TMP_DIR}/`)
+        ? `${TMP_DIR}${written.slice(SEATBELT_TMP_DIR.length)}`
+        : written;
+    };
+    const linked: ReadOnlyIo = {
+      readdir: (target) => files.io.readdir(followed(target)),
+      stat: (target) => files.io.stat(followed(target)),
+      lstat: (target) => files.io.lstat(followed(target)),
+      openRegular: (target) => files.io.openRegular(followed(target)),
+      realpath: (target) => Promise.resolve(followed(target)),
+    };
+    const { sessions } = await geminiCliAdapterFor(files, { io: linked }).poll();
+    expect(sorted(sessions).map((session) => session.id)).toEqual(
+      [idOf(ids.working), idOf(ids.idle)].sort(),
+    );
+    // Through the link only its tmp/ was looked at, once.
+    expect(files.count("stat", (target) => target === TMP_DIR)).toBe(2);
+    expect(files.count("readdir", (target) => target === TMP_DIR)).toBe(1);
+  });
+
+  test("two folders of one identity are read once when the system cannot follow links, or fails to", async () => {
+    const files = inBoth();
+    const homeIno = (await files.io.stat(TMP_DIR)).ino;
+    // No way to follow links: the stand-in files have none.
+    const sameIno: ReadOnlyIo = {
+      ...files.io,
+      stat: async (target) => {
+        const info = await files.io.stat(target);
+        return asWritten(target) === SEATBELT_TMP_DIR ? { ...info, ino: homeIno } : info;
+      },
+    };
+    expect(
+      (await geminiCliAdapterFor(files, { io: sameIno }).poll()).sessions.map((s) => s.id),
+    ).toEqual([idOf(homeSession)]);
+    const failing: ReadOnlyIo = {
+      ...sameIno,
+      realpath: () => Promise.reject(Object.assign(new Error("Refused."), { code: "EACCES" })),
+    };
+    expect(
+      (await geminiCliAdapterFor(files, { io: failing }).poll()).sessions.map((s) => s.id),
+    ).toEqual([idOf(homeSession)]);
+  });
+
+  test("links are not followed while the two folders' identities differ", async () => {
+    const files = inBoth();
+    let asked = 0;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      realpath: (target) => {
+        asked += 1;
+        return Promise.resolve(target);
+      },
+    };
+    expect((await geminiCliAdapterFor(files, { io }).poll()).sessions).toHaveLength(2);
+    expect(asked).toBe(0);
+  });
+
+  test("the system the adapter is given says whether a project folder's case is asked", async () => {
+    const files = inBoth();
+    let asked = 0;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      realpath: (target) => {
+        asked += 1;
+        return Promise.resolve(target);
+      },
+    };
+    await geminiCliAdapterFor(files, { io, platform: "win32" }).poll();
+    expect(asked).toBeGreaterThan(0);
+  });
+
+  test("two folders of the same identity on different disks are both read", async () => {
+    const files = inBoth();
+    const homeIno = (await files.io.stat(TMP_DIR)).ino;
+    const sameIno: ReadOnlyIo = {
+      ...files.io,
+      stat: async (target) => {
+        const info = await files.io.stat(target);
+        return asWritten(target) === SEATBELT_TMP_DIR ? { ...info, ino: homeIno } : info;
+      },
+      realpath: (target) => Promise.resolve(target),
+    };
+    const { sessions } = await geminiCliAdapterFor(files, { io: sameIno }).poll();
+    expect(sorted(sessions).map((session) => session.id)).toEqual([
+      idOf(homeSession),
+      seatbeltIdOf(seatbeltSession),
+    ]);
   });
 });

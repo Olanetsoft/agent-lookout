@@ -17,6 +17,12 @@ export const GEMINI_DIR = `${HOME}/.gemini`;
 /** The folder that holds every project's sessions. */
 export const TMP_DIR = `${GEMINI_DIR}/tmp`;
 
+/** Where Gemini CLI keeps its folder under macOS Seatbelt, which the adapter reads too on a Mac. */
+export const SEATBELT_DIR = `${HOME}/.cache/.gemini`;
+
+/** The folder there that holds every project's sessions. */
+export const SEATBELT_TMP_DIR = `${SEATBELT_DIR}/tmp`;
+
 /** Midday UTC on 1 October 2026, the day the fixture's sessions were written. */
 export const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
 

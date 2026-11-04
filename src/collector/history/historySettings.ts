@@ -6,7 +6,7 @@ import { ANTIGRAVITY_APP_HOME_ENV, DEFAULT_APP_HOME } from "../adapters/antigrav
 import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/index.ts";
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
-import { geminiCliFolder } from "../adapters/gemini-cli/index.ts";
+import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli/index.ts";
 import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
@@ -36,11 +36,13 @@ export type HistorySetup =
 /**
  * Whether the history is kept on disk, and where: `~/.agent-lookout/history`,
  * beside the folder of status files, unless `AGENT_LOOKOUT_HISTORY_DIR` names
- * another. `AGENT_LOOKOUT_HISTORY=off` keeps it in memory only.
+ * another. `AGENT_LOOKOUT_HISTORY=off` keeps it in memory only. The system
+ * is the one the adapters are given, since it says which folders they read.
  */
 export function readHistorySetup(
   env: NodeJS.ProcessEnv,
   homeDir: string = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
 ): HistorySetup {
   if (env[HISTORY_ENV]?.trim().toLowerCase() === "off") return { on: false };
   const override = env[HISTORY_DIR_ENV]?.trim() || undefined;
@@ -49,19 +51,24 @@ export function readHistorySetup(
     on: true,
     dir,
     folder: tildify(dir, homeDir),
-    sources: sourcesFingerprint(env, homeDir),
+    sources: sourcesFingerprint(env, homeDir, platform),
   };
 }
 
 /**
  * The folders the nine other sources read, and OpenCode's database, as the
- * adapters work them out, made into a short fingerprint that names none of
- * them. Two copies of Agent Lookout with the same one see the same sessions.
- * The writer lock carries it, so a copy can say when the one writing the
- * history watches other folders, such as a dev server pointed at empty test
- * folders.
+ * adapters work them out on this system, made into a short fingerprint that
+ * names none of them. Two copies of Agent Lookout with the same one see the
+ * same sessions. The writer lock carries it, so a copy can say when the one
+ * writing the history watches other folders, such as a dev server pointed at
+ * empty test folders. Gemini CLI's folder kept under macOS Seatbelt is in it
+ * only where the adapter reads that folder.
  */
-export function sourcesFingerprint(env: NodeJS.ProcessEnv, homeDir: string = os.homedir()): string {
+export function sourcesFingerprint(
+  env: NodeJS.ProcessEnv,
+  homeDir: string = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string {
   const set = (name: string) => env[name]?.trim() || undefined;
   const folders = [
     path.resolve(set(CLAUDE_HOME_ENV) ?? path.join(homeDir, ".claude")),
@@ -71,6 +78,7 @@ export function sourcesFingerprint(env: NodeJS.ProcessEnv, homeDir: string = os.
     path.resolve(set(ANTIGRAVITY_APP_HOME_ENV) ?? path.join(homeDir, ...DEFAULT_APP_HOME)),
     vibeSessionDirFor(env, homeDir),
     geminiCliFolder(env, homeDir).dir,
+    geminiCliSeatbeltFolder(env, homeDir, platform) ?? "",
     opencodeDatabaseFor(env, homeDir) ?? ":memory:",
     qwenFolders(env, homeDir).home,
     qwenFolders(env, homeDir).runtime,

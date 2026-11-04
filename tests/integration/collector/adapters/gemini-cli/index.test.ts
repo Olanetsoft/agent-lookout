@@ -8,6 +8,7 @@ import {
   readdir,
   readFile,
   readlink,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -66,6 +67,7 @@ function recordingIo() {
       calls.push({ method: "openRegular", path: target }),
       nodeIo.openRegular(target)
     ),
+    realpath: (target) => (calls.push({ method: "realpath", path: target }), realpath(target)),
   };
   return { io, calls };
 }
@@ -364,5 +366,130 @@ describe("what a session last said, read from the real files", () => {
       expect(Date.now() - started).toBeLessThan(3_000);
     },
     8_000,
+  );
+});
+
+describe("the folder Gemini CLI keeps under macOS Seatbelt, read from the real files", () => {
+  const homeSession = sessionIdOf("41");
+  const seatbeltSession = sessionIdOf("42");
+
+  /** A session file whose newest reply says this. */
+  const replying = (sessionId: string, says: string) =>
+    chatFile([
+      headerLine({ sessionId, startTime: NOW - 10 * MINUTE }),
+      userLine(messageIdOf("43"), NOW - 2 * MINUTE),
+      geminiLine(messageIdOf("44"), NOW - MINUTE, { content: says }),
+      updatedLine(NOW - MINUTE),
+    ]);
+
+  /**
+   * A home folder of its own with a session in `.gemini/tmp` and one in
+   * `.cache/.gemini/tmp`, each in a project folder of the same name, and a log
+   * beside the Seatbelt folder's chats that is never opened.
+   */
+  async function homeWithBoth() {
+    const home = await tempDir();
+    const files: Record<"home" | "seatbelt" | "log", string> = { home: "", seatbelt: "", log: "" };
+    for (const [where, sessionId, says] of [
+      ["home", homeSession, "A reply in its own folder."],
+      ["seatbelt", seatbeltSession, "A reply under Seatbelt."],
+    ] as const) {
+      const gemini =
+        where === "home" ? path.join(home, ".gemini") : path.join(home, ".cache", ".gemini");
+      const project = path.join(gemini, "tmp", SLUG);
+      await mkdir(path.join(project, "chats"), { recursive: true });
+      await writeFile(path.join(project, ".project_root"), PROJECT);
+      files[where] = path.join(project, "chats", chatName(NOW - 10 * MINUTE, sessionId));
+      await writeFile(files[where], replying(sessionId, says));
+      if (where === "seatbelt") {
+        files.log = path.join(project, "logs.json");
+        await writeFile(files.log, JSON.stringify([{ message: PRIVATE_WORDS }]));
+      }
+    }
+    return { home, files };
+  }
+
+  function adapterIn(home: string, io: ReadOnlyIo, platform: NodeJS.Platform = "darwin") {
+    return createGeminiCliAdapter({ env: {}, homeDir: home, now: () => NOW, io, platform });
+  }
+
+  test("on a Mac, lists the sessions in both with no setting, with ids that differ, and changes nothing", async () => {
+    const { home, files } = await homeWithBoth();
+    const before = await snapshotOf(home);
+    const { io, calls } = recordingIo();
+    const result = await adapterIn(home, io).poll();
+    expect(result.health).toMatchObject({ state: "ok" });
+    expect(result.health.watching).toContainEqual({
+      label: "Seatbelt sessions folder",
+      value: "~/.cache/.gemini/tmp",
+    });
+    const ids = result.sessions.map((session) => session.id).sort();
+    expect(ids).toEqual(
+      [
+        geminiCliSessionId(SLUG, homeSession),
+        geminiCliSessionId(SLUG, seatbeltSession, true),
+      ].sort(),
+    );
+    expect(geminiCliSessionId(SLUG, seatbeltSession, true)).toBe(
+      `${geminiCliSessionId(SLUG, seatbeltSession)}.seatbelt`,
+    );
+    const opened = calls.filter((call) => call.method === "openRegular").map((call) => call.path);
+    expect(opened.sort()).toEqual(
+      [
+        path.join(path.dirname(path.dirname(files.home)), ".project_root"),
+        files.home,
+        path.join(path.dirname(path.dirname(files.seatbelt)), ".project_root"),
+        files.seatbelt,
+      ].sort(),
+    );
+    expect(calls.filter((call) => call.path === files.log)).toEqual([]);
+    expect(await snapshotOf(home)).toEqual(before);
+  });
+
+  test("what a session in ~/.cache/.gemini last said is read from its own file, and from no other", async () => {
+    const { home, files } = await homeWithBoth();
+    const { io, calls } = recordingIo();
+    const adapter = adapterIn(home, io);
+    await adapter.poll();
+    calls.length = 0;
+    await expect(
+      adapter.lastMessage(geminiCliSessionId(SLUG, seatbeltSession, true)),
+    ).resolves.toEqual({
+      message: { text: "A reply under Seatbelt.", cut: false },
+    });
+    expect(calls.filter((call) => call.method === "openRegular").map((call) => call.path)).toEqual([
+      path.normalize(files.seatbelt),
+    ]);
+  });
+
+  test("on Linux, only ~/.gemini is read", async () => {
+    const { home } = await homeWithBoth();
+    const { io, calls } = recordingIo();
+    const result = await adapterIn(home, io, "linux").poll();
+    expect(result.sessions.map((session) => session.id)).toEqual([
+      geminiCliSessionId(SLUG, homeSession),
+    ]);
+    expect(calls.filter((call) => call.path.startsWith(path.join(home, ".cache")))).toEqual([]);
+  });
+
+  // Windows makes a link to a folder only with rights a test does not have.
+  test.skipIf(process.platform === "win32")(
+    "~/.cache/.gemini made a link to ~/.gemini is read once, as Gemini CLI's own",
+    async () => {
+      const home = await tempDir();
+      const project = path.join(home, ".gemini", "tmp", SLUG);
+      await mkdir(path.join(project, "chats"), { recursive: true });
+      await writeFile(path.join(project, ".project_root"), PROJECT);
+      await writeFile(
+        path.join(project, "chats", chatName(NOW - 10 * MINUTE, homeSession)),
+        replying(homeSession, "A reply in its own folder."),
+      );
+      await mkdir(path.join(home, ".cache"));
+      await symlink(path.join(home, ".gemini"), path.join(home, ".cache", ".gemini"));
+      const result = await adapterIn(home, nodeIo).poll();
+      expect(result.sessions.map((session) => session.id)).toEqual([
+        geminiCliSessionId(SLUG, homeSession),
+      ]);
+    },
   );
 });

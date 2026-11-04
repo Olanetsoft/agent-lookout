@@ -165,3 +165,21 @@ test("a session's id is Gemini CLI's own id and a short hash of its project fold
   expect(geminiCliSessionId("demo-project", "review")).toBe(id);
   expect(geminiCliSessionId("other-project", "review")).not.toBe(id);
 });
+
+test("a session in the folder Gemini CLI keeps under macOS Seatbelt has .seatbelt after that, so it never has the id of one in ~/.gemini", () => {
+  const home = geminiCliSessionId("demo-project", "review");
+  const seatbelt = geminiCliSessionId("demo-project", "review", true);
+  expect(seatbelt).toBe(`${home}.seatbelt`);
+  expect(seatbelt).toMatch(/^gemini-cli:review\.[0-9a-f]{8}\.seatbelt$/);
+  // One dot after the source for ~/.gemini, two for ~/.cache/.gemini.
+  expect(home.split(".")).toHaveLength(2);
+  expect(seatbelt.split(".")).toHaveLength(3);
+
+  const state = stateWith();
+  expect(geminiCliSession({ state, slug: SLUG, cwd: PROJECT, now: NOW })?.id).toBe(
+    geminiCliSessionId(SLUG, ids.working),
+  );
+  expect(geminiCliSession({ state, slug: SLUG, seatbelt: true, cwd: PROJECT, now: NOW })?.id).toBe(
+    geminiCliSessionId(SLUG, ids.working, true),
+  );
+});

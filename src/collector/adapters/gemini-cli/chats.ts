@@ -38,17 +38,17 @@ export const CHATS_DIR = "chats";
 export const CHATS_REFRESH_MS = 30_000;
 
 /** A session file, with what a `lstat` of it said this poll. */
-export interface ChatRef {
+export interface ChatRef<P extends Project = Project> {
   path: string;
-  /** The project folder it is in. */
-  project: Project;
+  /** The project folder it is in, as the caller gave it. */
+  project: P;
   info: FileInfo;
 }
 
 /** What a look at every project's session files found. */
-export interface ChatListing {
+export interface ChatListing<P extends Project = Project> {
   /** The session files written to in the last day. */
-  refs: ChatRef[];
+  refs: ChatRef<P>[];
   /** How many files in the format of Gemini CLI before 0.39 changed in the last day. */
   older: number;
 }
@@ -64,8 +64,12 @@ interface Listed {
 }
 
 export interface ChatLister {
-  /** The session files of these projects written to in the last day. */
-  recent(projects: readonly Project[], now: number): Promise<ChatListing>;
+  /**
+   * The session files of these projects written to in the last day, each with
+   * the project it is in. What is kept of a folder of session files not among
+   * them is forgotten, so every project is given in one call.
+   */
+  recent<P extends Project>(projects: readonly P[], now: number): Promise<ChatListing<P>>;
 }
 
 export interface ChatListerOptions {
@@ -111,9 +115,9 @@ export function createChatLister(options: ChatListerOptions): ChatLister {
   }
 
   return {
-    async recent(projects, now) {
+    async recent<P extends Project>(projects: readonly P[], now: number) {
       const cutoff = now - FINISHED_RETENTION_MS;
-      const refs: ChatRef[] = [];
+      const refs: ChatRef<P>[] = [];
       let older = 0;
       const seen = new Set<string>();
 

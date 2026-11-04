@@ -19,7 +19,7 @@ import { every } from "../words.ts";
 import { createChatFileReader, type ChatFileState } from "./chatFile.ts";
 import { createChatLister } from "./chats.ts";
 import { createGeminiCliLastMessages } from "./lastMessages.ts";
-import { createProjectLister } from "./projects.ts";
+import { createProjectLister, type Project, type ProjectLister } from "./projects.ts";
 import { geminiCliSession, lastActivity, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that names Gemini CLI's folder, the one that holds `tmp/`, for Agent Lookout alone. */
@@ -34,10 +34,17 @@ export const GEMINI_CLI_OWN_HOME_ENV = "GEMINI_CLI_HOME";
 /** Gemini CLI's folder in a home folder. */
 export const DEFAULT_DIR = ".gemini";
 
+/**
+ * The folder in a home folder that holds Gemini CLI's folder under macOS
+ * Seatbelt, as `.cache/.gemini` (`getGlobalRuntimeDir` in
+ * packages/core/src/config/storage.ts at v0.64.0).
+ */
+export const SEATBELT_PARENT_DIR = ".cache";
+
 /** The folder in Gemini CLI's folder that holds every project's sessions. */
 export const TMP_DIR = "tmp";
 
-/** How long a Gemini CLI folder that was not there is taken to be still missing before it is looked for again. */
+/** How long Gemini CLI is taken to be still missing, when none of its folders holds `tmp/`, before each `tmp/` is looked for again. */
 export const RECHECK_MS = 60_000;
 
 /** The one way this adapter reads, named for the poller. */
@@ -130,7 +137,7 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
 type HomeFrom = "agent-lookout" | "gemini-cli" | "default";
 
 /**
- * The folder this adapter reads, the one that holds `tmp/`: the one
+ * Gemini CLI's own folder, the one that holds `tmp/`: the one
  * `AGENT_LOOKOUT_GEMINI_CLI_HOME` names, otherwise `.gemini` in the home folder
  * Gemini CLI's own `GEMINI_CLI_HOME` names, otherwise `~/.gemini`.
  */
@@ -145,19 +152,60 @@ export function geminiCliFolder(
   return { dir: path.resolve(homeDir, DEFAULT_DIR), from: "default" };
 }
 
+/**
+ * The folder Gemini CLI keeps its sessions in under macOS Seatbelt, read
+ * beside the other, or null where none is: `.cache/.gemini` in the same home
+ * folder, Gemini CLI's own `GEMINI_CLI_HOME` or else the person's. Gemini CLI
+ * keeps them there when `SANDBOX` is `sandbox-exec`, which in Gemini CLI's
+ * code only its start under macOS's `sandbox-exec` sets, so it is read on a
+ * Mac alone. Agent Lookout cannot tell whether a session ran under Seatbelt,
+ * so it reads both folders with no setting. With
+ * `AGENT_LOOKOUT_GEMINI_CLI_HOME` set, only the folder it names is read.
+ */
+export function geminiCliSeatbeltFolder(
+  env: NodeJS.ProcessEnv,
+  homeDir: string = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  if (platform !== "darwin" || env[GEMINI_CLI_HOME_ENV]?.trim()) return null;
+  const geminiHome = env[GEMINI_CLI_OWN_HOME_ENV]?.trim() || undefined;
+  return path.resolve(geminiHome ?? homeDir, SEATBELT_PARENT_DIR, DEFAULT_DIR);
+}
+
+/** One folder of Gemini CLI's that holds `tmp/`. */
+interface Folder {
+  /** Whether it is the one Gemini CLI keeps under macOS Seatbelt. */
+  seatbelt: boolean;
+  tmpDir: string;
+  /** `tmp/` as people see it, such as `~/.gemini/tmp`. */
+  tmpName: string;
+  projects: ProjectLister;
+}
+
+/** A project, with the folder it was found in. */
+type FolderProject = Project & { seatbelt: boolean };
+
+/** A folder that is there and could not be read this poll, and what could not be done to it. */
+interface Unread {
+  folder: Folder;
+  could: "looked at" | "listed";
+}
+
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface GeminiCliAdapterOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
   now?: () => number;
   io?: ReadOnlyIo;
+  /** The system, which says whether the folder Gemini CLI keeps under macOS Seatbelt is read. Defaults to this one. */
+  platform?: NodeJS.Platform;
   /**
    * How often the poller calls `poll()`, which is how often the files are read.
    * The adapter keeps no timer of its own: this is only stated in `watching`.
    * Defaults to the poller's interval.
    */
   pollIntervalMs?: number;
-  /** How long a missing Gemini CLI folder is believed missing before one more look. Defaults to a minute. */
+  /** How long Gemini CLI is believed missing, when no folder holds `tmp/`, before one more look. Defaults to a minute. */
   recheckMs?: number;
   /** How often, at most, `tmp/` and each folder of session files are listed again. Defaults to 30 seconds. */
   listRefreshMs?: number;
@@ -191,13 +239,20 @@ export interface GeminiCliAdapter extends Adapter {
  * - Each project's `chats/`, listed, and the session files in it written to in
  *   the last day (`chats.ts`, `chatFile.ts`).
  *
+ * On a Mac it reads them in two folders: Gemini CLI's own, and the one it
+ * keeps its sessions in under macOS Seatbelt, `~/.cache/.gemini`
+ * (`geminiCliSeatbeltFolder`). Each folder has its own projects, so a session
+ * in each is a session of its own, with an id of its own. The two can be one
+ * folder, through a link, and are then read once, as the first.
+ *
  * A session is listed for 24 hours after its last update. Its status is
  * working, idle or unknown, never "needs-you", "finished" or "failed": Gemini
  * CLI writes nothing while a tool waits for approval or runs, and nothing when
  * a session ends. A subagent's own file is never listed. Two projects can each
  * hold a session of one id, which `--session-id` allows, so a session's id
- * names its project's folder too. Two files of one id in one project are listed
- * once, from the one active last, as Gemini CLI's own list shows them.
+ * names its project's folder too. Two files of one id in one project of one
+ * folder are listed once, from the one active last, as Gemini CLI's own list
+ * shows them.
  *
  * What a session last said is read from the end of the file the last poll
  * listed it from, but only when `lastMessage` is asked for it, which the
@@ -206,10 +261,12 @@ export interface GeminiCliAdapter extends Adapter {
  * is never put on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so
  * does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
  *
- * Gemini CLI not being installed costs nothing: when `tmp/` is missing, the
- * adapter says so and looks again only once a minute, with a single `stat`.
- * Someone who sets `AGENT_LOOKOUT_GEMINI_CLI_HOME` means that folder: if it
- * holds no sessions, that is an answer, not a missing Gemini CLI.
+ * Gemini CLI not being installed costs nothing: when no folder holds `tmp/`,
+ * the adapter says so and looks again only once a minute, with a single
+ * `stat` of each `tmp/`. While one is there, the other's is looked at on each
+ * poll with a single `stat`, and nothing more while it is missing. Someone who
+ * sets `AGENT_LOOKOUT_GEMINI_CLI_HOME` means that folder alone: if it holds no
+ * sessions, that is an answer, not a missing Gemini CLI.
  *
  * Built from Gemini CLI's source at v0.64.0, and not yet checked against a
  * machine running it.
@@ -219,15 +276,28 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
   const io = options.io ?? nodeIo;
+  const platform = options.platform ?? process.platform;
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
 
   const { dir: geminiDir, from: homeFrom } = geminiCliFolder(env, homeDir);
-  const tmpDir = path.join(geminiDir, TMP_DIR);
   const homeName = tildify(geminiDir, homeDir);
-  const tmpName = tildify(tmpDir, homeDir);
+  const seatbeltDir = geminiCliSeatbeltFolder(env, homeDir, platform);
 
-  const projects = createProjectLister({ tmpDir, io, refreshMs: options.listRefreshMs });
+  function folderAt(dir: string, seatbelt: boolean): Folder {
+    const tmpDir = path.join(dir, TMP_DIR);
+    return {
+      seatbelt,
+      tmpDir,
+      tmpName: tildify(tmpDir, homeDir),
+      projects: createProjectLister({ tmpDir, io, platform, refreshMs: options.listRefreshMs }),
+    };
+  }
+  const home = folderAt(geminiDir, false);
+  const seatbeltFolder = seatbeltDir === null ? undefined : folderAt(seatbeltDir, true);
+  /** Gemini CLI's own folder first, then, on a Mac, the one it keeps under Seatbelt. */
+  const folders = seatbeltFolder ? [home, seatbeltFolder] : [home];
+
   const chats = createChatLister({ io, refreshMs: options.listRefreshMs });
   const reader = createChatFileReader(io);
   // What a session last said, read only when it is asked for. With either
@@ -243,14 +313,21 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
   /** The file this poll listed each session from, by its id: the only file its last message is read from. */
   let listedFiles = new Map<string, string>();
 
-  /** When `tmp/` was last found missing. Null while it is there, or before the first look. */
+  /** When every `tmp/` was last found missing. Null while one is there, or before the first look. */
   let absentAt: number | null = null;
 
   const alwaysNotes = `${NEEDS_YOU_NOTE} ${FILES_ONLY_NOTE} ${UNCHECKED_NOTE}`;
 
+  /** Each folder of sessions read, in words: `~/.gemini/tmp and ~/.cache/.gemini/tmp`. */
+  const tmpNames = folders.map((folder) => folder.tmpName).join(" and ");
+
   function watching(read: string): SourceFact[] {
+    const seatbelt: SourceFact[] = seatbeltFolder
+      ? [{ label: "Seatbelt sessions folder", value: seatbeltFolder.tmpName }]
+      : [];
     return [
-      { label: "Sessions folder", value: tmpName },
+      { label: "Sessions folder", value: home.tmpName },
+      ...seatbelt,
       { label: "Read", value: read },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
       { label: "Programs run", value: "None" },
@@ -277,16 +354,43 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
 
   /** Gemini CLI is not on this machine, or not where it was said to be. Said calmly, with no advice. */
   function notFound(checkedAt: number): AdapterResult {
+    const missing = folders.map((folder) => folder.tmpName).join(" or ");
     const where =
       homeFrom === "gemini-cli"
-        ? `${GEMINI_CLI_OWN_HOME_ENV} is set, and there is no ${tmpName} folder`
-        : `there is no ${tmpName} folder`;
+        ? `${GEMINI_CLI_OWN_HOME_ENV} is set, and there is no ${missing} folder`
+        : `there is no ${missing} folder`;
     return result(
       "unavailable",
       `Gemini CLI was not found: ${where}. Agent Lookout looks again ${every(recheckMs)}.`,
       "not found",
       checkedAt,
     );
+  }
+
+  /** What could not be done to a folder, as part of a sentence. */
+  const unreadWords = ({ folder, could }: Unread) =>
+    `the folder ${folder.tmpName} could not be ${could}`;
+
+  /**
+   * Whether the folder Gemini CLI keeps under Seatbelt is its own folder,
+   * through a link: its `tmp/` has the same identity on the disk, and, when
+   * the system can say, the same path with every link followed, which reads
+   * nothing in either. Two folders apart on one disk never share an identity,
+   * so the path is asked only when they do.
+   */
+  async function sameAsHome(info: FileInfo, homeInfo: FileInfo | undefined): Promise<boolean> {
+    if (seatbeltFolder === undefined || homeInfo === undefined) return false;
+    if (info.ino !== homeInfo.ino) return false;
+    if (io.realpath === undefined) return true;
+    try {
+      const [mine, theirs] = await Promise.all([
+        io.realpath(seatbeltFolder.tmpDir),
+        io.realpath(home.tmpDir),
+      ]);
+      return mine === theirs;
+    } catch {
+      return true;
+    }
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -299,23 +403,27 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
       if (since >= 0 && since < recheckMs) return notFound(checkedAt);
     }
 
-    let tmpInfo: FileInfo | null;
-    try {
-      // `tmp/` may be a link, as Gemini CLI's folder may be, so it is followed here.
-      tmpInfo = await io.stat(tmpDir);
-    } catch (error) {
-      if (!isMissing(error)) {
-        return result(
-          "error",
-          `Gemini CLI sessions could not be read: the folder ${tmpName} could not be looked at.`,
-          "cannot be read",
-          checkedAt,
-        );
+    /** Each folder whose `tmp/` is there, with what its `stat` said. */
+    const there: { folder: Folder; info: FileInfo }[] = [];
+    /** Each folder that is there and could not be read this poll. */
+    const unread: Unread[] = [];
+    for (const folder of folders) {
+      let info: FileInfo;
+      try {
+        // `tmp/` may be a link, as Gemini CLI's folder may be, so it is followed here.
+        info = await io.stat(folder.tmpDir);
+      } catch (error) {
+        if (!isMissing(error)) unread.push({ folder, could: "looked at" });
+        continue;
       }
-      tmpInfo = null;
+      // Only a folder counts: `~/.gemini` alone does not, as Antigravity keeps its own files there.
+      if (info.kind !== "directory") continue;
+      // The folder kept under Seatbelt can be Gemini CLI's own, through a link.
+      // It is then read once, as Gemini CLI's own, which is looked at first.
+      if (folder.seatbelt && (await sameAsHome(info, there[0]?.info))) continue;
+      there.push({ folder, info });
     }
-    // Only a folder counts: `~/.gemini` alone does not, as Antigravity keeps its own files there.
-    if (tmpInfo?.kind !== "directory") {
+    if (there.length === 0 && unread.length === 0) {
       if (homeFrom === "agent-lookout") {
         return result(
           "ok",
@@ -329,27 +437,38 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
     }
     absentAt = null;
 
-    let listing;
-    try {
-      listing = await chats.recent(await projects.list(tmpInfo, checkedAt), checkedAt);
-    } catch {
+    const projects: FolderProject[] = [];
+    for (const { folder, info } of there) {
+      try {
+        const found = await folder.projects.list(info, checkedAt);
+        for (const project of found) projects.push({ ...project, seatbelt: folder.seatbelt });
+      } catch {
+        unread.push({ folder, could: "listed" });
+      }
+    }
+    // A folder that is there and could not be read makes the whole poll an
+    // error, though the other was read. The poller compares nothing from an
+    // error, so no session in that folder is taken to have ended, and none to
+    // have appeared again at the next poll that reads it.
+    if (unread.length > 0) {
       return result(
         "error",
-        `Gemini CLI sessions could not be read: the folder ${tmpName} could not be listed.`,
+        `Gemini CLI sessions could not be read: ${unread.map(unreadWords).join(", and ")}.`,
         "cannot be read",
         checkedAt,
       );
     }
+    // Every folder's projects at once, so neither forgets what it keeps of the other's.
+    const listing = await chats.recent(projects, checkedAt);
 
     /** The files read this poll, whose cache is worth keeping. */
     const read = new Set<string>();
-    /** The file to show for each session, by project and id: a session saved twice has more than one. */
+    /** The file to show for each session, by folder, project and id: a session saved twice has more than one. */
     const chosen = new Map<
       string,
       {
         state: ChatFileState;
-        slug: string;
-        cwd: string | null;
+        project: FolderProject;
         at: number;
         writtenAt: number;
         file: string;
@@ -372,14 +491,14 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
       // With no way to tell an open session from a closed one, each is kept
       // for a day after its last update, and no longer.
       if (at === null || !isWithinRetention(at, checkedAt)) continue;
-      // Gemini CLI tells sessions apart by id within one project's folder alone.
-      const key = `${ref.project.slug}/${header.sessionId}`;
+      // Gemini CLI tells sessions apart by id within one project's folder of
+      // one of its folders alone: `--resume` looks in no other.
+      const key = `${ref.project.seatbelt ? "seatbelt" : "home"}/${ref.project.slug}/${header.sessionId}`;
       const kept = chosen.get(key);
       if (!kept || at > kept.at) {
         chosen.set(key, {
           state,
-          slug: ref.project.slug,
-          cwd: ref.project.cwd,
+          project: ref.project,
           at,
           writtenAt: ref.info.mtimeMs,
           file: ref.path,
@@ -389,15 +508,18 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
     reader.keepOnly(read);
 
     const sessions: Session[] = [];
-    for (const { state, slug, cwd, writtenAt, file } of chosen.values()) {
-      const session = geminiCliSession({ state, slug, cwd, writtenAt, now: checkedAt });
+    for (const { state, project, writtenAt, file } of chosen.values()) {
+      const { slug, seatbelt, cwd } = project;
+      const session = geminiCliSession({ state, slug, seatbelt, cwd, writtenAt, now: checkedAt });
       if (session) {
         sessions.push(session);
         listedFiles.set(session.id, file);
       }
     }
 
-    let detail = `Sessions are read from the files Gemini CLI saves in ${tmpName}. ${alwaysNotes}`;
+    let detail = `Sessions are read from the files Gemini CLI saves in ${home.tmpName}`;
+    if (seatbeltFolder) detail += `, and in ${seatbeltFolder.tmpName} under macOS Seatbelt`;
+    detail += `. ${alwaysNotes}`;
     if (listing.older > 0) detail += ` ${OLDER_FORMAT_NOTE}`;
     if (sessions.some((session) => session.status === "unknown")) detail += ` ${UNKNOWN_NOTE}`;
     const answer = result("ok", detail, every(pollIntervalMs), checkedAt);
@@ -408,7 +530,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
     id: SOURCE_ID,
     label: LABEL,
     capabilities: GEMINI_CLI_CAPABILITIES,
-    lookingIn: `Looking for Gemini CLI sessions in ${tmpName}.`,
+    lookingIn: `Looking for Gemini CLI sessions in ${tmpNames}.`,
     async poll() {
       listedFiles = new Map();
       try {
