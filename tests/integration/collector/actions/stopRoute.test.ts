@@ -125,6 +125,23 @@ posixOnly("what the dashboard is told", () => {
     expect(response.body).not.toContain(standIn.procStart.replace(/\s+/g, " ").slice(0, 10));
   });
 
+  test("Claude Code's card says a stop's ps has not run until a stop has run it", async () => {
+    const standIn = await startStandIn();
+    const server = await serve({ [`${standIn.pid}.json`]: entryFor(standIn) });
+    const stopCheckRun = async () => {
+      const { sources } = (await request(server.port, "/api/sessions")).json<SessionsSnapshot>();
+      return sources
+        .find((source) => source.id === "claude-code")
+        ?.watching?.find((fact) => fact.label === "Stop check run")?.value;
+    };
+
+    expect(await stopCheckRun()).toBe("not run");
+
+    expect((await server.stop()).status).toBe(200);
+    await server.collector.poller.pollOnce();
+    expect(await stopCheckRun()).toBe("when you stop a session");
+  });
+
   test("with AGENT_LOOKOUT_STOP off, no session can be stopped and there is no route", async () => {
     const standIn = await startStandIn();
     const server = await serve(

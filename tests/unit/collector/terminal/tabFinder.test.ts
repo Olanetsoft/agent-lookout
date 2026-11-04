@@ -45,6 +45,20 @@ function finder(env: NodeJS.ProcessEnv = {}) {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("createTabFinder", () => {
+  test("says nothing has been asked until ps is, and with AGENT_LOOKOUT_TERMINAL_JUMP off it never is", async () => {
+    const { found } = finder();
+    expect(found.asked()).toBe(false);
+    await found.look([]);
+    expect(found.asked()).toBe(false);
+    await found.look([IN_TERMINAL]);
+    expect(found.asked()).toBe(true);
+
+    const off = finder({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+    await off.found.look([IN_TERMINAL]);
+    expect(off.found.asked()).toBe(false);
+    expect(off.ps.runs).toBe(0);
+  });
+
   test("finds the tab each process runs in, with one ps for them all", async () => {
     const { ps, found } = finder();
     await found.look([IN_TERMINAL, IN_ITERM, IN_WARP]);
@@ -148,6 +162,36 @@ describe("createTabFinder", () => {
 // Two adapters, such as Claude Code's and Qwen Code's, share one finder, each
 // through an asker of its own.
 describe("a tab finder two askers share", () => {
+  test("each says it has been asked for only once ps has been asked about one of its own", async () => {
+    const { ps, shared } = finder();
+    const claude = shared.asker();
+    const qwen = shared.asker();
+
+    await claude.look([]);
+    await qwen.look([IN_ITERM]);
+    expect(ps.runs).toBe(1);
+    expect(qwen.asked()).toBe(true);
+    expect(claude.asked()).toBe(false);
+  });
+
+  test("a look one asker makes counts for the other's new processes, and saying so runs no ps", async () => {
+    const { ps, clock, shared } = finder();
+    const claude = shared.asker();
+    const qwen = shared.asker();
+
+    await qwen.look([IN_ITERM]);
+    // Too soon to look again, so nothing has been asked of Claude Code's.
+    await claude.look([IN_TERMINAL]);
+    expect(claude.asked()).toBe(false);
+    expect(ps.runs).toBe(1);
+
+    clock.now += TAB_LOOK_SOONEST_MS;
+    await qwen.look([IN_ITERM]);
+    expect(ps.runs).toBe(2);
+    expect(claude.asked()).toBe(true);
+    expect(ps.runs).toBe(2);
+  });
+
   test("each asker keeps its tabs when the other looks", async () => {
     const { ps, clock, shared } = finder();
     const claude = shared.asker();

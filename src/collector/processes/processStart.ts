@@ -146,6 +146,12 @@ export interface ProcessStartCheck {
    * from the one the entry was written for.
    */
   reused(entries: readonly { pid: number; procStart?: string }[]): Promise<Set<number>>;
+  /**
+   * Whether a process has been sent to `ps` yet. On Windows that starts
+   * nothing, so Sources reads this on other systems alone, and reading it runs
+   * nothing.
+   */
+  asked(): boolean;
 }
 
 interface Remembered {
@@ -169,8 +175,10 @@ export function createProcessStartCheck(
   ttlMs: number = START_CHECK_TTL_MS,
 ): ProcessStartCheck {
   const remembered = new Map<number, Remembered>();
+  let askedYet = false;
 
   return {
+    asked: () => askedYet,
     async reused(entries) {
       const at = now();
       const checkable: { pid: number; recorded: string }[] = [];
@@ -193,6 +201,7 @@ export function createProcessStartCheck(
       const toAsk = due ? checkable : [];
 
       if (toAsk.length > 0) {
+        askedYet = true;
         let starts = new Map<number, string>();
         try {
           starts = await read(toAsk.map((item) => item.pid));

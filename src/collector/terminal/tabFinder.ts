@@ -32,6 +32,12 @@ export interface TabAsker {
   look(pids: readonly number[]): Promise<void>;
   /** The tab a process was found in, if one was. */
   tabOf(pid: number): TerminalTab | undefined;
+  /**
+   * Whether a look has been made for a process this asker named, at its own
+   * look or another's. Only on macOS does that run `ps`, so Sources reads this
+   * on a Mac alone, and reading it runs nothing.
+   */
+  asked(): boolean;
 }
 
 export interface TabFinder {
@@ -75,6 +81,8 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
   let lookedAt: number | null = null;
   /** The processes each asker named at its latest look. */
   const named = new Map<object, ReadonlySet<number>>();
+  /** The askers whose processes a look has asked about. */
+  const askedFor = new Set<object>();
   /** The look being made, while one is. */
   let underWay: Promise<void> | null = null;
 
@@ -115,6 +123,9 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
     // A clock that was set back does not hold a look back.
     if (lookedAt !== null && at >= lookedAt && at - lookedAt < soonestMs) return;
     lookedAt = at;
+    for (const [other, own] of named) {
+      if (unasked.some((pid) => own.has(pid))) askedFor.add(other);
+    }
 
     const looking = lookFor(unasked);
     underWay = looking;
@@ -130,7 +141,7 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
   return {
     asker() {
       const asker = {};
-      return { look: (pids) => look(asker, pids), tabOf };
+      return { look: (pids) => look(asker, pids), tabOf, asked: () => askedFor.has(asker) };
     },
     tabOf,
     forget(pid) {

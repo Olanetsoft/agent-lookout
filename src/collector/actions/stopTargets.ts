@@ -56,11 +56,16 @@ export interface StopTargets {
   askFeedSoon(): void;
   /** What `askFeedSoon` tells. The adapter that runs the command listens here. */
   onAskFeedSoon(listener: () => void): void;
+  /** Says that a stop is asking `ps` to confirm a session. */
+  noteCheck(): void;
+  /** Whether a stop has asked `ps` yet. The adapter's card reads this, and it runs nothing. */
+  checked(): boolean;
 }
 
 export function createStopTargets(): StopTargets {
   let targets: ReadonlyMap<string, StopTarget> = new Map();
   const listeners: (() => void)[] = [];
+  let checkedYet = false;
   return {
     set(next) {
       targets = next;
@@ -72,5 +77,9 @@ export function createStopTargets(): StopTargets {
     onAskFeedSoon(listener) {
       listeners.push(listener);
     },
+    noteCheck() {
+      checkedYet = true;
+    },
+    checked: () => checkedYet,
   };
 }

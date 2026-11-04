@@ -125,6 +125,22 @@ describe("createProcessStartCheck", () => {
     return { read, asked };
   }
 
+  test("says whether ps has been asked, and saying so asks nothing", async () => {
+    const { read, asked } = fakePs({ 4241: recorded });
+    const check = createProcessStartCheck(read, () => 0);
+    expect(check.asked()).toBe(false);
+
+    // An entry that recorded no start time gives ps nothing to answer.
+    await check.reused([{ pid: 4241 }]);
+    expect(check.asked()).toBe(false);
+    expect(asked).toEqual([]);
+
+    await check.reused([{ pid: 4241, procStart: recorded }]);
+    expect(check.asked()).toBe(true);
+    expect(check.asked()).toBe(true);
+    expect(asked).toEqual([[4241]]);
+  });
+
   test("names the pids that now belong to another process", async () => {
     const { read } = fakePs({ 4241: recorded, 4242: "Sat Oct  3 09:12:00 2026" });
     const check = createProcessStartCheck(read, () => 0);

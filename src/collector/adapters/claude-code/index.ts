@@ -18,8 +18,14 @@ import { LAST_MESSAGE_ENV, lastMessageOff } from "../../messages/lastMessageSett
 import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
-import { createProcessStartCheck, type ReadProcessStarts } from "../../processes/processStart.ts";
-import type { TabAsker } from "../../terminal/tabFinder.ts";
+import { PS_PARENTS_ARGS } from "../../processes/processParents.ts";
+import {
+  createProcessStartCheck,
+  START_CHECK_TTL_MS,
+  type ReadProcessStarts,
+} from "../../processes/processStart.ts";
+import { PS_TABLE_ARGS } from "../../processes/processTable.ts";
+import { TAB_LOOK_SOONEST_MS, type TabAsker } from "../../terminal/tabFinder.ts";
 import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
@@ -236,9 +242,10 @@ export interface ClaudeCodeAdapterOptions {
    * Told, after each poll, which sessions can be stopped and what each is
    * stopped by, and asks for the command to be run again at the next poll
    * once a background job has been stopped. The collector passes the one its
-   * routes that stop sessions read. Left out, no session is offered Stop.
+   * routes that stop sessions read, which also says whether a stop has asked
+   * `ps` yet. Left out, no session is offered Stop.
    */
-  stops?: Pick<StopTargets, "set" | "onAskFeedSoon">;
+  stops?: Pick<StopTargets, "set" | "onAskFeedSoon" | "checked">;
   /**
    * The system the adapter runs on, which says where `claude` is looked for,
    * how paths are written, and what Agent Lookout can do to a session there.
@@ -462,6 +469,58 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   const noEndedJobs = "Background jobs whose process has ended are not listed.";
   const oddStatus = `a session in the registry at ${registryName} has a status Agent Lookout does not know`;
 
+  /**
+   * What Sources says of `ps` for a session's start time, its tab and a stop:
+   * what is run, and how often, or "not run" until something has asked. Saying
+   * so runs nothing: the start check, the tab finder and the stop targets each
+   * say whether they have asked. The `ps` the pane finder runs goes with
+   * tmux, which no card lists.
+   *
+   * - The start check runs at a poll, for a session whose file records a start
+   *   time. On Windows `ps` is never run, so signal 0 is all there is.
+   * - The tab finder asks only on a Mac, the one system with Terminal or iTerm2.
+   * - A stop asks twice at the moment of acting, from a route, and only where
+   *   sessions can be stopped.
+   */
+  function processFacts(): SourceFact[] {
+    if (onWindows) {
+      return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
+    }
+    const tabs = platform === "darwin" ? options.terminals : undefined;
+    return [
+      { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+      {
+        label: "Process check run",
+        value: startCheck.asked()
+          ? `${every(START_CHECK_TTL_MS)} while a session's process runs, and sooner when another appears`
+          : "not run",
+      },
+      ...(tabs
+        ? [
+            { label: "Tab check", value: `ps ${PS_TABLE_ARGS.join(" ")}` },
+            {
+              label: "Tab check run",
+              value: tabs.asked()
+                ? `once for each new process, ${every(TAB_LOOK_SOONEST_MS)} at most`
+                : "not run",
+            },
+          ]
+        : []),
+      ...(stops
+        ? [
+            {
+              label: "Stop check",
+              value: `ps ${PS_PARENTS_ARGS.join(" ")} and ps -o pid=,lstart= -p <pid>`,
+            },
+            {
+              label: "Stop check run",
+              value: stops.checked() ? "when you stop a session" : "not run",
+            },
+          ]
+        : []),
+    ];
+  }
+
   function watching(registryRead: string, commandRun: string, plain: boolean): SourceFact[] {
     const args = plain ? FEED_ARGS_WITHOUT_ALL : FEED_ARGS;
     return [
@@ -469,6 +528,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       { label: "Registry read", value: registryRead },
       { label: "Command", value: `claude ${args.join(" ")}` },
       { label: "Command run", value: commandRun },
+      ...processFacts(),
       {
         label: "Transcript read",
         value: transcriptsOff

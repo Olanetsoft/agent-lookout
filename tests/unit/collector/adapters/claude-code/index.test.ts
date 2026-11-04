@@ -11,14 +11,18 @@ import {
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
+import { createTabFinder } from "@collector/terminal/tabFinder";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import type { TmuxPane } from "@collector/tmux/panes";
+import type { SourceFact } from "@core/sessions/session";
 import { HOME, ids, pids, registryFile, registryFiles } from "@tests/fixtures/claudeCode";
 import {
   adapterFor,
   fails,
   now,
   prints,
+  PROCESS_CHECK,
+  PROCESS_CHECK_RUN,
   watching,
   WITHHELD,
 } from "@tests/support/adapters/claudeCodeAdapter";
@@ -235,6 +239,7 @@ describe("Terminal and iTerm2 tabs", () => {
         looked.push([...asked].sort());
       },
       tabOf: (pid: number) => tabs[pid],
+      asked: () => looked.length > 0,
     };
   }
 
@@ -403,6 +408,267 @@ describe("Stop", () => {
     expect(asked).toBe(false);
     expect(adapter.capabilities).toBe(CLAUDE_CODE_WINDOWS_CAPABILITIES);
     expect(adapter.capabilities?.stop.level).toBe("no");
+  });
+});
+
+describe("what Sources says of ps", () => {
+  /** The fixtures' registry folder, held in memory. */
+  const registryIo: RegistryIo = {
+    readdir: async () => Object.keys(registryFiles),
+    readFile: async (file) => registryFiles[path.basename(file)] ?? "",
+  };
+
+  /** No session anywhere: an empty registry folder, and a command that lists none. */
+  const noSessions = {
+    registryIo: { readdir: async () => [], readFile: async () => "" },
+    run: prints("[]"),
+  };
+
+  /** What `ps` prints of the fixtures' processes, for the look for a tab. */
+  const table = () =>
+    new Map(Object.values(pids).map((pid) => [pid, { ppid: 1, tty: "??", path: "claude" }]));
+
+  /**
+   * Stand-ins for the two `ps` runs of a poll that the card lists, which count
+   * each run, on a clock a test moves.
+   */
+  function standIns(env: NodeJS.ProcessEnv = {}) {
+    const clock = { now };
+    const counted = { starts: 0, tables: 0 };
+    return {
+      clock,
+      counted,
+      readProcessStarts: async () => {
+        counted.starts += 1;
+        return new Map<number, string>();
+      },
+      finder: createTabFinder({
+        env,
+        homeDir: HOME,
+        now: () => clock.now,
+        readProcesses: async () => {
+          counted.tables += 1;
+          return table();
+        },
+      }),
+    };
+  }
+
+  /** An adapter on this system, handed what the collector hands it. */
+  function adapterOn(
+    platform: NodeJS.Platform,
+    options: Parameters<typeof adapterFor>[1] = {},
+    processes = standIns(),
+  ) {
+    const windows = platform === "win32";
+    return adapterFor(windows ? "C:\\Users\\example\\elsewhere" : "/Users/example/elsewhere", {
+      registryIo,
+      platform,
+      now: () => processes.clock.now,
+      readProcessStarts: processes.readProcessStarts,
+      terminals: processes.finder.asker(),
+      stops: createStopTargets(),
+      ...(windows && { homeDir: "C:\\Users\\example" }),
+      ...options,
+    });
+  }
+
+  const processRowsIn = (rows: SourceFact[] | undefined) =>
+    rows?.filter((fact) => /^(Process|Tab|Stop) check/.test(fact.label));
+
+  /** The rows a poll gives about processes. */
+  const processRows = async (adapter: ReturnType<typeof adapterFor>) =>
+    processRowsIn((await adapter.poll()).health.watching);
+
+  const TAB_CHECK = "ps -A -o pid=,ppid=,tty=,comm=";
+  const TAB_CHECK_RUN = "once for each new process, every 5 seconds at most";
+  const STOP_CHECK = "ps -A -o pid=,ppid= and ps -o pid=,lstart= -p <pid>";
+  const STOP_CHECK_RUN = "when you stop a session";
+
+  test("on a Mac it lists the start check, the look for a tab and a stop's check", async () => {
+    const stops = createStopTargets();
+    const adapter = adapterOn("darwin", { stops });
+
+    expect(await processRows(adapter)).toEqual([
+      { label: "Process check", value: PROCESS_CHECK },
+      { label: "Process check run", value: PROCESS_CHECK_RUN },
+      { label: "Tab check", value: TAB_CHECK },
+      { label: "Tab check run", value: TAB_CHECK_RUN },
+      { label: "Stop check", value: STOP_CHECK },
+      { label: "Stop check run", value: "not run" },
+    ]);
+
+    stops.noteCheck();
+    expect(await processRows(adapter)).toContainEqual({
+      label: "Stop check run",
+      value: STOP_CHECK_RUN,
+    });
+  });
+
+  test("on Linux it lists no look for a tab, which is made on a Mac alone", async () => {
+    const stops = createStopTargets();
+    const adapter = adapterOn("linux", { stops });
+
+    expect(await processRows(adapter)).toEqual([
+      { label: "Process check", value: PROCESS_CHECK },
+      { label: "Process check run", value: PROCESS_CHECK_RUN },
+      { label: "Stop check", value: STOP_CHECK },
+      { label: "Stop check run", value: "not run" },
+    ]);
+
+    stops.noteCheck();
+    expect(await processRows(adapter)).toContainEqual({
+      label: "Stop check run",
+      value: STOP_CHECK_RUN,
+    });
+  });
+
+  test("on Windows, which has no ps, it says signal 0 alone, whatever it is handed", async () => {
+    const signalOnly = [{ label: "Process check", value: "signal 0 alone, every 2 seconds" }];
+
+    expect(await processRows(adapterOn("win32"))).toEqual(signalOnly);
+    expect(await processRows(adapterOn("win32", noSessions))).toEqual(signalOnly);
+    expect(await processRows(adapterOn("win32", { pollIntervalMs: 1_000 }))).toEqual([
+      { label: "Process check", value: "signal 0 alone, every second" },
+    ]);
+
+    const { health } = await adapterOn("win32").poll();
+    expect(JSON.stringify(health.watching)).not.toMatch(/\bps\b/);
+  });
+
+  test.each(["darwin", "linux"] as const)(
+    "on %s each run says not run while no session has asked",
+    async (platform) => {
+      const processes = standIns();
+      const rows = await processRows(adapterOn(platform, noSessions, processes));
+      const runs = rows?.filter((fact) => fact.label.endsWith(" run"));
+
+      expect(runs?.length).toBeGreaterThan(1);
+      expect(runs?.every((fact) => fact.value === "not run")).toBe(true);
+      expect(processes.counted).toEqual({ starts: 0, tables: 0 });
+    },
+  );
+
+  test("a session whose file records no start time gives ps nothing to answer, so it says not run", async () => {
+    const processes = standIns();
+    const adapter = adapterOn(
+      "linux",
+      {
+        registryIo: {
+          readdir: async () => [`${pids.busy}.json`],
+          readFile: async () => registryFile({ procStart: undefined }),
+        },
+      },
+      processes,
+    );
+
+    expect(await processRows(adapter)).toContainEqual({
+      label: "Process check run",
+      value: "not run",
+    });
+    expect(processes.counted.starts).toBe(0);
+  });
+
+  test("the first run shows on the poll that made it, and stays once the sessions have gone", async () => {
+    let files: Record<string, string> = {};
+    const adapter = adapterOn("darwin", {
+      run: prints("[]"),
+      registryIo: {
+        readdir: async () => Object.keys(files),
+        readFile: async (file) => files[path.basename(file)] ?? "",
+      },
+    });
+    const runs = async () =>
+      (await processRows(adapter))?.filter((fact) => /^(Process|Tab) check run$/.test(fact.label));
+    const ran = [
+      { label: "Process check run", value: PROCESS_CHECK_RUN },
+      { label: "Tab check run", value: TAB_CHECK_RUN },
+    ];
+
+    expect(await runs()).toEqual([
+      { label: "Process check run", value: "not run" },
+      { label: "Tab check run", value: "not run" },
+    ]);
+
+    files = registryFiles;
+    expect(await runs()).toEqual(ran);
+
+    files = {};
+    expect(await runs()).toEqual(ran);
+  });
+
+  test("the rows add no run of ps: one start check in 30 seconds, and one look for the processes", async () => {
+    const processes = standIns();
+    const adapter = adapterOn("darwin", {}, processes);
+
+    for (let polled = 0; polled < 15; polled += 1) {
+      await adapter.poll();
+      processes.clock.now += 2_000;
+    }
+    expect(processes.counted).toEqual({ starts: 1, tables: 1 });
+
+    await adapter.poll();
+    expect(processes.counted).toEqual({ starts: 2, tables: 1 });
+  });
+
+  test("a look made for another adapter's process leaves this card's row at not run", async () => {
+    const processes = standIns();
+    await processes.finder.asker().look([pids.idle]);
+    expect(processes.counted.tables).toBe(1);
+
+    expect(await processRows(adapterOn("darwin", noSessions, processes))).toContainEqual({
+      label: "Tab check run",
+      value: "not run",
+    });
+  });
+
+  test("with no tab finder and no stop targets it says nothing of either", async () => {
+    const rows = await processRows(adapterOn("darwin", { terminals: undefined, stops: undefined }));
+    expect(rows?.map((fact) => fact.label)).toEqual(["Process check", "Process check run"]);
+  });
+
+  test("with AGENT_LOOKOUT_STOP off it lists no stop's check", async () => {
+    const rows = await processRows(
+      adapterOn("darwin", {
+        env: {
+          AGENT_LOOKOUT_CLAUDE_HOME: "/Users/example/elsewhere",
+          AGENT_LOOKOUT_CLAUDE_BIN: "/opt/tools/claude",
+          AGENT_LOOKOUT_STOP: "off",
+        },
+      }),
+    );
+    expect(rows?.map((fact) => fact.label)).toEqual([
+      "Process check",
+      "Process check run",
+      "Tab check",
+      "Tab check run",
+    ]);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off the look for a tab says not run, since none is made", async () => {
+    const processes = standIns({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+
+    expect(await processRows(adapterOn("darwin", {}, processes))).toContainEqual({
+      label: "Tab check run",
+      value: "not run",
+    });
+    expect(processes.counted.tables).toBe(0);
+  });
+
+  test("a poll that goes wrong gives the same rows", async () => {
+    let broken = false;
+    const adapter = adapterOn("darwin", {
+      isAlive: () => {
+        if (broken) throw new Error("Not expected.");
+        return true;
+      },
+    });
+    const rows = await processRows(adapter);
+
+    broken = true;
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(processRowsIn(health.watching)).toEqual(rows);
   });
 });
 

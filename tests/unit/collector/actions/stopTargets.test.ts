@@ -54,4 +54,11 @@ describe("createStopTargets", () => {
     stops.askFeedSoon();
     expect(heard).toHaveBeenCalledOnce();
   });
+
+  test("says no stop has asked ps until one has", () => {
+    const stops = createStopTargets();
+    expect(stops.checked()).toBe(false);
+    stops.noteCheck();
+    expect(stops.checked()).toBe(true);
+  });
 });

@@ -32,6 +32,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - A Gemini CLI session no longer looks quiet while a subagent it started works. A subagent writes to a file of its own, and the session writes nothing to its file while it waits, so its [Quiet for](docs/GUIDE.md#quiet-for) kept growing as if it had stopped. It now goes by the newest of the session's file and its subagents' files, in `chats/<session ID>/` in either of Gemini CLI's folders, and Keep awake counts those writes too. Agent Lookout only looks up when those files were last changed, for the sessions it lists, and never opens them. Sources says so. This was built from Gemini CLI's source at v0.64.0 and has not yet been checked on a machine running it (#178).
 
+- Claude Code's card in Sources gives three things it runs `ps` for. Process check, `ps -o pid=,lstart= -p <pids>`, tells a session's process from another program given its process ID, every 30 seconds while a session's process runs, and sooner when another appears. On a Mac, Tab check finds a session's tab of Terminal or iTerm2. Stop check confirms a session's process when you stop it. Each says "not run" until something has asked, and on Windows, which has no `ps`, Process check says signal 0 alone. Listing these adds no run of `ps`. The `ps` that finds a session's tmux pane is not on the card, as tmux is not, and PRIVACY.md gives both (#256).
+
 ## 0.2.17 - 2026-11-03
 
 Gemini CLI and OpenCode sessions show what they last said, and Qwen Code sessions give the token counts of their newest reply.

@@ -58,6 +58,8 @@ export interface StopperOptions {
   readStarts?: ReadProcessStarts;
   /** Asks `ps` for every process's parent, to find the processes Agent Lookout was started from. */
   readParents?: ReadProcessParents;
+  /** Told as a stop goes to ask `ps`, so that Sources can say it has been run. */
+  onCheck?: () => void;
   kill?: Kill;
   isAlive?: (pid: number) => boolean;
   /** Runs `claude stop`. Defaults to the runner the command is run with. */
@@ -152,6 +154,7 @@ export function createStopper(options: StopperOptions): Stopper {
     }
     // Nor any process further up, such as the Claude Code session whose
     // terminal ran the command that started it, as `ps` says now.
+    options.onCheck?.();
     let parents: Map<number, number>;
     try {
       parents = await readParents();
