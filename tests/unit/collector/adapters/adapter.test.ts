@@ -23,6 +23,8 @@ import { CLINE_CAPABILITIES, createClineAdapter } from "@collector/adapters/clin
 import { clineSession } from "@collector/adapters/cline/toSession";
 import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/codex/index";
 import { codexSession } from "@collector/adapters/codex/toSession";
+import { createGooseAdapter, GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
+import { gooseSession } from "@collector/adapters/goose/toSession";
 import {
   createGeminiCliAdapter,
   GEMINI_CLI_CAPABILITIES,
@@ -53,6 +55,7 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
+import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
   ENVIRONMENT_CONTEXT_ID,
@@ -87,6 +90,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Cline", CLINE_CAPABILITIES],
+  ["Goose", GOOSE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -156,6 +160,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createClineAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(CLINE_CAPABILITIES);
+    expect(
+      createGooseAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(GOOSE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -705,6 +712,41 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Goose: a session is unknown or finished, and never working, idle, waiting or failed", () => {
+    expect(statuses([mapGooseStatus(true), mapGooseStatus(false)])).toEqual(
+      new Set(["unknown", "finished"]),
+    );
+    expect(GOOSE_CAPABILITIES["working-and-idle"].level).toBe("no");
+    expect(GOOSE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(GOOSE_CAPABILITIES.failed.level).toBe("no");
+    expect(GOOSE_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Goose: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = gooseSession({
+      row: {
+        id: "20261001_1",
+        folder: "/Users/example/code/demo",
+        ownName: null,
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 10_000,
+      },
+      open: true,
+      now: NOW,
+    });
+    expect(session.name).toBe("demo");
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(GOOSE_CAPABILITIES.names.level).toBe("partly");
+    expect(GOOSE_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(GOOSE_CAPABILITIES.tokens.level).toBe("no");
+    expect(GOOSE_CAPABILITIES.jump.level).toBe("no");
+    expect(GOOSE_CAPABILITIES.stop.level).toBe("no");
+    expect(GOOSE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Qwen Code: only a reply that asks you a question or for a plan's approval makes a session need you, and no line fails or finishes one", () => {

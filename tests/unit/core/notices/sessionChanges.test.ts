@@ -759,6 +759,7 @@ describe("over a long run of snapshots", () => {
     "qwen-code": [],
     "hermes-agent": [],
     cline: [],
+    goose: [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

@@ -57,6 +57,14 @@ export interface AdapterResult {
    *
    * The Cline adapter has one, `files`: the manifest Cline keeps for each
    * session.
+   *
+   * The Goose adapter has three:
+   * - `database`: Goose's database, read while `ps` shows a Goose program
+   *   running. The usual one.
+   * - `database-closed`: the same while `ps` shows none, when every session
+   *   is finished.
+   * - `database-without-processes`: the same while `ps` cannot say, when no
+   *   session can be shown as finished.
    */
   basis?: string;
 }

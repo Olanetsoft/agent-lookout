@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Goose sessions, read from its database, `~/.local/share/goose/sessions/sessions.db`, with `sqlite3`, on macOS and Linux. A session shows as unknown while a Goose program runs and as finished once none does, since nothing ties a session to a process, so it never shows as working, idle or needing you. It is named after its folder, or by a name you gave it: Goose's own title can be the first four words of your first prompt, and is never read. Agent Lookout keeps its ID, folder, times and that name, and never reads a message. This was built from Goose's source at v1.57.0, and has not yet been checked on a computer running Goose. (#38)
+
 ### Fixed
 
 - Qwen Code's card in Sources lists the rest of what runs for Jump, whether or not anyone presses it. On a Mac, Tab check, `ps -A -o pid=,ppid=,tty=,comm=`, finds a session's tab of Terminal or iTerm2, once for each new process, every 5 seconds at most. One look can serve Claude Code and Qwen Code, so it shows on the card of each whose session it was for, and a look for a Claude Code session alone leaves Qwen Code's at "not run". On Linux with tmux, Jump check, `ps -o pid=,lstart= -p <pids>`, confirms a process found in a pane before its session gets Jump, every 30 seconds while a session's process is in a pane, and sooner when another is found in one. On a Mac that answer comes from the `ps` of Process check, so there is no Jump check. Each says "not run" until it has been asked, and Tab check stays so with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. Without tmux or with `AGENT_LOOKOUT_TMUX=off` there is no Jump check, and Windows lists neither. Listing these adds no run of `ps` (#275).

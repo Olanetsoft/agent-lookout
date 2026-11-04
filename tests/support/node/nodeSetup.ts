@@ -18,6 +18,7 @@ import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_CLINE_HOME,
+  EMPTY_GOOSE_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
@@ -105,6 +106,13 @@ process.env.AGENT_LOOKOUT_CLINE_HOME = EMPTY_CLINE_HOME;
 delete process.env.CLINE_DIR;
 delete process.env.CLINE_DATA_DIR;
 delete process.env.CLINE_SESSION_DATA_DIR;
+
+// Nor does one read Goose's data folder, `~/.local/share/goose` or the one
+// `GOOSE_PATH_ROOT` names: the adapter is pointed at an empty folder, and Goose's
+// own variable is dropped. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_GOOSE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_GOOSE_HOME = EMPTY_GOOSE_HOME;
+delete process.env.GOOSE_PATH_ROOT;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

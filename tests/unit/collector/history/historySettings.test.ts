@@ -95,6 +95,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(
     sourcesFingerprint({ CLINE_SESSION_DATA_DIR: "/Users/example/.cline/data/sessions" }, HOME),
   ).toBe(defaults);
+  // Goose's data folder is `~/.local/share/goose`, and `data` in the root its own variable names.
+  expect(sourcesFingerprint({ XDG_DATA_HOME: "relative/data" }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -127,6 +129,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ CLINE_DIR: "/tmp/empty-cline" }, HOME),
     sourcesFingerprint({ CLINE_DATA_DIR: "/tmp/empty-cline" }, HOME),
     sourcesFingerprint({ CLINE_SESSION_DATA_DIR: "/tmp/empty-cline" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_GOOSE_HOME: "/tmp/empty-goose" }, HOME),
+    sourcesFingerprint({ GOOSE_PATH_ROOT: path.resolve("/tmp/empty-goose") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

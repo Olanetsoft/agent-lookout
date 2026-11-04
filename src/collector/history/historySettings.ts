@@ -8,6 +8,7 @@ import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli/index.ts";
+import { gooseDatabaseFor } from "../adapters/goose/index.ts";
 import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
@@ -57,8 +58,8 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the nine other sources read, and OpenCode's database, as the
- * adapters work them out on this system, made into a short fingerprint that
+ * The folders the ten other sources read, and OpenCode's and Goose's databases,
+ * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
  * same sessions. The writer lock carries it, so a copy can say when the one
  * writing the history watches other folders, such as a dev server pointed at
@@ -85,6 +86,7 @@ export function sourcesFingerprint(
     qwenFolders(env, homeDir).runtime,
     hermesRootFor(env, homeDir),
     clineSessionsDirFor(env, homeDir),
+    gooseDatabaseFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }
