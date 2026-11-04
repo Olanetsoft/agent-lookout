@@ -32,7 +32,6 @@ function Line({ children }: { children: ReactNode }) {
 function reasonWords(
   reason: LastMessageReason,
   setting: LastMessageSetting | undefined,
-  agent: string,
 ): ReactNode {
   switch (reason) {
     case "off":
@@ -48,7 +47,7 @@ function reasonWords(
         </>
       );
     case "not-read":
-      return `Agent Lookout does not read what ${agent} sessions say.`;
+      return "Agent Lookout does not read what this session says.";
     case "not-found":
       return "Its transcript was not found.";
     case "unreadable":
@@ -117,8 +116,6 @@ interface LastMessageProps {
   reading: LastMessageReading;
   /** The session runs on another machine: nothing is asked for it. */
   remote: boolean;
-  /** Its agent, in words, for a session whose agent's messages are not read. */
-  agent: string;
 }
 
 /**
@@ -127,7 +124,7 @@ interface LastMessageProps {
  * `Loading`'s status while it is first read, nothing in it is announced as it
  * changes: it is there to be read when the person looks.
  */
-export function LastMessage({ reading, remote, agent }: LastMessageProps) {
+export function LastMessage({ reading, remote }: LastMessageProps) {
   if (remote) return <Line>{REMOTE_LINE}</Line>;
   if (reading.status === "idle") return null;
   if (reading.status === "loading") {
@@ -139,5 +136,5 @@ export function LastMessage({ reading, remote, agent }: LastMessageProps) {
     const { text, cut, endCut } = answer.message;
     return <Message text={text} cut={cut} endCut={endCut === true} />;
   }
-  return <Line>{reasonWords(answer.reason, answer.setting, agent)}</Line>;
+  return <Line>{reasonWords(answer.reason, answer.setting)}</Line>;
 }

@@ -37,7 +37,7 @@ interface Held {
   failed: boolean;
 }
 
-/** Answers after which asking again would say the same: the setting is off, or the agent is not read. */
+/** Answers after which asking again would say the same: the setting is off, or the session is not read. */
 function final(answer: LastMessageResponse): boolean {
   return answer.message === null && (answer.reason === "off" || answer.reason === "not-read");
 }
@@ -47,8 +47,7 @@ function final(answer: LastMessageResponse): boolean {
  * and the page is in sight: once when that begins, and once for each new
  * `beat` after, so no more often than the page reads the sessions. One request
  * is never joined by a second. After an answer that says it is off, or that
- * the session's agent is not read, it is not asked again until it is next
- * active.
+ * the session is not read, it is not asked again until it is next active.
  *
  * A failure, or the server saying it is busy, keeps the last answer on
  * screen. The answer is held in this hook's state alone: nothing of it goes to

@@ -1,20 +1,25 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  BOTH_SESSIONS_QUERY,
   MAX_SESSIONS,
   MESSAGES_FOR_TOKENS,
+  OPENCODE_2_SESSIONS_QUERY,
   PROBE_QUERY,
   QUERY_WINDOW_MS,
   readSchema,
   readSessionRows,
   SESSION_ID,
   SESSIONS_QUERY,
+  sessionsQueryFor,
   sqliteArguments,
   sqliteUri,
 } from "@collector/adapters/opencode/sessionRows";
 import {
   answerRow,
+  answerV2Row,
   FOLDER,
+  HOUR,
   messageId,
   MINUTE,
   NOW,
@@ -27,7 +32,12 @@ const A = sessionId("a1");
 
 describe("the two questions", () => {
   test("ask for no whole row, no whole data value, no text and no table but the session's own", () => {
-    for (const query of [PROBE_QUERY, SESSIONS_QUERY]) {
+    for (const query of [
+      PROBE_QUERY,
+      SESSIONS_QUERY,
+      OPENCODE_2_SESSIONS_QUERY,
+      BOTH_SESSIONS_QUERY,
+    ]) {
       // No `SELECT *` and no `s.*`: only `count(*)` and a multiplication.
       expect(query.replaceAll("count(*)", "").replaceAll("* 1000", "")).not.toContain("*");
       for (const never of [
@@ -111,6 +121,72 @@ describe("the two questions", () => {
     );
   });
 
+  test("the question for each layout names only the tables that layout has", () => {
+    expect(sessionsQueryFor("v1")).toBe(SESSIONS_QUERY);
+    expect(sessionsQueryFor("v2")).toBe(OPENCODE_2_SESSIONS_QUERY);
+    expect(sessionsQueryFor("both")).toBe(BOTH_SESSIONS_QUERY);
+    expect(SESSIONS_QUERY).not.toContain("session_v2");
+    for (const table of [/\bFROM session s\b/, /\bmessage\b/, /\bpart\b/]) {
+      expect(OPENCODE_2_SESSIONS_QUERY).not.toMatch(table);
+    }
+  });
+
+  test("of session_v2 it asks only for the listed columns, cut so that they cannot fill the answer", () => {
+    expect(OPENCODE_2_SESSIONS_QUERY).toBe(
+      "SELECT substr(v.id, 1, 68) AS id, substr(v.directory, 1, 4097) AS directory, substr(v.title, 1, 1000) AS title, CASE WHEN typeof(v.time_created) = 'integer' THEN v.time_created END AS time_created, CASE WHEN typeof(v.time_updated) = 'integer' THEN v.time_updated END AS time_updated, substr(v.slug, 1, 1000) AS slug, 1 AS v2, CASE typeof(v.time_suspended) WHEN 'integer' THEN v.time_suspended WHEN 'null' THEN NULL ELSE 'other' END AS time_suspended, CASE typeof(v.time_idle) WHEN 'integer' THEN v.time_idle WHEN 'null' THEN NULL ELSE 'other' END AS time_idle, substr(v.idle_outcome, 1, 65) AS idle_outcome FROM session_v2 v WHERE v.parent_id IS NULL AND v.time_archived IS NULL AND v.time_updated >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 172800000 ORDER BY v.time_updated DESC LIMIT 200",
+    );
+    // With both, the fields of session_v2 are these same ones.
+    const fromV2 = BOTH_SESSIONS_QUERY.slice(BOTH_SESSIONS_QUERY.indexOf("UNION ALL"));
+    const slug = OPENCODE_2_SESSIONS_QUERY.indexOf("substr(v.slug");
+    const from = OPENCODE_2_SESSIONS_QUERY.indexOf(" FROM session_v2");
+    expect(fromV2).toContain(OPENCODE_2_SESSIONS_QUERY.slice("SELECT ".length, slug));
+    expect(fromV2).toContain(OPENCODE_2_SESSIONS_QUERY.slice(slug, from));
+    for (const query of [OPENCODE_2_SESSIONS_QUERY, fromV2]) {
+      expect(query).not.toMatch(/\bv\.\*/);
+      for (const never of [
+        "tokens_",
+        "cost",
+        "share_url",
+        "summary_",
+        "metadata",
+        "revert",
+        "permission",
+        "agent",
+        "model",
+        "session_message",
+        "session_part",
+        "session_inbox",
+        "time_busy",
+      ]) {
+        expect(query, never).not.toContain(never);
+      }
+    }
+  });
+
+  test("with both, a session in session_v2 is left out of session, and each side is cut before the newest 200 are taken", () => {
+    expect(BOTH_SESSIONS_QUERY).toMatch(
+      /AND NOT EXISTS \(SELECT 1 FROM session_v2 w WHERE w\.id = s\.id\) ORDER BY s\.time_updated DESC LIMIT 200\) UNION ALL SELECT id, [\w, ]+ FROM \(SELECT substr\(v\.id, 1, 68\) AS id/,
+    );
+    expect(BOTH_SESSIONS_QUERY.endsWith(") ORDER BY time_updated DESC LIMIT 200")).toBe(true);
+    expect(BOTH_SESSIONS_QUERY.match(/LIMIT 200/g)).toHaveLength(3);
+    expect(
+      BOTH_SESSIONS_QUERY.match(/WHERE v\.parent_id IS NULL AND v\.time_archived IS NULL/g),
+    ).toHaveLength(1);
+  });
+
+  test("with both, each side names the same 28 fields, in the order the other prints them", () => {
+    const [first, second, ...rest] = [
+      ...BOTH_SESSIONS_QUERY.matchAll(/SELECT (id, [\w, ]+) FROM \(/g),
+    ]
+      .map(([, names]) => names)
+      .filter((names) => names !== undefined);
+    expect(rest).toEqual([]);
+    expect(first).toBe(second);
+    expect(first?.split(", ")).toHaveLength(28);
+    expect(first).toMatch(/^id, directory, title, time_created, time_updated, m_id, /);
+    expect(first).toMatch(/, r_total, slug, v2, time_suspended, time_idle, idle_outcome$/);
+  });
+
   test("the probe asks only for the names of tables and columns", () => {
     expect(PROBE_QUERY).toBe(
       "SELECT 'table' AS kind, name FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part', 'session_v2', 'session_message') UNION ALL SELECT 'session', name FROM pragma_table_info('session') UNION ALL SELECT 'session_v2', name FROM pragma_table_info('session_v2')",
@@ -148,16 +224,64 @@ describe("sqliteUri", () => {
 
 describe("readSchema", () => {
   test("OpenCode 1.x's tables, with every column asked for", () => {
-    expect(readSchema(probeJson("v1"))).toEqual({ layout: "v1", opencode2: false });
-    expect(readSchema(probeJson("v1+v2"))).toEqual({ layout: "v1", opencode2: true });
+    expect(readSchema(probeJson("v1"))).toEqual({ layout: "v1" });
   });
 
-  test("OpenCode 2's table alone", () => {
-    expect(readSchema(probeJson("v2-only"))).toEqual({ layout: "v2-only", opencode2: true });
+  test("OpenCode 2's table beside them", () => {
+    expect(readSchema(probeJson("v1+v2"))).toEqual({ layout: "both" });
+  });
+
+  test("OpenCode 2's table alone, as a fresh database of its holds it", () => {
+    expect(readSchema(probeJson("v2-only"))).toEqual({ layout: "v2" });
+  });
+
+  test("OpenCode 1.x's own session_message is no sign of OpenCode 2", () => {
+    const rows = JSON.parse(probeJson("v1")) as Record<string, unknown>[];
+    const withMessages = sqliteJson([...rows, { kind: "table", name: "session_message" }]);
+    expect(readSchema(withMessages)).toEqual({ layout: "v1" });
+  });
+
+  test("session_v2 without a column asked for is a layout Agent Lookout does not read, alone or beside 1.x's tables", () => {
+    for (const layout of ["v1+v2", "v2-only"] as const) {
+      const rows = JSON.parse(probeJson(layout)) as Record<string, unknown>[];
+      for (const name of [
+        "id",
+        "parent_id",
+        "slug",
+        "directory",
+        "title",
+        "time_created",
+        "time_updated",
+        "time_archived",
+        "time_suspended",
+        "time_idle",
+        "idle_outcome",
+      ]) {
+        const without = rows.filter((row) => row.kind !== "session_v2" || row.name !== name);
+        expect(readSchema(sqliteJson(without)), `${layout} ${name}`).toEqual({
+          layout: "unsupported",
+        });
+      }
+    }
+  });
+
+  test("session_v2 needs no time_busy, which OpenCode only has from v2.2.2", () => {
+    expect(probeJson("v2-only")).not.toContain("time_busy");
+    expect(readSchema(probeJson("v2-only"))).toEqual({ layout: "v2" });
+    expect(OPENCODE_2_SESSIONS_QUERY).not.toContain("time_busy");
+    expect(BOTH_SESSIONS_QUERY).not.toContain("time_busy");
+  });
+
+  test("session_v2 beside a session table that is not laid out as 1.x's is not read", () => {
+    const rows = sqliteJson([
+      { kind: "table", name: "session" },
+      ...(JSON.parse(probeJson("v2-only")) as Record<string, unknown>[]),
+    ]);
+    expect(readSchema(rows)).toEqual({ layout: "unsupported" });
   });
 
   test("anything else is a layout Agent Lookout does not read", () => {
-    expect(readSchema(probeJson("none"))).toEqual({ layout: "unsupported", opencode2: false });
+    expect(readSchema(probeJson("none"))).toEqual({ layout: "unsupported" });
     const withoutArchive = sqliteJson(
       ["session", "message", "part"]
         .map((name) => ({ kind: "table", name }))
@@ -168,7 +292,7 @@ describe("readSchema", () => {
           })),
         ),
     );
-    expect(readSchema(withoutArchive)).toEqual({ layout: "unsupported", opencode2: false });
+    expect(readSchema(withoutArchive)).toEqual({ layout: "unsupported" });
     const withoutParts = sqliteJson([
       { kind: "table", name: "session" },
       { kind: "table", name: "message" },
@@ -208,6 +332,7 @@ describe("readSessionRows", () => {
         },
         userCreatedAt: NOW - 3 * MINUTE,
         tokens: null,
+        turn: null,
       },
     ]);
   });
@@ -251,6 +376,65 @@ describe("readSessionRows", () => {
     expect(folderOf("/Users/example/code/\u202edemo")).toBeNull();
     expect(folderOf(`/${"a".repeat(4096)}`)).toBeNull();
     expect(folderOf(3)).toBeNull();
+  });
+
+  test("a row of session_v2 keeps how its turn stands, and no message or token counts", () => {
+    const [row] =
+      readSessionRows(
+        sqliteJson([
+          answerV2Row({
+            id: A,
+            time_suspended: NOW,
+            time_idle: NOW - 60_000,
+            idle_outcome: "failed",
+          }),
+        ]),
+      ) ?? [];
+    expect(row).toEqual({
+      id: A,
+      folder: FOLDER,
+      title: "Rename the helper",
+      createdAt: NOW - HOUR,
+      updatedAt: NOW - 2 * MINUTE,
+      message: null,
+      userCreatedAt: null,
+      tokens: null,
+      turn: { claimedAt: NOW, idleAt: NOW - 60_000, outcome: "failed" },
+    });
+  });
+
+  test("a row of session has no turn, and its slug is never taken", () => {
+    const [row] =
+      readSessionRows(sqliteJson([answerRow({ id: A, title: null, slug: "demo" })])) ?? [];
+    expect(row?.turn).toBeNull();
+    expect(row?.title).toBeNull();
+  });
+
+  test("a turn field that is too long, or of the wrong type, stays something the mapping can tell from none", () => {
+    const [row] =
+      readSessionRows(
+        sqliteJson([
+          answerV2Row({
+            id: A,
+            time_suspended: "other",
+            time_idle: "other",
+            idle_outcome: "x".repeat(65),
+          }),
+        ]),
+      ) ?? [];
+    expect(row?.turn).toEqual({ claimedAt: "other", idleAt: "other", outcome: undefined });
+  });
+
+  test("a row of session_v2 is named by its title, else its slug", () => {
+    const nameOf = (fields: Record<string, unknown>) =>
+      readSessionRows(sqliteJson([answerV2Row({ id: A, ...fields })]))?.[0]?.title;
+    expect(nameOf({ title: "Rename the helper" })).toBe("Rename the helper");
+    expect(nameOf({ title: null })).toBe("demo-slug");
+    expect(nameOf({ title: "" })).toBe("demo-slug");
+    expect(nameOf({ title: "   " })).toBe("demo-slug");
+    expect(nameOf({ title: "New session - 2026-10-01T11:00:00.000Z" })).toBe("demo-slug");
+    expect(nameOf({ title: null, slug: null })).toBeNull();
+    expect(nameOf({ title: null, slug: "x".repeat(5000) })).toHaveLength(1000);
   });
 
   test("OpenCode's placeholder title is no title, and a long one is cut", () => {

@@ -278,17 +278,17 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While OpenCode asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
+      "While OpenCode 1.x asks you a question or to approve a plan. Tool approvals, and all of OpenCode 2's waits, show as working.",
   },
   finished: {
     level: "partly",
     reason:
-      "Once ps shows no program named opencode, on macOS and Linux. While only the desktop app runs, its sessions show as finished.",
+      "Once ps shows no OpenCode program, on macOS and Linux. OpenCode 2's sessions stay idle until its background service stops.",
   },
   failed: {
     level: "partly",
     reason:
-      "When a reply ends on an error OpenCode records. One that fails before a reply begins shows as working.",
+      "When a reply ends on an error OpenCode records, or an OpenCode 2 turn fails. With 1.x, one that fails sooner shows as working.",
   },
   names: { level: "yes" },
   jump: {
@@ -301,7 +301,11 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "OpenCode keeps every session in one database, so no file shows when one session was last written.",
   },
-  tokens: { level: "yes" },
+  tokens: {
+    level: "partly",
+    reason:
+      "For OpenCode 1.x. An OpenCode 2 session shows none: only running totals are on its row, and its last message is not read.",
+  },
   stop: {
     level: "no",
     reason: "OpenCode's database names no process that Agent Lookout could confirm and stop.",
@@ -603,7 +607,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         },
         {
           label: "Last message read",
-          value: "a session's newest reply, with sqlite3, while its details are open",
+          value: "an OpenCode 1.x session's newest reply, with sqlite3, while its details are open",
         },
       ],
       capabilities: OPENCODE_CAPABILITIES,

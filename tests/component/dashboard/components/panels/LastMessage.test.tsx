@@ -17,7 +17,7 @@ async function show(reading: LastMessageReading, remote = false, width = 712) {
   const screen = await render(
     <div data-testid='part' style={{ width }}>
       <button type='button'>Before</button>
-      <LastMessage reading={reading} remote={remote} agent='Gemini CLI' />
+      <LastMessage reading={reading} remote={remote} />
     </div>,
   );
   return { screen, part: page.getByTestId("part").element() as HTMLElement };
@@ -85,11 +85,7 @@ test("a message whose end its transcript left out says so after it, quietly, as 
   await screen.rerender(
     <div data-testid='part' style={{ width: 712 }}>
       <button type='button'>Before</button>
-      <LastMessage
-        reading={saidStart("The start of a long reply.")}
-        remote={false}
-        agent='Gemini CLI'
-      />
+      <LastMessage reading={saidStart("The start of a long reply.")} remote={false} />
     </div>,
   );
   const end = part.querySelector('[data-part="last-message-end-cut"]') as HTMLElement;
@@ -223,7 +219,7 @@ test("the end line goes in the block only while the text alone is too long for i
       screen.rerender(
         <div data-testid='part' style={{ width: 712 }}>
           <button type='button'>Before</button>
-          <LastMessage reading={reading} remote={false} agent='Gemini CLI' />
+          <LastMessage reading={reading} remote={false} />
         </div>,
       );
     const settled = () =>
@@ -273,10 +269,7 @@ test.each([
     { message: null, reason: "off", setting: "AGENT_LOOKOUT_WAITING_TEXT" },
     "Last messages are off: AGENT_LOOKOUT_WAITING_TEXT is off.",
   ],
-  [
-    { message: null, reason: "not-read" },
-    "Agent Lookout does not read what Gemini CLI sessions say.",
-  ],
+  [{ message: null, reason: "not-read" }, "Agent Lookout does not read what this session says."],
   [{ message: null, reason: "not-found" }, "Its transcript was not found."],
   [{ message: null, reason: "unreadable" }, "Its transcript could not be read."],
   [{ message: null, reason: "nothing-yet" }, "It has not said anything yet."],
@@ -334,7 +327,7 @@ test("a short message is no Tab stop, and a long one scrolls in its block, which
   await screen.rerender(
     <div data-testid='part' style={{ width: 712 }}>
       <button type='button'>Before</button>
-      <LastMessage reading={said(long)} remote={false} agent='Gemini CLI' />
+      <LastMessage reading={said(long)} remote={false} />
     </div>,
   );
   await expect.poll(() => scroll(part).getAttribute("tabindex")).toBe("0");
@@ -361,7 +354,7 @@ test("past the first reading, nothing in it is announced as it changes: a messag
     screen.rerender(
       <div data-testid='part' style={{ width: 712 }}>
         <button type='button'>Before</button>
-        <LastMessage reading={reading} remote={false} agent='Gemini CLI' />
+        <LastMessage reading={reading} remote={false} />
       </div>,
     );
   await again(said("Second."));
@@ -385,7 +378,7 @@ test.each(["dark", "light"])(
     expect(warmPaint(part)).toEqual([]);
     await screen.rerender(
       <div data-testid='part' style={{ width: 712 }}>
-        <LastMessage reading={saidStart("A reply.")} remote={false} agent='Gemini CLI' />
+        <LastMessage reading={saidStart("A reply.")} remote={false} />
       </div>,
     );
     expect(part.querySelector('[data-part="last-message-end-cut"]')).not.toBeNull();
@@ -395,7 +388,6 @@ test.each(["dark", "light"])(
         <LastMessage
           reading={ready({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" })}
           remote={false}
-          agent='Gemini CLI'
         />
       </div>,
     );

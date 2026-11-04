@@ -13,7 +13,7 @@ import {
   LAST_MESSAGE_READ,
   NEEDS_YOU_NOTE,
   NO_SQLITE_ADVICE,
-  OPENCODE_2_NOTE,
+  OPENCODE_2_SESSIONS_NOTE,
   OPENCODE_CAPABILITIES,
   opencodeDatabaseFor,
   opencodeHomeFor,
@@ -35,6 +35,7 @@ import {
 import type { SessionsSnapshot } from "@core/sessions/session";
 import {
   answerRow,
+  answerV2Row,
   DATA_HOME,
   DATABASE,
   DAY,
@@ -45,6 +46,7 @@ import {
   probeJson,
   SECOND,
   sessionId,
+  sqliteJson,
 } from "@tests/fixtures/opencode/opencode";
 import {
   handClock,
@@ -318,7 +320,7 @@ describe("reading the sessions", () => {
     expect(await polled()).toEqual([BASIS_CLOSED, "finished", "finished"]);
     expect(processes.asked()).toBe(1);
 
-    // A program ps does not take for OpenCode, as OpenCode's desktop app, writes B
+    // A program ps does not take for OpenCode, as OpenCode 1.x's desktop app, writes B
     // a second later. B is not held open for it, so it does not flip to working
     // and back, with a Finished notice each time.
     clock.advance(1_000);
@@ -349,27 +351,218 @@ describe("reading the sessions", () => {
 
   test("says which waits show as needing you, and that a wait for a tool's approval shows as working", () => {
     expect(NEEDS_YOU_NOTE).toBe(
-      "An OpenCode session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.",
+      "An OpenCode 1.x session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.",
     );
   });
 
-  test("says so when OpenCode 2's table is there, and when a session ends in a way it does not know", async () => {
+  test("says so when a session ends in a way it does not know", async () => {
     const { files, sqlite } = openOpencode([answerRow({ id: A, m_role: "system" })]);
-    sqlite.probe(probeJson("v1+v2"));
     const { health, sessions } = await opencodeAdapterFor(files, sqlite).poll();
     expect(health.detail).toBe(
-      `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} ${OPENCODE_2_NOTE} ${UNKNOWN_MESSAGE_NOTE}`,
+      `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} ${UNKNOWN_MESSAGE_NOTE}`,
     );
     expect(sessions[0]?.status).toBe("unknown");
-    expect(OPENCODE_2_NOTE).toBe("OpenCode 2's sessions are not read yet.");
   });
 
-  test("a database of OpenCode 2's alone lists no sessions, and says why", async () => {
-    const { files, sqlite } = openOpencode();
+  test("a database of OpenCode 2's alone lists its sessions, and says what differs for them", async () => {
+    const { files, sqlite } = openOpencode([
+      answerV2Row({ id: A, title: null }),
+      answerV2Row({ id: B, time_suspended: NOW - MINUTE }),
+    ]);
     sqlite.probe(probeJson("v2-only"));
     const { health, sessions } = await opencodeAdapterFor(files, sqlite).poll();
     expect(health.state).toBe("ok");
-    expect(health.detail).toContain(OPENCODE_2_NOTE);
+    expect(health.detail).toBe(
+      `Sessions are read from OpenCode's database, ~/.local/share/opencode/opencode.db, with sqlite3. ${NOTES} ${OPENCODE_2_SESSIONS_NOTE}`,
+    );
+    expect(sessions.map((session) => [session.id, session.name, session.status])).toEqual([
+      [`opencode:${A}`, "demo-slug", "idle"],
+      [`opencode:${B}`, "Rename the helper", "working"],
+    ]);
+    expect(OPENCODE_2_SESSIONS_NOTE).toBe(
+      "OpenCode 2 keeps every question and approval in memory, so a session of its that waits for you shows as working. Its background service outlives its window, so its sessions show as idle, not finished, until that service stops. Their token counts and last message are not read.",
+    );
+  });
+
+  test("OpenCode 2's table with no session of its listed says nothing of it", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A })]);
+    sqlite.probe(probeJson("v1+v2"));
+    const { health, sessions } = await opencodeAdapterFor(files, sqlite).poll();
+    expect(health.detail).not.toContain("OpenCode 2");
+    expect(sessions).toHaveLength(1);
+  });
+
+  test("a session of OpenCode 2's is finished once ps shows no OpenCode, and working again once it runs", async () => {
+    const { files, sqlite } = openOpencode([answerV2Row({ id: A, time_suspended: NOW - MINUTE })]);
+    sqlite.probe(probeJson("v2-only"));
+    const processes = standInProcesses({ ok: true, running: false });
+    const clock = handClock(NOW);
+    const adapter = opencodeAdapterFor(files, sqlite, { processes, now: clock.now });
+    const closed = await adapter.poll();
+    expect(closed.sessions[0]?.status).toBe("finished");
+    expect(closed.basis).toBe(BASIS_CLOSED);
+    clock.advance(PROCESS_CHECK_MS);
+    processes.set({ ok: true, running: true });
+    const open = await adapter.poll();
+    expect(open.sessions[0]?.status).toBe("working");
+    expect(open.basis).toBe(BASIS);
+  });
+
+  test("a session of OpenCode 2's stays idle, not finished, while its service runs, and when ps cannot say", async () => {
+    const { files, sqlite } = openOpencode([answerV2Row({ id: A })]);
+    sqlite.probe(probeJson("v2-only"));
+    const processes = standInProcesses({ ok: false });
+    const adapter = opencodeAdapterFor(files, sqlite, { processes });
+    const { sessions, basis } = await adapter.poll();
+    expect(sessions[0]?.status).toBe("idle");
+    expect(basis).toBe(BASIS_WITHOUT_PROCESSES);
+  });
+
+  test("asks the last message of no session of OpenCode 2's", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A }), answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v1+v2"));
+    sqlite.said(A, lastTextJson(["Done."]));
+    sqlite.said(B, lastTextJson(["An older reply of 1.x's."]));
+    const adapter = opencodeAdapterFor(files, sqlite);
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${B}`)).toEqual({
+      message: null,
+      reason: "not-read",
+    });
+    expect(sqlite.questions()).toEqual([]);
+    expect(await adapter.lastMessage(`opencode:${A}`)).toMatchObject({
+      message: { text: "Done." },
+    });
+    expect(sqlite.questions()).toHaveLength(1);
+  });
+
+  test("keeps no reply of a session of 1.x once OpenCode 2 has copied it", async () => {
+    const clock = handClock(NOW);
+    const { files, sqlite } = openOpencode([answerRow({ id: A })]);
+    sqlite.said(A, lastTextJson(["Done."]));
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now });
+    await adapter.poll();
+    await adapter.lastMessage(`opencode:${A}`);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    sqlite.probe(probeJson("v1+v2"));
+    sqlite.set([answerV2Row({ id: A })]);
+    files.append(WAL, "more");
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${A}`)).toMatchObject({ reason: "not-read" });
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("a session of OpenCode 2's stops being answered once a poll does not list it", async () => {
+    const { files, sqlite } = openOpencode([answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v2-only"));
+    const adapter = opencodeAdapterFor(files, sqlite);
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${B}`)).toMatchObject({ reason: "not-read" });
+    files.remove(DATABASE);
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${B}`)).toBeNull();
+  });
+
+  test("a session of OpenCode 2's is not answered after a poll that throws", async () => {
+    const { files, sqlite } = openOpencode([answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v2-only"));
+    const real = createDatabaseReader({
+      file: DATABASE,
+      io: files.io,
+      platform: "darwin",
+      run: sqlite.run,
+      find: sqlite.find,
+    });
+    let broken = false;
+    const reader: DatabaseReader = {
+      read: (at) => (broken ? Promise.reject(new Error("A reader that throws.")) : real.read(at)),
+      askOnce: (question, known) => real.askOnce(question, known),
+    };
+    const clock = handClock(NOW);
+    const adapter = opencodeAdapterFor(files, sqlite, { reader, now: clock.now });
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${B}`)).toMatchObject({ reason: "not-read" });
+    broken = true;
+    clock.advance(SECOND);
+    await adapter.poll();
+    await expect(adapter.lastMessage(`opencode:${B}`)).resolves.toBeNull();
+  });
+
+  test("a session OpenCode 2 deleted stays out, though its old row of session is read again, until 1.x writes to it", async () => {
+    const clock = handClock(NOW);
+    const { files, sqlite } = openOpencode([answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v1+v2"));
+    sqlite.said(B, lastTextJson(["An older reply of 1.x's."]));
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now });
+    const listed = async (from = adapter) =>
+      (await from.poll()).sessions.map((session) => session.id);
+    const id = `opencode:${B}`;
+    expect(await listed()).toEqual([id]);
+
+    // OpenCode 2's delete leaves the row of session, with what 1.x last wrote.
+    sqlite.set([answerRow({ id: B })]);
+    files.append(WAL, "more");
+    clock.advance(SECOND);
+    expect(await listed()).toEqual([]);
+    expect(await adapter.lastMessage(id)).toBeNull();
+    expect(sqlite.questions()).toEqual([]);
+
+    // What was read is in memory alone, so a restart lists the row by 1.x's rules.
+    const restarted = opencodeAdapterFor(files, sqlite, { now: clock.now });
+    expect(await listed(restarted)).toEqual([id]);
+
+    // A 1.x OpenCode that writes to it carries it on.
+    sqlite.set([answerRow({ id: B, m_updated: clock.now() })]);
+    files.append(WAL, "more");
+    clock.advance(SECOND);
+    expect(await listed()).toEqual([id]);
+    expect(await adapter.lastMessage(id)).toMatchObject({
+      message: { text: "An older reply of 1.x's." },
+    });
+  });
+
+  test("forgets that a session was read from session_v2 a day after a poll last read it there", async () => {
+    const clock = handClock(NOW);
+    const { files, sqlite } = openOpencode([answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v1+v2"));
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now });
+    await adapter.poll();
+
+    // A time ahead of the clock keeps a row listed but says nothing was written
+    // since, so only the id being forgotten can let this row back in.
+    sqlite.set([answerRow({ id: B, time_updated: NOW + 7 * DAY })]);
+    files.append(WAL, "more");
+    clock.advance(DAY - 1);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    clock.advance(1);
+    expect((await adapter.poll()).sessions.map((session) => session.id)).toEqual([`opencode:${B}`]);
+  });
+
+  test("the setting that stops last messages is said first, for a session of OpenCode 2's too", async () => {
+    const { files, sqlite } = openOpencode([answerV2Row({ id: B })]);
+    sqlite.probe(probeJson("v2-only"));
+    const adapter = opencodeAdapterFor(files, sqlite, {
+      env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" },
+    });
+    await adapter.poll();
+    expect(await adapter.lastMessage(`opencode:${B}`)).toEqual({
+      message: null,
+      reason: "off",
+      setting: "AGENT_LOOKOUT_LAST_MESSAGE",
+    });
+  });
+
+  test("a table of OpenCode 2's laid out in a way it does not know lists nothing, rather than 1.x's rows alone", async () => {
+    const { files, sqlite } = openOpencode([answerRow({ id: A })]);
+    const rows = JSON.parse(probeJson("v1+v2")) as Record<string, unknown>[];
+    sqlite.probe(
+      sqliteJson(rows.filter((row) => row.kind !== "session_v2" || row.name !== "time_suspended")),
+    );
+    const { health, sessions } = await opencodeAdapterFor(files, sqlite).poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toContain("a version of OpenCode that Agent Lookout does not read");
     expect(sessions).toEqual([]);
   });
 
@@ -622,14 +815,14 @@ describe("what a session last said", () => {
     expect(on.sqlite.questions()).toHaveLength(1);
   });
 
-  test("Sources says it asks for a session's newest reply while its details are open", async () => {
+  test("Sources says it asks for a 1.x session's newest reply while its details are open", async () => {
     const { adapter } = saying();
     expect((await adapter.poll()).health.watching).toContainEqual({
       label: "Last message read",
-      value: "a session's newest reply, with sqlite3, while its details are open",
+      value: "an OpenCode 1.x session's newest reply, with sqlite3, while its details are open",
     });
     expect(LAST_MESSAGE_READ).toBe(
-      "a session's newest reply, with sqlite3, while its details are open",
+      "an OpenCode 1.x session's newest reply, with sqlite3, while its details are open",
     );
   });
 

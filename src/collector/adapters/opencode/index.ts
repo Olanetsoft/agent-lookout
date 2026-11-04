@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
+import { isWithinRetention } from "../../../core/sessions/retention.ts";
 import type {
   Session,
   SourceCapabilities,
@@ -100,18 +101,19 @@ const LABEL = "OpenCode";
 
 /** Said whenever OpenCode is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "An OpenCode session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.";
+  "An OpenCode 1.x session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.";
 
 /** Said whenever OpenCode is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from OpenCode 1.19.0's source and not yet checked on a computer running OpenCode, so a status can be wrong.";
+  "This was built from the source of OpenCode 1.19.0 and 2.2.5 and not yet checked on a computer running OpenCode, so a status can be wrong.";
 
-/** Said when the database holds OpenCode 2's table, whose sessions are not read yet. */
-export const OPENCODE_2_NOTE = "OpenCode 2's sessions are not read yet.";
+/** Said while a session of OpenCode 2's is listed, since what shows for it differs from 1.x. */
+export const OPENCODE_2_SESSIONS_NOTE =
+  "OpenCode 2 keeps every question and approval in memory, so a session of its that waits for you shows as working. Its background service outlives its window, so its sessions show as idle, not finished, until that service stops. Their token counts and last message are not read.";
 
-/** Said when a session's newest message is one this adapter does not know. */
+/** Said when a session's newest message, or how its turn ended, is one this adapter does not know. */
 export const UNKNOWN_MESSAGE_NOTE =
-  "Some sessions end with a message Agent Lookout does not know, perhaps from a newer OpenCode, so they show as unknown.";
+  "Some sessions end in a way Agent Lookout does not know, perhaps from a newer OpenCode, so they show as unknown.";
 
 /** Said on Linux when no sqlite3 was found, which Ubuntu and Debian do not install. */
 export const NO_SQLITE_ADVICE = "On Ubuntu or Debian, install it with sudo apt install sqlite3.";
@@ -124,22 +126,27 @@ export const WINDOWS_DETAIL =
  * What an OpenCode session can show, from the database this adapter reads
  * with `sqlite3`. See docs/adapters/opencode.md for each.
  *
- * - Working and idle are the newest message of each root session
- *   (`opencodeMapping.ts`), on macOS and Linux only.
+ * - Working and idle are the newest message of each root session of `session`
+ *   (`opencodeMapping.ts`), or `time_suspended` and `idle_outcome` of each of
+ *   `session_v2` (`opencode2Mapping.ts`), on macOS and Linux only.
  * - Needs you is a `question` or `plan_exit` tool part of the newest message
  *   in the state `running` (`sessionRows.ts`), unless it is older than the
  *   last `ps` that showed no OpenCode. OpenCode keeps a wait for a tool's
- *   approval in memory, so a session in one shows as working.
- * - Finished is every session while `ps` shows no program named `opencode`
- *   (`processes.ts`), on macOS and Linux.
- * - Failed is a reply that ends on an error OpenCode records.
- * - The name is OpenCode's title, or the folder's name while the title is a
- *   placeholder.
+ *   approval in memory, so a session in one shows as working. OpenCode 2 keeps
+ *   every wait in memory, so its sessions never need you.
+ * - Finished is every session while `ps` shows no OpenCode program
+ *   (`processes.ts`), on macOS and Linux. OpenCode 2's background service
+ *   outlives its window, and nothing marks a session of its closed.
+ * - Failed is a reply that ends on an error OpenCode records, or a turn of
+ *   OpenCode 2's whose `idle_outcome` is `failed`.
+ * - The name is OpenCode's title, or the slug of a session of OpenCode 2's, or
+ *   the folder's name while the title is a placeholder.
  * - No Jump, Stop or Answer: the database names no process or terminal.
  * - No Quiet for: every session is in one file, so no file's modified time
  *   says when one was last written.
- * - Tokens are the counts of the newest reply that ended with some, from the
- *   same read of the database (`replyTokensOf` in `sessionRows.ts`).
+ * - Tokens are the counts of the newest reply of a 1.x session that ended with
+ *   some, from the same read of the database (`replyTokensOf` in
+ *   `sessionRows.ts`). A session of OpenCode 2's has none.
  */
 export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
@@ -150,17 +157,17 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While OpenCode asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
+      "While OpenCode 1.x asks you a question or to approve a plan. Tool approvals, and all of OpenCode 2's waits, show as working.",
   },
   finished: {
     level: "partly",
     reason:
-      "Once ps shows no program named opencode, on macOS and Linux. While only the desktop app runs, its sessions show as finished.",
+      "Once ps shows no OpenCode program, on macOS and Linux. OpenCode 2's sessions stay idle until its background service stops.",
   },
   failed: {
     level: "partly",
     reason:
-      "When a reply ends on an error OpenCode records. One that fails before a reply begins shows as working.",
+      "When a reply ends on an error OpenCode records, or an OpenCode 2 turn fails. With 1.x, one that fails sooner shows as working.",
   },
   names: { level: "yes" },
   jump: {
@@ -173,7 +180,11 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "OpenCode keeps every session in one database, so no file shows when one session was last written.",
   },
-  tokens: { level: "yes" },
+  tokens: {
+    level: "partly",
+    reason:
+      "For OpenCode 1.x. An OpenCode 2 session shows none: only running totals are on its row, and its last message is not read.",
+  },
   stop: {
     level: "no",
     reason: "OpenCode's database names no process that Agent Lookout could confirm and stop.",
@@ -190,7 +201,7 @@ export const COMMAND_SHOWN = "sqlite3 -init /dev/null -batch -json <database> <f
 
 /** What Sources says of the last-message read while it is on. */
 export const LAST_MESSAGE_READ =
-  "a session's newest reply, with sqlite3, while its details are open";
+  "an OpenCode 1.x session's newest reply, with sqlite3, while its details are open";
 
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface OpencodeAdapterOptions {
@@ -238,12 +249,15 @@ type HomeFrom = "agent-lookout" | "default";
  * Finds OpenCode's sessions on this machine from the database OpenCode keeps,
  * with nothing installed, no setting changed and no program of OpenCode's run.
  *
- * OpenCode 1.x keeps every session, message and part in one SQLite database,
+ * OpenCode keeps every session, message and part in one SQLite database,
  * `opencode.db` in its data folder, and documents no listing a reader outside
  * it can use without starting OpenCode, which writes to that folder. So the
  * adapter looks at the database and the two files SQLite keeps beside it with
  * `lstat` on every poll, and asks the system's `sqlite3` two fixed questions
  * when the database or its `-wal` changes (`database.ts`, `sessionRows.ts`).
+ * OpenCode 1.x writes `session`, `message` and `part`, and OpenCode 2 writes
+ * `session_v2` in the same file. A session in both is read from `session_v2`,
+ * and one OpenCode 2 deleted once a poll read it there stays out of the list.
  * While there are sessions to show, it asks `ps` whether an OpenCode program
  * runs, at most every 10 seconds, and sooner, though not within 2 seconds of
  * the last ask, when a session is written after `ps` said none runs
@@ -256,14 +270,16 @@ type HomeFrom = "agent-lookout" | "default";
  * until the person answers. OpenCode keeps a wait for a tool's approval in
  * memory, so a session in one shows as working. A killed OpenCode leaves its
  * part `running`, so a part older than the last `ps` that showed no OpenCode
- * is no wait.
+ * is no wait. OpenCode 2 keeps every wait in memory, so its sessions show as
+ * working while they wait.
  *
  * What a session last said is asked of the database with one more fixed
  * question, but only when `lastMessage` is asked for it, which the route does
- * while a page has the session's details open, and only for a session the
- * last poll listed (`lastMessages.ts`). No poll asks it, and it is never put
- * on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so does
- * `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ * while a page has the session's details open, and only for a session of
+ * OpenCode 1.x the last poll listed (`lastMessages.ts`). A session read from
+ * `session_v2` is answered `not-read`, with nothing asked. No poll asks it, and
+ * it is never put on a session. `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and
+ * so does `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
  *
  * OpenCode not being installed costs nothing: when its data folder is
  * missing, the adapter says so and looks again only once a minute, with a
@@ -274,8 +290,8 @@ type HomeFrom = "agent-lookout" | "default";
  * variable means that folder: if it holds no database, that is an answer, not
  * a missing OpenCode.
  *
- * This was built from OpenCode's source at v1.19.0, and has not yet been
- * checked on a computer running OpenCode.
+ * This was built from OpenCode's source at v1.19.0, with `session_v2` read at
+ * v2.2.5, and has not yet been checked on a computer running OpenCode.
  */
 export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): OpencodeAdapter {
   const env = options.env ?? process.env;
@@ -329,6 +345,15 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
    * memory alone, so a restart forgets it.
    */
   let noOpencodeAt: number | null = null;
+  /** The sessions the last poll read from `session_v2`, by their id in the session model. */
+  let opencode2Sessions: ReadonlySet<string> = new Set();
+  /**
+   * When a poll last read each session from `session_v2`, by OpenCode's own id
+   * for it. OpenCode 2's delete leaves a copied session's row in `session`, so
+   * `deletedInOpencode2` leaves that row out. It is kept in memory alone, so a
+   * restart forgets it, and for a day, by when such a row has left the list.
+   */
+  const readFromOpencode2 = new Map<string, number>();
 
   const psRuns = platform === "darwin" || platform === "linux";
   const commandRun = platform === "win32" ? "not run on Windows" : "when the database changes";
@@ -420,9 +445,21 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     }
   }
 
+  /**
+   * Whether a row of `session` is what OpenCode 2 left of a session it deleted:
+   * a poll read the session from `session_v2`, and nothing of it was written
+   * since. One written since is a 1.x OpenCode carrying it on, so it is listed.
+   */
+  function deletedInOpencode2(row: SessionRow, checkedAt: number): boolean {
+    const readAt = readFromOpencode2.get(row.id);
+    if (row.turn !== null || readAt === undefined) return false;
+    return (lastActivity(row, checkedAt) ?? -Infinity) <= readAt;
+  }
+
   const alwaysNotes = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
-  async function poll(): Promise<AdapterResult> {
+  /** Reads the sessions, and adds each one read from `session_v2` to `fromOpencode2`, by its id. */
+  async function poll(fromOpencode2: Set<string>): Promise<AdapterResult> {
     const checkedAt = now();
     if (platform === "win32") {
       return result("unavailable", WINDOWS_DETAIL, "not on Windows", checkedAt);
@@ -516,8 +553,17 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
         break;
     }
 
+    for (const row of read.rows) {
+      if (row.turn !== null) readFromOpencode2.set(row.id, checkedAt);
+    }
+    for (const [id, readAt] of readFromOpencode2) {
+      if (!isWithinRetention(readAt, checkedAt)) readFromOpencode2.delete(id);
+    }
+
     // `ps` is asked only while there is a session to show.
-    const listed: SessionRow[] = read.rows.filter((row) => isListed(row, checkedAt));
+    const listed: SessionRow[] = read.rows.filter(
+      (row) => isListed(row, checkedAt) && !deletedInOpencode2(row, checkedAt),
+    );
     const asked = listed.length > 0 ? await processesFor(listed, checkedAt) : null;
     const open = asked === null || opencodeLiveness(asked) !== false;
     const sessions: Session[] = [];
@@ -526,6 +572,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       const session = opencodeSession({ row, open, now: checkedAt, noOpencodeAt });
       if (session === null) continue;
       if (session.status === "unknown") unknown = true;
+      if (row.turn !== null) fromOpencode2.add(session.id);
       sessions.push(session);
     }
     let detail = `Sessions are read from OpenCode's database, ${databaseName}, with sqlite3. ${alwaysNotes}`;
@@ -540,7 +587,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
         " No OpenCode program runs, so each session shows as finished, unless it failed or cannot be read.";
       basis = BASIS_CLOSED;
     }
-    if (read.opencode2) detail += ` ${OPENCODE_2_NOTE}`;
+    if (fromOpencode2.size > 0) detail += ` ${OPENCODE_2_SESSIONS_NOTE}`;
     if (unknown) detail += ` ${UNKNOWN_MESSAGE_NOTE}`;
     const answer = result("ok", detail, looked, checkedAt, basis);
     return { ...answer, sessions };
@@ -553,18 +600,26 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     lookingIn: `Looking for OpenCode sessions in ${databaseName}.`,
     async poll() {
       try {
-        const answer = await poll();
+        const fromOpencode2 = new Set<string>();
+        const answer = await poll(fromOpencode2);
+        opencode2Sessions = fromOpencode2;
         // The sessions whose last message may be asked for until the next
         // poll, each with OpenCode's own id for it. A poll that could not read
-        // the database lists none, so none may be asked for.
+        // the database lists none, so none may be asked for, and a session read
+        // from `session_v2` has no messages in the tables the question reads.
         lastMessages?.keep(
-          new Map(answer.sessions.map((session) => [session.id, rawIdOf(session.id)])),
+          new Map(
+            answer.sessions
+              .filter((session) => !fromOpencode2.has(session.id))
+              .map((session) => [session.id, rawIdOf(session.id)]),
+          ),
         );
         return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
         // answer, and the person sees a sentence, not a stack trace. It lists no
         // session, so no last message is kept either.
+        opencode2Sessions = new Set();
         lastMessages?.forget();
         return result(
           "error",
@@ -578,6 +633,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       if (lastMessagesOff !== null) {
         return { message: null, reason: "off", setting: lastMessagesOff };
       }
+      if (opencode2Sessions.has(sessionId)) return { message: null, reason: "not-read" };
       return lastMessages?.read(sessionId) ?? null;
     },
     get lastMessagesKept() {

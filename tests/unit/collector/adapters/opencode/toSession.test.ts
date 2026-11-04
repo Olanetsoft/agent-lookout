@@ -5,6 +5,7 @@ import { lastActivity, opencodeSession } from "@collector/adapters/opencode/toSe
 import { STEP_GAP_MS } from "@core/mapping/opencode/opencodeMapping";
 import {
   answerRow,
+  answerV2Row,
   DAY,
   FOLDER,
   HOUR,
@@ -270,5 +271,120 @@ describe("lastActivity", () => {
     expect(lastActivity(row({ time_updated: NOW - MINUTE, p_updated: NOW + DAY }), NOW)).toBe(
       NOW - MINUTE,
     );
+  });
+});
+
+describe("a session of OpenCode 2's", () => {
+  /** A row of `session_v2` as the reader keeps it, with these fields. */
+  function rowV2(fields: Record<string, unknown> = {}): SessionRow {
+    const [read] = readSessionRows(sqliteJson([answerV2Row({ id: A, ...fields })])) ?? [];
+    if (read === undefined) throw new Error("The row was dropped.");
+    return read;
+  }
+
+  test("an idle session, with its title, folder and times, and nothing it cannot have", () => {
+    const session = opencodeSession({ row: rowV2(), open: true, now: NOW });
+    expect(session).toEqual({
+      id: `opencode:${A}`,
+      source: "opencode",
+      surface: "unknown",
+      name: "Rename the helper",
+      cwd: FOLDER,
+      project: "demo",
+      status: "idle",
+      startedAt: NOW - HOUR,
+      statusSince: NOW - MINUTE,
+      tokensNotRead: true,
+      links: {},
+      stale: false,
+    });
+    for (const absent of ["tokens", "waitingReason", "waitingText", "pid", "lastWriteAt"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+  });
+
+  test("only a row of session_v2 is marked as a session whose counts are not read", () => {
+    expect(opencodeSession({ row: rowV2(), open: true, now: NOW })?.tokensNotRead).toBe(true);
+    expect(opencodeSession({ row: row(), open: true, now: NOW })).not.toHaveProperty(
+      "tokensNotRead",
+    );
+  });
+
+  test("is named by its title, else its slug, else its folder, else its id", () => {
+    const nameOf = (fields: Record<string, unknown>) =>
+      opencodeSession({ row: rowV2(fields), open: true, now: NOW })?.name;
+    expect(nameOf({})).toBe("Rename the helper");
+    expect(nameOf({ title: null })).toBe("demo-slug");
+    expect(nameOf({ title: "   " })).toBe("demo-slug");
+    expect(nameOf({ title: null, slug: "" })).toBe("demo");
+    expect(nameOf({ title: null, slug: null, directory: "" })).toBe(`opencode:${A}`);
+  });
+
+  test("a turn that holds its claim is working since then, whatever the turn before ended as", () => {
+    const session = opencodeSession({
+      row: rowV2({ time_suspended: NOW - MINUTE, idle_outcome: "failed", time_idle: NOW - HOUR }),
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("a turn that was cut off is finished from when it was last written, once OpenCode is closed", () => {
+    const session = opencodeSession({
+      row: rowV2({
+        time_updated: NOW - 2 * MINUTE,
+        time_suspended: NOW - 5 * MINUTE,
+        time_idle: NOW - HOUR,
+      }),
+      open: false,
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "finished", statusSince: NOW - 2 * MINUTE });
+  });
+
+  test("a turn that failed is failed, open or closed, since it ended", () => {
+    for (const open of [true, false]) {
+      const session = opencodeSession({
+        row: rowV2({ idle_outcome: "failed" }),
+        open,
+        now: NOW,
+      });
+      expect(session, String(open)).toMatchObject({ status: "failed", statusSince: NOW - MINUTE });
+    }
+  });
+
+  test("a session copied from 1.x that OpenCode 2 has run no turn in is idle since it was last written", () => {
+    const session = opencodeSession({
+      row: rowV2({ time_idle: null, idle_outcome: null }),
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({ status: "idle", statusSince: NOW - 2 * MINUTE });
+  });
+
+  test("is listed for a day after the newest of its row, the start of its turn and the end of one", () => {
+    const old = { time_updated: NOW - 2 * DAY };
+    const listed = (fields: Record<string, unknown>) =>
+      opencodeSession({ row: rowV2({ ...old, ...fields }), open: true, now: NOW }) !== null;
+    expect(listed({ time_idle: NOW - 2 * DAY, time_suspended: null })).toBe(false);
+    expect(listed({ time_idle: NOW - HOUR })).toBe(true);
+    expect(listed({ time_idle: NOW - 2 * DAY, time_suspended: NOW - HOUR })).toBe(true);
+    expect(lastActivity(rowV2({ ...old, time_idle: NOW - HOUR }), NOW)).toBe(NOW - HOUR);
+  });
+
+  test("an outcome it does not know, or a time of the wrong type, is unknown, with no time", () => {
+    for (const fields of [
+      { idle_outcome: "abandoned" },
+      { idle_outcome: "x".repeat(65) },
+      { idle_outcome: 3 },
+      { time_suspended: "other" },
+      { time_idle: "other" },
+    ]) {
+      const session = opencodeSession({ row: rowV2(fields), open: true, now: NOW });
+      expect(session, JSON.stringify(fields)).toMatchObject({
+        status: "unknown",
+        statusSince: null,
+      });
+    }
   });
 });

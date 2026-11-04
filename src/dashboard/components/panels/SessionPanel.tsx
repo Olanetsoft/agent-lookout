@@ -393,11 +393,7 @@ function Details({
       {/* What it last said is asked for while it is listed, and is not kept once it has gone. */}
       {!gone && (
         <Part data-part='last-message' title='Last message'>
-          <LastMessage
-            reading={lastMessage}
-            remote={session.machine !== undefined}
-            agent={agentLabel(session, sources)}
-          />
+          <LastMessage reading={lastMessage} remote={session.machine !== undefined} />
         </Part>
       )}
 

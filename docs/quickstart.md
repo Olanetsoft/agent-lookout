@@ -66,7 +66,7 @@ Not using Claude Code? Do step 1, then read [Using another agent](#using-another
 
 ## Using another agent
 
-After step 1, start your agent and send it a prompt. Within a few seconds its session appears in the Sessions list, with no setup. Antigravity and the Antigravity CLI also show in Needs you while they ask you to approve a step, Hermes Agent while it asks you a question or, late, waits for your approval, Mistral Vibe while it waits for your approval or an answer, and OpenCode and Qwen Code 0.25.1 or newer while they ask you a question or to approve a plan. The others show a session that waits for you as working, or as idle in Gemini CLI. Of these agents only Qwen Code has Jump, in tmux and in a tab of Terminal or iTerm2. [Supported agents](introduction.md#supported-agents) lists what each one shows, and what differs on Windows and Linux.
+After step 1, start your agent and send it a prompt. Within a few seconds its session appears in the Sessions list, with no setup. Antigravity and the Antigravity CLI also show in Needs you while they ask you to approve a step, Hermes Agent while it asks you a question or, late, waits for your approval, Mistral Vibe while it waits for your approval or an answer, and OpenCode 1.x and Qwen Code 0.25.1 or newer while they ask you a question or to approve a plan. The others show a session that waits for you as working, or as idle in Gemini CLI. Of these agents only Qwen Code has Jump, in tmux and in a tab of Terminal or iTerm2. [Supported agents](introduction.md#supported-agents) lists what each one shows, and what differs on Windows and Linux.
 
 To see Needs you without Claude Code, write a status file by hand. It makes a test session that waits for you. Run this in another terminal on macOS or Linux:
 

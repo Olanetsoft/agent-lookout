@@ -216,7 +216,7 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect(Object.keys(before)).toEqual(["opencode.db"]);
 
     const read = await readNow(file, now);
-    expect(read).toMatchObject({ state: "read", opencode2: false });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([B, A]);
     expect(await snapshotOf(dir)).toEqual(before);
 

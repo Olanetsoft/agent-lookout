@@ -4,8 +4,9 @@
 // and parts the JSON shapes it writes into their `data`, as written up in
 // docs/adapters/opencode.md. Beside them are three tables the adapter must
 // never read, holding words that stand for secrets and for what was written.
-// Nothing here is copied from a real machine or a real session. Product code
-// never imports this file.
+// `V2_SCHEMA` follows the columns OpenCode 2.2.5 gives `session_v2` and the
+// tables beside it, in the same file. Nothing here is copied from a real
+// machine or a real session. Product code never imports this file.
 
 export const HOME = "/Users/example";
 
@@ -77,6 +78,37 @@ export const SCHEMA = [
   `INSERT INTO account VALUES ('acc_1', 'demo@example.com', 'https://example.com', ${text(SECRET_WORDS)}, ${text(SECRET_WORDS)}, NULL, 0, 0);`,
 ].join("\n");
 
+/**
+ * The tables OpenCode 2.2.5 adds to the same file, with every column of
+ * `session_v2`, its indexes, and the message and part tables the adapter must
+ * never read, as a fresh database of OpenCode 2's holds them.
+ */
+export const V2_SCHEMA = [
+  `CREATE TABLE session_v2 (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT, parent_id TEXT,
+    fork_session_id TEXT, fork_boundary TEXT, slug TEXT NOT NULL, directory TEXT NOT NULL,
+    path TEXT, title TEXT, version TEXT NOT NULL, share_url TEXT, summary_additions INTEGER,
+    summary_deletions INTEGER, summary_files INTEGER, summary_diffs TEXT, metadata TEXT,
+    cost REAL NOT NULL DEFAULT 0, tokens_input INTEGER NOT NULL DEFAULT 0,
+    tokens_output INTEGER NOT NULL DEFAULT 0, tokens_reasoning INTEGER NOT NULL DEFAULT 0,
+    tokens_cache_read INTEGER NOT NULL DEFAULT 0, tokens_cache_write INTEGER NOT NULL DEFAULT 0,
+    revert TEXT, permission TEXT, agent TEXT, model TEXT, time_created INTEGER NOT NULL,
+    time_updated INTEGER NOT NULL, time_busy INTEGER, time_idle INTEGER, time_viewed INTEGER,
+    idle_outcome TEXT, time_compacting INTEGER, time_archived INTEGER, time_suspended INTEGER,
+    resume_attempts INTEGER NOT NULL DEFAULT 0);`,
+  "CREATE INDEX session_v2_project_idx ON session_v2 (project_id);",
+  "CREATE INDEX session_v2_workspace_idx ON session_v2 (workspace_id);",
+  "CREATE INDEX session_v2_parent_idx ON session_v2 (parent_id);",
+  "CREATE INDEX session_v2_time_suspended_idx ON session_v2 (time_suspended) WHERE time_suspended IS NOT NULL;",
+  `CREATE TABLE session_message (
+    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL,
+    time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL);`,
+  `CREATE TABLE session_part (
+    message_id TEXT NOT NULL, session_id TEXT NOT NULL, ordinal INTEGER NOT NULL, type TEXT NOT NULL,
+    call_id TEXT, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL,
+    PRIMARY KEY (message_id, ordinal));`,
+].join("\n");
+
 /** A text as SQL writes one. */
 export function text(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -136,6 +168,66 @@ export function sessionRow(fields: SessionFields): string {
   const names = Object.keys(columns).join(", ");
   const values = Object.values(columns).map(value).join(", ");
   return `INSERT INTO session (${names}) VALUES (${values});`;
+}
+
+export interface SessionV2Fields {
+  id: string;
+  /** Left out, it has one. Null for none, as OpenCode 2 leaves a session a model has not named. */
+  title?: string | null;
+  slug?: string;
+  directory?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  parentId?: string;
+  archivedAt?: number;
+  /** `time_suspended`, or anything else the test wants in that column. */
+  suspendedAt?: number | string | null;
+  /** `time_idle`, or anything else the test wants in that column. */
+  idleAt?: number | string | null;
+  /** `idle_outcome`. */
+  outcome?: string | null;
+}
+
+/** A row of `session_v2`, with words that stand for what was written in every column the adapter must not read. */
+export function sessionV2Row(fields: SessionV2Fields): string {
+  const createdAt = fields.createdAt ?? NOW - HOUR;
+  const columns = {
+    id: fields.id,
+    project_id: "demo-project-id",
+    parent_id: fields.parentId,
+    slug: fields.slug ?? "demo-slug",
+    directory: fields.directory ?? FOLDER,
+    title: fields.title === undefined ? "Rename the helper" : fields.title,
+    version: "2.2.5",
+    share_url: `https://example.com/share/${PRIVATE_WORDS}`,
+    summary_diffs: JSON.stringify([{ file: PRIVATE_WORDS }]),
+    metadata: JSON.stringify({ note: PRIVATE_WORDS }),
+    tokens_input: 2_000_000,
+    revert: JSON.stringify({ messageID: PRIVATE_WORDS }),
+    permission: JSON.stringify([{ pattern: PRIVATE_WORDS }]),
+    agent: "build",
+    model: JSON.stringify({ id: "demo-model", providerID: "demo-provider" }),
+    time_created: createdAt,
+    time_updated: fields.updatedAt ?? createdAt,
+    time_busy: fields.suspendedAt ?? null,
+    time_idle: fields.idleAt,
+    idle_outcome: fields.outcome,
+    time_archived: fields.archivedAt,
+    time_suspended: fields.suspendedAt,
+  };
+  const names = Object.keys(columns).join(", ");
+  const values = Object.values(columns).map(value).join(", ");
+  return `INSERT INTO session_v2 (${names}) VALUES (${values});`;
+}
+
+/** A row of OpenCode 2's messages and parts, with words the adapter must never read. */
+export function sessionV2MessageRows(sessionIdOf: string, suffix: string): string[] {
+  const id = messageId(`v${suffix}`);
+  const data = text(JSON.stringify({ text: PRIVATE_WORDS, tokens: { input: 7 } }));
+  return [
+    `INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES (${text(id)}, ${text(sessionIdOf)}, 'assistant', 1, ${NOW}, ${NOW}, ${data});`,
+    `INSERT INTO session_part (message_id, session_id, ordinal, type, time_created, time_updated, data) VALUES (${text(id)}, ${text(sessionIdOf)}, 0, 'text', ${NOW}, ${NOW}, ${data});`,
+  ];
 }
 
 export interface MessageFields {
@@ -322,7 +414,21 @@ export function probeJson(layout: "v1" | "v1+v2" | "v2-only" | "none" = "v1"): s
     "time_compacting",
     "time_archived",
   ];
-  const v2Columns = ["id", "directory", "title", "time_created", "time_updated", "time_suspended"];
+  const v2Columns = [
+    "id",
+    "project_id",
+    "parent_id",
+    "slug",
+    "directory",
+    "title",
+    "version",
+    "time_created",
+    "time_updated",
+    "time_idle",
+    "idle_outcome",
+    "time_archived",
+    "time_suspended",
+  ];
   const rows: Record<string, unknown>[] = [];
   if (layout === "v1" || layout === "v1+v2") {
     for (const name of ["session", "message", "part"]) rows.push({ kind: "table", name });
@@ -364,6 +470,11 @@ export interface AnswerRow {
   r_cache_read?: unknown;
   r_cache_write?: unknown;
   r_total?: unknown;
+  slug?: unknown;
+  v2?: unknown;
+  time_suspended?: unknown;
+  time_idle?: unknown;
+  idle_outcome?: unknown;
 }
 
 /**
@@ -394,6 +505,25 @@ export function answerRow(fields: AnswerRow): Record<string, unknown> {
     r_cache_read: null,
     r_cache_write: null,
     r_total: null,
+    ...fields,
+  };
+}
+
+/**
+ * A row of the answer for a session of `session_v2` whose newest turn ended
+ * well a minute before `NOW`, as `OPENCODE_2_SESSIONS_QUERY` prints it.
+ */
+export function answerV2Row(fields: AnswerRow): Record<string, unknown> {
+  return {
+    directory: FOLDER,
+    title: "Rename the helper",
+    time_created: NOW - HOUR,
+    time_updated: NOW - 2 * MINUTE,
+    slug: "demo-slug",
+    v2: 1,
+    time_suspended: null,
+    time_idle: NOW - MINUTE,
+    idle_outcome: "succeeded",
     ...fields,
   };
 }

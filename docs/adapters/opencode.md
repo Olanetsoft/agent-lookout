@@ -2,13 +2,13 @@
 
 These notes record what Agent Lookout reads from OpenCode, where each value comes from, and what breaks when OpenCode changes. Start here when the adapter stops working.
 
-The adapter was built from OpenCode's source at v1.19.0, the latest release, published 2026-10-11 (commit `733b2c6` of [anomalyco/opencode](https://github.com/anomalyco/opencode), which was sst/opencode), and from SQLite's source at 3.54.0. Which waits show as needing you was checked in OpenCode's source at v1.19.5 ([Needs you](#needs-you)). It has not yet been checked on a computer running OpenCode. OpenCode was not run on the machine where it was written, and nothing in OpenCode's own folders there was read. Everything below comes from OpenCode's source and from databases written by hand with the same tables, so a status can be wrong.
+The adapter was built from OpenCode's source at v1.19.0, the latest release, published 2026-10-11 (commit `733b2c6` of [anomalyco/opencode](https://github.com/anomalyco/opencode), which was sst/opencode), and from SQLite's source at 3.54.0. Which waits show as needing you was checked in OpenCode's source at v1.19.5 ([Needs you](#needs-you)). OpenCode 2's `session_v2` was read from its source at v2.2.5, the newest 2.x tag, published 2026-10-30 (commit `9bbb8ce`) ([OpenCode 2](#opencode-2)). It has not yet been checked on a computer running OpenCode. OpenCode was not run on the machine where it was written, and nothing in OpenCode's own folders there was read. Everything below comes from OpenCode's source and from databases written by hand with the same tables, so a status can be wrong.
 
-The code is in `src/collector/adapters/opencode/`, and the status mapping is in `src/core/mapping/opencode/opencodeMapping.ts`. The adapter starts the system's `sqlite3` with the helpers the Antigravity adapter uses, in `src/collector/adapters/antigravity/app/summaries.ts`, and `ps` as that adapter does for Antigravity's own program.
+The code is in `src/collector/adapters/opencode/`, and the status mappings are in `src/core/mapping/opencode/opencodeMapping.ts` and, for OpenCode 2, `opencode2Mapping.ts`. The adapter starts the system's `sqlite3` with the helpers the Antigravity adapter uses, in `src/collector/adapters/antigravity/app/summaries.ts`, and `ps` as that adapter does for Antigravity's own program.
 
 ## How it reads OpenCode, and why
 
-The adapter needs nothing installed and changes nothing, but for the one empty `-wal` [below](#how-sqlite3-opens-the-database): no plugin, no setting, no OpenCode program run, no network. It looks at OpenCode's database and the two files SQLite keeps beside it, asks the system's `sqlite3` two fixed questions when the database or its `-wal` changes, and asks `ps` whether an OpenCode program runs. While a session's details are open, it asks one more fixed question, about that session alone, for what it last said ([Last message](#last-message)).
+The adapter needs nothing installed and changes nothing, but for the one empty `-wal` [below](#how-sqlite3-opens-the-database): no plugin, no setting, no OpenCode program run, no network. It looks at OpenCode's database and the two files SQLite keeps beside it, asks the system's `sqlite3` two fixed questions when the database or its `-wal` changes, and asks `ps` whether an OpenCode program runs. While the details of a session of OpenCode 1.x are open, it asks one more fixed question, about that session alone, for what it last said ([Last message](#last-message)).
 
 OpenCode offers other ways in, and none of them can be used that way:
 
@@ -16,7 +16,7 @@ OpenCode offers other ways in, and none of them can be used that way:
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Any `opencode` command            | Starting one makes OpenCode's folders (`packages/core/src/global.ts`). `opencode session list`, the one checked, also opens the database read-write, sets WAL mode, moves the `-wal` into the database and applies migrations (`packages/core/src/database/database.ts`). |
 | `opencode session list`           | The same, and it lists only the root sessions of the project it is run in, with no status (`packages/opencode/src/cli/cmd/session.ts`).                                                                                                                                   |
-| `opencode serve` and its HTTP API | Only there while the person runs it, and asking it is a request to OpenCode's server.                                                                                                                                                                                     |
+| `opencode serve` and its HTTP API | Only there while it runs, and asking it is a request to OpenCode's server, whose password OpenCode 2 keeps in `service.json`, which is never read. Agent Lookout makes no request to it.                                                                                  |
 | A plugin                          | Needs a change to OpenCode's config. Agent Lookout installs only its own Claude Code plugin.                                                                                                                                                                              |
 | The JSON files under `storage/`   | OpenCode wrote sessions there up to v1.1.65. From v1.2.0 it keeps them in the database, and v1.16.0 removed the one-time import, so those files are no longer kept up to date.                                                                                            |
 
@@ -61,7 +61,7 @@ If a program closes the database between the `lstat` and the read, and SQLite re
 
 Each poll asks these two. Both are fixed text. Nothing from a file, a request or a setting is put into them, and the 48-hour cut-off is worked out inside SQLite. The third, which no poll asks, is under [Last message](#last-message).
 
-The probe asks for the names of tables and columns alone. It is asked each time before the sessions query, so a table OpenCode adds to the same file, as OpenCode 2 adds `session_v2`, is seen:
+The probe asks for the names of tables and columns alone. It is asked each time before the sessions query, so a table OpenCode adds to the same file, as OpenCode 2 adds `session_v2`, is seen, and the sessions query names no table the database lacks:
 
 ```sql
 SELECT 'table' AS kind, name FROM sqlite_master
@@ -70,7 +70,16 @@ UNION ALL SELECT 'session', name FROM pragma_table_info('session')
 UNION ALL SELECT 'session_v2', name FROM pragma_table_info('session_v2')
 ```
 
-The sessions query is asked only when the probe finds `session`, `message` and `part`, with `id`, `parent_id`, `directory`, `title`, `time_created`, `time_updated` and `time_archived` in `session`:
+Which sessions query is asked follows what the probe finds, in `readSchema` and `sessionsQueryFor` in `sessionRows.ts`:
+
+| The probe finds                                                                                          | Asked                       |
+| -------------------------------------------------------------------------------------------------------- | --------------------------- |
+| 1.x's tables, and no `session_v2`                                                                        | `SESSIONS_QUERY`, below     |
+| `session_v2` with every column in [OpenCode 2's question](#the-question-of-session_v2), and no `session` | `OPENCODE_2_SESSIONS_QUERY` |
+| Both                                                                                                     | `BOTH_SESSIONS_QUERY`       |
+| Anything else, such as a `session_v2` that lacks one of those columns                                    | Nothing more                |
+
+1.x's tables are `session`, `message` and `part`, with `id`, `parent_id`, `directory`, `title`, `time_created`, `time_updated` and `time_archived` in `session`. A database 1.x wrote alone is asked what it was asked before OpenCode 2 was read, and that question does not name `session_v2`, so it costs and prints what it did. `SESSIONS_QUERY` is:
 
 ```sql
 SELECT s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000) AS title,
@@ -171,28 +180,29 @@ Each `data` is read only once `json_valid` says it is JSON. A message whose `dat
 
 - Root sessions only: OpenCode's subagents run in sessions of their own, with `parent_id` set.
 - Not archived.
-- Their own row written in the last 48 hours, by SQLite's clock, the newest 200.
-- Then each for 24 hours after the newest of its row's `time_updated`, its newest message's and that message's parts'. A time ahead of the clock counts as it is, so a clock set back hides no session.
+- Their own row written in the last 48 hours, by SQLite's clock, the newest 200, of `session` and `session_v2` together.
+- Each once. A session in `session_v2` is read from there alone, whatever its row in `session` says.
+- Then each for 24 hours after the newest of its row's `time_updated`, its newest message's and that message's parts', or for a row of `session_v2` its `time_updated`, `time_suspended` and `time_idle`. A time ahead of the clock counts as it is, so a clock set back hides no session.
 
-The name is the title, else the folder's name, else the session's id. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop and no `lastWriteAt`. Its `tokens` are the counts of its newest reply that has them, as [Token counts](#token-counts) says.
+The name is the title, else, for a row of `session_v2`, the slug, else the folder's name, else the session's id. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop and no `lastWriteAt`. A session of `session` has `tokens`, the counts of its newest reply that has them, as [Token counts](#token-counts) says.
 
 ## Open or closed
 
-The `opencode` program writes no mark of its own for an open session or for itself (`packages/opencode/src/cli/cmd/serve.ts`, `packages/core/src/util/flock.ts`). Nor do the files beside the database say whether it runs. OpenCode 1.19.0 closes its database only when its runtime is disposed, which nothing does before it exits (`packages/core/src/database/sqlite.bun.ts`, `packages/opencode/src/effect/app-runtime.ts`), and Bun's own close at exit moves nothing into the database while a statement is still prepared. So a quit leaves `opencode.db-wal` full, as a crash does.
+OpenCode 1.x's `opencode` program writes no mark of its own for an open session or for itself (`packages/opencode/src/cli/cmd/serve.ts`, `packages/core/src/util/flock.ts`). Nor do the files beside the database say whether it runs. OpenCode 1.19.0 closes its database only when its runtime is disposed, which nothing does before it exits (`packages/core/src/database/sqlite.bun.ts`, `packages/opencode/src/effect/app-runtime.ts`), and Bun's own close at exit moves nothing into the database while a statement is still prepared. So a quit leaves `opencode.db-wal` full, as a crash does.
 
-So the adapter asks `ps`, as it does for Antigravity's own program (`processes.ts`): `ps -A -o comm=`, the name of each process's program and nothing else, run directly from `/usr/bin` or `/bin` with a 2-second timeout, only while there are sessions to show, on macOS and Linux. It runs at most every 10 seconds, and sooner, though not within 2 seconds of the last run, when a session is written after `ps` showed none, since OpenCode may have been started since. OpenCode's releases are one program built with Bun, named `opencode` (`packages/opencode/script/build.ts`). A process whose program has exactly that name is taken for it: on macOS `ps` prints a process's first argument, such as `opencode` or a full path ending in `/opencode`, and on Linux the name of the file it was started from, cut to 15 characters.
+So the adapter asks `ps`, as it does for Antigravity's own program (`processes.ts`): `ps -A -o comm=`, the name of each process's program and nothing else, run directly from `/usr/bin` or `/bin` with a 2-second timeout, only while there are sessions to show, on macOS and Linux. It runs at most every 10 seconds, and sooner, though not within 2 seconds of the last run, when a session is written after `ps` showed none, since OpenCode may have been started since. OpenCode's releases are one program built with Bun, named `opencode` (`packages/opencode/script/build.ts`). A process whose program has exactly that name, or another of OpenCode's in `OPENCODE_PROGRAMS` ([Finished](#finished)), is taken for it: on macOS `ps` prints a process's first argument, such as `opencode` or a full path ending in `/opencode`, and on Linux the name of the file it was started from, cut to 15 characters.
 
 | `ps`                                        | Taken as                                                              | Basis                        |
 | ------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- |
-| Shows a program named `opencode`            | Open                                                                  | `database`                   |
+| Shows a program of one of OpenCode's names  | Open                                                                  | `database`                   |
 | Shows none                                  | Closed: every session is finished, unless it failed or cannot be read | `database-closed`            |
 | Could not be run, or not run on this system | Not known: no session is shown as finished                            | `database-without-processes` |
 
-`ps` is not run on a system other than macOS and Linux. While no session is listed, it is not asked, and the basis is `database`. A session written after `ps` showed none is not held open: it shows as finished until `ps`, asked again, shows OpenCode. So a session written by a program `ps` does not see stays finished, and sends no new Finished notice each time it is written. Not yet checked against OpenCode: whether every way of installing it starts it by that name. The install script and Homebrew install a program named `opencode` (`install`, `packages/opencode/script/publish.ts`). npm's package keeps the program as `bin/opencode.exe` and links `opencode` to it, so it is seen when started through that link (`packages/opencode/script/postinstall.mjs`). OpenCode started by another name, such as that file itself, from its source with `bun`, or through Node, is not seen, and nor is OpenCode's desktop app, which runs OpenCode inside its own program (`packages/desktop/src/main/server.ts`): while only one of those runs, its sessions show as finished.
+`ps` is not run on a system other than macOS and Linux. While no session is listed, it is not asked, and the basis is `database`. A session written after `ps` showed none is not held open: it shows as finished until `ps`, asked again, shows OpenCode. So a session written by a program `ps` does not see stays finished, and sends no new Finished notice each time it is written. Not yet checked against OpenCode: whether every way of installing it starts it by one of those names. The install script and Homebrew install a program named `opencode` (`install`, `packages/opencode/script/publish.ts`). npm's package keeps the program as `bin/opencode.exe` and links `opencode` to it (`packages/opencode/script/postinstall.mjs`). OpenCode started from its source with `bun`, or through Node, is not seen, and nor is OpenCode 1.x's desktop app, which runs OpenCode inside its own program (`packages/desktop/src/main/server.ts` at v1.19.0): while only one of those runs, its sessions show as finished.
 
 ## Status
 
-From each root session's newest message, by `time_created` and `id`:
+A session of OpenCode 2's has the status its row of `session_v2` gives ([OpenCode 2](#opencode-2)). For a session of 1.x, from each root session's newest message, by `time_created` and `id`:
 
 | Newest message                                                                                                     | Open      | Closed   |
 | ------------------------------------------------------------------------------------------------------------------ | --------- | -------- |
@@ -218,9 +228,150 @@ From each root session's newest message, by `time_created` and `id`:
 
 The status time of a working session is when the newest `user` message began, which is mostly the person's prompt that starts the turn; else when the newest message began; else when the session did. The two prompts OpenCode writes itself when it compacts a session on its own are passed over, though OpenCode writes the message of each before its part, so a read that falls in between counts it until the next read. Three others it writes are not told apart from the person's, so the time moves to them: the one that asks for a subtask's summary after a command run as a subtask, a prompt it sends again after it compacts a session whose context overflowed (`prompt.ts`, `compaction.ts`), and, with OpenCode's experimental plan mode, the one it writes when the person approves a plan (`packages/opencode/src/tool/plan.ts`). A session that needs you has `m_asked_at` for its time, so no write while it waits moves it. For an idle, failed or finished session it is when the newest step ended, or else the newest time anything of the session was written. An unknown session has none.
 
+## OpenCode 2
+
+OpenCode 2 uses the same `opencode` command and the same `opencode.db` as 1.x (`databasePath` in `packages/cli/src/database-path.ts:4-13`). It writes its sessions to `session_v2`, their messages to `session_message` and `session_part`, and nothing to `session`, `message` or `part`. All of this is from OpenCode's source at v2.2.5 (commit `9bbb8ce`), whose line numbers these are, and has not been checked on a computer running OpenCode 2.
+
+- A database OpenCode 2 makes has `session_v2` and no `session`, `message` or `part` (`apply` in `packages/core/src/database/migration.ts:29-31`, `packages/core/src/database/schema.gen.ts`).
+- In a database 1.x wrote, OpenCode 2 adds `session_v2` beside its tables and copies each 1.x session into it with the same id, leaving `session` in place (`packages/core/src/database/v1-migration.bun.ts:674-687`). Once that copy is done it is not run again (`:507`, `:549`). A 1.x OpenCode that keeps running goes on writing to `session` alone.
+- The copy leaves `time_suspended`, `time_idle` and `idle_outcome` empty. So a copied session has no turn until OpenCode 2 runs one in it.
+
+### The question of `session_v2`
+
+`OPENCODE_2_SESSIONS_QUERY` is:
+
+```sql
+SELECT substr(v.id, 1, 68) AS id, substr(v.directory, 1, 4097) AS directory,
+  substr(v.title, 1, 1000) AS title,
+  CASE WHEN typeof(v.time_created) = 'integer' THEN v.time_created END AS time_created,
+  CASE WHEN typeof(v.time_updated) = 'integer' THEN v.time_updated END AS time_updated,
+  substr(v.slug, 1, 1000) AS slug, 1 AS v2,
+  CASE typeof(v.time_suspended) WHEN 'integer' THEN v.time_suspended
+    WHEN 'null' THEN NULL ELSE 'other' END AS time_suspended,
+  CASE typeof(v.time_idle) WHEN 'integer' THEN v.time_idle
+    WHEN 'null' THEN NULL ELSE 'other' END AS time_idle,
+  substr(v.idle_outcome, 1, 65) AS idle_outcome
+FROM session_v2 v WHERE v.parent_id IS NULL AND v.time_archived IS NULL
+  AND v.time_updated >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 172800000
+ORDER BY v.time_updated DESC LIMIT 200
+```
+
+`BOTH_SESSIONS_QUERY` is one run of `sqlite3` that puts the two questions together, so a database with both prints one list:
+
+```sql
+SELECT <the 28 fields> FROM (SELECT <the fields of SESSIONS_QUERY>, NULL AS slug, NULL AS v2,
+    NULL AS time_suspended, NULL AS time_idle, NULL AS idle_outcome
+  <the tables and conditions of SESSIONS_QUERY>
+  AND NOT EXISTS (SELECT 1 FROM session_v2 w WHERE w.id = s.id)
+  ORDER BY s.time_updated DESC LIMIT 200)
+UNION ALL SELECT <the 28 fields> FROM (SELECT <the five fields above>, NULL AS m_id,
+    <each other field of a message, NULL>, <the five fields above that follow them>
+  FROM session_v2 v WHERE <the conditions above> ORDER BY v.time_updated DESC LIMIT 200)
+ORDER BY time_updated DESC LIMIT 200
+```
+
+Every column read, with its line in `packages/core/src/session/sql.ts`:
+
+| Column                         | Line  | Holds                                                                                                                                                                                        | Asked for                                                     |
+| ------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `id`                           | `:31` | `ses_` and 26 characters, the same as the session's in `session` when it was copied (`packages/schema/src/session-id.ts`)                                                                    | Printed, cut to 68 characters. It must match `SESSION_ID`     |
+| `parent_id`                    | `:37` | Set for a subagent's session                                                                                                                                                                 | Tested inside SQLite                                          |
+| `slug`                         | `:40` | A name OpenCode makes when it makes a session, two words joined (`packages/core/src/util/slug.ts`)                                                                                           | Printed, cut to 1,000                                         |
+| `directory`                    | `:41` | The session's folder. A session copied from 1.x can have an empty one                                                                                                                        | Printed, cut to 4,097. Kept as for `session`                  |
+| `title`                        | `:43` | The session's title. Empty until a model writes one. A copied session can have 1.x's placeholder, which is kept as no title                                                                  | Printed, cut to 1,000                                         |
+| `time_created`, `time_updated` | `:65` | When it began, and when its row was last written: at each prompt (`projector.ts:771`), each step's start and end (`:814`, `:821`) and an archive or a rename. Never by a turn's start or end | Printed when a whole number                                   |
+| `time_idle`                    | `:67` | When the newest turn ended                                                                                                                                                                   | Printed when a whole number, else `other`, and null when none |
+| `idle_outcome`                 | `:69` | How it ended: `succeeded`, `failed` or `interrupted`                                                                                                                                         | Printed, cut to 65                                            |
+| `time_archived`                | `:71` | Set once the session is archived                                                                                                                                                             | Tested inside SQLite                                          |
+| `time_suspended`               | `:73` | The claim of a turn. `sql.ts` calls the name historical: nothing suspends                                                                                                                    | Printed when a whole number, else `other`, and null when none |
+
+`v2` is 1, a fixed value that tells a row of `session_v2` from one of `session`. No other column of `session_v2` is named, and no other table of OpenCode 2's: not `session_message`, `session_part` or `session_inbox`. The probe needs each column above in `session_v2`, each of which every 2.x has.
+
+`time_busy` (`sql.ts:66`) is not read. It is set as a turn starts (`SessionEvent.Execution.Started`, `projector.ts:790-797`), in the same transaction as the claim, so for a turn under way it says what `time_suspended` says. It came in at v2.2.2 (migration `20261029073502_session_time_busy`), so a database of an older 2.x has no such column, and a question that named it would fail there.
+
+A folder, a title or a slug is cut inside SQLite, and a time is printed only as a whole number, so a row that is not what is expected cannot fill the answer. A row of `session_v2` adds about 300 bytes to it, or 600 in `BOTH_SESSIONS_QUERY`, whose nulls `sqlite3` prints too, so about 120 KB for 200 sessions against the 4 MiB `sqlite3` may print.
+
+`session_v2_parent_idx` (`sql.ts:79`) finds the root sessions, so the question reads the rows of root sessions, and no subagent's, as `session_parent_idx` does for `session`. Neither table has an index on `time_updated`, so every root session's row is looked at, however old. With `BOTH_SESSIONS_QUERY` the check of an id in both goes through the primary key of `session_v2` alone, once for each 1.x session written in the last 48 hours. Each side stops at 200 before they are put together, so a message's fields are worked out for no more sessions than for a database of 1.x alone. `tests/integration/collector/adapters/opencode/sessionRows.test.ts` checks these plans. On a database of 50,000 sessions in each table, with 4 KB of `summary_diffs` in each row, `/usr/bin/sqlite3` 3.51.0 took about 140 ms for `BOTH_SESSIONS_QUERY` and 70 ms for `OPENCODE_2_SESSIONS_QUERY`.
+
+### How a turn stands
+
+The store sets `time_suspended`, and the projector the others.
+
+| State                                        | `time_suspended`                                                                                                                                                                                                        | `time_busy`                            | `time_idle`, `idle_outcome`                                                                          |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Made, or copied from 1.x, and no turn yet    | None                                                                                                                                                                                                                    | None                                   | None                                                                                                 |
+| A turn runs                                  | Set as it starts, in the transaction of its `Started` event (`claimOnCommit`, `packages/core/src/session/execution.ts:78-80`, `:110-114`, `claim` in `store.ts:218-229`). Set once: a resumed turn keeps the first time | Set at each start (`projector.ts:793`) | Those of the turn before                                                                             |
+| It succeeded                                 | Cleared (`releaseOnCommit`, `execution.ts:81-83`, `:123`, `release` in `store.ts:230-237`)                                                                                                                              | Left                                   | Set, `succeeded` (`projectIdle`, `projector.ts:506-535`)                                             |
+| It failed                                    | Cleared (`execution.ts:136-143`)                                                                                                                                                                                        | Left                                   | Set, `failed`                                                                                        |
+| The person stopped it                        | Cleared (`execution.ts:126-134`)                                                                                                                                                                                        | Left                                   | Set, `interrupted`                                                                                   |
+| The service shut down, or crashed, during it | Kept, so that the next start of the service resumes the turn (`execution.ts:127`, `:132`, `execution/restart.ts:47-63`)                                                                                                 | Left                                   | Those of the turn before: a shutdown writes neither (`projector.ts:515`), and a crash writes nothing |
+
+| `time_suspended`                                   | `idle_outcome`             | Open    | Closed   |
+| -------------------------------------------------- | -------------------------- | ------- | -------- |
+| Set                                                | Any                        | Working | Finished |
+| None                                               | None                       | Idle    | Finished |
+| None                                               | `succeeded`, `interrupted` | Idle    | Finished |
+| None                                               | `failed`                   | Failed  | Failed   |
+| None                                               | Any other                  | Unknown | Unknown  |
+| A value of the wrong type                          | Any                        | Unknown | Unknown  |
+| None, and a value of the wrong type in `time_idle` | Any                        | Unknown | Unknown  |
+
+`mapOpencode2Status` in `src/core/mapping/opencode/opencode2Mapping.ts` does this. `interrupted` is idle, as a reply stopped with Esc is for 1.x. The status time of a working session is `time_suspended`. For an idle, failed or finished session it is `time_idle`, or else the newest time anything of the session was written, and so too for a turn that was cut off, since `time_idle` is then older than the turn.
+
+A session is never needing you. A question and a wait for approval are held in the service's memory (`Form` in `packages/core/src/form.ts:101`, which the `question` tool waits on in `packages/core/src/tool/plugin/question.ts`, and `pending` in `packages/core/src/permission.ts:133`), and `session_v2` holds nothing of either, so a session that waits has its claim and shows as working. `plan_exit` is not a tool of OpenCode 2's.
+
+### Finished
+
+Nothing in `session_v2` marks a session closed, since one background service owns every session. A client starts it with `serve --service` if it is not running (`ensure` in `packages/client/src/effect/service.ts:60-71`), detached from that client (`packages/client/src/service-contender.ts:19-24`), and it goes on running once every window has closed. Nothing in `packages/server` ends it when it is idle, and OpenCode installs no launchd or systemd unit for it. It ends with `opencode service stop`, when a client replaces it with another version, or with the computer. With the service turned off, or `--standalone`, a client starts a server of its own instead, which ends with that client (`packages/cli/src/services/standalone.ts`). `~/.local/state/opencode/service.json` names the service's process and holds its password, so it is never read, and no request is made to the service.
+
+So finished is told as for 1.x, from `ps`, for every session at once. What differs is what `ps` shows and how long it shows it.
+
+The service sets no process title (nothing in `packages/cli`, `packages/client`, `packages/core` or `packages/server` sets `process.title`), and starts from the file its client runs from: `selfCommand` in `packages/cli/src/util/process.ts:5-11` gives `process.execPath`, which `service-config.ts:150` passes on. So `ps` shows it under that file's name, which is not always the `opencode` on `PATH`. A process with one of these names, alone or at the end of a path, is taken for OpenCode (`OPENCODE_PROGRAMS` in `processes.ts`):
+
+| Name           | What it is                                                                                                                                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opencode`     | The program of the install script, at `~/.opencode/bin/opencode` (`install:69`, `:326`), and of Homebrew's `opencode-v2` (`.github/release/render-homebrew.sh`), and 1.x's name                                                                                                   |
+| `opencode.exe` | The file npm's `@opencode/cli` keeps the program in, on macOS and Linux as well (`packages/cli/script/pack.ts:76-79`, `postinstall.mjs:27`). `opencode` on `PATH` is a link to it, and `process.execPath` names the file, so a service started by npm's package goes by this name |
+| `opencode2`    | npm's second link to that file (`pack.ts:22`, `:78`), as a window or `opencode2 serve` shows. The install script's `opencode2` is a script that starts `opencode`                                                                                                                 |
+| `opencode-cli` | The copy OpenCode 2's desktop app keeps in its data folder and starts the service from (`packages/desktop/src/main/service/desktop-cli.ts:145`, `:211-213`, `background-service.ts:64-69`)                                                                                        |
+
+Each fits in the 15 characters Linux keeps. `opencode2-node`, the build for Node, is not one: it is published only off the `latest` channel (`.github/release/publish-npm.sh:13-16`), so it is not seen.
+
+What that gives:
+
+- While the service runs, every session of OpenCode's is open, whether or not a window shows it. A session you have closed shows as idle, or failed, and not as finished, until it leaves the list a day after it was last written.
+- Once `ps` shows none of those programs, every session is finished, unless it failed or cannot be read. The service must have stopped, as with `opencode service stop` or a restart of the computer.
+- A turn cut off when the service stopped shows as working until `ps` next shows no OpenCode, and then as finished. When a managed service starts again it resumes the turn, and the session is working again.
+- With `ps` that cannot be run, no session is shown as finished, as for 1.x.
+- With a service that goes by another name, such as OpenCode run from its source, its sessions show as finished while they work.
+- The card says a session stays idle until the service stops, while a session of OpenCode 2's is listed (`OPENCODE_2_SESSIONS_NOTE`).
+
+### A session in both tables
+
+A row of `session_v2` wins for an id in both, whatever either row says, and whichever was written last.
+
+- A 1.x session OpenCode 2 copied and carried on shows what OpenCode 2 wrote: its title, folder and turn, not the old status of its 1.x row. Its old row is left in `session`, and is not read.
+- A session copied and not yet carried on shows as idle, or finished, with no status of its 1.x row: a failed reply there shows as idle here. Its name and folder are the same as 1.x's, unless OpenCode 2 replaced a relative folder.
+- A session OpenCode 2 archived, or a subagent's, stays out, though its 1.x row says neither, and one whose row in `session_v2` is older than 48 hours stays out though its 1.x row is newer.
+- A session 1.x made after the copy is only in `session`, and is read there, with its messages, as ever.
+- A copied session deleted in OpenCode 2 stays out of the list. The delete removes its row of `session_v2` alone (`SessionEvent.Deleted`, `projector.ts:646-651`), and leaves `session`, `message` and `part`, so `BOTH_SESSIONS_QUERY` prints its old row again. The adapter keeps, in memory for a day, when a poll last read each session from `session_v2`, and leaves out a row of `session` with that id and nothing written since. One a 1.x OpenCode writes to after that is listed, as 1.x wrote it. After a restart of Agent Lookout, or for a session no poll read from `session_v2`, nothing tells that row from a session 1.x made, so it is listed with its 1.x status, tokens and last message until it leaves the list a day after it was last written.
+
+### What is not read for a session of OpenCode 2's
+
+| What                               | What OpenCode 2 stores                                                                                                                                                                                                                                                                      | What shows                                                                                                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Token counts                       | `session_v2.tokens_*` are running totals, which each step adds to (`applyUsage`, `projector.ts:55-70`), so they are not a reply's. Each step's own counts are in `$.tokens` of the `data` of an assistant message's row of `session_message` (`packages/schema/src/session-message.ts:237`) | None. The session is marked `tokensNotRead`, so the details show a dash, and Not read for this session, whatever its last message answers. The sessions query reads `message`, which OpenCode 2 never writes, and `session_message` is not read |
+| Last message                       | A reply's text is in `session_part` and `session_message`, not `message` and `part`                                                                                                                                                                                                         | `GET /api/sessions/last-message` answers `not-read`, with no question asked, so no old text of a copied session's 1.x row can show. The details say Agent Lookout does not read what this session says                                          |
+| A command the person runs with `!` | A row of `session_message` of the type `shell` (`packages/core/src/session/message-updater.ts:189-202`). `Session.shell` takes no claim and starts no turn (`packages/core/src/session/session.ts:192-235`), so nothing on the row of `session_v2` changes while it runs                    | In a session with no turn running, idle, or failed if the last turn failed, not working as for 1.x                                                                                                                                              |
+| Needs you                          | Held in memory                                                                                                                                                                                                                                                                              | Working                                                                                                                                                                                                                                         |
+
+The tables of OpenCode 2's messages hold what a person and a model wrote, and the shapes of their `data` are not those 1.x's readers know. Reading them is a change of its own, with `AGENTS.md`, `PRIVACY.md` and `SECURITY.md` changed first.
+
+`tests/integration/collector/adapters/opencode/sessionRows.test.ts` runs the real `sqlite3` on a database of 1.x alone, of 2.x alone, with no `time_busy`, and with both, with a child and an archived row, a row with no title, each turn state, and rows that are not what is expected. Not yet checked on a computer running OpenCode 2: that a row holds what the source above writes, and what `ps -A -o comm=` prints for its service. To check, read `id`, `time_suspended`, `time_idle` and `idle_outcome`, and only those, of a session's row during a turn, after it, and after `opencode service stop` during one, and look for its service in `ps -A -o comm=`, started each way it is installed.
+
 ## Needs you
 
-A session needs you while OpenCode waits for the person inside a call to its `question` or `plan_exit` tool. OpenCode writes no wait as such. What the database holds is the tool part of that call.
+A session of OpenCode 1.x needs you while OpenCode waits for the person inside a call to its `question` or `plan_exit` tool. OpenCode writes no wait as such. What the database holds is the tool part of that call. A session of OpenCode 2's never needs you ([OpenCode 2](#opencode-2)).
 
 ### What OpenCode writes
 
@@ -263,7 +414,7 @@ Three more things hold for a step that waits:
 
 ## Token counts
 
-A session's details give the token counts of its newest reply that has them. They come from the sessions query each poll asks, so nothing is read for them that a poll does not read, and no question is asked for them alone.
+The details of a session of OpenCode 1.x give the token counts of its newest reply that has them. They come from the sessions query each poll asks, so nothing is read for them that a poll does not read, and no question is asked for them alone. A session of OpenCode 2's has none ([OpenCode 2](#what-is-not-read-for-a-session-of-opencode-2s)).
 
 ### Where OpenCode writes them
 
@@ -332,7 +483,7 @@ Not yet checked on a computer running OpenCode: that its messages hold the count
 
 ## Last message
 
-What a session last said is asked for only when `GET /api/sessions/last-message` asks, which the dashboard does while the session's details are open, and only for a session the last poll listed (`lastMessages.ts`, on `createEndReader` in `src/collector/messages/tailReader.ts`, which keeps the limits of Codex's and Qwen Code's readers). No poll asks it, and it is never put on a session.
+What a session of OpenCode 1.x last said is asked for only when `GET /api/sessions/last-message` asks, which the dashboard does while the session's details are open, and only for a session the last poll listed (`lastMessages.ts`, on `createEndReader` in `src/collector/messages/tailReader.ts`, which keeps the limits of Codex's and Qwen Code's readers). No poll asks it, and it is never put on a session. A session read from `session_v2` is answered `not-read`, with no question asked ([OpenCode 2](#what-is-not-read-for-a-session-of-opencode-2s)).
 
 - It is asked with `askOnce` in `database.ts`: the same three `lstat`s as a poll, the same address, chosen the same way, the same `sqlite3`, found the same way, with the same arguments, stdin closed, no shell and the same 5-second timeout, and at most 256 KB of what it prints read. So it touches OpenCode's files in no way a poll does not, and the one empty `-wal` [above](#how-sqlite3-opens-the-database) can come of it as of a poll's read.
 - It is asked again only once the database or its `-wal` has changed since that session's last answer, by identity, size or modified time. A look at the database counts as one of the four reads a second every agent's last messages share, and the answer is kept for at most 15 seconds after the last ask, as every agent's is.
@@ -407,21 +558,29 @@ Not checked on a computer running OpenCode: that the text looks as OpenCode show
 ## Known gaps
 
 - A session waiting for a tool's approval shows as working. OpenCode keeps that wait in memory, and writes nothing while it lasts (`packages/opencode/src/permission/index.ts`).
+- A session of OpenCode 2's that waits for a question or an approval shows as working: OpenCode 2 keeps both in memory.
+- A session of OpenCode 2's shows as idle for as long as its background service runs, though no window has it open, since nothing marks one closed. It shows as finished only once `ps` shows no OpenCode program.
+- A turn a crash cut off shows as working while any OpenCode program runs, until the background service next starts and resumes it (`installRestartContinuity` in `packages/server/src/process.ts`, `execution/restart.ts:56-62`). A server started with `opencode serve` or `--standalone` never resumes it, so with only such a server running the session shows as working until it leaves the list.
+- A session of OpenCode 2's has no token counts and no last message. Its row's `tokens_*` are running totals, and its messages are in tables that are not read.
+- A command a person runs with `!` in a session of OpenCode 2's with no turn running shows as idle, or failed if the last turn failed, while it runs. `Session.shell` takes no claim, so nothing on the row changes, and its only record is a row of `session_message`, which is not read.
+- A row of `session_v2` wins for an id in both. So a copied session that a 1.x OpenCode carries on keeps the status of its row in `session_v2`, and leaves the list once that row is old, though 1.x writes to it. A copied session OpenCode 2 has run no turn in shows as idle, whatever its 1.x row said.
+- A copied session deleted in OpenCode 2 that no poll read from `session_v2`, or that Agent Lookout has restarted since reading, is listed from its old row of `session`, with its 1.x status, token counts and last message, until it leaves the list a day after it was last written. Nothing in the tables that are read tells it from a session 1.x made after the copy.
+- A slug is OpenCode's own two words, so a session of OpenCode 2's with no title yet is named by words that say nothing of it.
 - A session a killed or crashed OpenCode left asking keeps its `running` part. With no OpenCode running it is finished, like every session. Once `ps` has shown none, the part is no wait, so the session shows as working when OpenCode starts again, like any other step that was cut off. If `ps` never showed none, because another OpenCode stayed open, or OpenCode came back before the next `ps`, the session goes on needing you, and counts for Keep awake, until a new prompt in it or until it leaves the list a day after it was last written. The time of that `ps` is kept in memory, so a restart of Agent Lookout forgets it until `ps` next shows none.
-- A live question in a program `ps` does not see, such as OpenCode's desktop app or OpenCode started by another name, is taken for one left behind once `ps` has shown no OpenCode, so while another OpenCode runs its session shows as working.
+- A live question in a program `ps` does not see, such as OpenCode 1.x's desktop app or OpenCode started by another name, is taken for one left behind once `ps` has shown no OpenCode, so while another OpenCode runs its session shows as working.
 - A question unanswered for a day leaves the list, and is logged as ended, though OpenCode still asks ([Needs you](#needs-you)). OpenCode writes nothing while it asks, so no time says the session is still in use.
 - A question a subagent asks shows as working on the session that started it: its part is in the subagent's own session, which is not read. A subagent has the `question` tool only when the person's config gives it.
 - Only the newest message is looked at, so a prompt sent while a question waits shows the session as working though OpenCode still waits. OpenCode's window hides its prompt box while a question shows (`packages/tui/src/routes/session/index.tsx:238`), so it takes another client to send one.
 - Quiet for is never shown. OpenCode keeps every session in one database, so no file's modified time says when one session was last written.
 - A reply's text is saved only once it ends, so nothing changes in the database while a long reply is written.
-- Finished is told from `ps`, so while only OpenCode's desktop app runs, or OpenCode started by a name other than `opencode`, its sessions show as finished. When `ps` fails, no session is shown as finished.
+- Finished is told from `ps`, so while only OpenCode 1.x's desktop app runs, or OpenCode started by a name not in `OPENCODE_PROGRAMS`, its sessions show as finished. When `ps` fails, no session is shown as finished.
 - A reply that fails before its first step begins, as when no model can be found, shows as working while OpenCode is open.
 - A prompt sent with no reply asked for, as OpenCode's `/move` and its new-workspace dialog send, shows as working while OpenCode is open.
 - When an approval or a question is turned down, or a subtask is cancelled, the turn ends there. If its last step asked for tools, the session shows as working for 10 seconds, then idle.
 - Nothing is read on Windows, where Agent Lookout never runs `sqlite3`. The card says OpenCode is not read there.
 - `opencode-<channel>.db` is not read.
 - The JSON files OpenCode kept under `storage/` before v1.2 are not read.
-- OpenCode 2's sessions, in `session_v2`, are not read yet. When the probe finds that table, the card says so. OpenCode 1.x has its own `session_message` table since v1.14.34, so that table alone does not mean OpenCode 2.
+- OpenCode 1.x has its own `session_message` table since v1.14.34, so that table alone does not mean OpenCode 2: only `session_v2` does.
 - A subagent's session is not listed, and its work does not show on the session that started it.
 - A session whose own row was last written more than 48 hours ago is not asked for.
 - Token counts are those of the newest step with counts among the session's newest 10 messages. When there is none there, as after ten prompts sent with no reply between them, the details show a dash.
@@ -436,27 +595,31 @@ Not checked on a computer running OpenCode: that the text looks as OpenCode show
 ## What it never reads
 
 - **Files:** `auth.json` and `mcp-auth.json`, which hold keys and sign-ins; everything in OpenCode's state folder, `~/.local/state/opencode`, such as `locks/`, `kv.json`, `model.json`, `password`, `server.json` and `service.json`; everything in its config folder, `~/.config/opencode`, `service.json` among it; `log/`, `storage/`, `snapshot/`, `tool-output/` and `plans/`; `opencode-<channel>.db`; and, for the adapter itself, any file but the three database files. A session's own folder is looked in for a git repository, as every session's is, and OpenCode makes its worktrees in `worktree/` in its data folder, so a session run in one has its folder there. Only its `.git` file is read there, then `HEAD` and `commondir` in the git folder that file names, and with `AGENT_LOOKOUT_PULL_REQUESTS=on` the repository's `config` and its remote's `HEAD`, as [PRIVACY.md](../../PRIVACY.md#git-repositories) describes.
-- **Tables:** every one but `session`, `message` and `part`, and the names in `sqlite_master` and of the columns of `session` and `session_v2`. So never `event`, `event_sequence`, `account`, `control_account`, `credential`, `session_share`, `permission`, `project`, `todo`, `workspace` or `kv`.
-- **Columns:** no `SELECT *` and no whole `data`. Never `share_url`, `summary_*`, `metadata`, `permission`, `model`, `agent`, `cost` or `tokens_*` of `session`, nothing of a message's `data` but the fields above, so never its `$.cost`, its `$.modelID` or its `$.providerID`, and of its `revert` only `$.messageID`, which the last-message question compares with message ids inside SQLite and never prints, and no text of a message or a part but the `$.text` of the reply's text parts that the last-message question prints: never a prompt's `$.text`, a `reasoning` part's, a tool's `$.state.input`, `$.state.output` or `$.state.error`, `$.system`, or `$.summary`, which that question only tests inside SQLite for `true`.
+- **Tables:** every one but `session`, `message`, `part` and `session_v2`, and the names in `sqlite_master` and of the columns of `session` and `session_v2`. So never `event`, `event_sequence`, `account`, `control_account`, `credential`, `session_share`, `permission`, `project`, `todo`, `workspace`, `kv`, `session_message`, `session_part` or `session_inbox`.
+- **Columns:** no `SELECT *` and no whole `data`. Never `share_url`, `summary_*`, `metadata`, `permission`, `model`, `agent`, `cost` or `tokens_*` of `session`, and of `session_v2` only the columns [above](#the-question-of-session_v2), so never those, `revert`, `path` or `version`, nothing of a message's `data` but the fields above, so never its `$.cost`, its `$.modelID` or its `$.providerID`, and of its `revert` only `$.messageID`, which the last-message question compares with message ids inside SQLite and never prints, and no text of a message or a part but the `$.text` of the reply's text parts that the last-message question prints: never a prompt's `$.text`, a `reasoning` part's, a tool's `$.state.input`, `$.state.output` or `$.state.error`, `$.system`, or `$.summary`, which that question only tests inside SQLite for `true`.
 - **Programs:** no `opencode` command, no git command and no request to OpenCode's server. `ps` is asked for the name of each process's program alone, never its arguments.
 
 ## What breaks when OpenCode changes
 
-| Change in OpenCode                                                                                                        | What the dashboard shows                                                 | Where to fix it                                |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------- |
-| A column the probe asks for is renamed or dropped                                                                         | The card says the database is from a version Agent Lookout does not read | `sessionRows.ts`                               |
-| `message` or `part` loses a column the query asks for                                                                     | The card says sqlite3 could not read the database                        | `sessionRows.ts`                               |
-| OpenCode drops the 1.x tables, as OpenCode 2 can                                                                          | No sessions, and the card says OpenCode 2's sessions are not read yet    | `sessionRows.ts`, `database.ts`                |
-| A new error name                                                                                                          | Sessions that end on it show as unknown                                  | `src/core/mapping/opencode/opencodeMapping.ts` |
-| `$.role`, `$.time.completed`, `$.error` or `$.finish` changes shape                                                       | Sessions show as unknown, or with the wrong status                       | `src/core/mapping/opencode/opencodeMapping.ts` |
-| The next step's message is written later after a step ends                                                                | A session between two steps shows as idle for a moment                   | `STEP_GAP_MS` in `opencodeMapping.ts`          |
-| `question` or `plan_exit` is renamed, or a call stops being `running` while it waits                                      | A session that asks shows as working                                     | `ASKING_PART` in `sessionRows.ts`              |
-| A wait is added to another tool of OpenCode's                                                                             | A session that asks through it shows as working                          | `ASKING_PART` in `sessionRows.ts`              |
-| The data folder or the database's name moves                                                                              | OpenCode is not found, or found with no database                         | `index.ts`                                     |
-| OpenCode's program is given another name                                                                                  | Its sessions show as finished while it runs                              | `processes.ts`                                 |
-| The placeholder title changes                                                                                             | New sessions are named by the placeholder, not the folder                | `sessionRows.ts`                               |
-| A text part's `$.text`, `$.synthetic` or `$.ignored`, a summary's `$.summary`, or `revert`'s `$.messageID`, changes shape | Last message shows nothing, or text OpenCode does not show as the reply  | `lastMessages.ts`                              |
-| `session` loses `revert`, or `part` loses `id`, the columns only the last-message question asks for                       | Last message says the transcript could not be read                       | `lastMessages.ts`                              |
-| A message's `$.tokens` changes shape, or `getUsage` counts `input`, `output` or `reasoning` another way                   | The details show a dash, or counts that are wrong                        | `sessionRows.ts`                               |
+| Change in OpenCode                                                                                                        | What the dashboard shows                                                                                       | Where to fix it                                              |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| A column the probe asks for is renamed or dropped                                                                         | The card says the database is from a version Agent Lookout does not read                                       | `sessionRows.ts`                                             |
+| `message` or `part` loses a column the query asks for                                                                     | The card says sqlite3 could not read the database                                                              | `sessionRows.ts`                                             |
+| `message` or `part` is dropped while `session` stays                                                                      | The card says the database is from a version Agent Lookout does not read                                       | `sessionRows.ts`                                             |
+| `session_v2` loses `time_suspended`, `time_idle`, `idle_outcome` or another column asked for, or one is renamed           | The card says the database is from a version Agent Lookout does not read, and no session of 1.x's lists either | `NEEDED_V2_COLUMNS` and `V2_TURN_FIELDS` in `sessionRows.ts` |
+| A new `idle_outcome`                                                                                                      | Sessions that end on it show as unknown                                                                        | `opencode2Mapping.ts`                                        |
+| `time_suspended` stops being set while a turn runs                                                                        | A session of OpenCode 2's shows as idle while it works                                                         | `opencode2Mapping.ts`                                        |
+| OpenCode 2 keeps a wait on disk                                                                                           | A session of OpenCode 2's that waits shows as working                                                          | `opencode2Mapping.ts`, `sessionRows.ts`                      |
+| A new error name                                                                                                          | Sessions that end on it show as unknown                                                                        | `src/core/mapping/opencode/opencodeMapping.ts`               |
+| `$.role`, `$.time.completed`, `$.error` or `$.finish` changes shape                                                       | Sessions show as unknown, or with the wrong status                                                             | `src/core/mapping/opencode/opencodeMapping.ts`               |
+| The next step's message is written later after a step ends                                                                | A session between two steps shows as idle for a moment                                                         | `STEP_GAP_MS` in `opencodeMapping.ts`                        |
+| `question` or `plan_exit` is renamed, or a call stops being `running` while it waits                                      | A session that asks shows as working                                                                           | `ASKING_PART` in `sessionRows.ts`                            |
+| A wait is added to another tool of OpenCode's                                                                             | A session that asks through it shows as working                                                                | `ASKING_PART` in `sessionRows.ts`                            |
+| The data folder or the database's name moves                                                                              | OpenCode is not found, or found with no database                                                               | `index.ts`                                                   |
+| OpenCode's program, or its service, is given another name                                                                 | Its sessions show as finished while it runs                                                                    | `OPENCODE_PROGRAMS` in `processes.ts`                        |
+| The placeholder title changes                                                                                             | New sessions are named by the placeholder, not the folder                                                      | `sessionRows.ts`                                             |
+| A text part's `$.text`, `$.synthetic` or `$.ignored`, a summary's `$.summary`, or `revert`'s `$.messageID`, changes shape | Last message shows nothing, or text OpenCode does not show as the reply                                        | `lastMessages.ts`                                            |
+| `session` loses `revert`, or `part` loses `id`, the columns only the last-message question asks for                       | Last message says the transcript could not be read                                                             | `lastMessages.ts`                                            |
+| A message's `$.tokens` changes shape, or `getUsage` counts `input`, `output` or `reasoning` another way                   | The details show a dash, or counts that are wrong                                                              | `sessionRows.ts`                                             |
 
-To check a new OpenCode version, read at its tag `packages/core/src/session/sql.ts`, `packages/core/src/session/projector.ts`, `packages/schema/src/v1/session.ts`, `packages/core/src/database/database.ts`, `packages/core/src/global.ts`, `packages/opencode/src/session/processor.ts`, `prompt.ts` and `compaction.ts`, `isDefaultTitle` in `packages/opencode/src/session/session.ts`, for the token counts `getUsage` there, `step-finish` and `cleanup` in `processor.ts`, `usage` in `packages/opencode/src/session/llm/ai-sdk.ts`, `Usage` in `packages/llm/src/schema/events.ts` and the version of `ai` and of each `@ai-sdk` package it pins, the program's name in `packages/opencode/script/build.ts`, for Needs you `packages/opencode/src/tool/question.ts` and `plan.ts`, `packages/opencode/src/question/index.ts`, `tool-call`, `completeToolCall`, `failToolCall` and `cleanup` in `processor.ts` and `packages/opencode/src/tool/registry.ts`, and, for Last message, `parts` and `page` in `packages/opencode/src/session/message-v2.ts`, `text-start` and `text-end` in `processor.ts`, `packages/opencode/src/session/revert.ts`, and "Copy last assistant message" and `messagesBeforeRevert` in `packages/tui/src/routes/session/index.tsx`. Then compare the dashboard with OpenCode's own list of sessions, with a turn running, waiting for approval, asking a question, stopped with Esc, ended on an error, and after OpenCode quits, and note what `ps -A -o comm=` prints for it, started each way it is installed. Compare Last message with what OpenCode shows of the newest reply, with one text part and with several, and after `/undo`, and the token counts as [Token counts](#token-counts) says.
+To check a new OpenCode version, read at its tag `packages/core/src/session/sql.ts`, `packages/core/src/session/projector.ts`, for OpenCode 2 `store.ts`, `execution.ts` and `execution/restart.ts` beside them, `packages/cli/src/util/process.ts`, `packages/cli/script/pack.ts`, `install` and `packages/desktop/src/main/service/desktop-cli.ts`, `packages/schema/src/v1/session.ts`, `packages/core/src/database/database.ts`, `packages/core/src/global.ts`, `packages/opencode/src/session/processor.ts`, `prompt.ts` and `compaction.ts`, `isDefaultTitle` in `packages/opencode/src/session/session.ts`, for the token counts `getUsage` there, `step-finish` and `cleanup` in `processor.ts`, `usage` in `packages/opencode/src/session/llm/ai-sdk.ts`, `Usage` in `packages/llm/src/schema/events.ts` and the version of `ai` and of each `@ai-sdk` package it pins, the program's name in `packages/opencode/script/build.ts`, for Needs you `packages/opencode/src/tool/question.ts` and `plan.ts`, `packages/opencode/src/question/index.ts`, `tool-call`, `completeToolCall`, `failToolCall` and `cleanup` in `processor.ts` and `packages/opencode/src/tool/registry.ts`, and, for Last message, `parts` and `page` in `packages/opencode/src/session/message-v2.ts`, `text-start` and `text-end` in `processor.ts`, `packages/opencode/src/session/revert.ts`, and "Copy last assistant message" and `messagesBeforeRevert` in `packages/tui/src/routes/session/index.tsx`. Then compare the dashboard with OpenCode's own list of sessions, with a turn running, waiting for approval, asking a question, stopped with Esc, ended on an error, and after OpenCode quits, and note what `ps -A -o comm=` prints for it, started each way it is installed. Compare Last message with what OpenCode shows of the newest reply, with one text part and with several, and after `/undo`, and the token counts as [Token counts](#token-counts) says.

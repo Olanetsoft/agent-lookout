@@ -15,11 +15,19 @@ import {
 } from "@collector/adapters/opencode/index";
 import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import type { ProcessAnswer } from "@collector/adapters/opencode/processes";
-import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
+import {
+  BOTH_SESSIONS_QUERY,
+  OPENCODE_2_SESSIONS_QUERY,
+  PROBE_QUERY,
+  SESSIONS_QUERY,
+} from "@collector/adapters/opencode/sessionRows";
 import { HOME, NOW, probeJson, sqliteJson } from "@tests/fixtures/opencode/opencode";
 import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
 export { handClock, memoryFiles, type MemoryFiles };
+
+/** The question of the sessions, for each layout of the database. */
+const SESSIONS_QUESTIONS = [SESSIONS_QUERY, OPENCODE_2_SESSIONS_QUERY, BOTH_SESSIONS_QUERY];
 
 /** One run of the stand-in `sqlite3`: the program, its arguments, and the timeout and cap on what it prints it was given. */
 export interface SqliteRun {
@@ -57,7 +65,7 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
       if (failing) return { ok: false };
       const question = args.at(-1) ?? "";
       if (question === PROBE_QUERY) return { ok: true, stdout: probe };
-      if (question === SESSIONS_QUERY) {
+      if (SESSIONS_QUESTIONS.includes(question)) {
         return { ok: true, stdout: typeof rows === "string" ? rows : sqliteJson(rows) };
       }
       const said = lastTexts.get(question);
@@ -95,12 +103,15 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
     },
     runs,
     /** The runs that asked for the sessions. */
-    queries: () => runs.filter((run) => run.args.at(-1) === SESSIONS_QUERY),
+    queries: () => runs.filter((run) => SESSIONS_QUESTIONS.includes(run.args.at(-1) ?? "")),
     /** The runs that asked for the tables. */
     probes: () => runs.filter((run) => run.args.at(-1) === PROBE_QUERY),
     /** The runs that asked anything but those two: the questions of a session's last text. */
     questions: () =>
-      runs.filter((run) => run.args.at(-1) !== SESSIONS_QUERY && run.args.at(-1) !== PROBE_QUERY),
+      runs.filter(
+        (run) =>
+          !SESSIONS_QUESTIONS.includes(run.args.at(-1) ?? "") && run.args.at(-1) !== PROBE_QUERY,
+      ),
   };
 }
 

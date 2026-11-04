@@ -88,7 +88,8 @@ export interface Adapter {
    * the route asks, by the session's id in the session model. Null when the
    * adapter did not list that id, and `busy` while it reads no more for a
    * moment. It never rejects. Left out by an adapter that does not read what
-   * its sessions say, whose sessions are then answered `not-read`.
+   * its sessions say, whose sessions are then answered `not-read`. An adapter
+   * that reads only some of its sessions answers `not-read` for the others.
    */
   lastMessage?(sessionId: string): Promise<LastMessageResponse | "busy" | null>;
 }

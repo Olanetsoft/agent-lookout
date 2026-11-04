@@ -216,7 +216,8 @@ export const LAST_MESSAGE_PATH = "/api/sessions/last-message";
  * Why there is no last message to show, in an answer of 200:
  *
  * off           a setting turns it off, and `setting` names it
- * not-read      Agent Lookout does not read what this session's agent says, or the session is on another machine
+ * not-read      Agent Lookout does not read what this session says: its agent is not read, it was read from
+ *               OpenCode 2's `session_v2`, or it is on another machine
  * not-found     its transcript was not found, or its id names none, as a background job's job id does.
  *               A link or a pipe where it should be is not taken for it
  * unreadable    its transcript could not be read, as when a link or a pipe took its place after it was found
