@@ -12,7 +12,9 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Changed
 
-- PRIVACY.md and the guide now say plainly what a session's name can hold. An email, a webhook post or a push holds no prompt, but it holds the session's name, which is the agent's own title and can echo what you first asked. [What a session's name can hold](PRIVACY.md#what-a-sessions-name-can-hold) says how for each agent: most titles are a model's, while Hermes Agent's is the first line of your first message until a model's takes its place, and stays so when that call fails or is turned off. No session's name changes (#270)
+- PRIVACY.md and the guide now say plainly what a session's name can hold. An email, a webhook post or a push holds no prompt, but it holds the session's name, which is the agent's own title and can echo what you first asked. [What a session's name can hold](PRIVACY.md#what-a-sessions-name-can-hold) says how for each agent: most titles are a model's, and a few can repeat your first words (#270).
+
+- A Hermes Agent session no longer takes the title Hermes Agent writes from the first line of your first message, so those words no longer go into a notification, an email, a webhook post, a push or the history. Hermes Agent marks that title `derived` in `title_source`, and `sqlite3` leaves it out of what it answers, so Agent Lookout never reads it. The session shows its folder's name, or its ID when it has no folder, as with a chat from a messaging app, until a model or you name it, and for good with `auxiliary.title_generation.model_upgrade_enabled` set to false. A title from a model or from you stays, and so does a title with no `title_source`, which Hermes Agent ranks as yours. A copy Hermes Agent marks otherwise, such as the `<title> #2` of `/branch` in the CLI or a chat, still shows, as [What a session's name can hold](PRIVACY.md#what-a-sessions-name-can-hold) says (#281).
 
 ## 0.2.18 - 2026-11-04
 

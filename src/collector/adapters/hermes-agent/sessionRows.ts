@@ -18,8 +18,10 @@ import path from "node:path";
  * fields of the newest row of its conversation, and for the times and process
  * of its turn lease. Its JSON columns, the activity label and a tool call's
  * name are only tested inside SQLite, as 0, 1 or a count: nothing of their
- * text is printed. Never a message's text, a tool's input or output, a system
- * prompt, a chat's or user's name or id, `SELECT *` or any other table.
+ * text is printed. `title_source` is only tested too, and a title it does not
+ * let through is never printed. Never a message's text, a tool's input or
+ * output, a system prompt, a chat's or user's name or id, `SELECT *` or any
+ * other table.
  *
  * Each answer is checked field by field as it is read, and a row whose id is
  * not one Hermes Agent makes is dropped.
@@ -58,6 +60,20 @@ function marker(table: string, key: string): string {
 }
 
 /**
+ * What goes before a row's title in the query, to leave the title out when
+ * Hermes Agent ranks it with `derived`, the title it makes from the first line
+ * of the first message, word for word. Text joined to nothing is nothing, so
+ * `''` lets a title through and no value stops it, inside SQLite, and a title
+ * stopped never reaches this program. The rule is Hermes Agent's `_title_rank`:
+ * `llm` and `user` rank above `derived`, and so does a row with no
+ * `title_source`, which it cannot tell from a title a person typed. Any other
+ * value ranks with `derived`.
+ */
+function unlessDerived(table: string): string {
+  return `(CASE WHEN ${table}.title_source IS NULL OR ${table}.title_source IN ('llm', 'user') THEN '' END) || `;
+}
+
+/**
  * Each conversation written in the last 48 hours, one row for each of its
  * rows that falls in the window, with the conversation's root:
  *
@@ -79,7 +95,8 @@ function marker(table: string, key: string): string {
  *   namespace inside SQLite.
  *
  * A title and a folder are cut inside SQLite to a little more than is ever
- * kept, so long ones cannot fill the answer.
+ * kept, so long ones cannot fill the answer, and a title Hermes Agent marks
+ * `derived` is left out there (`unlessDerived`).
  */
 export const SESSIONS_QUERY = [
   "WITH RECURSIVE",
@@ -106,10 +123,10 @@ export const SESSIONS_QUERY = [
   "heads(id, root, depth) AS (SELECT id, root, max(depth) FROM up GROUP BY id)",
   "SELECT h.root AS root_id, c.id,",
   "r.source AS root_source, r.created_source AS root_created_source, r.started_at AS root_started_at,",
-  "substr(r.title, 1, 1000) AS root_title, substr(r.cwd, 1, 4097) AS root_cwd,",
+  `${unlessDerived("r")}substr(r.title, 1, 1000) AS root_title, substr(r.cwd, 1, 4097) AS root_cwd,`,
   "c.started_at, c.ended_at, c.end_reason, c.last_activity_at,",
   "(SELECT max(m.timestamp) FROM messages m WHERE m.session_id = c.id) AS last_message_at,",
-  "substr(c.title, 1, 1000) AS title, substr(c.cwd, 1, 4097) AS cwd,",
+  `${unlessDerived("c")}substr(c.title, 1, 1000) AS title, substr(c.cwd, 1, 4097) AS cwd,`,
   "c.last_activity_description LIKE 'waiting for user approval%' AS approval_label,",
   "c.last_activity_description LIKE 'waiting for user clarify response%' AS question_label,",
   "n.role AS n_role, n.timestamp AS n_at, n.display_kind AS n_kind, n.finish_reason AS n_finish,",
@@ -185,7 +202,12 @@ export function sqliteArguments(file: string, mode: DatabaseMode, query: string)
   return ["-init", "/dev/null", "-batch", "-json", ...wait, sqliteUri(file, mode), query];
 }
 
-/** The tables the adapter needs, and the columns of each it asks for. */
+/**
+ * The tables the adapter needs, and the columns of each it asks for. Every one
+ * is needed: a query that names a column a database does not have is not
+ * answered. `title_source` is older than `created_source`, so it turns away no
+ * version `created_source` lets in.
+ */
 const NEEDED: Record<string, readonly string[]> = {
   sessions: [
     "id",
@@ -197,6 +219,7 @@ const NEEDED: Record<string, readonly string[]> = {
     "end_reason",
     "cwd",
     "title",
+    "title_source",
     "model_config",
     "session_key",
     "archived",

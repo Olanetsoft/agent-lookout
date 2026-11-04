@@ -266,6 +266,34 @@ function expectScene(rows: readonly { rootId: string; id: string }[]) {
   for (const out of LEFT_OUT.filter((id) => id !== SCENE.chainTip)) expect(ids).not.toContain(out);
 }
 
+/** The name of the one conversation in this database, read with the real sqlite3. */
+async function nameOf(file: string, now: number): Promise<string | undefined> {
+  const read = await readerFor(file).reader.read(now);
+  expect(read.state).toBe("read");
+  const chains = [...chainsOf(read.rows).values()];
+  expect(chains).toHaveLength(1);
+  const chain = chains[0] ?? [];
+  return hermesAgentSession({ profile: "default", chain, holderAlive: () => null, now })?.name;
+}
+
+/** A title, and what Hermes Agent wrote of where it came from. */
+type Titled = { title: string | null; titleSource: string | null };
+
+/** A conversation compressed a minute ago, with these titles on its root and its tip. */
+function compressed(now: number, root: Titled, tip: Titled): string[] {
+  const [rootId, tipId] = [sessionId("c1"), sessionId("c2")];
+  return [
+    sessionRow({
+      id: rootId,
+      ...root,
+      startedAt: now - 10 * MINUTE,
+      endedAt: now - MINUTE,
+      endReason: "compression",
+    }),
+    sessionRow({ id: tipId, parentId: rootId, ...tip, startedAt: now - MINUTE }),
+  ];
+}
+
 const NEW = sessionId("e9");
 
 /** A conversation begun now, as Hermes Agent's gateway writes one. */
@@ -571,6 +599,131 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
       expect(row.folder).toBeNull();
       expect(row.root.folder).toBeNull();
     }
+  });
+
+  test.each<[string, string | null, string]>([
+    ["derived, made from the first message, is no name", "derived", "demo"],
+    ["llm, a model's, is the name", "llm", "Rename the helper"],
+    ["user, a person's, is the name", "user", "Rename the helper"],
+    ["none, ranked as a person's by Hermes Agent, is the name", null, "Rename the helper"],
+    ["of a value it never writes, ranked with derived by it, is no name", "later", "demo"],
+  ])("a title with title_source %s", async (_, titleSource, name) => {
+    const now = Date.now();
+    const id = sessionId("t1");
+    const { file } = await makeDatabase("rollback", [
+      sessionRow({ id, title: "Rename the helper", titleSource, startedAt: now - MINUTE }),
+    ]);
+    expect(await nameOf(file, now)).toBe(name);
+  });
+
+  test("a derived title on a row with no folder, as a chat from a messaging app has none, gives way to the session's id", async () => {
+    const now = Date.now();
+    const id = sessionId("t3");
+    const { file } = await makeDatabase("rollback", [
+      sessionRow({
+        id,
+        source: "telegram",
+        cwd: null,
+        title: PRIVATE_WORDS,
+        titleSource: "derived",
+        startedAt: now - MINUTE,
+      }),
+    ]);
+    expect(await nameOf(file, now)).toBe(`hermes-agent:default/${id}`);
+  });
+
+  test("a title_source that is not text is one Hermes Agent ranks with derived, so its title is no name", async () => {
+    const now = Date.now();
+    const { file } = await makeDatabase("rollback", [
+      sessionRow({ id: sessionId("t2"), startedAt: now - MINUTE }),
+      "UPDATE sessions SET title_source = CAST('llm' AS BLOB);",
+    ]);
+    expect(await nameOf(file, now)).toBe("demo");
+  });
+
+  test.each<[string, Titled, Titled, string]>([
+    [
+      "a tip's derived title gives way to the root's from a model",
+      { title: "Root title", titleSource: "llm" },
+      { title: "Tip title", titleSource: "derived" },
+      "Root title",
+    ],
+    [
+      "a root's derived title is passed over for the tip's from a person",
+      { title: "Root title", titleSource: "derived" },
+      { title: "Tip title", titleSource: "user" },
+      "Tip title",
+    ],
+    [
+      "two derived titles give way to the folder's name",
+      { title: "Root title", titleSource: "derived" },
+      { title: "Tip title", titleSource: "derived" },
+      "demo",
+    ],
+    [
+      "a tip with no title and a root with a derived one take the folder's name",
+      { title: "Root title", titleSource: "derived" },
+      { title: null, titleSource: null },
+      "demo",
+    ],
+  ])("%s", async (_, root, tip, name) => {
+    const now = Date.now();
+    const { file } = await makeDatabase("rollback", compressed(now, root, tip));
+    expect(await nameOf(file, now)).toBe(name);
+  });
+
+  test("sqlite3 prints no derived title, and no title_source at all", async () => {
+    const now = Date.now();
+    const { file } = await makeDatabase(
+      "rollback",
+      compressed(
+        now,
+        { title: PRIVATE_WORDS, titleSource: "derived" },
+        { title: `${PRIVATE_WORDS} again`, titleSource: "derived" },
+      ),
+    );
+    const printed = await answers(file, "rollback");
+    expect(printed).not.toContain(PRIVATE_WORDS);
+    expect(printed).not.toContain("derived");
+    const rows = await printedRows(file, "rollback");
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(Object.keys(row)).toEqual(PRINTED);
+      expect([row.title, row.root_title]).toEqual([null, null]);
+    }
+  });
+
+  test("once a model's title takes a derived one's place, the next read has it", async () => {
+    const now = Date.now();
+    const { file } = await makeDatabase("rollback", [
+      sessionRow({
+        id: sessionId("t3"),
+        title: PRIVATE_WORDS,
+        titleSource: "derived",
+        startedAt: now - MINUTE,
+      }),
+    ]);
+    const { reader } = readerFor(file);
+    expect((await reader.read(now)).rows.map((row) => row.title)).toEqual([null]);
+    execFileSync(sqlite as string, [
+      ...NO_INIT,
+      file,
+      "UPDATE sessions SET title = 'Rename the helper', title_source = 'llm';",
+    ]);
+    expect((await reader.read(now)).rows.map((row) => row.title)).toEqual(["Rename the helper"]);
+  });
+
+  test("of a database with no title_source, the probe says so, as of any column it needs, the sessions are not asked for, and nothing is written", async () => {
+    const now = Date.now();
+    const { dir, file } = await makeDatabase("rollback", [
+      ...sceneRows(now),
+      "ALTER TABLE sessions DROP COLUMN title_source;",
+    ]);
+    const before = await snapshotOf(dir);
+    const { reader, runs } = readerFor(file);
+    expect(await reader.read(now)).toEqual({ state: "unsupported", rows: [] });
+    expect(runs.map((args) => args.at(-1))).toEqual([PROBE_QUERY]);
+    expect(await snapshotOf(dir)).toEqual(before);
   });
 
   test("a database that is not there is not made, and a file that is not a database is a failed read that runs nothing", async () => {

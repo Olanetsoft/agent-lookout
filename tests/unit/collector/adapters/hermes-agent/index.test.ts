@@ -1354,7 +1354,11 @@ test("what Hermes Agent can report, in the words of the design, each reason shor
       reason:
         "When a turn ends on an error Hermes Agent records. One that overflows the model's context shows as idle.",
     },
-    names: { level: "yes" },
+    names: {
+      level: "partly",
+      reason:
+        "The title a model or you give a session. Until it has one, or with Hermes Agent's model titles turned off, its folder's name.",
+    },
     jump: {
       level: "no",
       reason:

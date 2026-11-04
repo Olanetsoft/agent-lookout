@@ -33,6 +33,10 @@ import {
 const A = sessionId("a1");
 const B = sessionId("b2");
 
+/** What the sessions query puts before a table's title: a test of `title_source`, made inside SQLite. */
+const titleTest = (table: string) =>
+  `(CASE WHEN ${table}.title_source IS NULL OR ${table}.title_source IN ('llm', 'user') THEN '' END) || `;
+
 /** The one row kept from an answer of one row with these fields. */
 function row(fields: Record<string, unknown> = {}) {
   const rows = readSessionRows(sqliteJson([answerRow({ id: A, ...fields })]));
@@ -60,6 +64,8 @@ describe("the two questions", () => {
       expect(query.replaceAll("count(*)", "").replaceAll("GLOB 'pid=[0-9]*'", "")).not.toContain(
         "*",
       );
+      // Its one use of `title_source`, a test that prints nothing of it, is looked at below.
+      const rest = query.replaceAll(titleTest("c"), "").replaceAll(titleTest("r"), "");
       for (const never of [
         "system_prompt",
         "session_admissions",
@@ -96,13 +102,19 @@ describe("the two questions", () => {
         "profile_name",
         "message_count",
       ]) {
-        expect(query, never).not.toContain(never);
+        expect(rest, never).not.toContain(never);
       }
     }
     // The probe asks for names alone.
     expect(PROBE_QUERY).toBe(
       "SELECT 'table' AS kind, name FROM sqlite_master WHERE type = 'table' AND name IN ('sessions', 'messages', 'session_turn_leases') UNION ALL SELECT 'sessions', name FROM pragma_table_info('sessions') UNION ALL SELECT 'messages', name FROM pragma_table_info('messages') UNION ALL SELECT 'session_turn_leases', name FROM pragma_table_info('session_turn_leases')",
     );
+  });
+
+  test("ask for a title only behind a test of its title_source inside SQLite, which prints neither that nor a title it stops", () => {
+    expect(SESSIONS_QUERY).toContain(`${titleTest("r")}substr(r.title, 1, 1000) AS root_title,`);
+    expect(SESSIONS_QUERY).toContain(`${titleTest("c")}substr(c.title, 1, 1000) AS title,`);
+    expect(SESSIONS_QUERY.match(/\.title\b/g)).toHaveLength(2);
   });
 
   test("test a JSON column only at the paths named, and only once json_valid says it is JSON", () => {
@@ -237,6 +249,7 @@ describe("readSchema", () => {
         "end_reason",
         "cwd",
         "title",
+        "title_source",
         "model_config",
         "session_key",
         "archived",
