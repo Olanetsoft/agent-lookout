@@ -331,9 +331,9 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * `VIBE_APP_SERVER_CMD` can start Vibe's app server under any. Windows has no
  * `ps`. So on Linux and Windows one thing is sure, that a process signal 0 found
  * gone is not coming back: that lease stays left behind, whoever gets its pid,
- * until a restart, or a poll that cannot read the lease, forgets that. A lease
- * whose pid another program has by then, or went to one unseen, stands until
- * that program ends.
+ * until a restart, a poll that cannot list the leases, or a `.lock.json` that
+ * changed and cannot be read, forgets that. A lease whose pid another program
+ * has by then, or went to one unseen, stands until that program ends.
  *
  * Vibe not being installed costs nothing: when the session folder is
  * missing, the adapter says so and looks again only once a minute, with a
@@ -399,7 +399,8 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
    * is kept while the process runs. A lease another program has is not held, and
    * neither answer is asked for again unless the session waits. Where `ps` is not
    * asked, a lease whose process was found gone is "different". A poll that
-   * cannot read a lease forgets what is known of it, as a restart does.
+   * cannot list the leases, or a `.lock.json` that changed and cannot be read,
+   * forgets what is known of it, as a restart does.
    */
   let answers = new Map<string, LeaseAnswer>();
 
@@ -527,7 +528,8 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       for (const id of untimedSince.keys()) {
         if (!found.held.has(id)) untimedSince.delete(id);
       }
-    } else {
+    } else if (found.missing) {
+      // A listing that failed says nothing about the leases, so their count goes on.
       untimedSince.clear();
     }
     const extra: string[] = [];
@@ -601,7 +603,13 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       /** When a program that runs took the lease, when the lease says. */
       const acquiredAt = held === true ? (lease?.acquiredAt ?? null) : null;
       const heldFor = acquiredAt === null ? null : checkedAt - acquiredAt;
-      const heldAWhile = heldFor !== null && heldFor >= OLD_SESSION_LEASE_MS;
+      // A time with no process, as a read that failed keeps from the last one,
+      // shows no program that holds the lease, so it can only keep a session
+      // already followed, and never brings in a new one.
+      const heldAWhile =
+        heldFor !== null &&
+        heldFor >= OLD_SESSION_LEASE_MS &&
+        (lease?.pid !== null || tracked.has(id));
       /** When it was taken, or, when the lease gives no time, when a poll first found it so. */
       const takenAt = held === true ? (acquiredAt ?? untimedSince.get(id) ?? null) : null;
 
