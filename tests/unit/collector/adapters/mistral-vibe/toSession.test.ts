@@ -18,6 +18,7 @@ function envelope(fields: Partial<Envelope> = {}): Envelope {
     turnStatus: "in_progress",
     turnStartedAt: NOW - 5 * MINUTE,
     turnCompletedAt: null,
+    tokens: null,
     ...fields,
   };
 }
@@ -35,6 +36,50 @@ function session(fields: Partial<MistralVibeSessionInput> = {}) {
     ...fields,
   });
 }
+
+describe("the token counts of a Mistral Vibe session", () => {
+  const tokens = { input: 12_000, cached: 9_000, output: 340 };
+
+  test("are those of the newest state while it works or waits, is idle, failed or finished", () => {
+    expect(session({ envelope: envelope({ tokens }) })).toMatchObject({
+      status: "working",
+      tokens,
+    });
+    expect(session({ envelope: envelope({ tokens }), held: false })).toMatchObject({
+      status: "finished",
+      tokens,
+    });
+    expect(
+      session({
+        envelope: envelope({ tokens }),
+        wait: { reason: "permission", since: NOW - MINUTE, ids: ["a"] },
+      }),
+    ).toMatchObject({ status: "needs-you", tokens });
+    expect(session({ envelope: envelope({ statusType: "idle", tokens }) })).toMatchObject({
+      status: "idle",
+      tokens,
+    });
+    expect(session({ envelope: envelope({ statusType: "failed", tokens }) })).toMatchObject({
+      status: "failed",
+      tokens,
+    });
+  });
+
+  test("are left out when the newest state has none, or no state was read", () => {
+    expect(session({ envelope: envelope({ tokens }) })).toHaveProperty("tokens");
+    expect(session()).not.toHaveProperty("tokens");
+    expect(session({ envelope: null, title: "demo-project refactor" })).not.toHaveProperty(
+      "tokens",
+    );
+  });
+
+  test("are left out for a store newer than this adapter knows, whose status is not shown", () => {
+    expect(session({ envelope: envelope({ tokens }), tooNew: false })).toHaveProperty("tokens");
+    const newer = session({ envelope: envelope({ tokens }), tooNew: true });
+    expect(newer).toMatchObject({ status: "unknown" });
+    expect(newer).not.toHaveProperty("tokens");
+  });
+});
 
 describe("a Mistral Vibe session waiting for the person", () => {
   const since = NOW - MINUTE;
@@ -177,19 +222,11 @@ describe("a Mistral Vibe session", () => {
     expect(session({ envelope: old }).stale).toBe(true);
   });
 
-  test("with no wait, has no pid, alive, jump, stop, link or tokens, and does not need you", () => {
+  test("with no wait, has no pid, alive, jump, stop or link, and does not need you", () => {
     for (const statusType of ["running", "blocked", "idle", "failed"]) {
       const made = session({ envelope: envelope({ statusType }) });
       expect(made.status).not.toBe("needs-you");
-      for (const key of [
-        "pid",
-        "alive",
-        "jump",
-        "stop",
-        "tokens",
-        "waitingReason",
-        "waitingText",
-      ]) {
+      for (const key of ["pid", "alive", "jump", "stop", "waitingReason", "waitingText"]) {
         expect(made, key).not.toHaveProperty(key);
       }
       expect(made.links).toEqual({});

@@ -213,7 +213,7 @@ export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
       "Vibe's files name no terminal or window, and Vibe documents no link that opens a session.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "This version does not read Vibe's token counts." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason:

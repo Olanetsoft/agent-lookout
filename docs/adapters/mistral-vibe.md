@@ -2,20 +2,20 @@
 
 These notes record what Agent Lookout reads from Mistral Vibe, where each value comes from, and what breaks when Vibe changes. Vibe does not document these files for other programs, so when the adapter stops working, start here.
 
-Built on 2026-10-14 from the source of Mistral Vibe 2.26.1, released 2026-10-09 (tag `v2.26.1`, commit `4ae5c59` of [mistralai/mistral-vibe](https://github.com/mistralai/mistral-vibe)), with its store at format `mistral.vibe.unified-session-store/v1`, minor 8. Needs you was added on 2026-11-04 from the source of 2.26.1 and of 3.0.4, released 2026-10-30 (tag `v3.0.4`, commit `338ad4b`), whose store is minor 10. **Vibe was not installed on the machine where the adapter was written, and nothing here has been checked on a computer running Vibe.** Everything below comes from Vibe's source and from hand-written files laid out the same way. A citation is a path in that repository at `v2.26.1`, unless it says `3.0.4`, and a line number is one at `v3.0.4`. `harness/…/vibe/` stands for `harness/runtimes/python/python/mistralai_vibe_local_harness/vibe/`.
+Built on 2026-10-14 from the source of Mistral Vibe 2.26.1, released 2026-10-09 (tag `v2.26.1`, commit `4ae5c59` of [mistralai/mistral-vibe](https://github.com/mistralai/mistral-vibe)), with its store at format `mistral.vibe.unified-session-store/v1`, minor 8. Needs you and token counts were added on 2026-11-04 from the source of 2.26.1 and of 3.0.4, released 2026-10-30 (tag `v3.0.4`, commit `338ad4b`), whose store is minor 10. **Vibe was not installed on the machine where the adapter was written, and nothing here has been checked on a computer running Vibe.** Everything below comes from Vibe's source and from hand-written files laid out the same way. A citation is a path in that repository at `v2.26.1`, unless it says `3.0.4`, and a line number is one at `v3.0.4`. `harness/…/vibe/` stands for `harness/runtimes/python/python/mistralai_vibe_local_harness/vibe/`.
 
 The code is in `src/collector/adapters/mistral-vibe/`, and the status mapping is in `src/core/mapping/mistral-vibe/mistralVibeMapping.ts`.
 
-This version reads Needs you, working, idle, finished and failed, the name, the folder and Quiet for. It does not read token counts or what a session last said yet, and it does not list sessions Vibe ran on its older engine.
+This version reads Needs you, working, idle, finished and failed, the name, the folder, Quiet for and the token counts of the newest reply. It does not read what a session last said yet, and it does not list sessions Vibe ran on its older engine.
 
 ## Which versions this covers
 
-| Vibe           | Store minor | Read                                      |
-| -------------- | ----------- | ----------------------------------------- |
-| 2.26.0, 2.26.1 | 8           | Yes                                       |
-| 3.0.0 to 3.0.2 | 9           | Yes                                       |
-| 3.0.3, 3.0.4   | 10          | Yes                                       |
-| A newer store  | Above 10    | With no status, until the adapter is told |
+| Vibe           | Store minor | Read                                                          |
+| -------------- | ----------- | ------------------------------------------------------------- |
+| 2.26.0, 2.26.1 | 8           | Yes                                                           |
+| 3.0.0 to 3.0.2 | 9           | Yes                                                           |
+| 3.0.3, 3.0.4   | 10          | Yes                                                           |
+| A newer store  | Above 10    | With no status and no token counts, until the adapter is told |
 
 The adapter was written from 2.26.1 and 3.0.4, and the minor of each tag between was read from its `_storage.py`. Every field the adapter reads is the same at 2.26.1 and 3.0.4. `CurrentPointerV1`, `GenerationManifestV1`, the callback models, `compute_projection_delta`, `_journal_record_bytes` and the public state's statuses have not changed. `RuntimeStateV3` gained fields the adapter does not read, and `ProjectionStateV1` holds the same public state, which 3.0.4 keeps with any field a newer Vibe added left in (`StoredPublicSessionState`). What changed does not touch what is read:
 
@@ -100,7 +100,7 @@ Each session's store is `unified/<session ID>/` (`_storage.py`). Every file in i
 
 `CURRENT` names the session's newest saved state, a generation: `store_format`, `store_format_minor`, `session_id`, `generation`, 16 digits, `snapshot_sequence` and `manifest_sha256` (`CurrentPointerV1`). The adapter reads it whole when it changes, and goes on only when the format is `mistral.vibe.unified-session-store/v1`, the session ID is the folder's and the generation is 16 digits.
 
-Vibe's readers accept a store of their own minor or lower and refuse a higher one (`STORE_FORMAT_MINOR`, 8 at 2.26.1 and 10 at 3.0.4). A field Vibe adds raises no minor (`_StoredModel`). The adapter does the same: it reads any minor up to 10, keeps no key it does not know, and shows a session whose store has a higher minor with no status, with its name and folder when they still read, and a sentence on the card.
+Vibe's readers accept a store of their own minor or lower and refuse a higher one (`STORE_FORMAT_MINOR`, 8 at 2.26.1 and 10 at 3.0.4). A field Vibe adds raises no minor (`_StoredModel`). The adapter does the same: it reads any minor up to 10, keeps no key it does not know, and shows a session whose store has a higher minor with no status and no token counts, with its name and folder when they still read, and a sentence on the card.
 
 When `CURRENT` names a generation not read before, the adapter reads, once each while it follows the session, since Vibe never changes them:
 
@@ -133,7 +133,7 @@ The first read of a segment looks back from its end through at most 8 MiB for th
 
 The newest state in the segment wins over the generation's. Vibe saves a session whole when a turn ends with nothing left running and the journal holds something, and when its folder, model or settings change (`harness/…/vibe/_runtime.py`). A rename, and the title Vibe makes for a session in the background, are journaled with no save after them. So the generation's state is often older than the journal's, and an idle session's segment is often not empty.
 
-From a public state the adapter keeps `session.title`, `session.status.type`, `session.createdAt`, `session.updatedAt`, and `latestTurn.status`, `startedAt` and `completedAt`. It drops the rest, which includes `session.preview`, the first thing you asked, every error in full, the queue of prompts and `activeCallbacks`, which is empty on disk. Vibe 2.26.1 began writing `latestTurn.stopReason` as `limit` or `length` with no new minor, so values and keys the adapter does not know are left where they are.
+From a public state the adapter keeps `session.title`, `session.status.type`, `session.createdAt`, `session.updatedAt`, `latestTurn.status`, `startedAt` and `completedAt`, and three numbers of `session.contextUsage`, the newest reply's [token counts](#token-counts). It drops the rest, which includes `session.preview`, the first thing you asked, `session.tokenUsage`, the session's running total, every error in full, the queue of prompts and `activeCallbacks`, which is empty on disk. Vibe 2.26.1 began writing `latestTurn.stopReason` as `limit` or `length` with no new minor, so values and keys the adapter does not know are left where they are.
 
 ## Which sessions are listed
 
@@ -235,9 +235,84 @@ The files do not say whether a session runs in the terminal, an editor, the app 
 
 Quiet for is the journal segment's own modified time. Every record Vibe adds moves it, and a save starts a new segment. Nothing is journaled while a model streams its reply, so a long reply can read as quiet.
 
+## Token counts
+
+A session's details give the token counts of its newest reply. They come from the public state the adapter reads for the status, and no file is opened or read for them that is not read for it.
+
+### What is on disk
+
+A public state's `session` holds two usages of the same shape, `TokenUsage` (`session_protocol.py:326`, `PublicSession`, `:483`), in every tag from 2.26.0 to 3.0.4:
+
+```json
+{
+  "contextUsage": {
+    "cachedInputTokens": 9000,
+    "inputTokens": 12000,
+    "outputTokens": 340,
+    "totalTokens": 12340
+  },
+  "tokenUsage": {
+    "cachedInputTokens": 310000,
+    "inputTokens": 980000,
+    "outputTokens": 41000,
+    "totalTokens": 1021000
+  }
+}
+```
+
+| Field          | What it is                                                                                                                               | Read |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `contextUsage` | One reply's usage, not a total. Each reply Vibe commits replaces it with its own counts (`SessionProjector.apply`, `_projection.py:351`) | Yes  |
+| `tokenUsage`   | Every reply and compaction added up, the session's running total (`_projection.py:343` and `:393`)                                       | No   |
+
+A reply here is one request to the model, so a turn that runs tools makes several, and each replaces the counts. Both fields are `null` until the first reply.
+
+A committed reply changes the public state, so that change's `projection_delta` ends with a `set_envelope` step, and that step holds the whole state, `session.contextUsage` in it (`_advance`, `_projection.py:643`, and `compute_projection_delta`, `_storage.py:1130`). It is journaled as the reply is committed (`_persist_core_transition`, `_runtime.py:3977`), not while the model streams it (`_advance_provisional`, `_projection.py:654`). A save writes the same state to the generation's `projection-state.json`. So the newest state the adapter already reads for the status holds the newest reply's counts, and the journal's wins over the generation's, as it does for the status.
+
+### What each count holds
+
+Vibe fills a usage from what the provider sent (`USAGE_FIELDS`, `completion_profile/formats.py:116`, at 3.0.4, read by `reply_token_usage`, `adapters/_reply_usage.py`):
+
+| Provider's format    | `inputTokens`                                                                        | `cachedInputTokens`                   | `outputTokens`      |
+| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | ------------------- |
+| Mistral, OpenAI Chat | `prompt_tokens`                                                                      | `prompt_tokens_details.cached_tokens` | `completion_tokens` |
+| OpenAI Responses     | `input_tokens`                                                                       | `input_tokens_details.cached_tokens`  | `output_tokens`     |
+| Anthropic            | `input_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens` together | `cache_read_input_tokens`             | `output_tokens`     |
+| Ollama               | `prompt_eval_count`                                                                  | None, so 0                            | `eval_count`        |
+
+2.26.1 reads the same fields but Ollama's, which it has no format for, in other code (`_usage` in `adapters/mistral.py`, `adapters/generic/_anthropic.py`, and `_token_usage` in `adapters/generic/_execute.py`). In both, an Anthropic reply's cache counts are added to its input so that the input holds them, and `cachedInputTokens` is 0 for a count the provider did not send (`read_usage`, `formats.py:188`, at 3.0.4).
+
+`outputTokens` is the provider's own count. At 3.0.4 Vibe's core holds `reasoning_tokens` apart, which the public state does not carry, and a total is the input and the output alone. OpenAI and Anthropic count reasoning in their output, as [Qwen Code's notes](qwen-code.md#token-counts) say. Vibe's source does not say whether Mistral's `completion_tokens` does, so whether Out includes a reply's thinking is not known.
+
+| Shown  | Read from                     |
+| ------ | ----------------------------- |
+| In     | `inputTokens`                 |
+| Cached | `cachedInputTokens`, unless 0 |
+| Out    | `outputTokens`                |
+
+`replyTokensOf` in `envelope.ts` takes these three numbers and reads `totalTokens` only to check them, `tokenCountsOf` in `src/core/tokens/tokenCounts.ts` checks them, and `mistralVibeSession` in `toSession.ts` puts them on the session.
+
+### What a session shows
+
+- A newer reply's counts show on the poll that reads its record.
+- The counts stand while the session waits for you, once it is idle or failed and once it is finished. Nothing but a reply, a compaction or a rewind changes what shows, and a state Vibe writes for anything else, such as a rename, holds the same counts.
+- A reply with no usage leaves the counts of the reply before it (`_projection.py:336`). Up to 3.0.2 a provider that sends none does this. From 3.0.3, a reply without usage fails its turn (`CHANGELOG.md`).
+- A compaction sets every count to 0, since nothing has measured the summary it made until the next reply reports (`_projection.py:397`). That gives a dash, never an older reply's counts, as for [Codex](codex.md), until the next reply.
+- A `/rewind` in place gives a dash until the next turn starts. Vibe cuts the history, sets `latestTurn` to null in the generation it saves and leaves `session.contextUsage` as it was, though the reply it counted may be gone (`rewind`, `_host.py:1275`). Nothing else in Vibe sets `latestTurn` to null, so a state with no turn gives no counts. [Known gaps](#known-gaps) says what shows once the next turn starts.
+- A session that has never had a reply has a dash.
+- A `cachedInputTokens` of 0 is left out, and the details say only Newest reply: Vibe writes 0 for a provider that sent no cached count, and the state cannot tell that from a cache that held none.
+- Counts that could not be right give a dash, never an older reply's: a `contextUsage` that is not an object; an `inputTokens` that is missing, 0, negative, not a whole number or past what a JavaScript number holds exactly; an `outputTokens` that is missing, negative, not a whole number or past that; a `cachedInputTokens` that is negative, not a whole number, past that or larger than the input; and a `totalTokens` that is missing, past that or not the input and the output together, since Vibe refuses such a usage itself (`validate_token_usage`, `harness/core/src/core/wire/completion.rs`).
+- While the newest state is not known, the session has no counts, as it has no status: a record whose state is not read, or none found in what was read of a long segment. The generation's counts are not shown in their place, since they can be an older reply's.
+- A store newer than minor 10 shows none, as it shows no status: its counts may not mean what these do.
+
+A session's counts are its own replies'. A subagent has a session of its own, whose counts are in its own store, which is not read.
+
+The three numbers are kept in memory, with the rest of what is kept of a public state, and go where a session's `tokens` go: the snapshot, `GET /api/sessions` and the session's details, never an event, the history, a notification, an email, a webhook post, a push, an MCP answer or `agent-lookout status`.
+
 ## Known gaps
 
-- Token counts and what a session last said are not read yet.
+- What a session last said is not read yet.
+- After a `/rewind` in place, from when the next turn starts until a reply reports, Tokens can be the counts of a reply the rewind took back. That state has a turn and the old `session.contextUsage`, and nothing in it tells those counts from ones that still stand.
 - A subagent's wait shows its session as working. Vibe journals it in the subagent's own store, `unified/child-…`, and gathers it for its clients in memory (`open_callbacks`, `_host.py:1797`). That store is not read.
 - A callback whose record is longer than 8 MiB, read for the first time, or among more than 8 MiB added at once, is not read, since its start is past what is read, and the session shows with no status until Vibe writes a state. A wait saved in a generation is not taken as open while its segment has grown past 8 MiB on a first read, and the session shows as working.
 - A wait left behind in a lease whose process ID another program has since been given shows as needing you, until that program ends, when `ps` cannot tell: on Linux and Windows, where it is not run, when it gives no answer, or with a program that started within a minute of the lease. Keep awake counts it all the while, on a Mac that watches that computer over SSH too.
@@ -259,6 +334,7 @@ All of this comes from Vibe's source. A computer running Vibe has yet to show:
 
 - that real journal lines are laid out as above: `type` last, `set_envelope` the last step, `}],"watermark":` right after the state;
 - that a real `callback_registered` line begins as above, and a real wait shows as needing you within a poll of the prompt;
+- that a real `session.contextUsage` is laid out as above and changes with each reply, and that a real `/rewind` in place leaves it with `latestTurn` null;
 - what closing a terminal does to a Vibe that waits: whether it closes its callbacks or is killed with them;
 - whether the terminal app holds its lease from start to quit, and which process its `process_id` is;
 - what a crash leaves behind, and whether reopening the session rewrites its status;
@@ -268,9 +344,10 @@ All of this comes from Vibe's source. A computer running Vibe has yet to show:
 
 ## What breaks when Vibe changes
 
-- A store minor above 10: those sessions show with no status until the adapter knows the new minor.
+- A store minor above 10: those sessions show with no status and no token counts until the adapter knows the new minor.
 - A field renamed in `CURRENT`, the manifest, the public state or the runtime state.
 - Journal lines with `type` no longer last, or a step after `set_envelope`: states are no longer read, and sessions show as unknown.
+- `session.contextUsage` renamed, or a `totalTokens` that is no longer the input and the output together: sessions show a dash for Tokens. `inputTokens` or `outputTokens` given a new meaning with no new minor would show wrong counts, since a file cannot say so.
 - A key that sorts before `callbackId` or `createdAt` in a callback, or a callback's fields renamed: waits are no longer read, and sessions that wait show as working. So does a new kind of callback.
 - `acquired_at` written another way, which leaves a lease with no time: no wait shows.
 - A new lease format, or leases moved out of `active/`. An `acquired_at` written another way leaves a session Vibe last wrote to more than a day ago out while a program holds it, and shows a held session as finished for the first 30 seconds a poll finds it, until Vibe writes to it.
