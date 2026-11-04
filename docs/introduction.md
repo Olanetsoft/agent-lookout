@@ -40,7 +40,7 @@ Every agent's sessions appear on the page with their status. What else each one 
 | Hermes Agent                                                    | While it asks you a question, and 10 to 70 seconds late for an approval  | No                          | No                                   |
 | Mistral Vibe                                                    | While it waits for your approval or an answer                            | No                          | No                                   |
 | Qwen Code                                                       | From Qwen Code 0.25.1, while it asks you a question or to approve a plan | No                          | In tmux, Terminal or iTerm2          |
-| OpenCode                                                        | While it asks you a question or to approve a plan                        | No                          | No                                   |
+| OpenCode                                                        | While OpenCode 1.x asks you a question or to approve a plan              | No                          | No                                   |
 | Codex and Gemini CLI                                            | No: a waiting session shows as working, or as idle in Gemini CLI         | No                          | No                                   |
 | Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                             | No                          | No                                   |
 

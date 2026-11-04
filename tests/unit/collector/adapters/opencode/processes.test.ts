@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   createOpencodeProcessReader,
-  OPENCODE_PROGRAM,
+  OPENCODE_PROGRAMS,
   OPENCODE_TABLE_ARGS,
   opencodeInTable,
   opencodeLiveness,
@@ -14,7 +14,6 @@ const table = (programs: string[]) => programs.map((program) => `${program}\n`).
 
 describe("opencodeInTable", () => {
   test("finds a program named opencode, by its name alone or a path ending in it", () => {
-    expect(OPENCODE_PROGRAM).toBe("opencode");
     for (const program of [
       // Linux prints the name alone, and macOS the first argument as it was given.
       "opencode",
@@ -27,18 +26,43 @@ describe("opencodeInTable", () => {
     }
   });
 
+  test("finds the names OpenCode 2 and its background service go by", () => {
+    expect([...OPENCODE_PROGRAMS]).toEqual([
+      "opencode",
+      "opencode.exe",
+      "opencode2",
+      "opencode-cli",
+    ]);
+    for (const program of [
+      // npm's package keeps the program in this file, and the service is started from it.
+      "opencode.exe",
+      `${HOME}/.local/lib/node_modules/@opencode/cli/bin/opencode.exe`,
+      // npm's second link to that file.
+      "opencode2",
+      "/usr/local/bin/opencode2",
+      // The copy OpenCode 2's desktop app keeps, on Linux by its name and on macOS by its path.
+      "opencode-cli",
+      `${HOME}/Library/Application Support/ai.opencode.desktop/cli/2.2.5/opencode-cli`,
+    ]) {
+      expect(opencodeInTable(table(["/sbin/launchd", program, "/bin/zsh"])), program).toBe(true);
+    }
+    // Each fits in the 15 characters Linux keeps of a name.
+    for (const name of OPENCODE_PROGRAMS) expect(name.length, name).toBeLessThanOrEqual(15);
+  });
+
   test("does not take a program of another name for it", () => {
     expect(
       opencodeInTable(
         table([
           "node",
           "bun",
-          "opencode.exe",
           "opencode-desktop",
           "OpenCode",
           "/Applications/OpenCode.app/Contents/MacOS/OpenCode",
           `${HOME}/code/opencode/bin/opencode-dev`,
           "opencode run",
+          "opencode.exe serve",
+          "opencode2-node",
           "",
         ]),
       ),

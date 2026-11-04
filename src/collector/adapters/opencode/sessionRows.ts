@@ -12,23 +12,34 @@ import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
  * asks, of what a session last said, is in `lastMessages.ts`.
  *
  * The first, the probe, asks only for the names of the tables and of the
- * columns of `session` and `session_v2`, so that the second is asked only of
- * a database laid out as OpenCode 1.x lays one out.
+ * columns of `session` and `session_v2`, so that the second names only tables
+ * the database has. A database OpenCode 1.x wrote alone is asked
+ * `SESSIONS_QUERY`, one OpenCode 2 wrote alone `OPENCODE_2_SESSIONS_QUERY`,
+ * and one that holds both `BOTH_SESSIONS_QUERY`, one run of `sqlite3` for all
+ * of it.
  *
- * The second asks, for each root session that is not archived and was
- * written in the last 48 hours, for its id, folder, title and two times, and
- * for a few short fields of its newest message: its times, its role, when it
- * ended, the name of its error and why it ended, how many of its tool parts
- * OpenCode would wait on, whether its one tool part is the shell's, since when
- * a question or a plan's approval of it waits for the person, when the newest
- * user message began, passing over the two prompts OpenCode writes after it
- * compacts a session on its own, and the six token counts of the newest reply
- * that ended with some. Never the text of a message or a part, a tool's input
- * or output, `SELECT *` or a whole `data` value. Each answer is checked field
- * by field, and a row whose id is not one OpenCode makes is dropped.
+ * Of OpenCode 1.x's tables it asks, for each root session that is not
+ * archived and was written in the last 48 hours, for its id, folder, title and
+ * two times, and for a few short fields of its newest message: its times, its
+ * role, when it ended, the name of its error and why it ended, how many of its
+ * tool parts OpenCode would wait on, whether its one tool part is the shell's,
+ * since when a question or a plan's approval of it waits for the person, when
+ * the newest user message began, passing over the two prompts OpenCode writes
+ * after it compacts a session on its own, and the six token counts of the
+ * newest reply that ended with some.
+ *
+ * Of `session_v2` it asks, for the same sessions, for the same five fields and
+ * the session's slug, and for the three columns that say how its turn stands:
+ * `time_suspended`, `time_idle` and `idle_outcome`. No message, part or token
+ * column of OpenCode 2's is read.
+ *
+ * Never the text of a message or a part, a tool's input or output, `SELECT *`
+ * or a whole `data` value. Each answer is checked field by field, and a row
+ * whose id is not one OpenCode makes is dropped.
  *
  * This was built from OpenCode's source at v1.19.0, with the waits checked at
- * v1.19.5, and has not yet been checked on a computer running OpenCode.
+ * v1.19.5 and `session_v2` read at v2.2.5, and has not yet been checked on a
+ * computer running OpenCode.
  */
 
 /** The file OpenCode keeps its sessions in, in its data folder. */
@@ -145,6 +156,50 @@ const REPLY_COUNTS = (
   )
   .join(", ");
 
+/** When 48 hours ago was, by SQLite's clock, in milliseconds. */
+const WRITTEN_SINCE = `CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${QUERY_WINDOW_MS}`;
+
+/** What is asked of a session of OpenCode 1.x. `SESSIONS_QUERY` says what each is. */
+const V1_FIELDS = [
+  "s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000) AS title,",
+  "s.time_created, s.time_updated,",
+  "m.id AS m_id, m.time_created AS m_created, m.time_updated AS m_updated,",
+  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.role') END AS m_role,",
+  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.time.completed') END AS m_completed,",
+  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.error.name') END AS m_error,",
+  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.finish') END AS m_finish,",
+  "(SELECT count(*) FROM part p WHERE p.message_id = m.id",
+  "AND CASE WHEN json_valid(p.data) THEN",
+  "json_extract(p.data, '$.type') = 'tool'",
+  "AND json_type(p.data, '$.metadata.providerExecuted') IS NOT 'true'",
+  "AND NOT (json_extract(p.data, '$.state.status') IS 'error'",
+  "AND json_type(p.data, '$.state.metadata.interrupted') IS 'true') END) AS m_tools,",
+  "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IS 'bash') = 1 FROM part p",
+  "WHERE p.message_id = m.id",
+  "AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool' END) AS m_shell,",
+  "(SELECT CASE WHEN max(json_extract(p.data, '$.state.status') IS 'running') THEN",
+  "min(CASE WHEN json_type(p.data, '$.state.time.start') IS 'integer'",
+  "THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p",
+  `WHERE p.message_id = m.id AND ${ASKING_PART}) AS m_asked_at,`,
+  "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
+  "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
+  "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
+  `AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND ${OPENCODE_OWN_PART})`,
+  `AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT ${OPENCODE_OWN_PART}))`,
+  "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created,",
+  REPLY_COUNTS,
+];
+
+/** The tables those are read from, and which sessions are asked for. */
+const V1_TABLES = [
+  "FROM session s",
+  "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id",
+  "ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
+  COUNTED_REPLY,
+  "WHERE s.parent_id IS NULL AND s.time_archived IS NULL",
+  `AND s.time_updated >= ${WRITTEN_SINCE}`,
+];
+
 /**
  * Each root session of OpenCode 1.x that is not archived, written in the last
  * 48 hours, with the fields of its newest message. A tool part is counted as
@@ -175,41 +230,138 @@ const REPLY_COUNTS = (
  * ones cannot fill the answer.
  */
 export const SESSIONS_QUERY = [
-  "SELECT s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000) AS title,",
-  "s.time_created, s.time_updated,",
-  "m.id AS m_id, m.time_created AS m_created, m.time_updated AS m_updated,",
-  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.role') END AS m_role,",
-  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.time.completed') END AS m_completed,",
-  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.error.name') END AS m_error,",
-  "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.finish') END AS m_finish,",
-  "(SELECT count(*) FROM part p WHERE p.message_id = m.id",
-  "AND CASE WHEN json_valid(p.data) THEN",
-  "json_extract(p.data, '$.type') = 'tool'",
-  "AND json_type(p.data, '$.metadata.providerExecuted') IS NOT 'true'",
-  "AND NOT (json_extract(p.data, '$.state.status') IS 'error'",
-  "AND json_type(p.data, '$.state.metadata.interrupted') IS 'true') END) AS m_tools,",
-  "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IS 'bash') = 1 FROM part p",
-  "WHERE p.message_id = m.id",
-  "AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool' END) AS m_shell,",
-  "(SELECT CASE WHEN max(json_extract(p.data, '$.state.status') IS 'running') THEN",
-  "min(CASE WHEN json_type(p.data, '$.state.time.start') IS 'integer'",
-  "THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p",
-  `WHERE p.message_id = m.id AND ${ASKING_PART}) AS m_asked_at,`,
-  "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
-  "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
-  "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
-  `AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND ${OPENCODE_OWN_PART})`,
-  `AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT ${OPENCODE_OWN_PART}))`,
-  "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created,",
-  REPLY_COUNTS,
-  "FROM session s",
-  "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id",
-  "ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
-  COUNTED_REPLY,
-  "WHERE s.parent_id IS NULL AND s.time_archived IS NULL",
-  `AND s.time_updated >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${QUERY_WINDOW_MS}`,
+  "SELECT",
+  ...V1_FIELDS,
+  ...V1_TABLES,
   `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
 ].join(" ");
+
+/** A whole number from a column of `session_v2`, and null for anything else. */
+const WHOLE = (column: string) => `CASE WHEN typeof(${column}) = 'integer' THEN ${column} END`;
+
+/**
+ * A time from a column of `session_v2` that may be empty: a whole number, null
+ * for none, and the word `other` for anything else, so that nothing longer
+ * than a number can come of it, and a value of the wrong type is not taken for
+ * none.
+ */
+const TURN_TIME = (column: string) =>
+  `CASE typeof(${column}) WHEN 'integer' THEN ${column} WHEN 'null' THEN NULL ELSE 'other' END`;
+
+/** The five fields of a session's own, from `session_v2`, under the names `session`'s go by. */
+const V2_SESSION_FIELDS = [
+  "substr(v.id, 1, 68) AS id, substr(v.directory, 1, 4097) AS directory,",
+  "substr(v.title, 1, 1000) AS title,",
+  `${WHOLE("v.time_created")} AS time_created, ${WHOLE("v.time_updated")} AS time_updated,`,
+];
+
+/** The fields only `session_v2` has, with `v2` 1 to tell its rows from those of `session`. */
+const V2_TURN_FIELDS = [
+  "substr(v.slug, 1, 1000) AS slug, 1 AS v2,",
+  `${TURN_TIME("v.time_suspended")} AS time_suspended, ${TURN_TIME("v.time_idle")} AS time_idle,`,
+  "substr(v.idle_outcome, 1, 65) AS idle_outcome",
+];
+
+/**
+ * The root sessions of `session_v2` that are not archived, written in the last
+ * 48 hours, the newest 200, by `time_updated`, which every prompt and every
+ * step of a turn moves, and which a turn's start and end leave alone.
+ * `session_v2_parent_idx` finds the root sessions, so the scan is of root
+ * sessions alone, as with `session`.
+ */
+const V2_TABLE = [
+  "FROM session_v2 v WHERE v.parent_id IS NULL AND v.time_archived IS NULL",
+  `AND v.time_updated >= ${WRITTEN_SINCE}`,
+  `ORDER BY v.time_updated DESC LIMIT ${MAX_SESSIONS}`,
+];
+
+/**
+ * The sessions of a database OpenCode 2 wrote alone. A fresh database of
+ * OpenCode 2's has no `session`, `message` or `part`, so they are not named.
+ */
+export const OPENCODE_2_SESSIONS_QUERY = [
+  "SELECT",
+  ...V2_SESSION_FIELDS,
+  ...V2_TURN_FIELDS,
+  ...V2_TABLE,
+].join(" ");
+
+/** The fields of a 1.x session's newest message, which a row of `session_v2` has none of. */
+const V1_ONLY_FIELDS = [
+  "m_id",
+  "m_created",
+  "m_updated",
+  "m_role",
+  "m_completed",
+  "m_error",
+  "m_finish",
+  "m_tools",
+  "m_shell",
+  "m_asked_at",
+  "p_updated",
+  "u_created",
+  "r_input",
+  "r_output",
+  "r_reasoning",
+  "r_cache_read",
+  "r_cache_write",
+  "r_total",
+];
+
+/** The names of the fields only `session_v2` has. */
+const TURN_FIELDS = ["slug", "v2", "time_suspended", "time_idle", "idle_outcome"];
+
+/** The same fields, empty, for a row of `session`. */
+const NO_TURN_FIELDS = TURN_FIELDS.map((name) => `NULL AS ${name}`).join(", ");
+
+/** Every field of a row of `BOTH_SESSIONS_QUERY`, in the order both sides print them. */
+const BOTH_FIELDS = [
+  "id",
+  "directory",
+  "title",
+  "time_created",
+  "time_updated",
+  ...V1_ONLY_FIELDS,
+  ...TURN_FIELDS,
+].join(", ");
+
+/**
+ * The sessions of a database with both 1.x's tables and `session_v2`, as one
+ * list: the newest 200 of the two together. A session in `session_v2` is left
+ * out of `session`, whatever its row there says, so a row of `session_v2` wins
+ * for an id in both, and a session OpenCode 2 archived stays out. The check
+ * goes through `session_v2`'s primary key, once for each session of 1.x
+ * written in the last 48 hours. Each side is cut to 200 before they are put
+ * together, so the fields of a message are worked out for no more sessions
+ * than `SESSIONS_QUERY` works them out for.
+ *
+ * OpenCode 2's delete removes a session's row of `session_v2` alone, so once
+ * it is gone the old row of `session` is printed, as a session 1.x made after
+ * the copy is, with its 1.x status, counts and last message. The adapter leaves
+ * out such a row of a session it read from `session_v2` (`index.ts`). One it
+ * never read there, or read before a restart, is listed until it ages out, a
+ * day after it was last written.
+ */
+export const BOTH_SESSIONS_QUERY = [
+  `SELECT ${BOTH_FIELDS} FROM (SELECT`,
+  `${V1_FIELDS.join(" ")}, ${NO_TURN_FIELDS}`,
+  ...V1_TABLES,
+  "AND NOT EXISTS (SELECT 1 FROM session_v2 w WHERE w.id = s.id)",
+  `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS})`,
+  `UNION ALL SELECT ${BOTH_FIELDS} FROM (SELECT`,
+  ...V2_SESSION_FIELDS,
+  `${V1_ONLY_FIELDS.map((name) => `NULL AS ${name}`).join(", ")},`,
+  ...V2_TURN_FIELDS,
+  ...V2_TABLE,
+  ")",
+  `ORDER BY time_updated DESC LIMIT ${MAX_SESSIONS}`,
+].join(" ");
+
+/** The question of the sessions for a layout the probe found, which names no table the layout lacks. */
+export function sessionsQueryFor(layout: "v1" | "v2" | "both"): string {
+  if (layout === "v1") return SESSIONS_QUERY;
+  return layout === "v2" ? OPENCODE_2_SESSIONS_QUERY : BOTH_SESSIONS_QUERY;
+}
 
 /** How the database is opened: as a whole file nothing changes, or with what its `-wal` holds. */
 export type DatabaseMode = "whole" | "with-wal";
@@ -233,7 +385,7 @@ export function sqliteArguments(file: string, mode: DatabaseMode, query: string)
   return ["-init", "/dev/null", "-batch", "-json", sqliteUri(file, mode), query];
 }
 
-/** The tables the adapter needs, and the columns of `session` it asks for. */
+/** The tables the adapter needs of OpenCode 1.x, and the columns of `session` it asks for. */
 const NEEDED_TABLES = ["session", "message", "part"];
 const NEEDED_COLUMNS = [
   "id",
@@ -245,18 +397,31 @@ const NEEDED_COLUMNS = [
   "time_archived",
 ];
 
+/** The columns of `session_v2` it asks for, each there in every 2.x. `time_busy`, from v2.2.2, is not one. */
+const NEEDED_V2_COLUMNS = [
+  "id",
+  "parent_id",
+  "slug",
+  "directory",
+  "title",
+  "time_created",
+  "time_updated",
+  "time_archived",
+  "time_suspended",
+  "time_idle",
+  "idle_outcome",
+];
+
 /**
  * What the probe found:
  *
- * v1           OpenCode 1.x's tables, with every column asked for
- * v2-only      only OpenCode 2's `session_v2`, which is not read yet
+ * v1           OpenCode 1.x's tables, with every column asked for, and no `session_v2`
+ * v2           `session_v2`, with every column asked for, and no `session`
+ * both         1.x's tables and `session_v2`, each with every column asked for
  * unsupported  anything else: a version Agent Lookout does not read
- *
- * `opencode2` is true when `session_v2` is there, alone or beside 1.x's tables.
  */
 export interface Schema {
-  layout: "v1" | "v2-only" | "unsupported";
-  opencode2: boolean;
+  layout: "v1" | "v2" | "both" | "unsupported";
 }
 
 /** The rows of what `sqlite3 -json` printed: an array of objects, or nothing for no rows. Null for anything else. */
@@ -280,18 +445,22 @@ export function readSchema(stdout: string): Schema | null {
   if (rows === null) return null;
   const tables = new Set<string>();
   const columns = new Set<string>();
+  const v2Columns = new Set<string>();
   for (const { kind, name } of rows) {
     if (typeof name !== "string") continue;
     if (kind === "table") tables.add(name);
     else if (kind === "session") columns.add(name);
+    else if (kind === "session_v2") v2Columns.add(name);
   }
-  const opencode2 = tables.has("session_v2");
+  const hasV2 = tables.has("session_v2");
   const v1 =
     NEEDED_TABLES.every((table) => tables.has(table)) &&
     NEEDED_COLUMNS.every((column) => columns.has(column));
-  if (v1) return { layout: "v1", opencode2 };
-  if (opencode2 && !tables.has("session")) return { layout: "v2-only", opencode2 };
-  return { layout: "unsupported", opencode2 };
+  const v2 = hasV2 && NEEDED_V2_COLUMNS.every((column) => v2Columns.has(column));
+  if (v1 && !hasV2) return { layout: "v1" };
+  if (v1 && v2) return { layout: "both" };
+  if (v2 && !tables.has("session")) return { layout: "v2" };
+  return { layout: "unsupported" };
 }
 
 /** An id as OpenCode makes one for a session: `ses` and a short run of letters, digits, `_` and `-`. */
@@ -343,10 +512,20 @@ function folderOf(value: unknown): string | null {
 const DEFAULT_TITLE =
   /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-/** A title worth showing: text that is not OpenCode's placeholder. Null otherwise. */
+/** A title worth showing: text with something in it that is not OpenCode's placeholder. Null otherwise. */
 function titleOf(value: unknown): string | null {
-  if (typeof value !== "string" || DEFAULT_TITLE.test(value)) return null;
+  if (typeof value !== "string" || value.trim() === "" || DEFAULT_TITLE.test(value)) return null;
   return value.length > MAX_TITLE_LENGTH ? value.slice(0, MAX_TITLE_LENGTH) : value;
+}
+
+/** How a turn stands in a row of `session_v2`, each field as it was read. */
+export interface TurnRow {
+  /** `time_suspended`: when a turn claimed the session, while it holds that claim. Null when it does not. */
+  claimedAt: unknown;
+  /** `time_idle`: when its newest turn ended. Null before one has. */
+  idleAt: unknown;
+  /** `idle_outcome`: how that turn ended. Null before one has. */
+  outcome: unknown;
 }
 
 /** The fields of a session's newest message that are kept, as they were read. */
@@ -371,11 +550,11 @@ export interface SessionRow {
   /** OpenCode's id for it: `ses_` and 26 more characters. */
   id: string;
   folder: string | null;
-  /** Its title, unless it is still OpenCode's placeholder. */
+  /** Its title, unless it is still OpenCode's placeholder. For a row of `session_v2` with none, its slug. */
   title: string | null;
   createdAt: number | null;
   updatedAt: number | null;
-  /** The newest message, or null when it has none. */
+  /** The newest message, or null when it has none. A row of `session_v2` never has one. */
   message: MessageRow | null;
   /**
    * When its newest user message began, passing over the two prompts OpenCode
@@ -387,8 +566,11 @@ export interface SessionRow {
   /**
    * The token counts of its newest reply that ended with some, among its
    * newest 10 messages, or null when there are none that could be right.
+   * Always null for a row of `session_v2`.
    */
   tokens: TokenCounts | null;
+  /** How its turn stands, for a row of `session_v2`. Null for a row of `session`. */
+  turn: TurnRow | null;
 }
 
 /** A count of tokens: a whole number, 0 or more. Null for anything else. */
@@ -434,8 +616,8 @@ function replyTokensOf(row: Record<string, unknown>): TokenCounts | null {
 }
 
 /**
- * The sessions in what `sqlite3 -json` printed for `SESSIONS_QUERY`. Null when
- * it is not that answer at all.
+ * The sessions in what `sqlite3 -json` printed for `sessionsQueryFor`'s
+ * question. Null when it is not that answer at all.
  */
 export function readSessionRows(stdout: string): SessionRow[] | null {
   const rows = jsonRows(stdout);
@@ -464,12 +646,20 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
     sessions.push({
       id,
       folder: folderOf(row.directory),
-      title: titleOf(row.title),
+      title: titleOf(row.title) ?? (row.v2 === 1 ? titleOf(row.slug) : null),
       createdAt: wholeNumber(row.time_created),
       updatedAt: wholeNumber(row.time_updated),
       message,
       userCreatedAt: wholeNumber(row.u_created),
       tokens: replyTokensOf(row),
+      turn:
+        row.v2 === 1
+          ? {
+              claimedAt: shortField(row.time_suspended),
+              idleAt: shortField(row.time_idle),
+              outcome: shortField(row.idle_outcome),
+            }
+          : null,
     });
   }
   return sessions;

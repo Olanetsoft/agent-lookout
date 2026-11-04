@@ -293,7 +293,8 @@ test.each([
     const tokens = rows.map(
       (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
     );
-    // Claude Code's are read here while its details are open, and never from another machine.
+    // Claude Code's are read here while its details are open, and never from another
+    // machine, and OpenCode's for 1.x alone.
     expect(tokens).toEqual([
       "Partly",
       "Yes",
@@ -301,7 +302,7 @@ test.each([
       "Yes",
       "No",
       "Yes",
-      "Yes",
+      "Partly",
       "Yes",
       "No",
       "No",

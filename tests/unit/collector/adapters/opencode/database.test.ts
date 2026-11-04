@@ -8,6 +8,8 @@ import {
 } from "@collector/adapters/opencode/database";
 import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import {
+  BOTH_SESSIONS_QUERY,
+  OPENCODE_2_SESSIONS_QUERY,
   PROBE_QUERY,
   SESSIONS_QUERY,
   sqliteArguments,
@@ -15,6 +17,7 @@ import {
 import { isMissing } from "@collector/files/readOnlyIo";
 import {
   answerRow,
+  answerV2Row,
   DATABASE,
   lastTextJson,
   NOW,
@@ -30,6 +33,7 @@ import {
 } from "@tests/support/adapters/opencodeAdapter";
 
 const A = sessionId("a1");
+const B = sessionId("b2");
 const WAL = `${DATABASE}-wal`;
 const SHM = `${DATABASE}-shm`;
 
@@ -66,7 +70,7 @@ describe("which way the database is opened", () => {
     files.write(DATABASE, "database");
     const sqlite = standInSqlite([answerRow({ id: A })]);
     const read = await readerFor(files, sqlite).read(NOW);
-    expect(read).toMatchObject({ state: "read", opencode2: false });
+    expect(read).toMatchObject({ state: "read" });
     expect(read.rows.map((row) => row.id)).toEqual([A]);
     expect(addresses(sqlite)).toEqual([
       `file:${DATABASE}?mode=ro&immutable=1`,
@@ -137,7 +141,6 @@ describe("which way the database is opened", () => {
     expect(await reader.read(NOW)).toEqual({
       state: "missing",
       rows: [],
-      opencode2: false,
     });
     expect(sqlite.runs).toEqual([]);
     expect(files.calls.map((call) => call.path)).toEqual([DATABASE]);
@@ -150,7 +153,6 @@ describe("which way the database is opened", () => {
     expect(await reader.read(NOW)).toEqual({
       state: "missing",
       rows: [],
-      opencode2: false,
     });
     files.special(DATABASE);
     expect((await reader.read(NOW)).state).toBe("missing");
@@ -163,7 +165,7 @@ describe("which way the database is opened", () => {
     const { files, sqlite } = openDatabase();
     files.forget();
     const read = await readerFor(files, sqlite, "win32").read(NOW);
-    expect(read).toEqual({ state: "not-on-windows", rows: [], opencode2: false });
+    expect(read).toEqual({ state: "not-on-windows", rows: [] });
     expect(files.calls).toEqual([]);
     expect(sqlite.runs).toEqual([]);
   });
@@ -294,38 +296,49 @@ describe("when the sessions are asked for again", () => {
 describe("the probe", () => {
   test("is asked before each query of the sessions, so a table OpenCode adds to the same file is seen", async () => {
     const { files, sqlite, reader } = openDatabase();
-    expect((await reader.read(NOW)).opencode2).toBe(false);
+    expect((await reader.read(NOW)).state).toBe("read");
     // OpenCode 2 adds its table to the database, which stays the same file.
     sqlite.probe(probeJson("v1+v2"));
     files.append(WAL, "more");
-    expect(await reader.read(NOW + 2 * SECOND)).toMatchObject({ state: "read", opencode2: true });
+    expect((await reader.read(NOW + 2 * SECOND)).state).toBe("read");
     // Nothing changed, so nothing is asked.
     await reader.read(NOW + 4 * SECOND);
     expect(sqlite.runs.map((run) => run.args.at(-1))).toEqual([
       PROBE_QUERY,
       SESSIONS_QUERY,
       PROBE_QUERY,
-      SESSIONS_QUERY,
+      BOTH_SESSIONS_QUERY,
     ]);
   });
 
-  test("finding OpenCode 2's table beside 1.x's reads 1.x's sessions and says so", async () => {
+  test("OpenCode 1.x's tables alone are asked what they were always asked, with no word of OpenCode 2's", async () => {
     const { sqlite, reader } = openDatabase();
-    sqlite.probe(probeJson("v1+v2"));
-    const read = await reader.read(NOW);
-    expect(read).toMatchObject({ state: "read", opencode2: true });
-    expect(read.rows).toHaveLength(1);
+    await reader.read(NOW);
+    expect(sqlite.queries().map((run) => run.args.at(-1))).toEqual([SESSIONS_QUERY]);
+    expect(SESSIONS_QUERY).not.toContain("session_v2");
   });
 
-  test("finding only OpenCode 2's table reads no sessions, and asks nothing more", async () => {
+  test("finding OpenCode 2's table beside 1.x's reads both in one run of sqlite3", async () => {
+    const { sqlite, reader } = openDatabase();
+    sqlite.probe(probeJson("v1+v2"));
+    sqlite.set([answerRow({ id: A }), answerV2Row({ id: B })]);
+    const read = await reader.read(NOW);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => [row.id, row.turn === null])).toEqual([
+      [A, true],
+      [B, false],
+    ]);
+    expect(sqlite.queries().map((run) => run.args.at(-1))).toEqual([BOTH_SESSIONS_QUERY]);
+  });
+
+  test("finding only OpenCode 2's table reads it, and names no table of 1.x's", async () => {
     const { sqlite, reader } = openDatabase();
     sqlite.probe(probeJson("v2-only"));
-    expect(await reader.read(NOW)).toEqual({
-      state: "read",
-      rows: [],
-      opencode2: true,
-    });
-    expect(sqlite.queries()).toEqual([]);
+    sqlite.set([answerV2Row({ id: B })]);
+    const read = await reader.read(NOW);
+    expect(read.state).toBe("read");
+    expect(read.rows.map((row) => row.id)).toEqual([B]);
+    expect(sqlite.queries().map((run) => run.args.at(-1))).toEqual([OPENCODE_2_SESSIONS_QUERY]);
   });
 
   test("tables laid out another way are not asked about, until the database changes", async () => {
@@ -354,7 +367,6 @@ test("a reader that throws inside answers a failed read, and reads afresh after"
   expect(await reader.read(NOW)).toEqual({
     state: "failed",
     rows: [],
-    opencode2: false,
   });
   sqlite.throw(false);
   files.append(WAL, "more");

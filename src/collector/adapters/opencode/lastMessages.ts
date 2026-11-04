@@ -5,7 +5,7 @@ import type { DatabaseReader, DatabaseStamp } from "./database.ts";
 import { jsonRows, SESSION_ID } from "./sessionRows.ts";
 
 /**
- * What an OpenCode session last said, asked of OpenCode's database with one
+ * What a session of OpenCode 1.x last said, asked of OpenCode's database with one
  * fixed question when the route asks for it, and never by a poll.
  *
  * OpenCode keeps every session, message and part in one database, so there

@@ -5,7 +5,7 @@ import {
   PROBE_QUERY,
   readSchema,
   readSessionRows,
-  SESSIONS_QUERY,
+  sessionsQueryFor,
   sqliteArguments,
   type DatabaseMode,
   type Schema,
@@ -58,7 +58,8 @@ import {
  * prints read (`lastMessages.ts`).
  *
  * This was built from OpenCode's source at v1.19.0, and has not yet been
- * checked on a computer running OpenCode.
+ * checked on a computer running OpenCode. OpenCode 2 keeps the same file in
+ * WAL mode too (`packages/core/src/database/database.ts` at v2.2.5).
  */
 
 /** How long after a read that did not work the database is read again, changed or not. */
@@ -72,7 +73,7 @@ export const RETRY_MS = 10_000;
  * not-safe        its `-wal` holds something but has no `-shm`, or one of them is not an ordinary file
  * no-sqlite       no `sqlite3` was found to read it
  * failed          `sqlite3` did not answer, or its answer could not be read
- * unsupported     its tables are not laid out as OpenCode 1.x lays them out
+ * unsupported     its tables are not laid out as OpenCode 1.x or 2 lays them out
  * not-on-windows  nothing is read on Windows
  */
 export type DatabaseState =
@@ -82,8 +83,6 @@ export interface DatabaseRead {
   state: DatabaseState;
   /** The root sessions read. Empty unless `state` is `read`. */
   rows: readonly SessionRow[];
-  /** Whether OpenCode 2's table, `session_v2`, is there. Its sessions are not read yet. */
-  opencode2: boolean;
 }
 
 /**
@@ -216,7 +215,7 @@ export function createDatabaseReader(options: {
     const looked = await look();
     if (!("files" in looked)) {
       if (looked.state !== "not-on-windows") last = null;
-      return { state: looked.state, rows: NONE, opencode2: false };
+      return { state: looked.state, rows: NONE };
     }
     const { files } = looked;
 
@@ -228,7 +227,7 @@ export function createDatabaseReader(options: {
     const settled = last?.state === "read" || last?.state === "unsupported";
     const due = last === null || at - last.at < 0 || at - last.at >= retryMs;
     if (last !== null && unchanged && (settled || !due)) {
-      return { state: last.state, rows: last.rows, opencode2: last.opencode2 };
+      return { state: last.state, rows: last.rows };
     }
 
     const next = await ask(files);
@@ -239,18 +238,17 @@ export function createDatabaseReader(options: {
   /** Runs the probe, then the query of the sessions. */
   async function ask(files: Files): Promise<DatabaseRead> {
     const binary = await find();
-    if (binary === null) return { state: "no-sqlite", rows: NONE, opencode2: false };
+    if (binary === null) return { state: "no-sqlite", rows: NONE };
     const mode = modeOf(files);
     const probe = await run(binary, sqliteArguments(file, mode, PROBE_QUERY));
     const found: Schema | null = probe.ok ? readSchema(probe.stdout) : null;
-    if (found === null) return { state: "failed", rows: NONE, opencode2: false };
-    const { layout, opencode2 } = found;
-    if (layout === "v2-only") return { state: "read", rows: NONE, opencode2 };
-    if (layout === "unsupported") return { state: "unsupported", rows: NONE, opencode2 };
-    const answer = await run(binary, sqliteArguments(file, mode, SESSIONS_QUERY));
+    if (found === null) return { state: "failed", rows: NONE };
+    const { layout } = found;
+    if (layout === "unsupported") return { state: "unsupported", rows: NONE };
+    const answer = await run(binary, sqliteArguments(file, mode, sessionsQueryFor(layout)));
     const rows = answer.ok ? readSessionRows(answer.stdout) : null;
-    if (rows === null) return { state: "failed", rows: NONE, opencode2 };
-    return { state: "read", rows, opencode2 };
+    if (rows === null) return { state: "failed", rows: NONE };
+    return { state: "read", rows };
   }
 
   return {
@@ -259,7 +257,7 @@ export function createDatabaseReader(options: {
         return await read(at);
       } catch {
         last = null;
-        return { state: "failed", rows: NONE, opencode2: false };
+        return { state: "failed", rows: NONE };
       }
     },
     async askOnce(question, known) {

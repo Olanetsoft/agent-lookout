@@ -51,6 +51,9 @@ export const NOT_READ_YET = "Not read yet";
 /** Said under the dash of a Claude Code session that has left the list before its counts were read. */
 export const READ_WHILE_LISTED = "Read only while it is in the list";
 
+/** Said under the dash of a session marked `tokensNotRead`: its agent's counts are read, but not this session's. */
+export const NOT_READ_FOR_SESSION = "Not read for this session";
+
 /**
  * Why the answer for what a Claude Code session last said, whose counts come
  * with it, gave none, when that is not that none are recorded: its transcript
@@ -94,16 +97,18 @@ function tokensCell(
  * counts."; for a session on another machine whose agent can, "devbox sent
  * none"; for a Claude Code session, whose counts are read with its last
  * message, why they were not read, `notRead`, such as "Not read yet" while
- * that answer is still to come; otherwise "None recorded yet", as for a Codex
- * session before its first reply.
+ * that answer is still to come; for a session marked `tokensNotRead`, as an
+ * OpenCode 2 session is, "Not read for this session"; otherwise "None recorded
+ * yet", as for a Codex session before its first reply.
  */
 export function noTokensReason(
-  session: Pick<Session, "source" | "agent" | "machine">,
+  session: Pick<Session, "source" | "agent" | "machine" | "tokensNotRead">,
   sources: readonly Pick<SourceHealth, "id" | "capabilities" | "agents">[],
   notRead?: string,
 ): string {
   const cell = tokensCell(session, sources);
   if (cell?.level === "no") return cell.reason;
   if (session.machine !== undefined) return `${session.machine} sent none`;
+  if (session.tokensNotRead) return NOT_READ_FOR_SESSION;
   return notRead ?? NONE_YET;
 }

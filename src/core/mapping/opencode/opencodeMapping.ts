@@ -78,7 +78,7 @@ export interface OpencodeStatusFields {
 
 const isTime = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value);
 
-/** What the newest message says while the database is open, or `unknown`. */
+/** What the newest message says while OpenCode may have the session open, or `unknown`. */
 function openStatus(message: OpencodeMessageFields | null, now: number): SessionStatus {
   if (message === null) return "idle";
   const { role, completedAt, error, finish, tools, shell, askedAt } = message;

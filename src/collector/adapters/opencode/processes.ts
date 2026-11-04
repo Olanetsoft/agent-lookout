@@ -11,36 +11,55 @@ import { runPs, type PsAnswer } from "../../processes/ps.ts";
  * moves nothing into the database while a statement is still prepared. So a
  * quit leaves `opencode.db-wal` full, as a crash does.
  *
- * OpenCode's releases are one program built with Bun, named `opencode`
- * (`packages/opencode/script/build.ts`). A process whose program has exactly
- * that name is taken for it: on macOS `ps` prints a process's first argument,
- * such as `opencode` or a full path ending in `/opencode`, and on Linux the
- * name of the file it was started from, cut to 15 characters, which `opencode`
- * fits in. Not known, since OpenCode was not run where this was written:
- * whether every way of installing OpenCode starts it by that name. npm's
- * package keeps the program as `bin/opencode.exe` and puts `opencode` on
- * `PATH` as a link to it. OpenCode started by another name, such as that file
- * itself, from its source with `bun`, or through Node, is not seen, nor is
- * OpenCode's desktop app, which runs OpenCode inside its own program.
+ * OpenCode's releases are one program built with Bun. A process whose program
+ * has exactly one of the names below is taken for it: on macOS `ps` prints a
+ * process's first argument, such as `opencode` or a full path ending in
+ * `/opencode`, and on Linux the name of the file it was started from, cut to
+ * 15 characters, which each name fits in. Not known, since OpenCode was not
+ * run where this was written: whether every way of installing OpenCode starts
+ * it by one of them. OpenCode started from its source with `bun` or through
+ * Node is not seen, nor is OpenCode 1.x's desktop app, which runs OpenCode
+ * inside its own program.
+ *
+ * OpenCode 2's background service owns every session, and keeps running once
+ * the window that started it closes, until something stops it, such as
+ * `opencode service stop` or a restart of the computer. Each client starts it
+ * from its own file, and it sets no `process.title` (`selfCommand` in
+ * `packages/cli/src/util/process.ts` at v2.2.5, `ensure` in
+ * `packages/client/src/effect/service.ts`). So it shows under that file's name,
+ * which for npm's package is not the `opencode` on `PATH`.
  *
  * One run, direct, never through a shell, from `/usr/bin` or `/bin`, in the C
  * locale: `ps -A -o comm=`, the name each process gives its program and
  * nothing else, as for Antigravity's hub (`../antigravity/app/hubProcess.ts`).
- * Each line is compared with the name and dropped. The rest of a process's
+ * Each line is compared with the names and dropped. The rest of a process's
  * arguments are never asked for. It is run on macOS and Linux only.
  */
 
 /** The name each process gives its program, and nothing else about any of them. */
 export const OPENCODE_TABLE_ARGS = ["-A", "-o", "comm="] as const;
 
-/** The name of OpenCode's program. */
-export const OPENCODE_PROGRAM = "opencode";
+/**
+ * The names of OpenCode's program:
+ *
+ * opencode      what the install script, Homebrew and `PATH` call it, and 1.x's name
+ * opencode.exe  the file npm's package keeps it in, which OpenCode 2 starts its
+ *               service from, on macOS and Linux as well
+ * opencode2     npm's second link to that file, for OpenCode 2
+ * opencode-cli  the copy OpenCode 2's desktop app keeps and starts its service from
+ */
+export const OPENCODE_PROGRAMS: ReadonlySet<string> = new Set([
+  "opencode",
+  "opencode.exe",
+  "opencode2",
+  "opencode-cli",
+]);
 
-/** Whether one line of what `ps -A -o comm=` printed is OpenCode's program: `opencode`, or a path ending in `/opencode`. */
+/** Whether one line of what `ps -A -o comm=` printed is OpenCode's program: one of its names, or a path ending in one. */
 export function opencodeInTable(stdout: string): boolean {
   return stdout.split("\n").some((line) => {
     const program = line.trim();
-    return program.slice(program.lastIndexOf("/") + 1) === OPENCODE_PROGRAM;
+    return OPENCODE_PROGRAMS.has(program.slice(program.lastIndexOf("/") + 1));
   });
 }
 
@@ -79,7 +98,7 @@ export function createOpencodeProcessReader(
  * A session written after `ps` said none runs is not held open for it: the
  * adapter asks `ps` again soon after such a write (`index.ts`), and only an
  * OpenCode it then sees opens it. So a session written by a program `ps` does
- * not take for OpenCode, such as its desktop app, stays finished.
+ * not take for OpenCode, such as OpenCode 1.x's desktop app, stays finished.
  */
 export function opencodeLiveness(answer: ProcessAnswer): boolean | "unknown" {
   if (!answer.ok) return "unknown";

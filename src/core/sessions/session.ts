@@ -451,13 +451,21 @@ export interface Session {
    * see `TokenCounts`. Present only when the agent recorded counts that could
    * be right, which today a Codex or Gemini CLI session's file, an
    * Antigravity CLI or Antigravity session's transcript, a Qwen Code
-   * session's chat file and OpenCode's database give here. A Claude Code
-   * session's come only in the answer of `GET /api/sessions/last-message`.
+   * session's chat file and OpenCode's database, for a session of 1.x, give
+   * here. A Claude Code session's come only in the answer of
+   * `GET /api/sessions/last-message`.
    * Shown in the session's details alone: never copied into an event, the
    * history, an email, a webhook post, a push, an MCP answer or
    * `agent-lookout status`.
    */
   tokens?: TokenCounts;
+  /**
+   * Present, and true, on a session with no `tokens` because its agent's counts
+   * are read, but not this session's: today a session read from OpenCode 2's
+   * `session_v2`, whose counts are in a table Agent Lookout does not read. Its
+   * details then say so, whatever its last message answers.
+   */
+  tokensNotRead?: true;
   pid?: number;
   /** Whether the process still exists, when a pid is known. */
   alive?: boolean;

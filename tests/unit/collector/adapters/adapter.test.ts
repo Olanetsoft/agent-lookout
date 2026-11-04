@@ -631,6 +631,7 @@ describe("each declaration agrees with what its adapter does", () => {
         },
         userCreatedAt: NOW - 40_000,
         tokens: { input: 2_000, cached: 800, output: 64 },
+        turn: null,
       },
       open: true,
       now: NOW,
@@ -642,7 +643,7 @@ describe("each declaration agrees with what its adapter does", () => {
     }
     expect(session?.links).toEqual({});
     expect(OPENCODE_CAPABILITIES["quiet-for"].level).toBe("no");
-    expect(OPENCODE_CAPABILITIES.tokens.level).toBe("yes");
+    expect(OPENCODE_CAPABILITIES.tokens.level).toBe("partly");
     expect(OPENCODE_CAPABILITIES.names.level).toBe("yes");
     expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");

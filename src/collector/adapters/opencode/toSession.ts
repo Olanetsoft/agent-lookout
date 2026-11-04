@@ -1,4 +1,8 @@
 import {
+  mapOpencode2Status,
+  opencode2StatusSince,
+} from "../../../core/mapping/opencode/opencode2Mapping.ts";
+import {
   mapOpencodeStatus,
   opencodeStatusSince,
 } from "../../../core/mapping/opencode/opencodeMapping.ts";
@@ -12,17 +16,24 @@ import type { MessageRow, SessionRow } from "./sessionRows.ts";
 
 export const SOURCE_ID: SourceId = "opencode";
 
-/** The times OpenCode wrote anything of a session: its own row, its newest message and that message's parts. */
+/**
+ * The times OpenCode wrote anything of a session: its own row, its newest
+ * message and that message's parts, or for OpenCode 2 when its turn began and
+ * ended, which leave `time_updated` alone.
+ */
 function writeTimes(row: SessionRow): number[] {
-  return [row.updatedAt, row.message?.updatedAt, row.message?.partsUpdatedAt].filter(
-    (value): value is number => value !== null && value !== undefined,
-  );
+  return [
+    row.updatedAt,
+    row.message?.updatedAt,
+    row.message?.partsUpdatedAt,
+    row.turn?.claimedAt,
+    row.turn?.idleAt,
+  ].filter((value): value is number => typeof value === "number");
 }
 
 /**
  * The newest time OpenCode wrote anything of a session, as far as the rows
- * read say: the session's own row, its newest message or that message's
- * parts. Null when none could be right.
+ * read say (`writeTimes`). Null when none could be right.
  */
 export function lastActivity(row: SessionRow, now: number): number | null {
   const times = writeTimes(row)
@@ -73,20 +84,24 @@ function withoutLeftWait(
  * One OpenCode session in the shared model, or null when nothing of it was
  * written in the last 24 hours, or no time of it is known.
  *
- * - The status comes from its newest message and whether OpenCode may have
- *   it open (`mapOpencodeStatus`). It is "needs-you", with the reason
- *   "question", while OpenCode asks a question or asks for a plan's approval.
- *   It never has a `waitingText`: what OpenCode asks is never read. A wait
- *   ends with OpenCode: a session it left waiting is finished, with no reason,
- *   and no longer asks once OpenCode runs again (`withoutLeftWait`).
- * - The name is OpenCode's title, or the folder's name while the title is
- *   still OpenCode's placeholder, or the id.
+ * - The status of a row of `session` comes from its newest message and whether
+ *   OpenCode may have it open (`mapOpencodeStatus`). It is "needs-you", with
+ *   the reason "question", while OpenCode asks a question or asks for a plan's
+ *   approval. It never has a `waitingText`: what OpenCode asks is never read.
+ *   A wait ends with OpenCode: a session it left waiting is finished, with no
+ *   reason, and no longer asks once OpenCode runs again (`withoutLeftWait`).
+ * - The status of a row of `session_v2` comes from how its turn stands and
+ *   whether OpenCode may have it open (`mapOpencode2Status`). It is never
+ *   "needs-you": OpenCode 2 keeps its waits in memory.
+ * - The name is OpenCode's title, or the slug of a row of `session_v2`, or the
+ *   folder's name while the title is still OpenCode's placeholder, or the id.
  * - The app is not known: the database names no program.
  * - There is no last write: OpenCode keeps every session in one file, so no
  *   file's modified time says when one session was last written.
  * - Its tokens are the counts of its newest reply that ended with some, from
  *   the same read of the database (`replyTokensOf` in `sessionRows.ts`),
- *   when they could be right.
+ *   when they could be right. A row of `session_v2` has none, and is marked
+ *   `tokensNotRead`, since OpenCode 2 records them in a table that is not read.
  * - There is no pid, Jump, Stop or link.
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
@@ -98,19 +113,25 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
   const cwd = row.folder;
   const project = projectOf(cwd);
   const message = withoutLeftWait(row.message, noOpencodeAt);
-  const status = mapOpencodeStatus({ message, open, now });
-  const statusSince = opencodeStatusSince(
-    status,
-    {
-      sessionCreatedAt: row.createdAt,
-      messageCreatedAt: message?.createdAt ?? null,
-      userCreatedAt: row.userCreatedAt,
-      completedAt: message?.completedAt ?? null,
-      askedAt: message?.askedAt ?? null,
-      activityAt,
-    },
-    now,
-  );
+  const status =
+    row.turn === null
+      ? mapOpencodeStatus({ message, open, now })
+      : mapOpencode2Status({ turn: row.turn, open });
+  const statusSince =
+    row.turn === null
+      ? opencodeStatusSince(
+          status,
+          {
+            sessionCreatedAt: row.createdAt,
+            messageCreatedAt: message?.createdAt ?? null,
+            userCreatedAt: row.userCreatedAt,
+            completedAt: message?.completedAt ?? null,
+            askedAt: message?.askedAt ?? null,
+            activityAt,
+          },
+          now,
+        )
+      : opencode2StatusSince(status, { turn: row.turn, activityAt }, now);
   const session: Session = {
     id,
     source: SOURCE_ID,
@@ -127,5 +148,6 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
   };
   if (status === "needs-you") session.waitingReason = "question";
   if (row.tokens) session.tokens = { ...row.tokens };
+  if (row.turn !== null) session.tokensNotRead = true;
   return session;
 }

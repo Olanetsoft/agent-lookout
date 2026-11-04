@@ -48,6 +48,16 @@ test("a session in a wait Agent Lookout answered is read as answered, and only o
   expect(readSession(there)).toMatchObject({ machine: "devbox", answered: true });
 });
 
+test("a session whose counts are not read is read as one, and only on true", () => {
+  const sent = makeSession({ source: "opencode", tokensNotRead: true });
+  expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  for (const tokensNotRead of ["true", 1, {}, false]) {
+    expect(readSession({ ...sent, tokensNotRead }), String(tokensNotRead)).not.toHaveProperty(
+      "tokensNotRead",
+    );
+  }
+});
+
 test("a session from a status file keeps its agent's name, as text and only as text", () => {
   const sent = makeSession({
     id: "status-files:night-shift.json",

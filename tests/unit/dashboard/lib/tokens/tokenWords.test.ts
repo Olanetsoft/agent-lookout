@@ -12,6 +12,7 @@ import {
   NEWEST_REPLY,
   noTokensReason,
   NONE_YET,
+  NOT_READ_FOR_SESSION,
   NOT_READ_YET,
   NOT_RECORDED,
   READ_WHILE_LISTED,
@@ -114,6 +115,17 @@ describe("why there are none", () => {
     expect(NONE_YET).toBe("None recorded yet");
     // A source the page does not know says nothing more.
     expect(noTokensReason(makeSession({ source: "codex" }), [])).toBe("None recorded yet");
+  });
+
+  test("for a session marked as one whose counts are not read, is that, whatever else is known", () => {
+    const session = makeSession({ source: "codex", tokensNotRead: true });
+    expect(noTokensReason(session, SOURCES)).toBe("Not read for this session");
+    expect(noTokensReason(session, SOURCES, NOT_READ_YET)).toBe(NOT_READ_FOR_SESSION);
+    // A reason its agent gives, or its machine, comes first.
+    expect(noTokensReason({ ...session, machine: "devbox" }, SOURCES)).toBe("devbox sent none");
+    expect(noTokensReason({ ...session, source: "status-files" }, SOURCES)).toBe(
+      "A status file has no field for token counts.",
+    );
   });
 
   test("while the counts read with its last message are still to come, is that they are not read yet", () => {

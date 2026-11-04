@@ -18,6 +18,7 @@ import { readSession } from "@dashboard/lib/api/readApi";
 import {
   CLAUDE_CODE_CAPABILITIES,
   CODEX_CAPABILITIES,
+  OPENCODE_CAPABILITIES,
   STATUS_FILE_CAPABILITIES,
 } from "@site-tour/feed/sources";
 import { makeSession } from "@tests/fixtures/session";
@@ -31,6 +32,7 @@ const ago = (minutes: number) => NOW - minutes * MINUTE;
 const CLAUDE_ID = "claude-code:00000000-0000-4000-8000-000000000001";
 const CODEX_ID = "codex:00000000-0000-4000-8000-000000000002";
 const FILE_ID = "status-files:billing-webhooks.json";
+const OPENCODE_2_ID = "opencode:ses_0123456789abcdefABCDEFghij";
 const LINK = "vscode://anthropic.claude-code/open?session=00000000-0000-4000-8000-000000000001";
 
 const SOURCES: SourceHealth[] = [
@@ -1608,26 +1610,130 @@ test("what a Codex session last said is shown in its details as a Claude Code se
   expect(facts(dialog("api-rate-limits").element()).Tokens).toMatch(/^182,431 in, 9,120 out/);
 });
 
-test.each([
-  [FILE_ID, "billing-webhooks", "Agent Lookout does not read what night-shift sessions say."],
-])(
-  "a session whose agent is not read is asked about once, and the answer names its agent",
-  async (id, name, words) => {
-    const asked = saying(() => json({ message: null, reason: "not-read" }));
-    const screen = await renderPanel(id);
-    await expect.element(dialog(name)).toBeVisible();
-    await expect.poll(stateLine).toBe(words);
-    expect(asked).toEqual([askFor(id)]);
+test("a session that is not read is asked about once, and the answer speaks of that session", async () => {
+  const asked = saying(() => json({ message: null, reason: "not-read" }));
+  const screen = await renderPanel(FILE_ID);
+  await expect.element(dialog("billing-webhooks")).toBeVisible();
+  await expect.poll(stateLine).toBe("Agent Lookout does not read what this session says.");
+  expect(asked).toEqual([askFor(FILE_ID)]);
 
-    // Later reads of the sessions do not ask again.
-    for (const at of [NOW + 2_000, NOW + 4_000]) {
-      await screen.rerender(
-        <SessionPanel sessionId={id} onClose={vi.fn()} state={state({ lastOkAt: at })} now={at} />,
-      );
-    }
-    expect(asked).toHaveLength(1);
-  },
-);
+  // Later reads of the sessions do not ask again.
+  for (const at of [NOW + 2_000, NOW + 4_000]) {
+    await screen.rerender(
+      <SessionPanel
+        sessionId={FILE_ID}
+        onClose={vi.fn()}
+        state={state({ lastOkAt: at })}
+        now={at}
+      />,
+    );
+  }
+  expect(asked).toHaveLength(1);
+});
+
+/** The page with an OpenCode 2 session listed, or once it has left the list. */
+function withOpencode2(listed = true, at = NOW): CollectorState {
+  const session = makeSession({
+    id: OPENCODE_2_ID,
+    source: "opencode",
+    surface: "unknown",
+    name: "rename-helper",
+    tokensNotRead: true,
+  });
+  return state({
+    snapshot: {
+      generatedAt: at,
+      sources: [
+        ...SOURCES,
+        {
+          id: "opencode",
+          label: "OpenCode",
+          state: "ok",
+          capabilities: OPENCODE_CAPABILITIES,
+          checkedAt: at,
+        },
+      ],
+      sessions: listed ? [session, ...sessions()] : sessions(),
+    },
+    lastOkAt: at,
+  });
+}
+
+const opencode2Tokens = () => facts(dialog("rename-helper").element()).Tokens;
+const NOT_READ_FOR_IT = "–Not recordedNot read for this session";
+
+test.each<[string, () => Response | Promise<Response>]>([
+  ["answers that it is not read", () => json({ message: null, reason: "not-read" })],
+  [
+    "answers that last messages are off",
+    () => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_LAST_MESSAGE" }),
+  ],
+  [
+    "answers that the setting for transcripts is off",
+    () => json({ message: null, reason: "off", setting: "AGENT_LOOKOUT_WAITING_TEXT" }),
+  ],
+  ["has not answered yet", () => new Promise<Response>(() => {})],
+  ["could not be asked", () => json({ error: "No." }, 500)],
+])("an OpenCode 2 session's counts are not read while it %s", async (_name, respond) => {
+  const asked = saying(respond);
+  await renderPanel(OPENCODE_2_ID, withOpencode2());
+  await expect.poll(() => asked.length).toBeGreaterThan(0);
+  await expect.element(lastMessage()).toBeVisible();
+  expect(opencode2Tokens()).toBe(NOT_READ_FOR_IT);
+});
+
+test("an OpenCode 2 session's counts stay not read once it has left the list", async () => {
+  saying(() => json({ message: null, reason: "not-read" }));
+  const screen = await renderPanel(OPENCODE_2_ID, withOpencode2());
+  await expect.poll(stateLine).toBe("Agent Lookout does not read what this session says.");
+  expect(opencode2Tokens()).toBe(NOT_READ_FOR_IT);
+
+  await screen.rerender(
+    <SessionPanel
+      sessionId={OPENCODE_2_ID}
+      onClose={vi.fn()}
+      state={withOpencode2(false, NOW + MINUTE)}
+      now={NOW + MINUTE}
+    />,
+  );
+  await expect
+    .element(page.getByText("This session has left the list.", { exact: false }))
+    .toBeVisible();
+  expect(opencode2Tokens()).toBe(NOT_READ_FOR_IT);
+});
+
+test("an OpenCode 2 session's counts stay not read while its details fade out", async () => {
+  // The exit takes 150ms. It is slowed here so the test can look at it part-way.
+  const slow = document.createElement("style");
+  slow.textContent = "* { animation-duration: 800ms !important; }";
+  document.head.append(slow);
+  onTestFinished(() => slow.remove());
+
+  saying(() => json({ message: null, reason: "not-read" }));
+  const screen = await renderPanel(OPENCODE_2_ID, withOpencode2());
+  await expect.poll(stateLine).toBe("Agent Lookout does not read what this session says.");
+  const panel = dialog("rename-helper").element();
+
+  await screen.rerender(
+    <SessionPanel sessionId={null} onClose={vi.fn()} state={withOpencode2()} now={NOW} />,
+  );
+  expect(panel.getAttribute("data-state")).toBe("closed");
+  expect(facts(panel).Tokens).toBe(NOT_READ_FOR_IT);
+});
+
+test("a session with no mark says none are recorded yet, though its words are not read", async () => {
+  saying(() => json({ message: null, reason: "not-read" }));
+  const uncounted = state({
+    snapshot: {
+      generatedAt: NOW,
+      sources: SOURCES,
+      sessions: sessions().map(({ tokens: _tokens, ...session }) => session),
+    },
+  });
+  await renderPanel(CODEX_ID, uncounted);
+  await expect.poll(stateLine).toBe("Agent Lookout does not read what this session says.");
+  expect(facts(dialog("api-rate-limits").element()).Tokens).toBe("–Not recordedNone recorded yet");
+});
 
 test("a session on another machine is never asked about, and the part says why", async () => {
   const asked = saying(() => said("Never shown."));

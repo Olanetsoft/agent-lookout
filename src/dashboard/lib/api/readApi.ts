@@ -164,6 +164,7 @@ export function readSession(value: unknown): Session | null {
   // The newest reply's counts, each checked, or none: never zeros in their place.
   const tokens = tokenCountsOf(value.tokens);
   if (tokens) session.tokens = tokens;
+  if (value.tokensNotRead === true) session.tokensNotRead = true;
   const pid = number(value.pid);
   if (pid !== null) session.pid = pid;
   if (typeof value.alive === "boolean") session.alive = value.alive;
