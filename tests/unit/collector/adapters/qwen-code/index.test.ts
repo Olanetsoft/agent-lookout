@@ -3,8 +3,9 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { createTailLimits } from "@collector/messages/tailReader";
-import { createTabFinder } from "@collector/terminal/tabFinder";
+import { createTabFinder, TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFinder";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
+import { PANE_LOOK_SOONEST_MS } from "@collector/tmux/paneFinder";
 import type { TmuxPane } from "@collector/tmux/panes";
 import { tmuxInstalled } from "@collector/tmux/program";
 import type { SourceFact } from "@core/sessions/session";
@@ -52,6 +53,8 @@ import {
 import {
   handClock,
   healthy,
+  JUMP_CHECK,
+  JUMP_CHECK_RUN,
   LINUX_PROCESS_CHECK,
   MAC_PROCESS_CHECK,
   memoryFiles,
@@ -63,6 +66,7 @@ import {
   watching,
   type MemoryFiles,
 } from "@tests/support/adapters/qwenCodeAdapter";
+import { TAB_CHECK, TAB_CHECK_RUN } from "@tests/support/node/terminal";
 import {
   PANE_CHECK,
   PANE_CHECK_RUN,
@@ -1176,6 +1180,420 @@ describe("Jump", () => {
 
     test("with no pane finder it says nothing of tmux", async () => {
       expect(await paneRows(qwenCodeAdapterFor(memoryFiles()))).toEqual([]);
+    });
+  });
+
+  describe("what Sources says of the rest of what runs for Jump", () => {
+    const tabRows = (run: string) => [
+      { label: "Tab check", value: TAB_CHECK },
+      { label: "Tab check run", value: run },
+    ];
+    const jumpRows = (run: string) => [
+      { label: "Jump check", value: JUMP_CHECK },
+      { label: "Jump check run", value: run },
+    ];
+
+    const rowsIn = (rows: SourceFact[] | undefined) =>
+      rows?.filter((fact) => /^(Tab|Jump) check/.test(fact.label));
+    const rows = async (adapter: ReturnType<typeof qwenCodeAdapterFor>) =>
+      rowsIn((await adapter.poll()).health.watching);
+
+    /** What `ps` prints of the sessions' processes and another adapter's, for the look for a tab. */
+    const table = () =>
+      new Map(
+        [41001, 41004, 41009].map((pid) => [pid, { ppid: 1, tty: "??", path: "node" }] as const),
+      );
+
+    /**
+     * The tab finder and the pane finder the collector builds, on a clock a
+     * test moves, and the `ps` of start times. `ps` counts its runs. tmux lists
+     * one pane, which the processes in `parents` run in, both sessions' unless
+     * a test says otherwise.
+     */
+    function standIns(
+      more: {
+        env?: NodeJS.ProcessEnv;
+        parents?: Map<number, number>;
+        isInstalled?: () => Promise<boolean>;
+      } = {},
+    ) {
+      const clock = handClock();
+      const tables = { runs: 0 };
+      const tabs = createTabFinder({
+        env: more.env ?? {},
+        homeDir: HOME,
+        now: clock.now,
+        readProcesses: async () => {
+          tables.runs += 1;
+          return table();
+        },
+      });
+      const { finder: panes, tmux } = standInPaneFinder({
+        panes: ["4301 %1 0 0 checkout-flow"],
+        parents:
+          more.parents ??
+          new Map([
+            [41001, 4301],
+            [41004, 4301],
+          ]),
+        now: clock.now,
+        isInstalled: more.isInstalled,
+      });
+      return { clock, tables, tabs, panes, tmux, starts: ownStarts() };
+    }
+
+    /** An adapter on this system, handed what the collector hands it. */
+    function adapterOn(
+      platform: NodeJS.Platform,
+      processes: ReturnType<typeof standIns>,
+      files: MemoryFiles = twoSessions(),
+    ) {
+      return qwenCodeAdapterFor(files, {
+        platform,
+        now: processes.clock.now,
+        panes: processes.panes.asker(),
+        terminals: processes.tabs.asker(),
+        readProcessStarts: processes.starts.read,
+      });
+    }
+
+    test("on a Mac it lists the look for a tab as not run while no session has asked, and nothing has run", async () => {
+      const processes = standIns();
+      const adapter = adapterOn("darwin", processes, memoryFiles());
+
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(processes.tables.runs).toBe(0);
+    });
+
+    test("on a Mac a look shows at the poll after the one that made it, and stays once the sessions have gone", async () => {
+      const processes = standIns();
+      const live = standInProcesses([41001, 41004]);
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        platform: "darwin",
+        now: processes.clock.now,
+        isAlive: live.isAlive,
+        terminals: processes.tabs.asker(),
+      });
+
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(processes.tables.runs).toBe(1);
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(tabRows(TAB_CHECK_RUN));
+
+      live.stop(41001);
+      live.stop(41004);
+      processes.clock.advance(2_000);
+      await adapter.poll();
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(tabRows(TAB_CHECK_RUN));
+    });
+
+    test("on a Mac Process check's ps gives Jump its answer, so no second row names it", async () => {
+      const processes = standIns();
+      const adapter = adapterOn("darwin", processes);
+      await adapter.poll();
+      processes.clock.advance(2_000);
+      const { health, sessions } = await adapter.poll();
+
+      expect(sessions.every((session) => session.jump !== undefined)).toBe(true);
+      expect(health.watching?.map((fact) => fact.label).slice(3)).toEqual([
+        "Process check",
+        "Process check run",
+        "Pane check",
+        "Pane check run",
+        "Pane parent check",
+        "Pane parent check run",
+        "Tab check",
+        "Tab check run",
+        "Last message read",
+      ]);
+      expect(health.watching?.filter((fact) => fact.value === MAC_PROCESS_CHECK)).toHaveLength(1);
+    });
+
+    test("a look made for another adapter's process alone leaves Tab check at not run", async () => {
+      const processes = standIns();
+      await processes.tabs.asker().look([41009]);
+      expect(processes.tables.runs).toBe(1);
+
+      const adapter = adapterOn("darwin", processes, memoryFiles());
+      await adapter.poll();
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(processes.tables.runs).toBe(1);
+    });
+
+    test("a look another adapter makes shows here once it asks about one of this card's processes", async () => {
+      const processes = standIns();
+      const other = processes.tabs.asker();
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        platform: "darwin",
+        now: processes.clock.now,
+        terminals: processes.tabs.asker(),
+      });
+
+      await other.look([41009]);
+      // Too soon to look again, so nothing has been asked of this card's.
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(processes.tables.runs).toBe(1);
+
+      processes.clock.advance(TAB_LOOK_SOONEST_MS);
+      await other.look([41009]);
+      expect(processes.tables.runs).toBe(2);
+      expect(await rows(adapter)).toEqual(tabRows(TAB_CHECK_RUN));
+    });
+
+    test("with AGENT_LOOKOUT_TERMINAL_JUMP off the look for a tab says not run, since none is made", async () => {
+      const processes = standIns({ env: { AGENT_LOOKOUT_TERMINAL_JUMP: "off" } });
+      const adapter = adapterOn("darwin", processes);
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(tabRows("not run"));
+      expect(processes.tables.runs).toBe(0);
+    });
+
+    test("with no tab finder it says nothing of tabs", async () => {
+      expect(await rows(qwenCodeAdapterFor(memoryFiles(), { platform: "darwin" }))).toEqual([]);
+    });
+
+    test("on a Mac the rows add no run of ps: one look for the processes, and one start check in 30 seconds", async () => {
+      const processes = standIns();
+      const adapter = adapterOn("darwin", processes);
+
+      for (let polled = 0; polled < 15; polled += 1) {
+        await adapter.poll();
+        processes.clock.advance(2_000);
+      }
+      expect(processes.tables.runs).toBe(1);
+      expect(processes.starts.runs).toHaveLength(1);
+
+      await adapter.poll();
+      expect(processes.tables.runs).toBe(1);
+      expect(processes.starts.runs).toHaveLength(2);
+    });
+
+    test("on Linux it lists Jump check as not run until a process is in a pane, and no look for a tab", async () => {
+      const processes = standIns();
+      const adapter = adapterOn("linux", processes, memoryFiles());
+
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.starts.runs).toEqual([]);
+    });
+
+    test("on Linux a run shows at the poll after the one that made it, and stays once the sessions have gone", async () => {
+      const processes = standIns();
+      const live = standInProcesses([41001, 41004]);
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        platform: "linux",
+        now: processes.clock.now,
+        isAlive: live.isAlive,
+        panes: processes.panes.asker(),
+        readProcessStarts: processes.starts.read,
+      });
+
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.starts.runs).toEqual([[41001, 41004]]);
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows(JUMP_CHECK_RUN));
+
+      live.stop(41001);
+      live.stop(41004);
+      processes.clock.advance(2_000);
+      await adapter.poll();
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows(JUMP_CHECK_RUN));
+    });
+
+    test("on Linux, while tmux runs and no session's process is in a pane, Jump check says not run", async () => {
+      const processes = standIns({ parents: new Map() });
+      const adapter = adapterOn("linux", processes);
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.tmux.ran).toHaveLength(1);
+      expect(processes.starts.runs).toEqual([]);
+    });
+
+    test("on Linux, a look that finds another adapter's process alone leaves Jump check at not run", async () => {
+      const processes = standIns({ parents: new Map([[41009, 4301]]) });
+      await processes.panes.asker().look([41009]);
+      expect(processes.panes.paneOf(41009)).toBeDefined();
+
+      const adapter = adapterOn("linux", processes);
+      await adapter.poll();
+      processes.clock.advance(PANE_LOOK_SOONEST_MS);
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.tmux.ran).toHaveLength(2);
+      expect(processes.starts.runs).toEqual([]);
+    });
+
+    test("on Linux, a look another adapter caused counts once it finds one of this card's processes", async () => {
+      const processes = standIns();
+      const other = processes.panes.asker();
+      const adapter = adapterOn("linux", processes);
+
+      await other.look([41009]);
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.starts.runs).toEqual([]);
+
+      processes.clock.advance(PANE_LOOK_SOONEST_MS);
+      await other.look([41009]);
+      expect(processes.tmux.ran).toHaveLength(2);
+
+      await adapter.poll();
+      expect(processes.starts.runs).toEqual([[41001, 41004]]);
+      expect(await rows(adapter)).toEqual(jumpRows(JUMP_CHECK_RUN));
+    });
+
+    test("on Linux a record with no time to compare gives ps nothing to answer, so it says not run", async () => {
+      const files = memoryFiles();
+      files.write(
+        recordPath(QWEN_DIR, "41001.json"),
+        registryRecord({
+          pid: 41001,
+          sessionId: sessionIdOf(1),
+          kind: "tui",
+          extra: { startedAt: null },
+        }),
+      );
+      const processes = standIns();
+      const adapter = adapterOn("linux", processes, files);
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows("not run"));
+      expect(processes.starts.runs).toEqual([]);
+    });
+
+    test("on Linux the rows add no run of ps: one in 30 seconds, and one sooner for a process found since", async () => {
+      const parents = new Map([[41001, 4301]]);
+      const processes = standIns({ parents });
+      const adapter = adapterOn("linux", processes);
+
+      for (let polled = 0; polled < 15; polled += 1) {
+        await adapter.poll();
+        processes.clock.advance(2_000);
+      }
+      expect(processes.starts.runs).toEqual([[41001]]);
+
+      await adapter.poll();
+      expect(processes.starts.runs).toEqual([[41001], [41001]]);
+
+      parents.set(41004, 4301);
+      processes.panes.lookAgain();
+      processes.clock.advance(2_000);
+      await adapter.poll();
+      expect(processes.starts.runs).toEqual([[41001], [41001], [41001, 41004]]);
+    });
+
+    test("on Linux they come after the pane rows and before the last message read", async () => {
+      const { health } = await adapterOn("linux", standIns(), memoryFiles()).poll();
+
+      expect(health.watching?.map((fact) => fact.label).slice(3)).toEqual([
+        "Process check",
+        "Process check run",
+        "Pane check",
+        "Pane check run",
+        "Pane parent check",
+        "Pane parent check run",
+        "Jump check",
+        "Jump check run",
+        "Last message read",
+      ]);
+    });
+
+    test("on Linux without tmux it says nothing of Jump check, on the first poll or a later one", async () => {
+      const processes = standIns({ isInstalled: async () => false });
+      const adapter = adapterOn("linux", processes);
+
+      expect(await rows(adapter)).toEqual([]);
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual([]);
+    });
+
+    test("on Linux with AGENT_LOOKOUT_TMUX off it says nothing of Jump check", async () => {
+      const processes = standIns({
+        isInstalled: () =>
+          tmuxInstalled({
+            env: { AGENT_LOOKOUT_TMUX: "off" },
+            platform: "linux",
+            isExecutable: async () => true,
+          }),
+      });
+      const adapter = adapterOn("linux", processes, memoryFiles());
+
+      await adapter.poll();
+      expect(await rows(adapter)).toEqual([]);
+    });
+
+    test("AGENT_LOOKOUT_TERMINAL_JUMP is for tabs alone, so on Linux with it off ps still confirms a process in a pane and Jump check says so", async () => {
+      const env = { AGENT_LOOKOUT_TERMINAL_JUMP: "off" };
+      const processes = standIns({ env });
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        env,
+        platform: "linux",
+        now: processes.clock.now,
+        panes: processes.panes.asker(),
+        terminals: processes.tabs.asker(),
+        readProcessStarts: processes.starts.read,
+      });
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await rows(adapter)).toEqual(jumpRows(JUMP_CHECK_RUN));
+      expect(processes.starts.runs).toEqual([[41001, 41004]]);
+      expect(processes.tables.runs).toBe(0);
+    });
+
+    test("on Linux with no pane finder it says nothing of Jump check", async () => {
+      expect(await rows(qwenCodeAdapterFor(memoryFiles(), { platform: "linux" }))).toEqual([]);
+    });
+
+    test("on Windows it lists neither, whatever it is handed, and nothing is run", async () => {
+      const panes = knownPanes({});
+      panes.installed = () => true;
+      const ps = ownStarts();
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        platform: "win32",
+        panes,
+        terminals: knownTabs({}),
+        readProcessStarts: ps.read,
+      });
+      await adapter.poll();
+      const { health } = await adapter.poll();
+
+      expect(rowsIn(health.watching)).toEqual([]);
+      expect(JSON.stringify(health.watching)).not.toMatch(/\bps\b/);
+      expect(ps.runs).toEqual([]);
+    });
+
+    test("a poll that goes wrong gives the same rows", async () => {
+      let broken = false;
+      const processes = standIns();
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        platform: "linux",
+        now: processes.clock.now,
+        panes: processes.panes.asker(),
+        readProcessStarts: processes.starts.read,
+        isAlive: () => {
+          if (broken) throw new Error("Not expected.");
+          return true;
+        },
+      });
+      await adapter.poll();
+      processes.clock.advance(2_000);
+      const before = await rows(adapter);
+
+      broken = true;
+      const { health } = await adapter.poll();
+      expect(health.state).toBe("error");
+      expect(rowsIn(health.watching)).toEqual(before);
     });
   });
 });

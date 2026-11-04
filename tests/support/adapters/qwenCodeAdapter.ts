@@ -130,6 +130,13 @@ export const LINUX_PROCESS_CHECK = "/proc/<pid>/stat and /proc/sys/kernel/random
 export const PROCESS_CHECK_RUN =
   "every 30 seconds while a session's process runs, and sooner when another appears";
 
+/** What Sources says `ps` is run with on Linux, to confirm a process found in a pane before Jump. */
+export const JUMP_CHECK = "ps -o pid=,lstart= -p <pids>";
+
+/** How often it says that runs, once it has been asked. */
+export const JUMP_CHECK_RUN =
+  "every 30 seconds while a session's process is in a pane, and sooner when another is found in one";
+
 /** The facts, in the order the adapter gives them on a Mac, as `qwenCodeAdapterFor` is by default. */
 export function watching(
   read: string,

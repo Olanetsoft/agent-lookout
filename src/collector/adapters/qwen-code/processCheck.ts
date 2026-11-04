@@ -102,6 +102,13 @@ export interface RecordProcessCheck {
    * said about its process or it has nothing to compare, is "unknown".
    */
   matches<T extends RecordProcess>(records: readonly T[]): Promise<Map<T, StartMatch>>;
+  /**
+   * Whether a read has been made yet, which for a check against `ps` is a run
+   * of `ps`. Only a record with something to compare causes one. Each adapter
+   * builds its own check, so no other adapter's sessions can turn this on.
+   * Sources reads this, and reading it runs nothing.
+   */
+  asked(): boolean;
 }
 
 interface Remembered {
@@ -129,8 +136,10 @@ function rememberingCheck(
   ttlMs: number,
 ): RecordProcessCheck {
   const remembered = new Map<string, Remembered>();
+  let askedYet = false;
 
   return {
+    asked: () => askedYet,
     async matches<T extends RecordProcess>(records: readonly T[]) {
       const at = now();
       const keyed = records.map((record) => ({ record, key: comparison.keyOf(record) }));
@@ -144,6 +153,7 @@ function rememberingCheck(
       });
 
       if (due) {
+        askedYet = true;
         let read = new Map<number, string>();
         try {
           read = await comparison.read([...new Set(checkable.map(({ record }) => record.pid))]);

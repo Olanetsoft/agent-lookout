@@ -10,6 +10,12 @@ import { ITERM_PATH, TERMINAL_PATH } from "@collector/terminal/terminalTabs";
 
 export { ITERM_PATH, TERMINAL_PATH };
 
+/** What a card says `ps` is run with, to find a session's tab. */
+export const TAB_CHECK = "ps -A -o pid=,ppid=,tty=,comm=";
+
+/** How often it says that runs, once it has been asked for one of the card's sessions. */
+export const TAB_CHECK_RUN = "once for each new process, every 5 seconds at most";
+
 export interface FakeOsascript {
   run: RunOsascript;
   /** Every run, in order, as its arguments. */
