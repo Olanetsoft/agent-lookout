@@ -6,9 +6,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose and
- * Pi, none of the ten installed here, and status files. Then the other machine,
- * connected over SSH.
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi
+ * and Kimi Code, none of the eleven installed here, and status files. Then the
+ * other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -534,6 +534,56 @@ export const PI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Working from the lock Kimi Code keeps on a busy session. Idle only after that, while the same process runs.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While Kimi Code waits for your approval or an answer. A session whose subagent waits for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once its process goes. A session idle since before Agent Lookout saw it busy also shows as finished.",
+  },
+  failed: {
+    level: "partly",
+    reason: "When a turn ends on an error Kimi Code records. A crash mid-turn shows as finished.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title you or a model set, else the folder's. The default title is the start of your first prompt, never kept.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "A session's lock names a process, which can serve many sessions, and no terminal or window.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason: "From the main agent's event file, so a session whose subagent works can look quiet.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "Kimi Code writes its counts into the event file, of which only approvals and questions are parsed.",
+  },
+  stop: {
+    level: "no",
+    reason:
+      "The process holding a Kimi Code session can hold others too, so none can be confirmed and stopped alone.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout does not talk to Kimi Code, so it cannot send an answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -890,6 +940,27 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Kimi Code is not installed: its folder is looked for, and nothing more.
+      id: "kimi-code",
+      label: "Kimi Code",
+      state: "unavailable",
+      detail:
+        "Kimi Code was not found: there is no ~/.kimi-code folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.kimi-code/sessions" },
+        { label: "Session index", value: "~/.kimi-code/session_index.jsonl" },
+        { label: "Locks folder", value: "~/.kimi-code/locks/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+      ],
+      capabilities: KIMI_CODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -928,6 +999,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Cline there", value: "Not found" },
         { label: "Goose there", value: "Not found" },
         { label: "Pi there", value: "Not found" },
+        { label: "Kimi Code there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

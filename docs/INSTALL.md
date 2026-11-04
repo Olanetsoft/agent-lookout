@@ -6,7 +6,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 
 - macOS, Linux or Windows. Agent Lookout is developed and used on macOS. On Linux and Windows, CI runs the tests and starts it, and no one has used it on those desktops yet. [On Linux](GUIDE.md#on-linux) and [On Windows](GUIDE.md#on-windows) say what differs there.
 - Node.js 22.12 or newer. The [Mac app](#mac-app) needs no Node.js, and macOS 13 Ventura or later.
-- Claude Code, Codex, Antigravity, the Antigravity CLI (`agy`), Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose or Pi. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
+- Claude Code, Codex, Antigravity, the Antigravity CLI (`agy`), Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi or Kimi Code. None needs any setup. Any other agent can appear too, by writing a [status file](GUIDE.md#your-own-agents).
 - For Claude Code, a version that has the `claude agents` command. Without it, Agent Lookout still reads the session files, but cannot list background jobs that have finished or failed.
 - For Codex, version 0.155 or later, so that Agent Lookout can tell a session that has ended from one that is idle.
 - For the Antigravity CLI, version 1.3.1 is the one Agent Lookout was written from, and it was checked against one conversation; parts, such as `/resume`, are not yet checked. The Antigravity IDE's conversations do not appear yet, and Sources says when its folder is there.
@@ -19,6 +19,7 @@ Agent Lookout runs with npx, as a Mac app, or from a clone of the repository. Th
 - For Cline, its newer runtime, which its CLI and desktop app use and which keeps a session's files in `~/.cline/data/sessions`. Agent Lookout was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running it. The older VS Code extension's tasks do not appear.
 - For Goose, version 1.34.0 or later, on macOS or Linux, and the system's `sqlite3`, which macOS has, and which Ubuntu and Debian install with `sudo apt install sqlite3`. Agent Lookout was built from Goose's source at v1.57.0 and has not yet been checked on a computer running it. Its sessions show as unknown while a Goose program runs and as finished once none does, never as working, idle or needing you, and are named after their folder unless you named them.
 - For Pi, nothing more, on macOS, Linux or Windows. Agent Lookout was built from Pi's source at v1.5.0 and has not yet been checked on a computer running it. Its sessions show as unknown while a `pi` program runs and as finished once none does, on Windows always as unknown, never as working, idle or needing you, and are named after their folder unless they were given a name.
+- For Kimi Code, version 2.3.0 or later, whose sessions keep a lock while they are busy. An older one shows every session as finished or failed. Agent Lookout was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running it. A session shows as idle only once Agent Lookout has seen it busy, and is named after its folder unless you or Kimi Code's model named it.
 
 Check what you have:
 
@@ -34,9 +35,10 @@ hermes --version
 cline --version
 goose --version
 pi --version
+kimi --version
 ```
 
-`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, `agy --version` a version number such as `1.3.1`, `gemini --version` a version number such as `0.64.0`, `qwen --version` one such as `0.25.1`, and `hermes --version` a first line that starts with `Hermes Agent v` and a version such as `0.22.5`, and also checks for an update of itself, and `cline --version` a version number such as `3.0.74`, and, by default, as any start of Cline does, also checks for an update of itself, which it can install as it exits, and sends Cline's start-up telemetry, `goose --version` a version number such as `1.57.0`, and `pi --version` a version number such as `1.5.0`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, `agy`, `gemini`, `qwen`, `hermes`, `cline`, `goose` or `pi`, so the Codex desktop app needs no CLI.
+`node --version` prints `v22.12.0` or later. `claude --version` prints a version number followed by `(Claude Code)`, and `claude agents --help` prints a line that starts with `Usage: claude agents`. `codex --version` prints `codex-cli` followed by a version number, `agy --version` a version number such as `1.3.1`, `gemini --version` a version number such as `0.64.0`, `qwen --version` one such as `0.25.1`, and `hermes --version` a first line that starts with `Hermes Agent v` and a version such as `0.22.5`, and also checks for an update of itself, and `cline --version` a version number such as `3.0.74`, and, by default, as any start of Cline does, also checks for an update of itself, which it can install as it exits, and sends Cline's start-up telemetry, `goose --version` a version number such as `1.57.0`, `pi --version` a version number such as `1.5.0`, and `kimi --version` one such as `2.4.1`. A command for a program you do not use prints `command not found`: carry on. Agent Lookout never runs `codex`, `agy`, `gemini`, `qwen`, `hermes`, `cline`, `goose`, `pi` or `kimi`, so the Codex desktop app needs no CLI.
 
 ## With npx
 

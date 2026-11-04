@@ -761,6 +761,7 @@ describe("over a long run of snapshots", () => {
     cline: [],
     goose: [],
     pi: [],
+    "kimi-code": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

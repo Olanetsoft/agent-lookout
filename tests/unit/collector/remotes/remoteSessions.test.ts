@@ -7,6 +7,7 @@ import * as codex from "@collector/adapters/codex/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
 import * as pi from "@collector/adapters/pi/index";
+import * as kimiCode from "@collector/adapters/kimi-code/index";
 import * as cline from "@collector/adapters/cline/index";
 import * as hermesAgent from "@collector/adapters/hermes-agent/index";
 import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
@@ -303,6 +304,7 @@ describe("readRemoteSnapshot", () => {
       "gemini-cli": geminiCli,
       goose,
       "hermes-agent": hermesAgent,
+      "kimi-code": kimiCode,
       "mistral-vibe": mistralVibe,
       opencode,
       pi,

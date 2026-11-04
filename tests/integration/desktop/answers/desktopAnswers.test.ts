@@ -136,6 +136,7 @@ async function app(env: Record<string, string> = {}) {
       AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
       AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
       AGENT_LOOKOUT_PI_HOME: await tempDir(),
+      AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",

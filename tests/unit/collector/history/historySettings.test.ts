@@ -101,6 +101,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ PI_CODING_AGENT_SESSION_DIR: "relative/sessions" }, HOME)).toBe(
     defaults,
   );
+  // Kimi Code's own variable can name the folder it has anyway.
+  expect(sourcesFingerprint({ KIMI_CODE_HOME: "/Users/example/.kimi-code" }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -138,6 +140,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_PI_HOME: "/tmp/empty-pi" }, HOME),
     sourcesFingerprint({ PI_CODING_AGENT_DIR: path.resolve("/tmp/empty-pi") }, HOME),
     sourcesFingerprint({ PI_CODING_AGENT_SESSION_DIR: path.resolve("/tmp/empty-pi") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_KIMI_CODE_HOME: "/tmp/empty-kimi" }, HOME),
+    sourcesFingerprint({ KIMI_CODE_HOME: "/tmp/empty-kimi" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

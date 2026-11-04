@@ -142,6 +142,18 @@ export const EMPTY_GOOSE_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-go
 export const EMPTY_PI_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-pi", "pi");
 
 /**
+ * An empty folder for the Kimi Code adapter to read in place of `~/.kimi-code`,
+ * so that a collector a test builds from `process.env` finds no sessions:
+ * `nodeSetup.ts` makes it and names it there. Nothing is ever written in it. A
+ * test that builds an environment of its own names a `tempDir` there.
+ */
+export const EMPTY_KIMI_CODE_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-kimi-code",
+  "kimi-code",
+);
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

@@ -25,6 +25,8 @@ import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/code
 import { codexSession } from "@collector/adapters/codex/toSession";
 import { createGooseAdapter, GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { gooseSession } from "@collector/adapters/goose/toSession";
+import { createKimiCodeAdapter, KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
+import { kimiCodeSession } from "@collector/adapters/kimi-code/toSession";
 import {
   createGeminiCliAdapter,
   GEMINI_CLI_CAPABILITIES,
@@ -58,6 +60,7 @@ import {
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
+import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
   ENVIRONMENT_CONTEXT_ID,
@@ -95,6 +98,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Cline", CLINE_CAPABILITIES],
   ["Goose", GOOSE_CAPABILITIES],
   ["Pi", PI_CAPABILITIES],
+  ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -170,6 +174,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(createPiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities).toBe(
       PI_CAPABILITIES,
     );
+    expect(
+      createKimiCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(KIMI_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -789,6 +796,59 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(PI_CAPABILITIES.jump.level).toBe("no");
     expect(PI_CAPABILITIES.stop.level).toBe("no");
     expect(PI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Kimi Code: every status a session can show comes from what it declares", () => {
+    const all = [true, false];
+    const found = all.flatMap((held) =>
+      all.flatMap((waiting) =>
+        all.flatMap((lastHolderRuns) =>
+          all.map((lastTurnFailed) =>
+            mapKimiCodeStatus({ held, waiting, lastHolderRuns, lastTurnFailed }),
+          ),
+        ),
+      ),
+    );
+    expect(statuses(found)).toEqual(
+      new Set(["working", "needs-you", "idle", "finished", "failed"]),
+    );
+    for (const row of ["working-and-idle", "needs-you", "finished", "failed"] as const) {
+      expect(KIMI_CODE_CAPABILITIES[row].level, row).toBe("partly");
+    }
+  });
+
+  test("Kimi Code: a session has its folder's name, and no tokens, jump, stop or link", () => {
+    const session = kimiCodeSession({
+      session: {
+        id: "session_00000000-0000-4000-8000-000000000001",
+        bucket: "wd_demo_0a1b2c3d4e5f",
+        folder: "/Users/example/code/demo",
+      },
+      state: {
+        folder: "/Users/example/code/demo",
+        ownName: null,
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 10_000,
+        lastTurnFailed: false,
+        listed: true,
+      },
+      lock: null,
+      lastHolder: null,
+      wait: null,
+      stateWrittenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.name).toBe("demo");
+    for (const absent of ["tokens", "jump", "stop", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(KIMI_CODE_CAPABILITIES.names.level).toBe("partly");
+    expect(KIMI_CODE_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(KIMI_CODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(KIMI_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(KIMI_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(KIMI_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Qwen Code: only a reply that asks you a question or for a plan's approval makes a session need you, and no line fails or finishes one", () => {

@@ -27,6 +27,8 @@ export type RemoteSourceId = `remote:${string}`;
  * from its database.
  * `pi` is Pi, the coding agent `pi`, whose sessions are read from the file it
  * keeps for each.
+ * `kimi-code` is Moonshot AI's Kimi Code, in its command, its web page and its
+ * editor extension, whose sessions are read from the files in its folder.
  */
 export type SourceId =
   | "claude-code"
@@ -41,6 +43,7 @@ export type SourceId =
   | "cline"
   | "goose"
   | "pi"
+  | "kimi-code"
   | "status-files"
   | RemoteSourceId;
 
