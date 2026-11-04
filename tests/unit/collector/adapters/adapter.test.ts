@@ -43,6 +43,8 @@ import {
 import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
+import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
+import { continueSession } from "@collector/adapters/continue/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import { createQwenCodeAdapter, QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
@@ -99,6 +101,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Goose", GOOSE_CAPABILITIES],
   ["Pi", PI_CAPABILITIES],
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
+  ["Continue", CONTINUE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -177,6 +180,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createKimiCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(KIMI_CODE_CAPABILITIES);
+    expect(
+      createContinueAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(CONTINUE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -796,6 +802,39 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(PI_CAPABILITIES.jump.level).toBe("no");
     expect(PI_CAPABILITIES.stop.level).toBe("no");
     expect(PI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Continue: a session is unknown, and never working, idle, waiting, finished or failed", () => {
+    const session = continueSession(
+      { id: "00000000-0000-4000-8000-000000000001", folder: null, createdAt: null },
+      NOW,
+    );
+    expect(session.status).toBe("unknown");
+    for (const row of ["working-and-idle", "needs-you", "finished", "failed"] as const) {
+      expect(CONTINUE_CAPABILITIES[row].level, row).toBe("no");
+    }
+  });
+
+  test("Continue: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = continueSession(
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        folder: "/Users/example/code/demo",
+        createdAt: NOW - 60_000,
+      },
+      NOW,
+    );
+    expect(session.name).toBe("demo");
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(CONTINUE_CAPABILITIES.names.level).toBe("partly");
+    expect(CONTINUE_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(CONTINUE_CAPABILITIES.tokens.level).toBe("no");
+    expect(CONTINUE_CAPABILITIES.jump.level).toBe("no");
+    expect(CONTINUE_CAPABILITIES.stop.level).toBe("no");
+    expect(CONTINUE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Kimi Code: every status a session can show comes from what it declares", () => {

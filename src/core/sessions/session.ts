@@ -29,6 +29,8 @@ export type RemoteSourceId = `remote:${string}`;
  * keeps for each.
  * `kimi-code` is Moonshot AI's Kimi Code, in its command, its web page and its
  * editor extension, whose sessions are read from the files in its folder.
+ * `continue` is Continue, in its command `cn` and its editor extensions, whose
+ * sessions are read from the list it keeps of them.
  */
 export type SourceId =
   | "claude-code"
@@ -44,6 +46,7 @@ export type SourceId =
   | "goose"
   | "pi"
   | "kimi-code"
+  | "continue"
   | "status-files"
   | RemoteSourceId;
 

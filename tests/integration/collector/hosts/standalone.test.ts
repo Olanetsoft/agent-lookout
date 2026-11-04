@@ -68,11 +68,11 @@ async function distFolder(withPage: boolean): Promise<string> {
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
- * Cline, Goose, Pi and Kimi Code folders, an empty folder of status files and tmux
+ * Cline, Goose, Pi, Kimi Code and Continue folders, an empty folder of status files and tmux
  * turned off, on a free port. The poller runs in this process, so anything less would read the real
  * `~/.claude`, `~/.codex`, `~/.vibe`, `~/.gemini`, `~/.local/share/opencode`,
- * `~/.qwen`, `~/.hermes`, `~/.cline`, `~/.local/share/goose`, `~/.pi`, `~/.kimi-code` and
- * `~/.agent-lookout` and run the real `claude`.
+ * `~/.qwen`, `~/.hermes`, `~/.cline`, `~/.local/share/goose`, `~/.pi`, `~/.kimi-code`,
+ * `~/.continue` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -88,6 +88,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const gooseHome = await tempDir();
   const piHome = await tempDir();
   const kimiCodeHome = await tempDir();
+  const continueHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -104,6 +105,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     gooseHome,
     piHome,
     kimiCodeHome,
+    continueHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -120,6 +122,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_GOOSE_HOME: gooseHome,
       AGENT_LOOKOUT_PI_HOME: piHome,
       AGENT_LOOKOUT_KIMI_CODE_HOME: kimiCodeHome,
+      AGENT_LOOKOUT_CONTINUE_HOME: continueHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -194,6 +197,7 @@ describe("the standalone host", () => {
       gooseHome,
       piHome,
       kimiCodeHome,
+      continueHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -334,6 +338,13 @@ describe("the standalone host", () => {
             state: "ok",
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(kimiCodeHome, "sessions") },
+            ]),
+          },
+          {
+            id: "continue",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(continueHome, "sessions") },
             ]),
           },
           {
