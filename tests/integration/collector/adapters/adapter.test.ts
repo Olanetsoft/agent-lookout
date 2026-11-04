@@ -4,18 +4,31 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
+import { TRUSTED_SCHEMA_OFF } from "@collector/adapters/antigravity/app/summaries";
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { CONTINUE_CAPABILITIES } from "@collector/adapters/continue/index";
-import { CRUSH_CAPABILITIES } from "@collector/adapters/crush/index";
+import {
+  COMMAND_SHOWN as CRUSH_COMMAND,
+  CRUSH_CAPABILITIES,
+} from "@collector/adapters/crush/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
-import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
-import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
+import {
+  COMMAND_SHOWN as GOOSE_COMMAND,
+  GOOSE_CAPABILITIES,
+} from "@collector/adapters/goose/index";
+import {
+  COMMAND_SHOWN as HERMES_AGENT_COMMAND,
+  HERMES_AGENT_CAPABILITIES,
+} from "@collector/adapters/hermes-agent/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
-import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
+import {
+  COMMAND_SHOWN as OPENCODE_COMMAND,
+  OPENCODE_CAPABILITIES,
+} from "@collector/adapters/opencode/index";
 import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
@@ -30,6 +43,9 @@ const GUIDE = fileURLToPath(new URL("../../../../docs/GUIDE.md", import.meta.url
 const README = fileURLToPath(new URL("../../../../README.md", import.meta.url));
 const PRIVACY = fileURLToPath(new URL("../../../../PRIVACY.md", import.meta.url));
 const CLINE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/cline.md", import.meta.url));
+const ANTIGRAVITY_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/antigravity.md", import.meta.url),
+);
 const GOOSE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/goose.md", import.meta.url));
 const PI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/pi.md", import.meta.url));
 const KIMI_CODE_NOTES = fileURLToPath(
@@ -174,6 +190,21 @@ test("PRIVACY.md and the Cline notes name what is read and from which version", 
     expect(text).toContain("~/.cline/data/sessions");
     for (const field of ["session_id", "pid", "started_at", "ended_at", "status", "cwd"]) {
       expect(text).toContain(field);
+    }
+  }
+});
+
+test("every read Agent Lookout runs with sqlite3 that a card, PRIVACY.md or the Antigravity notes print keeps the schema from being trusted", async () => {
+  for (const command of [OPENCODE_COMMAND, HERMES_AGENT_COMMAND, GOOSE_COMMAND, CRUSH_COMMAND]) {
+    expect(command).toContain(`-cmd "${TRUSTED_SCHEMA_OFF}" <database>`);
+  }
+  for (const file of [PRIVACY, ANTIGRAVITY_NOTES]) {
+    const printed = (await readFile(file, "utf8"))
+      .split("\n")
+      .filter((line) => line.startsWith("sqlite3 -init "));
+    expect(printed).not.toEqual([]);
+    for (const command of printed) {
+      expect(command).toContain(`-cmd '${TRUSTED_SCHEMA_OFF}' `);
     }
   }
 });

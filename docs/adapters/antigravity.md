@@ -322,9 +322,11 @@ The app runs every chat's agent in one program, its hub: on macOS `Contents/Reso
 `app/summaries.ts` reads `conversation_id` and `workspace_uris` alone, with the system's `sqlite3`, from fixed places, `/usr/bin/sqlite3` first, never `PATH`, and never on Windows:
 
 ```sh
-sqlite3 -init /dev/null -batch -json 'file:<folder>/conversation_summaries.db?mode=ro&immutable=1' \
+sqlite3 -init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF' 'file:<folder>/conversation_summaries.db?mode=ro&immutable=1' \
   'SELECT conversation_id, workspace_uris FROM conversation_summaries'
 ```
+
+`-cmd 'PRAGMA trusted_schema=OFF'` keeps a view in the database from calling `edit()`, which the `sqlite3` program adds and which starts a program. `sqlite3` turns that setting off itself from 3.42 on, and one older than 3.33 has no `-json`, so this matters for 3.33 to 3.41. Every agent's read has it.
 
 Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly` with `?mode=ro` did not, with "unable to open database file (14)", while no `-wal` or `-shm` file was beside it, since a reader of a database in WAL mode otherwise makes its `-shm`. `immutable=1` takes no lock and makes no file. `mode=ro` is added so a database that is not there is never made: with `immutable=1` alone, `sqlite3` makes an empty one. `?mode=ro&immutable=1` was checked on a database in WAL mode with no side files, made for the tests, not on the app's own. `immutable=1` also means the app's `-wal` file is not read, so a chat begun a moment ago may have no folder until the app moves its writes into the database, and a read made while it does can fail. The folder is the first address in `workspace_uris` that is a local absolute path. The database is looked at with `lstat` on each poll that shows a chat, and read again only when its size or modified time changes after a read that worked, or a minute after a read that did not work, whether it changed or not, so a `sqlite3` that cannot read it, such as one too old to know `-json`, is not run on every change. With no `sqlite3`, or when it fails, chats show without a folder, and the card says so.
 
@@ -335,7 +337,7 @@ Seen on that Mac: `file:<path>?immutable=1` opened the database, and `-readonly`
 `app/waits.ts` reads two numbers of the newest step alone, with the same `sqlite3` as [Folders](#folders):
 
 ```sh
-sqlite3 -init /dev/null -batch -json 'file:<folder>/conversations/<id>.db?mode=ro&immutable=1' \
+sqlite3 -init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF' 'file:<folder>/conversations/<id>.db?mode=ro&immutable=1' \
   'SELECT idx, status FROM steps ORDER BY idx DESC LIMIT 1'
 ```
 

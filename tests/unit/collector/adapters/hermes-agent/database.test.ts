@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
+import {
+  SQLITE_TIMEOUT_MS,
+  TRUSTED_SCHEMA_OFF,
+} from "@collector/adapters/antigravity/app/summaries";
 import {
   createDatabaseReader,
   HEADER_LENGTH,
@@ -147,6 +150,9 @@ describe("which way the database is opened", () => {
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
     ]);
+    for (const run of sqlite.runs) {
+      expect(run.args.slice(-4, -2)).toEqual(["-cmd", TRUSTED_SCHEMA_OFF]);
+    }
     // Its version was asked, once, in case one that passes is there.
     expect(sqlite.versionRuns).toEqual(["/usr/bin/sqlite3"]);
   });
@@ -173,7 +179,7 @@ describe("which way the database is opened", () => {
         `file:${DATABASE}?mode=ro&immutable=1`,
       ]);
       expect(
-        sqlite.runs.every((run) => !run.args.includes("-cmd")),
+        sqlite.runs.every((run) => !run.args.includes(".timeout 1000")),
         sidecars,
       ).toBe(true);
       expect(sqlite.versionRuns, sidecars).toEqual(["/usr/bin/sqlite3"]);
@@ -191,7 +197,7 @@ describe("which way the database is opened", () => {
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
       `file:${DATABASE}?mode=ro&readonly_shm=1`,
     ]);
-    expect(sqlite.runs.every((run) => !run.args.includes("-cmd"))).toBe(true);
+    expect(sqlite.runs.every((run) => !run.args.includes(".timeout 1000"))).toBe(true);
   });
 
   test("in WAL mode with a -wal that holds commits, when no sqlite3 found passes the test, it is not read, and the first found is named", async () => {

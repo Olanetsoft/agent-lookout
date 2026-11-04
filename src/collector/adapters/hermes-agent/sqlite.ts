@@ -114,7 +114,8 @@ export const HERMES_SQLITE_LOCATIONS: readonly string[] = [
 /**
  * The arguments that ask `sqlite3` its version, and nothing else: with no
  * `-init /dev/null`, it first runs `~/.sqliterc`, which can print, or run
- * commands, before the version.
+ * commands, before the version. This is the one run that names no database, so
+ * it has no schema to keep from trusting.
  */
 export const VERSION_ARGS = ["-init", "/dev/null", "--version"] as const;
 

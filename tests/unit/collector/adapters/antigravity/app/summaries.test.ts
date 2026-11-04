@@ -4,12 +4,14 @@ import {
   createSummariesReader,
   findSqlite,
   folderOfUris,
+  readArguments,
   readFolders,
   RETRY_MS,
   SQLITE_LOCATIONS,
   sqliteArguments,
   SUMMARIES_QUERY,
   summariesUri,
+  TRUSTED_SCHEMA_OFF,
 } from "@collector/adapters/antigravity/app/summaries";
 import {
   APP_HOME,
@@ -27,6 +29,42 @@ const B = conversationId("b2");
 const FOLDER = "/Users/example/code/demo-project";
 const FILE = summariesPath(APP_HOME);
 
+describe("the arguments of every read of a database", () => {
+  test("keep the schema from being trusted, before the address", () => {
+    expect(TRUSTED_SCHEMA_OFF).toBe("PRAGMA trusted_schema=OFF");
+    expect(readArguments("file:/data/a.db?mode=ro&immutable=1", "SELECT 1")).toEqual([
+      "-init",
+      "/dev/null",
+      "-batch",
+      "-json",
+      "-cmd",
+      "PRAGMA trusted_schema=OFF",
+      "file:/data/a.db?mode=ro&immutable=1",
+      "SELECT 1",
+    ]);
+  });
+
+  test("put what one read adds ahead of that, and take nothing away", () => {
+    expect(
+      readArguments("file:/data/a.db?mode=ro&readonly_shm=1", "SELECT 1", [
+        "-cmd",
+        ".timeout 1000",
+      ]),
+    ).toEqual([
+      "-init",
+      "/dev/null",
+      "-batch",
+      "-json",
+      "-cmd",
+      ".timeout 1000",
+      "-cmd",
+      "PRAGMA trusted_schema=OFF",
+      "file:/data/a.db?mode=ro&readonly_shm=1",
+      "SELECT 1",
+    ]);
+  });
+});
+
 describe("the question sqlite3 is asked", () => {
   test("opens the file read-only, as one nothing changes, with every awkward letter of its path escaped", () => {
     expect(summariesUri(FILE)).toBe(
@@ -43,6 +81,8 @@ describe("the question sqlite3 is asked", () => {
       "/dev/null",
       "-batch",
       "-json",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       summariesUri(FILE),
       "SELECT conversation_id, workspace_uris FROM conversation_summaries",
     ]);

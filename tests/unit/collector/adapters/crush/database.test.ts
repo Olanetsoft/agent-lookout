@@ -1,12 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import { TRUSTED_SCHEMA_OFF } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader, RETRY_MS } from "@collector/adapters/crush/database";
 import { databaseOf } from "@collector/adapters/crush/projects";
-import {
-  PROBE_QUERY,
-  SESSIONS_QUERY,
-  TRUSTED_SCHEMA_OFF,
-} from "@collector/adapters/crush/sessionRows";
+import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/crush/sessionRows";
 import { readTimeUntil } from "@collector/adapters/hermes-agent/sqlite";
 import {
   DATA_FOLDER,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { TRUSTED_SCHEMA_OFF } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader, RETRY_MS } from "@collector/adapters/goose/database";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/goose/sessionRows";
 import {
@@ -76,6 +77,19 @@ describe("how the database is opened", () => {
     expect(sqlite.runs).toHaveLength(1);
     expect(sqlite.runs[0]?.slice(0, 4)).toEqual(["-init", "/dev/null", "-batch", "-json"]);
     expect(sqlite.runs[0]?.at(-1)).toBe(SESSIONS_QUERY);
+  });
+
+  test("with a database's schema not trusted on every run, a -wal's and the probe's too", async () => {
+    const files = gooseFiles();
+    files.write(WAL, "frames");
+    files.write(SHM, "index");
+    const sqlite = standInSqlite();
+    sqlite.fail("question");
+    await readerOf(files, sqlite).read(NOW);
+    expect(sqlite.runs.map((args) => args.at(-1))).toEqual([SESSIONS_QUERY, PROBE_QUERY]);
+    for (const args of sqlite.runs) {
+      expect(args.slice(-4, -2)).toEqual(["-cmd", TRUSTED_SCHEMA_OFF]);
+    }
   });
 });
 

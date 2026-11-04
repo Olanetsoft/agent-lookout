@@ -878,7 +878,8 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "not found" },
         {
           label: "Command",
-          value: "sqlite3 -init /dev/null -batch -json <database> <fixed query>",
+          value:
+            'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>',
         },
         { label: "Command run", value: "when the database changes" },
         { label: "Process check", value: "ps -A -o comm=" },
@@ -943,7 +944,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         {
           label: "Command",
           value:
-            'sqlite3 -init /dev/null -batch -json [-cmd ".timeout 1000"] <database> <fixed query>',
+            'sqlite3 -init /dev/null -batch -json [-cmd ".timeout 1000"] -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>',
         },
         { label: "Command run", value: "when a database changes" },
         { label: "sqlite3 for a live -wal", value: "not needed yet" },
@@ -984,7 +985,8 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "not found" },
         {
           label: "Command",
-          value: "sqlite3 -init /dev/null -batch -json <database> <fixed query>",
+          value:
+            'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>',
         },
         { label: "Command run", value: "when the database changes" },
         { label: "Process check", value: "ps -A -o comm=" },

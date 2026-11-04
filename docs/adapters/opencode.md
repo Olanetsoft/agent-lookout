@@ -39,7 +39,9 @@ The adapter opens no file itself. Only `sqlite3` opens the database, its `-wal` 
 
 ## How sqlite3 opens the database
 
-`sqlite3` is found and started as for Antigravity: at `/usr/bin/sqlite3`, `/bin/sqlite3`, `/opt/homebrew/bin/sqlite3`, `/usr/local/bin/sqlite3` or `/opt/local/bin/sqlite3`, never on `PATH`, directly with no shell, with stdin closed, only `PATH=/usr/bin:/bin` and `LC_ALL=C` in its environment, a 5-second timeout and at most 4 MiB of output. Its arguments are `-init /dev/null -batch -json`, the database's address and one fixed question. For the question of a session's last message, at most 256 KB of output is read.
+`sqlite3` is found and started as for Antigravity: at `/usr/bin/sqlite3`, `/bin/sqlite3`, `/opt/homebrew/bin/sqlite3`, `/usr/local/bin/sqlite3` or `/opt/local/bin/sqlite3`, never on `PATH`, directly with no shell, with stdin closed, only `PATH=/usr/bin:/bin` and `LC_ALL=C` in its environment, a 5-second timeout and at most 4 MiB of output. Its arguments are `-init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF'`, the database's address and one fixed question. For the question of a session's last message, at most 256 KB of output is read.
+
+`-cmd 'PRAGMA trusted_schema=OFF'` keeps a view in the database from calling `edit()`, which the `sqlite3` program adds and which starts a program. `sqlite3` turns that setting off itself from 3.42 on, and one older than 3.33 has no `-json`, so this matters for 3.33 to 3.41. Every agent's read has it.
 
 OpenCode keeps its database in WAL mode (`database.ts`). What it saves lies in `opencode.db-wal` until SQLite moves it into the database, which SQLite does on its own at about 1,000 pages, and `opencode.db-shm` indexes the `-wal`. OpenCode 1.19.0 never closes the database itself, so it leaves the `-wal` full when it quits, and what it saved there must still be read ([Open or closed](#open-or-closed)). So the address follows the files beside the database:
 

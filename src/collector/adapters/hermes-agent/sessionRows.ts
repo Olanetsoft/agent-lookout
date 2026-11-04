@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { readArguments } from "../antigravity/app/summaries.ts";
+
 /**
  * The two questions Agent Lookout asks a Hermes Agent profile's database,
  * `state.db`, and how their answers are read. Both are fixed text: nothing
@@ -199,7 +201,7 @@ export function sqliteUri(file: string, mode: DatabaseMode): string {
 /** The arguments `sqlite3` is given for one question, each as it is. */
 export function sqliteArguments(file: string, mode: DatabaseMode, query: string): string[] {
   const wait = mode === "rollback" ? ["-cmd", `.timeout ${BUSY_TIMEOUT_MS}`] : [];
-  return ["-init", "/dev/null", "-batch", "-json", ...wait, sqliteUri(file, mode), query];
+  return readArguments(sqliteUri(file, mode), query, wait);
 }
 
 /**

@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { runSqlite, SQLITE_TIMEOUT_MS } from "@collector/adapters/antigravity/app/summaries";
+import {
+  runSqlite,
+  SQLITE_TIMEOUT_MS,
+  TRUSTED_SCHEMA_OFF,
+} from "@collector/adapters/antigravity/app/summaries";
 import { BASIS, createHermesAgentAdapter } from "@collector/adapters/hermes-agent/index";
 import { parsePidNamespace } from "@collector/adapters/hermes-agent/processes";
 import {
@@ -254,16 +258,18 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
     }
 
     // sqlite3 is given only the fixed arguments: its settings off, JSON out, a
-    // second's wait in rollback-journal mode, the database and a fixed question.
+    // second's wait in rollback-journal mode, the schema not trusted, the
+    // database and a fixed question.
     expect(runs).toHaveLength(4);
     for (const args of runs) {
       expect(args.slice(0, 4)).toEqual(["-init", "/dev/null", "-batch", "-json"]);
       const rest = args.slice(4);
-      if (rest[0] === "-cmd") {
-        expect(rest.slice(0, 2)).toEqual(["-cmd", ".timeout 1000"]);
-        expect(rest[2]).toBe(sqliteUri(defaultDatabase, "rollback"));
+      if (rest[1] === ".timeout 1000") {
+        expect(rest.slice(0, 4)).toEqual(["-cmd", ".timeout 1000", "-cmd", TRUSTED_SCHEMA_OFF]);
+        expect(rest[4]).toBe(sqliteUri(defaultDatabase, "rollback"));
       } else {
-        expect(rest[0]).toBe(sqliteUri(coderDatabase, "whole"));
+        expect(rest.slice(0, 2)).toEqual(["-cmd", TRUSTED_SCHEMA_OFF]);
+        expect(rest[2]).toBe(sqliteUri(coderDatabase, "whole"));
       }
       expect([PROBE_QUERY, SESSIONS_QUERY]).toContain(args.at(-1));
     }
