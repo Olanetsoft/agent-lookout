@@ -140,9 +140,9 @@ export interface ListedSession {
   since: string | null;
   /**
    * For a working session, how long since its agent last wrote the file it is
-   * read from, when the source gives that. Five minutes or more is when the
-   * dashboard says so: the session may be waiting for an approval its agent
-   * does not record, or may have hung.
+   * read from, or for Codex and Gemini CLI a subagent's file, when the source
+   * gives that. Five minutes or more is when the dashboard says so: the session
+   * may be waiting for an approval its agent does not record, or may have hung.
    */
   quietFor: string | null;
   quietForMs: number | null;

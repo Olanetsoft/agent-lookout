@@ -7,10 +7,10 @@
 //   Agent Lookout has answered is not counted as one.
 // - A working session counts until 30 minutes after its newest update: the
 //   newer of when its status last changed and when its agent last wrote to
-//   its file, of whichever of the two it has. A session that still reads as
-//   waiting, in a wait Agent Lookout has answered, is working, as the page
-//   lists it, so the Mac is not let go for the second or two before its agent
-//   writes that it works again.
+//   its file, or for Codex and Gemini CLI to a subagent's file, of whichever
+//   of the two it has. A session that still reads as waiting, in a wait Agent
+//   Lookout has answered, is working, as the page lists it, so the Mac is not
+//   let go for the second or two before its agent writes that it works again.
 // - A working session with neither time does not count: nothing says it was
 //   updated in the last 30 minutes.
 // - A working Claude Code session whose process runs (`alive`), on this Mac

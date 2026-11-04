@@ -55,6 +55,18 @@ function statusAt(status: GeminiCliStatus, now: number): GeminiCliStatus {
 const WRITE_ORDER_SLACK_MS = 1_000;
 
 /**
+ * A file's modified time, as a time in the session's life, or null when it
+ * could not be right. The system gives it with a fraction of a millisecond,
+ * and no file of a session is written to before the session began.
+ */
+function writeTime(mtimeMs: number | undefined, startedAt: number | null, now: number) {
+  if (mtimeMs === undefined) return null;
+  const at = plausibleTime(Math.floor(mtimeMs), now);
+  if (at === null || (startedAt !== null && at < startedAt - WRITE_ORDER_SLACK_MS)) return null;
+  return at;
+}
+
+/**
  * When the session was last active, as far as its lines say: the newest time
  * that could be right of its last `lastUpdated`, its last message and the end
  * of its last tool call. Not the file's modified time, which a title Gemini CLI
@@ -81,6 +93,8 @@ export interface GeminiCliSessionInput {
   cwd: string | null;
   /** The file's modified time, as the `lstat` made before reading it gave it. */
   writtenAt?: number;
+  /** When a subagent of the session last wrote to its own file, if one has (`subagentWrites.ts`). */
+  subagentWrittenAt?: number;
   now: number;
 }
 
@@ -97,8 +111,11 @@ export interface GeminiCliSessionInput {
  *   id. A prompt is never used as a name.
  * - The status time is that of the line the status comes from. An unknown
  *   status has none, and a time before the session began is not known.
- * - The last write is the file's modified time. A time that could not be
- *   right, or that is before the session began, is not known.
+ * - The last write is the newest modified time of the file and its subagents'
+ *   files. A time that could not be right, or that is before the session
+ *   began, is not known. It is all a subagent's write moves: the status and
+ *   its time, the start and how long the session is listed come from the
+ *   session's own lines.
  * - Its tokens are the counts of its newest reply left that has them, from
  *   the same read of the file (`newestGeminiCliTokens`).
  * - It runs in a terminal. There is no pid, no `alive` and no link: Gemini
@@ -136,13 +153,10 @@ export function geminiCliSession(input: GeminiCliSessionInput): Session | null {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
-  // The system gives the time with a fraction of a millisecond. A file cannot
-  // have been written to before its session began.
-  const writtenAt =
-    input.writtenAt === undefined ? null : plausibleTime(Math.floor(input.writtenAt), now);
-  const beforeStart =
-    writtenAt !== null && startedAt !== null && writtenAt < startedAt - WRITE_ORDER_SLACK_MS;
-  if (writtenAt !== null && !beforeStart) session.lastWriteAt = writtenAt;
+  const writes = [input.writtenAt, input.subagentWrittenAt]
+    .map((mtimeMs) => writeTime(mtimeMs, startedAt, now))
+    .filter((at) => at !== null);
+  if (writes.length > 0) session.lastWriteAt = Math.max(...writes);
   if (state.tokens) session.tokens = { ...state.tokens };
   return session;
 }

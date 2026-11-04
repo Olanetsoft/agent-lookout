@@ -10,11 +10,11 @@ import type { Project } from "./projects.ts";
  * Gemini CLI 0.39 and later writes a session to
  * `tmp/<project>/chats/session-<YYYY-MM-DDTHH-MM>-<first 8 of its id>.jsonl`,
  * and an imported one to `session-<epoch ms>-<id>.jsonl`. A subagent's file
- * is in a folder of its parent session's, which is not looked into. A
- * rewrite that fails can leave `.jsonl.tmp-<pid>` or `.jsonl.unreadable-<time>`
- * beside a file, and those are passed over. Versions before 0.39 wrote
- * `session-<…>.json`, a format this adapter does not read: those are only
- * counted, for the note on the Sources card, never opened
+ * is in a folder of its parent session's, which is not looked into here
+ * (`subagentWrites.ts`). A rewrite that fails can leave `.jsonl.tmp-<pid>` or
+ * `.jsonl.unreadable-<time>` beside a file, and those are passed over. Versions
+ * before 0.39 wrote `session-<…>.json`, a format this adapter does not read:
+ * those are only counted, for the note on the Sources card, never opened
  * (packages/core/src/services/chatRecordingService.ts at v0.64.0).
  *
  * A folder holds up to 30 days of sessions, so it is listed again only when

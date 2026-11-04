@@ -10,7 +10,9 @@ import {
   geminiCliSeatbeltFolder,
   OLDER_FORMAT_NOTE,
   RECHECK_MS,
+  SUBAGENT_FILES,
   UNKNOWN_NOTE,
+  type GeminiCliAdapterOptions,
 } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import { createEventStore } from "@collector/eventStore";
@@ -57,6 +59,7 @@ import {
   setLine,
   setMessagesLine,
   SLUG,
+  subagentPath,
   titleLine,
   TMP_DIR,
   tokensOf,
@@ -188,6 +191,7 @@ describe("reading the sessions", () => {
       { label: "Seatbelt sessions folder", value: "~/.cache/.gemini/tmp" },
       { label: "Read", value: "every 2 seconds" },
       { label: "Files read", value: "chats/session-*.jsonl and .project_root in each project" },
+      { label: "Subagent files", value: SUBAGENT_FILES },
       { label: "Programs run", value: "None" },
       { label: "Last message read", value: LAST_MESSAGE_READ },
     ]);
@@ -431,6 +435,297 @@ describe("a request that fails", () => {
     const lines = failed.with(5, noticeLine("error", error, NOW - 2 * MINUTE));
     const { sessions } = await geminiCliAdapterFor(filesOf(lines)).poll();
     expect(sessions[0]).toMatchObject({ status: "idle", statusSince: NOW - 2 * MINUTE });
+  });
+});
+
+describe("a subagent's writes", () => {
+  const AGENT = "11111111-1111-4111-8111-111111111111";
+  const NEVER_OPENED = "placeholder: must never be opened";
+  const sessionFile = chatPath(chatName(NOW - 10 * MINUTE, ids.working));
+  const folder = `${TMP_DIR}/${SLUG}/chats/${ids.working}`;
+
+  /** A working session, whose own file was last written ten minutes ago. */
+  function quietSession() {
+    const files = memoryFiles();
+    files.write(projectRootPath(), PROJECT);
+    files.write(sessionFile, workingSession(), { mtimeMs: NOW - 10 * MINUTE });
+    return files;
+  }
+
+  const onlySession = async (files: ReturnType<typeof memoryFiles>) => {
+    const { sessions } = await geminiCliAdapterFor(files).poll();
+    expect(sessions).toHaveLength(1);
+    return sessions[0];
+  };
+
+  test("a subagent that wrote after the session's own file gives the session's last write", async () => {
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    expect((await onlySession(files))?.lastWriteAt).toBe(NOW - 5 * SECOND);
+  });
+
+  test("a subagent that wrote before the session's own file changes nothing", async () => {
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - HOUR });
+    expect((await onlySession(files))?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+  });
+
+  test("a session with no subagent keeps its own file's time", async () => {
+    expect((await onlySession(quietSession()))?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+  });
+
+  test("the time follows a subagent as it writes, poll by poll, with no file opened for it", async () => {
+    const files = quietSession();
+    const agentFile = subagentPath(ids.working, AGENT);
+    files.write(agentFile, NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.append(agentFile, "\n", { mtimeMs: NOW + SECOND });
+    clock.advance(2 * SECOND);
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]?.lastWriteAt).toBe(NOW + SECOND);
+    expect(files.opened().filter((target) => target.startsWith(folder))).toEqual([]);
+  });
+
+  test("a subagent that starts after the session was first polled counts at the next poll", async () => {
+    const files = quietSession();
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW + SECOND });
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.lastWriteAt).toBe(NOW + SECOND);
+  });
+
+  test("moves nothing but the last write: the status, its time and the start stay as the lines say", async () => {
+    const before = await onlySession(quietSession());
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    expect(await onlySession(files)).toEqual({ ...before, lastWriteAt: NOW - 5 * SECOND });
+  });
+
+  test("a subagent's own file is never listed as a session, and what it holds never reaches one", async () => {
+    const files = quietSession();
+    files.write(
+      subagentPath(ids.working, AGENT),
+      chatFile([
+        headerLine({ sessionId: AGENT, kind: "subagent", startTime: NOW - MINUTE }),
+        geminiLine(messageIdOf("41"), NOW - SECOND, { content: PRIVATE_WORDS }),
+        updatedLine(NOW - SECOND),
+      ]),
+      { mtimeMs: NOW - SECOND },
+    );
+    const session = await onlySession(files);
+    expect(session?.id).toBe(idOf(ids.working));
+    expect(JSON.stringify(session)).not.toContain(PRIVATE_WORDS);
+    expect(files.opened()).not.toContain(subagentPath(ids.working, AGENT));
+  });
+
+  test("a link in the folder gives no time, and a link in the folder's place is not looked through", async () => {
+    const files = quietSession();
+    files.special(subagentPath(ids.working, AGENT));
+    expect((await onlySession(files))?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+
+    const linked = quietSession();
+    linked.special(folder);
+    expect((await onlySession(linked))?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+    expect(linked.count("readdir", (target) => target.startsWith(folder))).toBe(0);
+  });
+
+  test("a time that could not be right leaves the session's own", async () => {
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW + HOUR });
+    expect((await onlySession(files))?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+  });
+
+  test("a subagent's folder or file that is refused leaves the session's own time, and the poll healthy", async () => {
+    const files = quietSession();
+    const agentFile = subagentPath(ids.working, AGENT);
+    files.write(agentFile, NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    for (const target of [folder, agentFile]) {
+      files.fail(target, "EACCES");
+      const { health, sessions } = await geminiCliAdapterFor(files).poll();
+      expect(health.state).toBe("ok");
+      expect(sessions.map(({ lastWriteAt }) => lastWriteAt)).toEqual([NOW - 10 * MINUTE]);
+      files.heal(target);
+    }
+  });
+
+  test("is looked up for no session that is not listed", async () => {
+    const files = memoryFiles();
+    files.write(projectRootPath(), PROJECT);
+    // A session not written to for a day, and one a title moved on after it left the list.
+    const old = sessionIdOf("41");
+    const titled = sessionIdOf("42");
+    const subagent = sessionIdOf("43");
+    files.write(chatPath(chatName(NOW - 3 * DAY, old)), idleSession(old, NOW - 3 * DAY), {
+      mtimeMs: NOW - 2 * DAY,
+    });
+    files.write(chatPath(chatName(NOW - 3 * DAY, titled)), idleSession(titled, NOW - 3 * DAY), {
+      mtimeMs: NOW - MINUTE,
+    });
+    // A subagent's file that is in chats/ itself, which is never listed.
+    files.write(
+      chatPath(chatName(NOW - MINUTE, subagent)),
+      chatFile([headerLine({ sessionId: subagent, kind: "subagent" })]),
+    );
+    for (const sessionId of [old, titled, subagent]) {
+      files.write(subagentPath(sessionId, AGENT), NEVER_OPENED, { mtimeMs: NOW - SECOND });
+    }
+    expect((await geminiCliAdapterFor(files).poll()).sessions).toEqual([]);
+    for (const sessionId of [old, titled, subagent]) {
+      const dir = `${TMP_DIR}/${SLUG}/chats/${sessionId}`;
+      expect(files.count(undefined, (target) => target.startsWith(dir))).toBe(0);
+    }
+  });
+
+  test("keeps no session on the list: it leaves a day after its own last update all the same", async () => {
+    const files = memoryFiles();
+    files.write(projectRootPath(), PROJECT);
+    const began = NOW - 2 * DAY;
+    files.write(chatPath(chatName(began, ids.working)), workingSession(ids.working, began), {
+      mtimeMs: NOW - DAY - HOUR,
+    });
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - SECOND });
+    expect((await geminiCliAdapterFor(files).poll()).sessions).toEqual([]);
+  });
+
+  test("count only for the session whose id names the folder, in that project", async () => {
+    const files = quietSession();
+    files.write(projectRootPath(OTHER_SLUG), OTHER_PROJECT);
+    files.write(chatPath(chatName(NOW - 10 * MINUTE, ids.working), OTHER_SLUG), workingSession(), {
+      mtimeMs: NOW - 8 * MINUTE,
+    });
+    files.write(chatPath(chatName(NOW - 30 * MINUTE, ids.idle)), idleSession(), {
+      mtimeMs: NOW - 30 * MINUTE,
+    });
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    const { sessions } = await geminiCliAdapterFor(files).poll();
+    const written = new Map(sessions.map((session) => [session.id, session.lastWriteAt]));
+    expect(written).toEqual(
+      new Map([
+        [idOf(ids.working), NOW - 5 * SECOND],
+        [idOf(ids.working, OTHER_SLUG), NOW - 8 * MINUTE],
+        [idOf(ids.idle), NOW - 30 * MINUTE],
+      ]),
+    );
+  });
+
+  test("a session saved in two files takes its subagents' time from their one folder", async () => {
+    const files = quietSession();
+    files.write(chatPath(chatName(NOW - 40 * MINUTE, ids.working)), workingSession(), {
+      mtimeMs: NOW - 40 * MINUTE,
+    });
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    expect((await onlySession(files))?.lastWriteAt).toBe(NOW - 5 * SECOND);
+  });
+
+  test("a poll where nothing changed lists no subagent folder, and costs one lstat of it and its file", async () => {
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    const clock = handClock(NOW);
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.forget();
+    clock.advance(2 * SECOND);
+    await adapter.poll();
+    expect(files.count("readdir")).toBe(0);
+    expect(files.count(undefined, (target) => target === folder)).toBe(1);
+    expect(files.count(undefined, (target) => target === subagentPath(ids.working, AGENT))).toBe(1);
+  });
+
+  test("listRefreshMs reaches the subagent folders", async () => {
+    const files = quietSession();
+    files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+    const adapter = geminiCliAdapterFor(files, { listRefreshMs: 0 });
+    await adapter.poll();
+    files.forget();
+    await adapter.poll();
+    expect(files.count("readdir", (target) => target === folder)).toBe(1);
+  });
+
+  describe("the names of its files, kept in memory", () => {
+    /** A session with a subagent, polled once by an adapter on a hand clock. */
+    async function polled(options: GeminiCliAdapterOptions = {}) {
+      const files = quietSession();
+      files.write(subagentPath(ids.working, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+      const clock = handClock(NOW);
+      const adapter = geminiCliAdapterFor(files, { now: clock.now, ...options });
+      await adapter.poll();
+      expect(adapter.subagentFoldersKept).toBe(1);
+      return { adapter, clock, files };
+    }
+
+    test("go with a poll that cannot list the sessions, and the folder is listed again once one does", async () => {
+      const { adapter, clock, files } = await polled();
+      files.fail(TMP_DIR);
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).health.state).toBe("error");
+      expect(adapter.subagentFoldersKept).toBe(0);
+
+      files.heal(TMP_DIR);
+      files.forget();
+      clock.advance(2 * SECOND);
+      await adapter.poll();
+      expect(adapter.subagentFoldersKept).toBe(1);
+      expect(files.count("readdir", (target) => target === folder)).toBe(1);
+    });
+
+    test.each([
+      ["Gemini CLI's own folder", {}, "unavailable"],
+      [
+        "the folder AGENT_LOOKOUT_GEMINI_CLI_HOME names",
+        { AGENT_LOOKOUT_GEMINI_CLI_HOME: GEMINI_DIR },
+        "ok",
+      ],
+    ])("go once tmp/ has left %s", async (_where, env, state) => {
+      const { adapter, clock, files } = await polled({ env });
+      files.remove(TMP_DIR);
+      clock.advance(2 * SECOND);
+      const { health, sessions } = await adapter.poll();
+      expect(health.state).toBe(state);
+      expect(sessions).toEqual([]);
+      expect(adapter.subagentFoldersKept).toBe(0);
+    });
+
+    test("go with a poll that throws", async () => {
+      const clock = handClock(NOW);
+      let broken = false;
+      // A clock that throws once, as nothing in a poll is expected to.
+      const now = () => {
+        if (broken) {
+          broken = false;
+          throw new Error("A stand-in that throws.");
+        }
+        return clock.now();
+      };
+      const { adapter } = await polled({ now });
+      broken = true;
+      expect((await adapter.poll()).health.state).toBe("error");
+      expect(adapter.subagentFoldersKept).toBe(0);
+    });
+
+    test("stay for a session still listed, and go for one that left the list", async () => {
+      const files = quietSession();
+      files.write(chatPath(chatName(NOW - 30 * MINUTE, ids.idle)), idleSession(), {
+        mtimeMs: NOW - 30 * MINUTE,
+      });
+      for (const id of [ids.working, ids.idle]) {
+        files.write(subagentPath(id, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+      }
+      const clock = handClock(NOW);
+      const adapter = geminiCliAdapterFor(files, { now: clock.now });
+      await adapter.poll();
+      expect(adapter.subagentFoldersKept).toBe(2);
+
+      files.remove(sessionFile);
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions.map((session) => session.id)).toEqual([
+        idOf(ids.idle),
+      ]);
+      expect(adapter.subagentFoldersKept).toBe(1);
+    });
   });
 });
 
@@ -1409,6 +1704,32 @@ describe("the folder Gemini CLI keeps under macOS Seatbelt", () => {
     files.forget();
     await expect(adapter.lastMessage(idOf(seatbeltSession))).resolves.toBeNull();
     expect(files.calls).toEqual([]);
+  });
+
+  test("a subagent's writes count for a session in ~/.cache/.gemini, and only for the session in that folder", async () => {
+    const shared = sessionIdOf("35");
+    const began = NOW - 30 * MINUTE;
+    const files = memoryFiles();
+    for (const tmp of [TMP_DIR, SEATBELT_TMP_DIR]) {
+      files.write(projectRootPath(SLUG, tmp), PROJECT);
+      files.write(chatPath(chatName(began, shared), SLUG, tmp), workingSession(shared, began), {
+        mtimeMs: NOW - 20 * MINUTE,
+      });
+    }
+    files.write(
+      subagentPath(shared, "agent-0001", SLUG, SEATBELT_TMP_DIR),
+      "placeholder: must never be opened",
+      { mtimeMs: NOW - 5 * SECOND },
+    );
+    const { sessions } = await geminiCliAdapterFor(files).poll();
+    const written = new Map(sessions.map((session) => [session.id, session.lastWriteAt]));
+    expect(written).toEqual(
+      new Map([
+        [idOf(shared), NOW - 20 * MINUTE],
+        [seatbeltIdOf(shared), NOW - 5 * SECOND],
+      ]),
+    );
+    expect(files.opened().filter((target) => target.endsWith("agent-0001.jsonl"))).toEqual([]);
   });
 
   test("a folder that is there and cannot be read makes the poll an error that says which, though the other was read", async () => {

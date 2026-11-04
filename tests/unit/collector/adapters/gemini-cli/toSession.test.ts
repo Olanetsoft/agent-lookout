@@ -24,7 +24,12 @@ function stateWith(fields: Partial<ChatFileState> = {}): ChatFileState {
 /** The session a file with a header makes. */
 function sessionOf(
   state: ChatFileState,
-  extra: { cwd?: string | null; writtenAt?: number; now?: number } = {},
+  extra: {
+    cwd?: string | null;
+    writtenAt?: number;
+    subagentWrittenAt?: number;
+    now?: number;
+  } = {},
 ) {
   const session = geminiCliSession({ state, slug: SLUG, cwd: PROJECT, now: NOW, ...extra });
   if (session === null) throw new Error("No session was made.");
@@ -118,6 +123,50 @@ describe("geminiCliSession", () => {
     );
     expect(sessionOf(stateWith(), { writtenAt: NOW + HOUR })).not.toHaveProperty("lastWriteAt");
     expect(sessionOf(stateWith())).not.toHaveProperty("lastWriteAt");
+  });
+
+  test("its last write is the newer of the file's time and its subagents'", () => {
+    const writes = (writtenAt: number, subagentWrittenAt: number) =>
+      sessionOf(stateWith(), { writtenAt, subagentWrittenAt }).lastWriteAt;
+    expect(writes(NOW - MINUTE, NOW - 5_000)).toBe(NOW - 5_000);
+    expect(writes(NOW - 5_000, NOW - MINUTE)).toBe(NOW - 5_000);
+  });
+
+  test("a subagent's write stands when the file's time could not be right, or there is none", () => {
+    const subagentWrittenAt = NOW - 5_000;
+    expect(sessionOf(stateWith(), { writtenAt: NOW + HOUR, subagentWrittenAt }).lastWriteAt).toBe(
+      subagentWrittenAt,
+    );
+    expect(
+      sessionOf(stateWith(), { writtenAt: NOW - 2 * HOUR, subagentWrittenAt }).lastWriteAt,
+    ).toBe(subagentWrittenAt);
+    expect(sessionOf(stateWith(), { subagentWrittenAt }).lastWriteAt).toBe(subagentWrittenAt);
+  });
+
+  test("a subagent's write before the session began, or that could not be right, is not known", () => {
+    const writtenAt = NOW - MINUTE;
+    expect(sessionOf(stateWith(), { writtenAt, subagentWrittenAt: NOW + HOUR }).lastWriteAt).toBe(
+      writtenAt,
+    );
+    expect(sessionOf(stateWith(), { subagentWrittenAt: NOW - HOUR - 2_000 })).not.toHaveProperty(
+      "lastWriteAt",
+    );
+  });
+
+  test("a subagent's write moves nothing else: the status, its time and the start stay as the lines say", () => {
+    const quiet = sessionOf(stateWith(), { writtenAt: NOW - MINUTE });
+    const busy = sessionOf(stateWith(), {
+      writtenAt: NOW - MINUTE,
+      subagentWrittenAt: NOW - 5_000,
+    });
+    expect(busy).toEqual({ ...quiet, lastWriteAt: NOW - 5_000 });
+
+    // A session the lines leave idle stays idle, and stale, while one works.
+    const idle = { status: "idle" as const, since: NOW - DAY };
+    const header = { sessionId: ids.idle, startedAt: NOW - 2 * DAY, updatedAt: null };
+    expect(
+      sessionOf(stateWith({ header, status: idle }), { subagentWrittenAt: NOW - 5_000 }),
+    ).toMatchObject({ status: "idle", statusSince: NOW - DAY, stale: true });
   });
 
   test("is stale after a day idle, and never while working", () => {

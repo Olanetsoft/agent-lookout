@@ -75,6 +75,10 @@ export function chatName(began: number, sessionId: string, clash?: number): stri
 export const chatPath = (name: string, slug = SLUG, tmp = TMP_DIR) =>
   `${tmp}/${slug}/chats/${name}`;
 
+/** A subagent's file: in a folder named for its session, in the project's `chats/`. */
+export const subagentPath = (sessionId: string, agentId: string, slug = SLUG, tmp = TMP_DIR) =>
+  chatPath(`${sessionId}/${agentId}.jsonl`, slug, tmp);
+
 /** A project's `.project_root`. */
 export const projectRootPath = (slug = SLUG, tmp = TMP_DIR) => `${tmp}/${slug}/.project_root`;
 

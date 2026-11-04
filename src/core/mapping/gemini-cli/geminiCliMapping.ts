@@ -8,10 +8,10 @@
 // session's details, or with `messages` replaces the whole list. This module
 // replays the small records the collector keeps of each line by the same rules,
 // and reads a status, and the newest reply's token counts, from what is left.
-// Gemini CLI writes nothing while a tool waits for approval or runs, and no
-// mark when a session ends, so a session is working, idle, failed or unknown
-// here, never "needs-you" or "finished". See docs/adapters/gemini-cli.md for
-// where each value comes from.
+// Gemini CLI writes nothing to a session's file while a tool waits for approval
+// or runs, and no mark when a session ends, so a session is working, idle,
+// failed or unknown here, never "needs-you" or "finished". See
+// docs/adapters/gemini-cli.md for where each value comes from.
 //
 // Built from Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts), and not yet checked
