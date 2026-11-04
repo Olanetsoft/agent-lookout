@@ -239,12 +239,12 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "no",
     reason:
-      "Gemini CLI writes no end mark, so a closed session keeps its last status, idle or working, until a day after its last update.",
+      "Gemini CLI writes no end mark, so a closed session keeps its last status until a day after its last update.",
   },
   failed: {
-    level: "no",
+    level: "partly",
     reason:
-      "Agent Lookout does not read Gemini CLI's errors yet, so a session whose request failed shows as idle.",
+      "When a request ends on an error Gemini CLI records. One that fails under gemini -p records none, so it shows as idle or working.",
   },
   names: {
     level: "partly",

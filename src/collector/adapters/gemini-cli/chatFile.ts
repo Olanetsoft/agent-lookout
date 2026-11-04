@@ -36,18 +36,18 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  *   never kept.
  * - From a message: its `id`, `type` and `timestamp`, the shape of its content
  *   (`GeminiCliContent`: whether it is "", asks for a tool, answers one, is
- *   only thoughts, or begins as a note Gemini CLI writes itself), and for a
- *   reply whether every tool call was cancelled and when the newest ended, and
- *   three numbers worked out from its `tokens`, the reply's token counts
- *   (`summaryCountsOf`).
+ *   only thoughts, or begins as a note Gemini CLI writes itself or as a failed
+ *   request's error does), and for a reply whether every tool call was
+ *   cancelled and when the newest ended, and three numbers worked out from its
+ *   `tokens`, the reply's token counts (`summaryCountsOf`).
  * - From a `$rewindTo`, its id. From a `$patch`, the ids it changes, removes
  *   and reorders, and the shape of any new content.
  * - From a `$set`, its `lastUpdated`, its title, whether it sets `sessionId`,
  *   and its `messages` taken as messages are.
  *
- * No other text is kept: not a prompt, a reply, a thought, a tool's arguments or
- * result, `displayContent`, `memoryScratchpad`, `directories`, `projectHash`
- * or a reply's `model`, nor the rest of its `tokens`.
+ * No other text is kept: not a prompt, a reply, a thought, an error, a tool's
+ * arguments or result, `displayContent`, `memoryScratchpad`, `directories`,
+ * `projectHash` or a reply's `model`, nor the rest of its `tokens`.
  * What a session last said is read apart from this, from the end of the file,
  * only when the route asks for it and never by a poll (`lastMessages.ts`).
  * A line that does not parse is passed over, as Gemini CLI passes it over. A
@@ -60,7 +60,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * not parsed: it is told apart from its first 512 bytes alone, and if those do
  * not say what it is, the status is unknown, and so are the token counts until
  * a newer reply has them, as it may have taken back a reply. A reply's line
- * that long gives no token counts: they come after its content. A last line
+ * that long gives no token counts: they come after its content. An `error`
+ * that long is told by how its text begins, which those bytes hold. A last line
  * that is still being written is left for the next read.
  */
 
@@ -107,6 +108,12 @@ const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{
 const MESSAGE_PREFIX =
   /^\{"id":"([^"\\]{1,128})","timestamp":"([^"\\]{1,40})","type":"(user|gemini|info|warning|error)"/;
 
+/**
+ * What the recorder writes after an `error` message's `type`: its text, always
+ * a string (`addItem` in packages/cli/src/ui/hooks/useHistoryManager.ts).
+ */
+const ERROR_TEXT_KEY = ',"content":"';
+
 /** The start of a `$set` that replaces every message, written by Gemini CLI 0.44 to 0.63. */
 const SET_MESSAGES_PREFIX = /^\{"\$set":\{"messages"/;
 
@@ -124,6 +131,29 @@ export const NOTE_STARTS = [
   "I ran the following shell command:",
   "- **Workspace Directories:**",
   "User has manually exited Plan Mode.",
+] as const;
+
+/**
+ * How the `error` message of a failed request begins, and no other `error`
+ * Gemini CLI 0.64.0 records. What a request throws goes through
+ * `parseAndFormatApiError` (packages/core/src/utils/errorParsing.ts). A stream
+ * that gave no usable reply gives one of the fixed texts below, from
+ * `handleInvalidStreamEvent` (packages/cli/src/ui/hooks/useGeminiStream.ts),
+ * `packages/core/src/utils/constants.ts` and `InvalidStreamError`
+ * (packages/core/src/core/geminiChat.ts).
+ */
+export const FAILED_REQUEST_STARTS = [
+  "[API Error: ",
+  "The model returned an empty response with no text or thoughts.",
+  "The model returned reasoning thoughts but no final response text.",
+  "Model response was truncated because it exceeded the token limit.",
+  "The model response was blocked due to safety settings.",
+  "The model response was blocked due to recitation/copyright filters.",
+  "The model response was blocked due to other policy settings.",
+  "Model stream ended without a finish reason.",
+  "Model stream ended with malformed function call.",
+  "Model stream ended with unexpected tool call.",
+  "Invalid stream received from model",
 ] as const;
 
 /** What is kept of a session file's header. */
@@ -210,6 +240,7 @@ export function contentShapeOf(content: unknown): GeminiCliContent {
       content.length > 0 &&
       content.every((part) => isRecord(part) && part.thought === true),
     note: NOTE_STARTS.some((start) => text.startsWith(start)),
+    failedRequest: FAILED_REQUEST_STARTS.some((start) => text.startsWith(start)),
   };
 }
 
@@ -416,7 +447,9 @@ export function readLine(line: string, otherId: () => string): GeminiCliRecord |
  * What a line too long to parse says, from its first bytes alone: a message as
  * the recorder writes one, whose content is then not known, nor a reply's
  * token counts, which come after it, or a `$set` that replaces every message
- * with ones not known. Anything else is not known.
+ * with ones not known. Anything else is not known. Of an `error`, the shape of
+ * the start of its text, which the recorder writes next: none of the
+ * `FAILED_REQUEST_STARTS` holds a character JSON writes another way.
  */
 export function readLongLine(prefix: string, otherId: () => string): GeminiCliRecord {
   const unknown: GeminiCliMessage = {
@@ -428,7 +461,7 @@ export function readLongLine(prefix: string, otherId: () => string): GeminiCliRe
   };
   const message = MESSAGE_PREFIX.exec(prefix);
   if (message) {
-    const [, id = "", timestamp, type] = message;
+    const [start, id = "", timestamp, type] = message;
     const kept: GeminiCliMessage = {
       id,
       type: messageType(type),
@@ -437,6 +470,9 @@ export function readLongLine(prefix: string, otherId: () => string): GeminiCliRe
       toolCalls: null,
     };
     if (kept.type === "gemini") kept.tokens = null;
+    if (kept.type === "error" && prefix.startsWith(ERROR_TEXT_KEY, start.length)) {
+      kept.content = contentShapeOf(prefix.slice(start.length + ERROR_TEXT_KEY.length));
+    }
     return { kind: "message", message: kept };
   }
   if (SET_MESSAGES_PREFIX.test(prefix)) {

@@ -81,7 +81,8 @@ export const UNKNOWN_NOTE =
  * - Needs you never: approval waits are never written to its files.
  * - Finished never: it writes no lock and no mark when a session ends, so a
  *   closed session keeps its last status, working when it closed mid-turn.
- * - Failed never, for now: its errors are not read yet.
+ * - Failed partly: an `error` message says a request failed only by how its
+ *   text begins, and `gemini -p` records no error at all.
  * - Its name is the title Gemini CLI saves at a later start in the same folder.
  * - No Jump: the files name no process or terminal.
  * - Quiet for is the file's own modified time, moved on by every line.
@@ -103,12 +104,12 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "no",
     reason:
-      "Gemini CLI writes no end mark, so a closed session keeps its last status, idle or working, until a day after its last update.",
+      "Gemini CLI writes no end mark, so a closed session keeps its last status until a day after its last update.",
   },
   failed: {
-    level: "no",
+    level: "partly",
     reason:
-      "Agent Lookout does not read Gemini CLI's errors yet, so a session whose request failed shows as idle.",
+      "When a request ends on an error Gemini CLI records. One that fails under gemini -p records none, so it shows as idle or working.",
   },
   names: {
     level: "partly",
@@ -246,7 +247,7 @@ export interface GeminiCliAdapter extends Adapter {
  * folder, through a link, and are then read once, as the first.
  *
  * A session is listed for 24 hours after its last update. Its status is
- * working, idle or unknown, never "needs-you", "finished" or "failed": Gemini
+ * working, idle, failed or unknown, never "needs-you" or "finished": Gemini
  * CLI writes nothing while a tool waits for approval or runs, and nothing when
  * a session ends. A subagent's own file is never listed. Two projects can each
  * hold a session of one id, which `--session-id` allows, so a session's id

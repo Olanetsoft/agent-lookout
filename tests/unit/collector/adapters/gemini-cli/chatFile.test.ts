@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   contentShapeOf,
   createChatFileReader,
+  FAILED_REQUEST_STARTS,
   LINE_LIMIT_BYTES,
   readHeaderLine,
   readLine,
@@ -15,6 +16,7 @@ import {
   chatPath,
   contextLine,
   ENVIRONMENT_CONTEXT_ID,
+  failedRequestLine,
   geminiLine,
   headerLine,
   ids,
@@ -281,6 +283,52 @@ describe("a line longer than the limit", () => {
     expect((await readIt(files, reader)).status).toEqual({ status: "working", since: null });
   });
 
+  describe("an error", () => {
+    /** A session whose reply is the newest message, then a long line added to it. */
+    async function statusWith(line: string) {
+      const files = memoryFiles();
+      files.write(FILE, chatFile([headerLine(), geminiLine(messageIdOf("00"), NOW - 2 * MINUTE)]));
+      const reader = createChatFileReader(files.io);
+      await readIt(files, reader);
+      files.append(FILE, `${line}\n`);
+      return readIt(files, reader);
+    }
+
+    test("whose text begins as a failed request's is failed since its time", async () => {
+      const line = failedRequestLine(messageIdOf("01"), NOW - MINUTE, `[API Error: ${huge}]`);
+      expect((await statusWith(line)).status).toEqual({ status: "failed", since: NOW - MINUTE });
+    });
+
+    test("of another kind is idle since its time", async () => {
+      const line = failedRequestLine(messageIdOf("01"), NOW - MINUTE, `Could not read it: ${huge}`);
+      expect((await statusWith(line)).status).toEqual({ status: "idle", since: NOW - MINUTE });
+    });
+
+    test("whose text is not the string the recorder writes is not told to be a failed request", () => {
+      const line = JSON.stringify({
+        id: "e1",
+        timestamp: at(NOW),
+        type: "error",
+        content: [{ text: `[API Error: ${huge}]` }],
+      });
+      expect(readLongLine(line.slice(0, 512), otherIds())).toMatchObject({
+        message: { type: "error", content: null },
+      });
+    });
+
+    test("keeps nothing of its text", async () => {
+      const line = failedRequestLine(
+        messageIdOf("01"),
+        NOW - MINUTE,
+        `[API Error: ${PRIVATE_WORDS} ${huge}]`,
+      );
+      expect(JSON.stringify(readLongLine(line.slice(0, 512), otherIds()))).not.toContain(
+        PRIVATE_WORDS,
+      );
+      expect(JSON.stringify(await statusWith(line))).not.toContain(PRIVATE_WORDS);
+    });
+  });
+
   test("one with its keys in another order, as an import writes, is unknown", () => {
     const line = JSON.stringify({ id: "m1", type: "user", content: huge, timestamp: at(NOW) });
     const record = readLongLine(line.slice(0, 512), otherIds());
@@ -308,6 +356,7 @@ describe("what is kept of each line", () => {
     noticeLine("info", messageIdOf("04"), NOW),
     noticeLine("warning", messageIdOf("05"), NOW),
     noticeLine("error", messageIdOf("06"), NOW),
+    failedRequestLine(messageIdOf("08"), NOW),
     titleLine("A placeholder title"),
     setLine({ messages: [JSON.parse(userLine(messageIdOf("07"), NOW))] }),
     patchLine({
@@ -327,6 +376,36 @@ describe("what is kept of each line", () => {
         PRIVATE_WORDS,
       );
     }
+  });
+
+  test("an error keeps only whether it begins as a failed request's does", () => {
+    const shape = {
+      empty: false,
+      functionCall: false,
+      functionResponse: false,
+      thoughtOnly: false,
+      note: false,
+    };
+    expect(readLine(failedRequestLine("e1", NOW), otherIds())).toEqual({
+      kind: "message",
+      message: {
+        id: "e1",
+        type: "error",
+        at: NOW,
+        content: { ...shape, failedRequest: true },
+        toolCalls: null,
+      },
+    });
+    expect(readLine(noticeLine("error", "e2", NOW), otherIds())).toEqual({
+      kind: "message",
+      message: {
+        id: "e2",
+        type: "error",
+        at: NOW,
+        content: { ...shape, failedRequest: false },
+        toolCalls: null,
+      },
+    });
   });
 
   test("a reply keeps whether every call was cancelled and when the newest ended", () => {
@@ -349,6 +428,7 @@ describe("what is kept of each line", () => {
           functionResponse: false,
           thoughtOnly: false,
           note: false,
+          failedRequest: false,
         },
         toolCalls: { allCancelled: true, lastAt: NOW },
         tokens: REPLY_COUNTS,
@@ -357,7 +437,7 @@ describe("what is kept of each line", () => {
   });
 
   test("a $patch keeps its own change first, then its updates, removals and order", () => {
-    expect(readLine(lines[10] as string, otherIds())).toEqual({
+    expect(readLine(lines[11] as string, otherIds())).toEqual({
       kind: "patch",
       updates: [
         { id: messageIdOf("02"), content: expect.objectContaining({ note: false }) },
@@ -418,8 +498,59 @@ describe("the shape of a message's content", () => {
       functionResponse: false,
       thoughtOnly: false,
       note: false,
+      failedRequest: false,
       ...shape,
     });
+  });
+
+  describe("a failed request's error", () => {
+    /** Written out from Gemini CLI 0.64.0, so that the list is held to something but itself. */
+    const FAILED_REQUEST_TEXTS = [
+      "[API Error: quota exceeded]",
+      "The model returned an empty response with no text or thoughts. This may be a transient API issue; please try again.",
+      "The model returned reasoning thoughts but no final response text. If your context window is near capacity, try using /compress.",
+      "Model response was truncated because it exceeded the token limit. Try using /compress to free up context space.",
+      "The model response was blocked due to safety settings.",
+      "The model response was blocked due to recitation/copyright filters.",
+      "The model response was blocked due to other policy settings.",
+      "Model stream ended without a finish reason.",
+      "Model stream ended with malformed function call.",
+      "Model stream ended with unexpected tool call.",
+      "Invalid stream received from model",
+    ];
+
+    test.each(FAILED_REQUEST_TEXTS)("is told from what Gemini CLI writes: %s", (text) => {
+      expect(contentShapeOf(text).failedRequest).toBe(true);
+      const line = failedRequestLine("e1", NOW, `${text} ${"z".repeat(1024)}`);
+      expect(readLongLine(line.slice(0, 512), otherIds())).toMatchObject({
+        message: { content: { failedRequest: true } },
+      });
+    });
+
+    test.each([
+      "[API",
+      "[API Error",
+      "Model stream ended",
+      "Model response was",
+      "The model returned",
+      "The model response was blocked",
+      "Invalid stream",
+    ])("is not told from only part of its start, %s", (text) => {
+      expect(contentShapeOf(text).failedRequest).toBe(false);
+    });
+
+    test("is told by no start but those of the texts above", () => {
+      expect(FAILED_REQUEST_STARTS).toHaveLength(FAILED_REQUEST_TEXTS.length);
+    });
+  });
+
+  test.each([
+    ["a slash command's error", "Failed to compress chat history: [API Error: quota]"],
+    ["the error of a command run with !", "An unexpected error occurred: exit code 1"],
+    ["leaving Plan Mode's error", "Failed to update the model about exiting Plan Mode."],
+    ["an empty error", ""],
+  ])("%s is not a failed request", (_name, text) => {
+    expect(contentShapeOf(text).failedRequest).toBe(false);
   });
 
   test("the context message is known by its id too", () => {

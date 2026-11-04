@@ -25,6 +25,7 @@ import {
   contextLine,
   DAY,
   ENVIRONMENT_CONTEXT_ID,
+  failedRequestLine,
   GEMINI_DIR,
   geminiLine,
   headerLine,
@@ -381,6 +382,58 @@ describe("reading the sessions", () => {
   });
 });
 
+describe("a request that fails", () => {
+  const sessionId = sessionIdOf("f1");
+  const began = NOW - 10 * MINUTE;
+  const prompt = messageIdOf("91");
+  const error = messageIdOf("92");
+  const failed = [
+    headerLine({ sessionId, startTime: began }),
+    userLine(prompt, NOW - 3 * MINUTE),
+    updatedLine(NOW - 3 * MINUTE),
+    rewindLine(prompt),
+    updatedLine(NOW - 2 * MINUTE),
+    failedRequestLine(error, NOW - 2 * MINUTE),
+    updatedLine(NOW - 2 * MINUTE),
+  ];
+
+  function filesOf(lines: string[]) {
+    const files = memoryFiles();
+    files.write(projectRootPath(), PROJECT);
+    files.write(chatPath(chatName(began, sessionId)), chatFile(lines));
+    return files;
+  }
+
+  test("shows as failed from its error's time, with none of the error's text", async () => {
+    const { sessions } = await geminiCliAdapterFor(filesOf(failed)).poll();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      status: "failed",
+      statusSince: NOW - 2 * MINUTE,
+      stale: false,
+    });
+    expect(JSON.stringify(sessions)).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("shows as working again from the prompt after it", async () => {
+    const files = filesOf(failed);
+    const adapter = geminiCliAdapterFor(files);
+    await adapter.poll();
+    files.append(
+      chatPath(chatName(began, sessionId)),
+      `${userLine(messageIdOf("93"), NOW - MINUTE)}\n${updatedLine(NOW - MINUTE)}\n`,
+    );
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("an error of another kind in its place stays idle", async () => {
+    const lines = failed.with(5, noticeLine("error", error, NOW - 2 * MINUTE));
+    const { sessions } = await geminiCliAdapterFor(filesOf(lines)).poll();
+    expect(sessions[0]).toMatchObject({ status: "idle", statusSince: NOW - 2 * MINUTE });
+  });
+});
+
 describe("a session taken up again with --resume or /resume", () => {
   const sessionId = sessionIdOf("06");
   const began = NOW - 3 * DAY;
@@ -484,6 +537,22 @@ describe("a session as Gemini CLI 0.44 to 0.63 wrote it, with $set of messages",
     expect(await sessionOf(sessionAsOf063(sessionId, began), began)).toMatchObject({
       status: "idle",
       statusSince: began + 2 * MINUTE,
+    });
+  });
+
+  test("a prompt whose request failed, taken back by a $set of messages, is failed since its error", async () => {
+    const began = NOW - HOUR;
+    const lines = [
+      ...sessionAsOf063(sessionId, began),
+      userLine(messageIdOf("73"), NOW - 3 * MINUTE),
+      updatedLine(NOW - 3 * MINUTE),
+      setMessagesLine(messagesAsOf063(began), NOW - 2 * MINUTE),
+      failedRequestLine(messageIdOf("74"), NOW - 2 * MINUTE),
+      updatedLine(NOW - 2 * MINUTE),
+    ];
+    expect(await sessionOf(lines, began)).toMatchObject({
+      status: "failed",
+      statusSince: NOW - 2 * MINUTE,
     });
   });
 

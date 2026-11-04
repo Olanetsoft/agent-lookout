@@ -246,6 +246,15 @@ export function noticeLine(type: "info" | "warning" | "error", id: string, time:
   });
 }
 
+/** The `error` message of a failed request, its text begun as `parseAndFormatApiError` begins it. */
+export function failedRequestLine(
+  id: string,
+  time: number,
+  text = `[API Error: ${PRIVATE_WORDS}]`,
+): string {
+  return JSON.stringify({ id, timestamp: at(time), type: "error", content: text });
+}
+
 /** A `$set` of the session's details. */
 export function setLine(fields: Record<string, unknown>): string {
   return JSON.stringify({ $set: fields });

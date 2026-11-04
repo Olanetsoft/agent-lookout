@@ -88,7 +88,7 @@ export interface GeminiCliSessionInput {
  * One Gemini CLI session in the shared model.
  *
  * - The status is the one its lines replay to (`mapGeminiCliStatus`): working,
- *   idle or unknown, never "needs-you", "finished" or "failed". A batch of tool
+ *   idle, failed or unknown, never "needs-you" or "finished". A batch of tool
  *   calls that ended less than `BATCH_GRACE_MS` ago is working since the newest
  *   prompt, as its tools' results will be.
  * - The id is the project's folder in `tmp/`, the session's own id and which
