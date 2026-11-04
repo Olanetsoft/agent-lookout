@@ -712,6 +712,14 @@ describe("which sessions are followed", () => {
     expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "idle" });
   });
 
+  test("a lease with a time and no process lists no session older than a day", async () => {
+    const files = vibeFiles(() => NOW - 2 * DAY);
+    writeStore(files, { id: A, state: idle(A) });
+    writeLease(files, A, null);
+    expect((await vibeAdapterFor(files).poll()).sessions).toEqual([]);
+    expect(files.opened().filter(underStore(A))).toEqual([]);
+  });
+
   test("a session no program holds, saved after the last look, is found at the next look through the stores", async () => {
     const files = vibeFiles();
     const clock = handClock();
@@ -1379,6 +1387,31 @@ describe("waiting for the person", () => {
     expect(result.sessions[0]?.status).toBe("working");
     expect(result.basis).toBe(BASIS_WITHOUT_LEASES);
     expect(ps.runs).toEqual([]);
+  });
+
+  test("a lease that changed and cannot be read claims no wait, and `ps` is not asked", async () => {
+    const json = `${SESSION_DIR}/active/${A}.lock.json`;
+    const files = sessionWith(approval(6));
+    const ps = standInStarts();
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      platform: "darwin",
+      readProcessStarts: ps.read,
+    });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    const runs = ps.runs.length;
+
+    files.rewrite(json, leaseFile(A, GONE_PID, NOW), { mtimeMs: NOW + SECOND });
+    files.failOpen(json);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    expect(ps.runs).toHaveLength(runs);
+  });
+
+  test("a look at a lease that fails keeps its wait", async () => {
+    const files = sessionWith(approval(6));
+    const adapter = vibeAdapterFor(files, standInPids(), { platform: "darwin" });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    files.fail(`${SESSION_DIR}/active/${A}.lock.json`);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
   });
 
   test("what was read of a wait stands for a poll that cannot read the journal", async () => {
@@ -2086,6 +2119,344 @@ describe("a lease whose .json could not be read", () => {
       expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
     }
     expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(1);
+  });
+});
+
+describe("a lease that cannot be read after a read that worked", () => {
+  /** What is asked about a lease's process differs by system, `ps` only on a Mac, so each test names its own. */
+  const PLATFORMS = ["darwin", "linux", "win32"] as const;
+  const ACTIVE = `${SESSION_DIR}/active`;
+  const LEASE_JSON = `${ACTIVE}/${A}.lock.json`;
+  /** The process of a Vibe that took the session after the one the first read names. */
+  const NEXT_PID = 5151;
+
+  /**
+   * A session Vibe last wrote to two minutes ago, whose lease, taken at 11:00, is
+   * held, with each poll's answer compared as the poller compares it. `told` is
+   * every event that gives.
+   */
+  function watched(platform: NodeJS.Platform, state: StateFields = running(A)) {
+    const clock = handClock();
+    const files = vibeFiles(() => NOW - 2 * MINUTE);
+    writeStore(files, { id: A, state });
+    writeLease(files, A);
+    const pids = standInPids([LIVE_PID, NEXT_PID]);
+    const adapter = vibeAdapterFor(files, pids, { now: clock.now, platform });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const told: string[] = [];
+    const poll = async () => {
+      const result = await adapter.poll();
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+      return statuses(result.sessions)[A];
+    };
+    /** Vibe writes the lease over, as another program does that takes it now. */
+    const takenOver = () =>
+      files.rewrite(LEASE_JSON, leaseFile(A, NEXT_PID, clock.now()), { mtimeMs: clock.now() });
+    return { clock, files, pids, poll, takenOver, told };
+  }
+
+  test.each(PLATFORMS)(
+    "on %s, a .json that changed and cannot be opened leaves the session as it was, though its last read's process went",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver, told } = watched(platform);
+      expect(await poll()).toBe("working");
+
+      // The Vibe that held it quits, and another takes the session between two polls.
+      pids.set([NEXT_PID]);
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("working");
+
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("working");
+      expect(pids.asked.at(-1)).toBe(NEXT_PID);
+      expect(told).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a failed listing keeps the last read, so an unchanged .json is not opened, though an open would fail, and the session stays as it was",
+    async (platform) => {
+      const { clock, files, poll, told } = watched(platform);
+      expect(await poll()).toBe("working");
+
+      files.fail(ACTIVE);
+      expect(await poll()).toBe("working");
+      files.heal(ACTIVE);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("working");
+
+      expect(told).toEqual([]);
+      expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(1);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a failed listing while the .json changed, followed by a failed open, leaves the session as it was",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver, told } = watched(platform);
+      expect(await poll()).toBe("working");
+
+      files.fail(ACTIVE);
+      expect(await poll()).toBe("working");
+      pids.set([NEXT_PID]);
+      takenOver();
+      files.heal(ACTIVE);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("working");
+      expect(told).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a failed look at the .json leaves the session as it was",
+    async (platform) => {
+      const { clock, files, poll, told } = watched(platform);
+      expect(await poll()).toBe("working");
+
+      files.fail(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("working");
+      files.heal(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      expect(told).toEqual([]);
+      expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(1);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a lease that has never been read shows as just taken for 30 seconds, tells nothing, and a failed listing does not start that over",
+    async (platform) => {
+      const { clock, files, poll, told } = watched(platform);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("finished");
+      clock.advance(OLD_SESSION_LEASE_MS);
+      expect(await poll()).toBe("working");
+
+      files.fail(ACTIVE);
+      expect(await poll()).toBe("working");
+      files.heal(ACTIVE);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      expect(told).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a failed listing on the first poll followed by a failed open shows as just taken and tells nothing",
+    async (platform) => {
+      const { clock, files, poll, told } = watched(platform);
+      files.fail(ACTIVE);
+      expect(await poll()).toBe("working");
+      files.heal(ACTIVE);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("finished");
+      clock.advance(OLD_SESSION_LEASE_MS);
+      expect(await poll()).toBe("working");
+      expect(told).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session whose process went while its changed .json could not be read shows as finished at the first read that works",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver, told } = watched(platform);
+      expect(await poll()).toBe("working");
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+
+      pids.set([]);
+      expect(await poll()).toBe("working");
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("finished");
+      expect(told).toEqual(["finished"]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session whose process went during a failed listing shows as finished at the next listing, though its .json cannot be opened",
+    async (platform) => {
+      const { files, pids, poll, told } = watched(platform);
+      expect(await poll()).toBe("working");
+      files.fail(ACTIVE);
+      pids.set([]);
+      expect(await poll()).toBe("working");
+      files.heal(ACTIVE);
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("finished");
+      expect(told).toEqual(["finished"]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session whose process goes shows as finished though its .json cannot be looked at",
+    async (platform) => {
+      const { files, pids, poll, told } = watched(platform);
+      expect(await poll()).toBe("working");
+      files.fail(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      pids.set([]);
+      expect(await poll()).toBe("finished");
+      expect(told).toEqual(["finished"]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session that showed as finished shows as open while its changed .json cannot be read, and Finished goes again if nothing took it",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver, told } = watched(platform);
+      expect(await poll()).toBe("working");
+      pids.set([]);
+      expect(await poll()).toBe("finished");
+      expect(told).toEqual(["finished"]);
+
+      // A program took the lease for a moment, and its process has gone by the next read.
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("working");
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("finished");
+      expect(told).toEqual(["finished", "finished"]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session only its lease keeps stays listed while its changed .json cannot be read",
+    async (platform) => {
+      const { files, clock, poll, takenOver } = watched(platform, idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      expect(await poll()).toBe("idle");
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBe("idle");
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("idle");
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a lease left behind on an old session opens nothing of it while its changed .json cannot be read",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver, told } = watched(platform, idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      pids.set([NEXT_PID]);
+      expect(await poll()).toBeUndefined();
+
+      // Vibe takes the lease of every session that ran a process to clear old output.
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBeUndefined();
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBeUndefined();
+
+      releaseLease(files, A);
+      expect(await poll()).toBeUndefined();
+      expect(files.opened().filter(underStore(A))).toEqual([]);
+      expect(told).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a .json gone between the look and the open opens nothing of an old session either",
+    async (platform) => {
+      const { files, pids, poll, takenOver } = watched(platform, idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      pids.set([NEXT_PID]);
+      expect(await poll()).toBeUndefined();
+
+      takenOver();
+      files.failOpen(LEASE_JSON, "ENOENT");
+      expect(await poll()).toBeUndefined();
+      expect(files.opened().filter(underStore(A))).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a store that cannot be opened that same poll does not start following an old session",
+    async (platform) => {
+      const { files, pids, poll, takenOver } = watched(platform, idle(A));
+      const stored = `${SESSION_DIR}/${storePath(A)}/CURRENT`;
+      makeOld(files, A, NOW - 2 * DAY);
+      pids.set([NEXT_PID]);
+      expect(await poll()).toBeUndefined();
+
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      files.failOpen(stored);
+      expect(await poll()).toBeUndefined();
+      files.heal(stored);
+      expect(await poll()).toBeUndefined();
+      expect(files.opened().filter(underStore(A))).toEqual([]);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, an old session whose changed .json could not be read is listed once a read names a process that has held it for 30 seconds",
+    async (platform) => {
+      const { clock, files, pids, poll, takenOver } = watched(platform, idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      pids.set([NEXT_PID]);
+      expect(await poll()).toBeUndefined();
+
+      takenOver();
+      files.failOpen(LEASE_JSON);
+      expect(await poll()).toBeUndefined();
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(await poll()).toBe("idle");
+    },
+  );
+
+  test("on a Mac, what `ps` said stands through a failed look, and is asked again after a .json that changed and could not be read", async () => {
+    const clock = handClock();
+    const files = vibeFiles(() => NOW - 2 * MINUTE);
+    writeStore(files, { id: A, state: running(A) });
+    writeLease(files, A);
+    const ps = standInStarts({ [LIVE_PID]: "Thu Oct  1 10:30:00 2026" });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      platform: "darwin",
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+
+    files.fail(LEASE_JSON);
+    clock.advance(LEASE_RETRY_MS);
+    await adapter.poll();
+    files.heal(LEASE_JSON);
+    clock.advance(LEASE_RETRY_MS);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+
+    files.rewrite(LEASE_JSON, leaseFile(A), { mtimeMs: clock.now() });
+    files.failOpen(LEASE_JSON);
+    clock.advance(LEASE_RETRY_MS);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+
+    files.heal(LEASE_JSON);
+    clock.advance(LEASE_RETRY_MS);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(2);
   });
 });
 

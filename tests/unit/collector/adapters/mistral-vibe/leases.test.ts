@@ -19,7 +19,12 @@ import {
   leaseFile,
   sessionId,
 } from "@tests/fixtures/mistralVibe";
-import { handClock, memoryFiles, writeLease } from "@tests/support/adapters/mistralVibeAdapter";
+import {
+  handClock,
+  memoryFiles,
+  releaseLease,
+  writeLease,
+} from "@tests/support/adapters/mistralVibeAdapter";
 
 const ACTIVE = `${SESSION_DIR}/active`;
 const A = sessionId("a1");
@@ -241,6 +246,29 @@ describe("a .json that could not be read", () => {
     expect(files.count("lstat")).toBe(polls);
   });
 
+  test("a listing or a look that fails does not start the tries over", async () => {
+    const { clock, files, reader } = unreadable();
+    await reader.read();
+
+    clock.advance(LEASE_RETRY_MS - 3 * SECOND);
+    files.fail(ACTIVE);
+    await reader.read();
+    files.heal(ACTIVE);
+    clock.advance(SECOND);
+    await reader.read();
+    files.fail(JSON_FILE);
+    await reader.read();
+    files.heal(JSON_FILE);
+    files.failOpen(JSON_FILE);
+    clock.advance(SECOND);
+    await reader.read();
+    expect(files.opened()).toHaveLength(1);
+
+    clock.advance(SECOND);
+    await reader.read();
+    expect(files.opened()).toHaveLength(2);
+  });
+
   test("a read that fails once the file is open counts the same, and the file is closed", async () => {
     const clock = handClock();
     const files = memoryFiles(clock.now);
@@ -354,5 +382,129 @@ describe("a .json that could not be read", () => {
     const leases = await reader.read();
     expect(leases.supported && leases.held.get(A)?.pid).toBe(4242);
     expect(files.opened()).toHaveLength(1);
+  });
+});
+
+describe("a failure after a .json was read", () => {
+  const JSON_FILE = `${ACTIVE}/${A}.lock.json`;
+  const TAKEN = NOW - HOUR;
+
+  /** A held lease read once, on a clock the test moves. */
+  async function readOnce(pid = 4242) {
+    const clock = handClock();
+    const files = memoryFiles(clock.now);
+    writeLease(files, A, pid);
+    const reader = createLeaseReader(ACTIVE, files.io, clock.now);
+    const lease = async () => {
+      const leases = await reader.read();
+      return leases.supported ? leases.held.get(A) : undefined;
+    };
+    await lease();
+    return { clock, files, reader, lease };
+  }
+
+  test("a .json that changed and cannot be opened keeps the time of its last read and names no process", async () => {
+    const { clock, files, lease } = await readOnce();
+    files.rewrite(JSON_FILE, leaseFile(A, 5151, NOW), { mtimeMs: NOW + SECOND });
+    files.failOpen(JSON_FILE);
+    const kept = { pid: null, acquiredAt: TAKEN };
+    expect(await lease()).toEqual(kept);
+
+    // Tried again as any file that could not be read is, and the time stands through each try.
+    clock.advance(LEASE_RETRY_MS);
+    expect(await lease()).toEqual(kept);
+    expect(files.opened()).toHaveLength(3);
+
+    files.heal(JSON_FILE);
+    clock.advance(LEASE_RETRY_MS);
+    expect(await lease()).toEqual({ pid: 5151, acquiredAt: NOW });
+  });
+
+  test("a read that fails once the file is open keeps the same", async () => {
+    const clock = handClock();
+    const files = memoryFiles(clock.now);
+    writeLease(files, A, 4242);
+    let readFails = false;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      async openRegular(file) {
+        const handle = await files.io.openRegular(file);
+        return readFails ? { ...handle, read: () => Promise.reject(new Error("EIO")) } : handle;
+      },
+    };
+    const reader = createLeaseReader(ACTIVE, io, clock.now);
+    await reader.read();
+
+    readFails = true;
+    files.rewrite(JSON_FILE, leaseFile(A, 5151, NOW), { mtimeMs: NOW + SECOND });
+    const leases = await reader.read();
+    expect(leases.supported && leases.held.get(A)).toEqual({ pid: null, acquiredAt: TAKEN });
+    expect(files.openHandles()).toBe(0);
+  });
+
+  test("a .json whose last read gave no time keeps none", async () => {
+    const text = JSON.stringify({ acquired_at: "yesterday", process_id: 4242, session_id: A });
+    const { files, lease } = await readOnce();
+    files.rewrite(JSON_FILE, text, { mtimeMs: NOW + SECOND });
+    expect(await lease()).toEqual({ pid: 4242, acquiredAt: null });
+
+    files.rewrite(JSON_FILE, leaseFile(A, 5151, NOW), { mtimeMs: NOW + 2 * SECOND });
+    files.failOpen(JSON_FILE);
+    expect(await lease()).toEqual({ pid: null, acquiredAt: null });
+  });
+
+  test("a look that fails leaves the last read as it was, and opens nothing", async () => {
+    const { files, lease } = await readOnce();
+    files.fail(JSON_FILE);
+    expect(await lease()).toEqual({ pid: 4242, acquiredAt: TAKEN });
+    files.heal(JSON_FILE);
+    expect(await lease()).toEqual({ pid: 4242, acquiredAt: TAKEN });
+    expect(files.opened()).toHaveLength(1);
+  });
+
+  test("a change a failed look did not see is found by the next look", async () => {
+    const { files, lease } = await readOnce();
+    files.fail(JSON_FILE);
+    await lease();
+    files.rewrite(JSON_FILE, leaseFile(A, 5151, NOW), { mtimeMs: NOW + SECOND });
+    files.heal(JSON_FILE);
+    expect(await lease()).toEqual({ pid: 5151, acquiredAt: NOW });
+  });
+
+  test("a .json found gone is a fact, so its last read goes with it", async () => {
+    const { files, lease } = await readOnce();
+    files.fail(JSON_FILE, "ENOENT");
+    expect(await lease()).toEqual({ pid: null, acquiredAt: null });
+    files.heal(JSON_FILE);
+    await lease();
+    expect(files.opened()).toHaveLength(2);
+  });
+
+  test("a listing that fails keeps what was read, and a folder found missing does not", async () => {
+    const { files, lease, reader } = await readOnce();
+    files.fail(ACTIVE);
+    expect(await reader.read()).toEqual({ supported: false, missing: false });
+    files.heal(ACTIVE);
+    expect(await lease()).toEqual({ pid: 4242, acquiredAt: TAKEN });
+    expect(files.opened()).toHaveLength(1);
+
+    files.fail(ACTIVE, "ENOENT");
+    expect(await reader.read()).toEqual({ supported: false, missing: true });
+    files.heal(ACTIVE);
+    await lease();
+    expect(files.opened()).toHaveLength(2);
+  });
+
+  test("a lease kept through a failed listing goes once a listing no longer finds it", async () => {
+    const { files, lease } = await readOnce();
+    files.fail(ACTIVE);
+    await lease();
+    files.heal(ACTIVE);
+    releaseLease(files, A);
+    expect(await lease()).toBeUndefined();
+
+    writeLease(files, A, 5151);
+    files.failOpen(JSON_FILE);
+    expect(await lease()).toEqual({ pid: null, acquiredAt: null });
   });
 });

@@ -50,9 +50,9 @@ const LOCK_JSON = ".lock.json";
 
 /** What a session's `.lock.json` says. */
 export interface Lease {
-  /** The process that took the lease. Null when the file is missing, being written, or cannot be read. */
+  /** The process that took the lease. Null when the file is missing, being written, or not read since it last changed. */
   pid: number | null;
-  /** When it was taken, in epoch milliseconds, when that could be read. */
+  /** When it was taken, in epoch milliseconds, as its last read that worked gave that. */
   acquiredAt: number | null;
 }
 
@@ -132,14 +132,16 @@ export function createLeaseReader(
       return { pid: null, acquiredAt: null };
     }
     const file = path.join(dir, `${id}${LOCK_JSON}`);
+    const cached = cache.get(id);
     let info: FileInfo;
     try {
       info = await io.lstat(file);
-    } catch {
+    } catch (error) {
+      // A look that failed says nothing about the file, so the last read stands.
+      if (cached && !isMissing(error)) return cached.lease;
       cache.delete(id);
       return { pid: null, acquiredAt: null };
     }
-    const cached = cache.get(id);
     if (
       cached &&
       cached.ino === info.ino &&
@@ -155,6 +157,11 @@ export function createLeaseReader(
     if (info.kind === "file" && info.size <= LEASE_FILE_LIMIT_BYTES) {
       // Failed until its bytes are in hand, so a close that fails after them loses nothing.
       failedAt = now();
+      // A read that fails keeps when the lease was taken, so it does not pass for
+      // a lease just taken. It keeps no process: the file changed, so a program
+      // wrote it, and the process the last read named may have gone while another
+      // holds the lease. Asking about that one could show a Vibe that runs as finished.
+      lease = { pid: null, acquiredAt: cached?.lease.acquiredAt ?? null };
       try {
         const handle = await io.openRegular(file);
         try {
@@ -165,7 +172,7 @@ export function createLeaseReader(
           await handle.close();
         }
       } catch {
-        // Gone, or not readable, between the look and the read: no pid this time.
+        // Gone, or not readable, between the look and the read: tried again later.
       }
     }
     cache.set(id, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lease, failedAt });
@@ -178,8 +185,10 @@ export function createLeaseReader(
       try {
         names = await io.readdir(dir);
       } catch (error) {
-        cache.clear();
-        return { supported: false, missing: isMissing(error) };
+        // A listing that failed says nothing about the files, so what was read stands.
+        const missing = isMissing(error);
+        if (missing) cache.clear();
+        return { supported: false, missing };
       }
       const locks = new Set<string>();
       const jsons = new Set<string>();
