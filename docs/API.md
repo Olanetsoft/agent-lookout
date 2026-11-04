@@ -330,7 +330,7 @@ How long sessions waited on you today, from local midnight, and over the last se
 | `since`        | Where the history held begins, as in `/api/history`. Nothing before it is counted                                                                           |
 | `where`        | `disk`, or `memory` with `AGENT_LOOKOUT_HISTORY=off`, when the history begins as this run of Agent Lookout started, so only the time since then counts      |
 
-A wait begins with a move into `needs-you` and ends with the session's next move out of it, or its end. A wait already under way when Agent Lookout found the session, as when it started while the session waited, is counted from when that run of Agent Lookout started. A wait the history holds no end for, of a session that does not need you now, ended while Agent Lookout was stopped, so it is counted up to the start of this run and no further. Only Claude Code sessions and sessions from a status file can be seen waiting: a Codex session never needs you, so it is never in this answer.
+A wait begins with a move into `needs-you` and ends with the session's next move out of it, or its end. A wait already under way when Agent Lookout found the session, as when it started while the session waited, is counted from when that run of Agent Lookout started. A wait the history holds no end for, of a session that does not need you now, ended while Agent Lookout was stopped, so it is counted up to the start of this run and no further. [Waits](GUIDE.md#waits) says which sessions can be seen waiting: a Codex session never needs you, so it is never in this answer.
 
 ### `GET /api/email` and `GET /api/webhook`
 

@@ -1,8 +1,19 @@
+import { isVibeTurnInFlight } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import {
+  CALLBACK_HEAD_BYTES,
+  emptyFold,
+  foldLine,
+  openedBy,
+  settledBy,
+  type CallbackFold,
+  type CallbackLine,
+} from "./callbacks.ts";
 import { envelopeOf, type Envelope } from "./envelope.ts";
 
 /**
- * Reading a Vibe session's journal segment, for the newest public state in it.
+ * Reading a Vibe session's journal segment, for the newest public state in it
+ * and what it says of the callbacks Vibe opens and settles (`callbacks.ts`).
  *
  * Between two saves of a session whole, Vibe records what happens in the
  * segment the manifest names, `journal/<16 digits>.jsonl`, one record a line,
@@ -33,10 +44,12 @@ import { envelopeOf, type Envelope } from "./envelope.ts";
  *
  * Every read is bounded. The first read of a segment looks back from its end
  * through at most 8 MiB for the newest line that sets the state, and can read
- * the state from a line longer than that, whose start it never reaches. After
- * that, only what was added is read, at most 8 MiB at a time. A last line with
- * no newline yet is one Vibe is still writing, or one it will cut off: it is
- * left for the next read.
+ * the state from a line longer than that, whose start it never reaches. It
+ * stops at that line unless the state has a turn in flight, which is the one
+ * time a callback can hold the session: then it goes on through the same 8 MiB
+ * for the turn's callbacks. After that, only what was added is read, at most
+ * 8 MiB at a time. A last line with no newline yet is one Vibe is still
+ * writing, or one it will cut off: it is left for the next read.
  */
 
 /** The most of a segment's end looked through at once. A single line can be far longer. */
@@ -105,6 +118,19 @@ export function readJournalLine(line: Uint8Array, whole = true): Newest | null {
   return envelope === null ? { kind: "unread" } : { kind: "state", envelope };
 }
 
+/**
+ * What a whole line says of a callback, from its first bytes alone, or null
+ * when it is no callback's. A line whose start was not read is never asked:
+ * what looks like a record's start there can be a tool's arguments.
+ */
+export function readCallbackLine(line: Uint8Array): CallbackLine | null {
+  const type = recordTypeOf(line);
+  if (type !== "callback_registered" && type !== "callback_resolved") return null;
+  const bytes = Buffer.from(line.buffer, line.byteOffset, line.byteLength);
+  const head = bytes.toString("utf8", 0, Math.min(bytes.byteLength, CALLBACK_HEAD_BYTES));
+  return type === "callback_registered" ? openedBy(head) : settledBy(head);
+}
+
 function bytesOf(data: Uint8Array): Buffer {
   return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
 }
@@ -120,14 +146,39 @@ interface Tail {
   newest: Newest;
   /** Where the complete lines end. Null when no line end was found within the limit. */
   end: number | null;
+  callbacks: CallbackFold;
+}
+
+/** Whether a state can have a callback holding the session, so that older lines still matter. */
+function mayWait(newest: Newest): boolean {
+  return newest.kind === "state" && isVibeTurnInFlight(newest.envelope.statusType);
 }
 
 /**
- * Reads backwards from the end until a line sets the state, the start of the
- * segment is reached, or the limit has been read. The bytes after the last
- * newline are a line still being written, and are left alone.
+ * Reads backwards from the end until a line sets a state no callback can hold,
+ * the start of the segment is reached, or the limit has been read. The bytes
+ * after the last newline are a line still being written, and are left alone.
  */
 async function scanTail(file: OpenFile, size: number): Promise<Tail> {
+  let newest: Newest | null = null;
+  /** The callback lines found, newest first. */
+  const callbackLines: CallbackLine[] = [];
+
+  /** Takes in one whole line. True when no older line can matter. */
+  function take(line: Uint8Array): boolean {
+    const callback = readCallbackLine(line);
+    if (callback !== null) callbackLines.push(callback);
+    newest ??= readJournalLine(line);
+    return newest !== null && !mayWait(newest);
+  }
+
+  /** What was found. `whole` says the lines read start at the segment's start. */
+  function tail(end: number | null, whole: boolean): Tail {
+    const callbacks = emptyFold(whole);
+    for (const line of callbackLines.reverse()) foldLine(callbacks, line);
+    return { newest: newest ?? { kind: whole ? "none" : "beyond" }, end, callbacks };
+  }
+
   let position = size;
   let budget = TAIL_LIMIT_BYTES;
   /** The bytes from `position` to the first newline after it: not yet known to be a whole line. */
@@ -155,31 +206,29 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
 
     let newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
     while (newline !== -1) {
-      const found = readJournalLine(buffer.subarray(newline + 1, cut));
-      if (found !== null) return { newest: found, end };
+      if (take(buffer.subarray(newline + 1, cut))) return tail(end, false);
       cut = newline;
       newline = cut > 0 ? buffer.lastIndexOf(NEWLINE, cut - 1) : -1;
     }
 
     if (start === 0) {
       // The whole segment has been read: its first line is whole too.
-      const found = cut > 0 ? readJournalLine(buffer.subarray(0, cut)) : null;
-      return { newest: found ?? { kind: "none" }, end };
+      if (cut > 0) take(buffer.subarray(0, cut));
+      return tail(end, true);
     }
     fragment = buffer.subarray(0, cut);
   }
 
   if (position === 0) {
     // The start was reached with no complete line at all.
-    return { newest: { kind: "none" }, end: end ?? 0 };
+    return tail(end ?? 0, true);
   }
   // The limit was reached. The end of the line it stopped inside may still
   // hold the state, which comes last on a line.
-  if (end !== null && fragment.byteLength > 0) {
-    const found = readJournalLine(fragment, false);
-    if (found !== null) return { newest: found, end };
+  if (newest === null && end !== null && fragment.byteLength > 0) {
+    newest = readJournalLine(fragment, false);
   }
-  return { newest: { kind: "beyond" }, end };
+  return tail(end, false);
 }
 
 /** What is cached for one segment between polls. */
@@ -190,6 +239,7 @@ interface Cached {
   newest: Newest;
   /** Where the lines read so far end, always at a line's start. Null when not known. */
   offset: number | null;
+  callbacks: CallbackFold;
 }
 
 export interface JournalReader {
@@ -199,6 +249,8 @@ export interface JournalReader {
    * it cannot be read; the caller keeps what it had.
    */
   read(file: string, info: FileInfo): Promise<Newest>;
+  /** What the lines read so far of a segment say of callbacks, which stands while it cannot be read. */
+  callbacks(file: string): CallbackFold;
   /** Forgets every segment not in this set. */
   keepOnly(files: ReadonlySet<string>): void;
 }
@@ -217,6 +269,7 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
         mtimeMs: info.mtimeMs,
         newest: tail.newest,
         offset: tail.end,
+        callbacks: tail.callbacks,
       };
     } finally {
       await handle.close();
@@ -251,8 +304,11 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
       let start = 0;
       let newline = added.indexOf(NEWLINE);
       while (newline !== -1) {
-        const found = readJournalLine(added.subarray(start, newline));
+        const line = added.subarray(start, newline);
+        const found = readJournalLine(line);
         if (found !== null) newest = found;
+        const callback = readCallbackLine(line);
+        if (callback !== null) foldLine(cached.callbacks, callback);
         start = newline + 1;
         newline = added.indexOf(NEWLINE, start);
       }
@@ -262,6 +318,7 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
         mtimeMs: opened.mtimeMs,
         newest,
         offset: offset + start,
+        callbacks: cached.callbacks,
       };
     } finally {
       await handle.close();
@@ -282,6 +339,9 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
       const next = (cached && (await readOnward(file, cached, info))) || (await readFresh(file));
       cache.set(file, next);
       return next.newest;
+    },
+    callbacks(file) {
+      return cache.get(file)?.callbacks ?? emptyFold(false);
     },
     keepOnly(files) {
       for (const file of cache.keys()) {

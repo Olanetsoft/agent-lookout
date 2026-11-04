@@ -188,9 +188,9 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
 export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "This version does not read Vibe's approval waits, so a session waiting for you shows as working.",
+      "While Vibe waits for your approval or an answer. A session whose subagent waits for you shows as working.",
   },
   finished: {
     level: "partly",
@@ -535,7 +535,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card when Mistral Vibe is not installed: its folder is looked for, and nothing more.
+      // The adapter's card on a Mac without Mistral Vibe: its folder is looked for, and `ps` would run only while a session waits.
       id: "mistral-vibe",
       label: "Mistral Vibe",
       state: "unavailable",
@@ -545,6 +545,11 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Sessions folder", value: "~/.vibe/logs/session/unified" },
         { label: "Read", value: "not found" },
         { label: "Open-sessions folder", value: "~/.vibe/logs/session/active" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session waits, and sooner when another starts to wait",
+        },
       ],
       capabilities: MISTRAL_VIBE_CAPABILITIES,
       checkedAt,

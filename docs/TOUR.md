@@ -263,11 +263,12 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `leases.ts` lists `active/` and reads the `<id>.lock.json` beside each `<id>.lock`, for the process that holds the session. It never opens a lock: Vibe's own programs try the lock, and this adapter takes a lease as held while its process exists.
 - `stores.ts` reads `CURRENT` when it changes, and the manifest, public state and runtime state of the generation it names once each while it follows the session. It also looks through `unified/` for sessions no program holds, dating each by its `CURRENT` and its journal segments, at most every 30 seconds while it changes.
 - `journal.ts` reads the journal segment from its end, then as it grows, and parses only the public state at the end of each `projection_delta` record, never the history before it. The journal's newest state wins over the generation's, which is often older.
+- `callbacks.ts` reads the first bytes of the `callback_registered` and `callback_resolved` records, and the pending `callbacks` of a generation's runtime state, for the id, kind and time of each approval or question Vibe has open, never what it says. `vibeWaitOf` in the mapping decides which of those a session waits on: an open callback on disk is not enough, since a killed Vibe, a question an earlier program left and an action Vibe abandoned all leave one. It counts only under a lease of a process that runs, with a turn in flight, and when it is newer than the lease and the turn (#70). While one counts on a Mac, `ps` is asked when the lease's process started, so that a pid given to another program holds up no wait.
 - `envelope.ts` keeps the title, the status and a few times of a state, and `toSession.ts` makes the session.
 
 **Bases.** `files` is the usual one. `files-without-leases` is used while `active/` cannot be listed, when no session is shown as finished.
 
-**How sure it is.** It was built from the source of Vibe 2.26.1 and has not yet been checked on a computer running Vibe. The card says so (`UNCHECKED_NOTE`), and says too that Needs you is not read yet (`NEEDS_YOU_NOTE`).
+**How sure it is.** It was built from the source of Vibe 2.26.1 and 3.0.4 and has not yet been checked on a computer running Vibe. The card says so (`UNCHECKED_NOTE`), and says too that a subagent's wait is not read (`NEEDS_YOU_NOTE`).
 
 ### Gemini CLI
 
@@ -382,7 +383,7 @@ In short:
 - **Codex** reports working and idle, finished from 0.155 on, Quiet for and tokens. Never needs you or failed. No Jump, Stop or Answer.
 - **The Antigravity CLI** reports working and idle, Quiet for and tokens. Needs you only for a tool approval, finished only where `ps` can be asked, and failed only for agy's own errors. No Jump, Stop or Answer.
 - **Antigravity** reports working and idle, Quiet for and tokens. Finished only on macOS, once `ps` shows the app is closed, and failed only for its own errors. Needs you only while the chat's database says the app asks to approve a step, and not on Windows. No Jump, Stop or Answer.
-- **Mistral Vibe** reports working and idle, names and Quiet for. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No Needs you or tokens yet, and no Jump, Stop or Answer.
+- **Mistral Vibe** reports working and idle, names and Quiet for. Needs you while Vibe waits for your approval or an answer, but not while only a subagent does. Finished once no Vibe program holds the session, or one took it in the last 30 seconds and wrote nothing, and failed only for errors Vibe records. No tokens yet, and no Jump, Stop or Answer.
 - **Gemini CLI** reports Quiet for and tokens, and working and idle in part, since a reply with text whose tool waits or runs shows as idle. Names only once Gemini CLI saves a title. Failed only for a failed request's error that Gemini CLI records. Never needs you or finished. No Jump, Stop or Answer.
 - **OpenCode** reports working and idle, finished once `ps` shows no OpenCode program, and failed for the errors OpenCode records, on macOS and Linux. Names are its titles. Tokens are its newest reply's. Needs you only while OpenCode asks a question or for a plan's approval. No Quiet for, Jump, Stop or Answer.
 - **Qwen Code** reports Quiet for and tokens, and working, idle and finished in part. Needs you only while Qwen Code 0.25.1 or newer asks a question or for a plan's approval. Never failed. Jump only in tmux and in a tab of Terminal or iTerm2. No Stop or Answer.

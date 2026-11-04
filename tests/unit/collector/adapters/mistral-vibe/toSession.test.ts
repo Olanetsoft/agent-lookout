@@ -36,6 +36,52 @@ function session(fields: Partial<MistralVibeSessionInput> = {}) {
   });
 }
 
+describe("a Mistral Vibe session waiting for the person", () => {
+  const since = NOW - MINUTE;
+
+  test("needs you, with the wait's reason, from when the wait began, and no words of Vibe's", () => {
+    const approval = session({ wait: { reason: "permission", since, ids: ["a"] } });
+    expect(approval).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: since,
+    });
+    expect(approval).not.toHaveProperty("waitingText");
+    expect(approval).not.toHaveProperty("waitingDetail");
+    expect(session({ wait: { reason: "question", since, ids: ["a"] } })).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+    });
+  });
+
+  test("works, from when its turn began, once the wait is over", () => {
+    const answered = session({ wait: null });
+    expect(answered).toMatchObject({ status: "working", statusSince: NOW - 5 * MINUTE });
+    expect(answered).not.toHaveProperty("waitingReason");
+  });
+
+  test("that closes is finished, with no reason, from the state's last change", () => {
+    const closed = session({ held: false, wait: { reason: "permission", since, ids: ["a"] } });
+    expect(closed).toMatchObject({ status: "finished", statusSince: NOW - 2 * MINUTE });
+    expect(closed).not.toHaveProperty("waitingReason");
+  });
+
+  test("in a store a newer Vibe wrote has no status and no reason", () => {
+    const newer = session({ tooNew: true, wait: { reason: "question", since, ids: ["a"] } });
+    expect(newer).toMatchObject({ status: "unknown", statusSince: null });
+    expect(newer).not.toHaveProperty("waitingReason");
+  });
+
+  test("has no time for a wait that could not have begun then", () => {
+    expect(
+      session({ wait: { reason: "question", since: NOW + DAY, ids: ["a"] } }).statusSince,
+    ).toBeNull();
+    expect(
+      session({ wait: { reason: "question", since: NOW - DAY, ids: ["a"] } }).statusSince,
+    ).toBeNull();
+  });
+});
+
 describe("a Mistral Vibe session", () => {
   test("is named by its title, with its folder and project, its start, and when it last wrote", () => {
     expect(session()).toEqual({
@@ -131,7 +177,7 @@ describe("a Mistral Vibe session", () => {
     expect(session({ envelope: old }).stale).toBe(true);
   });
 
-  test("has no pid, alive, jump, stop, link or tokens, and never needs you", () => {
+  test("with no wait, has no pid, alive, jump, stop, link or tokens, and does not need you", () => {
     for (const statusType of ["running", "blocked", "idle", "failed"]) {
       const made = session({ envelope: envelope({ statusType }) });
       expect(made.status).not.toBe("needs-you");
