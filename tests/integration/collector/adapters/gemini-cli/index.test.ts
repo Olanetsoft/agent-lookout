@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFile,
+  chmod,
   cp,
   lstat,
   mkdir,
@@ -19,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
-import { createGeminiCliAdapter } from "@collector/adapters/gemini-cli/index";
+import { createGeminiCliAdapter, subagentsUnreadNote } from "@collector/adapters/gemini-cli/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
@@ -29,6 +30,7 @@ import {
   geminiLine,
   headerLine,
   HOME,
+  HOUR,
   ids,
   messageIdOf,
   MINUTE,
@@ -348,6 +350,116 @@ describe("a subagent's writes, from the real files", () => {
     await lastWrite(home, io);
     expect(calls.filter((call) => call.path.startsWith(otherFolder))).toEqual([]);
   });
+
+  // Windows keeps no such modes, and the root user is refused nothing.
+  const withModes = test.runIf(process.platform !== "win32" && process.getuid?.() !== 0);
+
+  withModes(
+    "a folder the system will not let it look in is said on the card, and clears once it can",
+    async () => {
+      const { home, subagents } = await homeWithSession();
+      await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+      const clock = handClock(NOW);
+      const adapter = adapterFor(home, nodeIo, clock.now);
+      const healthy = await adapter.poll();
+      expect(healthy.sessions[0]?.lastWriteAt).toBe(NOW - 5 * SECOND);
+      const note = subagentsUnreadNote({ refused: 1, failed: 0 });
+
+      try {
+        // It can be listed, and no file in it looked at.
+        await chmod(subagents, 0o600);
+        clock.advance(2 * SECOND);
+        const noFile = await adapter.poll();
+        expect(noFile.health).toMatchObject({
+          state: "ok",
+          detail: `${healthy.health.detail} ${note}`,
+        });
+        expect(noFile.sessions).toEqual(healthy.sessions);
+
+        // It cannot be listed, which a listing finds.
+        await chmod(subagents, 0o000);
+        clock.advance(31 * SECOND);
+        const noListing = await adapter.poll();
+        expect(noListing.health).toMatchObject({
+          state: "ok",
+          detail: `${healthy.health.detail} ${note}`,
+        });
+        expect(noListing.sessions[0]?.lastWriteAt).toBe(NOW - 5 * SECOND);
+      } finally {
+        await chmod(subagents, 0o700);
+      }
+
+      clock.advance(2 * SECOND);
+      const back = await adapter.poll();
+      expect(back.health.detail).toBe(healthy.health.detail);
+      expect(back.sessions[0]?.lastWriteAt).toBe(NOW - 5 * SECOND);
+    },
+  );
+
+  withModes(
+    "a folder of more files than are looked at between listings keeps its last write past a listing that can look at none",
+    async () => {
+      const { home, subagents } = await homeWithSession();
+      for (let number = 1; number <= 19; number += 1) {
+        const name = `agent-${String(number).padStart(4, "0")}.jsonl`;
+        await writeAgent(subagents, name, NOW - 3 * HOUR);
+      }
+      // It sorts last, and led at the listing before.
+      await writeAgent(subagents, "agent-9999.jsonl", NOW - 5 * SECOND);
+      const clock = handClock(NOW);
+      const adapter = adapterFor(home, nodeIo, clock.now);
+      const healthy = await adapter.poll();
+      const leading = NOW - 5 * SECOND;
+      expect(healthy.sessions[0]?.lastWriteAt).toBe(leading);
+
+      try {
+        await chmod(subagents, 0o600);
+        clock.advance(32 * SECOND);
+        const noFile = await adapter.poll();
+        expect(noFile.health.detail).toContain("permission was refused for 1 session.");
+        expect(noFile.sessions[0]?.lastWriteAt).toBe(leading);
+      } finally {
+        await chmod(subagents, 0o700);
+      }
+
+      for (let poll = 0; poll < 2; poll += 1) {
+        clock.advance(2 * SECOND);
+        const back = await adapter.poll();
+        expect(back.health.detail).toBe(healthy.health.detail);
+        expect(back.sessions[0]?.lastWriteAt).toBe(leading);
+      }
+    },
+  );
+
+  withModes(
+    "a folder it can look in and not list moves on with the files it knows, and stays said on the card",
+    async () => {
+      const { home, subagents } = await homeWithSession();
+      const agent = await writeAgent(subagents, `${AGENT}.jsonl`, NOW - 5 * SECOND);
+      const clock = handClock(NOW);
+      const adapter = adapterFor(home, nodeIo, clock.now);
+      const healthy = await adapter.poll();
+      const note = subagentsUnreadNote({ refused: 1, failed: 0 });
+
+      try {
+        await chmod(subagents, 0o311);
+        clock.advance(30 * SECOND);
+        for (let poll = 0; poll < 2; poll += 1) {
+          clock.advance(2 * SECOND);
+          const writtenAt = clock.now() - SECOND;
+          await writeTime(agent, writtenAt);
+          const { health, sessions } = await adapter.poll();
+          expect(health.detail).toBe(`${healthy.health.detail} ${note}`);
+          expect(sessions[0]?.lastWriteAt).toBe(writtenAt);
+        }
+      } finally {
+        await chmod(subagents, 0o700);
+      }
+
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).health.detail).toBe(healthy.health.detail);
+    },
+  );
 
   test("no subagent's file is opened, or changed, and only the session is listed", async () => {
     const { home, subagents } = await homeWithSession();

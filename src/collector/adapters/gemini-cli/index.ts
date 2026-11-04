@@ -20,7 +20,7 @@ import { createChatFileReader, type ChatFileState } from "./chatFile.ts";
 import { createChatLister } from "./chats.ts";
 import { createGeminiCliLastMessages } from "./lastMessages.ts";
 import { createProjectLister, type Project, type ProjectLister } from "./projects.ts";
-import { createSubagentWrites, subagentFolder } from "./subagentWrites.ts";
+import { createSubagentWrites, subagentFolder, type SubagentsUnread } from "./subagentWrites.ts";
 import { geminiCliSession, lastActivity, SOURCE_ID } from "./toSession.ts";
 
 /** The variable that names Gemini CLI's folder, the one that holds `tmp/`, for Agent Lookout alone. */
@@ -75,6 +75,21 @@ export const OLDER_FORMAT_NOTE =
 /** Said when a session listed is unknown. */
 export const UNKNOWN_NOTE =
   "Agent Lookout cannot tell how some Gemini CLI sessions stand from their last lines, so they show as unknown.";
+
+const sessionCount = (count: number) => (count === 1 ? "1 session" : `${count} sessions`);
+
+/**
+ * Said when subagents' folders or files could not be looked up this poll, or
+ * null when all could. It gives the kind of failure and how many sessions it
+ * touched, and never names a session, a folder or a file.
+ */
+export function subagentsUnreadNote({ refused, failed }: SubagentsUnread): string | null {
+  const kinds: string[] = [];
+  if (refused > 0) kinds.push(`permission was refused for ${sessionCount(refused)}`);
+  if (failed > 0) kinds.push(`the lookup failed for ${sessionCount(failed)}`);
+  if (kinds.length === 0) return null;
+  return `Subagent files could not be looked up: ${kinds.join(", and ")}. Such a session can look quiet while a subagent works, and in the Mac app Keep awake can stop counting it.`;
+}
 
 /**
  * What a Gemini CLI session can show, from the files this adapter reads. See
@@ -251,7 +266,9 @@ export interface GeminiCliAdapter extends Adapter {
  *   the last day (`chats.ts`, `chatFile.ts`).
  * - The folder of each session it lists, `chats/<session id>/`, listed, for when
  *   the session's subagents last wrote, from their files' modified times. Those
- *   files are never opened (`subagentWrites.ts`).
+ *   files are never opened (`subagentWrites.ts`). A folder or file that cannot
+ *   be looked up leaves the session listed from its own file, and `detail` says
+ *   so on each poll that finds it so.
  *
  * On a Mac it reads them in two folders: Gemini CLI's own, and the one it
  * keeps its sessions in under macOS Seatbelt, `~/.cache/.gemini`
@@ -528,7 +545,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
 
     // Only the folders of the sessions this poll lists. A subagent's writes count
     // as its session's, since the session writes nothing while it waits on one.
-    const subagentWrites = await subagents.newest(
+    const subagentLook = await subagents.newest(
       [...chosen.values()].map(({ subagentDir }) => subagentDir),
       checkedAt,
     );
@@ -542,7 +559,7 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
         seatbelt,
         cwd,
         writtenAt,
-        subagentWrittenAt: subagentWrites.get(subagentDir),
+        subagentWrittenAt: subagentLook.times.get(subagentDir),
         now: checkedAt,
       });
       if (session) {
@@ -556,6 +573,8 @@ export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): G
     detail += `. ${alwaysNotes}`;
     if (listing.older > 0) detail += ` ${OLDER_FORMAT_NOTE}`;
     if (sessions.some((session) => session.status === "unknown")) detail += ` ${UNKNOWN_NOTE}`;
+    const unreadNote = subagentsUnreadNote(subagentLook.unread);
+    if (unreadNote !== null) detail += ` ${unreadNote}`;
     const answer = result("ok", detail, every(pollIntervalMs), checkedAt);
     return { ...answer, sessions };
   }
