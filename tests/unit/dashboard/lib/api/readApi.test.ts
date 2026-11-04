@@ -529,10 +529,10 @@ test("the way another machine read each of its sources is kept, so each is compa
     "parts",
   );
   const many = Object.fromEntries(
-    Array.from({ length: 30 }, (_, index) => [`remote:devbox:s${index}:`, "files"]),
+    Array.from({ length: 70 }, (_, index) => [`remote:devbox:s${index}:`, "files"]),
   );
   const kept = readSource({ id: "remote:devbox", state: "ok", parts: many }, T)?.parts;
-  expect(Object.keys(kept ?? {})).toHaveLength(20);
+  expect(Object.keys(kept ?? {})).toHaveLength(60);
 });
 
 test("what a source can report is kept whole, or not at all, so no cell is a guess", () => {

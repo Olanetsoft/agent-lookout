@@ -79,7 +79,7 @@ Only `setupLocalWorkspace` registers a folder. A session run through `CRUSH_CLIE
 - A read that catches it half written, or that cannot be parsed, leaves the last list standing. With none before it, the card says it could not be read.
 - Of each entry only `path` is kept. `data_dir` and `last_accessed` are never taken.
 - A `path` is kept only when it is a string of at most 4,096 characters, an absolute path, with no `.` or `..` in it and nothing unprintable in it. Any other entry is skipped, and opens nothing.
-- Only the first 20 folders are taken, the newest. That is as many as the page reads for one source (`MAX_PARTS` in `src/dashboard/lib/api/readApi.ts`). Another machine takes 20 parts in all, one of them for its status files, so past that each of its sources is compared whole.
+- Only the first 20 folders are taken, the newest. Each is a part of its own in `health.parts`, and a machine read from another shares 60 parts among all its sources (`MAX_REMOTE_PARTS` in `src/collector/remotes/remoteSessions.ts`).
 
 ## Where a project's database is
 
@@ -258,7 +258,7 @@ Nothing is read, and `sqlite3` and `ps` are not run, as for OpenCode, Hermes Age
 - A rename moves `updated_at`, so a session closed long ago can come back for a day.
 - A folder copied with its `.crush` shows its sessions twice, once for each folder, each with an id of its own.
 - A project not read is named on the card by its folder's name alone, so two folders of one name read alike.
-- On another machine, its sources share 20 parts. While they come to more than that, with a project that failed left out, each source is compared as a whole, Hermes Agent's profiles too, so a database that fails there shows its sessions as ended here.
+- On another machine, its sources share 60 parts. Today they name at most 51, these 20 projects, Hermes Agent's 17 profiles and one for each of the other 14 sources, so a database that fails there leaves its sessions as they were here too. Past 60, which a later version there could reach, each source is compared as a whole, Hermes Agent's profiles too, so a database that fails there shows its sessions as ended here.
 - `sqlite3 -json` needs SQLite 3.33 or newer. An older one is a failed read.
 - A Crush older than v0.25.0 keeps no list, so nothing of it is read.
 

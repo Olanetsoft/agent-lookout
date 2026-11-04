@@ -43,10 +43,9 @@ export const DATABASE_FILE = "crush.db";
 export const MAX_LIST_BYTES = 1024 * 1024;
 
 /**
- * The most projects read, the newest first. As many as the page reads for one
- * source (`MAX_PARTS` in `src/dashboard/lib/api/readApi.ts`). Another machine
- * takes 20 parts in all, one of them for its status files, so past that each of
- * its sources is compared whole.
+ * The most projects read, the newest first. Each is a part of its own, and a
+ * machine read from another shares `MAX_REMOTE_PARTS`, in
+ * `src/collector/remotes/remoteSessions.ts`, among all its sources.
  */
 export const MAX_PROJECTS = 20;
 

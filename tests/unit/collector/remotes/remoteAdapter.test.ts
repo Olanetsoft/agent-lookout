@@ -15,7 +15,15 @@ import type {
   SourceHealth,
   SourceId,
 } from "@core/sessions/session";
-import { NOW, REMOTE_VERSION, snapshotThere, workingThere } from "@tests/fixtures/remote";
+import {
+  CRUSH_PROJECTS_THERE,
+  crushSessionThere,
+  everySourceThere,
+  NOW,
+  REMOTE_VERSION,
+  snapshotThere,
+  workingThere,
+} from "@tests/fixtures/remote";
 
 const REMOTE: Remote = { name: "devbox", target: "dev@devbox.local", port: 4777 };
 
@@ -500,6 +508,17 @@ describe("the way a machine is read", () => {
     await machine.poll(there("registry+feed", "failed"));
     expect(machine.notices).toEqual(["failed remote:devbox:codex:job"]);
     expect(machine.changes()).toEqual(["remote:devbox:codex:job working->failed"]);
+  });
+
+  test("a Crush project that fails there, with every source there naming all it can, ends none of its sessions here", async () => {
+    const sessions = CRUSH_PROJECTS_THERE.map(crushSessionThere);
+    const machine = watched(everySourceThere(CRUSH_PROJECTS_THERE, sessions));
+    await machine.poll();
+    await machine.poll();
+    await machine.poll(everySourceThere(CRUSH_PROJECTS_THERE.slice(1), sessions.slice(1)));
+    await machine.poll(everySourceThere(CRUSH_PROJECTS_THERE, sessions));
+    expect(machine.notices).toEqual([]);
+    expect(machine.changes()).toEqual([]);
   });
 
   test("a way this version does not name for a source there is left out, and that source is compared under api", async () => {
