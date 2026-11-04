@@ -20,6 +20,7 @@ import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
+import type { SourceFact } from "@core/sessions/session";
 import {
   feedEntries,
   feedJson,
@@ -37,6 +38,7 @@ import {
   noStartTimes,
   now,
   prints,
+  processFacts,
   watching,
   WITHHELD,
 } from "@tests/support/adapters/claudeCodeAdapter";
@@ -1671,6 +1673,7 @@ describe("what the adapter says about itself", () => {
         "Registry read",
         "Command",
         "Command run",
+        ...processFacts(false).map((fact) => fact.label),
         "Transcript read",
       ]);
     }
@@ -1759,13 +1762,18 @@ describe("what the adapter touches", () => {
       },
     });
     const result = await adapter.poll();
+    // The first poll runs the command before it reads the registry, so `ps` has not been asked.
+    const notAsked = ({ label, value }: SourceFact) =>
+      label === "Process check run" ? { label, value: "not run" } : { label, value };
     expect(result).toEqual({
       health: {
         id: "claude-code",
         label: "Claude Code",
         state: "error",
         detail: "Something unexpected went wrong while reading Claude Code sessions.",
-        watching: watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds"),
+        watching: watching(path.join(home, "sessions"), "every 2 seconds", "every 30 seconds").map(
+          notAsked,
+        ),
         checkedAt: now,
       },
       sessions: [],

@@ -33,7 +33,7 @@ import {
 } from "@tests/fixtures/claudeCode";
 import { prompt, said, transcript, usage } from "@tests/fixtures/claudeTranscript";
 import { makeSession } from "@tests/fixtures/session";
-import { adapterFor, prints } from "@tests/support/adapters/claudeCodeAdapter";
+import { adapterFor, prints, processFacts } from "@tests/support/adapters/claudeCodeAdapter";
 import { listen, request } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
@@ -160,6 +160,7 @@ describe("routes", () => {
       { label: "Registry read", value: "every 2 seconds" },
       { label: "Command", value: "claude agents --json --all" },
       { label: "Command run", value: "every 30 seconds" },
+      ...processFacts(true),
       {
         label: "Transcript read",
         value: "last message of a waiting session, and of one whose details are open",

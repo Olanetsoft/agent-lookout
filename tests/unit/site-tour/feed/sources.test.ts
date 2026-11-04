@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { expect, test } from "vitest";
 
+import { createStopTargets } from "@collector/actions/stopTargets";
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
@@ -14,9 +16,11 @@ import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
 import { sshArguments } from "@collector/remotes/sshProgram";
+import { createTabFinder } from "@collector/terminal/tabFinder";
 import { SOURCE_STATE_LABEL } from "@core/sessions/session";
 import { MACHINE } from "@site-tour/feed/hour";
 import * as tour from "@site-tour/feed/sources";
+import { HOME, registryFiles } from "@tests/fixtures/claudeCode";
 import {
   antigravityAdapterFor,
   antigravityAppAdapterFor,
@@ -24,6 +28,7 @@ import {
   standInHub,
   standInProcesses,
 } from "@tests/support/adapters/antigravityAdapter";
+import { adapterFor } from "@tests/support/adapters/claudeCodeAdapter";
 import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
@@ -70,6 +75,32 @@ test("Codex says, as its adapter does, that its sessions cannot be seen waiting"
   const codex = tour.sourcesAt(0, 1, "0.2.6").find((source) => source.id === "codex");
   expect(codex?.detail).toContain(NEEDS_YOU_NOTE);
   expect(codex?.capabilities?.["needs-you"].level).toBe("no");
+});
+
+test("Claude Code's card is the one its adapter shows on a Mac with sessions, once a session has been stopped", async () => {
+  const stops = createStopTargets();
+  stops.noteCheck();
+  const adapter = adapterFor(`${HOME}/.claude`, {
+    platform: "darwin",
+    stops,
+    terminals: createTabFinder({
+      env: {},
+      homeDir: HOME,
+      readProcesses: async () => new Map(),
+    }).asker(),
+    registryIo: {
+      readdir: async () => Object.keys(registryFiles),
+      readFile: async (file) => registryFiles[path.basename(file)] ?? "",
+    },
+  });
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "claude-code")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions.length).toBeGreaterThan(0);
 });
 
 test("the Antigravity CLI's card is the one its adapter shows on a computer without agy", async () => {

@@ -105,6 +105,23 @@ function terminalSession(overrides: Record<string, unknown> = {}): World {
 }
 
 describe("the checks made again before a stop", () => {
+  test("says a stop is asking ps as it goes to, once for each stop, and not for a process it would never stop", async () => {
+    const asked: string[] = [];
+    const { stopper } = stopperIn(terminalSession(), {
+      onCheck: () => asked.push("told"),
+      readParents: async () => {
+        asked.push("parents");
+        return new Map(PARENTS);
+      },
+    });
+
+    await stopper.confirm({ ...SIGNAL, pid: 1 });
+    expect(asked).toEqual([]);
+
+    await stopper.confirm(SIGNAL);
+    expect(asked).toEqual(["told", "parents"]);
+  });
+
   test("a session that is still what was found may be stopped, and nothing is sent yet", async () => {
     const { stopper, kill, readStarts, readFile } = stopperIn(terminalSession());
 

@@ -596,6 +596,7 @@ export function createCollector(options: CollectorOptions): Collector {
     now,
     readStarts: options.readProcessStarts,
     readParents: readProcesses && (async () => parentsIn(await readProcesses())),
+    onCheck: () => stopTargets?.noteCheck(),
     ...options.stopping,
   });
   const stopRoutes = stopTargets && {

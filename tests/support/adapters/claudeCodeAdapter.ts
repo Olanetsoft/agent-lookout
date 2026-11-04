@@ -71,20 +71,47 @@ export function adapterFor(claudeHome: string, options: ClaudeCodeAdapterOptions
 export const TRANSCRIPT_READ =
   "last message of a waiting session, and of one whose details are open";
 
-/** The five facts, in the order the adapter gives them. */
+/** What the card says tells a session's process from another program, on a Mac and on Linux. */
+export const PROCESS_CHECK = "ps -o pid=,lstart= -p <pids>";
+
+/** How often it says that runs, once something has asked. */
+export const PROCESS_CHECK_RUN =
+  "every 30 seconds while a session's process runs, and sooner when another appears";
+
+/**
+ * The facts about a session's process on the system the tests run on, for an
+ * adapter handed no tab finder and no stop targets. `ran` says whether `ps` has
+ * been asked, and `polled` how often the adapter is polled.
+ */
+export const processFacts = (ran: boolean, polled = "every 2 seconds") =>
+  process.platform === "win32"
+    ? [{ label: "Process check", value: `signal 0 alone, ${polled}` }]
+    : [
+        { label: "Process check", value: PROCESS_CHECK },
+        { label: "Process check run", value: ran ? PROCESS_CHECK_RUN : "not run" },
+      ];
+
+/**
+ * The facts, in the order the adapter gives them. A registry that was read is
+ * taken to have held a session, whose start time `ps` has been asked about.
+ */
 export const watching = (
   folder: string,
   registryRead: string,
   commandRun: string,
   command?: string,
   transcriptRead: string = TRANSCRIPT_READ,
-) => [
-  { label: "Registry folder", value: folder },
-  { label: "Registry read", value: registryRead },
-  { label: "Command", value: command ?? "claude agents --json --all" },
-  { label: "Command run", value: commandRun },
-  { label: "Transcript read", value: transcriptRead },
-];
+) => {
+  const read = registryRead.startsWith("every");
+  return [
+    { label: "Registry folder", value: folder },
+    { label: "Registry read", value: registryRead },
+    { label: "Command", value: command ?? "claude agents --json --all" },
+    { label: "Command run", value: commandRun },
+    ...processFacts(read, read ? registryRead : undefined),
+    { label: "Transcript read", value: transcriptRead },
+  ];
+};
 
 /** What is said when the claude command is held back because only the folder was named. */
 export const WITHHELD =

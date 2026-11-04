@@ -661,6 +661,7 @@ describe("Jump", () => {
         looked.push([...asked].sort());
       },
       tabOf: (pid: number) => tabs[pid],
+      asked: () => looked.length > 0,
     };
   }
 

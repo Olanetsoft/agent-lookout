@@ -459,6 +459,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
   const checkedAt = now - 1_500;
   return [
     {
+      // The adapter's card on a Mac with sessions running, once one has been stopped.
       id: "claude-code",
       label: "Claude Code",
       state: "ok",
@@ -469,6 +470,15 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Registry read", value: "every 2 seconds" },
         { label: "Command", value: "claude agents --json --all" },
         { label: "Command run", value: "every 30 seconds" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+        { label: "Tab check", value: "ps -A -o pid=,ppid=,tty=,comm=" },
+        { label: "Tab check run", value: "once for each new process, every 5 seconds at most" },
+        { label: "Stop check", value: "ps -A -o pid=,ppid= and ps -o pid=,lstart= -p <pid>" },
+        { label: "Stop check run", value: "when you stop a session" },
         {
           label: "Transcript read",
           value: "last message of a waiting session, and of one whose details are open",
