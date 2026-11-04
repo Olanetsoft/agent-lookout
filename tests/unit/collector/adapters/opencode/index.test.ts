@@ -26,7 +26,10 @@ import {
 } from "@collector/adapters/opencode/index";
 import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
+import { createEventStore } from "@collector/eventStore";
+import { createHistoryStore } from "@collector/historyStore";
 import { createTailLimits } from "@collector/messages/tailReader";
+import { createPoller } from "@collector/poller";
 import {
   EMPTY_CHANGE_MEMORY,
   sessionChanges,
@@ -63,6 +66,8 @@ const B = sessionId("b2");
 const WAL = `${DATABASE}-wal`;
 const SHM = `${DATABASE}-shm`;
 const NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
+const NOT_LOOKED_AT_DETAIL =
+  "OpenCode's database, ~/.local/share/opencode/opencode.db, was not read: a file of the database could not be looked at, so no OpenCode sessions are listed.";
 
 /** The rows Sources shows, for the default folder. */
 function watching(
@@ -764,6 +769,117 @@ describe("when the database cannot be read", () => {
       detail: "Something unexpected went wrong while reading OpenCode sessions.",
     });
     expect(sessions).toEqual([]);
+  });
+});
+
+// The stand-in files, with each system's rules, so these pass on Windows too.
+describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (platform) => {
+  function pollerOf(adapter: ReturnType<typeof opencodeAdapterFor>, now: () => number) {
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      now,
+    });
+    const logged = () => events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
+    return { poller, logged };
+  }
+
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("at %s is an error that says so, and not a missing database", async (_case, target) => {
+    const { files, sqlite } = openOpencode();
+    files.fail(target);
+    const processes = standInProcesses();
+    const adapter = opencodeAdapterFor(files, sqlite, { platform, processes });
+    const { health, sessions, basis } = await adapter.poll();
+    expect(health).toMatchObject({
+      state: "error",
+      detail: NOT_LOOKED_AT_DETAIL,
+      watching: watching("every 2 seconds"),
+    });
+    expect(sessions).toEqual([]);
+    expect(basis).toBeUndefined();
+    expect(sqlite.runs).toEqual([]);
+    expect(processes.asked()).toBe(0);
+  });
+
+  test("in a folder Agent Lookout's setting names is not a folder with no database", async () => {
+    const { files, sqlite } = openOpencode();
+    files.fail("/tmp/oc/opencode.db");
+    const adapter = opencodeAdapterFor(files, sqlite, {
+      env: { AGENT_LOOKOUT_OPENCODE_HOME: "/tmp/oc" },
+      platform,
+    });
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toContain("could not be looked at");
+    expect(health.detail).not.toContain("which has no");
+  });
+
+  test("with the data folder refused too, is not an OpenCode that is not there", async () => {
+    const { files, sqlite } = openOpencode();
+    files.fail(DATA_HOME);
+    files.fail(DATABASE);
+    const { health } = await opencodeAdapterFor(files, sqlite, { platform }).poll();
+    expect(health).toMatchObject({ state: "error", detail: NOT_LOOKED_AT_DETAIL });
+  });
+
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])(
+    "at %s sends no ended, and a look that works again brings the sessions back with no event",
+    async (_case, target) => {
+      const clock = handClock();
+      const { files, sqlite } = openOpencode();
+      const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, platform });
+      const { poller, logged } = pollerOf(adapter, clock.now);
+      expect((await poller.pollOnce()).sessions).toHaveLength(1);
+
+      files.fail(target);
+      clock.advance(2 * SECOND);
+      const refused = await poller.pollOnce();
+      expect(refused.sources[0]?.state).toBe("error");
+      expect(refused.sessions).toEqual([]);
+      expect(logged()).toEqual([]);
+
+      files.heal(target);
+      clock.advance(2 * SECOND);
+      const resumed = await poller.pollOnce();
+      expect(resumed.sources[0]?.state).toBe("ok");
+      expect(resumed.sessions).toHaveLength(1);
+      expect(logged()).toEqual([]);
+    },
+  );
+
+  test("is told from a database that has gone, whose sessions do end", async () => {
+    const clock = handClock();
+    const { files, sqlite } = openOpencode();
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, platform });
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    await poller.pollOnce();
+    files.remove(DATABASE);
+    clock.advance(2 * SECOND);
+    await poller.pollOnce();
+    expect(logged()).toEqual([{ kind: "ended", sessionId: `opencode:${A}` }]);
+  });
+
+  test("between two polls leaves what a session last said unreadable, with nothing asked", async () => {
+    const { files, sqlite } = openOpencode();
+    sqlite.said(A, lastTextJson(["The reply."]));
+    const adapter = opencodeAdapterFor(files, sqlite, { platform });
+    await adapter.poll();
+    files.fail(WAL);
+    await expect(adapter.lastMessage(`opencode:${A}`)).resolves.toEqual({
+      message: null,
+      reason: "unreadable",
+    });
+    expect(sqlite.questions()).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { findSqlite, runSqlite, type RunSqlite } from "../antigravity/app/summaries.ts";
-import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { TRANSCRIPT_TAIL_BYTES } from "../../files/transcriptTail.ts";
 import {
   PROBE_QUERY,
@@ -34,6 +34,10 @@ import {
  *   closes the database then leaves its `-wal` and `-shm` in place.
  * - such a `-wal` without its `-shm`, or either of them not an ordinary file:
  *   not read.
+ *
+ * A database that has gone is nothing to read, and a file beside it that has
+ * gone is no file. One of the three that cannot be looked at may still be there,
+ * so it is not taken for gone.
  *
  * An empty `opencode.db` is taken as none: SQLite would delete a `-wal` beside
  * it.
@@ -71,13 +75,21 @@ export const RETRY_MS = 10_000;
  * read            the sessions were read
  * missing         there is no database, it is empty, or it is not an ordinary file
  * not-safe        its `-wal` holds something but has no `-shm`, or one of them is not an ordinary file
+ * not-looked-at   `lstat` failed at one of the three files for any reason but that nothing is there
  * no-sqlite       no `sqlite3` was found to read it
  * failed          `sqlite3` did not answer, or its answer could not be read
  * unsupported     its tables are not laid out as OpenCode 1.x or 2 lays them out
  * not-on-windows  nothing is read on Windows
  */
 export type DatabaseState =
-  "read" | "missing" | "not-safe" | "no-sqlite" | "failed" | "unsupported" | "not-on-windows";
+  | "read"
+  | "missing"
+  | "not-safe"
+  | "not-looked-at"
+  | "no-sqlite"
+  | "failed"
+  | "unsupported"
+  | "not-on-windows";
 
 export interface DatabaseRead {
   state: DatabaseState;
@@ -111,9 +123,10 @@ export interface DatabaseReader {
    * its `-wal` are as `known` says, nothing is asked, and it says so. It
    * rejects with the error `lstat` gave when there is no database, which
    * `isMissing` knows, and with another when it is not read for any other
-   * reason: on Windows, when the database is not an ordinary file or is
-   * empty, when the files beside it are not safe to read, when no `sqlite3`
-   * is found, and when `sqlite3` does not answer.
+   * reason: on Windows, when one of the three files cannot be looked at, when
+   * the database is not an ordinary file or is empty, when the files beside
+   * it are not safe to read, when no `sqlite3` is found, and when `sqlite3`
+   * does not answer.
    */
   askOnce(question: string, known: DatabaseStamp | null): Promise<QuestionRead>;
 }
@@ -128,7 +141,7 @@ interface Files {
 /** What one look at the three files found: the files, or why the database is not read. */
 type Look =
   | { files: Files }
-  | { state: "missing" | "not-safe"; error: unknown }
+  | { state: "missing" | "not-safe" | "not-looked-at"; error: unknown }
   | { state: "not-on-windows" };
 
 const NONE: readonly SessionRow[] = [];
@@ -160,19 +173,21 @@ export function createDatabaseReader(options: {
   /** The last read, with the files as they were then and when it was made. */
   let last: (DatabaseRead & { files: Files; at: number }) | null = null;
 
-  /** What is at a path beside the database: null when nothing is there. */
+  /** What is at a path beside the database: null when nothing is there. Throws when it cannot be looked at. */
   async function beside(target: string): Promise<FileInfo | null> {
     try {
       return await io.lstat(target);
-    } catch {
-      return null;
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
     }
   }
 
   /**
    * The three files with `lstat`, as every read looks at them first, or why
    * the database is not read: there is none, it is empty or not an ordinary
-   * file, or the files beside it are not safe to read.
+   * file, one of the three cannot be looked at, or the files beside it are not
+   * safe to read.
    */
   async function look(): Promise<Look> {
     if (platform === "win32") return { state: "not-on-windows" };
@@ -180,18 +195,23 @@ export function createDatabaseReader(options: {
     try {
       database = await io.lstat(file);
     } catch (error) {
-      return { state: "missing", error };
+      return { state: isMissing(error) ? "missing" : "not-looked-at", error };
     }
     // SQLite deletes the -wal beside an empty database as it opens it, so an
     // empty one is not read.
     if (database.kind !== "file" || database.size === 0) {
       return { state: "missing", error: new Error("OpenCode's database is empty or not a file.") };
     }
-    const files: Files = {
-      database,
-      wal: await beside(`${file}-wal`),
-      shm: await beside(`${file}-shm`),
-    };
+    let files: Files;
+    try {
+      files = {
+        database,
+        wal: await beside(`${file}-wal`),
+        shm: await beside(`${file}-shm`),
+      };
+    } catch (error) {
+      return { state: "not-looked-at", error };
+    }
     if (
       (files.wal !== null &&
         (files.wal.kind !== "file" || (walHolds(files) && files.shm === null))) ||

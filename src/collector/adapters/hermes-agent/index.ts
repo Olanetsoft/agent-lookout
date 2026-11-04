@@ -257,6 +257,8 @@ function shortReason(failure: NotRead): string {
   switch (failure.state) {
     case "not-safe":
       return "its -wal file has no -shm file beside it, or one of them is not an ordinary file";
+    case "not-looked-at":
+      return "a file of its database could not be looked at";
     case "no-sqlite":
       return "no sqlite3 program was found";
     case "vulnerable-sqlite":
@@ -438,6 +440,8 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
     switch (failure.state) {
       case "not-safe":
         return `Hermes Agent's database, ${database}, was not read: its -wal file holds something but has no -shm file beside it, or one of them is not an ordinary file, so it cannot be read without writing to it.`;
+      case "not-looked-at":
+        return `Hermes Agent's database, ${database}, was not read: a file of the database could not be looked at, so no Hermes Agent sessions are listed.`;
       case "no-sqlite":
         return `No sqlite3 program was found to read Hermes Agent's database, ${database}, so no Hermes Agent sessions are listed.`;
       case "vulnerable-sqlite": {
@@ -643,7 +647,15 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
     let detail = `Sessions are read from Hermes Agent's databases in ${rootName}, with sqlite3. ${notes}`;
     if (failures.length > 0) detail += ` ${notReadSentence(failures)}`;
     if (unknown) detail += ` ${UNKNOWN_ROW_NOTE}`;
-    return { ...withParts(result("ok", detail, looked, checkedAt, advice), parts), sessions };
+    const answer = {
+      ...withParts(result("ok", detail, looked, checkedAt, advice), parts),
+      sessions,
+    };
+    const refused = failures.filter((failure) => failure.state === "not-looked-at");
+    if (refused.length > 0) {
+      answer.notLookedAt = refused.map((failure) => profilePrefix(failure.profile));
+    }
+    return answer;
   }
 
   return {

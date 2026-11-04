@@ -37,6 +37,8 @@ OpenCode offers other ways in, and none of them can be used that way:
 
 The adapter opens no file itself. Only `sqlite3` opens the database, its `-wal` and its `-shm`, and only as the next section says, for the last-message question as for a poll's. While there are sessions to show, it also runs `ps`, at most every 10 seconds, and sooner after a session is written while `ps` shows no OpenCode, as [Open or closed](#open-or-closed) says. Nothing is read on Windows.
 
+A look at one of the three files that fails for any reason but that nothing is there, as when Agent Lookout is refused or a disk fails, is not taken for a missing database, and at the `-wal` or `-shm` it is not taken for no file. The card says a file of the database could not be looked at, and no session is listed. It is an error, so the poller sends no ended for the sessions it knew. The next poll looks again, and the first look that works reads the database. Such a look between two polls answers a session's last message `unreadable`, with nothing asked of `sqlite3`.
+
 ## How sqlite3 opens the database
 
 `sqlite3` is found and started as for Antigravity: at `/usr/bin/sqlite3`, `/bin/sqlite3`, `/opt/homebrew/bin/sqlite3`, `/usr/local/bin/sqlite3` or `/opt/local/bin/sqlite3`, never on `PATH`, directly with no shell, with stdin closed, only `PATH=/usr/bin:/bin` and `LC_ALL=C` in its environment, a 5-second timeout and at most 4 MiB of output. Its arguments are `-init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF'`, the database's address and one fixed question. For the question of a session's last message, at most 256 KB of output is read.

@@ -170,7 +170,9 @@ export interface Poller {
    * `sightings` say how the sessions in a wait were last seen, in any order.
    * A session whose wait the history leaves open, that the first good poll
    * leaves out, is not taken to have ended unless the way that last listed it
-   * is the way that poll was read.
+   * is the way that poll was read. Nor is a session of a part that poll could
+   * not look at (`notLookedAt`), which that part's first read takes as it is
+   * found.
    */
   resume(events: readonly SessionEvent[], sightings?: readonly WaitSighting[]): void;
   /** When the collector began. History before this was not measured. */
@@ -582,7 +584,12 @@ export function createPoller(options: PollerOptions): Poller {
         const after = result.sessions.filter(
           (session) => known.has(session.id) && !waits.has(session.id),
         );
-        const compared = before.filter((session) => !waits.has(session.id));
+        // A part this poll could not look at says nothing of its sessions.
+        const notLookedAt = result.notLookedAt ?? [];
+        const compared = before.filter(
+          (session) =>
+            !waits.has(session.id) && !notLookedAt.some((start) => session.id.startsWith(start)),
+        );
         const sighted = new Map(before.map((session) => [session.id, session.sighting]));
         changes.push(
           ...diffSessions(compared, after, at).map((event) =>

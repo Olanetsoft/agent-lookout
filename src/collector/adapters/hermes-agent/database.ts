@@ -1,5 +1,5 @@
 import { runSqlite, SQLITE_TIMEOUT_MS, type RunSqlite } from "../antigravity/app/summaries.ts";
-import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import {
   PROBE_QUERY,
   readSchema,
@@ -47,6 +47,10 @@ import {
  * - such a `-wal` without its `-shm`, or either not an ordinary file: not read.
  * - a `-wal` beside a rollback-journal database, or a header that is neither:
  *   not read.
+ *
+ * A database that has gone is nothing to read, and a file beside it that has
+ * gone is no file. One of the three that cannot be looked at may still be there,
+ * so it is not taken for gone.
  *
  * A read made with a `sqlite3` that fails the test, as none that passes was
  * found, during which the database went to WAL mode or its `-wal` came to
@@ -106,6 +110,7 @@ export function headerMode(bytes: Uint8Array): HeaderMode {
  * read               the sessions were read
  * missing            there is no database, it is empty, or it is not an ordinary file
  * not-safe           its `-wal` holds something but has no `-shm`, or one of them is not an ordinary file
+ * not-looked-at      `lstat` failed at one of the three files for any reason but that nothing is there
  * failed             its header is not one Agent Lookout reads, a `-wal` is beside a rollback-journal
  *                    database, `sqlite3` did not answer, its answer could not be read, or the probe
  *                    had its whole 5 seconds and the query did not fit in the poll's time after it
@@ -123,6 +128,7 @@ export type DatabaseState =
   | "read"
   | "missing"
   | "not-safe"
+  | "not-looked-at"
   | "failed"
   | "no-sqlite"
   | "vulnerable-sqlite"
@@ -196,12 +202,13 @@ export function createDatabaseReader(options: {
   /** The mode the header last said, and `state.db` as it was when it was read. */
   let header: { info: FileInfo; mode: HeaderMode } | null = null;
 
-  /** What is at a path beside the database: null when nothing is there. */
+  /** What is at a path beside the database: null when nothing is there. Throws when it cannot be looked at. */
   async function beside(target: string): Promise<FileInfo | null> {
     try {
       return await io.lstat(target);
-    } catch {
-      return null;
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
     }
   }
 
@@ -231,10 +238,10 @@ export function createDatabaseReader(options: {
     let database: FileInfo;
     try {
       database = await io.lstat(file);
-    } catch {
+    } catch (error) {
       last = null;
       header = null;
-      return { state: "missing", rows: NONE };
+      return { state: isMissing(error) ? "missing" : "not-looked-at", rows: NONE };
     }
     // SQLite deletes the -wal beside an empty database as it opens it, so an
     // empty one is not read.
@@ -243,11 +250,17 @@ export function createDatabaseReader(options: {
       header = null;
       return { state: "missing", rows: NONE };
     }
-    const files: Files = {
-      database,
-      wal: await beside(`${file}-wal`),
-      shm: await beside(`${file}-shm`),
-    };
+    let files: Files;
+    try {
+      files = {
+        database,
+        wal: await beside(`${file}-wal`),
+        shm: await beside(`${file}-shm`),
+      };
+    } catch {
+      last = null;
+      return { state: "not-looked-at", rows: NONE };
+    }
     if (
       (files.wal !== null && files.wal.kind !== "file") ||
       (files.shm !== null && files.shm.kind !== "file")

@@ -93,6 +93,16 @@ export interface AdapterResult {
    * were.
    */
   basis?: string;
+  /**
+   * The start of the ids of the sessions of each part a look failed at on this
+   * poll, for a reason other than that nothing is there. The poll says nothing
+   * of them, so the first good poll of a run leaves them out of its compare
+   * with the history, and that part's first read takes them as it finds them.
+   *
+   * The Hermes Agent adapter names each profile whose database, `-wal` or
+   * `-shm` could not be looked at, as `hermes-agent:<profile>/`.
+   */
+  notLookedAt?: string[];
 }
 
 /**

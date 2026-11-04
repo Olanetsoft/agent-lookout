@@ -22,9 +22,13 @@ import {
   WINDOWS_DETAIL,
   type HermesAgentAdapterOptions,
 } from "@collector/adapters/hermes-agent/index";
+import { PROFILES_LIST_MS } from "@collector/adapters/hermes-agent/home";
 import { SESSIONS_QUERY } from "@collector/adapters/hermes-agent/sessionRows";
 import { HERMES_SQLITE_LOCATIONS } from "@collector/adapters/hermes-agent/sqlite";
-import { POLL_DEADLINE_MS } from "@collector/poller";
+import { createEventStore } from "@collector/eventStore";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller, POLL_DEADLINE_MS } from "@collector/poller";
+import type { SessionEvent } from "@core/sessions/session";
 import {
   answerRow,
   databaseHeader,
@@ -40,6 +44,7 @@ import {
   PROFILE,
   PROFILE_DATABASE,
   ROOT,
+  SECOND,
   seconds,
   sessionId,
 } from "@tests/fixtures/hermes-agent/hermesAgent";
@@ -63,6 +68,8 @@ const C = sessionId("c3");
 const KEG = "/opt/homebrew/opt/sqlite/bin/sqlite3";
 const NOTES = `${LATE_NOTE} ${UNCHECKED_NOTE}`;
 const HEALTHY = `Sessions are read from Hermes Agent's databases in ~/.hermes, with sqlite3. ${NOTES}`;
+const NOT_LOOKED_AT_DETAIL =
+  "Hermes Agent's database, ~/.hermes/state.db, was not read: a file of the database could not be looked at, so no Hermes Agent sessions are listed.";
 
 /** The rows Sources shows, in order, for the default root. */
 function watching(
@@ -680,6 +687,284 @@ describe("when a profile cannot be read", () => {
       detail: "Something unexpected went wrong while reading Hermes Agent sessions.",
     });
     expect(sessions).toEqual([]);
+  });
+});
+
+// The stand-in files, with each system's rules, so these pass on Windows too.
+describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (platform) => {
+  const IN_DEFAULT = `hermes-agent:default/${A}`;
+  const IN_CODER = `hermes-agent:coder/${B}`;
+  const NOT_READ =
+    "Not read: the coder profile, because a file of its database could not be looked at.";
+  const ids = (sessions: readonly { id: string }[]) => sessions.map((session) => session.id);
+
+  /** The two profiles' live databases, and an adapter on a clock the test moves. */
+  function livingHome() {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, DEFAULT_DATABASE);
+    writeLiveWalDatabase(files, PROFILE_DATABASE);
+    const sqlite = standInSqlite({
+      [DEFAULT_DATABASE]: [answerRow({ id: A })],
+      [PROFILE_DATABASE]: [answerRow({ id: B, title: "Write the notes" })],
+    });
+    const clock = handClock();
+    const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, platform });
+    return { files, sqlite, clock, adapter };
+  }
+
+  function pollerOf(adapter: Adapter, now: () => number) {
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      now,
+    });
+    const logged = () => events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
+    return { poller, logged };
+  }
+
+  /** Each session as an earlier run's history kept it: idle, as both are listed. */
+  const keptOf = (at: number, ...sessionIds: string[]): SessionEvent[] =>
+    sessionIds.map((sessionId) => ({
+      id: `${sessionId}@${at}`,
+      at,
+      sessionId,
+      sessionName: "Write the notes",
+      kind: "appeared",
+      to: "idle",
+      severity: "advisory",
+    }));
+
+  test.each([
+    ["the database", DEFAULT_DATABASE],
+    ["the -wal", `${DEFAULT_DATABASE}-wal`],
+    ["the -shm", `${DEFAULT_DATABASE}-shm`],
+  ])(
+    "at %s of the only database is an error that says so, and not a missing one",
+    async (_case, target) => {
+      const files = memoryFiles();
+      writeLiveWalDatabase(files, DEFAULT_DATABASE);
+      files.fail(target);
+      const sqlite = standInSqlite({ [DEFAULT_DATABASE]: [answerRow({ id: A })] });
+      const result = await hermesAgentAdapterFor(files, sqlite, { platform }).poll();
+      expect(result.health).toMatchObject({ state: "error", detail: NOT_LOOKED_AT_DETAIL });
+      expect(result.health).not.toHaveProperty("advice");
+      expect(result.health).not.toHaveProperty("parts");
+      expect(result).not.toHaveProperty("basis");
+      expect(result.sessions).toEqual([]);
+      expect(sqlite.runs).toEqual([]);
+    },
+  );
+
+  test("in a folder Agent Lookout's setting names is not a folder with no database", async () => {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, "/tmp/hermes/state.db");
+    files.fail("/tmp/hermes/state.db");
+    const adapter = hermesAgentAdapterFor(files, standInSqlite(), {
+      env: { AGENT_LOOKOUT_HERMES_HOME: "/tmp/hermes" },
+      platform,
+    });
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toContain("could not be looked at");
+    expect(health.detail).not.toContain("which has no");
+  });
+
+  test("with the root refused too, is not a Hermes Agent that is not there", async () => {
+    const { files, adapter } = livingHome();
+    files.fail(ROOT);
+    files.fail(DEFAULT_DATABASE);
+    files.fail(PROFILE_DATABASE);
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toContain("could not be looked at");
+  });
+
+  test.each([
+    ["the database", PROFILE_DATABASE],
+    ["the -wal", `${PROFILE_DATABASE}-wal`],
+    ["the -shm", `${PROFILE_DATABASE}-shm`],
+  ])("at %s of one profile leaves the others read and listed", async (_case, target) => {
+    const { files, sqlite, adapter } = livingHome();
+    files.fail(target);
+    const { health, sessions, basis } = await adapter.poll();
+    expect(health.state).toBe("ok");
+    expect(health.detail).toBe(`${HEALTHY} ${NOT_READ}`);
+    expect(basis).toBe(BASIS);
+    // Only the profile read is named, so the poller leaves the other's sessions alone.
+    expect(health.parts).toEqual({ "hermes-agent:default/": BASIS });
+    expect(ids(sessions)).toEqual([IN_DEFAULT]);
+    expect(sqlite.runs.every((run) => run.database !== PROFILE_DATABASE)).toBe(true);
+  });
+
+  test("at the database of one profile, beside a profile with none, is an error, and not a missing one", async () => {
+    const files = memoryFiles();
+    writeLiveWalDatabase(files, PROFILE_DATABASE);
+    files.fail(PROFILE_DATABASE);
+    const { health, sessions } = await hermesAgentAdapterFor(files, standInSqlite(), {
+      platform,
+    }).poll();
+    expect(health).toMatchObject({
+      state: "error",
+      detail:
+        "Hermes Agent's database, ~/.hermes/profiles/coder/state.db, was not read: a file of the database could not be looked at, so no Hermes Agent sessions are listed.",
+    });
+    expect(sessions).toEqual([]);
+  });
+
+  test("at every profile is an error that names each", async () => {
+    const { files, adapter } = livingHome();
+    files.fail(DEFAULT_DATABASE);
+    files.fail(PROFILE_DATABASE);
+    const result = await adapter.poll();
+    expect(result.health).toMatchObject({
+      state: "error",
+      detail:
+        "No Hermes Agent profile in ~/.hermes could be read. Not read: the default profile, because a file of its database could not be looked at; the coder profile, because a file of its database could not be looked at.",
+    });
+    expect(result.health).not.toHaveProperty("parts");
+    expect(result).not.toHaveProperty("basis");
+    expect(result.sessions).toEqual([]);
+  });
+
+  test.each([
+    ["the database", PROFILE_DATABASE],
+    ["the -wal", `${PROFILE_DATABASE}-wal`],
+    ["the -shm", `${PROFILE_DATABASE}-shm`],
+  ])(
+    "at %s of one profile sends no ended, and a look that works again brings its sessions back with no event",
+    async (_case, target) => {
+      const { files, clock, adapter } = livingHome();
+      const { poller, logged } = pollerOf(adapter, clock.now);
+      expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+
+      files.fail(target);
+      clock.advance(2 * SECOND);
+      const refused = await poller.pollOnce();
+      expect(refused.sources[0]?.state).toBe("ok");
+      expect(ids(refused.sessions)).toEqual([IN_DEFAULT]);
+      expect(logged()).toEqual([]);
+
+      files.heal(target);
+      clock.advance(2 * SECOND);
+      const resumed = await poller.pollOnce();
+      expect(ids(resumed.sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+      expect(logged()).toEqual([]);
+    },
+  );
+
+  test("at every profile sends no ended, and a look that works again brings the sessions back with no event", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    await poller.pollOnce();
+
+    files.fail(DEFAULT_DATABASE);
+    files.fail(PROFILE_DATABASE);
+    clock.advance(2 * SECOND);
+    const refused = await poller.pollOnce();
+    expect(refused.sources[0]?.state).toBe("error");
+    expect(refused.sessions).toEqual([]);
+    expect(logged()).toEqual([]);
+
+    files.heal(DEFAULT_DATABASE);
+    files.heal(PROFILE_DATABASE);
+    clock.advance(2 * SECOND);
+    expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+    expect(logged()).toEqual([]);
+  });
+
+  test("at the profiles folder leaves the named profiles out, unnamed, and sends no ended for them", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    await poller.pollOnce();
+
+    files.fail(`${ROOT}/profiles`);
+    clock.advance(PROFILES_LIST_MS);
+    const refused = await poller.pollOnce();
+    expect(ids(refused.sessions)).toEqual([IN_DEFAULT]);
+    expect(refused.sources[0]?.detail).toBe(HEALTHY);
+    expect(logged()).toEqual([]);
+
+    files.heal(`${ROOT}/profiles`);
+    clock.advance(PROFILES_LIST_MS);
+    expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+    expect(logged()).toEqual([]);
+  });
+
+  test.each([
+    ["the database", PROFILE_DATABASE],
+    ["the -wal", `${PROFILE_DATABASE}-wal`],
+    ["the -shm", `${PROFILE_DATABASE}-shm`],
+  ])(
+    "at %s of one profile on the first poll after a restart sends no ended, then or once it works",
+    async (_case, target) => {
+      const { files, clock, adapter } = livingHome();
+      const { poller, logged } = pollerOf(adapter, clock.now);
+      poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER));
+
+      files.fail(target);
+      const refused = await poller.pollOnce();
+      expect(ids(refused.sessions)).toEqual([IN_DEFAULT]);
+      expect(refused.sources[0]?.detail).toBe(`${HEALTHY} ${NOT_READ}`);
+      expect(logged()).toEqual([]);
+
+      files.heal(target);
+      clock.advance(2 * SECOND);
+      expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+      expect(logged()).toEqual([]);
+    },
+  );
+
+  test("at every profile after a restart sends no ended on the first poll one of them reads", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER));
+
+    files.fail(DEFAULT_DATABASE);
+    files.fail(PROFILE_DATABASE);
+    expect((await poller.pollOnce()).sources[0]?.state).toBe("error");
+
+    files.heal(DEFAULT_DATABASE);
+    clock.advance(2 * SECOND);
+    expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT]);
+    expect(logged()).toEqual([]);
+  });
+
+  test("is told from a profile deleted while Agent Lookout was stopped, whose sessions do end", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER));
+    files.remove(`${ROOT}/profiles/coder`);
+    await poller.pollOnce();
+    expect(logged()).toEqual([{ kind: "ended", sessionId: IN_CODER }]);
+  });
+
+  test("at the profiles folder on the first poll after a restart is not told from a deleted profile", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER));
+
+    files.fail(`${ROOT}/profiles`);
+    await poller.pollOnce();
+    expect(logged()).toEqual([{ kind: "ended", sessionId: IN_CODER }]);
+
+    files.heal(`${ROOT}/profiles`);
+    clock.advance(PROFILES_LIST_MS);
+    expect(ids((await poller.pollOnce()).sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+    expect(logged()).toEqual([{ kind: "ended", sessionId: IN_CODER }]);
+  });
+
+  test("is told from a profile's database that has gone, whose sessions do end", async () => {
+    const { files, clock, adapter } = livingHome();
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    await poller.pollOnce();
+    files.remove(PROFILE_DATABASE);
+    files.remove(`${PROFILE_DATABASE}-wal`);
+    files.remove(`${PROFILE_DATABASE}-shm`);
+    clock.advance(2 * SECOND);
+    await poller.pollOnce();
+    expect(logged()).toEqual([{ kind: "ended", sessionId: IN_CODER }]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +15,10 @@ import { createDatabaseReader } from "@collector/adapters/opencode/database";
 import { BASIS, BASIS_CLOSED, createOpencodeAdapter } from "@collector/adapters/opencode/index";
 import type { OpencodeProcessReader } from "@collector/adapters/opencode/processes";
 import { PROBE_QUERY, SESSIONS_QUERY, sqliteUri } from "@collector/adapters/opencode/sessionRows";
+import { createEventStore } from "@collector/eventStore";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
 import {
   assistantData,
   FOLDER,
@@ -280,6 +283,38 @@ function holdOpen(file: string) {
     },
   };
 }
+
+describe("a look the system refuses", () => {
+  // Windows has no such modes and no sqlite3 to run, and root is refused nothing.
+  const onMacAndLinux = test.runIf(sqlite !== null && process.getuid?.() !== 0);
+
+  onMacAndLinux("on macOS and Linux sends no ended, and resumes when it works again", async () => {
+    const now = Date.now();
+    const { home } = await makeHome(now);
+    onTestFinished(() => chmod(home, 0o755));
+    const { adapter } = adapterFor(home, now, { read: async () => ({ ok: true, running: true }) });
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+    });
+    const listed = (await poller.pollOnce()).sessions.length;
+    expect(listed).toBeGreaterThan(0);
+
+    await chmod(home, 0o000);
+    const refused = await poller.pollOnce();
+    expect(refused.sources[0]?.state).toBe("error");
+    expect(refused.sources[0]?.detail).toContain("could not be looked at");
+    expect(refused.sessions).toEqual([]);
+
+    await chmod(home, 0o755);
+    const resumed = await poller.pollOnce();
+    expect(resumed.sources[0]?.state).toBe("ok");
+    expect(resumed.sessions).toHaveLength(listed);
+    expect(events.list()).toEqual([]);
+  });
+});
 
 describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", () => {
   test("lists each root session with its name, folder and status while OpenCode runs, and finishes them once it quits, leaving its -wal full", async () => {
