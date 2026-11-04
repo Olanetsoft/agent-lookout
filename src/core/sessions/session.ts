@@ -779,6 +779,13 @@ export interface SessionEvent {
    * Left out when the person pressed Allow or Deny.
    */
   rule?: EventRule;
+  /**
+   * For a move out of a wait whose session was out of the list as it ended:
+   * the last poll that listed it, or for one the last run still listed, when
+   * this run began. The wait is known only up to here, and `at` is when its end
+   * was seen.
+   */
+  lastSeen?: number;
 }
 
 /** A permission rule as an event names it: its tool, and for Bash its command. */

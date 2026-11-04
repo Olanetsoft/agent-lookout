@@ -10,7 +10,8 @@
  *   not measured   the session was there, as far as anyone knows, but nothing
  *                  was polling: before Agent Lookout started, across a break in
  *                  its polls, or since the page stopped getting answers
- *   empty          the session was not running: it had not started, or had ended
+ *   empty          the session was not listed: it had not started, had ended, or
+ *                  was out of the list while a wait ended unseen
  *
  * Time that was not measured is never filled in with a status, with one
  * exception. A source reports when a session's present status began, so that
@@ -108,7 +109,8 @@ export interface TimelineInput {
  * A stretch of one session's life with one status, before measurement is taken
  * into account. "unseen" is a stretch in which nothing is known of the session
  * yet: it may have started, but no poll had seen it. Where something was polling
- * it was not there, so only the time nobody polled is left not measured.
+ * it was not there, so only the time nobody polled is left not measured. So is
+ * the time a session was out of the list as a wait ended unseen (`outOfSight`).
  */
 interface Piece extends Span {
   status: SessionStatus | "unseen";
@@ -118,6 +120,17 @@ interface Piece extends Span {
   reaches: boolean;
   /** Its status is not known, though it was running: drawn as not measured, polled or not. */
   notKnown?: true;
+}
+
+/**
+ * The time before an event in which its session was out of the list: a wait
+ * that ended out of sight is drawn up to the last poll that listed it, and
+ * nothing is known of it after that, up to the event.
+ */
+function outOfSight(event: SessionEvent): Piece[] {
+  const { lastSeen } = event;
+  if (lastSeen === undefined || lastSeen >= event.at) return [];
+  return [{ from: lastSeen, to: event.at, status: "unseen", startObserved: true, reaches: false }];
 }
 
 /**
@@ -143,11 +156,12 @@ function statusPieces(
       // It was already there, doing what the event says it changed from.
       pieces.push({
         from: before,
-        to: first.at,
+        to: first.lastSeen ?? first.at,
         status: first.from ?? "unknown",
         startObserved: before !== -Infinity,
         reaches: false,
       });
+      pieces.push(...outOfSight(first));
     } else {
       // It appeared then. Back to its start time, or with none as far back as
       // the window goes, it was not there wherever something was polling, and
@@ -172,15 +186,19 @@ function statusPieces(
           reaches: false,
         });
       }
-      const to = events[index + 1]?.at ?? window.to;
-      if (event.kind === "ended" || to <= event.at) return;
-      pieces.push({
-        from: event.at,
-        to,
-        status: event.to ?? "unknown",
-        startObserved: true,
-        reaches: false,
-      });
+      const next = events[index + 1];
+      const to = next?.lastSeen ?? next?.at ?? window.to;
+      if (event.kind === "ended") return;
+      if (to > event.at) {
+        pieces.push({
+          from: event.at,
+          to,
+          status: event.to ?? "unknown",
+          startObserved: true,
+          reaches: false,
+        });
+      }
+      if (next) pieces.push(...outOfSight(next));
     });
   } else if (session) {
     // No event means no change: it has had its present status for as long as

@@ -740,6 +740,21 @@ test("a session Agent Lookout stopped is an event of its own, with who stopped i
   expect(readEvents({ events: [stopped] })).toEqual([stopped]);
 });
 
+test("a move out of a wait says the last poll that listed its session, when it says anything a time can be", () => {
+  const ended = {
+    id: "claude-code:1@1:ended",
+    at: T,
+    sessionId: "claude-code:1",
+    sessionName: "demo",
+    kind: "ended",
+    from: "needs-you",
+    severity: "advisory",
+  };
+  const lost = { ...ended, lastSeen: T - 60_000 };
+  expect(readEvents({ events: [lost] })).toEqual([lost]);
+  expect(readEvents({ events: [{ ...ended, lastSeen: "soon" }] })).toEqual([ended]);
+});
+
 test("a session the collector can stop says how, and nothing else is read as Stop", () => {
   const base = { id: "claude-code:1", source: "claude-code", status: "idle" };
   expect(readSession({ ...base, stop: { how: "signal" } })?.stop).toEqual({ how: "signal" });

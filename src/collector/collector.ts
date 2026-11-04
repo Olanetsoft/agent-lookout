@@ -339,9 +339,10 @@ export function createCollector(options: CollectorOptions): Collector {
         warn,
       })
     : null;
-  // What `GET /api/waits` is worked out from: the waits and the stretches
-  // measured over nine days, further back than the stores hold. It takes what
-  // the stores take, and what the history on disk held as it is read back.
+  // What `GET /api/waits` is worked out from: the waits, the stretches measured
+  // and how the sessions in a wait were seen, over nine days, further back than
+  // the stores hold. It takes what the stores take, the poller's sightings, and
+  // what the history on disk held as it is read back.
   const ledger = createWaitLedger();
   const events = ledgerEventStore(
     keeper ? keptEventStore(memoryEvents, keeper) : memoryEvents,
@@ -540,6 +541,12 @@ export function createCollector(options: CollectorOptions): Collector {
     history,
     intervalMs,
     now,
+    // How a session in a wait is seen is for the waits alone: the ledger holds
+    // it and the history keeps it, and neither shows it in the Events log.
+    onSightings: (sightings) => {
+      keeper?.addSightings(sightings);
+      ledger.addSightings(sightings);
+    },
     // Every source's sessions alike are given the branch of their folder, and
     // with pull requests on, the branch's pull request, as last learnt.
     // Every snapshot carries the time rules in force, and is stale by them.
@@ -719,7 +726,10 @@ export function createCollector(options: CollectorOptions): Collector {
           // Agent Lookout was stopped is recorded at the first poll. A session
           // whose wait began before the newest events held is among them, so
           // its wait is ended by the first poll that finds it answered or gone.
-          poller.resume([...unendedWaits(kept.whole.waitEvents), ...kept.events]);
+          poller.resume(
+            [...unendedWaits(kept.whole.waitEvents), ...kept.events],
+            kept.whole.sightings,
+          );
           if (running) begin();
         })
         .catch(() => {

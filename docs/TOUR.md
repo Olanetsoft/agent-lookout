@@ -89,7 +89,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 - An adapter's `poll()` promises never to throw. `pollSafely` catches it if one does anyway, so one broken adapter cannot stop the others.
 - Before the snapshot is made, an `annotate` step adds each session's git branch. Events are worked out from the sessions as the adapters gave them, so a branch change is not an event.
 - Events come from `diffSessions` in `src/core/sessions/diff.ts`: a session appeared, changed status or ended. Arriving at needs-you is a warning, arriving at failed is critical, and the rest are advisory (`severityFor`).
-- The first good poll of each source is a baseline and makes no events, because those sessions were already running. After a restart with history on disk, `resume` hands the poller the kept events. The first poll is compared with them instead, so a change made while Agent Lookout was stopped still shows up (#21). A way of reading's baseline makes no events either, with one exception: `waitMoves` in `src/core/sessions/diff.ts` reports a wait that ends or begins again on any poll, so a wait that ends when its agent closes does not run on in Waits (#190).
+- The first good poll of each source is a baseline and makes no events, because those sessions were already running. After a restart with history on disk, `resume` hands the poller the kept events. The first poll is compared with them instead, so a change made while Agent Lookout was stopped still shows up (#21). A way of reading's baseline makes no events either, with one exception: `waitMoves` in `src/core/sessions/diff.ts` reports a wait that ends or begins again on any poll, so a wait that ends when its agent closes does not run on in Waits (#190). Only the way that last listed a session in a wait ends it by no longer listing it. Left out by any other way, or on a source that turned unavailable, the session gets no event, since absence proves nothing: `followWaits` notes where it was lost, and Waits stops there (#255).
 - Each poll is compared only with the last poll read the same way, its `basis`, and another machine's source in parts, each of its sources there by the way that machine read it (`readWays`). An adapter that falls back to another way of reading sees slightly different sessions, and comparing the two would announce sessions ending and appearing that never did. `withoutRepeats` drops a change the log already holds.
 - A history point is added only when no source that answered before has stopped answering (`measuredEverySource`). Otherwise a failed read would draw a dip in the chart that never happened.
 - `staleBy` works out `stale` again at the poll's moment, with the idle time in force, whatever the adapter said. `sortSessions` then puts needs-you first.
@@ -1096,7 +1096,7 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 **On disk.** This came from #21 (419292c, out in 0.2.2). The code is in `src/collector/history/`.
 
 - `historyKeeper.ts`: `keptEventStore` and `keptHistoryStore` wrap the two stores. It writes every 5 seconds (`FLUSH_INTERVAL_MS`) and once more on stop, never during a poll. `restore` reads the files back at start, within 10 seconds.
-- `historyFormat.ts`: the files are JSON lines, one file per UTC day, such as `v1-2026-10-06.jsonl`. There are four kinds of record: start, cleared, point and event. An event is written field by field from the fields of `SessionEvent`.
+- `historyFormat.ts`: the files are JSON lines, one file per UTC day, such as `v1-2026-10-06.jsonl`. There are five kinds of record: start, cleared, point, event and sighting. An event or a sighting is written field by field from the fields of its type.
 - `historyLimits.ts`: at most 20 MB in all, 2 MB per file, and 8 days.
 - `historyFiles.ts`: all the file access. The folder has mode 700 and each file mode 600, and no link is followed.
 - `writerLock.ts`: `writer.lock`. Only one copy of Agent Lookout writes at a time. The others read what was kept when they start, and keep the rest in memory. Without it, the Mac app and `npm run dev` running at once would write every line twice.
@@ -1105,7 +1105,7 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 
 **Waits.** This came from #59 (ca1977c, out in 0.2.3).
 
-- The stores only reach back six hours. So `src/collector/waits/waitLedger.ts` keeps nine days of moves into and out of needs-you, and the stretches of time Agent Lookout was measuring.
+- The stores only reach back six hours. So `src/collector/waits/waitLedger.ts` keeps nine days of moves into and out of needs-you, the stretches of time Agent Lookout was measuring, and how the sessions in a wait were seen.
 - `waitTotals` in `src/core/waits/waitTotals.ts` works out `GET /api/waits` from them. It counts only time Agent Lookout was running.
 - The card is `src/dashboard/components/waits/WaitsCard.tsx`.
 

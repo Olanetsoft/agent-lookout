@@ -1182,6 +1182,133 @@ describe("sessionChanges: what happened to each session", () => {
       ).toEqual([["finished", B]]);
     });
 
+    test("a wait the fallback cannot see says nothing while it is out of sight, and is told to have ended only by the way that listed it", () => {
+      const asking = (status: SessionStatus = "needs-you") =>
+        withStatus(B, status, { name: "billing-webhooks" });
+      expect(
+        saidOver(
+          readAs("registry+feed", [working(B)]),
+          readAs("registry+feed", [asking()]),
+          readAs("registry", []),
+          readAs("registry", []),
+          readAs("registry+feed", []),
+          readAs("registry+feed", []),
+        ),
+      ).toEqual([
+        ["needs-you", B],
+        ["ended", B],
+      ]);
+    });
+
+    describe("a wait a way that does not last list it leaves out", () => {
+      const asking = (status: SessionStatus = "needs-you") =>
+        withStatus(B, status, { name: "billing-webhooks" });
+
+      test("a fallback with an older answer that holds the session says nothing, and the way that listed it says it ended", () => {
+        expect(
+          saidOver(
+            readAs("registry", [working(B)]),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry+feed", [asking()]),
+            readAs("registry", []),
+            readAs("registry", []),
+            readAs("registry+feed", []),
+          ),
+        ).toEqual([
+          ["needs-you", B],
+          ["ended", B],
+        ]);
+      });
+
+      test("an older answer that held it waiting, as a way that listed it since goes on, says nothing", () => {
+        expect(
+          saidOver(
+            readAs("registry", [asking()]),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry+feed", [asking()]),
+            readAs("registry", []),
+          ),
+        ).toEqual([["needs-you", B]]);
+      });
+
+      test("a second fallback with an older answer says nothing, once the first has left it out", () => {
+        expect(
+          saidOver(
+            readAs("files", [working(B)]),
+            readAs("registry", [working(B)]),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry+feed", [asking()]),
+            readAs("registry", []),
+            readAs("files", []),
+            readAs("registry+feed", [asking()]),
+          ),
+        ).toEqual([
+          ["needs-you", B],
+          ["needs-you", B],
+        ]);
+      });
+
+      test("seen waiting again it says so again, and no way ends it by an older answer", () => {
+        expect(
+          saidOver(
+            readAs("registry", [working(B)]),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry+feed", [asking()]),
+            readAs("registry", []),
+            readAs("registry+feed", [asking()]),
+            readAs("registry+feed", [asking()]),
+          ),
+        ).toEqual([
+          ["needs-you", B],
+          ["needs-you", B],
+        ]);
+      });
+
+      test("the way that last listed it, whichever that is, says it ended", () => {
+        expect(
+          saidOver(
+            readAs("registry+feed", [working(B)]),
+            readAs("registry", [working(B)]),
+            readAs("registry", [asking()]),
+            readAs("registry+feed", []),
+            readAs("registry+feed", []),
+            readAs("registry", []),
+          ),
+        ).toEqual([
+          ["needs-you", B],
+          ["ended", B],
+        ]);
+      });
+
+      test("is forgotten once it is listed, so a later end is told as any other", () => {
+        expect(
+          saidOver(
+            readAs("registry", [working(B)]),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry+feed", [asking()]),
+            readAs("registry", []),
+            readAs("registry+feed", [working(B)]),
+            readAs("registry", [working(B)]),
+            readAs("registry", []),
+          ),
+        ).toEqual([
+          ["needs-you", B],
+          ["ended", B],
+        ]);
+      });
+
+      test("is forgotten once no way's last answer holds it", () => {
+        const memory = [
+          readAs("registry", [working(B)]),
+          readAs("registry+feed", [working(B)]),
+          readAs("registry+feed", [asking()]),
+          readAs("registry", []),
+          readAs("registry+feed", []),
+        ].reduce((held, each) => sessionChanges(held, each).memory, EMPTY_CHANGE_MEMORY);
+        expect([...memory.lost.values()].flatMap((left) => [...left.keys()])).toEqual([]);
+      });
+    });
+
     test("the first answer read another way is a baseline, whatever it lacks or holds", () => {
       expect(
         saidOver(

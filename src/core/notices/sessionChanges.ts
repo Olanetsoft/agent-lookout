@@ -227,6 +227,12 @@ export interface ChangeMemory {
    * being told twice.
    */
   over: ReadonlyMap<SourceId, ReadonlyMap<string, OverEvent>>;
+  /**
+   * For each source, the sessions that left its list in a wait, each with the
+   * key of the way that last listed it, which alone can tell that it has gone.
+   * One listed again, or that no way's last answer holds any more, is forgotten.
+   */
+  lost: ReadonlyMap<SourceId, ReadonlyMap<string, string>>;
 }
 
 /** The memory to start from, before any snapshot has been seen. */
@@ -234,6 +240,7 @@ export const EMPTY_CHANGE_MEMORY: ChangeMemory = {
   waits: EMPTY_WAIT_MEMORY,
   seen: new Map(),
   over: new Map(),
+  lost: new Map(),
 };
 
 /** One thing that happened to one session. */
@@ -302,6 +309,11 @@ function toldAlready(event: OverEvent, known: OverEvent | undefined): boolean {
  * - A remembered session that is gone from the list has ended, unless it was
  *   finished or failed. A session that is over and later leaves the list has
  *   said what happened already.
+ * - But a session in a wait has ended only when the way that last listed it no
+ *   longer lists it, as in the poller's event log (`endsWaitUnseen`). Another
+ *   way's answer can be older than the wait, and can leave out a session that
+ *   still waits. Its wait has stopped all the same (`waitChanges`), so a session
+ *   seen waiting again has started.
  * - A session known to be over is not told of again: an end seen in one way
  *   of reading shows up again when the other is next compared with its own,
  *   older, answer.
@@ -353,7 +365,9 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
   for (const [source, { read }] of answers) {
     for (const [way, sessions] of read) {
       for (const [id, before] of memory.seen.get(source)?.get(way) ?? []) {
-        if (!sessions.has(id) && !isOverStatus(before.status)) {
+        if (sessions.has(id) || isOverStatus(before.status)) continue;
+        const waitWay = memory.waits.get(source)?.get(id)?.way ?? memory.lost.get(source)?.get(id);
+        if (waitWay === undefined || waitWay === way) {
           found.push({ event: "ended", session: before });
         }
       }
@@ -382,6 +396,7 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
 
   const seen = new Map(memory.seen);
   const over = new Map(memory.over);
+  const lost = new Map(memory.lost);
   for (const [source, { read }] of answers) {
     const ways = new Map(memory.seen.get(source));
     for (const [way, sessions] of read) ways.set(way, sessions);
@@ -398,7 +413,19 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
       if (![...ways.values()].some((listed) => listed.has(id))) known.delete(id);
     }
     over.set(source, known);
+
+    const left = new Map(memory.lost.get(source));
+    for (const [id, wait] of memory.waits.get(source) ?? []) {
+      if (!waits.memory.get(source)?.has(id)) left.set(id, wait.way);
+    }
+    for (const sessions of read.values()) {
+      for (const id of sessions.keys()) left.delete(id);
+    }
+    for (const id of left.keys()) {
+      if (![...ways.values()].some((listed) => listed.has(id))) left.delete(id);
+    }
+    lost.set(source, left);
   }
 
-  return { memory: { waits: waits.memory, seen, over }, changes, stopped: waits.stopped };
+  return { memory: { waits: waits.memory, seen, over, lost }, changes, stopped: waits.stopped };
 }
