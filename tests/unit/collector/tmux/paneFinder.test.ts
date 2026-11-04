@@ -4,6 +4,7 @@ import {
   createPaneFinder,
   PANE_LOOK_INTERVAL_MS,
   PANE_LOOK_SOONEST_MS,
+  type PaneFinderOptions,
 } from "@collector/tmux/paneFinder";
 import { LIST_PANES_ARGS } from "@collector/tmux/panes";
 import { fakeTmux } from "@tests/support/node/tmux";
@@ -13,7 +14,11 @@ import { fakeTmux } from "@tests/support/node/tmux";
  * moves, and one asker of it, as an adapter has. While `held.until` is set,
  * tmux answers only once it has settled.
  */
-function finder(panes: string[], parents: [number, number][] = []) {
+function finder(
+  panes: string[],
+  parents: [number, number][] = [],
+  more: Pick<PaneFinderOptions, "isInstalled"> = {},
+) {
   const tmux = fakeTmux({ panes });
   const clock = { now: 1_700_000_000_000 };
   const ps = { runs: 0, parents: new Map(parents), fails: false };
@@ -29,6 +34,7 @@ function finder(panes: string[], parents: [number, number][] = []) {
       return ps.parents;
     },
     now: () => clock.now,
+    ...more,
   });
   return { tmux, clock, ps, held, shared, found: shared.asker() };
 }
@@ -327,5 +333,232 @@ describe("a finder two askers share", () => {
     expect(qwen.paneOf(5002)?.id).toBe("%2");
     // No look of its own was made: the one under way was for both.
     expect(tmux.ran).toHaveLength(2);
+  });
+});
+
+describe("what an asker says for Sources", () => {
+  const says = (asker: { asked(): boolean; parentsAsked(): boolean }) => ({
+    tmux: asker.asked(),
+    ps: asker.parentsAsked(),
+  });
+  const NOT_ASKED = { tmux: false, ps: false };
+  const BOTH_ASKED = { tmux: true, ps: true };
+
+  test("nothing has been asked until a look runs tmux and ps, and reading that runs nothing", async () => {
+    const { tmux, ps, found } = finder(PANES, PARENTS);
+
+    expect(says(found)).toEqual(NOT_ASKED);
+    expect(found.installed()).toBe(true);
+    expect(tmux.ran).toEqual([]);
+    expect(ps.runs).toBe(0);
+
+    await found.look([5001]);
+    expect(says(found)).toEqual(BOTH_ASKED);
+
+    for (let read = 0; read < 5; read += 1) says(found);
+    expect(tmux.ran).toHaveLength(1);
+    expect(ps.runs).toBe(1);
+  });
+
+  test("a look with no process asks nothing", async () => {
+    const { tmux, found } = finder(PANES, PARENTS);
+    await found.look([]);
+
+    expect(says(found)).toEqual(NOT_ASKED);
+    expect(tmux.ran).toEqual([]);
+  });
+
+  test("with no tmux server running tmux has been asked, and ps has not", async () => {
+    const { tmux, ps, found } = finder(PANES, PARENTS);
+    tmux.down = "no server running on /tmp/tmux-501/default";
+    await found.look([5001]);
+
+    expect(says(found)).toEqual({ tmux: true, ps: false });
+    expect(tmux.ran).toHaveLength(1);
+    expect(ps.runs).toBe(0);
+  });
+
+  test("a server with no panes leaves ps not asked too", async () => {
+    const { found } = finder([], PARENTS);
+    await found.look([5001]);
+
+    expect(says(found)).toEqual({ tmux: true, ps: false });
+  });
+
+  test("a look made for one asker's process says nothing for another that named none", async () => {
+    const { tmux, shared, found } = finder(PANES, PARENTS);
+    const other = shared.asker();
+    await other.look([]);
+    await found.look([5001]);
+
+    expect(tmux.ran).toHaveLength(1);
+    expect(says(found)).toEqual(BOTH_ASKED);
+    expect(says(other)).toEqual(NOT_ASKED);
+  });
+
+  test("an asker that has yet to look gets no credit for another's", async () => {
+    const { shared, found } = finder(PANES, PARENTS);
+    await found.look([5001]);
+
+    expect(says(shared.asker())).toEqual(NOT_ASKED);
+  });
+
+  test("one look for both askers' processes counts for both, with one tmux and one ps", async () => {
+    const { tmux, ps, clock, shared, found } = finder(PANES, PARENTS);
+    const other = shared.asker();
+    await found.look([5001]);
+    await other.look([5002]);
+
+    // Too soon after the first look to look again, so tmux has not been asked about it.
+    expect(says(other)).toEqual(NOT_ASKED);
+
+    clock.now += PANE_LOOK_SOONEST_MS;
+    await other.look([5002]);
+    expect(says(other)).toEqual(BOTH_ASKED);
+    expect(tmux.ran).toHaveLength(2);
+    expect(ps.runs).toBe(2);
+  });
+
+  test("stays said once the processes have gone", async () => {
+    const { clock, found } = finder(PANES, PARENTS);
+    await found.look([5001]);
+
+    clock.now += PANE_LOOK_INTERVAL_MS;
+    await found.look([]);
+    expect(says(found)).toEqual(BOTH_ASKED);
+  });
+
+  test("a look that fails to read ps has still asked it", async () => {
+    const { ps, found } = finder(PANES, PARENTS);
+    ps.fails = true;
+    await found.look([5001]);
+
+    expect(says(found)).toEqual(BOTH_ASKED);
+    expect(found.paneOf(5001)).toBeUndefined();
+  });
+
+  describe("whether tmux is there", () => {
+    /** A search for tmux's program that says what a test sets, and counts each time it is made. */
+    function search(there: boolean) {
+      const searches = {
+        there,
+        made: 0,
+        isInstalled: async () => {
+          searches.made += 1;
+          return searches.there;
+        },
+      };
+      return searches;
+    }
+
+    test("is not said until a look has searched, and the first look's card can say it", async () => {
+      const searches = search(true);
+      const { found } = finder(PANES, PARENTS, searches);
+
+      expect(found.installed()).toBe(false);
+      await found.look([]);
+      expect(found.installed()).toBe(true);
+      expect(searches.made).toBe(1);
+    });
+
+    test("without it, nothing counts as asked, though the runner was handed the look", async () => {
+      const searches = search(false);
+      const { ps, found } = finder([], PARENTS, searches);
+      await found.look([5001]);
+
+      expect(found.installed()).toBe(false);
+      expect(says(found)).toEqual(NOT_ASKED);
+      expect(ps.runs).toBe(0);
+    });
+
+    test("is searched for once every 30 seconds with no process to ask about, and for every asker", async () => {
+      const searches = search(true);
+      const { tmux, clock, shared, found } = finder(PANES, PARENTS, searches);
+      const other = shared.asker();
+
+      await Promise.all([found.look([]), other.look([])]);
+      expect(other.installed()).toBe(true);
+      expect(searches.made).toBe(1);
+
+      clock.now += PANE_LOOK_INTERVAL_MS - 1;
+      await found.look([]);
+      expect(searches.made).toBe(1);
+
+      clock.now += 1;
+      await found.look([]);
+      expect(searches.made).toBe(2);
+      expect(tmux.ran).toEqual([]);
+    });
+
+    test("a run goes by a search of its own, so tmux installed since the last one counts as asked", async () => {
+      const searches = search(false);
+      const { tmux, clock, found } = finder(PANES, PARENTS, searches);
+      await found.look([]);
+
+      searches.there = true;
+      clock.now += PANE_LOOK_SOONEST_MS;
+      await found.look([5001]);
+      expect(tmux.ran).toHaveLength(1);
+      expect(searches.made).toBe(2);
+      expect(found.installed()).toBe(false);
+      expect(says(found)).toEqual(BOTH_ASKED);
+
+      clock.now += PANE_LOOK_INTERVAL_MS;
+      await found.look([5001]);
+      expect(found.installed()).toBe(true);
+      expect(says(found)).toEqual(BOTH_ASKED);
+    });
+
+    test("and tmux removed since the last search does not count as asked", async () => {
+      const searches = search(true);
+      const { tmux, clock, ps, found } = finder(PANES, PARENTS, searches);
+      await found.look([]);
+
+      searches.there = false;
+      tmux.down = "";
+      clock.now += PANE_LOOK_SOONEST_MS;
+      await found.look([5001]);
+      expect(found.installed()).toBe(true);
+      expect(says(found)).toEqual(NOT_ASKED);
+      expect(ps.runs).toBe(0);
+    });
+
+    test("a clock set back searches again", async () => {
+      const searches = search(true);
+      const { clock, found } = finder(PANES, PARENTS, searches);
+      await found.look([]);
+
+      clock.now -= 1_000;
+      await found.look([]);
+      expect(searches.made).toBe(2);
+    });
+
+    test("notices tmux installed or removed while the collector runs", async () => {
+      const searches = search(false);
+      const { clock, found } = finder(PANES, PARENTS, searches);
+      await found.look([]);
+      expect(found.installed()).toBe(false);
+
+      searches.there = true;
+      clock.now += PANE_LOOK_INTERVAL_MS;
+      await found.look([]);
+      expect(found.installed()).toBe(true);
+
+      searches.there = false;
+      clock.now += PANE_LOOK_INTERVAL_MS;
+      await found.look([]);
+      expect(found.installed()).toBe(false);
+    });
+
+    test("a search that fails says it is not there, and the look still answers", async () => {
+      const { found } = finder(PANES, PARENTS, {
+        isInstalled: async () => {
+          throw new Error("could not look");
+        },
+      });
+
+      await expect(found.look([5001])).resolves.toBeUndefined();
+      expect(found.installed()).toBe(false);
+    });
   });
 });

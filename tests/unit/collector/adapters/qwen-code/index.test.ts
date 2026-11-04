@@ -3,8 +3,11 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { createTailLimits } from "@collector/messages/tailReader";
+import { createTabFinder } from "@collector/terminal/tabFinder";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import type { TmuxPane } from "@collector/tmux/panes";
+import { tmuxInstalled } from "@collector/tmux/program";
+import type { SourceFact } from "@core/sessions/session";
 
 import {
   BASIS,
@@ -60,6 +63,13 @@ import {
   watching,
   type MemoryFiles,
 } from "@tests/support/adapters/qwenCodeAdapter";
+import {
+  PANE_CHECK,
+  PANE_CHECK_RUN,
+  PANE_PARENT_CHECK,
+  PANE_PARENT_CHECK_RUN,
+  standInPaneFinder,
+} from "@tests/support/node/tmux";
 
 const SESSIONS = `${QWEN_DIR}/sessions`;
 const PROJECTS = `${QWEN_DIR}/projects`;
@@ -640,7 +650,11 @@ describe("Jump", () => {
   const pane: TmuxPane = { pid: 4100, id: "%3", place: "api-rate-limits:0.1" };
   const tab: TerminalTab = { app: "iTerm2", tty: "/dev/ttys007" };
 
-  /** A stand-in for the collector's pane finder: it knows some panes, and writes down who it was asked about. */
+  /**
+   * A stand-in for the collector's pane finder: it knows some panes, and writes
+   * down who it was asked about. It says tmux is not there, which keeps the rows
+   * about panes off the card.
+   */
   function knownPanes(panes: Record<number, TmuxPane>) {
     const looked: number[][] = [];
     return {
@@ -649,6 +663,9 @@ describe("Jump", () => {
         looked.push([...asked].sort());
       },
       paneOf: (pid: number) => panes[pid],
+      installed: () => false,
+      asked: () => false,
+      parentsAsked: () => false,
     };
   }
 
@@ -904,7 +921,7 @@ describe("Jump", () => {
     }
   });
 
-  test("the health of the source says nothing of Jump, found or not", async () => {
+  test("without tmux, the health of the source is the same with a pane found or no finder", async () => {
     const found = await qwenCodeAdapterFor(twoSessions(), {
       panes: knownPanes({ 41001: pane }),
       readProcessStarts: ownStarts().read,
@@ -912,6 +929,254 @@ describe("Jump", () => {
     const without = await qwenCodeAdapterFor(twoSessions()).poll();
 
     expect(found.health).toEqual(without.health);
+  });
+
+  describe("what Sources says of tmux", () => {
+    const NOT_RUN = [
+      { label: "Pane check", value: PANE_CHECK },
+      { label: "Pane check run", value: "not run" },
+      { label: "Pane parent check", value: PANE_PARENT_CHECK },
+      { label: "Pane parent check run", value: "not run" },
+    ];
+    const RAN = [
+      { label: "Pane check", value: PANE_CHECK },
+      { label: "Pane check run", value: PANE_CHECK_RUN },
+      { label: "Pane parent check", value: PANE_PARENT_CHECK },
+      { label: "Pane parent check run", value: PANE_PARENT_CHECK_RUN },
+    ];
+
+    /** The pane finder the collector builds, with one pane that both sessions' processes run in. */
+    function standIns(
+      more: { isInstalled?: () => Promise<boolean>; parents?: Map<number, number> } = {},
+    ) {
+      const clock = handClock();
+      const found = standInPaneFinder({
+        panes: ["4301 %1 0 0 checkout-flow"],
+        parents: new Map([
+          [41001, 4301],
+          [41004, 4301],
+        ]),
+        now: clock.now,
+        ...more,
+      });
+      return { clock, ...found };
+    }
+
+    const paneRowsIn = (rows: SourceFact[] | undefined) =>
+      rows?.filter((fact) => fact.label.startsWith("Pane "));
+    const paneRows = async (adapter: ReturnType<typeof qwenCodeAdapterFor>) =>
+      paneRowsIn((await adapter.poll()).health.watching);
+
+    test.each(["darwin", "linux"] as const)(
+      "on %s it lists tmux and its ps as not run while no session has asked, and nothing has run",
+      async (platform) => {
+        const processes = standIns();
+        const adapter = qwenCodeAdapterFor(memoryFiles(), {
+          platform,
+          panes: processes.finder.asker(),
+        });
+
+        expect(await paneRows(adapter)).toEqual(NOT_RUN);
+        expect(processes.tmux.ran).toEqual([]);
+        expect(processes.ps.runs).toBe(0);
+      },
+    );
+
+    test.each(["darwin", "linux"] as const)(
+      "on %s a run shows at the poll after the one that made it, and stays once the sessions have gone",
+      async (platform) => {
+        const processes = standIns();
+        const live = standInProcesses([41001, 41004]);
+        const adapter = qwenCodeAdapterFor(twoSessions(), {
+          platform,
+          now: processes.clock.now,
+          isAlive: live.isAlive,
+          panes: processes.finder.asker(),
+          readProcessStarts: ownStarts().read,
+        });
+
+        expect(await paneRows(adapter)).toEqual(NOT_RUN);
+        expect(processes.tmux.ran).toHaveLength(1);
+
+        processes.clock.advance(2_000);
+        expect(await paneRows(adapter)).toEqual(RAN);
+
+        live.stop(41001);
+        live.stop(41004);
+        processes.clock.advance(2_000);
+        await adapter.poll();
+        processes.clock.advance(2_000);
+        expect(await paneRows(adapter)).toEqual(RAN);
+      },
+    );
+
+    test("the first card has none of these rows until a look has searched for tmux", async () => {
+      const processes = standIns({ isInstalled: async () => true });
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        now: processes.clock.now,
+        panes: processes.finder.asker(),
+      });
+
+      expect(await paneRows(adapter)).toEqual([]);
+
+      processes.clock.advance(2_000);
+      expect(await paneRows(adapter)).toEqual(RAN);
+    });
+
+    test("it says the same whether or not a session was found in a pane", async () => {
+      const polledTwice = async (processes: ReturnType<typeof standIns>) => {
+        const adapter = qwenCodeAdapterFor(twoSessions(), {
+          now: processes.clock.now,
+          panes: processes.finder.asker(),
+          readProcessStarts: ownStarts().read,
+        });
+        await adapter.poll();
+        processes.clock.advance(2_000);
+        return adapter.poll();
+      };
+      const found = await polledTwice(standIns());
+      const notFound = await polledTwice(standIns({ parents: new Map() }));
+
+      expect(found.sessions.some((session) => session.jump !== undefined)).toBe(true);
+      expect(notFound.sessions.some((session) => session.jump !== undefined)).toBe(false);
+      expect(found.health).toEqual(notFound.health);
+    });
+
+    test("they come after the process check and before the last message read", async () => {
+      const { health } = await qwenCodeAdapterFor(memoryFiles(), {
+        panes: standIns().finder.asker(),
+      }).poll();
+
+      expect(health.watching?.map((fact) => fact.label).slice(3)).toEqual([
+        "Process check",
+        "Process check run",
+        "Pane check",
+        "Pane check run",
+        "Pane parent check",
+        "Pane parent check run",
+        "Last message read",
+      ]);
+    });
+
+    test("on Windows, which has neither, it lists neither, whatever it is handed", async () => {
+      const { health } = await qwenCodeAdapterFor(memoryFiles(), {
+        platform: "win32",
+        panes: standIns().finder.asker(),
+      }).poll();
+
+      expect(paneRowsIn(health.watching)).toEqual([]);
+      expect(JSON.stringify(health.watching)).not.toMatch(/tmux|\bps\b/);
+    });
+
+    test("with no tmux server running it says tmux has run, and its ps has not", async () => {
+      const processes = standIns();
+      processes.tmux.down = "no server running on /tmp/tmux-501/default";
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        now: processes.clock.now,
+        panes: processes.finder.asker(),
+      });
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await paneRows(adapter)).toEqual([RAN[0], RAN[1], RAN[2], NOT_RUN[3]]);
+      expect(processes.ps.runs).toBe(0);
+    });
+
+    test("without tmux it says nothing of it, on the first poll or a later one", async () => {
+      const processes = standIns({ isInstalled: async () => false });
+      processes.tmux.panes = [];
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        now: processes.clock.now,
+        panes: processes.finder.asker(),
+      });
+
+      expect(await paneRows(adapter)).toEqual([]);
+      processes.clock.advance(2_000);
+      expect(await paneRows(adapter)).toEqual([]);
+      expect(processes.ps.runs).toBe(0);
+    });
+
+    test("with AGENT_LOOKOUT_TMUX off it says nothing of tmux, which is not even looked for", async () => {
+      const env = { AGENT_LOOKOUT_TMUX: "off", PATH: "/opt/homebrew/bin" };
+      const looked: string[] = [];
+      const processes = standIns({
+        isInstalled: () =>
+          tmuxInstalled({
+            env,
+            platform: "darwin",
+            isExecutable: async (candidate) => {
+              looked.push(candidate);
+              return true;
+            },
+          }),
+      });
+      const adapter = qwenCodeAdapterFor(memoryFiles(), { panes: processes.finder.asker() });
+
+      await adapter.poll();
+      expect(await paneRows(adapter)).toEqual([]);
+      expect(looked).toEqual([]);
+    });
+
+    test("AGENT_LOOKOUT_TERMINAL_JUMP is for tabs alone, so with it off tmux runs and the card says so", async () => {
+      const env = { AGENT_LOOKOUT_TERMINAL_JUMP: "off" };
+      const processes = standIns({
+        isInstalled: () =>
+          tmuxInstalled({ env, isExecutable: async () => true, platform: "darwin" }),
+      });
+      let tables = 0;
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        now: processes.clock.now,
+        panes: processes.finder.asker(),
+        terminals: createTabFinder({
+          env,
+          homeDir: HOME,
+          readProcesses: async () => {
+            tables += 1;
+            return new Map();
+          },
+        }).asker(),
+      });
+      await adapter.poll();
+
+      processes.clock.advance(2_000);
+      expect(await paneRows(adapter)).toEqual(RAN);
+      expect(processes.tmux.names()).toEqual(["list-panes"]);
+      expect(tables).toBe(0);
+    });
+
+    test("the rows add no run of tmux or ps: one of each in 30 seconds", async () => {
+      const processes = standIns();
+      const adapter = qwenCodeAdapterFor(twoSessions(), {
+        now: processes.clock.now,
+        panes: processes.finder.asker(),
+      });
+
+      for (let polled = 0; polled < 15; polled += 1) {
+        await adapter.poll();
+        processes.clock.advance(2_000);
+      }
+      expect(processes.tmux.ran).toHaveLength(1);
+      expect(processes.ps.runs).toBe(1);
+
+      await adapter.poll();
+      expect(processes.tmux.ran).toHaveLength(2);
+      expect(processes.ps.runs).toBe(2);
+    });
+
+    test("a look made for another adapter's process leaves this card's rows at not run", async () => {
+      const processes = standIns();
+      await processes.finder.asker().look([41001]);
+      expect(processes.tmux.ran).toHaveLength(1);
+
+      const adapter = qwenCodeAdapterFor(memoryFiles(), { panes: processes.finder.asker() });
+      await adapter.poll();
+      expect(await paneRows(adapter)).toEqual(NOT_RUN);
+      expect(processes.tmux.ran).toHaveLength(1);
+    });
+
+    test("with no pane finder it says nothing of tmux", async () => {
+      expect(await paneRows(qwenCodeAdapterFor(memoryFiles()))).toEqual([]);
+    });
   });
 });
 

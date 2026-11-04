@@ -90,7 +90,7 @@ import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
 import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
 import { createTabFinder } from "./terminal/tabFinder.ts";
 import { createPaneFinder } from "./tmux/paneFinder.ts";
-import { createTmuxRunner, type RunTmux } from "./tmux/program.ts";
+import { createTmuxRunner, tmuxInstalled, type RunTmux } from "./tmux/program.ts";
 import { createWaitLedger, ledgerEventStore, ledgerHistoryStore } from "./waits/waitLedger.ts";
 import {
   createWebhookNotifications,
@@ -361,6 +361,7 @@ export function createCollector(options: CollectorOptions): Collector {
   const { readProcesses } = options;
   const panes = createPaneFinder({
     run: tmux,
+    isInstalled: options.tmux ? undefined : () => tmuxInstalled({ env, platform }),
     readParents: readProcesses && (async () => parentsIn(await readProcesses())),
     now,
   });

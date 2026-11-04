@@ -17,6 +17,7 @@ import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
 import { sshArguments } from "@collector/remotes/sshProgram";
 import { createTabFinder } from "@collector/terminal/tabFinder";
+import { createPaneFinder } from "@collector/tmux/paneFinder";
 import { SOURCE_STATE_LABEL } from "@core/sessions/session";
 import { MACHINE } from "@site-tour/feed/hour";
 import * as tour from "@site-tour/feed/sources";
@@ -34,6 +35,7 @@ import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapte
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
+import { fakeTmux } from "@tests/support/node/tmux";
 
 const readme = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const page = readFileSync(new URL("../../../../site/index.html", import.meta.url), "utf8");
@@ -77,12 +79,16 @@ test("Codex says, as its adapter does, that its sessions cannot be seen waiting"
   expect(codex?.capabilities?.["needs-you"].level).toBe("no");
 });
 
-test("Claude Code's card is the one its adapter shows on a Mac with sessions, once a session has been stopped", async () => {
+test("Claude Code's card is the one its adapter shows on a Mac with tmux and sessions, once a session has been stopped", async () => {
   const stops = createStopTargets();
   stops.noteCheck();
   const adapter = adapterFor(`${HOME}/.claude`, {
     platform: "darwin",
     stops,
+    panes: createPaneFinder({
+      run: fakeTmux({ panes: ["4301 %1 0 0 work"] }).run,
+      readParents: async () => new Map(),
+    }).asker(),
     terminals: createTabFinder({
       env: {},
       homeDir: HOME,
@@ -163,8 +169,10 @@ test("OpenCode's card is the one its adapter shows on a computer without it", as
   expect(sessions).toEqual([]);
 });
 
-test("Qwen Code's card is the one its adapter shows on a computer without it", async () => {
-  const adapter = qwenCodeAdapterFor(memoryFiles());
+test("Qwen Code's card is the one its adapter shows on a computer with tmux and without Qwen Code", async () => {
+  const adapter = qwenCodeAdapterFor(memoryFiles(), {
+    panes: createPaneFinder({ run: fakeTmux().run }).asker(),
+  });
   const { health, sessions } = await adapter.poll();
   const { capabilities, ...card } = tour
     .sourcesAt(0, 1, "0.2.6")

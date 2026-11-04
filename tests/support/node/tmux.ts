@@ -1,7 +1,8 @@
-// Two stand-ins for a person's tmux. `fakeTmux` runs nothing: it writes down
-// each command and answers as tmux would. `privateTmux` is the real program on
-// a server of the test's own, on its own socket, which is killed when the test
-// finishes. No test asks, or changes, the tmux server a person is using.
+// Stand-ins for a person's tmux. `fakeTmux` runs nothing: it writes down each
+// command and answers as tmux would. `standInPaneFinder` is the pane finder the
+// collector builds, over one. `privateTmux` is the real program on a server of
+// the test's own, on its own socket, which is killed when the test finishes. No
+// test asks, or changes, the tmux server a person is using.
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -10,7 +11,22 @@ import path from "node:path";
 
 import { onTestFinished } from "vitest";
 
+import { createPaneFinder, type PaneFinderOptions } from "@collector/tmux/paneFinder";
 import { runTmuxBinary, type RunTmux, type TmuxResult } from "@collector/tmux/program";
+
+/** What a card says tmux is run with, to find a session's pane. */
+export const PANE_CHECK =
+  "tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'";
+
+/** How often it says that runs, once it has been asked for one of the card's sessions. */
+export const PANE_CHECK_RUN =
+  "every 30 seconds while a session's process runs, and sooner when another appears or a Jump finds its pane gone";
+
+/** What a card says `ps` is run with, to walk from a pane to a session's process. */
+export const PANE_PARENT_CHECK = "ps -A -o pid=,ppid=";
+
+/** How often it says that runs, once it has been asked for one of the card's sessions. */
+export const PANE_PARENT_CHECK_RUN = "with each pane check while tmux lists a pane";
 
 export interface FakeTmux {
   run: RunTmux;
@@ -61,6 +77,30 @@ export function fakeTmux(start: Partial<Pick<FakeTmux, "panes" | "clients" | "wh
     },
   };
   return tmux;
+}
+
+/**
+ * The pane finder the collector builds, over a `fakeTmux` that lists these
+ * panes, and a `ps` that counts its runs and answers with these parents.
+ */
+export function standInPaneFinder(options: {
+  panes: string[];
+  parents: ReadonlyMap<number, number>;
+  now: () => number;
+  isInstalled?: PaneFinderOptions["isInstalled"];
+}) {
+  const tmux = fakeTmux({ panes: options.panes });
+  const ps = { runs: 0 };
+  const finder = createPaneFinder({
+    run: tmux.run,
+    isInstalled: options.isInstalled,
+    readParents: async () => {
+      ps.runs += 1;
+      return new Map(options.parents);
+    },
+    now: options.now,
+  });
+  return { tmux, ps, finder };
 }
 
 export interface PrivateTmux {

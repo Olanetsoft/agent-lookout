@@ -32,6 +32,7 @@ import type { TerminalTab } from "../../terminal/terminalTabs.ts";
 import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { TmuxPane } from "../../tmux/panes.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
+import { paneFacts } from "../paneFacts.ts";
 import { every } from "../words.ts";
 import { createChatReader, type ChatState } from "./chatRecords.ts";
 import { createFinishedSessions } from "./finishedSessions.ts";
@@ -300,7 +301,8 @@ export interface QwenCodeAdapterOptions {
   /**
    * Finds the tmux pane each open session's process runs in, so that Jump can
    * select it. The collector passes an asker of the finder the jump route acts
-   * with. Left out, no pane is looked for and tmux is never run.
+   * with, which also says whether it has asked. Left out, no pane is looked
+   * for and tmux is never run.
    */
   panes?: PaneAsker;
   /**
@@ -384,8 +386,9 @@ export interface QwenCodeAdapter extends Adapter {
  *
  * Qwen Code not being installed costs nothing: when neither folder is there,
  * the adapter says so and looks again only once a minute, with two `stat`s.
- * Someone who sets `AGENT_LOOKOUT_QWEN_HOME` means that folder: if it holds
- * no sessions, that is an answer, not a missing Qwen Code.
+ * A pane finder it is handed still looks for tmux's program, which starts
+ * nothing. Someone who sets `AGENT_LOOKOUT_QWEN_HOME` means that folder: if it
+ * holds no sessions, that is an answer, not a missing Qwen Code.
  */
 export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): QwenCodeAdapter {
   const env = options.env ?? process.env;
@@ -461,6 +464,10 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
       { label: "Chats folder", value: projectsName },
       { label: "Read", value: read },
       ...processCheck,
+      // Written before this poll's look, so what it finds shows at the next poll.
+      // That includes whether tmux is there, so the first card can have none of
+      // these rows.
+      ...paneFacts(options.panes, platform),
       { label: "Last message read", value: lastMessageRead },
     ];
   }

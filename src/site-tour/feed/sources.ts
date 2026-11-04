@@ -459,7 +459,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
   const checkedAt = now - 1_500;
   return [
     {
-      // The adapter's card on a Mac with sessions running, once one has been stopped.
+      // The adapter's card on a Mac with tmux and sessions running, once one has been stopped.
       id: "claude-code",
       label: "Claude Code",
       state: "ok",
@@ -474,6 +474,21 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         {
           label: "Process check run",
           value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+        {
+          label: "Pane check",
+          value:
+            "tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'",
+        },
+        {
+          label: "Pane check run",
+          value:
+            "every 30 seconds while a session's process runs, and sooner when another appears or a Jump finds its pane gone",
+        },
+        { label: "Pane parent check", value: "ps -A -o pid=,ppid=" },
+        {
+          label: "Pane parent check run",
+          value: "with each pane check while tmux lists a pane",
         },
         { label: "Tab check", value: "ps -A -o pid=,ppid=,tty=,comm=" },
         { label: "Tab check run", value: "once for each new process, every 5 seconds at most" },
@@ -624,7 +639,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card when Qwen Code is not installed: its folders are looked for, and nothing more.
+      // The adapter's card on a computer with tmux, when Qwen Code is not installed: its folders and tmux's program are looked for, and nothing more.
       id: "qwen-code",
       label: "Qwen Code",
       state: "unavailable",
@@ -639,6 +654,14 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           label: "Process check run",
           value: "every 30 seconds while a session's process runs, and sooner when another appears",
         },
+        {
+          label: "Pane check",
+          value:
+            "tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'",
+        },
+        { label: "Pane check run", value: "not run" },
+        { label: "Pane parent check", value: "ps -A -o pid=,ppid=" },
+        { label: "Pane parent check run", value: "not run" },
         {
           label: "Last message read",
           value: "end of a session's chat file, while its details are open",

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { createTmuxRunner, findTmuxBinary, TMUX_LOCATIONS } from "@collector/tmux/program";
+import {
+  createTmuxRunner,
+  findTmuxBinary,
+  tmuxInstalled,
+  TMUX_LOCATIONS,
+} from "@collector/tmux/program";
 
 /** Pretends exactly these paths are runnable, and records every path asked about. */
 function executables(...present: string[]) {
@@ -81,6 +86,78 @@ describe("createTmuxRunner", () => {
     });
 
     expect(await run(["list-panes", "-a"])).toEqual({ ok: false, stderr: "" });
+    expect(fake.asked).toEqual([]);
+  });
+});
+
+describe("tmuxInstalled", () => {
+  test("says whether tmux is found on PATH or in a fixed location", async () => {
+    const onPath = executables("/opt/tools/tmux");
+    expect(
+      await tmuxInstalled({
+        env: { PATH: "/opt/tools" },
+        isExecutable: onPath.isExecutable,
+        platform: "linux",
+      }),
+    ).toBe(true);
+
+    const fixed = executables("/opt/homebrew/bin/tmux");
+    expect(
+      await tmuxInstalled({
+        env: { PATH: "/opt/tools" },
+        isExecutable: fixed.isExecutable,
+        platform: "darwin",
+      }),
+    ).toBe(true);
+  });
+
+  test("with no tmux on the machine it says so", async () => {
+    const fake = executables();
+    expect(
+      await tmuxInstalled({
+        env: { PATH: "/opt/tools" },
+        isExecutable: fake.isExecutable,
+        platform: "linux",
+      }),
+    ).toBe(false);
+    expect(fake.asked).toEqual(["/opt/tools/tmux", ...TMUX_LOCATIONS]);
+  });
+
+  test.each(["off", "OFF", " off "])(
+    "with AGENT_LOOKOUT_TMUX set to %j it says no, and tmux is not even looked for",
+    async (value) => {
+      const fake = executables("/opt/homebrew/bin/tmux");
+      expect(
+        await tmuxInstalled({
+          env: { AGENT_LOOKOUT_TMUX: value, PATH: "/opt/homebrew/bin" },
+          isExecutable: fake.isExecutable,
+          platform: "darwin",
+        }),
+      ).toBe(false);
+      expect(fake.asked).toEqual([]);
+    },
+  );
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off it still says yes: that setting is for tabs alone", async () => {
+    const fake = executables("/opt/homebrew/bin/tmux");
+    expect(
+      await tmuxInstalled({
+        env: { AGENT_LOOKOUT_TERMINAL_JUMP: "off", PATH: "/opt/homebrew/bin" },
+        isExecutable: fake.isExecutable,
+        platform: "darwin",
+      }),
+    ).toBe(true);
+  });
+
+  test("on Windows, which has no tmux, it says no, and tmux is not even looked for", async () => {
+    const fake = executables("C:\\Tools\\tmux.exe");
+    expect(
+      await tmuxInstalled({
+        env: { Path: "C:\\Tools" },
+        isExecutable: fake.isExecutable,
+        platform: "win32",
+      }),
+    ).toBe(false);
     expect(fake.asked).toEqual([]);
   });
 });
