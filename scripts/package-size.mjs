@@ -43,11 +43,16 @@ import { gunzipSync } from "node:zlib";
  * Unpacked was raised from 3.60 MB to 3.90 MB once Cline took it just past 3.60
  * MB. It added 34 KB, 17 KB of code in the command and 16 KB of the documents
  * the package ships, which leaves room for several more sources.
+ *
+ * The tarball was raised from 1.00 MB to 1.20 MB, and installed from 5.50 MB to
+ * 6.00 MB, once Goose, Pi and Kimi Code took the tarball to 1.002 MB and
+ * installed to 5.49 MB. They added 126 KB unpacked, about 27 KB of it in the
+ * tarball, of code in the command and the documents the package ships.
  */
 const LIMITS = {
-  tarball: 1_000_000,
+  tarball: 1_200_000,
   unpacked: 3_900_000,
-  installed: 5_500_000,
+  installed: 6_000_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */
