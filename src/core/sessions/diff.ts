@@ -132,3 +132,49 @@ export function withoutRepeats(
   }
   return fresh;
 }
+
+/**
+ * The moves into and out of a wait that a poll's sessions show and no diff does.
+ *
+ * A poll is compared only with the last poll read the same way. So when a
+ * source moves to a way in which every session is finished, as when an agent
+ * is closed, the first poll read that way is a baseline, and an older one may
+ * hold the session as finished already. Neither shows a change, but a wait
+ * must still end, or it runs on for as long as the agent stays closed:
+ *
+ * - A session last reported as needing the person and listed as finished has
+ *   stopped waiting.
+ * - A session last reported as finished and listed as needing the person is
+ *   waiting again, from now: the way it is read last saw it waiting, so a diff
+ *   shows nothing, though the log said it finished.
+ *
+ * Any other difference is not news: a fallback may read a waiting session as
+ * working, and that ends no wait.
+ *
+ * `reported` is updated to match what is returned.
+ */
+export function waitMoves(
+  sessions: readonly Pick<Session, "id" | "name" | "status">[],
+  reported: ReportedStatuses,
+  at: number,
+): SessionEvent[] {
+  const moves: SessionEvent[] = [];
+  for (const session of sessions) {
+    const said = reported.get(session.id);
+    const ended = said === "needs-you" && session.status === "finished";
+    const began = said === "finished" && session.status === "needs-you";
+    if (!ended && !began) continue;
+    reported.set(session.id, session.status);
+    moves.push({
+      id: eventId(session.id, at, "status-changed"),
+      at,
+      sessionId: session.id,
+      sessionName: session.name,
+      kind: "status-changed",
+      from: said,
+      to: session.status,
+      severity: severityFor(session.status),
+    });
+  }
+  return moves;
+}

@@ -83,6 +83,66 @@ describe("opencodeSession", () => {
     expect(session).toMatchObject({ status: "working", statusSince: NOW - 3 * MINUTE });
   });
 
+  /** A session whose step under way waits for the person. */
+  const asking = () =>
+    row({ m_completed: null, m_finish: null, m_tools: 1, m_asked_at: NOW - 2 * MINUTE });
+
+  test("a session that asks the person needs them since the call began, with the reason and nothing it asks", () => {
+    const session = opencodeSession({ row: asking(), open: true, now: NOW });
+    expect(session).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - 2 * MINUTE,
+      stale: false,
+    });
+    expect(session).not.toHaveProperty("waitingText");
+  });
+
+  test("a wait whose time could not be right still needs the person, with no time", () => {
+    const session = opencodeSession({
+      row: row({ m_completed: null, m_finish: null, m_tools: 1, m_asked_at: 12 }),
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: null,
+    });
+  });
+
+  test("a session goes back to working once it is answered, with no reason left", () => {
+    const answered = row({ m_completed: null, m_finish: null, m_tools: 1 });
+    const session = opencodeSession({ row: answered, open: true, now: NOW });
+    expect(session).toMatchObject({ status: "working", statusSince: NOW - 3 * MINUTE });
+    expect(session).not.toHaveProperty("waitingReason");
+  });
+
+  test("a session that ends while it waits is finished, with no reason", () => {
+    const session = opencodeSession({ row: asking(), open: false, now: NOW });
+    expect(session).toMatchObject({ status: "finished", statusSince: NOW - MINUTE });
+    expect(session).not.toHaveProperty("waitingReason");
+  });
+
+  test("a wait that began before ps last showed no OpenCode is no wait: the step is one that was cut off", () => {
+    const left = { row: asking(), open: true, now: NOW };
+    const session = opencodeSession({ ...left, noOpencodeAt: NOW - MINUTE });
+    expect(session).toMatchObject({ status: "working", statusSince: NOW - 3 * MINUTE });
+    expect(session).not.toHaveProperty("waitingReason");
+    expect(opencodeSession({ ...left, open: false, noOpencodeAt: NOW - MINUTE })?.status).toBe(
+      "finished",
+    );
+  });
+
+  test("a wait that began once ps had shown no OpenCode, or with none shown, stands", () => {
+    const asked = { row: asking(), open: true, now: NOW };
+    for (const noOpencodeAt of [NOW - 2 * MINUTE, NOW - 3 * MINUTE, null, undefined]) {
+      expect(opencodeSession({ ...asked, noOpencodeAt })?.status, `${noOpencodeAt}`).toBe(
+        "needs-you",
+      );
+    }
+  });
+
   test("a step that asked for tools is working for a moment, then idle", () => {
     const ended = row({ m_finish: "tool-calls", m_completed: NOW - 2_000 });
     expect(opencodeSession({ row: ended, open: true, now: NOW })?.status).toBe("working");
@@ -143,6 +203,22 @@ describe("opencodeSession", () => {
     // With no time that could be right, it is not listed either.
     const none = row({ time_updated: null, m_updated: null, p_updated: null });
     expect(opencodeSession({ row: none, open: true, now: NOW })).toBeNull();
+  });
+
+  test("a question unanswered for a day leaves the list as any session does, though OpenCode still asks, since it writes nothing while it asks", () => {
+    const written = {
+      m_completed: null,
+      m_finish: null,
+      m_tools: 1,
+      m_asked_at: NOW - DAY,
+      time_updated: NOW - DAY,
+      m_updated: NOW - DAY,
+      p_updated: NOW - DAY,
+    };
+    expect(opencodeSession({ row: row(written), open: true, now: NOW })).toBeNull();
+    expect(opencodeSession({ row: row(written), open: true, now: NOW - MINUTE })?.status).toBe(
+      "needs-you",
+    );
   });
 
   test("a clock set back never hides a session, even one whose every time is ahead of it", () => {

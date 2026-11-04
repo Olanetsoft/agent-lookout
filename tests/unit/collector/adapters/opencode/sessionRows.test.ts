@@ -61,7 +61,7 @@ describe("the two questions", () => {
     expect(uses.length).toBeGreaterThan(0);
     for (const use of uses) {
       expect(use, use).toMatch(
-        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|tool|auto|metadata\.providerExecuted|metadata\.compaction_continue|state\.status|state\.metadata\.interrupted|tokens\.(input|output|reasoning|cache\.read|cache\.write|total))'$/,
+        /^[a-z]\.data, '\$\.(role|time\.completed|error\.name|finish|type|tool|auto|metadata\.providerExecuted|metadata\.compaction_continue|state\.status|state\.time\.start|state\.metadata\.interrupted|tokens\.(input|output|reasoning|cache\.read|cache\.write|total))'$/,
       );
     }
     for (const alias of ["m", "p", "u", "q", "y", "r"]) {
@@ -74,6 +74,15 @@ describe("the two questions", () => {
     expect(SESSIONS_QUERY).toContain(`* 1000 - ${QUERY_WINDOW_MS}`);
     expect(SESSIONS_QUERY).toContain(`LIMIT ${MAX_SESSIONS}`);
     expect(QUERY_WINDOW_MS).toBe(48 * 60 * 60 * 1000);
+  });
+
+  test("tell a call that waits for the person by the tool's name and state alone, compared exactly, on the newest message's own parts", () => {
+    // Its start is printed only as a whole number, so nothing longer can come of it.
+    expect(SESSIONS_QUERY).toContain(
+      "(SELECT CASE WHEN max(json_extract(p.data, '$.state.status') IS 'running') THEN min(CASE WHEN json_type(p.data, '$.state.time.start') IS 'integer' THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p WHERE p.message_id = m.id AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') IS 'tool' AND json_extract(p.data, '$.tool') IN ('question', 'plan_exit') AND json_extract(p.data, '$.state.status') IN ('running', 'completed', 'error') ELSE 0 END) AS m_asked_at,",
+    );
+    expect(SESSIONS_QUERY.match(/'\$\.state\.time\.start'/g)).toHaveLength(2);
+    expect(SESSIONS_QUERY).not.toMatch(/\b(LIKE|GLOB|REGEXP|MATCH)\b/);
   });
 
   test("read the six token counts of the newest reply that ended with some among the session's own newest 10 messages, each only as a whole number", () => {
@@ -194,6 +203,7 @@ describe("readSessionRows", () => {
           finish: "stop",
           tools: 0,
           shell: 0,
+          askedAt: null,
           partsUpdatedAt: NOW - MINUTE,
         },
         userCreatedAt: NOW - 3 * MINUTE,
@@ -303,6 +313,14 @@ describe("readSessionRows", () => {
       shell: undefined,
     });
     expect(fieldsOf({ m_id: messageId("b1") })?.role).toBe("assistant");
+  });
+
+  test("when a call that waits began is kept as a short field, for the mapping to judge", () => {
+    const fieldsOf = (fields: Record<string, unknown>) =>
+      readSessionRows(sqliteJson([answerRow({ id: A, ...fields })]))?.[0]?.message;
+    expect(fieldsOf({})?.askedAt).toBeNull();
+    expect(fieldsOf({ m_asked_at: NOW - MINUTE })?.askedAt).toBe(NOW - MINUTE);
+    expect(fieldsOf({ m_asked_at: "x".repeat(65) })?.askedAt).toBeUndefined();
   });
 });
 

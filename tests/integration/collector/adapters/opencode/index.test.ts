@@ -26,6 +26,7 @@ import {
   SECRET_WORDS,
   sessionId,
   sessionRow,
+  text,
   textData,
   toolData,
   userData,
@@ -177,7 +178,7 @@ const PLACEHOLDERS = [
 ];
 
 /** A copy of the fixture's data folder, with OpenCode's log and a database of these rows, closed. */
-async function makeHome(now: number): Promise<{ home: string; file: string }> {
+async function makeHome(now: number, more: string[] = []): Promise<{ home: string; file: string }> {
   const home = path.join(await tempDir(), "opencode");
   await cp(FIXTURE_HOME, home, { recursive: true });
   // Logs are kept out of git, so the log is written here.
@@ -186,7 +187,7 @@ async function makeHome(now: number): Promise<{ home: string; file: string }> {
   const file = path.join(home, "opencode.db");
   // On stdin, since Linux takes no argument longer than 128 KB.
   execFileSync(sqlite as string, [file], {
-    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows(now)].join("\n"),
+    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows(now), ...more].join("\n"),
   });
   await rm(`${file}-wal`, { force: true });
   await rm(`${file}-shm`, { force: true });
@@ -352,6 +353,88 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
     );
     // And no file it must never open was changed.
     expect(await snapshotOf(home, PLACEHOLDERS)).toEqual(placeholders);
+  });
+
+  test("a session that asks shows as needing you until it is answered, and is finished when OpenCode quits while it asks", async () => {
+    const now = Date.now();
+    const ASKING = sessionId("a7");
+    const PLANNING = sessionId("b8");
+    const LEFT = sessionId("c9");
+    const asked = now - 2 * MINUTE;
+    /** A session whose step under way has one tool part, this one. */
+    function underWay(id: string, suffix: string, tool: string): string[] {
+      return [
+        sessionRow({ id, title: `Waits on ${tool}`, createdAt: now - HOUR, updatedAt: asked }),
+        messageRow({
+          id: messageId(`${suffix}u`),
+          sessionId: id,
+          createdAt: now - 3 * MINUTE,
+          data: userData(now - 3 * MINUTE),
+        }),
+        messageRow({
+          id: messageId(`${suffix}a`),
+          sessionId: id,
+          createdAt: asked - 1_000,
+          data: assistantData({ createdAt: asked - 1_000 }),
+        }),
+        partRow({
+          id: partId(`${suffix}a`),
+          messageId: messageId(`${suffix}a`),
+          sessionId: id,
+          createdAt: asked,
+          data: toolData({ status: "running", tool, startedAt: asked }),
+        }),
+      ];
+    }
+    const { home, file } = await makeHome(now, [
+      ...underWay(ASKING, "a7", "question"),
+      ...underWay(PLANNING, "b8", "plan_exit"),
+      ...underWay(LEFT, "c9", "question"),
+    ]);
+    const writer = holdOpen(file);
+    const marks = await tempDir();
+    await writer.write(
+      [`UPDATE session SET time_updated = ${asked} WHERE id = '${ASKING}';`],
+      path.join(marks, "1"),
+    );
+    const { adapter } = adapterFor(home, now, writer.processes);
+    const statusOf = (answer: Awaited<ReturnType<typeof adapter.poll>>, id: string) =>
+      answer.sessions.find((session) => session.id === `opencode:${id}`);
+
+    const waiting = await adapter.poll();
+    for (const id of [ASKING, PLANNING, LEFT]) {
+      expect(statusOf(waiting, id)).toMatchObject({
+        status: "needs-you",
+        waitingReason: "question",
+        statusSince: asked,
+      });
+      expect(statusOf(waiting, id)).not.toHaveProperty("waitingText");
+    }
+    expect(JSON.stringify(waiting)).not.toContain(PRIVATE_WORDS);
+
+    // The person answers the question and turns the plan down, and OpenCode moves each part on.
+    const answered = (suffix: string, tool: string, status: "completed" | "error") =>
+      `UPDATE part SET data = ${text(JSON.stringify(toolData({ status, tool, startedAt: asked })))} WHERE id = '${partId(`${suffix}a`)}';`;
+    await writer.write(
+      [answered("a7", "question", "completed"), answered("b8", "plan_exit", "error")],
+      path.join(marks, "2"),
+    );
+    const moved = await adapter.poll();
+    for (const id of [ASKING, PLANNING]) {
+      expect(statusOf(moved, id)).toMatchObject({
+        status: "working",
+        statusSince: now - 3 * MINUTE,
+      });
+      expect(statusOf(moved, id)).not.toHaveProperty("waitingReason");
+    }
+    expect(statusOf(moved, LEFT)?.status).toBe("needs-you");
+
+    // OpenCode quits while one still asks: it is finished, with no reason.
+    await writer.quit();
+    const closed = await adapter.poll();
+    expect(closed.basis).toBe(BASIS_CLOSED);
+    expect(statusOf(closed, LEFT)?.status).toBe("finished");
+    expect(statusOf(closed, LEFT)).not.toHaveProperty("waitingReason");
   });
 
   test("a poll where nothing changed runs no sqlite3", async () => {

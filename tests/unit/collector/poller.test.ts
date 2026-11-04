@@ -14,6 +14,7 @@ import type {
   SourceState,
 } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
+import { waitTotals } from "@core/waits/waitTotals";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -891,6 +892,117 @@ describe("changes that happen across a switch between two ways of reading", () =
   });
 });
 
+describe("a wait that ends when its agent closes, in a way of reading of its own", () => {
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  const asking = makeSession({ id: "claude-code:a", name: "demo-a", status: "needs-you" });
+  const open = (status: SessionStatus): AdapterResult => ({
+    ...result([{ ...asking, status }]),
+    basis: "open",
+  });
+  const closed: AdapterResult = { ...result([{ ...asking, status: "finished" }]), basis: "closed" };
+
+  /** A poller that takes one answer at each moment, in time order. */
+  async function play(...steps: [number, AdapterResult][]) {
+    const { adapter } = scriptedAdapter(...steps.map(([, answer]) => answer));
+    const { poller, events } = setUp(adapter);
+    for (const [after] of steps) {
+      vi.setSystemTime(T0 + after);
+      await poller.pollOnce();
+    }
+    return { poller, events };
+  }
+
+  const told = (events: ReturnType<typeof createEventStore>) =>
+    [...events.list()]
+      .sort((a, b) => a.at - b.at)
+      .map((event) => [event.at - T0, event.from, event.to]);
+
+  /** What the waits add up to, with every moment since the first poll measured. */
+  function totals(events: ReturnType<typeof createEventStore>, now: number, waiting: boolean) {
+    const { sevenDays } = waitTotals({
+      events: events.list(),
+      measured: [{ from: T0, to: T0 + now }],
+      runStarts: [T0],
+      waitingNow: waiting ? [{ id: asking.id, name: asking.name }] : [],
+      since: T0,
+      now: T0 + now,
+    });
+    return [sevenDays.waitedMs, sevenDays.openMs, sevenDays.waits];
+  }
+
+  test("ends on the first poll read the new way, though that poll is a baseline", async () => {
+    const { events } = await play(
+      [0, open("working")],
+      [MINUTE, open("needs-you")],
+      [2 * MINUTE, closed],
+      [8 * HOUR, closed],
+    );
+    expect(told(events)).toEqual([
+      [MINUTE, "working", "needs-you"],
+      [2 * MINUTE, "needs-you", "finished"],
+    ]);
+    expect(totals(events, 8 * HOUR, false)).toEqual([MINUTE, 0, 1]);
+  });
+
+  test("ends though an older poll read that way already holds the session as finished", async () => {
+    const { events } = await play(
+      [0, closed],
+      [MINUTE, open("working")],
+      [2 * MINUTE, open("needs-you")],
+      [3 * MINUTE, closed],
+      [8 * HOUR, closed],
+    );
+    expect(told(events)).toEqual([
+      [2 * MINUTE, "finished", "needs-you"],
+      [3 * MINUTE, "needs-you", "finished"],
+    ]);
+    expect(totals(events, 8 * HOUR, false)).toEqual([MINUTE, 0, 1]);
+  });
+
+  test("a wait read again once the agent is back is a wait of its own, and the time closed counts for neither", async () => {
+    const { events } = await play(
+      [0, open("working")],
+      [MINUTE, open("needs-you")],
+      [2 * MINUTE, closed],
+      [3 * HOUR, open("needs-you")],
+      [3 * HOUR + 2_000, open("needs-you")],
+    );
+    expect(told(events)).toEqual([
+      [MINUTE, "working", "needs-you"],
+      [2 * MINUTE, "needs-you", "finished"],
+      [3 * HOUR, "finished", "needs-you"],
+    ]);
+    expect(totals(events, 3 * HOUR + 5 * MINUTE, true)).toEqual([6 * MINUTE, 5 * MINUTE, 2]);
+  });
+
+  test("a wait first read as the agent opens begins there, and what follows goes on from what the log said", async () => {
+    const { events } = await play(
+      [0, closed],
+      [MINUTE, open("needs-you")],
+      [2 * MINUTE, closed],
+      [3 * MINUTE, open("working")],
+    );
+    expect(told(events)).toEqual([
+      [MINUTE, "finished", "needs-you"],
+      [2 * MINUTE, "needs-you", "finished"],
+      [3 * MINUTE, "finished", "working"],
+    ]);
+    expect(totals(events, 8 * HOUR, false)).toEqual([MINUTE, 0, 1]);
+  });
+
+  test("a way that only reads a waiting session differently ends no wait", async () => {
+    const { events } = await play(
+      [0, open("working")],
+      [MINUTE, open("needs-you")],
+      [2 * MINUTE, { ...open("working"), basis: "fallback" }],
+      [3 * MINUTE, open("needs-you")],
+    );
+    expect(told(events)).toEqual([[MINUTE, "working", "needs-you"]]);
+    expect(totals(events, 4 * MINUTE, true)).toEqual([3 * MINUTE, 3 * MINUTE, 1]);
+  });
+});
+
 describe("a source that does not answer", () => {
   /** An adapter whose polls are answered by hand, or never. */
   function manualAdapter() {
@@ -1477,6 +1589,18 @@ describe("a wait whose permission request Agent Lookout answered", () => {
     vi.setSystemTime(T0 + 4_000);
     await poller.pollOnce();
     expect(events.list().map((event) => [event.kind, event.to])).toEqual([["appeared", "working"]]);
+  });
+
+  test("a wait that was answered is no wait to the log, though a way last said the session finished", async () => {
+    const { adapter } = scriptedAdapter(
+      { ...result([{ ...goesOn, status: "finished" }]), basis: "closed" },
+      { ...result([asking]), basis: "open" },
+    );
+    const { poller, events } = withAnswers(adapter, () => new Set([id]));
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
   });
 
   test("a session on another machine that its own Agent Lookout marked answered is taken as answered here", async () => {

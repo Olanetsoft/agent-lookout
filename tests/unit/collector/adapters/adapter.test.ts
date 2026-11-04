@@ -550,7 +550,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GEMINI_CLI_CAPABILITIES.answer.level).toBe("no");
   });
 
-  test("OpenCode: no message ever makes a session need you, and only an error OpenCode records fails", () => {
+  test("OpenCode: only a step under way with a call that waits needs you, and only an error OpenCode records fails", () => {
     const messages = [
       null,
       ...["user", "assistant", "system", 7].flatMap((role) =>
@@ -558,7 +558,17 @@ describe("each declaration agrees with what its adapter does", () => {
           [null, "MessageAbortedError", "APIError", "SomeNewError"].flatMap((error) =>
             [null, "stop", "tool-calls", "unknown"].flatMap((finish) =>
               [0, 1].flatMap((tools) =>
-                [0, 1].map((shell) => ({ role, completedAt, error, finish, tools, shell })),
+                [0, 1].flatMap((shell) =>
+                  [null, NOW - 60_000].map((askedAt) => ({
+                    role,
+                    completedAt,
+                    error,
+                    finish,
+                    tools,
+                    shell,
+                    askedAt,
+                  })),
+                ),
               ),
             ),
           ),
@@ -570,13 +580,27 @@ describe("each declaration agrees with what its adapter does", () => {
         [true, false].map((open) => mapOpencodeStatus({ message, open, now: NOW })),
       ),
     );
-    expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
-    // With OpenCode closed, nothing is working or idle.
+    expect(mapped).toEqual(
+      new Set(["needs-you", "working", "idle", "finished", "failed", "unknown"]),
+    );
+    const waiting = messages.filter(
+      (message) => mapOpencodeStatus({ message, open: true, now: NOW }) === "needs-you",
+    );
+    expect(waiting.length).toBeGreaterThan(0);
+    for (const message of waiting) {
+      expect(message).toMatchObject({
+        role: "assistant",
+        completedAt: null,
+        error: null,
+        askedAt: NOW - 60_000,
+      });
+    }
+    // With OpenCode closed, nothing is working, idle or waiting.
     const closed = statuses(
       messages.map((message) => mapOpencodeStatus({ message, open: false, now: NOW })),
     );
     expect(closed).toEqual(new Set(["finished", "failed", "unknown"]));
-    expect(OPENCODE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(OPENCODE_CAPABILITIES["needs-you"].level).toBe("partly");
     expect(OPENCODE_CAPABILITIES.failed.level).toBe("partly");
     expect(OPENCODE_CAPABILITIES.finished.level).toBe("partly");
     expect(OPENCODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
@@ -599,6 +623,7 @@ describe("each declaration agrees with what its adapter does", () => {
           finish: null,
           tools: 1,
           shell: 0,
+          askedAt: null,
           partsUpdatedAt: NOW - 10_000,
         },
         userCreatedAt: NOW - 40_000,

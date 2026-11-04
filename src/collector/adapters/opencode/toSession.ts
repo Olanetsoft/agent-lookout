@@ -8,7 +8,7 @@ import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
-import type { SessionRow } from "./sessionRows.ts";
+import type { MessageRow, SessionRow } from "./sessionRows.ts";
 
 export const SOURCE_ID: SourceId = "opencode";
 
@@ -47,6 +47,26 @@ export interface OpencodeSessionInput {
   /** Whether OpenCode may have it open: an OpenCode program runs, or whether one does is not known. */
   open: boolean;
   now: number;
+  /** When `ps` last showed no OpenCode program, if it has. */
+  noOpencodeAt?: number | null;
+}
+
+/**
+ * The newest message with no wait, if its wait began before `ps` last showed
+ * no OpenCode program. A wait lives in a running OpenCode's memory, so one
+ * that began before none ran was left by an OpenCode that was killed or
+ * crashed, and no one is being asked: its `running` part just stays as it was.
+ * The step is then like any other that was cut off.
+ */
+function withoutLeftWait(
+  message: MessageRow | null,
+  noOpencodeAt: number | null,
+): MessageRow | null {
+  if (message === null || noOpencodeAt === null) return message;
+  const { askedAt } = message;
+  return typeof askedAt === "number" && askedAt < noOpencodeAt
+    ? { ...message, askedAt: null }
+    : message;
 }
 
 /**
@@ -54,7 +74,11 @@ export interface OpencodeSessionInput {
  * written in the last 24 hours, or no time of it is known.
  *
  * - The status comes from its newest message and whether OpenCode may have
- *   it open (`mapOpencodeStatus`). It is never "needs-you".
+ *   it open (`mapOpencodeStatus`). It is "needs-you", with the reason
+ *   "question", while OpenCode asks a question or asks for a plan's approval.
+ *   It never has a `waitingText`: what OpenCode asks is never read. A wait
+ *   ends with OpenCode: a session it left waiting is finished, with no reason,
+ *   and no longer asks once OpenCode runs again (`withoutLeftWait`).
  * - The name is OpenCode's title, or the folder's name while the title is
  *   still OpenCode's placeholder, or the id.
  * - The app is not known: the database names no program.
@@ -66,14 +90,14 @@ export interface OpencodeSessionInput {
  * - There is no pid, Jump, Stop or link.
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
-  const { row, open, now } = input;
+  const { row, open, now, noOpencodeAt = null } = input;
   if (!isListed(row, now)) return null;
   const activityAt = lastActivity(row, now);
 
   const id = `${SOURCE_ID}:${row.id}`;
   const cwd = row.folder;
   const project = projectOf(cwd);
-  const message = row.message;
+  const message = withoutLeftWait(row.message, noOpencodeAt);
   const status = mapOpencodeStatus({ message, open, now });
   const statusSince = opencodeStatusSince(
     status,
@@ -82,6 +106,7 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
       messageCreatedAt: message?.createdAt ?? null,
       userCreatedAt: row.userCreatedAt,
       completedAt: message?.completedAt ?? null,
+      askedAt: message?.askedAt ?? null,
       activityAt,
     },
     now,
@@ -100,6 +125,7 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
+  if (status === "needs-you") session.waitingReason = "question";
   if (row.tokens) session.tokens = { ...row.tokens };
   return session;
 }

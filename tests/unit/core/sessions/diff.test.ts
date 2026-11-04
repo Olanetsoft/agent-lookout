@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   diffSessions,
   severityFor,
+  waitMoves,
   withoutRepeats,
   type ReportedStatuses,
 } from "@core/sessions/diff";
@@ -257,5 +258,54 @@ describe("withoutRepeats", () => {
     const events = withoutRepeats(diffSessions([a], [], at), reported);
     expect(events).toMatchObject([{ kind: "ended", from: "needs-you", severity: "advisory" }]);
     expect(reported.has("claude-code:a")).toBe(false);
+  });
+});
+
+describe("waitMoves", () => {
+  const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "finished" });
+
+  test("a session last reported as needing the person and listed as finished has stopped waiting", () => {
+    const reported: ReportedStatuses = new Map([["claude-code:a", "needs-you"]]);
+    expect(waitMoves([a], reported, at)).toEqual([
+      {
+        id: `claude-code:a@${at}:status-changed`,
+        at,
+        sessionId: "claude-code:a",
+        sessionName: "demo-a",
+        kind: "status-changed",
+        from: "needs-you",
+        to: "finished",
+        severity: "advisory",
+      },
+    ]);
+    expect(reported.get("claude-code:a")).toBe("finished");
+    // It is said once.
+    expect(waitMoves([a], reported, at)).toEqual([]);
+  });
+
+  test("a session last reported as finished and listed as needing the person is waiting again", () => {
+    const reported: ReportedStatuses = new Map([["claude-code:a", "finished"]]);
+    expect(waitMoves([{ ...a, status: "needs-you" }], reported, at)).toMatchObject([
+      { kind: "status-changed", from: "finished", to: "needs-you", severity: "warning" },
+    ]);
+    expect(reported.get("claude-code:a")).toBe("needs-you");
+  });
+
+  test("any other difference is not news, and a session the log does not hold is passed over", () => {
+    const statuses: SessionStatus[] = ["needs-you", "working", "idle", "finished", "failed"];
+    for (const said of statuses) {
+      for (const status of statuses) {
+        const moves =
+          (said === "needs-you" && status === "finished") ||
+          (said === "finished" && status === "needs-you");
+        if (moves) continue;
+        const reported: ReportedStatuses = new Map([["claude-code:a", said]]);
+        expect(waitMoves([{ ...a, status }], reported, at), `${said} ${status}`).toEqual([]);
+        expect(reported.get("claude-code:a")).toBe(said);
+      }
+    }
+    const reported: ReportedStatuses = new Map();
+    expect(waitMoves([a], reported, at)).toEqual([]);
+    expect(reported.size).toBe(0);
   });
 });

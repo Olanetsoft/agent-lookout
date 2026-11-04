@@ -33,6 +33,7 @@ import {
   textData,
   toolData,
   userData,
+  type ToolFields,
 } from "@tests/fixtures/opencode/opencode";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -538,6 +539,257 @@ describe.skipIf(sqlite === null)("reading OpenCode's database with the real sqli
     expect(read.state).toBe("read");
     const shell = Object.fromEntries(read.rows.map((row) => [row.id, row.message?.shell]));
     expect(shell).toEqual({ [A]: 1, [B]: 0, [C]: 0 });
+  });
+
+  describe("a call that waits for the person", () => {
+    /** A session whose newest step is under way, as OpenCode's is while a tool runs, with these parts. */
+    function underWay(
+      id: string,
+      suffix: string,
+      parts: Record<string, unknown>[],
+      at: number,
+    ): string[] {
+      const reply = messageId(`a${suffix}`);
+      return [
+        sessionRow({ id, updatedAt: at }),
+        messageRow({
+          id: reply,
+          sessionId: id,
+          createdAt: at,
+          data: assistantData({ createdAt: at }),
+        }),
+        ...parts.map((data, index) =>
+          partRow({
+            id: partId(`${suffix}${index}`),
+            messageId: reply,
+            sessionId: id,
+            createdAt: at,
+            data,
+          }),
+        ),
+      ];
+    }
+
+    test("is a question or a plan's approval, running, and no other tool or state of one", async () => {
+      const now = Date.now();
+      const started = now - 2 * MINUTE;
+      const asked: [string, Record<string, unknown>, boolean][] = [
+        // Asking, and once answered, declined, or cut off, as OpenCode writes each.
+        ["question waiting", toolData({ status: "running", tool: "question" }), true],
+        ["question answered", toolData({ status: "completed", tool: "question" }), false],
+        ["question declined", toolData({ status: "error", tool: "question" }), false],
+        [
+          "question cut off",
+          toolData({ status: "error", tool: "question", interrupted: true }),
+          false,
+        ],
+        // The model is still writing the call, so nothing is asked yet.
+        ["question being written", toolData({ status: "pending", tool: "question" }), false],
+        ["plan waiting", toolData({ status: "running", tool: "plan_exit" }), true],
+        ["plan answered", toolData({ status: "completed", tool: "plan_exit" }), false],
+        ["plan declined", toolData({ status: "error", tool: "plan_exit" }), false],
+        // Any other tool, however close its name, is work.
+        ["shell", toolData({ status: "running", tool: "bash" }), false],
+        ["subtask", toolData({ status: "running", tool: "task" }), false],
+        ["another name", toolData({ status: "running", tool: "question_more" }), false],
+        ["a name in capitals", toolData({ status: "running", tool: "Question" }), false],
+        ["plan_enter", toolData({ status: "running", tool: "plan_enter" }), false],
+        // Only a tool part counts, and the name must be text.
+        [
+          "not a tool part",
+          { type: "text", tool: "question", state: { status: "running" } },
+          false,
+        ],
+        ["a list for a name", { ...toolData({ status: "running" }), tool: ["question"] }, false],
+      ];
+      const ids = asked.map((_, index) => sessionId(`w${index}`));
+      const { file } = await makeDatabase(
+        asked.flatMap(([, part], index) =>
+          underWay(ids[index] as string, `w${index}`, [part], started),
+        ),
+      );
+      const read = await readNow(file, now);
+      expect(read.state).toBe("read");
+      expect(read.rows).toHaveLength(asked.length);
+      const byId = new Map(read.rows.map((row) => [row.id, row.message]));
+      asked.forEach(([what, , waits], index) => {
+        const askedAt = byId.get(ids[index] as string)?.askedAt;
+        expect(askedAt !== null, what).toBe(waits);
+      });
+    });
+
+    test("carries when the step's oldest such call began, and never what was asked", async () => {
+      const now = Date.now();
+      const C = sessionId("c3");
+      const D = sessionId("d4");
+      const started = now - 3 * MINUTE;
+      const written = now - MINUTE;
+      const { file } = await makeDatabase([
+        ...underWay(
+          A,
+          "1",
+          [toolData({ status: "running", tool: "question", startedAt: started })],
+          written,
+        ),
+        // Two at once, beside a tool that runs: OpenCode asks each in turn.
+        ...underWay(
+          B,
+          "2",
+          [
+            toolData({ status: "running", tool: "plan_exit", startedAt: started + 5_000 }),
+            toolData({ status: "running", tool: "question", startedAt: started }),
+            toolData({ status: "running", tool: "bash", startedAt: started - MINUTE }),
+          ],
+          written,
+        ),
+        // One step is one wait, so a call of it that is over keeps its time.
+        ...underWay(
+          C,
+          "3",
+          [
+            toolData({ status: "completed", tool: "question", startedAt: started - MINUTE }),
+            toolData({ status: "running", tool: "question", startedAt: started }),
+          ],
+          written,
+        ),
+        // A start that is not a whole number is not printed: the part's own time stands in.
+        ...underWay(
+          D,
+          "4",
+          [toolData({ status: "running", tool: "question", startedAt: PRIVATE_WORDS })],
+          written,
+        ),
+      ]);
+      const read = await readNow(file, now);
+      expect(read.state).toBe("read");
+      expect(Object.fromEntries(read.rows.map((row) => [row.id, row.message?.askedAt]))).toEqual({
+        [A]: started,
+        [B]: started,
+        [C]: started - MINUTE,
+        [D]: written,
+      });
+      const printed = await answers(file, "whole");
+      expect(printed).toContain('"m_asked_at":');
+      expect(printed).not.toContain(PRIVATE_WORDS);
+      expect(printed).not.toContain("question");
+      expect(printed).not.toContain("plan_exit");
+      expect(printed).not.toContain("running");
+    });
+
+    test("keeps its time however a step's two calls are answered, so one wait is announced once", async () => {
+      const now = Date.now();
+      const started = now - 3 * MINUTE;
+      const second = started + 3_000;
+      const written = now - MINUTE;
+      const call = (status: ToolFields["status"], startedAt: number) =>
+        toolData({ status, tool: "question", startedAt });
+      const askedAtOf = async (parts: Record<string, unknown>[]) => {
+        const { file } = await makeDatabase(underWay(A, "1", parts, written));
+        const read = await readNow(file, now);
+        return read.rows[0]?.message?.askedAt;
+      };
+
+      // The first, alone, then the second begins, with nothing answered.
+      expect(await askedAtOf([call("running", started)])).toBe(started);
+      expect(await askedAtOf([call("running", started), call("running", second)])).toBe(started);
+      // Either is answered first.
+      expect(await askedAtOf([call("completed", started), call("running", second)])).toBe(started);
+      expect(await askedAtOf([call("running", started), call("error", second)])).toBe(started);
+      // Both are answered, and the wait is over.
+      expect(await askedAtOf([call("completed", started), call("error", second)])).toBeNull();
+      expect(await askedAtOf([call("completed", started)])).toBeNull();
+    });
+
+    test("does not take its time from a call the model is still writing, which has no start", async () => {
+      const now = Date.now();
+      const started = now - 3 * MINUTE;
+      const { file } = await makeDatabase(
+        underWay(
+          A,
+          "1",
+          [
+            toolData({ status: "running", tool: "question", startedAt: started }),
+            toolData({ status: "pending", tool: "question" }),
+          ],
+          now - 5 * MINUTE,
+        ),
+      );
+      const read = await readNow(file, now);
+      expect(read.rows[0]?.message?.askedAt).toBe(started);
+    });
+
+    test("is looked for on the newest message alone, and a part that is not JSON changes nothing", async () => {
+      const now = Date.now();
+      const C = sessionId("c3");
+      const notJson = (id: string, suffix: string, message: string) =>
+        `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (${text(partId(suffix))}, ${text(message)}, ${text(id)}, ${now}, ${now}, ${text('{"type":"tool","tool":"question","state":{"status":"running"')});`;
+      const { file } = await makeDatabase([
+        // A's question was left waiting on an older message, and a newer prompt came after it.
+        ...underWay(A, "1", [toolData({ status: "running", tool: "question" })], now - 3 * MINUTE),
+        messageRow({
+          id: messageId("u1"),
+          sessionId: A,
+          createdAt: now - MINUTE,
+          data: userData(now - MINUTE),
+        }),
+        // B has one part that is not JSON, though it reads like a call that waits.
+        ...underWay(B, "2", [], now - MINUTE),
+        notJson(B, "x2", messageId("a2")),
+        // C's call waits, beside a part that is not JSON.
+        ...underWay(
+          C,
+          "3",
+          [toolData({ status: "running", tool: "question", startedAt: now - 2 * MINUTE })],
+          now - MINUTE,
+        ),
+        notJson(C, "x3", messageId("a3")),
+      ]);
+      const read = await readNow(file, now);
+      expect(read.state).toBe("read");
+      expect(Object.fromEntries(read.rows.map((row) => [row.id, row.message?.askedAt]))).toEqual({
+        [A]: null,
+        [B]: null,
+        [C]: now - 2 * MINUTE,
+      });
+    });
+
+    test("in a subagent's session is never counted for the session that started it", async () => {
+      const now = Date.now();
+      const child = sessionId("c3");
+      const { file } = await makeDatabase([
+        ...underWay(A, "1", [toolData({ status: "running", tool: "task" })], now - MINUTE),
+        sessionRow({ id: child, parentId: A, updatedAt: now - MINUTE }),
+        messageRow({
+          id: messageId("a3"),
+          sessionId: child,
+          createdAt: now - MINUTE,
+          data: assistantData({ createdAt: now - MINUTE }),
+        }),
+        partRow({
+          id: partId("a3"),
+          messageId: messageId("a3"),
+          sessionId: child,
+          createdAt: now - MINUTE,
+          data: toolData({ status: "running", tool: "question" }),
+        }),
+      ]);
+      const read = await readNow(file, now);
+      expect(read.state).toBe("read");
+      expect(read.rows.map((row) => [row.id, row.message?.askedAt])).toEqual([[A, null]]);
+    });
+
+    test("is looked for through OpenCode's index of a message's parts, and in no other part", async () => {
+      const { file } = await makeDatabase([]);
+      const plan = execFileSync(sqlite as string, ["-init", "/dev/null", "-batch", file], {
+        input: `EXPLAIN QUERY PLAN ${SESSIONS_QUERY};`,
+        encoding: "utf8",
+      });
+      expect(plan).not.toMatch(/SCAN p\b/);
+      // m_tools, m_shell, m_asked_at and p_updated each search the newest message's parts.
+      expect(
+        plan.match(/SEARCH p USING INDEX part_message_id_id_idx \(message_id=\?\)/g),
+      ).toHaveLength(4);
+    });
   });
 
   test("a message or a part whose data is not JSON gives empty fields, and every other session is still read", async () => {

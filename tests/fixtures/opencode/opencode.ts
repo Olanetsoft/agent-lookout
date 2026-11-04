@@ -237,6 +237,8 @@ export function continueData(): Record<string, unknown> {
 export interface ToolFields {
   status: "pending" | "running" | "completed" | "error";
   tool?: string;
+  /** Its `$.state.time.start`, as OpenCode writes it when the part goes to `running`. Left out, a minute before `NOW`. A `pending` part has none. */
+  startedAt?: unknown;
   /** Run by the model's provider itself, which OpenCode does not wait on. */
   providerExecuted?: boolean;
   /** Marked as cut off when OpenCode cleaned up a step. */
@@ -248,8 +250,8 @@ export function toolData(fields: ToolFields): Record<string, unknown> {
   const state: Record<string, unknown> = {
     status: fields.status,
     input: { command: PRIVATE_WORDS },
-    time: { start: NOW - MINUTE },
   };
+  if (fields.status !== "pending") state.time = { start: fields.startedAt ?? NOW - MINUTE };
   if (fields.status === "completed") state.output = PRIVATE_WORDS;
   if (fields.status === "error") state.error = PRIVATE_WORDS;
   if (fields.interrupted) state.metadata = { interrupted: true };
@@ -353,6 +355,7 @@ export interface AnswerRow {
   m_finish?: unknown;
   m_tools?: unknown;
   m_shell?: unknown;
+  m_asked_at?: unknown;
   p_updated?: unknown;
   u_created?: unknown;
   r_input?: unknown;
@@ -382,6 +385,7 @@ export function answerRow(fields: AnswerRow): Record<string, unknown> {
     m_finish: "stop",
     m_tools: 0,
     m_shell: 0,
+    m_asked_at: null,
     p_updated: NOW - MINUTE,
     u_created: NOW - 3 * MINUTE,
     r_input: null,

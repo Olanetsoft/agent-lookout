@@ -276,9 +276,9 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
       "Read with sqlite3 on macOS and Linux. Agent Lookout reads nothing of OpenCode's on Windows.",
   },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "OpenCode keeps approval waits and questions in memory, so a session waiting for you shows as working.",
+      "While OpenCode asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
   },
   finished: {
     level: "partly",
@@ -309,7 +309,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "OpenCode keeps its approvals and questions in memory, so there is nothing to answer from here.",
+      "Agent Lookout makes no request to OpenCode's server, and OpenCode keeps a wait for a tool's approval in memory.",
   },
 };
 

@@ -100,7 +100,7 @@ const LABEL = "OpenCode";
 
 /** Said whenever OpenCode is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "OpenCode does not record when it waits for your approval or an answer, so a session waiting for you shows as working.";
+  "An OpenCode session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.";
 
 /** Said whenever OpenCode is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -126,7 +126,10 @@ export const WINDOWS_DETAIL =
  *
  * - Working and idle are the newest message of each root session
  *   (`opencodeMapping.ts`), on macOS and Linux only.
- * - Needs you never: OpenCode keeps its approval waits and questions in memory.
+ * - Needs you is a `question` or `plan_exit` tool part of the newest message
+ *   in the state `running` (`sessionRows.ts`), unless it is older than the
+ *   last `ps` that showed no OpenCode. OpenCode keeps a wait for a tool's
+ *   approval in memory, so a session in one shows as working.
  * - Finished is every session while `ps` shows no program named `opencode`
  *   (`processes.ts`), on macOS and Linux.
  * - Failed is a reply that ends on an error OpenCode records.
@@ -145,9 +148,9 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
       "Read with sqlite3 on macOS and Linux. Agent Lookout reads nothing of OpenCode's on Windows.",
   },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "OpenCode keeps approval waits and questions in memory, so a session waiting for you shows as working.",
+      "While OpenCode asks you a question or to approve a plan. A wait for a tool's approval shows as working.",
   },
   finished: {
     level: "partly",
@@ -178,7 +181,7 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "OpenCode keeps its approvals and questions in memory, so there is nothing to answer from here.",
+      "Agent Lookout makes no request to OpenCode's server, and OpenCode keeps a wait for a tool's approval in memory.",
   },
 };
 
@@ -248,8 +251,12 @@ type HomeFrom = "agent-lookout" | "default";
  *
  * Each root session that is not archived is listed for 24 hours after
  * anything of it was last written. Its status is working, idle, failed,
- * finished or unknown, never "needs-you": OpenCode keeps its approval waits
- * and its questions in memory.
+ * finished or unknown, or "needs-you" while OpenCode asks a question or for a
+ * plan's approval, each a tool call whose part the database holds as `running`
+ * until the person answers. OpenCode keeps a wait for a tool's approval in
+ * memory, so a session in one shows as working. A killed OpenCode leaves its
+ * part `running`, so a part older than the last `ps` that showed no OpenCode
+ * is no wait.
  *
  * What a session last said is asked of the database with one more fixed
  * question, but only when `lastMessage` is asked for it, which the route does
@@ -316,6 +323,12 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
   /** What `ps` last said, null before it was first asked, and when it was asked. */
   let lastProcesses: ProcessAnswer | null = null;
   let processesAt = 0;
+  /**
+   * When `ps` last showed no OpenCode program, or null when it has not, so a
+   * `running` part older than this is no wait (`toSession.ts`). It is kept in
+   * memory alone, so a restart forgets it.
+   */
+  let noOpencodeAt: number | null = null;
 
   const psRuns = platform === "darwin" || platform === "linux";
   const commandRun = platform === "win32" ? "not run on Windows" : "when the database changes";
@@ -380,6 +393,10 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     if (lastProcesses === null || due) {
       lastProcesses = await processes.read();
       processesAt = checkedAt;
+      if (lastProcesses.ok && !lastProcesses.running) noOpencodeAt = checkedAt;
+      // A time ahead of this poll's is from a clock set back, so a question
+      // asked since would look older than it.
+      else if (noOpencodeAt !== null && noOpencodeAt > checkedAt) noOpencodeAt = null;
     }
     return lastProcesses;
   }
@@ -506,7 +523,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     const sessions: Session[] = [];
     let unknown = false;
     for (const row of listed) {
-      const session = opencodeSession({ row, open, now: checkedAt });
+      const session = opencodeSession({ row, open, now: checkedAt, noOpencodeAt });
       if (session === null) continue;
       if (session.status === "unknown") unknown = true;
       sessions.push(session);

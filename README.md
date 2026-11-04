@@ -61,7 +61,7 @@ Any other agent can show up by writing one small file per session. [Your own age
 | Antigravity     | Partly    | No     | Yes       | Yes    | No     | No     |
 | Mistral Vibe    | No        | No     | Yes       | No     | No     | No     |
 | Gemini CLI      | No        | No     | Yes       | Yes    | No     | No     |
-| OpenCode        | No        | No     | No        | Yes    | No     | No     |
+| OpenCode        | Partly    | No     | No        | Yes    | No     | No     |
 | Qwen Code       | Partly    | Partly | Yes       | Yes    | No     | No     |
 | Hermes Agent    | Partly    | No     | No        | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |

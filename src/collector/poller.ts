@@ -1,4 +1,9 @@
-import { diffSessions, withoutRepeats, type ReportedStatuses } from "../core/sessions/diff.ts";
+import {
+  diffSessions,
+  waitMoves,
+  withoutRepeats,
+  type ReportedStatuses,
+} from "../core/sessions/diff.ts";
 import { historyPointFor } from "../core/history.ts";
 import {
   isStatusEvent,
@@ -422,6 +427,17 @@ export function createPoller(options: PollerOptions): Poller {
             if (!reported.has(session.id)) reported.set(session.id, session.status);
           }
         }
+        // Whichever branch that was, a wait begins and ends in the log. A way
+        // that lists every session as finished, as when an agent is closed,
+        // shows no change on its baseline or against its own older poll. A
+        // wait that was answered is no news here either.
+        changes.push(
+          ...waitMoves(
+            sessions.filter((session) => !answered.has(session.id)),
+            reported,
+            at,
+          ),
+        );
         // What a waiting session is asking belongs to its wait. A baseline can
         // outlive the wait, while the source is read another way, so it is kept
         // without it.
