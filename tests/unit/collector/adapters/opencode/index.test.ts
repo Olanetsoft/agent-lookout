@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
+import type { AdapterResult } from "@collector/adapters/adapter";
 import { createDatabaseReader, type DatabaseReader } from "@collector/adapters/opencode/database";
 import {
   BASIS,
@@ -26,6 +27,12 @@ import {
 import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import { PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/opencode/sessionRows";
 import { createTailLimits } from "@collector/messages/tailReader";
+import {
+  EMPTY_CHANGE_MEMORY,
+  sessionChanges,
+  type ChangeMemory,
+} from "@core/notices/sessionChanges";
+import type { SessionsSnapshot } from "@core/sessions/session";
 import {
   answerRow,
   DATA_HOME,
@@ -340,6 +347,12 @@ describe("reading the sessions", () => {
     expect(PROMPT_PROCESS_CHECK_MS).toBe(2_000);
   });
 
+  test("says which waits show as needing you, and that a wait for a tool's approval shows as working", () => {
+    expect(NEEDS_YOU_NOTE).toBe(
+      "An OpenCode session shows as needing you while OpenCode asks you a question or to approve a plan. OpenCode does not record a wait for a tool's approval, so a session waiting for one shows as working.",
+    );
+  });
+
   test("says so when OpenCode 2's table is there, and when a session ends in a way it does not know", async () => {
     const { files, sqlite } = openOpencode([answerRow({ id: A, m_role: "system" })]);
     sqlite.probe(probeJson("v1+v2"));
@@ -402,6 +415,87 @@ describe("reading the sessions", () => {
     const { sessions } = await opencodeAdapterFor(files, sqlite, { env }).poll();
     expect(sessions).toHaveLength(1);
     expect(sqlite.runs[0]?.args.at(-2)).toContain("/Users/example/oc/opencode-other.db?mode=ro");
+  });
+});
+
+describe("a part left `running` by an OpenCode that was killed or crashed", () => {
+  const asking = (askedAt: number) =>
+    answerRow({ id: A, m_completed: null, m_finish: null, m_tools: 1, m_asked_at: askedAt });
+
+  /** An adapter on a session left asking, whose `ps` and clock the test moves. */
+  function leftAsking(askedAt = NOW - MINUTE) {
+    const { files, sqlite } = openOpencode([asking(askedAt)]);
+    const clock = handClock();
+    const processes = standInProcesses();
+    const adapter = opencodeAdapterFor(files, sqlite, { now: clock.now, processes });
+    /** One poll with `ps` asked again and giving this answer. */
+    const poll = (running: boolean) => {
+      processes.set({ ok: true, running });
+      clock.advance(PROCESS_CHECK_MS);
+      return adapter.poll();
+    };
+    return { files, sqlite, clock, processes, adapter, poll };
+  }
+
+  const snapshotOf = ({ health, sessions, basis }: AdapterResult): SessionsSnapshot => ({
+    generatedAt: health.checkedAt,
+    sources: [{ ...health, ...(basis !== undefined && { basis }) }],
+    sessions,
+  });
+
+  test("is announced once, and no more each time OpenCode is closed and started", async () => {
+    const { poll } = leftAsking();
+    const statuses: string[] = [];
+    const announced: string[] = [];
+    let memory: ChangeMemory = EMPTY_CHANGE_MEMORY;
+    for (const running of [true, false, true, false, true]) {
+      const answer = await poll(running);
+      statuses.push(answer.sessions[0]?.status ?? "not listed");
+      const seen = sessionChanges(memory, snapshotOf(answer));
+      memory = seen.memory;
+      announced.push(...seen.changes.map((change) => change.event));
+    }
+    expect(statuses).toEqual(["needs-you", "finished", "working", "finished", "working"]);
+    expect(announced).not.toContain("needs-you");
+  });
+
+  test("is no wait from the first ps that shows no OpenCode, whenever the collector started", async () => {
+    const { poll } = leftAsking();
+    expect((await poll(false)).sessions[0]?.status).toBe("finished");
+    const { sessions } = await poll(true);
+    expect(sessions[0]?.status).toBe("working");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  test("a question asked once OpenCode is back is a wait, and is announced", async () => {
+    const { files, sqlite, clock, poll } = leftAsking();
+    let memory = sessionChanges(EMPTY_CHANGE_MEMORY, snapshotOf(await poll(true))).memory;
+    memory = sessionChanges(memory, snapshotOf(await poll(false))).memory;
+    memory = sessionChanges(memory, snapshotOf(await poll(true))).memory;
+    sqlite.set([asking(clock.now() + 1_000)]);
+    files.write(WAL, "more frames");
+    const answer = await poll(true);
+    expect(answer.sessions[0]?.status).toBe("needs-you");
+    const { changes } = sessionChanges(memory, snapshotOf(answer));
+    expect(changes.map((change) => change.event)).toEqual(["needs-you"]);
+  });
+
+  test("stands while ps goes on showing an OpenCode, or cannot say", async () => {
+    const { processes, poll, adapter, clock } = leftAsking();
+    expect((await poll(true)).sessions[0]?.status).toBe("needs-you");
+    expect((await poll(true)).sessions[0]?.status).toBe("needs-you");
+    processes.set({ ok: false });
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+  });
+
+  test("a clock set back does not make a question asked since look older than the last ps", async () => {
+    const { files, sqlite, clock, poll } = leftAsking();
+    await poll(false);
+    clock.advance(-DAY / 2);
+    sqlite.set([asking(clock.now())]);
+    files.write(WAL, "more frames");
+    expect((await poll(true)).sessions[0]?.status).toBe("needs-you");
   });
 });
 

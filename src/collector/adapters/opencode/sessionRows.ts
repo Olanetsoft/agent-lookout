@@ -19,16 +19,16 @@ import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
  * written in the last 48 hours, for its id, folder, title and two times, and
  * for a few short fields of its newest message: its times, its role, when it
  * ended, the name of its error and why it ended, how many of its tool parts
- * OpenCode would wait on, whether its one tool part is the shell's, when
- * the newest user message began, passing over the two prompts OpenCode
- * writes after it compacts a session on its own, and the six token counts of
- * the newest reply that ended with some. Never the text of a message or a
- * part, a tool's input or output, `SELECT *` or a whole `data` value. Each
- * answer is checked field by field, and a row whose id is not one OpenCode
- * makes is dropped.
+ * OpenCode would wait on, whether its one tool part is the shell's, since when
+ * a question or a plan's approval of it waits for the person, when the newest
+ * user message began, passing over the two prompts OpenCode writes after it
+ * compacts a session on its own, and the six token counts of the newest reply
+ * that ended with some. Never the text of a message or a part, a tool's input
+ * or output, `SELECT *` or a whole `data` value. Each answer is checked field
+ * by field, and a row whose id is not one OpenCode makes is dropped.
  *
- * This was built from OpenCode's source at v1.19.0, and has not yet been
- * checked on a computer running OpenCode.
+ * This was built from OpenCode's source at v1.19.0, with the waits checked at
+ * v1.19.5, and has not yet been checked on a computer running OpenCode.
  */
 
 /** The file OpenCode keeps its sessions in, in its data folder. */
@@ -62,6 +62,22 @@ const OPENCODE_OWN_PART = [
   "CASE WHEN json_valid(q.data) THEN (json_extract(q.data, '$.type') IS 'compaction'",
   "AND json_type(q.data, '$.auto') IS 'true')",
   "OR json_type(q.data, '$.metadata.compaction_continue') IS 'true' ELSE 0 END",
+].join(" ");
+
+/**
+ * Whether a part `p` of a message is a call that asks the person: a `tool`
+ * part of OpenCode's `question` or `plan_exit` that OpenCode has started, so
+ * its state is `running`, or `completed` or `error` once it is over. Both tools
+ * wait inside their call, and OpenCode moves the part out of `running` once
+ * the person answers, declines or presses Esc (docs/adapters/opencode.md). A
+ * `pending` part is one the model is still writing, which has no start and
+ * asks nothing yet. The name and the state are compared exactly, and neither
+ * is printed. 1 when it is such a part, else 0 or null.
+ */
+const ASKING_PART = [
+  "CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') IS 'tool'",
+  "AND json_extract(p.data, '$.tool') IN ('question', 'plan_exit')",
+  "AND json_extract(p.data, '$.state.status') IN ('running', 'completed', 'error') ELSE 0 END",
 ].join(" ");
 
 /**
@@ -135,12 +151,18 @@ const REPLY_COUNTS = (
  * OpenCode counts the ones it waits on: not one its model's provider ran
  * itself, and not one OpenCode marked as cut off when it cleaned up a step.
  * `m_shell` is 1 when the message's one tool part is the shell's, `bash`, as
- * OpenCode writes for a command the person runs with `!`. The newest user
- * message, `u_created`, passes over the two OpenCode writes itself when it
- * compacts a session on its own: one whose parts are all a compaction it made
- * on its own, or the text it adds to go on after one. A user message with a
- * part of the person's beside such a part is kept. Those marks, and the
- * tool's name, are only tested inside SQLite: nothing of them is printed.
+ * OpenCode writes for a command the person runs with `!`. `m_asked_at` is
+ * null unless one of the message's calls that ask the person (`ASKING_PART`)
+ * is still `running`, and then it is the oldest `$.state.time.start` among all
+ * of them, or the time OpenCode wrote the part for one with no whole number
+ * there. All of them, not only those still `running`: one message is one step,
+ * one model call, so its calls are one wait, and answering the older must not
+ * move the time. The newest user message, `u_created`, passes over the two
+ * OpenCode writes itself when it compacts a session on its own: one whose
+ * parts are all a compaction it made on its own, or the text it adds to go on
+ * after one. A user message with a part of the person's beside such a part is
+ * kept. Those marks, and the tool's name and state, are only tested inside
+ * SQLite: nothing of them is printed.
  * The token counts are those of the newest step that ended with counts
  * among the session's own newest 10 messages (`COUNTED_REPLY`), so a reply
  * under way, or one that ended with none, leaves the counts of the one
@@ -169,6 +191,10 @@ export const SESSIONS_QUERY = [
   "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IS 'bash') = 1 FROM part p",
   "WHERE p.message_id = m.id",
   "AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool' END) AS m_shell,",
+  "(SELECT CASE WHEN max(json_extract(p.data, '$.state.status') IS 'running') THEN",
+  "min(CASE WHEN json_type(p.data, '$.state.time.start') IS 'integer'",
+  "THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p",
+  `WHERE p.message_id = m.id AND ${ASKING_PART}) AS m_asked_at,`,
   "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
   "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
   "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
@@ -334,6 +360,8 @@ export interface MessageRow {
   tools: unknown;
   /** 1 when the message's one tool part is the shell's, else 0. */
   shell: unknown;
+  /** When the oldest `question` or `plan_exit` call of it began, while one of them waits for the person. Null when none does. */
+  askedAt: unknown;
   /** The newest `time_updated` of the message's parts. */
   partsUpdatedAt: number | null;
 }
@@ -429,6 +457,7 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
             finish: shortField(row.m_finish),
             tools: shortField(row.m_tools),
             shell: shortField(row.m_shell),
+            askedAt: shortField(row.m_asked_at),
             partsUpdatedAt: wholeNumber(row.p_updated),
           }
         : null;

@@ -35,10 +35,10 @@
 // to work: a Gemini CLI session whose terminal was closed while it worked
 // keeps that status until it leaves the list, a day after its last update.
 // A Codex session waiting for approval, which shows as working, stops
-// counting after 30 quiet minutes too. So does an OpenCode session 30 minutes
-// after the prompt that began its turn, the only time it has, however busy it
-// is: OpenCode shows a session as working from its database alone, for as
-// long as any OpenCode program runs, so a step that never ended would
+// counting after 30 quiet minutes too. So does a working OpenCode session 30
+// minutes after the prompt that began its turn, the only time it has, however
+// busy it is: OpenCode shows a session as working from its database alone, for
+// as long as any OpenCode program runs, so a step that never ended would
 // otherwise keep the Mac awake for the day it stays listed.
 //
 // It reads nothing and runs nothing, so the page and the app could share it.

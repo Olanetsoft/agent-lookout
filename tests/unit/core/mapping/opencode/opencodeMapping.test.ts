@@ -24,6 +24,7 @@ function assistant(fields: Partial<OpencodeMessageFields> = {}): OpencodeMessage
     finish: "stop",
     tools: 0,
     shell: 0,
+    askedAt: null,
     ...fields,
   };
 }
@@ -35,6 +36,7 @@ const user: OpencodeMessageFields = {
   finish: null,
   tools: 0,
   shell: 0,
+  askedAt: null,
 };
 
 const both = (message: OpencodeMessageFields | null, now = NOW) =>
@@ -47,6 +49,12 @@ describe("mapOpencodeStatus", () => {
     ["none", null, "idle", "finished"],
     ["the person's", user, "working", "finished"],
     ["a step still running", assistant({ completedAt: null, finish: null }), "working", "finished"],
+    [
+      "a step under way that asks the person",
+      assistant({ completedAt: null, finish: null, tools: 1, askedAt: NOW - MINUTE }),
+      "needs-you",
+      "finished",
+    ],
     ["a stopped step", assistant({ error: ABORTED_ERROR }), "idle", "finished"],
     ["a step that ended on an error", assistant({ error: "APIError" }), "failed", "failed"],
     [
@@ -147,6 +155,42 @@ describe("mapOpencodeStatus", () => {
     ).toEqual(["working", "finished"]);
   });
 
+  test("a wait needs the person however long it has stood, and whatever its time says", () => {
+    const underWay = { completedAt: null, finish: null, tools: 1 };
+    expect(both(assistant({ ...underWay, askedAt: NOW - 23 * 60 * MINUTE }))).toEqual([
+      "needs-you",
+      "finished",
+    ]);
+    for (const askedAt of [12, NOW + 24 * 60 * MINUTE]) {
+      expect(both(assistant({ ...underWay, askedAt }))).toEqual(["needs-you", "finished"]);
+    }
+  });
+
+  test("a step needs the person only while it is under way and a call of it waits", () => {
+    const asking = { tools: 1, askedAt: NOW - MINUTE };
+    // OpenCode's own runtime writes why the step ended while its tools still run.
+    expect(both(assistant({ ...asking, completedAt: null, finish: "tool-calls" }))).toEqual([
+      "needs-you",
+      "finished",
+    ]);
+    // A step that ended, or was stopped, or failed, waits for no one.
+    expect(both(assistant({ ...asking, finish: "tool-calls", completedAt: NOW - 1_000 }))).toEqual([
+      "working",
+      "finished",
+    ]);
+    expect(both(assistant({ ...asking, finish: "tool-calls" }))).toEqual(["idle", "finished"]);
+    expect(both(assistant({ ...asking, completedAt: null, error: ABORTED_ERROR }))).toEqual([
+      "idle",
+      "finished",
+    ]);
+    expect(both(assistant({ ...asking, completedAt: null, error: "APIError" }))).toEqual([
+      "failed",
+      "failed",
+    ]);
+    // A step with no such call goes on working.
+    expect(both(assistant({ completedAt: null, tools: 1 }))).toEqual(["working", "finished"]);
+  });
+
   test("a field of the wrong type is unknown, open or closed", () => {
     for (const wrong of [
       { completedAt: "soon" },
@@ -160,13 +204,16 @@ describe("mapOpencodeStatus", () => {
       { shell: 2 },
       { shell: "1" },
       { shell: undefined },
+      { askedAt: "soon" },
+      { askedAt: 1.5 },
+      { askedAt: undefined },
       { role: undefined },
     ]) {
       expect(both(assistant(wrong)), JSON.stringify(wrong)).toEqual(["unknown", "unknown"]);
     }
   });
 
-  test("it never says a session needs you", () => {
+  test("without a call that waits, it never says a session needs you", () => {
     const messages: (OpencodeMessageFields | null)[] = [
       null,
       user,
@@ -192,6 +239,7 @@ describe("opencodeStatusSince", () => {
     messageCreatedAt: NOW - 2 * MINUTE,
     userCreatedAt: NOW - 5 * MINUTE,
     completedAt: NOW - MINUTE,
+    askedAt: NOW - 90_000,
     activityAt: NOW - 40_000,
   };
 
@@ -216,6 +264,15 @@ describe("opencodeStatusSince", () => {
         NOW - 40_000,
       );
     }
+  });
+
+  test("needs-you is when the call that waits began, and no newer write moves it", () => {
+    expect(opencodeStatusSince("needs-you", times, NOW)).toBe(NOW - 90_000);
+    expect(opencodeStatusSince("needs-you", { ...times, activityAt: NOW - 1_000 }, NOW)).toBe(
+      NOW - 90_000,
+    );
+    // A time that could not be right is not known.
+    expect(opencodeStatusSince("needs-you", { ...times, askedAt: 12 }, NOW)).toBeNull();
   });
 
   test("unknown has no time, and a time that could not be right is not known", () => {

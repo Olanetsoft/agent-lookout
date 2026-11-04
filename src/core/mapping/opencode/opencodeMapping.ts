@@ -4,11 +4,14 @@
 // OpenCode keeps every session in one SQLite database, `opencode.db`. Each
 // step of a reply is an assistant message of its own, written when the step
 // starts and again when it ends. Whether a session is busy, and every wait for
-// an approval or an answer, OpenCode keeps in memory only, so a session is
-// working, idle, failed, finished or unknown here, and never "needs-you". This
-// was built from OpenCode's source at v1.19.0 and has not yet been checked on a
-// computer running OpenCode. See docs/adapters/opencode.md for where each value
-// comes from.
+// a tool's approval, OpenCode keeps in memory only. A question it asks, or a
+// plan it asks the person to approve, is a call to a tool of its own, whose
+// part stays `running` in the database until the person answers, declines or
+// presses Esc. So a session is "needs-you" while one of those waits, and
+// otherwise working, idle, failed, finished or unknown here. This was built
+// from OpenCode's source at v1.19.0, with the waits checked at v1.19.5, and
+// has not yet been checked on a computer running OpenCode. See
+// docs/adapters/opencode.md for where each value comes from.
 
 import type { SessionStatus } from "../../sessions/session.ts";
 import { CLOCK_SLACK_MS, plausibleTime } from "../../time.ts";
@@ -57,6 +60,8 @@ export interface OpencodeMessageFields {
   tools: unknown;
   /** 1 when its one tool part is the shell's, as for a command the person runs with `!`, else 0. Null when not known. */
   shell: unknown;
+  /** When the oldest `question` or `plan_exit` tool part of it began, while one of them is in the state `running`. Null when none is. */
+  askedAt: unknown;
 }
 
 export interface OpencodeStatusFields {
@@ -76,7 +81,7 @@ const isTime = (value: unknown) => typeof value === "number" && Number.isSafeInt
 /** What the newest message says while the database is open, or `unknown`. */
 function openStatus(message: OpencodeMessageFields | null, now: number): SessionStatus {
   if (message === null) return "idle";
-  const { role, completedAt, error, finish, tools, shell } = message;
+  const { role, completedAt, error, finish, tools, shell, askedAt } = message;
   if (role === "user") return "working";
   if (role !== "assistant") return "unknown";
   if (completedAt !== null && !isTime(completedAt)) return "unknown";
@@ -84,9 +89,12 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
   if (finish !== null && typeof finish !== "string") return "unknown";
   if (tools !== null && !(isTime(tools) && (tools as number) >= 0)) return "unknown";
   if (shell !== null && shell !== 0 && shell !== 1) return "unknown";
+  if (askedAt !== null && !isTime(askedAt)) return "unknown";
   if (error === ABORTED_ERROR) return "idle";
   if (typeof error === "string") return FAILED_ERRORS.includes(error) ? "failed" : "unknown";
-  if (completedAt === null) return "working";
+  // A step that waits for the person has not ended: OpenCode ends it only once
+  // every tool part of it has left `running`.
+  if (completedAt === null) return askedAt === null ? "working" : "needs-you";
   // A command the person ran with `!` is a step with no reason it ended and
   // one tool part, the shell's, which no next step follows.
   if (finish === null && shell === 1) return "idle";
@@ -107,7 +115,8 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
  * | ------------------------------------------------------------------- | ------- | -------- |
  * | none                                                                | idle    | finished |
  * | `user`                                                              | working | finished |
- * | `assistant`, no `time.completed`                                    | working | finished |
+ * | `assistant`, no `time.completed`, a `question` or `plan_exit` part `running` | needs-you | finished |
+ * | `assistant`, no `time.completed`, and no such part                  | working | finished |
  * | `assistant`, error `MessageAbortedError`                            | idle    | finished |
  * | `assistant`, error that is one of the other seven names             | failed  | failed   |
  * | `assistant`, error with any other name                              | unknown | unknown  |
@@ -118,9 +127,10 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
  * | any other role, or a field of the wrong type                        | unknown | unknown  |
  *
  * An error OpenCode records ends the step, so it is read first. A session
- * that failed, or cannot be read, stays so once OpenCode is closed. It
- * never returns "needs-you": OpenCode keeps its approval waits and its
- * questions in memory, so a session waiting for the person shows as working.
+ * that failed, or cannot be read, stays so once OpenCode is closed. A session
+ * that waits for the person is finished once OpenCode is closed, since the
+ * wait lives in OpenCode's memory. A wait for a tool's approval is in memory
+ * alone, so a session in one shows as working.
  */
 export function mapOpencodeStatus(fields: OpencodeStatusFields): SessionStatus {
   const open = openStatus(fields.message, fields.now);
@@ -141,6 +151,8 @@ export interface OpencodeTimes {
   userCreatedAt: unknown;
   /** `$.time.completed` of the newest message. */
   completedAt: unknown;
+  /** When the oldest `question` or `plan_exit` part of the newest message began, while one of them is in the state `running`. */
+  askedAt: unknown;
   /** The newest time OpenCode wrote anything of the session: its row, its newest message or that message's parts. */
   activityAt: number | null;
 }
@@ -153,6 +165,8 @@ export interface OpencodeTimes {
  *   that starts the turn, but for the three OpenCode writes itself that
  *   `userCreatedAt` does not pass over; else the newest message's start;
  *   else the session's.
+ * - needs-you: when the step's oldest call that asks began, which does not
+ *   move while it waits, as a time that moves would announce a new wait.
  * - idle, failed and finished: when the newest step ended; else the newest
  *   time anything of the session was written.
  * - unknown: not known.
@@ -162,7 +176,8 @@ export function opencodeStatusSince(
   times: OpencodeTimes,
   now: number,
 ): number | null {
-  if (status === "unknown" || status === "needs-you") return null;
+  if (status === "unknown") return null;
+  if (status === "needs-you") return plausibleTime(times.askedAt, now);
   if (status === "working") {
     return (
       plausibleTime(times.userCreatedAt, now) ??

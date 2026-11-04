@@ -74,9 +74,9 @@ function nowInWords(
  * "Quiet" is the Quiet for of the Sessions list. A working session stops
  * counting 30 minutes after its newest update, and where its agent's writes
  * are measured, that is when it has been quiet for 30 minutes. A Claude Code
- * session whose process runs counts while it is listed, and an OpenCode session, which never
- * shows Quiet for, stops counting 30 minutes after the prompt that began its
- * turn, as the rule says.
+ * session whose process runs counts while it is listed, and a working OpenCode
+ * session, which never shows Quiet for, stops counting 30 minutes after the
+ * prompt that began its turn, as the rule says.
  *
  * With the switch on, a line under it says whether the Mac is kept awake right
  * now and, while it is, names the sessions that count, on this Mac and on the
