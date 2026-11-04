@@ -26,7 +26,8 @@ import { isRecord } from "./envelope.ts";
  * never does: it lists the folder and reads `<id>.lock.json` alone, and never
  * opens, locks or makes anything else there. So it cannot tell a lease a
  * crashed program left behind from a held one but by the pid the `.json`
- * names: a pid that runs is held, one that does not is left behind.
+ * names: a pid that runs is held, one that does not is left behind. On a Mac
+ * `ps` then tells a pid another program was given (`index.ts`).
  */
 export const LEASE_DIR = "active";
 

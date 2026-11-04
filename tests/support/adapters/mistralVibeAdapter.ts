@@ -104,7 +104,8 @@ export const MAC_PROCESS_CHECK = [
   { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
   {
     label: "Process check run",
-    value: "every 30 seconds while a session waits, and sooner when another starts to wait",
+    value:
+      "once for each lease, after a minute with nothing written or as soon as its session waits, then every 30 seconds while it waits or until ps answers",
   },
 ];
 

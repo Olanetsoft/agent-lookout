@@ -8,6 +8,7 @@ import {
   readFile,
   readlink,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -34,6 +35,7 @@ import {
   PRIVATE_WORDS,
   sessionId,
   storeFiles,
+  storePath,
   SUBAGENT_ID,
   journalPath,
   usage,
@@ -463,6 +465,43 @@ describe("a Mistral Vibe session waiting for you, on a real folder", () => {
     expect(opened.some((each) => each.endsWith(".registry"))).toBe(false);
     expect(opened.some((each) => each.endsWith("checkpoint.json"))).toBe(false);
   });
+});
+
+describe("a Mistral Vibe lease, on a real folder", () => {
+  const HELD = sessionId("g1");
+  const REUSED = sessionId("g2");
+
+  /** Makes a session's store look last written two minutes ago, so that its lease is due a look. */
+  async function makeQuiet(dir: string, id: string) {
+    const ago = new Date(Date.now() - 2 * MINUTE);
+    for (const file of [`${storePath(id)}/CURRENT`, journalPath(id)]) {
+      await utimes(path.join(dir, ...file.split("/")), ago, ago);
+    }
+  }
+
+  // Told it is on a Mac, so that a Linux computer with a `ps` runs this too.
+  test.skipIf(process.platform === "win32")(
+    "on a Mac, the real `ps` tells a lease this process could have taken from one given its process ID",
+    async () => {
+      const dir = await tempDir();
+      const startedAt = Date.now() - process.uptime() * 1_000;
+      await writeAll(dir, {
+        ...storeFiles({ id: HELD, minor: 10, state: running(HELD, "demo-project held") }),
+        ...storeFiles({ id: REUSED, minor: 10, state: idle(REUSED, "demo-project reused") }),
+        [`active/${HELD}.lock`]: "",
+        [`active/${HELD}.lock.json`]: leaseFile(HELD, process.pid, Date.now() - MINUTE),
+        [`active/${REUSED}.lock`]: "",
+        [`active/${REUSED}.lock.json`]: leaseFile(REUSED, process.pid, startedAt - 10 * MINUTE),
+      });
+      await makeQuiet(dir, HELD);
+      await makeQuiet(dir, REUSED);
+      const { sessions } = await adapterFor(dir, { platform: "darwin" }).poll();
+      expect(sessions.find((each) => each.id === `mistral-vibe:${HELD}`)?.status).toBe("working");
+      expect(sessions.find((each) => each.id === `mistral-vibe:${REUSED}`)?.status).toBe(
+        "finished",
+      );
+    },
+  );
 });
 
 describe("a Mistral Vibe session's token counts, on a real folder", () => {

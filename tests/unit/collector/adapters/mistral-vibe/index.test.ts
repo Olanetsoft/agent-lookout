@@ -1249,7 +1249,7 @@ describe("waiting for the person", () => {
     }
   });
 
-  test("`ps` is asked only while a session waits, at most every 30 seconds, about all that wait at once", async () => {
+  test("`ps` is asked about a session that waits at once and at most every 30 seconds, all that wait in one run, and not about one just written to", async () => {
     const files = sessionWith(approval(6));
     writeStore(files, { id: B, state: idle(B), journal: [delta(5, running(B)), question(6)] });
     writeLease(files, B);
@@ -1278,7 +1278,7 @@ describe("waiting for the person", () => {
     expect(none.runs).toEqual([]);
   });
 
-  test("`ps` is asked about each waiting session's process in one run, and no other's", async () => {
+  test("`ps` is asked about each waiting session's process in one run, and not about one just written to", async () => {
     const OTHER_PID = 5151;
     const files = sessionWith(approval(6));
     writeStore(files, { id: B, state: idle(B), journal: [delta(5, running(B)), question(6)] });
@@ -1491,6 +1491,431 @@ describe("waiting for the person", () => {
       clock.advance(2 * SECOND);
     }
     expect(told).toEqual(["needs-you"]);
+  });
+});
+
+describe("a lease whose process ID may have gone to another program", () => {
+  /** What `ps` prints for a process that started before the leases below were taken, at 11:00. */
+  const BEFORE_LEASE = "Thu Oct  1 10:45:00 2026";
+  /** What it prints for one that started after. */
+  const AFTER_LEASE = "Thu Oct  1 11:30:00 2026";
+  const OTHER_PID = 5151;
+
+  const add = (files: ReturnType<typeof memoryFiles>, line: string, at: number) =>
+    files.append(`${SESSION_DIR}/${journalPath(A)}`, line, { mtimeMs: at });
+
+  /** A folder whose files were last written two minutes ago, so that a lease in it is due a look. */
+  const quietFiles = () => vibeFiles(() => NOW - 2 * MINUTE);
+
+  /** A session Vibe last wrote to two minutes ago, under a lease taken at 11:00. */
+  function quietSession(state: StateFields = running(A)) {
+    const files = quietFiles();
+    writeStore(files, { id: A, state });
+    writeLease(files, A);
+    return files;
+  }
+
+  test("a Vibe that runs stays open, and `ps` is asked once, however long it runs", async () => {
+    const clock = handClock();
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const adapter = vibeAdapterFor(quietSession(), standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    for (const later of [0, SECOND, MINUTE, HOUR]) {
+      clock.advance(later);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+    }
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test.each([
+    ["working", running(A)],
+    ["idle", idle(A)],
+  ])(
+    "on a Mac, a %s session whose lease's process ID went to another program shows as it does once its process is gone",
+    async (_, state) => {
+      const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+      const { sessions } = await vibeAdapterFor(quietSession(state), standInPids(), {
+        readProcessStarts: ps.read,
+      }).poll();
+      const gone = await vibeAdapterFor(quietSession(state), standInPids([])).poll();
+      expect(sessions[0]?.status).toBe("finished");
+      expect(sessions).toEqual(gone.sessions);
+    },
+  );
+
+  test("a failed session stays failed", async () => {
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const { sessions } = await vibeAdapterFor(quietSession(failed(A)), standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "failed" });
+  });
+
+  test("`ps` is asked once about a lease another program has, and the session goes on showing as finished", async () => {
+    const clock = handClock();
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const adapter = vibeAdapterFor(quietSession(), standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    for (const later of [0, MINUTE, HOUR]) {
+      clock.advance(later);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    }
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test("a session shown as finished that a Vibe takes back is asked about again, and open", async () => {
+    const files = quietSession();
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), { readProcessStarts: ps.read });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+
+    // A Vibe that took the session at 11:45, after the process with this ID began.
+    takeLease(files, A, NOW - 15 * MINUTE);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+    expect(ps.runs).toEqual([[LIVE_PID], [LIVE_PID]]);
+  });
+
+  test.each(["linux", "win32"] as const)(
+    "on %s `ps` is not asked, so a lease whose process ID went to another program unseen stays as it is",
+    async (platform) => {
+      const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+      const { sessions } = await vibeAdapterFor(quietSession(), standInPids(), {
+        platform,
+        readProcessStarts: ps.read,
+      }).poll();
+      expect(statuses(sessions)).toEqual({ [A]: "working" });
+      expect(ps.runs).toEqual([]);
+    },
+  );
+
+  test.each(["linux", "win32"] as const)(
+    "on %s a lease whose process was found gone stays left behind, whoever is given its process ID, until a program takes the lease",
+    async (platform) => {
+      const files = quietSession();
+      const pids = standInPids();
+      const ps = standInStarts();
+      const adapter = vibeAdapterFor(files, pids, { platform, readProcessStarts: ps.read });
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+
+      pids.set([]);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+      pids.set([LIVE_PID]);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+
+      takeLease(files, A, NOW - 10 * MINUTE);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      expect(ps.runs).toEqual([]);
+    },
+  );
+
+  test("on a Mac, `ps` decides a lease whose process was found gone, once its process ID is back", async () => {
+    const clock = handClock();
+    const pids = standInPids();
+    const starts: Record<number, string> = { [LIVE_PID]: BEFORE_LEASE };
+    const ps = standInStarts(starts);
+    const adapter = vibeAdapterFor(quietSession(), pids, {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+
+    pids.set([]);
+    clock.advance(SECOND);
+    await adapter.poll();
+    pids.set([LIVE_PID]);
+    starts[LIVE_PID] = AFTER_LEASE;
+    clock.advance(SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  const noAnswers = [
+    ["says nothing of the process", () => new Map<number, string>()],
+    ["prints what is not a time", () => new Map([[LIVE_PID, "not a time"]])],
+    [
+      "fails",
+      () => {
+        throw new Error("ps could not be run");
+      },
+    ],
+  ] as const;
+
+  test.each(noAnswers)(
+    "a session stays as it is while `ps` %s, and `ps` is asked again after 30 seconds",
+    async (_, answer) => {
+      const clock = handClock();
+      const runs: (readonly number[])[] = [];
+      const adapter = vibeAdapterFor(quietSession(), standInPids(), {
+        now: clock.now,
+        readProcessStarts: async (pids) => {
+          runs.push(pids);
+          return answer();
+        },
+      });
+      for (const [later, expected] of [
+        [0, 1],
+        [29 * SECOND, 1],
+        [SECOND, 2],
+        [SECOND, 2],
+      ] as const) {
+        clock.advance(later);
+        expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+        expect(runs).toHaveLength(expected);
+      }
+    },
+  );
+
+  test("a lease `ps` could not answer for is told once it can", async () => {
+    const clock = handClock();
+    const starts: Record<number, string> = {};
+    const ps = standInStarts(starts);
+    const adapter = vibeAdapterFor(quietSession(), standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+    starts[LIVE_PID] = AFTER_LEASE;
+    clock.advance(30 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    clock.advance(HOUR);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  test("a lease taken after its process started stays open, as an app server's does", async () => {
+    const files = quietFiles();
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - 15 * MINUTE);
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "working" });
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test.each([
+    ["Thu Oct  1 11:01:00 2026", "working"],
+    ["Thu Oct  1 11:01:01 2026", "finished"],
+  ])("a process that started at %s, after a lease taken at 11:00, is %s", async (start, status) => {
+    const ps = standInStarts({ [LIVE_PID]: start });
+    const { sessions } = await vibeAdapterFor(quietSession(), standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: status });
+  });
+
+  test("several leases on one process are asked about in one run, each by when it was taken", async () => {
+    const files = quietSession();
+    writeStore(files, { id: B, state: running(B) });
+    takeLease(files, B, NOW - 15 * MINUTE);
+    writeStore(files, { id: C, state: idle(C) });
+    takeLease(files, C, NOW - 10 * MINUTE);
+    // Began at 11:30: it took two of them, and was given the ID of whatever took the first.
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "finished", [B]: "working", [C]: "idle" });
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test("leases on several processes are asked about in one run", async () => {
+    const files = quietSession();
+    writeStore(files, { id: B, state: running(B) });
+    writeLease(files, B, OTHER_PID);
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE, [OTHER_PID]: AFTER_LEASE });
+    const { sessions } = await vibeAdapterFor(files, standInPids([LIVE_PID, OTHER_PID]), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "working", [B]: "finished" });
+    expect(ps.runs).toEqual([[LIVE_PID, OTHER_PID]]);
+  });
+
+  test("a session only a left-behind lease keeps is not listed, and is not asked about again", async () => {
+    const files = vibeFiles(() => NOW - 2 * DAY);
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - 3 * DAY);
+    const ps = standInStarts({ [LIVE_PID]: "Tue Sep 29 12:00:00 2026" });
+    const adapter = vibeAdapterFor(files, standInPids(), { readProcessStarts: ps.read });
+    for (let poll = 0; poll < 4; poll += 1) {
+      expect((await adapter.poll()).sessions).toEqual([]);
+    }
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test("a Vibe that keeps a session it last wrote to days ago stays listed", async () => {
+    const files = vibeFiles(() => NOW - 2 * DAY);
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - HOUR);
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "working" });
+  });
+
+  test("with no lease, a process that is gone, or a lease that names no process or no time, `ps` is not run", async () => {
+    const files = quietFiles();
+    writeStore(files, { id: A, state: running(A) });
+    writeStore(files, { id: B, state: running(B) });
+    writeLease(files, B, GONE_PID);
+    writeStore(files, { id: C, state: running(C) });
+    files.write(`${SESSION_DIR}/active/${C}.lock`, "");
+    const untimed = sessionId("d1");
+    writeStore(files, { id: untimed, state: running(untimed) });
+    files.write(`${SESSION_DIR}/active/${untimed}.lock`, "");
+    files.write(
+      `${SESSION_DIR}/active/${untimed}.lock.json`,
+      JSON.stringify({ process_id: LIVE_PID }),
+    );
+    const clock = handClock();
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    clock.advance(OLD_SESSION_LEASE_MS);
+    const { sessions } = await adapter.poll();
+    expect(statuses(sessions)).toEqual({
+      [A]: "finished",
+      [B]: "finished",
+      [C]: "working",
+      [untimed]: "working",
+    });
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("a lease taken in the last 30 seconds with nothing written since is not asked about", async () => {
+    const files = quietFiles();
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - 10 * SECOND);
+    const ps = standInStarts();
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "finished" });
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("a save counts as a write, so a session just saved is not asked about", async () => {
+    const files = quietSession();
+    files.rewrite(`${SESSION_DIR}/${storePath(A)}/CURRENT`, current({ id: A }), {
+      mtimeMs: NOW - 10 * SECOND,
+    });
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "working" });
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("a session Vibe keeps writing to costs no run, and one that goes quiet costs one", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A), journal: [delta(5, running(A))] });
+    writeLease(files, A);
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    for (let sequence = 6; sequence < 12; sequence += 1) {
+      await adapter.poll();
+      clock.advance(MINUTE - SECOND);
+      add(files, delta(sequence, running(A)), clock.now());
+    }
+    expect(ps.runs).toEqual([]);
+
+    clock.advance(MINUTE - SECOND);
+    await adapter.poll();
+    expect(ps.runs).toEqual([]);
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+
+    add(files, delta(12, running(A)), clock.now());
+    clock.advance(HOUR);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+  });
+
+  test("leases already looked at cost no run, and a new one costs one, about itself alone", async () => {
+    const clock = handClock();
+    const files = quietSession();
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE, [OTHER_PID]: BEFORE_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids([LIVE_PID, OTHER_PID]), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    clock.advance(HOUR);
+    await adapter.poll();
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+
+    writeStore(files, { id: B, state: running(B) });
+    writeLease(files, B, OTHER_PID);
+    clock.advance(SECOND);
+    await adapter.poll();
+    clock.advance(HOUR);
+    await adapter.poll();
+    expect(ps.runs).toEqual([[LIVE_PID], [OTHER_PID]]);
+  });
+
+  test("a session that starts to wait under a lease already looked at is asked about at once, then every 30 seconds", async () => {
+    const clock = handClock();
+    const files = quietSession();
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    clock.advance(MINUTE);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+
+    add(files, callbackRegistered(6, { id: "ask-1", createdAt: clock.now() }), clock.now());
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    expect(ps.runs).toHaveLength(2);
+    clock.advance(10 * SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(2);
+    clock.advance(20 * SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(3);
+  });
+
+  test("each new wait under a lease already looked at costs one run, however close together", async () => {
+    const clock = handClock();
+    const files = quietSession();
+    const ps = standInStarts({ [LIVE_PID]: BEFORE_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+
+    let sequence = 6;
+    for (let wait = 0; wait < 5; wait += 1) {
+      const id = `ask-${wait}`;
+      add(files, callbackRegistered(sequence++, { id, createdAt: clock.now() }), clock.now());
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      add(files, callbackResolved(sequence++, id), clock.now());
+      clock.advance(2 * SECOND);
+      await adapter.poll();
+    }
+    // The first wait falls within 30 seconds of the first answer, so it adds no run.
+    expect(ps.runs).toHaveLength(5);
   });
 });
 
