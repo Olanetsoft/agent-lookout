@@ -4,15 +4,18 @@ import {
   SUBAGENT_ID_PREFIX,
   VIBE_SESSION_ID,
 } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
+import type { VibeCallback } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { pendingCallbacks } from "./callbacks.ts";
 import { envelopeOf, isRecord, type Envelope } from "./envelope.ts";
 
 /**
  * Reading Vibe's session stores, for the little this adapter needs.
  *
  * Vibe keeps each session in `<session folder>/unified/<session id>/`
- * (harness/.../vibe/_storage.py at 2.26.1, store format
- * `mistral.vibe.unified-session-store/v1`, minor 8). Every file there is JSON
+ * (harness/.../vibe/_storage.py, store format
+ * `mistral.vibe.unified-session-store/v1`, minor 8 at 2.26.1 and minor 10 at
+ * 3.0.4, whose files read the same way). Every file there is JSON
  * with its keys sorted, replaced whole through a temporary file, never written
  * in place:
  *
@@ -27,8 +30,9 @@ import { envelopeOf, isRecord, type Envelope } from "./envelope.ts";
  *   as it was when the generation was saved (`envelope.ts`).
  * - `generations/<g>/runtime-state.json` holds, with much else, the session's
  *   folder (`session_metadata.cwd`), whether it is a session of its own, a
- *   fork or a subagent (`identity.kind`) and whether it is being deleted
- *   (`lifecycle.type`). Only those three are kept.
+ *   fork or a subagent (`identity.kind`), whether it is being deleted
+ *   (`lifecycle.type`) and every callback (`callbacks`). Only those three, and
+ *   the id, kind and time of a pending callback (`callbacks.ts`), are kept.
  *
  * A generation's files are written once and never change, so each is read
  * once while the adapter follows the session, when `CURRENT` names a new one.
@@ -48,11 +52,13 @@ export const STORE_DIR = "unified";
 export const STORE_FORMAT = "mistral.vibe.unified-session-store/v1";
 
 /**
- * The newest minor of that format this adapter knows, Vibe 2.26.1's. Vibe's
- * own readers refuse a store of a higher minor, so this adapter shows its
- * sessions without a status.
+ * The newest minor of that format this adapter knows, Vibe 3.0.4's. Minors 9
+ * and 10 changed nothing this adapter reads: 9 added a journal record for a
+ * session that moves and 10 left repeated settings out of a record it does not
+ * read. Vibe's own readers refuse a store of a higher minor, so this adapter
+ * shows its sessions without a status.
  */
-export const KNOWN_STORE_MINOR = 8;
+export const KNOWN_STORE_MINOR = 10;
 
 /** The most of each file read. Vibe allows any of them 64 MiB, and writes far less. */
 export const CURRENT_LIMIT_BYTES = 4 * 1024;
@@ -100,6 +106,8 @@ export interface Store {
   kind: string | null;
   /** True while Vibe deletes the session and its subagents. */
   deleting: boolean;
+  /** What was open when the generation was saved: never what a callback says. */
+  pending: VibeCallback[];
 }
 
 export type StoreRead =
@@ -242,6 +250,7 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
     let cwd: string | null = null;
     let kind: string | null = null;
     let deleting = false;
+    let pending: VibeCallback[] = [];
     const runtimeFile = generationFile(manifest, "runtime_state", RUNTIME_FILE);
     if (runtimeFile !== null) {
       try {
@@ -253,13 +262,14 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
           cwd = folder(metadata.cwd);
           kind = word(identity.kind);
           deleting = lifecycle.type === "deleting_tree";
+          pending = pendingCallbacks(runtime.callbacks);
         }
       } catch (error) {
         if (wentAway(error)) throw error;
       }
     }
 
-    return { journal, snapshot, cwd, kind, deleting };
+    return { journal, snapshot, cwd, kind, deleting, pending };
   }
 
   /** `CURRENT`, read whole. Null when it says nothing this adapter can read. */
@@ -339,6 +349,7 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
               cwd: null,
               kind: null,
               deleting: false,
+              pending: [],
             };
             cache.set(sessionId, { current, store });
             return { state: "ok", store, current };

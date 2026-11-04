@@ -12,6 +12,7 @@ import {
   CWD,
   DAY,
   HOUR,
+  MINUTE,
   NOW,
   PRIVATE_WORDS,
   SESSION_DIR,
@@ -20,6 +21,8 @@ import {
   document,
   generationName,
   journalPath,
+  runtimeState,
+  savedCallback,
   sessionId,
   storePath,
 } from "@tests/fixtures/mistralVibe";
@@ -83,6 +86,7 @@ describe("a session's store", () => {
       cwd: CWD,
       kind: "root",
       deleting: false,
+      pending: [],
     });
     expect(JSON.stringify(read.store)).not.toContain(PRIVATE_WORDS);
   });
@@ -118,22 +122,22 @@ describe("a session's store", () => {
     expect(files.opened()).toContain(`${generationOf(A, 9)}/manifest.json`);
   });
 
-  test("minor 7 and minor 8 are read, a higher minor is a store too new for its status", async () => {
-    for (const minor of [7, 8]) {
+  test("minors up to 10, Vibe 3.0.4's, are read, a higher minor is a store too new for its status", async () => {
+    for (const minor of [7, 8, 9, 10]) {
       const files = memoryFiles();
       writeStore(files, { id: A, minor });
       const read = await createStoreReader(STORES, files.io).read(A);
       expect(read.state === "ok" && read.store.tooNew, `minor ${minor}`).toBe(false);
     }
     const files = memoryFiles();
-    writeStore(files, { id: A, minor: 9 });
+    writeStore(files, { id: A, minor: 11 });
     const read = await createStoreReader(STORES, files.io).read(A);
     expect(read.state === "ok" && read.store).toMatchObject({ tooNew: true, cwd: CWD });
   });
 
   test("a newer Vibe's generation that does not read as this one's still gives the session, with nothing more", async () => {
     const files = memoryFiles();
-    writeStore(files, { id: A, minor: 9 });
+    writeStore(files, { id: A, minor: 11 });
     files.rewrite(`${generationOf(A)}/manifest.json`, "a format this adapter cannot read");
     const read = await createStoreReader(STORES, files.io).read(A);
     expect(read.state === "ok" && read.store).toEqual({
@@ -144,7 +148,40 @@ describe("a session's store", () => {
       cwd: null,
       kind: null,
       deleting: false,
+      pending: [],
     });
+  });
+
+  test("of the callbacks a generation saved, only a pending one's id, kind and time are kept", async () => {
+    const files = memoryFiles();
+    writeStore(files, {
+      id: A,
+      callbacks: [
+        savedCallback({ id: "approval-call-1", createdAt: NOW - MINUTE }),
+        savedCallback({ id: "user-input-call-2", kind: "user_input", createdAt: NOW - 1_000 }),
+        { ...savedCallback({ id: "approval-call-3", createdAt: NOW - HOUR }), state: "resolved" },
+        { ...savedCallback({ id: "approval-call-4", createdAt: NOW - HOUR }), state: "failed" },
+      ],
+    });
+    const read = await createStoreReader(STORES, files.io).read(A);
+    expect(read.state === "ok" && read.store.pending).toEqual([
+      { id: "approval-call-1", kind: "approval", createdAt: NOW - MINUTE },
+      { id: "user-input-call-2", kind: "user_input", createdAt: NOW - 1_000 },
+    ]);
+    expect(JSON.stringify(read)).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("a runtime state of another session's gives no callbacks", async () => {
+    const files = memoryFiles();
+    writeStore(files, { id: A });
+    files.rewrite(
+      `${generationOf(A)}/runtime-state.json`,
+      runtimeState(sessionId("b1"), {
+        callbacks: [savedCallback({ id: "approval-call-1", createdAt: NOW })],
+      }),
+    );
+    const read = await createStoreReader(STORES, files.io).read(A);
+    expect(read.state === "ok" && read.store.pending).toEqual([]);
   });
 
   test("a CURRENT of another format, another session or no generation is not a store it reads", async () => {

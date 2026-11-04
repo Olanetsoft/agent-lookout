@@ -2,8 +2,12 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  continuedVibeWait,
   isMistralVibeUserSession,
   vibeLeaseHeld,
+  vibeWaitOf,
+  type VibeCallback,
+  type VibeWait,
 } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
 import type {
@@ -18,8 +22,11 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
+import { START_CHECK_TTL_MS, type ReadProcessStarts } from "../../processes/processStart.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
+import { createRecordProcessCheck, type RecordProcess } from "../qwen-code/processCheck.ts";
 import { every } from "../words.ts";
+import { openCallbacks } from "./callbacks.ts";
 import type { Envelope } from "./envelope.ts";
 import { createJournalReader, type Newest } from "./journal.ts";
 import { createLeaseReader, LEASE_DIR } from "./leases.ts";
@@ -30,7 +37,7 @@ import {
   STORE_DIR,
   storeWrittenAt,
 } from "./stores.ts";
-import { mistralVibeSession, SOURCE_ID } from "./toSession.ts";
+import { mistralVibeSession, SOURCE_ID, type MistralVibeSessionInput } from "./toSession.ts";
 
 /** The variable that names Vibe's session folder, for Agent Lookout alone. */
 export const VIBE_SESSION_DIR_ENV = "AGENT_LOOKOUT_VIBE_SESSION_DIR";
@@ -107,13 +114,13 @@ export const BASIS_WITHOUT_LEASES = "files-without-leases";
 
 const LABEL = "Mistral Vibe";
 
-/** Said whenever Vibe is watched, until Needs you is read. */
+/** Said whenever Vibe is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "This version does not read when Mistral Vibe waits for your approval, so a waiting session shows as working.";
+  "A Mistral Vibe session shows as needing you while Vibe waits for your approval or an answer. Vibe keeps a subagent's wait in the subagent's own files, which are not read, so a session whose subagent waits for you shows as working.";
 
 /** Said whenever Vibe is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from the source of Mistral Vibe 2.26.1 and not yet checked on a computer running Vibe, so a status can be wrong.";
+  "This was built from the source of Mistral Vibe 2.26.1 and 3.0.4 and not yet checked on a computer running Vibe, so a status can be wrong.";
 
 /** Said when a store was written by a newer Vibe than this adapter knows. */
 export const NEWER_STORE_NOTE =
@@ -133,8 +140,10 @@ export const WITHOUT_LEASES_NOTE =
  *
  * - Working and idle are the status of the newest public state, from the
  *   journal or the generation (`mistralVibeMapping.ts`).
- * - Needs you not yet: the requests Vibe journals while it waits are not read
- *   by this version, so a waiting session shows as working.
+ * - Needs you is a callback Vibe journals as it asks for an approval or an
+ *   answer, while a program that runs holds the session and the turn is in
+ *   flight (`vibeWaitOf`). A subagent's wait is in the subagent's own store,
+ *   which is not read, so its session shows as working.
  * - Finished is a session no Vibe program holds the lease of, or whose lease
  *   was taken less than 30 seconds ago with nothing written to it since. The
  *   desktop app lets go of a session's lease after each turn, so its sessions
@@ -154,9 +163,9 @@ export const WITHOUT_LEASES_NOTE =
 export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },
   "needs-you": {
-    level: "no",
+    level: "partly",
     reason:
-      "This version does not read Vibe's approval waits, so a session waiting for you shows as working.",
+      "While Vibe waits for your approval or an answer. A session whose subagent waits for you shows as working.",
   },
   finished: {
     level: "partly",
@@ -199,6 +208,10 @@ export interface MistralVibeAdapterOptions {
   io?: ReadOnlyIo;
   /** Whether a process runs, for the pid a lease names. Defaults to asking the system. */
   isAlive?: (pid: number) => boolean;
+  /** When processes started, asked about the pid of a lease a wait hangs on. Defaults to `ps`. */
+  readProcessStarts?: ReadProcessStarts;
+  /** The system it runs on, which says whether `ps` is asked. Defaults to this one. */
+  platform?: NodeJS.Platform;
   /**
    * How often the poller calls `poll()`, which is how often the files are read.
    * The adapter keeps no timer of its own: this is only stated in `watching`.
@@ -221,14 +234,36 @@ type Mark = { ino: number; mtimeMs: number } | null;
 const sameMark = (a: Mark, b: Mark) =>
   a === b || (a !== null && b !== null && a.ino === b.ino && a.mtimeMs === b.mtimeMs);
 
+/** What tells one lease of a session from another. */
+const leaseMark = (id: string, pid: number | null, acquiredAt: number | null) =>
+  `${id} ${pid} ${acquiredAt}`;
+
+/**
+ * What Sources says tells a lease's process from another program given its
+ * pid, and how often that is asked. Where `ps` is not asked, signal 0 is all
+ * there is.
+ */
+function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[] {
+  if (!asksPs) {
+    return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
+  }
+  return [
+    { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+    {
+      label: "Process check run",
+      value: `${every(START_CHECK_TTL_MS)} while a session waits, and sooner when another starts to wait`,
+    },
+  ];
+}
+
 /**
  * Finds Mistral Vibe sessions on this machine from the files Vibe keeps, with
- * nothing installed, no setting changed and no program run.
+ * nothing installed, no setting changed and no Vibe program run.
  *
  * Vibe documents no listing of its sessions for another program to read: its
  * own `--resume` is a picker for a person. So the adapter reads Vibe's files,
- * which Vibe does not document either, read-only, as Vibe 2.26.1's source
- * writes them:
+ * which Vibe does not document either, read-only, as the source of Vibe
+ * 2.26.1 and 3.0.4 writes them:
  *
  * - The folder of leases, `<session folder>/active`, listed on every poll, and
  *   each held lease's `<id>.lock.json` when it changes, for which sessions a
@@ -237,7 +272,8 @@ const sameMark = (a: Mark, b: Mark) =>
  *   the manifest, public state and runtime state of the generation it names,
  *   once each while it follows the session (`stores.ts`).
  * - The journal segment that generation names, read from its end and then as
- *   it grows, for the newest public state (`journal.ts`).
+ *   it grows, for the newest public state and the callbacks Vibe opens and
+ *   settles (`journal.ts`).
  *
  * A session is listed for 24 hours after Vibe last wrote to its `CURRENT` or
  * its journal, and while a Vibe program holds it. One older than that is
@@ -252,6 +288,21 @@ const sameMark = (a: Mark, b: Mark) =>
  * Subagents, sessions being deleted and sessions not yet saved are left out.
  * Forks are listed. Sessions the older engine saved are not, and the card
  * says so when it saved one in the last day.
+ *
+ * A wait counts toward keeping the Mac awake for as long as it is listed, so
+ * on a Mac, while a session has one, `ps` is asked when the process its lease
+ * names started, again after 30 seconds, and sooner when another session starts
+ * to wait. A process that started more than a minute after the lease was taken
+ * was given a crashed Vibe's pid: no program holds the session, which is
+ * finished, and that lease is not asked about again. No other session is asked
+ * about, and while none waits no program is run.
+ *
+ * Only on a Mac, because a comparison acts only when it is sure. Linux's `ps`
+ * works a start out again from the clock each time, so a clock set forward by
+ * more than a minute makes a Vibe that runs look as if it started after its
+ * lease, and a lease holds no start token to read from `/proc` instead, as a
+ * Qwen Code record does. Windows has no `ps`. So on Linux and Windows, a wait in
+ * a lease whose pid went to another program stands until that program ends.
  *
  * Vibe not being installed costs nothing: when the session folder is
  * missing, the adapter says so and looks again only once a minute, with a
@@ -273,6 +324,8 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const scanMinMs = options.scanMinMs ?? SCAN_MIN_MS;
   const scanMaxMs = options.scanMaxMs ?? SCAN_MAX_MS;
+  const asksPs = (options.platform ?? process.platform) === "darwin";
+  const processCheck = asksPs ? createRecordProcessCheck(options.readProcessStarts, now) : null;
 
   const dirFrom: DirFrom = env[VIBE_SESSION_DIR_ENV]?.trim()
     ? "agent-lookout"
@@ -308,12 +361,21 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
    * was taken.
    */
   const untimedSince = new Map<string, number>();
+  /** Each session's wait as the last poll showed it. */
+  let waits = new Map<string, VibeWait>();
+  /**
+   * Each lease `ps` showed another program has, by `leaseMark`, kept while its
+   * process runs. A pid goes only to a program that starts later, so the answer
+   * stands, and such a lease is not held and not asked about again.
+   */
+  let ruledOut = new Set<string>();
 
   function watching(read: string): SourceFact[] {
     return [
       { label: "Sessions folder", value: storesName },
       { label: "Read", value: read },
       { label: "Open-sessions folder", value: leasesName },
+      ...processCheckFacts(asksPs, pollIntervalMs),
     ];
   }
 
@@ -477,15 +539,21 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
 
     const kept = new Set<string>();
     const journalFiles = new Set<string>();
-    const sessions: Session[] = [];
+    /** Each session to list, with the process a wait of its hangs on, if it has one. */
+    const listed: { input: MistralVibeSessionInput; waitsOn: RecordProcess | null }[] = [];
+    const stillRuledOut = new Set<string>();
     let tooNewSeen = false;
 
     for (const id of [...candidates].sort()) {
       const lease = found.supported ? found.held.get(id) : undefined;
+      const alive = lease === undefined || lease.pid === null ? null : isAlive(lease.pid);
+      const mark = lease === undefined ? null : leaseMark(id, lease.pid, lease.acquiredAt);
+      const leftBehind = alive === true && mark !== null && ruledOut.has(mark);
+      if (leftBehind) stillRuledOut.add(mark);
       const held = vibeLeaseHeld({
         leaseFolder: found.supported,
         locked: lease !== undefined,
-        alive: lease === undefined || lease.pid === null ? null : isAlive(lease.pid),
+        alive: leftBehind ? false : alive,
       });
       /** When a program that runs took the lease, when the lease says. */
       const acquiredAt = held === true ? (lease?.acquiredAt ?? null) : null;
@@ -515,6 +583,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
 
       let journalInfo: FileInfo | null = null;
       let newest: Newest = { kind: "beyond" };
+      let callbacks: VibeCallback[] = [];
       if (store.journal !== null) {
         const file = path.join(storesDir, id, ...store.journal.split("/"));
         try {
@@ -529,6 +598,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
           newest = lastNewest.get(id) ?? { kind: "beyond" };
           journalFiles.add(file);
         }
+        callbacks = openCallbacks(store.pending, journals.callbacks(file));
       }
 
       // Every record Vibe adds moves the segment's time, and every save moves `CURRENT`'s.
@@ -554,19 +624,54 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       const title =
         newest.kind === "state" ? newest.envelope.title : (store.snapshot?.title ?? null);
       if (store.tooNew) tooNewSeen = true;
-      sessions.push(
-        mistralVibeSession({
+      const shownHeld = justTaken ? false : held;
+      const wait = store.tooNew
+        ? null
+        : vibeWaitOf({
+            callbacks,
+            statusType: envelope?.statusType,
+            held: shownHeld,
+            leaseTakenAt: lease?.pid === null ? null : acquiredAt,
+            turnStartedAt: envelope?.turnStartedAt ?? null,
+          });
+      listed.push({
+        input: {
           sessionId: id,
           envelope,
           title,
           cwd: store.cwd,
-          held: justTaken ? false : held,
+          held: shownHeld,
           tooNew: store.tooNew,
+          wait,
           writtenAt: journalInfo?.mtimeMs,
           now: checkedAt,
-        }),
-      );
+        },
+        waitsOn:
+          wait === null || lease?.pid === null || lease?.pid === undefined
+            ? null
+            : { pid: lease.pid, startedAt: lease.acquiredAt },
+      });
     }
+
+    // On a Mac, a process that started more than a minute after its lease was
+    // taken was given the pid of a Vibe that crashed, and no program holds that
+    // session. Only a wait turns on this: it keeps the Mac awake for as long as
+    // it is listed, where a session left showing as working stops doing so.
+    const matches = await processCheck?.matches(listed.flatMap(({ waitsOn }) => waitsOn ?? []));
+    const shownWaits = new Map<string, VibeWait>();
+    const sessions: Session[] = listed.map(({ input, waitsOn }) => {
+      if (waitsOn !== null && matches?.get(waitsOn) === "different") {
+        stillRuledOut.add(leaseMark(input.sessionId, waitsOn.pid, waitsOn.startedAt));
+        return mistralVibeSession({ ...input, held: false, wait: null });
+      }
+      if (!input.wait) return mistralVibeSession(input);
+      const wait = continuedVibeWait(waits.get(input.sessionId), input.wait);
+      shownWaits.set(input.sessionId, wait);
+      return mistralVibeSession({ ...input, wait });
+    });
+    waits = shownWaits;
+    ruledOut = stillRuledOut;
+
     tracked = kept;
     stores.keepOnly(kept);
     journals.keepOnly(journalFiles);

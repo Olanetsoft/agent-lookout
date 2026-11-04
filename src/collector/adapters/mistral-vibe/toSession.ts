@@ -1,6 +1,7 @@
 import {
   mapMistralVibeStatus,
   type VibeHeld,
+  type VibeWait,
 } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
@@ -30,6 +31,8 @@ export interface MistralVibeSessionInput {
   held: VibeHeld;
   /** True when a newer Vibe than Agent Lookout knows wrote the store. */
   tooNew?: boolean;
+  /** What it waits for from the person, when it does (`vibeWaitOf`). */
+  wait?: VibeWait | null;
   /** The journal segment's modified time, as the `lstat` made this poll gave it. */
   writtenAt?: number;
   now: number;
@@ -38,33 +41,39 @@ export interface MistralVibeSessionInput {
 /**
  * One Mistral Vibe session in the shared model.
  *
- * - The status comes from the newest public state and the lease
- *   (`mapMistralVibeStatus`). It is never "needs-you" yet.
+ * - The status comes from the newest public state, the lease and whether it
+ *   waits for the person (`mapMistralVibeStatus`). It is "needs-you", with the
+ *   reason "permission" for an approval and "question" for a question, and it
+ *   never has a `waitingText`: what Vibe asks is never kept.
  * - The app is not known: the files do not say whether a session runs in the
  *   terminal, an editor or the desktop app.
  * - It is named by its title, else its folder's name, else its id. Never by
  *   the first thing the person asked, which Vibe keeps beside the title.
- * - The status time is when the newest turn began while it works, when it
- *   ended once it is idle or failed, and the state's last change once it is
- *   finished. An unknown status has no time.
+ * - The status time is when the newest turn began while it works, when the
+ *   wait began while it needs you, when the turn ended once it is idle or
+ *   failed, and the state's last change once it is finished. An unknown status
+ *   has no time.
  * - The last write is the journal segment's modified time, moved by every
  *   record Vibe adds, and by the new segment each save begins.
  * - There is no pid, no `alive`, no link and no Stop: the process that holds
  *   a lease can hold many sessions' leases.
  */
 export function mistralVibeSession(input: MistralVibeSessionInput): Session {
-  const { sessionId, envelope, held, now } = input;
+  const { sessionId, envelope, held, wait, now } = input;
   const id = `${SOURCE_ID}:${sessionId}`;
   const status = mapMistralVibeStatus({
     statusType: envelope?.statusType,
     held,
     tooNew: input.tooNew,
+    waiting: wait !== null && wait !== undefined,
   });
 
   const startedAt = plausibleTime(envelope?.createdAt ?? null, now);
   const updatedAt = plausibleTime(envelope?.updatedAt ?? null, now);
   let statusSince: number | null = null;
-  if (status === "working") {
+  if (status === "needs-you") {
+    statusSince = plausibleTime(wait?.since ?? null, now);
+  } else if (status === "working") {
     statusSince = plausibleTime(envelope?.turnStartedAt ?? null, now) ?? updatedAt;
   } else if (status === "idle" || status === "failed") {
     statusSince = plausibleTime(envelope?.turnCompletedAt ?? null, now) ?? updatedAt;
@@ -94,6 +103,7 @@ export function mistralVibeSession(input: MistralVibeSessionInput): Session {
     cwd,
     project,
     status,
+    ...(status === "needs-you" && wait ? { waitingReason: wait.reason } : {}),
     startedAt,
     statusSince,
     links: {},

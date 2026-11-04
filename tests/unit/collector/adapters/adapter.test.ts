@@ -389,7 +389,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(ANTIGRAVITY_APP_CAPABILITIES.stop.level).toBe("no");
   });
 
-  test("Mistral Vibe: no status or lease makes a session need you yet, and only a turn Vibe records as failed fails", () => {
+  test("Mistral Vibe: only a wait makes a session need you, and only a turn Vibe records as failed fails", () => {
     const types = ["idle", "running", "blocked", "failed", "archived", "something_else", undefined];
     const mapped = statuses(
       types.flatMap((statusType) =>
@@ -399,7 +399,10 @@ describe("each declaration agrees with what its adapter does", () => {
       ),
     );
     expect(mapped).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
-    expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(mapMistralVibeStatus({ statusType: "running", held: true, waiting: true })).toBe(
+      "needs-you",
+    );
+    expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("partly");
     expect(MISTRAL_VIBE_CAPABILITIES.failed.level).toBe("partly");
     expect(MISTRAL_VIBE_CAPABILITIES.finished.level).toBe("partly");
   });

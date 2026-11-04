@@ -1,8 +1,9 @@
 // The Mistral Vibe adapter, cut off from this machine, for the tests that
-// share it: the same file system held in memory that the Codex tests use, a
-// stand-in for asking the system whether a lease's pid runs, which counts each
-// time it is asked, and an adapter built from them with a clock the test
-// moves by hand. Nothing here touches a real file or asks about a real process.
+// share it: the same file system held in memory that the Codex tests use,
+// stand-ins for asking the system whether a lease's pid runs, which counts each
+// time it is asked, and when a process started, and an adapter built from them
+// with a clock the test moves by hand. Nothing here touches a real file or asks
+// about a real process.
 
 import {
   createMistralVibeAdapter,
@@ -40,7 +41,23 @@ export function standInPids(running: number[] = [LIVE_PID]) {
   };
 }
 
-/** An adapter that reads only the stand-in files. With nothing in `env` it looks in `~/.vibe/logs/session`. */
+/** A stand-in for `ps`: what it prints for a pid's start, by pid, and every run, with the pids it was asked about. */
+export function standInStarts(starts: Record<number, string> = {}) {
+  const runs: number[][] = [];
+  return {
+    async read(pids: readonly number[]) {
+      runs.push([...pids]);
+      const known = pids.flatMap((pid): [number, string][] => {
+        const start = starts[pid];
+        return start === undefined ? [] : [[pid, start]];
+      });
+      return new Map(known);
+    },
+    runs,
+  };
+}
+
+/** An adapter that reads only the stand-in files, on a Mac, the one system `ps` is asked on. With nothing in `env` it looks in `~/.vibe/logs/session`. */
 export function vibeAdapterFor(
   files: MemoryFiles,
   pids = standInPids(),
@@ -52,6 +69,8 @@ export function vibeAdapterFor(
     now: () => NOW,
     io: files.io,
     isAlive: pids.isAlive,
+    readProcessStarts: standInStarts().read,
+    platform: "darwin",
     ...options,
   });
 }
@@ -80,12 +99,22 @@ export function releaseLease(files: MemoryFiles, id: string, dir = SESSION_DIR) 
   files.remove(`${dir}/active/${id}.lock.json`);
 }
 
-/** The three facts, in the order the adapter gives them, for a session folder written as people see it. */
+/** The command that tells a lease's process from another program, and how often it runs, as a Mac's card gives them. */
+export const MAC_PROCESS_CHECK = [
+  { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+  {
+    label: "Process check run",
+    value: "every 30 seconds while a session waits, and sooner when another starts to wait",
+  },
+];
+
+/** The facts of a Mac's card, in the order the adapter gives them, for a session folder written as people see it. */
 export function watching(dir: string, read: string) {
   return [
     { label: "Sessions folder", value: `${dir}/unified` },
     { label: "Read", value: read },
     { label: "Open-sessions folder", value: `${dir}/active` },
+    ...MAC_PROCESS_CHECK,
   ];
 }
 

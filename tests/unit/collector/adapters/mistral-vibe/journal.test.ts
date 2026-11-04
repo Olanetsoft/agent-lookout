@@ -2,12 +2,15 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   createJournalReader,
+  readCallbackLine,
   readJournalLine,
   recordTypeOf,
   TAIL_LIMIT_BYTES,
   type Newest,
 } from "@collector/adapters/mistral-vibe/journal";
 import {
+  callbackRegistered,
+  callbackResolved,
   delta,
   NOW,
   MINUTE,
@@ -328,5 +331,249 @@ describe("reading a segment", () => {
     files.append(FILE, delta(6, idle), { mtimeMs: NOW + 1 });
     await readNow(files, reader);
     expect(files.openHandles()).toBe(0);
+  });
+});
+
+describe("the callbacks in a segment", () => {
+  const ID_A = "approval-call-1";
+  const ID_Q = "user-input-call-2";
+  const OPENED = { id: ID_A, kind: "approval", createdAt: NOW - 30_000 };
+  const ASKED = { id: ID_Q, kind: "user_input", createdAt: NOW - 20_000 };
+  const open = (fold: { open: Map<string, unknown> }) => [...fold.open.values()];
+
+  /** What a first read of the segment, or the next read by `reader`, says of callbacks. */
+  async function foldOf(files: MemoryFiles, reader = createJournalReader(files.io)) {
+    await readNow(files, reader);
+    return reader.callbacks(FILE);
+  }
+
+  test("a line says which callback it opens or settles, and any other line says nothing", () => {
+    expect(readCallbackLine(line(callbackRegistered(6, OPENED)))).toEqual({ opened: OPENED });
+    expect(readCallbackLine(line(callbackResolved(7, ID_A)))).toEqual({ settled: ID_A });
+    expect(readCallbackLine(line(delta(5, running)))).toBeNull();
+    expect(readCallbackLine(line(otherRecord("action_intent", 6)))).toBeNull();
+  });
+
+  test("a line whose type says callback but whose start does not read as one says nothing", () => {
+    const type = '"sequence":6,"type":"callback_registered"}';
+    expect(readCallbackLine(line(`{"payload":null,${type}`))).toBeNull();
+    expect(readCallbackLine(line(`{"payload":{"callback_id":"a",${type}`))).toBeNull();
+    expect(readCallbackLine(line(`not a record,${type}`))).toBeNull();
+  });
+
+  test("the first read finds a callback opened before the newest state, with a turn in flight", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [delta(5, running), callbackRegistered(6, OPENED), delta(7, running)].join(""),
+    );
+    const fold = await foldOf(files);
+    expect(open(fold)).toEqual([OPENED]);
+    expect(fold.whole).toBe(true);
+  });
+
+  test("the first read takes a callback settled in the segment as closed, and keeps one opened before it", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [
+        delta(5, running),
+        callbackRegistered(6, OPENED),
+        callbackResolved(7, ID_A),
+        callbackRegistered(8, ASKED),
+        callbackResolved(9, "approval-from-a-save"),
+        delta(10, running),
+      ].join(""),
+    );
+    const fold = await foldOf(files);
+    expect(open(fold)).toEqual([ASKED]);
+    expect(fold.settled).toEqual(new Set(["approval-from-a-save"]));
+  });
+
+  test("the first read stops at a state no callback can hold, so it reads no older line", async () => {
+    const files = memoryFiles();
+    const filler = otherRecord("action_result", 7).replace(PRIVATE_WORDS, "x".repeat(512 * 1024));
+    files.write(FILE, [callbackRegistered(5, OPENED), filler, filler, delta(9, idle)].join(""));
+    const fold = await foldOf(files);
+    expect(open(fold)).toEqual([]);
+    expect(fold.whole).toBe(false);
+    expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThan(512 * 1024);
+  });
+
+  test.each([
+    ["one it does not read", otherRecord("projection_advanced", 9)],
+    ["a broken one", delta(9, idle).replace('"session":{', '"session":{oops')],
+  ])("the first read stops at a state that is %s, too", async (_name, last) => {
+    const files = memoryFiles();
+    const filler = otherRecord("action_result", 7).replace(PRIVATE_WORDS, "x".repeat(512 * 1024));
+    files.write(FILE, [callbackRegistered(5, OPENED), filler, filler, last].join(""));
+    const fold = await foldOf(files);
+    expect(open(fold)).toEqual([]);
+    expect(fold.whole).toBe(false);
+    expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThan(512 * 1024);
+  });
+
+  test("a segment whose first read stopped short still takes in what is added after it", async () => {
+    const files = memoryFiles();
+    files.write(FILE, [delta(5, running), delta(6, idle)].join(""));
+    const reader = createJournalReader(files.io);
+    expect((await foldOf(files, reader)).whole).toBe(false);
+
+    files.append(FILE, `${delta(7, running)}${callbackRegistered(8, OPENED)}`, {
+      mtimeMs: NOW + 1,
+    });
+    expect(open(await foldOf(files, reader))).toEqual([OPENED]);
+  });
+
+  test("with a turn in flight, the first read looks no further back than the tail for its callbacks", async () => {
+    const files = memoryFiles();
+    const filler = otherRecord("action_result", 7).replace(PRIVATE_WORDS, "x".repeat(64 * 1024));
+    const lines = [callbackRegistered(5, OPENED), delta(6, running)];
+    while (lines.join("").length < TAIL_LIMIT_BYTES + 512 * 1024) lines.push(filler);
+    files.write(FILE, `${lines.join("")}${delta(99, running)}`);
+    const reader = createJournalReader(files.io);
+    expect(statusOf(await readNow(files, reader))).toBe("state:running");
+    const fold = reader.callbacks(FILE);
+    expect(open(fold)).toEqual([]);
+    expect(fold.whole).toBe(false);
+    expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThanOrEqual(
+      TAIL_LIMIT_BYTES,
+    );
+
+    files.append(FILE, callbackRegistered(100, ASKED), { mtimeMs: NOW + 1 });
+    expect(open(await foldOf(files, reader))).toEqual([ASKED]);
+  });
+
+  test("later reads take in only what was added", async () => {
+    const files = memoryFiles();
+    files.write(FILE, delta(5, running));
+    const reader = createJournalReader(files.io);
+    expect(open(await foldOf(files, reader))).toEqual([]);
+
+    files.append(FILE, callbackRegistered(6, OPENED), { mtimeMs: NOW + 1 });
+    expect(open(await foldOf(files, reader))).toEqual([OPENED]);
+
+    files.append(FILE, callbackRegistered(7, ASKED), { mtimeMs: NOW + 2 });
+    expect(open(await foldOf(files, reader))).toEqual([OPENED, ASKED]);
+
+    files.append(FILE, callbackResolved(8, ID_A), { mtimeMs: NOW + 3 });
+    expect(open(await foldOf(files, reader))).toEqual([ASKED]);
+
+    files.append(FILE, callbackResolved(9, "approval-from-a-save"), { mtimeMs: NOW + 4 });
+    const fold = await foldOf(files, reader);
+    expect(fold.settled).toEqual(new Set(["approval-from-a-save"]));
+    expect(fold.whole).toBe(true);
+  });
+
+  test("a callback's line Vibe has not ended yet is left for the next read", async () => {
+    const files = memoryFiles();
+    const whole = callbackRegistered(6, OPENED);
+    files.write(FILE, `${delta(5, running)}${whole.slice(0, 80)}`);
+    const reader = createJournalReader(files.io);
+    expect(open(await foldOf(files, reader))).toEqual([]);
+    files.append(FILE, whole.slice(80), { mtimeMs: NOW + 1 });
+    expect(open(await foldOf(files, reader))).toEqual([OPENED]);
+  });
+
+  test("a broken line among them is passed over", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [
+        delta(5, running),
+        "this is not a record\n",
+        '{"payload":{"callback_id":"cut-off\n',
+        '{"payload":null,"sequence":6,"type":"callback_resolved"}\n',
+        callbackRegistered(7, OPENED),
+      ].join(""),
+    );
+    expect(open(await foldOf(files))).toEqual([OPENED]);
+  });
+
+  test("a long record is read from its first bytes, whichever read comes to it", async () => {
+    const long = callbackRegistered(6, OPENED).replace(PRIVATE_WORDS, "x".repeat(2 * 1024 * 1024));
+    const first = memoryFiles();
+    first.write(FILE, `${delta(5, running)}${long}`);
+    expect(open(await foldOf(first))).toEqual([OPENED]);
+
+    const later = memoryFiles();
+    later.write(FILE, delta(5, running));
+    const reader = createJournalReader(later.io);
+    await foldOf(later, reader);
+    later.append(FILE, long, { mtimeMs: NOW + 1 });
+    expect(open(await foldOf(later, reader))).toEqual([OPENED]);
+  });
+
+  test("a callback's line longer than the tail, whose start is never read, is left out", async () => {
+    const files = memoryFiles();
+    const huge = callbackRegistered(6, OPENED).replace(PRIVATE_WORDS, "y".repeat(9 * 1024 * 1024));
+    files.write(FILE, `${delta(5, running)}${huge}`);
+    const fold = await foldOf(files);
+    expect(open(fold)).toEqual([]);
+    expect(fold.whole).toBe(false);
+    expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThanOrEqual(
+      TAIL_LIMIT_BYTES,
+    );
+  });
+
+  test("a tool's arguments that read as a record where the tail begins are not taken for one", async () => {
+    const lineWith = (pad: number) =>
+      record("callback_registered", 6, {
+        callback_id: ID_A,
+        kind: "approval",
+        routing: {
+          callbackId: ID_A,
+          createdAt: NOW - 30_000,
+          detail: {
+            effect: {
+              input: {
+                payload: {
+                  callback_id: "made-up",
+                  kind: "approval",
+                  routing: { callbackId: "made-up", createdAt: NOW, text: "y".repeat(pad) },
+                },
+              },
+            },
+          },
+        },
+      });
+    const fromMadeUp = (text: string) =>
+      text.length - text.indexOf('{"payload":{"callback_id":"made');
+    const huge = lineWith(TAIL_LIMIT_BYTES - fromMadeUp(lineWith(0)));
+    expect(fromMadeUp(huge)).toBe(TAIL_LIMIT_BYTES);
+
+    const files = memoryFiles();
+    files.write(FILE, `${delta(5, running)}${huge}`);
+    expect(open(await foldOf(files))).toEqual([]);
+  });
+
+  test("a segment rewritten smaller is read afresh", async () => {
+    const files = memoryFiles();
+    files.write(FILE, [delta(5, running), callbackRegistered(6, OPENED)].join(""));
+    const reader = createJournalReader(files.io);
+    expect(open(await foldOf(files, reader))).toEqual([OPENED]);
+    files.rewrite(FILE, delta(5, running));
+    expect(open(await foldOf(files, reader))).toEqual([]);
+  });
+
+  test("a segment not read yet says nothing", () => {
+    const fold = createJournalReader(memoryFiles().io).callbacks(FILE);
+    expect(open(fold)).toEqual([]);
+    expect(fold.whole).toBe(false);
+  });
+
+  test("nothing of what a callback says is kept", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [
+        delta(5, running),
+        callbackRegistered(6, OPENED),
+        callbackRegistered(7, ASKED),
+        callbackResolved(8, "approval-from-a-save"),
+      ].join(""),
+    );
+    const fold = await foldOf(files);
+    expect(JSON.stringify([open(fold), [...fold.settled]])).not.toContain(PRIVATE_WORDS);
   });
 });

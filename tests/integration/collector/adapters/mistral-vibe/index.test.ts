@@ -21,6 +21,8 @@ import {
 } from "@collector/adapters/mistral-vibe/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  callbackRegistered,
+  callbackResolved,
   delta,
   document,
   HOME,
@@ -38,10 +40,10 @@ import {
 } from "@tests/fixtures/mistralVibe";
 import { tempDir } from "@tests/support/node/tempFiles";
 
-// The Mistral Vibe adapter on a real folder laid out as Vibe 2.26.1's source
-// lays out its own, with real leases: one held by this test's own process,
-// one left behind by a process that has ended. Every file is written from the
-// invented fixtures.
+// The Mistral Vibe adapter on a real folder laid out as Vibe's source lays out
+// its own, with real leases: one held by this test's own process, one left
+// behind by a process that has ended. Every file is written from the invented
+// fixtures.
 
 const WORKING = sessionId("a1");
 const LEFT_BEHIND = sessionId("b1");
@@ -375,3 +377,89 @@ describe.skipIf(process.platform === "win32" || !runs("python3"))(
     });
   },
 );
+
+describe("a Mistral Vibe session waiting for you, on a real folder", () => {
+  const ASKING = sessionId("e1");
+  const KILLED = sessionId("e2");
+  const CALLBACK = "approval-call-1";
+
+  /** A session this process holds and one a process that has ended held, each asked for an approval. */
+  async function waitingDir() {
+    const dir = await tempDir();
+    const asked = Date.now() - 1_000;
+    const lines = (id: string) => [
+      delta(5, running(id, "demo-project wait")),
+      callbackRegistered(6, { id: CALLBACK, createdAt: asked }),
+    ];
+    await writeAll(dir, {
+      ...storeFiles({ id: ASKING, minor: 10, journal: lines(ASKING) }),
+      ...storeFiles({ id: KILLED, minor: 10, journal: lines(KILLED) }),
+      [`active/${ASKING}.lock`]: "",
+      [`active/${ASKING}.lock.json`]: leaseFile(ASKING, process.pid, Date.now() - MINUTE),
+      [`active/${KILLED}.lock`]: "",
+      [`active/${KILLED}.lock.json`]: leaseFile(KILLED, endedPid(), Date.now() - MINUTE),
+    });
+    return { dir, asked };
+  }
+
+  test("needs you while a lease's process runs, is finished for a killed Vibe, and works on once answered", async () => {
+    const { dir, asked } = await waitingDir();
+    const adapter = adapterFor(dir);
+    const { sessions } = await adapter.poll();
+    expect(sessions.find((each) => each.id === `mistral-vibe:${ASKING}`)).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: asked,
+    });
+    expect(sessions.find((each) => each.id === `mistral-vibe:${KILLED}`)).toMatchObject({
+      status: "finished",
+    });
+    expect(JSON.stringify(sessions)).not.toContain(PRIVATE_WORDS);
+
+    await appendFile(
+      path.join(dir, ...journalPath(ASKING).split("/")),
+      callbackResolved(7, CALLBACK),
+    );
+    const { sessions: after } = await adapter.poll();
+    const answered = after.find((each) => each.id === `mistral-vibe:${ASKING}`);
+    expect(answered?.status).toBe("working");
+    expect(answered).not.toHaveProperty("waitingReason");
+  });
+
+  // Told it is on a Mac, so that a Linux computer with a `ps` runs this too.
+  test.skipIf(process.platform === "win32")(
+    "on a Mac, is finished when the real `ps` says the lease's process ID went to another program",
+    async () => {
+      const dir = await tempDir();
+      const startedAt = Date.now() - process.uptime() * 1_000;
+      await writeAll(dir, {
+        ...storeFiles({
+          id: ASKING,
+          minor: 10,
+          journal: [
+            delta(5, running(ASKING, "demo-project wait")),
+            callbackRegistered(6, { id: CALLBACK, createdAt: Date.now() - 1_000 }),
+          ],
+        }),
+        [`active/${ASKING}.lock`]: "",
+        [`active/${ASKING}.lock.json`]: leaseFile(ASKING, process.pid, startedAt - 10 * MINUTE),
+      });
+      const { sessions } = await adapterFor(dir, { platform: "darwin" }).poll();
+      expect(sessions[0]?.status).toBe("finished");
+      expect(sessions[0]).not.toHaveProperty("waitingReason");
+    },
+  );
+
+  test("changes nothing in Vibe's folder and opens no lock", async () => {
+    const { dir } = await waitingDir();
+    const before = await snapshotOf(dir);
+    const { io, calls } = recordingIo();
+    await adapterFor(dir, { io }).poll();
+    expect(await snapshotOf(dir)).toEqual(before);
+    const opened = calls.filter(({ method }) => method === "openRegular").map((each) => each.path);
+    expect(opened.length).toBeGreaterThan(0);
+    expect(opened.some((each) => each.endsWith(".lock"))).toBe(false);
+    expect(opened.some((each) => each.endsWith(".registry"))).toBe(false);
+    expect(opened.some((each) => each.endsWith("checkpoint.json"))).toBe(false);
+  });
+});

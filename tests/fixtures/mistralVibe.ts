@@ -1,7 +1,7 @@
 // Test fixtures only. Every id, time and word here is invented and generic.
-// The files follow the layout Mistral Vibe 2.26.1's source writes, as written
-// up in docs/adapters/mistral-vibe.md: a store for each session under
-// `unified/<id>/`, with `CURRENT`, one generation's `manifest.json`,
+// The files follow the layout the source of Mistral Vibe 2.26.1 and 3.0.4
+// writes, as written up in docs/adapters/mistral-vibe.md: a store for each
+// session under `unified/<id>/`, with `CURRENT`, one generation's `manifest.json`,
 // `projection-state.json` and `runtime-state.json`, and a journal segment,
 // and a lease for each open session under `active/`. Every document is JSON
 // as Vibe writes it, with its keys sorted, no spaces and a newline at the end.
@@ -157,6 +157,8 @@ export interface StoreFields {
   storeFormat?: string;
   /** Journal lines, each with its newline. Defaults to none: an empty segment. */
   journal?: string[];
+  /** Callbacks the generation saved, beside the settled one every store here has. */
+  callbacks?: SavedCallback[];
 }
 
 /** The path of a session's store, relative to the session folder. */
@@ -222,7 +224,13 @@ export function projectionState(id: string, state: StateFields, sequence = 4): s
 /** A generation's runtime state, carrying a request and an import in words the adapter must never keep. */
 export function runtimeState(
   id: string,
-  fields: { cwd?: string | null; kind?: string; lifecycle?: string; sequence?: number } = {},
+  fields: {
+    cwd?: string | null;
+    kind?: string;
+    lifecycle?: string;
+    sequence?: number;
+    callbacks?: SavedCallback[];
+  } = {},
 ): string {
   const kind = fields.kind ?? "root";
   return document({
@@ -258,6 +266,7 @@ export function runtimeState(
         state: "resolved",
         routing: { detail: { effect: { input: { command: PRIVATE_WORDS } } } },
       },
+      ...(fields.callbacks ?? []),
     ],
     provider_operations: [],
     processes: [],
@@ -296,6 +305,7 @@ export function storeFiles(fields: StoreFields): Record<string, string> {
       kind: fields.kind,
       lifecycle: fields.lifecycle,
       sequence,
+      callbacks: fields.callbacks,
     }),
     [`${generation}/checkpoint.json`]: document({ context: { messages: [PRIVATE_WORDS] } }),
     [`${root}/chunks/${digest(7)}.json`]: document([{ id: "entry-1", text: PRIVATE_WORDS }]),
@@ -334,6 +344,96 @@ export function delta(
 /** A record of another kind, carrying words the adapter must never keep. */
 export function otherRecord(type: string, sequence: number): string {
   return record(type, sequence, { action_id: `action-${sequence}`, request: PRIVATE_WORDS });
+}
+
+export interface CallbackFields {
+  id: string;
+  /** Defaults to `approval`. */
+  kind?: string;
+  createdAt: number;
+}
+
+/**
+ * What Vibe keeps of a callback, as `_approval_callback` and
+ * `_user_input_callback` build one: what a tool was asked to run, why, and the
+ * question, in words the adapter must never keep.
+ */
+export function callbackRouting(fields: CallbackFields): Record<string, unknown> {
+  const { id, createdAt } = fields;
+  const kind = fields.kind ?? "approval";
+  return {
+    type: "callback",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: "turn-1",
+    createdAt,
+    updatedAt: createdAt,
+    generationStatus: "in_progress",
+    relatedEntryId: "effect-action-1",
+    inputEntryId: "entry-1",
+    callbackId: id,
+    title: kind === "approval" ? "Approve bash" : "User input required",
+    detail:
+      kind === "approval"
+        ? {
+            kind,
+            effect: {
+              kind: "tool",
+              toolName: "bash",
+              input: { command: PRIVATE_WORDS },
+              display: { summary: "bash", message: PRIVATE_WORDS, statusText: PRIVATE_WORDS },
+            },
+            requiredPermissions: [],
+            choices: [
+              "approve",
+              "approve_for_session",
+              "approve_permanently",
+              "deny",
+              "cancel_turn",
+            ],
+            relatedEntryId: "effect-action-1",
+            reason: PRIVATE_WORDS,
+          }
+        : { kind, request: { questions: [PRIVATE_WORDS] }, relatedEntryId: "call-1" },
+    state: { status: "open" },
+  };
+}
+
+/** A `callback_registered` record: Vibe asks for an approval or an answer. */
+export function callbackRegistered(sequence: number, fields: CallbackFields): string {
+  return record("callback_registered", sequence, {
+    callback_id: fields.id,
+    kind: fields.kind ?? "approval",
+    routing: callbackRouting(fields),
+  });
+}
+
+/**
+ * A `callback_resolved` record. An answer, and an approval or a denial, are
+ * `resolved`, with the person's words in the result. A callback closed by a
+ * stopped turn, or an error sent back, is `failed`.
+ */
+export function callbackResolved(
+  sequence: number,
+  id: string,
+  state: "resolved" | "failed" = "resolved",
+  result: unknown = { callback_id: id, output: { result: PRIVATE_WORDS } },
+): string {
+  return record("callback_resolved", sequence, { callback_id: id, result, state });
+}
+
+/** A callback as a generation's `runtime-state.json` keeps it. */
+export type SavedCallback = Record<string, unknown>;
+
+/** A callback a generation saved as still pending. */
+export function savedCallback(fields: CallbackFields): SavedCallback {
+  return {
+    callback_id: fields.id,
+    kind: fields.kind ?? "approval",
+    result: null,
+    routing: callbackRouting(fields),
+    state: "pending",
+  };
 }
 
 /** A lease's `<id>.lock.json`, as Vibe writes it. */

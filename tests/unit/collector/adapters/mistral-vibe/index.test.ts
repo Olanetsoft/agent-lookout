@@ -18,6 +18,7 @@ import {
   WITHOUT_LEASES_NOTE,
 } from "@collector/adapters/mistral-vibe/index";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { keepsAwake } from "@core/keep-awake/keepAwakeRule";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
   CWD,
@@ -32,6 +33,8 @@ import {
   SECOND,
   SESSION_DIR,
   SUBAGENT_ID,
+  callbackRegistered,
+  callbackResolved,
   current,
   delta,
   journalPath,
@@ -39,6 +42,7 @@ import {
   otherRecord,
   record,
   publicState,
+  savedCallback,
   sessionId,
   storePath,
   type StateFields,
@@ -46,9 +50,11 @@ import {
 import {
   handClock,
   healthy,
+  MAC_PROCESS_CHECK,
   memoryFiles,
   releaseLease,
   standInPids,
+  standInStarts,
   vibeAdapterFor,
   watching,
   writeLease,
@@ -383,7 +389,7 @@ describe("listing sessions", () => {
 
   test("a store a newer Vibe wrote is shown with no status, and the card says why", async () => {
     const files = vibeFiles();
-    writeStore(files, { id: A, minor: 9, state: running(A) });
+    writeStore(files, { id: A, minor: 11, state: running(A) });
     writeLease(files, A);
     const { health, sessions } = await vibeAdapterFor(files).poll();
     expect(sessions[0]).toMatchObject({ status: "unknown", name: "demo-project refactor" });
@@ -828,10 +834,659 @@ describe("when something goes wrong", () => {
   });
 });
 
+test("says what tells a lease's process from another program's, by what the system has", async () => {
+  const factsOn = async (platform: NodeJS.Platform) => {
+    const { health } = await vibeAdapterFor(vibeFiles(), standInPids(), { platform }).poll();
+    return health.watching?.filter((fact) => fact.label.startsWith("Process check"));
+  };
+  expect(await factsOn("darwin")).toEqual(MAC_PROCESS_CHECK);
+  for (const platform of ["linux", "win32"] as const) {
+    expect(await factsOn(platform)).toEqual([
+      { label: "Process check", value: "signal 0 alone, every 2 seconds" },
+    ]);
+  }
+});
+
 test("declares what it can report, the same on every poll", async () => {
   const adapter = vibeAdapterFor(vibeFiles());
   expect(adapter.capabilities).toBe(MISTRAL_VIBE_CAPABILITIES);
   expect(adapter.lookingIn).toBe("Looking for Mistral Vibe sessions in ~/.vibe/logs/session.");
-  expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("no");
+  expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("partly");
   expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("no");
+});
+
+describe("waiting for the person", () => {
+  const ASKED = NOW - MINUTE;
+  const APPROVAL = "approval-call-1";
+  const QUESTION = "user-input-call-2";
+
+  const approval = (sequence: number, createdAt = ASKED, id = APPROVAL) =>
+    callbackRegistered(sequence, { id, createdAt });
+  const question = (sequence: number, createdAt = ASKED, id = QUESTION) =>
+    callbackRegistered(sequence, { id, kind: "user_input", createdAt });
+
+  /** A session with a turn in flight and these lines after it, held by a program that runs. */
+  function sessionWith(...lines: string[]) {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), journal: [delta(5, running(A)), ...lines] });
+    writeLease(files, A);
+    return files;
+  }
+
+  const add = (files: ReturnType<typeof memoryFiles>, line: string, at = NOW + SECOND) =>
+    files.append(`${SESSION_DIR}/${journalPath(A)}`, line, { mtimeMs: at });
+
+  test("an approval shows as needing you for permission, from when Vibe asked", async () => {
+    const { sessions } = await vibeAdapterFor(sessionWith(approval(6))).poll();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: ASKED,
+    });
+  });
+
+  test("a question shows as needing you for an answer, from when Vibe asked", async () => {
+    const { sessions } = await vibeAdapterFor(sessionWith(question(6))).poll();
+    expect(sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: ASKED,
+    });
+  });
+
+  test("a session idle when first read, which then starts a turn and asks, needs you", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      state: idle(A),
+      journal: [delta(5, running(A)), delta(6, idle(A))],
+    });
+    writeLease(files, A);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
+    add(
+      files,
+      delta(7, { ...running(A), turn: { status: "in_progress", startedAt: NOW - 2 * MINUTE } }),
+    );
+    add(files, approval(8), NOW + 2 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: ASKED,
+    });
+  });
+
+  test("an ask in a lease's first 30 seconds shows at once", async () => {
+    const files = vibeFiles();
+    const state = { ...running(A), turn: { status: "in_progress", startedAt: NOW - 4 * SECOND } };
+    writeStore(files, {
+      id: A,
+      state: idle(A),
+      journal: [delta(5, state), approval(6, NOW - 2 * SECOND)],
+    });
+    takeLease(files, A, NOW - 5 * SECOND);
+    expect((await vibeAdapterFor(files).poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: NOW - 2 * SECOND,
+    });
+  });
+
+  test("a store Vibe 3.0.4 wrote, of minor 10, shows the same", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      minor: 10,
+      state: idle(A),
+      journal: [delta(5, running(A)), approval(6)],
+    });
+    writeLease(files, A);
+    const { health, sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]).toMatchObject({ status: "needs-you", waitingReason: "permission" });
+    expect(health.detail).toBe(healthy());
+  });
+
+  describe.each([
+    ["an approval", approval, APPROVAL],
+    ["a question", question, QUESTION],
+  ])("%s", (_name, ask, id) => {
+    const interrupted: StateFields = {
+      ...idle(A),
+      turn: { status: "interrupted", startedAt: NOW - 5 * MINUTE, completedAt: NOW },
+    };
+
+    test("answered: goes back to working, from when its turn began", async () => {
+      const files = sessionWith(ask(6));
+      const adapter = vibeAdapterFor(files);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      add(files, callbackResolved(7, id));
+      const { sessions } = await adapter.poll();
+      expect(sessions[0]).toMatchObject({ status: "working", statusSince: NOW - 5 * MINUTE });
+      expect(sessions[0]).not.toHaveProperty("waitingReason");
+    });
+
+    test("declined: the wait ends, and the turn goes on", async () => {
+      const files = sessionWith(ask(6));
+      const adapter = vibeAdapterFor(files);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      // Vibe records a denied approval as it does an approval, with the decision
+      // in the result, and a question refused with an error as failed.
+      const declined =
+        id === APPROVAL
+          ? callbackResolved(7, id, "resolved", { output: { decision: { type: "deny" } } })
+          : callbackResolved(7, id, "failed", { error: { message: PRIVATE_WORDS } });
+      add(files, declined);
+      const { sessions } = await adapter.poll();
+      expect(sessions[0]).toMatchObject({ status: "working", statusSince: NOW - 5 * MINUTE });
+      expect(sessions[0]).not.toHaveProperty("waitingReason");
+    });
+
+    test("stopped: Vibe closes the callback, then the turn", async () => {
+      const files = sessionWith(ask(6));
+      const adapter = vibeAdapterFor(files);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      add(
+        files,
+        callbackResolved(7, id, "failed", {
+          code: "callback_closed",
+          message: "Turn interrupted",
+        }),
+      );
+      add(files, delta(8, interrupted), NOW + 2 * SECOND);
+      const { sessions } = await adapter.poll();
+      expect(sessions[0]).toMatchObject({ status: "idle", statusSince: NOW });
+      expect(sessions[0]).not.toHaveProperty("waitingReason");
+    });
+
+    test("stopped, with only the callback's record read so far: the wait is over already", async () => {
+      const files = sessionWith(ask(6));
+      const adapter = vibeAdapterFor(files);
+      await adapter.poll();
+      add(files, callbackResolved(7, id, "failed", { code: "callback_closed", message: "" }));
+      expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    });
+  });
+
+  test("two open at once: the reason is the newest's, and the time stands until the last is settled", async () => {
+    const files = sessionWith(approval(6, ASKED), question(7, ASKED + 3 * SECOND));
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: ASKED,
+    });
+    add(files, callbackResolved(8, APPROVAL));
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: ASKED,
+    });
+    add(files, callbackResolved(9, QUESTION), NOW + 2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+  });
+
+  test("a new ask right after the last was answered is a new wait, from when Vibe asked", async () => {
+    const files = sessionWith(approval(6, ASKED));
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.statusSince).toBe(ASKED);
+    add(files, callbackResolved(7, APPROVAL));
+    add(files, question(8, ASKED + 30 * SECOND), NOW + 2 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: ASKED + 30 * SECOND,
+    });
+  });
+
+  test("the status time does not move while the wait stands, whatever Vibe writes", async () => {
+    const files = sessionWith(approval(6));
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    const since: (number | null | undefined)[] = [];
+    for (const line of [
+      otherRecord("action_result", 7),
+      delta(8, { ...running(A), title: "new" }),
+    ]) {
+      since.push((await adapter.poll()).sessions[0]?.statusSince);
+      clock.advance(5 * SECOND);
+      add(files, line, clock.now());
+    }
+    since.push((await adapter.poll()).sessions[0]?.statusSince);
+    expect(since).toEqual([ASKED, ASKED, ASKED]);
+  });
+
+  test("a store too new to read shows no wait, and `ps` is not asked", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      minor: 11,
+      state: idle(A),
+      journal: [delta(5, running(A)), approval(6)],
+    });
+    writeLease(files, A);
+    const ps = standInStarts();
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(sessions[0]?.status).toBe("unknown");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("a wait outlasts a save: Vibe carries it into the next generation, whose segment settles it", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      sequence: 9,
+      state: running(A),
+      callbacks: [savedCallback({ id: APPROVAL, createdAt: ASKED })],
+    });
+    writeLease(files, A);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: ASKED,
+    });
+    files.append(`${SESSION_DIR}/${journalPath(A, 9)}`, callbackResolved(10, APPROVAL), {
+      mtimeMs: NOW + SECOND,
+    });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+  });
+
+  test("a wait a poll saw stands through a save, which tells nothing new", async () => {
+    const files = sessionWith();
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const told: string[] = [];
+    const pollOnce = async () => {
+      const result = await adapter.poll();
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+      return result.sessions[0];
+    };
+    await pollOnce();
+    add(files, approval(6), clock.now());
+    expect(await pollOnce()).toMatchObject({ status: "needs-you", statusSince: ASKED });
+    files.rewrite(`${SESSION_DIR}/${journalPath(A)}`, "", { mtimeMs: clock.now() });
+    writeStore(files, {
+      id: A,
+      sequence: 9,
+      state: running(A),
+      callbacks: [savedCallback({ id: APPROVAL, createdAt: ASKED })],
+    });
+    expect(await pollOnce()).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: ASKED,
+    });
+    files.append(`${SESSION_DIR}/${journalPath(A, 9)}`, callbackResolved(10, APPROVAL), {
+      mtimeMs: clock.now(),
+    });
+    expect((await pollOnce())?.status).toBe("working");
+    expect(told).toEqual(["needs-you"]);
+  });
+
+  test("a killed Vibe's wait does not show: the session is finished, and does not keep the Mac awake", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), journal: [delta(5, running(A)), approval(6)] });
+    writeLease(files, A, GONE_PID);
+    const { sessions } = await vibeAdapterFor(files, standInPids([LIVE_PID])).poll();
+    expect(sessions[0]?.status).toBe("finished");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+    expect(keepsAwake(sessions[0]!, NOW)).toBe(false);
+  });
+
+  test("a Vibe killed while the page watches: the wait ends with its process", async () => {
+    const files = sessionWith(question(6));
+    const pids = standInPids([LIVE_PID]);
+    const adapter = vibeAdapterFor(files, pids);
+    const { sessions: before } = await adapter.poll();
+    expect(before[0]?.status).toBe("needs-you");
+    expect(keepsAwake(before[0]!, NOW)).toBe(true);
+
+    pids.set([]);
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]?.status).toBe("finished");
+    expect(keepsAwake(sessions[0]!, NOW)).toBe(false);
+  });
+
+  test("on a Mac, a wait in a lease whose process ID went to another program does not show", async () => {
+    const files = sessionWith(question(6));
+    // The lease was taken at 11:00 and the process with its ID started at 11:30.
+    const ps = standInStarts({ [LIVE_PID]: "Thu Oct  1 11:30:00 2026" });
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(sessions[0]?.status).toBe("finished");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+    expect(keepsAwake(sessions[0]!, NOW)).toBe(false);
+  });
+
+  test.each(["linux", "win32"] as const)(
+    "on %s `ps` is not asked, so a clock set forward leaves a wait standing, and a lease whose process ID went to another program too",
+    async (platform) => {
+      const files = sessionWith(question(6));
+      // What Linux's `ps` prints for a Vibe that took this lease as it started,
+      // at 11:00, once the clock is set 10 minutes on. Another program with the
+      // process ID prints the same.
+      const ps = standInStarts({ [LIVE_PID]: "Thu Oct  1 11:10:00 2026" });
+      const { sessions } = await vibeAdapterFor(files, standInPids(), {
+        platform,
+        readProcessStarts: ps.read,
+      }).poll();
+      expect(sessions[0]).toMatchObject({ status: "needs-you", waitingReason: "question" });
+      expect(keepsAwake(sessions[0]!, NOW)).toBe(true);
+      expect(ps.runs).toEqual([]);
+    },
+  );
+
+  test("`ps` is asked once about a lease another program has, which leaves the list as any finished session does", async () => {
+    const files = sessionWith(question(6));
+    const clock = handClock();
+    const ps = standInStarts({ [LIVE_PID]: "Thu Oct  1 11:30:00 2026" });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    for (const later of [0, MINUTE, HOUR]) {
+      clock.advance(later);
+      const { sessions } = await adapter.poll();
+      expect(sessions[0]?.status).toBe("finished");
+      expect(sessions[0]).not.toHaveProperty("waitingReason");
+    }
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test("a lease `ps` ruled out is asked about again once its process has ended, and a new lease is too", async () => {
+    const files = sessionWith(question(6));
+    const clock = handClock();
+    const pids = standInPids();
+    const ps = standInStarts({ [LIVE_PID]: "Thu Oct  1 11:30:00 2026" });
+    const adapter = vibeAdapterFor(files, pids, { now: clock.now, readProcessStarts: ps.read });
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+
+    pids.set([]);
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    pids.set([LIVE_PID]);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+
+    // A Vibe that took the session at 11:45, after the process with this ID began.
+    takeLease(files, A, NOW - 15 * MINUTE);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    expect(ps.runs).toHaveLength(3);
+  });
+
+  test("a wait stands when `ps` says its process was there first, and when it cannot say", async () => {
+    const started = standInStarts({ [LIVE_PID]: "Thu Oct  1 10:45:00 2026" });
+    for (const ps of [started, standInStarts()]) {
+      const { sessions } = await vibeAdapterFor(sessionWith(question(6)), standInPids(), {
+        readProcessStarts: ps.read,
+      }).poll();
+      expect(sessions[0]?.status).toBe("needs-you");
+      expect(ps.runs).toEqual([[LIVE_PID]]);
+    }
+  });
+
+  test("`ps` is asked only while a session waits, at most every 30 seconds, about all that wait at once", async () => {
+    const files = sessionWith(approval(6));
+    writeStore(files, { id: B, state: idle(B), journal: [delta(5, running(B)), question(6)] });
+    writeLease(files, B);
+    writeStore(files, { id: C, state: running(C) });
+    writeLease(files, C);
+    const clock = handClock();
+    const ps = standInStarts();
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+    clock.advance(10 * SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    clock.advance(30 * SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(2);
+
+    const quiet = vibeFiles();
+    writeStore(quiet, { id: A, state: running(A) });
+    writeLease(quiet, A);
+    const none = standInStarts();
+    await vibeAdapterFor(quiet, standInPids(), { readProcessStarts: none.read }).poll();
+    expect(none.runs).toEqual([]);
+  });
+
+  test("`ps` is asked about each waiting session's process in one run, and no other's", async () => {
+    const OTHER_PID = 5151;
+    const files = sessionWith(approval(6));
+    writeStore(files, { id: B, state: idle(B), journal: [delta(5, running(B)), question(6)] });
+    writeLease(files, B, OTHER_PID);
+    writeStore(files, { id: C, state: running(C) });
+    writeLease(files, C, OTHER_PID + 1);
+    const ps = standInStarts();
+    await vibeAdapterFor(files, standInPids([LIVE_PID, OTHER_PID, OTHER_PID + 1]), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(ps.runs).toEqual([[LIVE_PID, OTHER_PID]]);
+  });
+
+  test("a session that ends while it waits is finished, with no reason", async () => {
+    const files = sessionWith(approval(6));
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    releaseLease(files, A);
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]).toMatchObject({ status: "finished", statusSince: NOW - 5 * MINUTE });
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+    expect(keepsAwake(sessions[0]!, NOW)).toBe(false);
+  });
+
+  test("a question a killed Vibe left open is not waited on once a later program has the session", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      state: idle(A),
+      journal: [delta(5, running(A)), question(6), otherRecord("action_result", 7)],
+    });
+    takeLease(files, A, NOW - 10 * SECOND);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("working");
+  });
+
+  test("a lease taken a moment ago, with nothing written since, shows no wait", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), journal: [delta(5, running(A)), approval(6)] });
+    makeOld(files, A, NOW - MINUTE);
+    files.rewrite(
+      `${SESSION_DIR}/${journalPath(A)}`,
+      [delta(5, running(A)), approval(6)].join(""),
+      { mtimeMs: NOW - MINUTE },
+    );
+    takeLease(files, A, NOW - 5 * SECOND);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("finished");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  test("a callback an earlier turn left open is no wait", async () => {
+    const { sessions } = await vibeAdapterFor(
+      sessionWith(approval(6, NOW - 6 * MINUTE), otherRecord("action_result", 7)),
+    ).poll();
+    expect(sessions[0]?.status).toBe("working");
+  });
+
+  test("a callback left open in a session with no turn in flight is no wait", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), journal: [approval(5), delta(6, idle(A))] });
+    writeLease(files, A);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("idle");
+  });
+
+  test("a kind of callback this version does not know leaves the session working", async () => {
+    const line = callbackRegistered(6, { id: "tool-1", kind: "client_tool", createdAt: ASKED });
+    const { sessions } = await vibeAdapterFor(sessionWith(line)).poll();
+    expect(sessions[0]?.status).toBe("working");
+  });
+
+  test("a lease that does not say when it was taken shows no wait", async () => {
+    const files = sessionWith(approval(6));
+    files.rewrite(`${SESSION_DIR}/active/${A}.lock.json`, '{"process_id":4242}\n');
+    expect((await vibeAdapterFor(files).poll()).sessions[0]?.status).toBe("working");
+  });
+
+  test("a lease that gives a time but no process claims no wait, and `ps` is not asked", async () => {
+    const files = sessionWith(approval(6));
+    files.rewrite(`${SESSION_DIR}/active/${A}.lock.json`, leaseFile(A, null));
+    const ps = standInStarts();
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(sessions[0]?.status).toBe("working");
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("while the leases cannot be read, a wait is not claimed, and `ps` is not asked", async () => {
+    const files = sessionWith(approval(6));
+    files.fail(`${SESSION_DIR}/active`, "EACCES");
+    const ps = standInStarts();
+    const result = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(result.sessions[0]?.status).toBe("working");
+    expect(result.basis).toBe(BASIS_WITHOUT_LEASES);
+    expect(ps.runs).toEqual([]);
+  });
+
+  test("what was read of a wait stands for a poll that cannot read the journal", async () => {
+    const files = sessionWith(approval(6));
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    add(files, otherRecord("action_result", 7));
+    files.fail(`${SESSION_DIR}/${journalPath(A)}`, "EACCES");
+    await adapter.poll();
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: ASKED,
+    });
+  });
+
+  test("a long record and a broken line are passed through, and the wait still shows", async () => {
+    const long = approval(6).replace(PRIVATE_WORDS, "x".repeat(2 * 1024 * 1024));
+    const broken = '{"payload":{"callback_id":"cut-off\nnot a record at all\n';
+    const { sessions } = await vibeAdapterFor(sessionWith(broken, long)).poll();
+    expect(sessions[0]).toMatchObject({ status: "needs-you", statusSince: ASKED });
+  });
+
+  test("an approval's line too long to read to its start claims no wait, and no status either", async () => {
+    const huge = approval(6).replace(PRIVATE_WORDS, "y".repeat(9 * 1024 * 1024));
+    const { sessions } = await vibeAdapterFor(sessionWith(huge)).poll();
+    expect(sessions[0]?.status).toBe("unknown");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  test("a subagent's wait is in its own store, which is not read: its session shows as working", async () => {
+    const files = sessionWith();
+    writeStore(files, {
+      id: SUBAGENT_ID,
+      kind: "subagent",
+      state: idle(SUBAGENT_ID),
+      journal: [delta(5, running(SUBAGENT_ID)), approval(6)],
+    });
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(statuses(sessions)).toEqual({ [A]: "working" });
+    expect(files.count(undefined, underStore(SUBAGENT_ID))).toBe(0);
+  });
+
+  test("nothing of what a callback says is kept: no tool, arguments, question or answer", async () => {
+    const files = sessionWith(approval(6), question(7));
+    const adapter = vibeAdapterFor(files);
+    const asking = await adapter.poll();
+    expect(asking.sessions[0]).not.toHaveProperty("waitingText");
+    expect(asking.sessions[0]).not.toHaveProperty("waitingDetail");
+    expect(JSON.stringify(asking)).not.toContain(PRIVATE_WORDS);
+    expect(JSON.stringify(asking)).not.toContain("bash");
+    expect(JSON.stringify(asking)).not.toContain(APPROVAL);
+
+    add(files, callbackResolved(8, APPROVAL));
+    add(files, callbackResolved(9, QUESTION), NOW + 2 * SECOND);
+    expect(JSON.stringify(await adapter.poll())).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("a wait's start and end are told as any session's are", async () => {
+    const files = sessionWith();
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const told: string[] = [];
+    const steps = [
+      () => undefined,
+      () => add(files, approval(6), clock.now()),
+      () => add(files, callbackResolved(7, APPROVAL), clock.now()),
+      () => add(files, question(8, NOW), clock.now()),
+      () => releaseLease(files, A),
+    ];
+    for (const step of steps) {
+      step();
+      const result = await adapter.poll();
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+    }
+    expect(told).toEqual(["needs-you", "needs-you", "finished"]);
+  });
+
+  test("settling the older of two tells nothing: the wait goes on", async () => {
+    const files = sessionWith();
+    const clock = handClock();
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const told: string[] = [];
+    const steps = [
+      () => undefined,
+      () => {
+        add(files, approval(6), clock.now());
+        add(files, question(7, ASKED + SECOND), clock.now());
+      },
+      () => add(files, callbackResolved(8, APPROVAL), clock.now()),
+    ];
+    for (const step of steps) {
+      step();
+      const result = await adapter.poll();
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+    }
+    expect(told).toEqual(["needs-you"]);
+  });
 });
