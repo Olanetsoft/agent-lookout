@@ -69,6 +69,30 @@ describe("createRecordProcessCheck", () => {
   const own = { pid: 41001, startedAt: REGISTERED };
   const reused = { pid: 41002, startedAt: REGISTERED };
 
+  test("says whether ps has been asked, and saying so runs nothing", async () => {
+    const { ps, check: records } = check({ 41001: REGISTERED - 2 * SECOND });
+
+    expect(records.asked()).toBe(false);
+    expect(ps.runs).toEqual([]);
+
+    await records.matches([]);
+    await records.matches([{ pid: 41001, startedAt: null }]);
+    expect(records.asked()).toBe(false);
+    expect(ps.runs).toEqual([]);
+
+    await records.matches([own]);
+    expect(records.asked()).toBe(true);
+    expect(ps.runs).toEqual([[41001]]);
+  });
+
+  test("a ps that could not answer was still asked", async () => {
+    const { ps, check: records } = check({});
+    ps.fails = true;
+
+    await records.matches([own]);
+    expect(records.asked()).toBe(true);
+  });
+
   test("confirms the records whose process is their own, with one ps for them all", async () => {
     const { ps, check: records } = check({
       41001: REGISTERED - 2 * SECOND,

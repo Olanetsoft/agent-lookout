@@ -173,9 +173,15 @@ test("OpenCode's card is the one its adapter shows on a computer without it", as
   expect(sessions).toEqual([]);
 });
 
-test("Qwen Code's card is the one its adapter shows on a computer with tmux and without Qwen Code", async () => {
+test("Qwen Code's card is the one its adapter shows on a Mac with tmux and without Qwen Code", async () => {
   const adapter = qwenCodeAdapterFor(memoryFiles(), {
+    platform: "darwin",
     panes: createPaneFinder({ run: fakeTmux().run }).asker(),
+    terminals: createTabFinder({
+      env: {},
+      homeDir: HOME,
+      readProcesses: async () => new Map(),
+    }).asker(),
   });
   const { health, sessions } = await adapter.poll();
   const { capabilities, ...card } = tour

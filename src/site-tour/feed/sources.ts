@@ -687,7 +687,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card on a computer with tmux, when Qwen Code is not installed: its folders and tmux's program are looked for, and nothing more.
+      // The adapter's card on a Mac with tmux, when Qwen Code is not installed: its folders and tmux's program are looked for, and nothing more.
       id: "qwen-code",
       label: "Qwen Code",
       state: "unavailable",
@@ -710,6 +710,8 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Pane check run", value: "not run" },
         { label: "Pane parent check", value: "ps -A -o pid=,ppid=" },
         { label: "Pane parent check run", value: "not run" },
+        { label: "Tab check", value: "ps -A -o pid=,ppid=,tty=,comm=" },
+        { label: "Tab check run", value: "not run" },
         {
           label: "Last message read",
           value: "end of a session's chat file, while its details are open",

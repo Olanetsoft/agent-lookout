@@ -24,11 +24,11 @@ import {
   START_CHECK_TTL_MS,
   type ReadProcessStarts,
 } from "../../processes/processStart.ts";
-import { PS_TABLE_ARGS } from "../../processes/processTable.ts";
-import { TAB_LOOK_SOONEST_MS, type TabAsker } from "../../terminal/tabFinder.ts";
+import type { TabAsker } from "../../terminal/tabFinder.ts";
 import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { paneFacts } from "../paneFacts.ts";
+import { tabFacts } from "../tabFacts.ts";
 import { every } from "../words.ts";
 import {
   createFeedReader,
@@ -481,7 +481,8 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
    * - The start check runs at a poll, for a session whose file records a start
    *   time. On Windows `ps` is never run, so signal 0 is all there is.
    * - The pane finder asks only where tmux is (`paneFacts`).
-   * - The tab finder asks only on a Mac, the one system with Terminal or iTerm2.
+   * - The tab finder asks only on a Mac, the one system with Terminal or iTerm2
+   *   (`tabFacts`).
    * - A stop asks twice at the moment of acting, from a route, and only where
    *   sessions can be stopped.
    */
@@ -489,7 +490,6 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     if (onWindows) {
       return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
     }
-    const tabs = platform === "darwin" ? options.terminals : undefined;
     return [
       { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
       {
@@ -499,17 +499,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           : "not run",
       },
       ...paneFacts(options.panes, platform),
-      ...(tabs
-        ? [
-            { label: "Tab check", value: `ps ${PS_TABLE_ARGS.join(" ")}` },
-            {
-              label: "Tab check run",
-              value: tabs.asked()
-                ? `once for each new process, ${every(TAB_LOOK_SOONEST_MS)} at most`
-                : "not run",
-            },
-          ]
-        : []),
+      ...tabFacts(options.terminals, platform),
       ...(stops
         ? [
             {

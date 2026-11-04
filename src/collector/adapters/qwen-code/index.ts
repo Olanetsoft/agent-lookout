@@ -33,6 +33,7 @@ import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { TmuxPane } from "../../tmux/panes.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { paneFacts } from "../paneFacts.ts";
+import { tabFacts } from "../tabFacts.ts";
 import { every } from "../words.ts";
 import { createChatReader, type ChatState } from "./chatRecords.ts";
 import { createFinishedSessions } from "./finishedSessions.ts";
@@ -246,6 +247,9 @@ function liveCheckFor(
   return null;
 }
 
+/** The `ps` that says when a record's process started, as a card names it. */
+const START_PS = "ps -o pid=,lstart= -p <pids>";
+
 /**
  * What Sources says tells a session's process from another program given its
  * pid, and how often that is asked (`liveCheckFor`). Where nothing is compared,
@@ -256,7 +260,7 @@ function processCheckFacts(platform: NodeJS.Platform, pollIntervalMs: number): S
     platform === "linux"
       ? `/proc/<pid>/stat and ${BOOT_ID_FILE}`
       : platform === "darwin"
-        ? "ps -o pid=,lstart= -p <pids>"
+        ? START_PS
         : null;
   if (shown === null) {
     return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
@@ -266,6 +270,39 @@ function processCheckFacts(platform: NodeJS.Platform, pollIntervalMs: number): S
     {
       label: "Process check run",
       value: `${every(START_CHECK_TTL_MS)} while a session's process runs, and sooner when another appears`,
+    },
+  ];
+}
+
+/**
+ * What Sources says of the `ps` that confirms a process found in a pane before
+ * its session gets Jump, on Linux alone: what is run, and how often, or "not
+ * run" until it has been. Saying so runs nothing: the check says whether it has
+ * asked.
+ *
+ * - On a Mac that answer comes from the run Process check lists, so it has no
+ *   rows of its own, and on Windows `ps` is never run.
+ * - On Linux a process is found only in a pane, since `ps` is not asked for a
+ *   tab there, so where tmux is not run (`paneFacts`) neither is this.
+ * - The panes are found by a finder every adapter shares, but this check is
+ *   this adapter's own, and asks only about its own records. A look another
+ *   adapter caused can find a Qwen Code session's process, and then this runs
+ *   for that session. A look that finds only another adapter's leaves this at
+ *   "not run".
+ */
+function jumpCheckFacts(
+  panes: PaneAsker | undefined,
+  startCheck: RecordProcessCheck,
+  platform: NodeJS.Platform,
+): SourceFact[] {
+  if (platform !== "linux" || !panes?.installed()) return [];
+  return [
+    { label: "Jump check", value: START_PS },
+    {
+      label: "Jump check run",
+      value: startCheck.asked()
+        ? `${every(START_CHECK_TTL_MS)} while a session's process is in a pane, and sooner when another is found in one`
+        : "not run",
     },
   ];
 }
@@ -308,7 +345,8 @@ export interface QwenCodeAdapterOptions {
   /**
    * Finds the Terminal or iTerm2 tab each open session's process runs in, for
    * a session in no tmux pane. The collector passes an asker of the finder the
-   * jump route reads. Left out, no tab is looked for.
+   * jump route reads, which also says whether it has asked. Left out, no tab is
+   * looked for.
    */
   terminals?: TabAsker;
   /**
@@ -466,8 +504,10 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
       ...processCheck,
       // Written before this poll's look, so what it finds shows at the next poll.
       // That includes whether tmux is there, so the first card can have none of
-      // these rows.
+      // the rows that go by it: the pane rows and Jump check.
       ...paneFacts(options.panes, platform),
+      ...jumpCheckFacts(options.panes, startCheck, platform),
+      ...tabFacts(options.terminals, platform),
       { label: "Last message read", value: lastMessageRead },
     ];
   }

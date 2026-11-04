@@ -19,6 +19,7 @@ import { lstart } from "@tests/fixtures/antigravity";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
 import { registryRecord as qwenRecord, sessionIdOf } from "@tests/fixtures/qwen-code/qwenCode";
+import { JUMP_CHECK, JUMP_CHECK_RUN } from "@tests/support/adapters/qwenCodeAdapter";
 import { listen, request, type TestRequest } from "@tests/support/node/http";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
 import {
@@ -33,6 +34,8 @@ import {
   ITERM_PATH,
   MISSING,
   NOT_ALLOWED,
+  TAB_CHECK,
+  TAB_CHECK_RUN,
   TERMINAL_PATH,
   TIMED_OUT,
   type ProcessRow,
@@ -86,10 +89,12 @@ const SOONEST_MS = Math.max(PANE_LOOK_SOONEST_MS, TAB_LOOK_SOONEST_MS);
  * A Qwen Code folder that lists one session in a terminal, whose process is
  * `pid`, in this process's pid namespace, with none where it has none: on
  * Linux the adapter reads its own, and lists no record that names no other.
+ * For a collector told it runs on a Mac it names none, whatever this runs on,
+ * as a record written on a Mac does.
  */
-async function qwenHome(pid: number): Promise<string> {
+async function qwenHome(pid: number, platform?: NodeJS.Platform): Promise<string> {
   const home = await tempDir();
-  const pidNs = await createPidNamespaceRead()();
+  const pidNs = platform === "darwin" ? null : await createPidNamespaceRead()();
   await mkdir(path.join(home, "sessions"));
   await writeFile(
     path.join(home, "sessions", `${pid}.json`),
@@ -137,7 +142,7 @@ function inOneTab(app: string): ProcessRow[] {
 async function serve(
   env: Record<string, string> = {},
   processes: ProcessRow[] = [],
-  more: { panes?: string[]; startedAt?: number } = {},
+  more: { panes?: string[]; startedAt?: number; platform?: NodeJS.Platform } = {},
 ) {
   const tmux = fakeTmux({
     panes: [`${process.pid} %7 2 1 checkout-flow`, ...(more.panes ?? [])],
@@ -176,6 +181,7 @@ async function serve(
       return new Map(pids.map((pid) => [pid, lstart(startedAt)]));
     },
     now: () => clock.now,
+    ...(more.platform && { platform: more.platform }),
   });
   const port = await listen(createServer(collector.handler));
   await collector.poller.pollOnce();
@@ -197,6 +203,12 @@ const paneRowsOf = (sources: readonly SourceHealth[], id: string) =>
   sources
     .find((source) => source.id === id)
     ?.watching?.filter((fact) => fact.label.startsWith("Pane "));
+
+/** What a source's card says of the look for a tab, and of the `ps` that confirms a process for Jump. */
+const jumpRowsOf = (sources: readonly SourceHealth[], id: string) =>
+  sources
+    .find((source) => source.id === id)
+    ?.watching?.filter((fact) => /^(Tab|Jump) check/.test(fact.label));
 
 /** The rows of a card whose sessions tmux and `ps` have been asked about. */
 const RAN = [
@@ -731,15 +743,16 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
   async function serveQwen(
     env: Record<string, string> = {},
     processes: (pid: number) => ProcessRow[] = () => [],
-    more: { inPane?: boolean; startedAt?: number } = {},
+    more: { inPane?: boolean; startedAt?: number; platform?: NodeJS.Platform } = {},
   ) {
     const standIn = await startStandIn();
     const server = await serve(
-      { AGENT_LOOKOUT_QWEN_HOME: await qwenHome(standIn.pid), ...env },
+      { AGENT_LOOKOUT_QWEN_HOME: await qwenHome(standIn.pid, more.platform), ...env },
       processes(standIn.pid),
       {
         panes: more.inPane === false ? [] : [`${standIn.pid} %8 0 0 search-indexing`],
         startedAt: more.startedAt,
+        platform: more.platform,
       },
     );
     server.clock.now += SOONEST_MS;
@@ -788,6 +801,74 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
     expect(paneRowsOf(sources, "claude-code")).toEqual(RAN);
     expect(paneRowsOf(sources, "qwen-code")).toEqual(RAN);
     expect(server.tmux.names()).toHaveLength(looks);
+  });
+
+  describe("what its card says of the rest of what runs for Jump", () => {
+    const tabRows = (run: string) => [
+      { label: "Tab check", value: TAB_CHECK },
+      { label: "Tab check run", value: run },
+    ];
+    const jumpRows = (run: string) => [
+      { label: "Jump check", value: JUMP_CHECK },
+      { label: "Jump check run", value: run },
+    ];
+
+    /** One more poll, since a card is written before its poll's look. */
+    async function sourcesAfterAPoll(server: Awaited<ReturnType<typeof serveQwen>>) {
+      server.clock.now += 2_000;
+      await server.collector.poller.pollOnce();
+      return server.sources();
+    }
+
+    test("on a Mac, Tab check says a look was made for its session, and reading it adds no run", async () => {
+      const server = await serveQwen({}, (pid) => inTabOf(TERMINAL_PATH, pid), {
+        inPane: false,
+        platform: "darwin",
+      });
+      const sources = await sourcesAfterAPoll(server);
+      const reads = server.ps.runs;
+
+      expect(jumpRowsOf(sources, "qwen-code")).toEqual(tabRows(TAB_CHECK_RUN));
+      await server.sources();
+      expect(server.ps.runs).toBe(reads);
+    });
+
+    test("on a Mac, with AGENT_LOOKOUT_TERMINAL_JUMP off it says not run", async () => {
+      const server = await serveQwen(
+        { AGENT_LOOKOUT_TERMINAL_JUMP: "off" },
+        (pid) => inTabOf(TERMINAL_PATH, pid),
+        { inPane: false, platform: "darwin" },
+      );
+
+      expect(jumpRowsOf(await sourcesAfterAPoll(server), "qwen-code")).toEqual(tabRows("not run"));
+      // Each read is the tmux pane finder's, for the pane tmux lists.
+      expect(server.ps.runs).toBe(server.tmux.names().length);
+    });
+
+    test("on a Mac, a look for a Claude Code session alone leaves it at not run", async () => {
+      const server = await serve({}, inOneTab(TERMINAL_PATH), { platform: "darwin" });
+
+      expect(jumpRowsOf(await server.sources(), "claude-code")).toEqual(tabRows(TAB_CHECK_RUN));
+      expect(jumpRowsOf(await server.sources(), "qwen-code")).toEqual(tabRows("not run"));
+    });
+
+    test("on Linux, Jump check says ps confirmed a process in a pane, and reading it adds no run", async () => {
+      const server = await serveQwen({}, () => [], { platform: "linux" });
+      const sources = await sourcesAfterAPoll(server);
+      const starts = server.starts.length;
+
+      expect(jumpRowsOf(sources, "qwen-code")).toEqual(jumpRows(JUMP_CHECK_RUN));
+      expect(jumpRowsOf(sources, "claude-code")).toEqual([]);
+      await server.sources();
+      expect(server.starts).toHaveLength(starts);
+    });
+
+    test("on Linux, a pane found for a Claude Code session alone leaves it at not run", async () => {
+      const server = await serve({}, [], { platform: "linux" });
+
+      expect(server.tmux.names()).toEqual(["list-panes"]);
+      expect(jumpRowsOf(await server.sources(), "qwen-code")).toEqual(jumpRows("not run"));
+    });
   });
 
   test("Jump selects the session's pane, and then a Claude Code session's", async () => {
