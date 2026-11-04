@@ -7,8 +7,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code and Continue, none of the twelve installed here, and status files.
- * Then the other machine, connected over SSH.
+ * Kimi Code, Continue and Crush, none of the thirteen installed here, and status
+ * files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -627,6 +627,45 @@ export const CONTINUE_CAPABILITIES: SourceCapabilities = {
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
 
+export const CRUSH_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason:
+      "Nothing ties a Crush session to a process, so a turn a crash cut off looks like one under way.",
+  },
+  "needs-you": {
+    level: "no",
+    reason: "Crush holds a permission request in its memory, and writes nothing of it to disk.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Every session at once, when ps shows no Crush program, on macOS and Linux. Crush writes no end to one.",
+  },
+  failed: {
+    level: "no",
+    reason: "Crush writes how a turn ended inside a message, which is not read.",
+  },
+  names: {
+    level: "partly",
+    reason: "The folder's. Crush's title can be the start of your first prompt.",
+  },
+  jump: { level: "no", reason: "Crush's database names no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Crush session never shows as working.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout does not read the counts on a session's row." },
+  stop: {
+    level: "no",
+    reason: "Crush's database names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Crush, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1014,6 +1053,35 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Crush is not installed: its folder is looked for, and nothing more.
+      id: "crush",
+      label: "Crush",
+      state: "unavailable",
+      detail:
+        "Crush was not found: there is no ~/.local/share/crush folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Data folder", value: "~/.local/share/crush" },
+        { label: "Project list", value: "~/.local/share/crush/projects.json" },
+        { label: "Projects", value: "none found" },
+        { label: "Database", value: "<project>/.crush/crush.db" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Command",
+          value:
+            'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>',
+        },
+        { label: "Command run", value: "when a database changes" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Crush",
+        },
+      ],
+      capabilities: CRUSH_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1054,6 +1122,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Pi there", value: "Not found" },
         { label: "Kimi Code there", value: "Not found" },
         { label: "Continue there", value: "Not found" },
+        { label: "Crush there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

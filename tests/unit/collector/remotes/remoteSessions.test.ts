@@ -5,6 +5,7 @@ import * as antigravityCli from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import * as codex from "@collector/adapters/codex/index";
 import * as continueAdapter from "@collector/adapters/continue/index";
+import * as crush from "@collector/adapters/crush/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
 import * as pi from "@collector/adapters/pi/index";
@@ -307,6 +308,7 @@ describe("readRemoteSnapshot", () => {
       goose,
       "hermes-agent": hermesAgent,
       "kimi-code": kimiCode,
+      crush,
       "mistral-vibe": mistralVibe,
       opencode,
       pi,

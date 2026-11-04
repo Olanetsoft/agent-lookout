@@ -17,7 +17,7 @@
 // tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
 // Antigravity and one for Mistral Vibe, an empty Gemini CLI folder with its
 // tmp/, an empty folder for OpenCode, one for Qwen Code, one for Hermes Agent,
-// one for Cline, one for Goose, one for Pi, one for Kimi Code and one for Continue, a folder with one status file, and a folder for the history the app keeps, so nothing is
+// one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue and one for Crush, a folder with one status file, and a folder for the history the app keeps, so nothing is
 // written to this machine's. It starts the app on a port the system picks, with
 // the claude command, tmux and Terminal left alone, and asks only
 // `/api/health`, `/api/sessions`, the dashboard's page and its script. Then it
@@ -102,6 +102,8 @@ const SOURCES = [
   ["pi", "Pi"],
   ["kimi-code", "Kimi Code"],
   ["continue", "Continue"],
+  // Nothing of Crush's is read on Windows.
+  ["crush", "Crush", "unavailable"],
   ["status-files", "Status files"],
 ];
 
@@ -328,6 +330,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const piHome = path.join(dir, "pi");
   const kimiCodeHome = path.join(dir, "kimi-code");
   const continueHome = path.join(dir, "continue");
+  const crushHome = path.join(dir, "crush");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   // Named and never made, so the app reads no settings and starts with every rule off.
@@ -346,6 +349,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(piHome, { recursive: true });
   await mkdir(kimiCodeHome, { recursive: true });
   await mkdir(continueHome, { recursive: true });
+  await mkdir(crushHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -415,6 +419,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     piHome,
     kimiCodeHome,
     continueHome,
+    crushHome,
     statusDir,
     historyDir,
     settingsFile,
@@ -425,7 +430,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
 /**
  * The environment `npm start` is given: this one, without any setting of
  * Agent Lookout's own, Codex's, Mistral Vibe's, Gemini CLI's, Qwen Code's,
- * Hermes Agent's, Cline's, Goose's, Pi's, Kimi Code's or Continue's,
+ * Hermes Agent's, Cline's, Goose's, Pi's, Kimi Code's, Continue's or Crush's,
  * and with the folders made for the check. The claude command is not run, tmux
  * and Terminal are not asked, and npm does not look for a newer version of
  * itself.
@@ -448,7 +453,8 @@ function appEnv(folders) {
         name !== "PI_CODING_AGENT_DIR" &&
         name !== "PI_CODING_AGENT_SESSION_DIR" &&
         name !== "KIMI_CODE_HOME" &&
-        name !== "CONTINUE_GLOBAL_DIR",
+        name !== "CONTINUE_GLOBAL_DIR" &&
+        name !== "CRUSH_GLOBAL_DATA",
     ),
   );
   return {
@@ -470,6 +476,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_PI_HOME: folders.piHome,
     AGENT_LOOKOUT_KIMI_CODE_HOME: folders.kimiCodeHome,
     AGENT_LOOKOUT_CONTINUE_HOME: folders.continueHome,
+    AGENT_LOOKOUT_CRUSH_HOME: folders.crushHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,

@@ -31,6 +31,8 @@ export type RemoteSourceId = `remote:${string}`;
  * editor extension, whose sessions are read from the files in its folder.
  * `continue` is Continue, in its command `cn` and its editor extensions, whose
  * sessions are read from the list it keeps of them.
+ * `crush` is Charm's Crush, whose sessions are read from the database it keeps in
+ * each project.
  */
 export type SourceId =
   | "claude-code"
@@ -47,6 +49,7 @@ export type SourceId =
   | "pi"
   | "kimi-code"
   | "continue"
+  | "crush"
   | "status-files"
   | RemoteSourceId;
 
@@ -647,6 +650,9 @@ export interface SourceHealth {
    * - Hermes Agent names each profile it read this poll, such as
    *   `hermes-agent:coder/` for `database`, so a profile that could not be read
    *   leaves its sessions as they were.
+   * - Crush names each project it read this poll, such as
+   *   `crush:0123456789ab/` for `database`, by the hash of the project's folder,
+   *   so a database that could not be read leaves its sessions as they were.
    */
   parts?: Record<string, string>;
   /**

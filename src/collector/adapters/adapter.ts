@@ -79,6 +79,18 @@ export interface AdapterResult {
    *
    * The Continue adapter has one, `files`: its list of sessions and when each
    * session's file was last written.
+   *
+   * The Crush adapter has three, as the Goose adapter does:
+   * - `database`: the database in each project in Crush's list, read while `ps`
+   *   shows a Crush program running. The usual one.
+   * - `database-closed`: the same while `ps` shows none, when every session is
+   *   finished.
+   * - `database-without-processes`: the same while `ps` cannot say, when no
+   *   session can be shown as finished.
+   * It names each project it read in `health.parts` too, with the same way, by
+   * the start of the ids of that project's sessions, `crush:<hash of its folder>/`,
+   * so a database that could not be read on one poll leaves its sessions as they
+   * were.
    */
   basis?: string;
 }
