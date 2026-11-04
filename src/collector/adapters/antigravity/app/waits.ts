@@ -1,5 +1,12 @@
 import type { FileInfo } from "../../../files/readOnlyIo.ts";
-import { findSqlite, runSqlite, summariesUri, RETRY_MS, type RunSqlite } from "./summaries.ts";
+import {
+  findSqlite,
+  readArguments,
+  runSqlite,
+  summariesUri,
+  RETRY_MS,
+  type RunSqlite,
+} from "./summaries.ts";
 
 /**
  * Whether an Antigravity 2.0 chat waits for the person, from its own
@@ -13,7 +20,8 @@ import { findSqlite, runSqlite, summariesUri, RETRY_MS, type RunSqlite } from ".
  * of chats (`summaries.ts`), with one question that asks for two numbers and
  * nothing else:
  *
- *     sqlite3 -init /dev/null -batch -json 'file:<the file>?mode=ro&immutable=1'
+ *     sqlite3 -init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF'
+ *       'file:<the file>?mode=ro&immutable=1'
  *       'SELECT idx, status FROM steps ORDER BY idx DESC LIMIT 1'
  *
  * Never a step's payload, its metadata or its permissions, which hold what
@@ -37,7 +45,7 @@ export const NEWEST_STEP_QUERY = "SELECT idx, status FROM steps ORDER BY idx DES
 
 /** The arguments `sqlite3` is given, each as it is. */
 export function waitArguments(file: string): string[] {
-  return ["-init", "/dev/null", "-batch", "-json", summariesUri(file), NEWEST_STEP_QUERY];
+  return readArguments(summariesUri(file), NEWEST_STEP_QUERY);
 }
 
 /** The newest step's number and status. */

@@ -390,7 +390,7 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
     expect(runs.every((args) => args.some((arg) => arg.endsWith("?mode=ro&readonly_shm=1")))).toBe(
       true,
     );
-    expect(runs.every((args) => !args.includes("-cmd"))).toBe(true);
+    expect(runs.every((args) => !args.includes(".timeout 1000"))).toBe(true);
     expect(await snapshotOf(dir)).toEqual(before);
 
     const printed = await answers(file, "with-wal");
@@ -457,7 +457,7 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
     // The next read sees the new header, and opens it as WAL mode with its -wal.
     const again = readerFor(file);
     expect((await again.reader.read(now)).state).toBe("read");
-    expect(again.runs.every((args) => !args.includes("-cmd"))).toBe(true);
+    expect(again.runs.every((args) => !args.includes(".timeout 1000"))).toBe(true);
     expect(await snapshotOf(dir)).toEqual(switched);
   });
 

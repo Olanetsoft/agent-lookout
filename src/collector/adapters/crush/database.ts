@@ -7,7 +7,7 @@ import {
   type RunSqlite,
 } from "../antigravity/app/summaries.ts";
 import { isOutOfTime, runWithin, unlimitedTime, type ReadTime } from "../hermes-agent/sqlite.ts";
-import type { DatabaseMode } from "../opencode/sessionRows.ts";
+import { sqliteArguments, type DatabaseMode } from "../opencode/sessionRows.ts";
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import {
   PROBE_QUERY,
@@ -15,7 +15,6 @@ import {
   readSchema,
   readSessionRows,
   SESSIONS_QUERY,
-  sqliteArguments,
   type SessionRow,
 } from "./sessionRows.ts";
 
@@ -25,8 +24,8 @@ import {
  * (`../antigravity/app/summaries.ts`): at fixed places only, never on `PATH`,
  * directly with no shell, stdin closed, a timeout, a cap on what it prints, and
  * never on Windows. The database lies in a project's folder, so a repository can
- * ship one: it is untrusted input, read with `trusted_schema` off
- * (`TRUSTED_SCHEMA_OFF` in `sessionRows.ts`).
+ * ship one: it is untrusted input, read with `trusted_schema` off, as every
+ * agent's is (`TRUSTED_SCHEMA_OFF` in `../antigravity/app/summaries.ts`).
  *
  * Crush keeps the database in WAL mode (`pragmas` in `internal/db/connect.go`):
  * what it has saved lies in `crush.db-wal` until SQLite moves it into the

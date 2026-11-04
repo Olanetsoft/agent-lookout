@@ -143,7 +143,8 @@ export const GOOSE_CAPABILITIES: SourceCapabilities = {
 };
 
 /** The command, as Sources shows it: its questions are fixed text. */
-export const COMMAND_SHOWN = "sqlite3 -init /dev/null -batch -json <database> <fixed query>";
+export const COMMAND_SHOWN =
+  'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>';
 
 /**
  * Goose's data folder, worked out as Goose does (`config/paths.rs`), on macOS as

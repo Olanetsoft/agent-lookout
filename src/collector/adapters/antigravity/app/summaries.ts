@@ -16,7 +16,8 @@ import { conversationIdOfFolder } from "../shared/conversations.ts";
  * a timeout, no settings of the person's own (`-init /dev/null` in place of
  * `~/.sqliterc`), and one question:
  *
- *     sqlite3 -init /dev/null -batch -json 'file:<the file>?mode=ro&immutable=1'
+ *     sqlite3 -init /dev/null -batch -json -cmd 'PRAGMA trusted_schema=OFF'
+ *       'file:<the file>?mode=ro&immutable=1'
  *       'SELECT conversation_id, workspace_uris FROM conversation_summaries'
  *
  * `mode=ro` opens the file read-only and never makes it when it is not there.
@@ -78,9 +79,32 @@ export function summariesUri(file: string): string {
   return `file:${encoded}?mode=ro&immutable=1`;
 }
 
+/**
+ * Set before `sqlite3` reads a database, whichever way it is opened. A view in a
+ * database could otherwise call `edit()`, which the `sqlite3` program adds and
+ * which starts a program. From 3.42 on `sqlite3` turns this off itself. It came
+ * in 3.31, and an older `sqlite3` ignores a pragma it does not know, but such a
+ * one never gets here: it stops at `-json`, which needs 3.33, and reads nothing.
+ */
+export const TRUSTED_SCHEMA_OFF = "PRAGMA trusted_schema=OFF";
+
+/**
+ * The arguments of one read of a database, each as it is. Every agent's read is
+ * built here, so each has `TRUSTED_SCHEMA_OFF`. `before` is what one read adds
+ * ahead of it, as Hermes Agent's wait for a commit.
+ */
+export function readArguments(
+  address: string,
+  query: string,
+  before: readonly string[] = [],
+): string[] {
+  const settings = [...before, "-cmd", TRUSTED_SCHEMA_OFF];
+  return ["-init", "/dev/null", "-batch", "-json", ...settings, address, query];
+}
+
 /** The arguments `sqlite3` is given, each as it is. */
 export function sqliteArguments(file: string): string[] {
-  return ["-init", "/dev/null", "-batch", "-json", summariesUri(file), SUMMARIES_QUERY];
+  return readArguments(summariesUri(file), SUMMARIES_QUERY);
 }
 
 /**
