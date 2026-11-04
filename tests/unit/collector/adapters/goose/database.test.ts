@@ -152,6 +152,44 @@ describe("what is not read", () => {
     expect((await readerOf(files, standInSqlite()).read(NOW)).state).toBe("not-safe");
   });
 
+  test.each([
+    ["Goose's data folder", DATA_DIR],
+    ["the sessions folder", SESSIONS_DIR],
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("%s that cannot be looked at is not taken for gone", async (_name, target) => {
+    const files = gooseFiles();
+    files.fail(target);
+    const sqlite = standInSqlite([printedRow()]);
+    expect(await readerOf(files, sqlite).read(NOW)).toEqual({ state: "not-looked-at", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a failing disk is not taken for gone either, as any error but a missing path is not", async () => {
+    const files = gooseFiles();
+    files.fail(SESSIONS_DIR, "EIO");
+    expect((await readerOf(files, standInSqlite()).read(NOW)).state).toBe("not-looked-at");
+  });
+
+  test("a file above Goose's data folder is a database that has gone", async () => {
+    const files = gooseFiles();
+    files.fail(DATA_DIR, "ENOTDIR");
+    expect((await readerOf(files, standInSqlite()).read(NOW)).state).toBe("missing");
+  });
+
+  test("once it can be looked at again it is read", async () => {
+    const files = gooseFiles();
+    const sqlite = standInSqlite([printedRow()]);
+    const reader = readerOf(files, sqlite);
+    await reader.read(NOW);
+    files.fail(SESSIONS_DIR);
+    expect((await reader.read(NOW + SECOND)).rows).toEqual([]);
+    files.heal(SESSIONS_DIR);
+    expect((await reader.read(NOW + 2 * SECOND)).rows).toHaveLength(1);
+    expect(sqlite.runs).toHaveLength(2);
+  });
+
   test("nothing on Windows: no file is looked at and no program run", async () => {
     const sqlite = standInSqlite();
     const files = gooseFiles();

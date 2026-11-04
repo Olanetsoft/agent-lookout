@@ -21,6 +21,9 @@ import {
   WINDOWS_DETAIL,
 } from "@collector/adapters/goose/index";
 import { RETRY_MS, type DatabaseReader } from "@collector/adapters/goose/database";
+import { createEventStore } from "@collector/eventStore";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
 import {
   DATA_DIR,
   DATABASE,
@@ -52,6 +55,7 @@ const SHM = `${DATABASE}-shm`;
 const NOTES = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
 const SHOWN_DATABASE = "~/.local/share/goose/sessions/sessions.db";
 const READ_DETAIL = `Sessions are read from Goose's database, ${SHOWN_DATABASE}, with sqlite3. ${NOTES}`;
+const NOT_LOOKED_AT_DETAIL = `Goose's database, ${SHOWN_DATABASE}, was not read: the data folder, its sessions folder or a file of the database could not be looked at, so no Goose sessions are listed.`;
 
 /** The rows Sources shows, for the default folder. */
 function watching(
@@ -686,6 +690,96 @@ describe("a database that cannot be read", () => {
       state: "error",
       detail: "Something unexpected went wrong while reading Goose sessions.",
     });
+  });
+});
+
+// The stand-in files, with each system's rules, so these pass on Windows too.
+describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (platform) => {
+  function pollerOf(adapter: ReturnType<typeof gooseAdapterFor>, now: () => number) {
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      now,
+    });
+    const logged = () => events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
+    return { poller, logged };
+  }
+
+  test.each([
+    ["the data folder", DATA_DIR],
+    ["the sessions folder", SESSIONS_DIR],
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("at %s is an error that says so, and not a missing database", async (_case, target) => {
+    const files = gooseFiles();
+    files.fail(target);
+    const sqlite = standInSqlite([printedRow()]);
+    const adapter = gooseAdapterFor(files, sqlite, { platform });
+    const { health, sessions, basis } = await adapter.poll();
+    expect(health).toMatchObject({
+      state: "error",
+      detail: NOT_LOOKED_AT_DETAIL,
+      watching: watching("every 2 seconds"),
+    });
+    expect(sessions).toEqual([]);
+    expect(basis).toBeUndefined();
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("in a folder Agent Lookout's setting names is not a folder with no database", async () => {
+    const files = gooseFiles();
+    files.fail(DATABASE);
+    const adapter = gooseAdapterFor(files, standInSqlite(), {
+      env: { AGENT_LOOKOUT_GOOSE_HOME: DATA_DIR },
+      platform,
+    });
+    const { health } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(health.detail).toContain("could not be looked at");
+    expect(health.detail).not.toContain("which has no");
+  });
+
+  test("sends no ended, and a look that works again brings the sessions back with no event", async () => {
+    const clock = handClock();
+    const files = gooseFiles();
+    const adapter = gooseAdapterFor(files, standInSqlite([printedRow()]), {
+      now: clock.now,
+      platform,
+    });
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    expect((await poller.pollOnce()).sessions).toHaveLength(1);
+
+    files.fail(SESSIONS_DIR);
+    clock.advance(2 * SECOND);
+    const refused = await poller.pollOnce();
+    expect(refused.sources[0]?.state).toBe("error");
+    expect(refused.sessions).toEqual([]);
+    expect(logged()).toEqual([]);
+
+    files.heal(SESSIONS_DIR);
+    clock.advance(2 * SECOND);
+    const resumed = await poller.pollOnce();
+    expect(resumed.sources[0]?.state).toBe("ok");
+    expect(resumed.sessions).toHaveLength(1);
+    expect(logged()).toEqual([]);
+  });
+
+  test("is told from a database that has gone, whose sessions do end", async () => {
+    const clock = handClock();
+    const files = gooseFiles();
+    const adapter = gooseAdapterFor(files, standInSqlite([printedRow()]), {
+      now: clock.now,
+      platform,
+    });
+    const { poller, logged } = pollerOf(adapter, clock.now);
+    await poller.pollOnce();
+    files.remove(DATABASE);
+    clock.advance(2 * SECOND);
+    await poller.pollOnce();
+    expect(logged()).toEqual([{ kind: "ended", sessionId: "goose:20261001_1" }]);
   });
 });
 

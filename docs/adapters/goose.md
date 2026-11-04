@@ -59,6 +59,8 @@ On Windows, `etcetera`'s Windows strategy gives `%APPDATA%\Block\goose\data`. No
 
 While the data folder is missing, and `AGENT_LOOKOUT_GOOSE_HOME` does not name it, only that `stat` is made. After a read that did not work, the question is asked again on the next change, or 10 seconds later. A database that is laid out as another version stands until it changes.
 
+A look that fails for any reason but that nothing is there, as when Agent Lookout is refused or a disk fails, is not taken for a missing database. The card says it could not be looked at, and no session is listed. It is an error, so the poller sends no ended for the sessions it knew. The next poll looks again, and the first look that works reads the database.
+
 ### How sqlite3 opens the database
 
 Goose keeps the database in WAL mode (`session_manager.rs:1091`), so what it has just saved can lie in `sessions.db-wal`, and a new session can be there alone. Which way it is opened follows the files beside it, as for OpenCode's database:
@@ -116,7 +118,7 @@ The schema is version 17 at this tag (`session_manager.rs:32`). `sessions` is ma
 
 A session has no column that says it is open, running or over, none that says it failed, and none that names a process, a terminal or a window. Goose writes nothing when it quits.
 
-Goose's own lists are the reason for the three kinds asked for. `goose session list` shows `user` and `scheduled` (`:2524`), and the desktop app and other ACP clients those and `acp` (`crates/goose/src/acp/server.rs:133`), each session with a message (`crates/goose/src/acp/server/list_sessions.rs:118`).
+Goose's own lists are the reason for the three kinds asked for. `goose session list` shows `user` and `scheduled` (`:2524`), with or without a message (`:2348`), and the desktop app and other ACP clients those and `acp` (`crates/goose/src/acp/server.rs:133`), only with a message (`crates/goose/src/acp/server/list_sessions.rs:206`).
 
 ## Which sessions are listed
 
@@ -166,7 +168,7 @@ Goose's own title cannot be told from a person's first words, so it is never ask
 - By default a model writes that title, from the prompt in `crates/goose/src/prompts/session_name.md`.
 - With a provider that uses local naming, no model is asked, and the title is **the first four words of the first prompt, word for word** (`generate_simple_session_description`, `crates/goose/src/providers/cli_common.rs:42`). `uses_local_session_naming` is on for `codex` and `cursor-agent`, and by default for every provider that manages its own context (`crates/goose-provider-types/src/base.rs:703`): `claude-code`, `gemini-cli` and every provider run through ACP, `AcpProvider`, such as `claude-acp`, `codex-acp`, `copilot-acp`, `amp-acp` and `pi-acp`.
 
-Nothing on the row tells these apart. `provider_name` is the provider a session has now, which the person can change after it was named, and a new provider of this kind would pass a list of the known ones. A title is only compared with the first prompt by reading the prompt. So, as for Cline, the question leaves the title inside SQLite, and a session takes its folder's name, else its id.
+Nothing on the row tells these apart. `provider_name` is the provider a session has now, which the person can change after it was named, and a new provider of this kind would pass a list of the known ones. A title is only compared with the first prompt by reading the prompt. So the question leaves the title inside SQLite, and a session takes its folder's name, else its id, as a Cline session does.
 
 A name the person gave is kept. It is `user_set_name` 1: from `goose session --name`, `goose session rename`, `goose term` with a name, or the desktop app's rename. An imported session keeps the mark it had. A fork or a copy does not take it: it has `user_set_name` 0, and its folder's name.
 

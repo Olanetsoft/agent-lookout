@@ -321,7 +321,7 @@ describe.skipIf(sqlite === null)("reading Goose's database with the real sqlite3
       ]);
     });
 
-    test("leaves out a session with no message, as each new chat is until its first prompt", async () => {
+    test("leaves out a session with no message, as Goose's ACP list does, though `goose session list` shows one", async () => {
       const { file } = await makeDatabase([
         sessionSql(),
         sessionSql({ id: "20261001_2" }),

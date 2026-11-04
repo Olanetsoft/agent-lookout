@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { findSqlite, runSqlite, type RunSqlite } from "../antigravity/app/summaries.ts";
 import { sqliteArguments, type DatabaseMode } from "../opencode/sessionRows.ts";
-import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import {
   PROBE_QUERY,
   readSchema,
@@ -35,6 +35,8 @@ import {
  *
  * Nothing is opened by a link. Goose's data folder and the `sessions` folder in
  * it are looked at with `lstat` as well, and a link at either is not followed.
+ * A database that has gone is nothing to read. One that cannot be looked at may
+ * still be there, so it is not taken for gone.
  *
  * An empty `sessions.db` is taken as none: SQLite would delete a `-wal` beside
  * it.
@@ -59,13 +61,21 @@ export const RETRY_MS = 10_000;
  * missing         there is no database, or it is empty
  * not-safe        a link or anything but an ordinary file is at one of the names read, or a folder's
  *                 name, or its `-wal` holds something but has no `-shm`
+ * not-looked-at   `lstat` failed at one of those names for any reason but that nothing is there
  * no-sqlite       no `sqlite3` was found to read it
  * failed          `sqlite3` did not answer, or its answer could not be read
  * unsupported     its tables are not laid out as Goose v1.34.0 and later lay them out
  * not-on-windows  nothing is read on Windows
  */
 export type DatabaseState =
-  "read" | "missing" | "not-safe" | "no-sqlite" | "failed" | "unsupported" | "not-on-windows";
+  | "read"
+  | "missing"
+  | "not-safe"
+  | "not-looked-at"
+  | "no-sqlite"
+  | "failed"
+  | "unsupported"
+  | "not-on-windows";
 
 export interface DatabaseRead {
   state: DatabaseState;
@@ -116,37 +126,44 @@ export function createDatabaseReader(options: {
   /** The last read, with the files as they were then and when it was made. */
   let last: (DatabaseRead & { files: Files; at: number }) | null = null;
 
-  /** What is at a path: null when nothing is there. */
+  /** What is at a path: null when nothing is there. Throws when it cannot be looked at. */
   async function look(target: string): Promise<FileInfo | null> {
     try {
       return await io.lstat(target);
-    } catch {
-      return null;
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
     }
   }
 
   /** The three files with `lstat`, or why the database is not read. */
-  async function lookUp(): Promise<{ files: Files } | { state: "missing" | "not-safe" }> {
-    for (const folder of [dataFolder, sessionsFolder]) {
-      const info = await look(folder);
-      if (info === null) return { state: "missing" };
-      if (info.kind !== "directory") return { state: "not-safe" };
+  async function lookUp(): Promise<
+    { files: Files } | { state: "missing" | "not-safe" | "not-looked-at" }
+  > {
+    try {
+      for (const folder of [dataFolder, sessionsFolder]) {
+        const info = await look(folder);
+        if (info === null) return { state: "missing" };
+        if (info.kind !== "directory") return { state: "not-safe" };
+      }
+      const database = await look(file);
+      if (database === null) return { state: "missing" };
+      if (database.kind !== "file") return { state: "not-safe" };
+      // SQLite deletes the -wal beside an empty database as it opens it, so an
+      // empty one is not read.
+      if (database.size === 0) return { state: "missing" };
+      const files: Files = {
+        database,
+        wal: await look(`${file}-wal`),
+        shm: await look(`${file}-shm`),
+      };
+      const beside = [files.wal, files.shm].filter((info) => info !== null);
+      if (beside.some((info) => info.kind !== "file")) return { state: "not-safe" };
+      if (walHolds(files) && files.shm === null) return { state: "not-safe" };
+      return { files };
+    } catch {
+      return { state: "not-looked-at" };
     }
-    const database = await look(file);
-    if (database === null) return { state: "missing" };
-    if (database.kind !== "file") return { state: "not-safe" };
-    // SQLite deletes the -wal beside an empty database as it opens it, so an
-    // empty one is not read.
-    if (database.size === 0) return { state: "missing" };
-    const files: Files = {
-      database,
-      wal: await look(`${file}-wal`),
-      shm: await look(`${file}-shm`),
-    };
-    const beside = [files.wal, files.shm].filter((info) => info !== null);
-    if (beside.some((info) => info.kind !== "file")) return { state: "not-safe" };
-    if (walHolds(files) && files.shm === null) return { state: "not-safe" };
-    return { files };
   }
 
   /** Runs the question of the sessions, then the probe if that failed, to tell why. */
