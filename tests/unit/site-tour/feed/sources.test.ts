@@ -9,6 +9,7 @@ import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/in
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
+import { CONTINUE_CAPABILITIES } from "@collector/adapters/continue/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
@@ -35,6 +36,7 @@ import {
 } from "@tests/support/adapters/antigravityAdapter";
 import { adapterFor } from "@tests/support/adapters/claudeCodeAdapter";
 import { clineAdapterFor } from "@tests/support/adapters/cline/clineAdapter";
+import { continueAdapterFor } from "@tests/support/adapters/continue/continueAdapter";
 import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
 import { gooseAdapterFor } from "@tests/support/adapters/goose/gooseAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
@@ -65,6 +67,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.GOOSE_CAPABILITIES).toEqual(GOOSE_CAPABILITIES);
   expect(tour.PI_CAPABILITIES).toEqual(PI_CAPABILITIES);
   expect(tour.KIMI_CODE_CAPABILITIES).toEqual(KIMI_CODE_CAPABILITIES);
+  expect(tour.CONTINUE_CAPABILITIES).toEqual(CONTINUE_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -84,6 +87,7 @@ test("this computer's sources come in the collector's order", () => {
     "goose",
     "pi",
     "kimi-code",
+    "continue",
     "status-files",
   ]);
 });
@@ -265,6 +269,18 @@ test("Kimi Code's card is the one its adapter shows on a computer without it", a
   expect(sessions).toEqual([]);
 });
 
+test("Continue's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = continueAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "continue")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -343,6 +359,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: KIMI_CODE_CAPABILITIES,
         },
         {
+          id: "continue",
+          label: "Continue",
+          state: "unavailable",
+          capabilities: CONTINUE_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -381,7 +403,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>();
+const NOT_ON_THE_PAGE_YET = new Set<string>(["Continue"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

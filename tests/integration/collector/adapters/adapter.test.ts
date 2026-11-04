@@ -8,6 +8,7 @@ import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/in
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
+import { CONTINUE_CAPABILITIES } from "@collector/adapters/continue/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
@@ -33,6 +34,9 @@ const PI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/pi.md", import
 const KIMI_CODE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/kimi-code.md", import.meta.url),
 );
+const CONTINUE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/continue.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -52,6 +56,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Goose", GOOSE_CAPABILITIES],
   ["Pi", PI_CAPABILITIES],
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
+  ["Continue", CONTINUE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -251,6 +256,31 @@ test("PRIVACY.md and the Kimi Code notes name what is read and from which versio
       "interaction.request",
       "interaction.resolved",
       "ps -o pid=,lstart= -p <pids>",
+    ]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Continue notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(CONTINUE_NOTES, "utf8");
+  const start = privacy.indexOf("### Continue's files");
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  expect(start).toBeGreaterThan(-1);
+  expect(section).toContain("built from Continue's source at v1.5.45");
+  expect(notes).toContain("v1.5.45");
+
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.continue/sessions",
+      "sessions.json",
+      "sessionId",
+      "workspaceDirectory",
+      "dateCreated",
+      "title",
+      "CONTINUE_GLOBAL_DIR",
+      "generated",
     ]) {
       expect(text).toContain(field);
     }

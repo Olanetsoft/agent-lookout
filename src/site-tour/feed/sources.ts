@@ -6,9 +6,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi
- * and Kimi Code, none of the eleven installed here, and status files. Then the
- * other machine, connected over SSH.
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
+ * Kimi Code and Continue, none of the twelve installed here, and status files.
+ * Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -585,6 +585,44 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const CONTINUE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason: "Continue writes nothing that says a session runs, and ps shows cn only as node.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "A tool call waiting for approval is written as one a crash left behind is, with nothing to tell them apart.",
+  },
+  finished: {
+    level: "no",
+    reason: "Continue writes no end to a session, and ps shows cn only as node.",
+  },
+  failed: { level: "no", reason: "Continue writes nothing that says a turn failed." },
+  names: {
+    level: "partly",
+    reason: "The folder's name. Continue's own title can be a line of your first prompt.",
+  },
+  jump: { level: "no", reason: "Continue's files name no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Continue session never shows as working.",
+  },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are in the session's file, which is never opened.",
+  },
+  stop: {
+    level: "no",
+    reason: "Continue's files name no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Continue, so it cannot send an answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -962,6 +1000,20 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Continue is not installed: its folder is looked for, and nothing more.
+      id: "continue",
+      label: "Continue",
+      state: "unavailable",
+      detail:
+        "Continue was not found: there is no ~/.continue/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.continue/sessions" },
+        { label: "Read", value: "not found" },
+      ],
+      capabilities: CONTINUE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1001,6 +1053,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Goose there", value: "Not found" },
         { label: "Pi there", value: "Not found" },
         { label: "Kimi Code there", value: "Not found" },
+        { label: "Continue there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

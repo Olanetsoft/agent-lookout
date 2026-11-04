@@ -24,6 +24,7 @@ import {
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
   EMPTY_KIMI_CODE_HOME,
+  EMPTY_CONTINUE_HOME,
   EMPTY_OPENCODE_HOME,
   EMPTY_QWEN_HOME,
   EMPTY_VIBE_SESSION_DIR,
@@ -131,6 +132,14 @@ delete process.env.PI_CODING_AGENT_SESSION_DIR;
 mkdirSync(EMPTY_KIMI_CODE_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_KIMI_CODE_HOME = EMPTY_KIMI_CODE_HOME;
 delete process.env.KIMI_CODE_HOME;
+
+// Nor does one read Continue's folder, `~/.continue` or the one
+// `CONTINUE_GLOBAL_DIR` names: the adapter is pointed at an empty folder, and
+// Continue's own variable is dropped. A test of the adapter names a folder of its
+// own.
+mkdirSync(EMPTY_CONTINUE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_CONTINUE_HOME = EMPTY_CONTINUE_HOME;
+delete process.env.CONTINUE_GLOBAL_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

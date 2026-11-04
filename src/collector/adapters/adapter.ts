@@ -76,6 +76,9 @@ export interface AdapterResult {
    *
    * The Kimi Code adapter has one, `files`: its list of sessions, its folder of
    * locks and each session's files.
+   *
+   * The Continue adapter has one, `files`: its list of sessions and when each
+   * session's file was last written.
    */
   basis?: string;
 }
