@@ -110,7 +110,8 @@ export interface HermesAgentSessionInput {
  * - The status comes from the tip and the root's turn lease
  *   (`mapHermesAgentStatus`), judged again on every poll.
  * - The name is the tip's title, else the root's, else the folder's name,
- *   else the id. The folder is the tip's, else the root's.
+ *   else the id. A title Hermes Agent marks `derived` never gets here: the
+ *   query leaves it out. The folder is the tip's, else the root's.
  * - The app is the terminal or the desktop app when the root's source says.
  * - There is no last write: Hermes Agent keeps every session of a profile in
  *   one file, so no file's modified time says when one was last written.

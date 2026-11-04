@@ -301,6 +301,42 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
     }
   });
 
+  test("a title Hermes Agent derived from the first message reaches nothing it says, nor what sqlite3 prints, and the session takes its folder's name", async () => {
+    const now = Date.now();
+    const root = path.join(await tempDir(), "hermes");
+    await writeDatabase(path.join(root, "state.db"), "rollback", [
+      sessionRow({
+        id: sessionId("da"),
+        title: PRIVATE_WORDS,
+        titleSource: "derived",
+        startedAt: now - 5 * MINUTE,
+      }),
+      sessionRow({ id: sessionId("db"), titleSource: "llm", startedAt: now - 5 * MINUTE }),
+    ]);
+    const printed: string[] = [];
+    const adapter = createHermesAgentAdapter({
+      env: { HERMES_HOME: root },
+      homeDir: "/Users/example",
+      now: () => now,
+      io: nodeIo,
+      platform: process.platform,
+      run: async (binary, args, timeoutMs) => {
+        const answer = await runSqlite(binary, args, timeoutMs);
+        if (answer.ok) printed.push(answer.stdout);
+        return answer;
+      },
+    });
+
+    const polled = await adapter.poll();
+    expect(polled.sessions.map((session) => session.name).sort()).toEqual([
+      "Rename the helper",
+      "demo",
+    ]);
+    expect(JSON.stringify(polled)).not.toContain(PRIVATE_WORDS);
+    expect(printed).not.toHaveLength(0);
+    expect(printed.join("")).not.toContain(PRIVATE_WORDS);
+  });
+
   test("a profile whose newest commits are in a live -wal is read with a sqlite3 that passes Hermes Agent's test, or named as not read, leaving the other profile's sessions be", async () => {
     const now = Date.now();
     const { root, coderDatabase } = await makeRoot(now);

@@ -144,6 +144,8 @@ export interface SessionFields {
   cwd?: string | null;
   /** Defaults to `Rename the helper`. */
   title?: string | null;
+  /** `derived`, `llm` or `user`. Defaults to `llm` for a row with a title, and none for one with no title. */
+  titleSource?: string | null;
   /** A marker kept in `model_config`, naming `markerOf`, else `parentId`. */
   marker?: Marker;
   markerOf?: string;
@@ -161,6 +163,7 @@ export interface SessionFields {
  */
 export function sessionRow(fields: SessionFields): string {
   const source = fields.source ?? "local";
+  const title = fields.title === undefined ? "Rename the helper" : fields.title;
   const config: Record<string, unknown> = { note: PRIVATE_WORDS, yolo_mode: false };
   if (fields.marker !== undefined)
     config[fields.marker] = fields.markerOf ?? fields.parentId ?? null;
@@ -191,8 +194,9 @@ export function sessionRow(fields: SessionFields): string {
     cwd: fields.cwd === undefined ? FOLDER : fields.cwd,
     git_branch: PRIVATE_WORDS,
     billing_base_url: `https://example.com/${SECRET_WORDS}`,
-    title: fields.title === undefined ? "Rename the helper" : fields.title,
-    title_source: "model",
+    title,
+    title_source:
+      fields.titleSource === undefined ? (title === null ? null : "llm") : fields.titleSource,
     last_activity_at: fields.lastActivityAt === undefined ? null : seconds(fields.lastActivityAt),
     last_activity_description: fields.label,
     last_activity_provenance: PRIVATE_WORDS,
@@ -608,6 +612,7 @@ const PROBED: Record<string, string[]> = {
     "end_reason",
     "cwd",
     "title",
+    "title_source",
     "last_activity_at",
     "last_activity_description",
     "archived",

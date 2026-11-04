@@ -111,7 +111,8 @@ export const WINDOWS_DETAIL =
  *   killed is never stamped.
  * - Failed is a turn Hermes Agent closed on an error. One that overflows the
  *   context writes no such row.
- * - The name is Hermes Agent's title, else the folder's name.
+ * - The name is a title from a model or a person, else the folder's name,
+ *   else the id. A title Hermes Agent marks `derived` is left out.
  * - No Jump, Stop or Answer: turns run in a gateway shared by every session,
  *   and approvals and questions are kept in its memory.
  * - No Quiet for: every session of a profile is in one file.
@@ -138,7 +139,11 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
     reason:
       "When a turn ends on an error Hermes Agent records. One that overflows the model's context shows as idle.",
   },
-  names: { level: "yes" },
+  names: {
+    level: "partly",
+    reason:
+      "The title a model or you give a session. Until it has one, or with Hermes Agent's model titles turned off, its folder's name.",
+  },
   jump: {
     level: "no",
     reason:
