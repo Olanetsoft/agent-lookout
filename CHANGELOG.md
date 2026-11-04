@@ -8,6 +8,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Qwen Code's card in Sources lists the rest of what runs for Jump, whether or not anyone presses it. On a Mac, Tab check, `ps -A -o pid=,ppid=,tty=,comm=`, finds a session's tab of Terminal or iTerm2, once for each new process, every 5 seconds at most. One look can serve Claude Code and Qwen Code, so it shows on the card of each whose session it was for, and a look for a Claude Code session alone leaves Qwen Code's at "not run". On Linux with tmux, Jump check, `ps -o pid=,lstart= -p <pids>`, confirms a process found in a pane before its session gets Jump, every 30 seconds while a session's process is in a pane, and sooner when another is found in one. On a Mac that answer comes from the `ps` of Process check, so there is no Jump check. Each says "not run" until it has been asked, and Tab check stays so with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. Without tmux or with `AGENT_LOOKOUT_TMUX=off` there is no Jump check, and Windows lists neither. Listing these adds no run of `ps` (#275).
 
+- After one failed read of a Mistral Vibe session's lease, as when Agent Lookout is out of file handles, a session whose Vibe then goes no longer stays as working until it leaves the list. The failed read was remembered until the file changed, and the file does not change once Vibe has gone, so nothing asked whether its process still ran. A lease that cannot be read is now tried again every 30 seconds, and a session whose Vibe went shows as finished at the first read that works (#271).
+
 ## 0.2.18 - 2026-11-04
 
 Cline and OpenCode 2 sessions show, OpenCode 1.x, Qwen Code and Mistral Vibe sessions show when they ask you a question, and Jump reaches Qwen Code sessions.

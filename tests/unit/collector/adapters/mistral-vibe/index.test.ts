@@ -18,6 +18,7 @@ import {
   WITHOUT_LEASES_NOTE,
 } from "@collector/adapters/mistral-vibe/index";
 import { TAIL_LIMIT_BYTES } from "@collector/adapters/mistral-vibe/journal";
+import { LEASE_RETRY_MS } from "@collector/adapters/mistral-vibe/leases";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { keepsAwake } from "@core/keep-awake/keepAwakeRule";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
@@ -1916,6 +1917,175 @@ describe("a lease whose process ID may have gone to another program", () => {
     }
     // The first wait falls within 30 seconds of the first answer, so it adds no run.
     expect(ps.runs).toHaveLength(5);
+  });
+});
+
+describe("a lease whose .json could not be read", () => {
+  /** What is asked about a lease's process differs by system, `ps` only on a Mac, so each test names its own. */
+  const PLATFORMS = ["darwin", "linux", "win32"] as const;
+  const LEASE_JSON = `${SESSION_DIR}/active/${A}.lock.json`;
+  /** What `ps` prints for a process that started after the lease below, taken at 11:00. */
+  const AFTER_LEASE = "Thu Oct  1 11:30:00 2026";
+
+  /** A session Vibe last wrote to two minutes ago, whose lease, taken at 11:00, is held by a process that runs. */
+  function heldSession(state: StateFields = running(A)) {
+    const files = vibeFiles(() => NOW - 2 * MINUTE);
+    writeStore(files, { id: A, state });
+    writeLease(files, A);
+    return files;
+  }
+
+  test.each(PLATFORMS)(
+    "on %s, a failed open followed by a process that goes shows as finished at the next read that works",
+    async (platform) => {
+      const clock = handClock();
+      const files = heldSession();
+      files.failOpen(LEASE_JSON);
+      const pids = standInPids();
+      const adapter = vibeAdapterFor(files, pids, { now: clock.now, platform });
+      const control = heldSession();
+      const controlPids = standInPids();
+      const shown = vibeAdapterFor(control, controlPids, { now: clock.now, platform });
+
+      // A lease that gives no time counts as taken at this poll, so a read that
+      // fails here shows a session as just taken, not as held, for 30 seconds.
+      await adapter.poll();
+      await shown.poll();
+      clock.advance(LEASE_RETRY_MS);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      expect(statuses((await shown.poll()).sessions)).toEqual({ [A]: "working" });
+
+      // Vibe goes, and the file it leaves behind never changes again.
+      pids.set([]);
+      controlPids.set([]);
+      clock.advance(LEASE_RETRY_MS);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      expect(statuses((await shown.poll()).sessions)).toEqual({ [A]: "finished" });
+
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS - SECOND);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      clock.advance(SECOND);
+      const { sessions } = await adapter.poll();
+      expect(statuses(sessions)).toEqual({ [A]: "finished" });
+      expect(sessions).toEqual((await shown.poll()).sessions);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, while it cannot be read the session stays as it is and no process is asked about",
+    async (platform) => {
+      const clock = handClock();
+      const files = heldSession();
+      files.failOpen(LEASE_JSON);
+      const pids = standInPids([]);
+      const ps = standInStarts();
+      const adapter = vibeAdapterFor(files, pids, {
+        now: clock.now,
+        platform,
+        readProcessStarts: ps.read,
+      });
+      await adapter.poll();
+      for (const later of [LEASE_RETRY_MS, LEASE_RETRY_MS, HOUR]) {
+        clock.advance(later);
+        expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      }
+      expect(pids.asked).toEqual([]);
+      expect(ps.runs).toEqual([]);
+      expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(4);
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a failed open that then reads goes on as a lease that was read",
+    async (platform) => {
+      const clock = handClock();
+      const files = heldSession();
+      files.failOpen(LEASE_JSON);
+      const pids = standInPids();
+      const adapter = vibeAdapterFor(files, pids, { now: clock.now, platform });
+      await adapter.poll();
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      expect(pids.asked).toEqual([LIVE_PID]);
+
+      clock.advance(HOUR);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+      expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(2);
+    },
+  );
+
+  test("on a Mac, `ps` is asked about a lease once it reads, and tells a process ID another program has", async () => {
+    const clock = handClock();
+    const files = heldSession();
+    files.failOpen(LEASE_JSON);
+    const ps = standInStarts({ [LIVE_PID]: AFTER_LEASE });
+    const adapter = vibeAdapterFor(files, standInPids(), {
+      now: clock.now,
+      platform: "darwin",
+      readProcessStarts: ps.read,
+    });
+    await adapter.poll();
+    clock.advance(LEASE_RETRY_MS);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+    expect(ps.runs).toEqual([]);
+
+    files.heal(LEASE_JSON);
+    clock.advance(LEASE_RETRY_MS);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+  });
+
+  test.each(PLATFORMS)(
+    "on %s, a session only its lease keeps is left out until the lease reads, then listed",
+    async (platform) => {
+      const clock = handClock();
+      const files = heldSession(idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      files.failOpen(LEASE_JSON);
+      const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now, platform });
+      expect((await adapter.poll()).sessions).toEqual([]);
+      clock.advance(LEASE_RETRY_MS);
+      expect((await adapter.poll()).sessions).toEqual([]);
+
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "idle" });
+    },
+  );
+
+  test.each(PLATFORMS)(
+    "on %s, a session only its lease keeps does not come back if its process went while the lease could not be read",
+    async (platform) => {
+      const clock = handClock();
+      const files = heldSession(idle(A));
+      makeOld(files, A, NOW - 2 * DAY);
+      files.failOpen(LEASE_JSON);
+      const pids = standInPids();
+      const adapter = vibeAdapterFor(files, pids, { now: clock.now, platform });
+      expect((await adapter.poll()).sessions).toEqual([]);
+
+      pids.set([]);
+      files.heal(LEASE_JSON);
+      clock.advance(LEASE_RETRY_MS);
+      expect((await adapter.poll()).sessions).toEqual([]);
+      clock.advance(HOUR);
+      expect((await adapter.poll()).sessions).toEqual([]);
+    },
+  );
+
+  test("a .json that names no process is not opened again, and its lock still holds", async () => {
+    const clock = handClock();
+    const files = heldSession();
+    files.rewrite(LEASE_JSON, "", { mtimeMs: NOW - 2 * MINUTE });
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now, platform: "linux" });
+    await adapter.poll();
+    for (const later of [LEASE_RETRY_MS, LEASE_RETRY_MS, HOUR]) {
+      clock.advance(later);
+      expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
+    }
+    expect(files.opened().filter((file) => file === LEASE_JSON)).toHaveLength(1);
   });
 });
 
