@@ -54,6 +54,9 @@ export interface AdapterResult {
    * names each profile it read in `health.parts` too, by the start of the ids
    * of that profile's sessions, `hermes-agent:<profile>/`, so a profile that
    * could not be read on one poll leaves its sessions as they were.
+   *
+   * The Cline adapter has one, `files`: the manifest Cline keeps for each
+   * session.
    */
   basis?: string;
 }

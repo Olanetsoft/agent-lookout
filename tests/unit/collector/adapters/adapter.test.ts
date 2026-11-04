@@ -19,6 +19,8 @@ import {
   createClaudeCodeAdapter,
 } from "@collector/adapters/claude-code/index";
 import { sessionFromRegistry } from "@collector/adapters/claude-code/toSession";
+import { CLINE_CAPABILITIES, createClineAdapter } from "@collector/adapters/cline/index";
+import { clineSession } from "@collector/adapters/cline/toSession";
 import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/codex/index";
 import { codexSession } from "@collector/adapters/codex/toSession";
 import {
@@ -50,6 +52,7 @@ import {
   mapAntigravityStatus,
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
+import { mapClineStatus } from "@core/mapping/cline/clineMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
   ENVIRONMENT_CONTEXT_ID,
@@ -83,6 +86,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["OpenCode", OPENCODE_CAPABILITIES],
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
+  ["Cline", CLINE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -149,6 +153,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createHermesAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(HERMES_AGENT_CAPABILITIES);
+    expect(
+      createClineAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(CLINE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -188,6 +195,54 @@ test("on Windows Claude Code reports all it does elsewhere, but Jump in VS Code 
  */
 describe("each declaration agrees with what its adapter does", () => {
   const statuses = (mapped: SessionStatus[]) => new Set(mapped);
+
+  test("Cline: the manifest can say a session needs you, finished or failed, and the rest is unknown", () => {
+    const mapped = statuses(
+      ["running", "pending", "idle", "completed", "cancelled", "failed", "archived", null].flatMap(
+        (status) =>
+          [true, false, null].map((processRuns) => mapClineStatus({ status, processRuns }).status),
+      ),
+    );
+    expect(mapped).toEqual(
+      new Set(["working", "needs-you", "idle", "finished", "failed", "unknown"]),
+    );
+    expect(mapClineStatus({ status: "pending", processRuns: true })).toEqual({
+      status: "needs-you",
+      waitingReason: "permission",
+    });
+    expect(CLINE_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(CLINE_CAPABILITIES.finished.level).toBe("partly");
+    expect(CLINE_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("Cline: a session has a name, the time of its last write, and no tokens, jump or stop", () => {
+    const session = clineSession({
+      manifest: {
+        sessionId: "1790000000000_demo1",
+        pid: 4242,
+        status: "running",
+        cwd: "/Users/example/code/demo",
+        startedAt: NOW - 60_000,
+        endedAt: null,
+      },
+      processRuns: true,
+      statusWrittenAt: NOW - 30_000,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.name).toBe("demo");
+    expect(session.lastWriteAt).toBe(NOW - 10_000);
+    expect(session).not.toHaveProperty("tokens");
+    expect(session).not.toHaveProperty("jump");
+    expect(session).not.toHaveProperty("stop");
+    expect(session.links).toEqual({});
+    expect(CLINE_CAPABILITIES.names.level).toBe("partly");
+    expect(CLINE_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(CLINE_CAPABILITIES.tokens.level).toBe("no");
+    expect(CLINE_CAPABILITIES.jump.level).toBe("no");
+    expect(CLINE_CAPABILITIES.stop.level).toBe("no");
+    expect(CLINE_CAPABILITIES.answer.level).toBe("no");
+  });
 
   test("Claude Code: a live status can need you, and only a background job's state finishes or fails", () => {
     const live = statuses(

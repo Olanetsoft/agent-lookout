@@ -5,6 +5,7 @@ import path from "node:path";
 import { ANTIGRAVITY_APP_HOME_ENV, DEFAULT_APP_HOME } from "../adapters/antigravity/app/index.ts";
 import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/index.ts";
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
+import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli/index.ts";
 import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
@@ -83,6 +84,7 @@ export function sourcesFingerprint(
     qwenFolders(env, homeDir).home,
     qwenFolders(env, homeDir).runtime,
     hermesRootFor(env, homeDir),
+    clineSessionsDirFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

@@ -39,10 +39,14 @@ import { gunzipSync } from "node:zlib";
  * and Qwen Code, and unpacked reached 3.26 MB and installed 4.93 MB. The
  * documents the package ships grew by about 66 KB with them, and the rest is
  * their code in the command.
+ *
+ * Unpacked was raised from 3.60 MB to 3.90 MB once Cline took it just past 3.60
+ * MB. It added 34 KB, 17 KB of code in the command and 16 KB of the documents
+ * the package ships, which leaves room for several more sources.
  */
 const LIMITS = {
   tarball: 1_000_000,
-  unpacked: 3_600_000,
+  unpacked: 3_900_000,
   installed: 5_500_000,
 };
 

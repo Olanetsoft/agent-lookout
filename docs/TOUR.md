@@ -4,7 +4,7 @@ This tour walks through the whole project in plain language: what each part does
 
 ## What Agent Lookout is
 
-Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
+Agent Lookout is a control panel for AI agent sessions that are already running on your computer. It finds Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline sessions where those tools already keep them, plus any agent that writes a small status file. It works out whether each one is working, idle, finished, failed or waiting for you, and shows them all on one page.
 
 It starts no agent and installs nothing into one. By default it sends nothing off the computer. The one exception is the Mac app's daily check on GitHub for a newer version, which Settings turns off. It can act on a session, but only when you ask: bring its tab forward, stop it, or answer its permission prompt.
 
@@ -38,6 +38,7 @@ flowchart LR
     oc["OpenCode<br/>~/.local/share/opencode, sqlite3, ps"]
     qw["Qwen Code<br/>~/.qwen sessions and chat files"]
     ha["Hermes Agent<br/>~/.hermes state.db, sqlite3"]
+    cl["Cline<br/>~/.cline/data/sessions manifests"]
     sf["Your own agents<br/>~/.agent-lookout/sessions"]
   end
   remote["Agent Lookout on another machine<br/>over your ssh"]
@@ -58,6 +59,7 @@ flowchart LR
   oc --> adapters
   qw --> adapters
   ha --> adapters
+  cl --> adapters
   sf --> adapters
   remote --> adapters
   plugin -->|"Unix socket"| held
@@ -78,7 +80,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 
 ### The poller
 
-**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the nine local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and status files), adds one adapter for each other machine, and hands them all to the poller.
+**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the eleven local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline and status files), adds one adapter for each other machine, and hands them all to the poller.
 
 **Where it came from.** It was in the first commit, 042ec3e, on 4 October 2026. Later work added reading history back after a restart (#21), an idle time you can set (#12), marking a wait Agent Lookout answered (#9, #11) and other machines over SSH (#57).
 
@@ -104,7 +106,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 **A session** has:
 
-- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, with `.seatbelt` after it for a session in `~/.cache/.gemini`, `opencode:<session id>`, `qwen-code:<session id>`, `hermes-agent:<profile>/<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
+- an `id` that stays the same from poll to poll, and begins with the source: `claude-code:<session id>`, `codex:<thread id>`, `antigravity-cli:<conversation id>`, `antigravity-app:<conversation id>`, `mistral-vibe:<session id>`, `gemini-cli:<session id>.<hash of its project folder>`, with `.seatbelt` after it for a session in `~/.cache/.gemini`, `opencode:<session id>`, `qwen-code:<session id>`, `hermes-agent:<profile>/<session id>`, `cline:<session id>`, `status-files:<file name>`, or `remote:<machine>:…` for another machine
 - its `source`, the app it runs in (`surface`) and a `name`
 - its folder, `cwd`, and `project`, the folder's last part (`projectOf` in `src/core/sessions/project.ts`)
 - a `status`, and when it started and last changed status (`startedAt`, `statusSince`)
@@ -114,7 +116,7 @@ The event store keeps the last 1,000 events (`EVENT_CAPACITY` in `src/collector/
 
 One rule matters more than it looks: `statusSince` must not move while a session keeps needing you. A later time on a session that is still waiting reads as a new wait, which means a second notification.
 
-**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`), `mistralVibeMapping.ts`, `geminiCliMapping.ts`, `opencode/opencodeMapping.ts` (with `opencode/opencode2Mapping.ts`), `qwen-code/qwenCodeMapping.ts`, `hermes-agent/hermesAgentMapping.ts` and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
+**Mapping.** Each tool's own words become these six in a pure function under `src/core/mapping/`: `claudeCodeMapping.ts`, `codexMapping.ts`, `antigravityMapping.ts` (with `antigravityLiveness.ts` and `antigravityLog.ts`), `mistralVibeMapping.ts`, `geminiCliMapping.ts`, `opencode/opencodeMapping.ts` (with `opencode/opencode2Mapping.ts`), `qwen-code/qwenCodeMapping.ts`, `hermes-agent/hermesAgentMapping.ts`, `cline/clineMapping.ts` and `statusFileMapping.ts`. A word a mapping does not know becomes `unknown`, never a guess. A status a tool does not record is never shown. Codex never writes that it waits for approval, so a Codex session is never `needs-you`.
 
 **Times from other tools.** Every time read from another tool goes through `plausibleTime` in `src/core/time.ts`. A time before 2020, or more than a minute ahead of the clock, is taken as unknown, so nothing shows as idle since 1970.
 
@@ -146,6 +148,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 - OpenCode lists a root session anything of which was written in the last day, by the times in its rows.
 - Qwen Code counts a closed session from the poll that found it closed, or, for a record a crash left behind, from when its chat file was last written (`finishedSessions.ts`).
 - Hermes Agent lists a conversation anything of which was written in the last day, by the times in its rows.
+- Cline first lists a session whose manifest was written in the last day, keeps it for a day after its manifest or, while that says it is open, its messages file was last written, and keeps one that works or waits for as long as its process runs.
 
 ### Branches and pull requests
 
@@ -350,6 +353,27 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **How sure it is.** Not checked against Hermes Agent yet. An approval shows 10 to 70 seconds late, since Hermes Agent saves its label at most once a minute, and a session whose Hermes Agent or gateway was killed stays idle.
 
+### Cline
+
+**Where.** `src/collector/adapters/cline/`, with the mapping in `src/core/mapping/cline/clineMapping.ts`. [adapters/cline.md](adapters/cline.md) is the full reference.
+
+**Where it came from.** Issue #34 asked for Cline. It reads the folder Cline's newer runtime keeps, which its CLI, its desktop app and the VS Code builds that run the runtime write. The older VS Code extension keeps its tasks in the editor's own storage, which is not read. It was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running Cline. The card says so (`UNCHECKED_NOTE`).
+
+**Why the manifests.** Each session has a small file that says its status, its folder and the process that hosts it. Cline's commands write when they list sessions, its database holds the same status beside the prompts, and its hub needs a token. So the adapter reads the manifests alone.
+
+**How it works.**
+
+- `index.ts` works out the folder as Cline does, lists it on every poll, and looks up only the manifests of the sessions it shows and of any new folder. Every other manifest is looked up once a minute, since Cline keeps every session it ever ran.
+- `manifests.ts` opens a manifest only when it changed and was written in the last day, without following a link, reads it only when it is 1 MiB or less, and keeps the id, pid, status, folder and two times. The first prompt and the title are in the same file, and go with the parsed text. A manifest caught half written keeps what was read before, once.
+- `clineMapping.ts` turns the status and whether the process runs into a session's status. `running`, `idle` and `pending` hold only while the process runs, so a crash left behind is finished, and a manifest with no pid is unknown.
+- `toSession.ts` makes the session, `cline:<session id>`, named after its folder.
+
+**Needs you.** The issue said a pending tool approval is not on disk. At cli-v3.0.74 it is: the runtime writes `pending` around each approval, and nothing else writes it. A question writes nothing, so it shows as working.
+
+**The hub.** The CLI and the desktop app usually run sessions in Cline's hub, one background process, so `pid` can be shared and in no terminal. A session closed in the CLI stays in the hub, so it shows as idle for as long as the hub runs. That is why it has no Jump, and why an idle session leaves the list a day after it was last written.
+
+**How sure it is.** Not checked against Cline yet. A session resumed in a new process without a prompt keeps the pid before it, so it shows as finished while it runs.
+
 ### Status files: your own agents
 
 **Where.** `src/collector/adapters/status-files/`, with the mapping in `src/core/mapping/statusFileMapping.ts`. The file format is Agent Lookout's own, and [Your own agents](GUIDE.md#your-own-agents) in the guide is its reference.
@@ -389,6 +413,7 @@ In short:
 - **OpenCode** reports working and idle, finished once `ps` shows no OpenCode program, which OpenCode 2's background service can keep from happening for days, and failed for the errors OpenCode records and for a turn of OpenCode 2's that failed, on macOS and Linux. Names are its titles. Tokens are the newest reply's, for 1.x alone. Needs you only while OpenCode 1.x asks a question or for a plan's approval. No Quiet for, Jump, Stop or Answer.
 - **Qwen Code** reports Quiet for and tokens, and working, idle and finished in part. Needs you only while Qwen Code 0.25.1 or newer asks a question or for a plan's approval. Never failed. Jump only in tmux and in a tab of Terminal or iTerm2. No Stop or Answer.
 - **Hermes Agent** reports working and idle from its turn leases, needs you for a question at once and for an approval 10 to 70 seconds late, finished when Hermes Agent ends a session, and failed for the errors it records, on macOS and Linux. Names are its titles. No Quiet for, Jump, tokens, Stop or Answer.
+- **Cline** reports working and idle from each session's manifest, needs you while it waits for a tool's approval, and finished and failed as it writes them, and finished once the process of a session it left open has gone. Names are its folders', since its titles are by default the start of the first prompt, and Quiet for comes from its files' times. No Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
@@ -1439,7 +1464,7 @@ A test ends in `.test.tsx` only when its module is a `.tsx` file. A module may h
 **Why no test touches your machine.** Tests run on a contributor's own computer, next to their real sessions, so two safeguards keep them apart:
 
 - The test config leaves out the collector's Vite plugin.
-- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed, keeps the Mac app's plugin install from running `claude plugin` and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent at empty folders, drops `HERMES_HOME`, and points the settings at `NO_SETTINGS_FILE`.
+- `tests/support/node/nodeSetup.ts` runs before every unit and integration test file. It turns the history off, stops the real `gh` from running, keeps the permission-answer socket closed, keeps the Mac app's plugin install from running `claude plugin` and removes the phone settings. It also points the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline at empty folders, drops `HERMES_HOME` and Cline's own folder settings, and points the settings at `NO_SETTINGS_FILE`.
 
 A test that builds its own environment does the same itself. One block of tests, the check against the real `claude`, runs only with `AGENT_LOOKOUT_CHECK_REAL_CLAUDE=1`. [tests/README.md](../tests/README.md) has the command, says what goes in each group and describes every helper in `tests/support/`.
 
@@ -1594,7 +1619,7 @@ Both ship inside the npm package.
 | A Gemini CLI session's last message is read only from the file its last poll listed it from, and is never a reply Gemini CLI took back                                                                                                                       | `tests/integration/collector/adapters/gemini-cli/index.test.ts`: "is the newest reply's text, read from the session's own file when asked, and from no other file", and `tests/unit/collector/adapters/gemini-cli/lastMessages.test.ts`: "a $rewindTo to a message from before the end drops every reply the end holds"                                                                                                                            |
 | An OpenCode session's last message is asked only of its own messages, never a subagent's session, never holds a prompt, thinking, a tool, a file, a `synthetic` or `ignored` part or a compaction's summary, and leaves every file of the database as it was | `tests/integration/collector/adapters/opencode/lastMessages.test.ts`: "is the newest reply's own text parts, in OpenCode's order, joined with a line break, and no file is made or changed", "a step that only thinks, calls tools or says nothing but spaces is passed over for the reply before it, and so is a compaction's summary" and "a subagent's text is never its parent's last message, and its session is not asked as one of its own" |
 | Token counts never reach an email, `agent-lookout status` or an MCP answer (#83)                                                                                                                                                                             | `tests/unit/collector/email/emailMessage.test.ts`, `tests/unit/cli/statusReport.test.ts` and `tests/unit/cli/mcp/toolAnswers.test.ts`                                                                                                                                                                                                                                                                                                              |
-| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code or Hermes Agent folder                          | `tests/support/node/nodeSetup.ts`                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| A collector a test builds from `process.env` writes no history, runs no `gh`, opens no answer socket, sends no push and reads no Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent or Cline folder                   | `tests/support/node/nodeSetup.ts`                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | The Mac app's plugin install runs only its fixed `claude plugin` commands, once ever, and nothing built from `process.env` runs them                                                                                                                         | `tests/unit/desktop/claude-plugin/pluginInstaller.test.ts`, `tests/integration/desktop/claude-plugin/pluginInstaller.test.ts` and `tests/support/node/nodeSetup.ts`                                                                                                                                                                                                                                                                                |
 
 The docs are held to the code in the same way:

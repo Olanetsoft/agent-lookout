@@ -21,6 +21,8 @@ export type RemoteSourceId = `remote:${string}`;
  * `qwen-code` is Qwen Code in a terminal.
  * `hermes-agent` is Nous Research's Hermes Agent, whose sessions are read
  * from each of its profiles' databases.
+ * `cline` is Cline's runtime, in its CLI, its desktop app and the VS Code builds
+ * that run it, whose sessions are read from the manifest it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -32,6 +34,7 @@ export type SourceId =
   | "opencode"
   | "qwen-code"
   | "hermes-agent"
+  | "cline"
   | "status-files"
   | RemoteSourceId;
 
@@ -437,13 +440,13 @@ export interface Session {
   statusSince: number | null;
   /**
    * When the agent last wrote to the file this session is read from, or for
-   * Codex and Gemini CLI to a subagent's file, in epoch milliseconds: the
-   * file's own modified time, and nothing read from inside it. Present only
-   * for a source whose file is written as the session works, and only when
-   * the time could be right. It is a measurement, not a status: a working
-   * session that has written nothing for a while may be waiting for an
-   * approval its agent does not record, or may have hung, and the page says
-   * how long, not which.
+   * Codex and Gemini CLI to a subagent's file, or for Cline to its messages
+   * file, in epoch milliseconds: the file's own modified time, and nothing
+   * read from inside it. Present only for a source whose file is written as
+   * the session works, and only when the time could be right. It is a
+   * measurement, not a status: a working session that has written nothing for
+   * a while may be waiting for an approval its agent does not record, or may
+   * have hung, and the page says how long, not which.
    */
   lastWriteAt?: number;
   /**

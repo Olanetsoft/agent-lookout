@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
+import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
@@ -22,6 +23,8 @@ import {
 
 const GUIDE = fileURLToPath(new URL("../../../../docs/GUIDE.md", import.meta.url));
 const README = fileURLToPath(new URL("../../../../README.md", import.meta.url));
+const PRIVACY = fileURLToPath(new URL("../../../../PRIVACY.md", import.meta.url));
+const CLINE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/cline.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -37,6 +40,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["OpenCode", OPENCODE_CAPABILITIES],
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
+  ["Cline", CLINE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -132,4 +136,25 @@ test("the agent table in README.md says what each adapter declares, in each colu
       ),
     ]),
   );
+});
+
+test("PRIVACY.md and the Cline notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(CLINE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const cline = line("For Cline, Agent Lookout reads");
+  expect(cline).toContain("built from Cline's source at cli-v3.0.74");
+  expect(cline).not.toContain("Hermes Agent");
+  expect(line("For Hermes Agent, Agent Lookout runs")).toContain(
+    "built from Hermes Agent's source at v0.22.5",
+  );
+  expect(notes).toContain("cli-v3.0.74");
+
+  for (const text of [privacy, notes]) {
+    expect(text).toContain("~/.cline/data/sessions");
+    for (const field of ["session_id", "pid", "started_at", "ended_at", "status", "cwd"]) {
+      expect(text).toContain(field);
+    }
+  }
 });
