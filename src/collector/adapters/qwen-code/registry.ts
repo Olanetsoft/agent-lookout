@@ -18,13 +18,20 @@ import { isQwenSessionId } from "./transcriptFile.ts";
  *   `<name>.json.<12 hex>.tmp`, and every other name are never opened.
  * - Each is opened without following a link, only as an ordinary file, and
  *   only when it is 64 KiB or less, the limit Qwen Code reads to.
- * - Only `pid`, `sessionId`, `cwd`, `startedAt` and `kind` are kept. The
- *   record also holds `ipcPath`, the path of the session's socket, and
- *   `ipcToken`, the token that lets a program send to it: both are dropped
- *   with the parsed record, never copied, kept, logged or used. So are
- *   `name`, `procStart`, `pidNs`, `qwenVersion` and anything Qwen Code adds,
- *   except that a start token or a namespace id says the record was written
- *   by a process on Linux, which on a Mac or Windows is one in a container.
+ * - Only `pid`, `sessionId`, `cwd`, `startedAt`, `kind`, `procStart` and
+ *   `pidNs` are kept. The record also holds `ipcPath`, the path of the
+ *   session's socket, and `ipcToken`, the token that lets a program send to
+ *   it: both are dropped with the parsed record, never copied, kept, logged or
+ *   used. So are `name`, `qwenVersion` and anything Qwen Code adds.
+ * - `procStart`, a start token, and `pidNs`, a pid namespace, are written on
+ *   Linux alone. On Linux the token tells whether the process with the pid
+ *   now is the record's (`processCheck.ts`), and a record whose namespace is
+ *   not Agent Lookout's, such as one Qwen Code wrote in a container, is not
+ *   listed, as Qwen Code's own listing leaves it out. Nor is one that names
+ *   none, which Qwen Code on Linux never writes: it was written on a Mac or
+ *   Windows into a folder the two share. On a Mac or Windows either field
+ *   says the record was written by a process on Linux, which is one in a
+ *   container, and that record is not listed either.
  * - `kind` is `tui` for Qwen Code in a terminal, `headless` or `serve` for a
  *   session an editor or Qwen Code's own server drives, and `external` for a
  *   program that is not Qwen Code. A record without one is a terminal's,
@@ -56,6 +63,9 @@ const MAX_CWD_LENGTH = 4096;
 
 const CONTROL = /\p{Cc}/u;
 
+/** A start token as Qwen Code writes one: a boot id, hex digits and dashes, a colon and a start. */
+const START_TOKEN = /^[0-9a-f-]{1,64}:\d{1,20}$/i;
+
 /** The kind of a terminal session, which is the only kind listed. */
 export const TERMINAL_KIND = "tui";
 
@@ -81,6 +91,10 @@ export interface RegistryEntry {
   kind: string;
   /** The record was written by a process on Linux: it carries a start token or a namespace id. */
   linux: boolean;
+  /** Its start token, `<boot id>:<start>`, when it has one in the form Qwen Code writes it. */
+  procStart?: string;
+  /** The pid namespace it was written in, when it names one. */
+  pidNs?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -122,6 +136,7 @@ export function parseRecord(
     typeof value.startedAt === "number" && Number.isSafeInteger(value.startedAt)
       ? value.startedAt
       : null;
+  const { procStart, pidNs } = value;
   return {
     pid,
     sessionId: value.sessionId,
@@ -129,8 +144,10 @@ export function parseRecord(
     startedAt,
     kind: typeof value.kind === "string" && KIND.test(value.kind) ? value.kind : TERMINAL_KIND,
     linux:
-      (typeof value.procStart === "string" && value.procStart !== "") ||
-      (typeof value.pidNs === "number" && Number.isFinite(value.pidNs)),
+      (typeof procStart === "string" && procStart !== "") ||
+      (typeof pidNs === "number" && Number.isFinite(pidNs)),
+    ...(typeof procStart === "string" && START_TOKEN.test(procStart) ? { procStart } : {}),
+    ...(typeof pidNs === "number" && Number.isSafeInteger(pidNs) && pidNs > 0 ? { pidNs } : {}),
   };
 }
 
@@ -143,7 +160,11 @@ export type RegistryRead =
       parsed: Map<string, RegistryEntry>;
       /** How many records are of a newer format. */
       newer: number;
-      /** How many terminal records were written on another system: Linux, from a Mac or Windows. */
+      /**
+       * How many terminal records were written where their pid means nothing
+       * here: on a Mac or Windows, ones written on Linux, and on Linux, ones
+       * written in another pid namespace or on a Mac or Windows.
+       */
       elsewhere: number;
     }
   | {
@@ -174,12 +195,19 @@ async function readRecordFile(file: string, io: ReadOnlyIo): Promise<string | nu
  * that file held then stands in for it this once, so its session does not
  * drop out of the list for a poll. One still not whole the next time is
  * skipped.
+ *
+ * On Linux, given the pid namespace Agent Lookout runs in, `ownPidNs`, a
+ * record that names another, or none, is not listed, as Qwen Code's own
+ * listing leaves it out: Qwen Code on Linux never writes one with none, so it
+ * was written on a Mac or Windows. While Agent Lookout's own namespace is not
+ * known, every record is listed.
  */
 export async function readRegistry(
   sessionsDir: string,
   io: ReadOnlyIo,
   platform: NodeJS.Platform,
   previous?: ReadonlyMap<string, RegistryEntry>,
+  ownPidNs: number | null = null,
 ): Promise<RegistryRead> {
   let names: string[];
   try {
@@ -216,13 +244,17 @@ export async function readRegistry(
   );
 
   // A Linux process's ids mean nothing on a Mac or Windows: one in a container
-  // writes into the folder it shares with this computer.
+  // writes into the folder it shares with this computer. On Linux they mean
+  // nothing outside their own pid namespace, and a record that names none was
+  // written on a Mac or Windows.
   const foreign = platform === "darwin" || platform === "win32";
+  const namespace = platform === "linux" ? ownPidNs : null;
   let elsewhere = 0;
   const entries: RegistryEntry[] = [];
   for (const entry of found) {
     if (entry === null || entry.kind !== TERMINAL_KIND) continue;
-    if (foreign && entry.linux) {
+    const otherNamespace = namespace !== null && entry.pidNs !== namespace;
+    if ((foreign && entry.linux) || otherNamespace) {
       elsewhere += 1;
       continue;
     }
@@ -243,19 +275,19 @@ function isNewer(entry: RegistryEntry, than: RegistryEntry): boolean {
 
 /**
  * One record for each session, with whether its process runs, asked of
- * `isAlive` once for each record. Two records naming one session, as a
- * process that resumed it and one that had not yet let it go would write,
- * give the newest by `startedAt` whose process runs, as Qwen Code decides
- * between them: its own listing checks each process first, then takes the
- * newest. When no process of them runs, the newest.
+ * `isAlive` once for each record, with the record's pid and the record. Two
+ * records naming one session, as a process that resumed it and one that had
+ * not yet let it go would write, give the newest by `startedAt` whose process
+ * runs, as Qwen Code decides between them: its own listing checks each process
+ * first, then takes the newest. When no process of them runs, the newest.
  */
 export function oneForEachSession(
   entries: readonly RegistryEntry[],
-  isAlive: (pid: number) => boolean,
+  isAlive: (pid: number, entry: RegistryEntry) => boolean,
 ): ChosenEntry[] {
   const bySession = new Map<string, ChosenEntry>();
   for (const entry of entries) {
-    const alive = isAlive(entry.pid);
+    const alive = isAlive(entry.pid, entry);
     const kept = bySession.get(entry.sessionId);
     if (
       kept === undefined ||

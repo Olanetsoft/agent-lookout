@@ -10,12 +10,14 @@ import {
 } from "@collector/adapters/qwen-code/registry";
 import {
   NOW,
+  PID_NAMESPACE,
   PRIVATE_TOKEN,
   PROJECT,
   QWEN_DIR,
   recordPath,
   registryRecord,
   sessionIdOf,
+  startToken,
 } from "@tests/fixtures/qwen-code/qwenCode";
 import { memoryFiles } from "@tests/support/adapters/qwenCodeAdapter";
 
@@ -70,6 +72,16 @@ describe("oneForEachSession", () => {
     });
     expect(chosen.map(({ entry }) => entry.pid)).toEqual([41001, 41003]);
     expect(asked).toEqual([41001, 41002, 41003]);
+  });
+
+  test("asks with each record, so two records of one pid can be told apart", () => {
+    const first = entryOf(41001, 1, { startedAt: NOW - 10 * 60_000 });
+    const second = entryOf(41001, 2, { startedAt: NOW - 5 * 60_000 });
+    const chosen = oneForEachSession([first, second], (_pid, entry) => entry === second);
+    expect(chosen).toEqual([
+      { entry: first, alive: false },
+      { entry: second, alive: true },
+    ]);
   });
 });
 
@@ -197,6 +209,28 @@ describe("parseRecord", () => {
     expect(linuxOf("00000000-0000-4000-8000-000000000000:12345", null)).toBe(true);
     expect(linuxOf(null, 4026531836)).toBe(true);
   });
+
+  test("keeps a start token and a namespace in the form Qwen Code writes them, and none in another", () => {
+    const parsed = (procStart: unknown, pidNs: unknown) =>
+      parseRecord(
+        registryRecord({ pid: 41001, sessionId: sessionIdOf(1), extra: { procStart, pidNs } }),
+        41001,
+        "linux",
+      ) as RegistryEntry;
+    expect(parsed(startToken(1234), PID_NAMESPACE)).toEqual(
+      entryOf(41001, 1, { linux: true, procStart: startToken(1234), pidNs: PID_NAMESPACE }),
+    );
+    for (const [procStart, pidNs] of [
+      ["12345", 1.5],
+      ["not a token:12345", -1],
+      [`${startToken(1234)} `, "4026531836"],
+      [`${"a".repeat(65)}:1`, 0],
+    ]) {
+      const entry = parsed(procStart, pidNs);
+      expect(entry, String(procStart)).not.toHaveProperty("procStart");
+      expect(entry, String(pidNs)).not.toHaveProperty("pidNs");
+    }
+  });
 });
 
 describe("readRegistry", () => {
@@ -288,6 +322,34 @@ describe("readRegistry", () => {
     }
     const linux = await readRegistry(SESSIONS, files.io, "linux");
     expect(linux.readable && linux.entries.map((entry) => entry.pid).sort()).toEqual([1, 41001]);
+  });
+
+  test("on Linux, leaves out a record from another pid namespace, or that names none, as Qwen Code's own listing does", async () => {
+    const files = memoryFiles();
+    const write = (pid: number, n: number, pidNs: number | null) =>
+      files.write(
+        recordPath(QWEN_DIR, `${pid}.json`),
+        registryRecord({
+          pid,
+          sessionId: sessionIdOf(n),
+          procStart: pidNs === null ? null : startToken(n),
+          pidNs,
+        }),
+      );
+    write(41001, 1, PID_NAMESPACE);
+    write(41002, 2, 4026532001);
+    // As Qwen Code on a Mac or Windows writes one, into a folder it shares with Linux.
+    write(41003, 3, null);
+
+    const read = await readRegistry(SESSIONS, files.io, "linux", undefined, PID_NAMESPACE);
+    // Qwen Code on Linux never writes one that names none.
+    expect(read.readable && read.entries.map((entry) => entry.pid)).toEqual([41001]);
+    expect(read).toMatchObject({ elsewhere: 2 });
+
+    // While Agent Lookout's own namespace is not known, none is left out.
+    const unknown = await readRegistry(SESSIONS, files.io, "linux", undefined, null);
+    expect(unknown).toMatchObject({ elsewhere: 0 });
+    expect(unknown.readable && unknown.entries).toHaveLength(3);
   });
 
   test("skips a link, a pipe and a record over 64 KiB", async () => {

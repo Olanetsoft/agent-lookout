@@ -63,6 +63,15 @@ export const registeredAt = {
   fresh: NOW - 5 * MINUTE,
 } as const;
 
+/** The boot id of the Linux computer the fixture's Linux records were written on, in the kernel's form. */
+export const BOOT_ID = "00000000-0000-4000-8000-00000000b001";
+
+/** A start token as Qwen Code writes one on Linux: a boot id and a start, in clock ticks since that boot. */
+export const startToken = (ticks: number, bootId = BOOT_ID) => `${bootId}:${ticks}`;
+
+/** The pid namespace the fixture's Linux records were written in, the one a Linux computer starts with. */
+export const PID_NAMESPACE = 4026531836;
+
 /** A time as Qwen Code writes it: `YYYY-MM-DDTHH:MM:SS.mmmZ`, in UTC. */
 export const at = (ms: number) => new Date(ms).toISOString();
 

@@ -8,6 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createCollector } from "@collector/collector";
 import { MAX_JUMP_BODY_BYTES } from "@collector/jumpRoute";
+import { createPidNamespaceRead } from "@collector/processes/linuxProcesses";
 import { focusTabArgs, ITERM_SCRIPT, TERMINAL_SCRIPT } from "@collector/terminal/focusTab";
 import { TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFinder";
 import { PANE_LOOK_INTERVAL_MS, PANE_LOOK_SOONEST_MS } from "@collector/tmux/paneFinder";
@@ -75,13 +76,18 @@ const QWEN_SESSION = `qwen-code:${QWEN_ID}`;
 /** The soonest both finders look again for a process that has turned up. */
 const SOONEST_MS = Math.max(PANE_LOOK_SOONEST_MS, TAB_LOOK_SOONEST_MS);
 
-/** A Qwen Code folder that lists one session in a terminal, whose process is `pid`. */
+/**
+ * A Qwen Code folder that lists one session in a terminal, whose process is
+ * `pid`, in this process's pid namespace, with none where it has none: on
+ * Linux the adapter reads its own, and lists no record that names no other.
+ */
 async function qwenHome(pid: number): Promise<string> {
   const home = await tempDir();
+  const pidNs = await createPidNamespaceRead()();
   await mkdir(path.join(home, "sessions"));
   await writeFile(
     path.join(home, "sessions", `${pid}.json`),
-    qwenRecord({ pid, sessionId: QWEN_ID, kind: "tui", startedAt: QWEN_REGISTERED }),
+    qwenRecord({ pid, sessionId: QWEN_ID, kind: "tui", startedAt: QWEN_REGISTERED, pidNs }),
   );
   return home;
 }

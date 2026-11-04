@@ -23,6 +23,7 @@ import {
   type QwenCodeAdapterOptions,
 } from "@collector/adapters/qwen-code/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createPidNamespaceRead } from "@collector/processes/linuxProcesses";
 import {
   assistantLine,
   chatPath,
@@ -36,6 +37,7 @@ import {
   PRIVATE_TOKEN,
   PRIVATE_WORDS,
   PROJECT,
+  PID_NAMESPACE,
   PROJECT_FOLDER,
   promptLine,
   registeredAt,
@@ -43,9 +45,15 @@ import {
   RUNNING_PIDS,
   SECOND,
   sessionIdOf,
+  startToken,
   toolResultLine,
 } from "@tests/fixtures/qwen-code/qwenCode";
-import { handClock, healthy } from "@tests/support/adapters/qwenCodeAdapter";
+import {
+  handClock,
+  healthy,
+  standInStarts,
+  standInTokens,
+} from "@tests/support/adapters/qwenCodeAdapter";
 import { tempDir } from "@tests/support/node/tempFiles";
 
 /** `tests/fixtures/qwen-code/home`, laid out as Qwen Code lays out its own folder. Never written in. */
@@ -76,7 +84,11 @@ async function makeQwenHome(): Promise<string> {
   return home;
 }
 
-/** An adapter pointed at this folder, with the clock at the fixture's `NOW` and its processes stood in for. */
+/**
+ * An adapter pointed at this folder, with the clock at the fixture's `NOW` and
+ * its processes stood in for, a `ps` among them that knows no start time, so
+ * no process of this machine that has a fixture's pid is asked about.
+ */
 function adapterFor(home: string, options: QwenCodeAdapterOptions = {}) {
   return createQwenCodeAdapter({
     env: { AGENT_LOOKOUT_QWEN_HOME: home },
@@ -84,6 +96,7 @@ function adapterFor(home: string, options: QwenCodeAdapterOptions = {}) {
     now: () => NOW,
     isAlive: (pid) => RUNNING_PIDS.has(pid),
     platform: "darwin",
+    readProcessStarts: async () => new Map(),
     ...options,
   });
 }
@@ -323,6 +336,10 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     const ended = spawnSync(process.execPath, ["-e", ""]);
     expect(ended.status).toBe(0);
     const startedAt = Date.now() - MINUTE;
+    // This process's pid namespace, with none where it has none: with no
+    // stand-in the adapter reads its own on Linux, and lists no record that
+    // names no other.
+    const pidNs = await createPidNamespaceRead()();
     const records: [string, number, string][] = [
       [`${process.pid}.json`, process.pid, sessionIdOf(11)],
       [`${ended.pid}.json`, ended.pid, sessionIdOf(12)],
@@ -332,7 +349,7 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     for (const [name, pid, sessionId] of records) {
       await writeFile(
         path.join(sessions, name),
-        registryRecord({ pid, sessionId, startedAt, kind: "tui" }),
+        registryRecord({ pid, sessionId, startedAt, kind: "tui", pidNs }),
       );
     }
 
@@ -373,6 +390,71 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     await mkdir(home);
     await adapterFor(home).poll();
     expect(await readdir(home)).toEqual([]);
+  });
+});
+
+describe("a record whose pid another program was given, read from the real files", () => {
+  const statusOf = (sessions: { id: string; status: string }[], name: keyof typeof fixture) =>
+    sessions.find((session) => session.id === `qwen-code:${fixture[name].sessionId}`)?.status;
+
+  test("on Linux, a record's start token tells its process from another given its pid, and one from a container is not listed", async () => {
+    const home = await makeQwenHome();
+    // The working and idle sessions' records as Qwen Code writes them on Linux,
+    // and a session in a container that shares the folder, at a pid that runs here.
+    for (const [name, ticks] of [
+      ["working", 500],
+      ["idle", 900],
+    ] as const) {
+      const { pid, sessionId } = fixture[name];
+      await writeFile(
+        path.join(home, "sessions", `${pid}.json`),
+        registryRecord({
+          pid,
+          sessionId,
+          startedAt: registeredAt[name],
+          kind: "tui",
+          procStart: startToken(ticks),
+          pidNs: PID_NAMESPACE,
+        }),
+      );
+    }
+    await writeFile(
+      path.join(home, "sessions", "41006.json"),
+      registryRecord({
+        pid: fixture.fresh.pid,
+        sessionId: fixture.fresh.sessionId,
+        kind: "tui",
+        procStart: startToken(300),
+        pidNs: 4026532001,
+      }),
+    );
+    // The idle session's Qwen Code crashed, and another program has its pid.
+    const tokens = standInTokens({ 41001: startToken(500), 41004: startToken(64_000) });
+    const { sessions } = await adapterFor(home, {
+      platform: "linux",
+      readStartTokens: tokens.read,
+      readPidNamespace: async () => PID_NAMESPACE,
+    }).poll();
+
+    expect(statusOf(sessions, "working")).toBe("working");
+    expect(statusOf(sessions, "idle")).toBe("finished");
+    expect(statusOf(sessions, "fresh")).toBeUndefined();
+    expect(tokens.reads).toEqual([[41001, 41004]]);
+  });
+
+  test("on a Mac, a process ps says started after its record was written was given the pid, and its session is finished", async () => {
+    const home = await makeQwenHome();
+    const ps = standInStarts({
+      [fixture.working.pid]: registeredAt.working - 2 * SECOND,
+      [fixture.idle.pid]: NOW - 10 * MINUTE,
+    });
+    const { sessions } = await adapterFor(home, { readProcessStarts: ps.read }).poll();
+
+    expect(statusOf(sessions, "working")).toBe("working");
+    expect(statusOf(sessions, "idle")).toBe("finished");
+    // ps knows nothing of it, so it stays as signal 0 says.
+    expect(statusOf(sessions, "fresh")).toBe("idle");
+    expect(ps.runs).toEqual([[fixture.working.pid, fixture.idle.pid, fixture.fresh.pid]]);
   });
 });
 
