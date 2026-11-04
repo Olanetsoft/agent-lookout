@@ -6,8 +6,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent, none of the
- * seven installed here, and status files. Then the other machine, connected
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline, none of
+ * the eight installed here, and status files. Then the other machine, connected
  * over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
@@ -406,6 +406,53 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const CLINE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From each session's manifest. Cline's hub holds a session on, so it stays idle after its window closes.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason: "While Cline waits for a tool's approval. A question it asks you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once Cline says so or its process goes. A session resumed in a new process shows as finished as it runs.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When Cline writes it. An open session whose turn ended on an error shows as idle until it closes.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The folder's name. Cline's own title is by default the start of your first prompt, which is never kept.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "The process a session names can be Cline's hub, shared by many sessions and in no terminal.",
+  },
+  "quiet-for": { level: "yes" },
+  tokens: {
+    level: "no",
+    reason:
+      "The manifest holds a session's running totals. A reply's own counts are in a file that is never opened.",
+  },
+  stop: {
+    level: "no",
+    reason: "Agent Lookout stops Claude Code sessions only so far.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Agent Lookout does not talk to Cline's hub or its runtime, so it cannot send an answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -695,6 +742,25 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Cline is not installed: its folder is looked for, and nothing more.
+      id: "cline",
+      label: "Cline",
+      state: "unavailable",
+      detail:
+        "Cline was not found: there is no ~/.cline/data/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.cline/data/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+      ],
+      capabilities: CLINE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -730,6 +796,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "OpenCode there", value: "Not found" },
         { label: "Qwen Code there", value: "Not found" },
         { label: "Hermes Agent there", value: "Not found" },
+        { label: "Cline there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

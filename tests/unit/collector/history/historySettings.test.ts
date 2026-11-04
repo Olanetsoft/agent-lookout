@@ -89,6 +89,12 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ HERMES_HOME: "/Users/example/.hermes/profiles/coder" }, HOME)).toBe(
     defaults,
   );
+  // Cline's own variables name its folder, its data folder or its sessions folder.
+  expect(sourcesFingerprint({ CLINE_DIR: "/Users/example/.cline" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ CLINE_DATA_DIR: "/Users/example/.cline/data" }, HOME)).toBe(defaults);
+  expect(
+    sourcesFingerprint({ CLINE_SESSION_DATA_DIR: "/Users/example/.cline/data/sessions" }, HOME),
+  ).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -117,6 +123,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_HERMES_HOME: "/tmp/empty-hermes" }, HOME),
     sourcesFingerprint({ HERMES_HOME: "/tmp/empty-hermes" }, HOME),
     sourcesFingerprint({ HERMES_HOME: "/tmp/hermes/profiles/work" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_CLINE_HOME: "/tmp/empty-cline" }, HOME),
+    sourcesFingerprint({ CLINE_DIR: "/tmp/empty-cline" }, HOME),
+    sourcesFingerprint({ CLINE_DATA_DIR: "/tmp/empty-cline" }, HOME),
+    sourcesFingerprint({ CLINE_SESSION_DATA_DIR: "/tmp/empty-cline" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

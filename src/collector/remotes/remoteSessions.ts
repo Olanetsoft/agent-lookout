@@ -65,6 +65,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["opencode", ["database", "database-closed", "database-without-processes"]],
   ["qwen-code", ["files"]],
   ["hermes-agent", ["database"]],
+  ["cline", ["files"]],
   ["status-files", ["files"]],
 ]);
 

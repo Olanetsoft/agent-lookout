@@ -6,10 +6,10 @@ export const QUIET_AFTER_MS = 5 * 60_000;
 
 /**
  * How long a working session's agent has written nothing to its file, or for
- * Codex and Gemini CLI to a subagent's file, once that is the threshold or
- * longer. Null for every other session: one that is not working, one whose
- * source gives no time of its last write, and one that wrote more recently
- * than that.
+ * Codex and Gemini CLI to a subagent's file, or for Cline to its messages
+ * file, once that is the threshold or longer. Null for every other session:
+ * one that is not working, one whose source gives no time of its last write,
+ * and one that wrote more recently than that.
  *
  * It is a measurement and changes nothing else: the session stays working,
  * with its own mark and word, and is never taken to need the person. A Codex

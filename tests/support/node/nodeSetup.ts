@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
+  EMPTY_CLINE_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
@@ -94,6 +95,16 @@ delete process.env.QWEN_RUNTIME_DIR;
 mkdirSync(EMPTY_HERMES_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_HERMES_HOME = EMPTY_HERMES_HOME;
 delete process.env.HERMES_HOME;
+
+// Nor does one read Cline's folder, `~/.cline` or the ones `CLINE_DIR`,
+// `CLINE_DATA_DIR` and `CLINE_SESSION_DATA_DIR` name: the adapter is pointed at
+// an empty folder, and Cline's own variables are dropped. A test of the adapter
+// names a folder of its own.
+mkdirSync(EMPTY_CLINE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_CLINE_HOME = EMPTY_CLINE_HOME;
+delete process.env.CLINE_DIR;
+delete process.env.CLINE_DATA_DIR;
+delete process.env.CLINE_SESSION_DATA_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

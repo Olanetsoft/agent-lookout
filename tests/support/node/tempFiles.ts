@@ -117,6 +117,14 @@ export const EMPTY_QWEN_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-qwe
 export const EMPTY_HERMES_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-hermes", "hermes");
 
 /**
+ * An empty folder for the Cline adapter to read in place of `~/.cline`, so that
+ * a collector a test builds from `process.env` finds no sessions: `nodeSetup.ts`
+ * makes it and names it there. Nothing is ever written in it. A test that builds
+ * an environment of its own names a `tempDir` there.
+ */
+export const EMPTY_CLINE_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-cline", "cline");
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,
