@@ -55,6 +55,7 @@ async function serve(
       AGENT_LOOKOUT_QWEN_HOME: await tempDir(),
       AGENT_LOOKOUT_HERMES_HOME: await tempDir(),
       AGENT_LOOKOUT_CLINE_HOME: await tempDir(),
+      AGENT_LOOKOUT_GOOSE_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",

@@ -220,8 +220,9 @@ export function SourcesView({ state, now }: SourcesViewProps) {
           <p>
             A source is an agent tool Agent Lookout finds sessions in. It reads its files and never
             writes to them, except that the sqlite3 it runs for OpenCode and Hermes Agent can leave
-            an empty -wal file beside OpenCode&apos;s or Hermes Agent&apos;s database. Agent Lookout
-            stops a Claude Code session only when you press Stop and confirm.
+            an empty -wal file beside OpenCode&apos;s or Hermes Agent&apos;s database. The one it
+            runs for Goose can do the same beside Goose&apos;s. Agent Lookout stops a Claude Code
+            session only when you press Stop and confirm.
           </p>
           <p>
             Status files are how any other agent appears: it writes a small file for each of its

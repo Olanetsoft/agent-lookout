@@ -14,6 +14,7 @@
     "qwen-code",
     "hermes-agent",
     "cline",
+    "goose",
     "mcp",
     "mcp-server",
     "tmux",

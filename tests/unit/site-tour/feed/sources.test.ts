@@ -10,6 +10,7 @@ import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index"
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
+import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
@@ -33,6 +34,7 @@ import {
 import { adapterFor } from "@tests/support/adapters/claudeCodeAdapter";
 import { clineAdapterFor } from "@tests/support/adapters/cline/clineAdapter";
 import { geminiCliAdapterFor } from "@tests/support/adapters/geminiCliAdapter";
+import { gooseAdapterFor } from "@tests/support/adapters/goose/gooseAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
@@ -56,6 +58,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.QWEN_CODE_CAPABILITIES).toEqual(QWEN_CODE_CAPABILITIES);
   expect(tour.HERMES_AGENT_CAPABILITIES).toEqual(HERMES_AGENT_CAPABILITIES);
   expect(tour.CLINE_CAPABILITIES).toEqual(CLINE_CAPABILITIES);
+  expect(tour.GOOSE_CAPABILITIES).toEqual(GOOSE_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -72,6 +75,7 @@ test("this computer's sources come in the collector's order", () => {
     "qwen-code",
     "hermes-agent",
     "cline",
+    "goose",
     "status-files",
   ]);
 });
@@ -217,6 +221,18 @@ test("Cline's card is the one its adapter shows on a computer without it", async
   expect(sessions).toEqual([]);
 });
 
+test("Goose's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = gooseAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "goose")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("the other machine's agents and its row for each source are what this computer's reader makes of them", () => {
   const read = readRemoteSnapshot(
     {
@@ -277,6 +293,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: CLINE_CAPABILITIES,
         },
         {
+          id: "goose",
+          label: "Goose",
+          state: "unavailable",
+          capabilities: GOOSE_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -315,7 +337,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>();
+const NOT_ON_THE_PAGE_YET = new Set(["Goose"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

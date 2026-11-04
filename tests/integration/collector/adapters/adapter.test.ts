@@ -9,6 +9,7 @@ import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index"
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
+import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
@@ -25,6 +26,7 @@ const GUIDE = fileURLToPath(new URL("../../../../docs/GUIDE.md", import.meta.url
 const README = fileURLToPath(new URL("../../../../README.md", import.meta.url));
 const PRIVACY = fileURLToPath(new URL("../../../../PRIVACY.md", import.meta.url));
 const CLINE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/cline.md", import.meta.url));
+const GOOSE_NOTES = fileURLToPath(new URL("../../../../docs/adapters/goose.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -41,6 +43,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Qwen Code", QWEN_CODE_CAPABILITIES],
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Cline", CLINE_CAPABILITIES],
+  ["Goose", GOOSE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -154,6 +157,36 @@ test("PRIVACY.md and the Cline notes name what is read and from which version", 
   for (const text of [privacy, notes]) {
     expect(text).toContain("~/.cline/data/sessions");
     for (const field of ["session_id", "pid", "started_at", "ended_at", "status", "cwd"]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Goose notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(GOOSE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const goose = line("For Goose, Agent Lookout runs");
+  expect(goose).toContain("built from Goose's source at v1.57.0");
+  expect(goose).not.toContain("Cline");
+  expect(goose).toContain("`ps`");
+  expect(notes).toContain("v1.57.0");
+
+  const start = privacy.indexOf("### Goose's files");
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    expect(text).toContain("~/.local/share/goose/sessions/sessions.db");
+    for (const field of [
+      "working_dir",
+      "user_set_name",
+      "created_at",
+      "updated_at",
+      "session_type",
+      "archived_at",
+      "messages",
+      "ps -A -o comm=",
+    ]) {
       expect(text).toContain(field);
     }
   }

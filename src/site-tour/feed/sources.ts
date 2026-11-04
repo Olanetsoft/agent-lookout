@@ -6,8 +6,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * when it reads its sessions with nothing wrong: what it reads, how often, and
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
- * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline, none of
- * the eight installed here, and status files. Then the other machine, connected
+ * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline and Goose,
+ * none of the nine installed here, and status files. Then the other machine, connected
  * over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
@@ -457,6 +457,44 @@ export const CLINE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const GOOSE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason:
+      "Nothing ties a Goose session to a process, so a turn a crash cut off looks like one under way.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Goose writes a tool's approval inside a message, which is not read, and a crash leaves it there.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Every session at once, when ps shows no Goose program, on macOS and Linux. Goose writes no end to one.",
+  },
+  failed: { level: "no", reason: "Goose writes no field that says a turn failed." },
+  names: {
+    level: "partly",
+    reason:
+      "The folder's, or one you gave the session. Goose's title can be the start of your first prompt.",
+  },
+  jump: { level: "no", reason: "Goose's database names no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Goose session never shows as working.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout does not read the counts on a session's row." },
+  stop: {
+    level: "no",
+    reason: "Goose's database names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Goose, so it cannot send an answer.",
+  },
+};
+
 /** The sentence the Codex adapter says of waits, beside its sessions. */
 export const CODEX_NEEDS_YOU_NOTE =
   "Codex's session files do not record when it is waiting for your approval, so a Codex session that is waiting for you shows as working.";
@@ -767,6 +805,32 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Goose is not installed: its folder is looked for, and nothing more.
+      id: "goose",
+      label: "Goose",
+      state: "unavailable",
+      detail:
+        "Goose was not found: there is no ~/.local/share/goose folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Data folder", value: "~/.local/share/goose" },
+        { label: "Database", value: "~/.local/share/goose/sessions/sessions.db" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Command",
+          value: "sqlite3 -init /dev/null -batch -json <database> <fixed query>",
+        },
+        { label: "Command run", value: "when the database changes" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Goose",
+        },
+      ],
+      capabilities: GOOSE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -803,6 +867,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Qwen Code there", value: "Not found" },
         { label: "Hermes Agent there", value: "Not found" },
         { label: "Cline there", value: "Not found" },
+        { label: "Goose there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

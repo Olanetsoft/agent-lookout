@@ -23,6 +23,8 @@ export type RemoteSourceId = `remote:${string}`;
  * from each of its profiles' databases.
  * `cline` is Cline's runtime, in its CLI, its desktop app and the VS Code builds
  * that run it, whose sessions are read from the manifest it keeps for each.
+ * `goose` is Goose, in its command and its desktop app, whose sessions are read
+ * from its database.
  */
 export type SourceId =
   | "claude-code"
@@ -35,6 +37,7 @@ export type SourceId =
   | "qwen-code"
   | "hermes-agent"
   | "cline"
+  | "goose"
   | "status-files"
   | RemoteSourceId;
 
