@@ -153,8 +153,8 @@ const FEATURES = [
   { name: "allow-deny", scene: "Allow or Deny", step: 0, height: 800 },
   { name: "notifications", scene: "Settings", step: 0, height: 1000 },
   { name: "jump-stop", scene: "Stop", step: 0, height: 800, pressed: true, alone: true },
-  // With the rows of Hermes Agent, Cline, Goose, Pi and Kimi Code, the card is taller than its clip in a 1520-wide window.
-  { name: "agents", scene: "Sources", step: 2, width: 1600, height: 1000 },
+  // With the rows of Hermes Agent, Cline, Goose, Pi and Kimi Code, the card is taller than its clip in a 1600-wide window.
+  { name: "agents", scene: "Sources", step: 2, width: 1640, height: 1000 },
 ];
 
 /**
