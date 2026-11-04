@@ -436,18 +436,21 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(MISTRAL_VIBE_CAPABILITIES.answer.level).toBe("no");
   });
 
-  test("Gemini CLI: no line ever makes a session need you, finish or fail", () => {
+  test("Gemini CLI: no line ever makes a session need you or finish, and only a failed request's error fails it", () => {
     const shapes = [false, true].flatMap((empty) =>
       [false, true].flatMap((functionCall) =>
         [false, true].flatMap((functionResponse) =>
           [false, true].flatMap((thoughtOnly) =>
-            [false, true].map((note) => ({
-              empty,
-              functionCall,
-              functionResponse,
-              thoughtOnly,
-              note,
-            })),
+            [false, true].flatMap((note) =>
+              [false, true].map((failedRequest) => ({
+                empty,
+                functionCall,
+                functionResponse,
+                thoughtOnly,
+                note,
+                failedRequest,
+              })),
+            ),
           ),
         ),
       ),
@@ -495,10 +498,20 @@ describe("each declaration agrees with what its adapter does", () => {
         ),
       ),
     );
-    expect(mapped).toEqual(new Set(["working", "idle", "unknown"]));
+    expect(mapped).toEqual(new Set(["working", "idle", "failed", "unknown"]));
+    const failing = messages.filter(
+      (message) =>
+        mapGeminiCliStatus(replayGeminiCliRecords([...before, { kind: "message", message }]))
+          .status === "failed",
+    );
+    expect(failing.length).toBeGreaterThan(0);
+    for (const { type, content } of failing) {
+      expect(type).toBe("error");
+      expect(content?.failedRequest).toBe(true);
+    }
     expect(GEMINI_CLI_CAPABILITIES["needs-you"].level).toBe("no");
     expect(GEMINI_CLI_CAPABILITIES.finished.level).toBe("no");
-    expect(GEMINI_CLI_CAPABILITIES.failed.level).toBe("no");
+    expect(GEMINI_CLI_CAPABILITIES.failed.level).toBe("partly");
     expect(GEMINI_CLI_CAPABILITIES["working-and-idle"].level).toBe("partly");
   });
 

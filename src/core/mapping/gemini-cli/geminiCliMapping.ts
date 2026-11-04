@@ -9,9 +9,9 @@
 // replays the small records the collector keeps of each line by the same rules,
 // and reads a status, and the newest reply's token counts, from what is left.
 // Gemini CLI writes nothing while a tool waits for approval or runs, and no
-// mark when a session ends, so a session is working, idle or unknown here,
-// never "needs-you" or "finished". See docs/adapters/gemini-cli.md for where
-// each value comes from.
+// mark when a session ends, so a session is working, idle, failed or unknown
+// here, never "needs-you" or "finished". See docs/adapters/gemini-cli.md for
+// where each value comes from.
 //
 // Built from Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts), and not yet checked
@@ -56,6 +56,11 @@ export interface GeminiCliContent {
    * a shell command's output, a change of folders or leaving Plan Mode.
    */
   note: boolean;
+  /**
+   * Its text begins as the `error` message of a failed request does. Read only
+   * of an `error` message: any other is something else the CLI showed.
+   */
+  failedRequest: boolean;
 }
 
 /** What a reply's tool calls say. Gemini CLI writes them only once every call in the batch has ended. */
@@ -75,7 +80,8 @@ export interface GeminiCliMessage {
   at: number | null;
   /**
    * Null when the line was too long to parse, and only its first bytes were
-   * read, or when it is a line of a kind not known.
+   * read, or when it is a line of a kind not known. An `error` that long has
+   * the shape of the start of its text, when those bytes hold it.
    */
   content: GeminiCliContent | null;
   /** A reply's tool calls. Null when it has none. */
@@ -511,7 +517,8 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * | `gemini`: only thoughts, Gemini CLI's note before it asks about a file a tool sent back | working | the newest prompt |
  * | `gemini` with text and no tool calls | idle | the reply |
  * | `gemini` with tool calls: the batch ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
- * | `error` | idle | the error |
+ * | `error` that begins as a failed request's does | failed | the error |
+ * | any other `error` | idle | the error |
  * | a type Gemini CLI 0.64.0 does not write, a line that could not be read, or a `gemini` line too long to read | unknown | |
  *
  * A reply with text that also calls for a tool is written just as a final
@@ -523,7 +530,11 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * `batch` lets the collector show it as working while it is new
  * (`src/collector/adapters/gemini-cli/toSession.ts`).
  *
- * It never returns "needs-you", "finished" or "failed".
+ * Gemini CLI records every error it shows as an `error` message, so only the
+ * start of its text says that a request failed (`failedRequest`). A newer
+ * prompt, or a take-back of the error, moves the session on as any message's.
+ *
+ * It never returns "needs-you" or "finished".
  */
 export function mapGeminiCliStatus(replay: GeminiCliReplay): GeminiCliStatus {
   if (replay.lastEvent === "rollback" || replay.lastEvent === "reattach") {
@@ -561,7 +572,7 @@ export function mapGeminiCliStatus(replay: GeminiCliReplay): GeminiCliStatus {
       return { status: "idle", since: newest.at };
     }
     case "error":
-      return { status: "idle", since: newest.at };
+      return { status: content?.failedRequest === true ? "failed" : "idle", since: newest.at };
     default:
       return unknown;
   }

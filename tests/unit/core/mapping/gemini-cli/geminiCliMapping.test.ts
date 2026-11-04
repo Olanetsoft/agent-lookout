@@ -22,6 +22,7 @@ const SHAPE: GeminiCliContent = {
   functionResponse: false,
   thoughtOnly: false,
   note: false,
+  failedRequest: false,
 };
 
 function message(
@@ -57,6 +58,7 @@ const batch = (id: string, at: number, allCancelled = false, lastAt = at + 5_000
   message(id, "gemini", at, { empty: true }, { allCancelled, lastAt });
 const notice = (type: "info" | "warning" | "error", id: string, at: number) =>
   message(id, type, at);
+const failure = (id: string, at: number) => message(id, "error", at, { failedRequest: true });
 const updated = (at: number): GeminiCliRecord => ({ kind: "set", reattach: false, updatedAt: at });
 const rewind = (id: string): GeminiCliRecord => ({ kind: "rewind", id });
 const patch = (fields: Partial<Extract<GeminiCliRecord, { kind: "patch" }>>): GeminiCliRecord => ({
@@ -128,8 +130,14 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
       T + 90_000,
     ],
     [
-      "an error",
-      [header(), prompt("p1", T + 60_000), notice("error", "e1", T + 90_000)],
+      "an error of a failed request",
+      [header(), reply("g1", T + 60_000), failure("e1", T + 90_000)],
+      "failed",
+      T + 90_000,
+    ],
+    [
+      "an error of another kind",
+      [header(), reply("g1", T + 60_000), notice("error", "e1", T + 90_000)],
       "idle",
       T + 90_000,
     ],
@@ -202,7 +210,7 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
     expect(statusOf(records)).toEqual({ status: "idle", since: T + 76_500 });
   });
 
-  test("never says a session needs you, has finished or has failed", () => {
+  test("never says a session needs you or has finished", () => {
     const kinds: GeminiCliRecord[][] = [
       [prompt("p", T)],
       [toolResult("r", T)],
@@ -211,6 +219,7 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
       [batch("g", T)],
       [batch("g", T, true)],
       [notice("error", "e", T)],
+      [failure("e", T)],
       [notice("info", "i", T)],
       [message("x", "other", T)],
       [rewind("x")],
@@ -222,7 +231,134 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
         seen.add(statusOf([header(), ...records], fromStart).status);
       }
     }
-    expect(seen).toEqual(new Set(["working", "idle", "unknown"]));
+    expect(seen).toEqual(new Set(["working", "idle", "failed", "unknown"]));
+  });
+});
+
+describe("an error of a failed request", () => {
+  const failed = [
+    header(),
+    prompt("p1", T + 60_000),
+    rewind("p1"),
+    updated(T + 65_000),
+    failure("e1", T + 65_001),
+    updated(T + 65_001),
+  ];
+
+  test("is failed after a $patch that takes back the prompt and an older error", () => {
+    const records = [
+      header(),
+      reply("g1", T + 30_000),
+      notice("error", "e1", T + 40_000),
+      prompt("p1", T + 60_000),
+      patch({ removeIds: ["e1", "p1"] }),
+      updated(T + 65_000),
+      failure("e2", T + 65_001),
+      updated(T + 65_001),
+    ];
+    expect(statusOf(records)).toEqual({ status: "failed", since: T + 65_001 });
+  });
+
+  test("is failed after a request that sends the tools' results, which takes nothing back", () => {
+    const records = [
+      header(),
+      prompt("p1", T + 60_000),
+      batch("g1", T + 61_000),
+      toolResult("r1", T + 67_000),
+      failure("e1", T + 70_000),
+      updated(T + 70_000),
+    ];
+    expect(statusOf(records)).toEqual({ status: "failed", since: T + 70_000 });
+  });
+
+  test("is failed when it is all a file read from part way through holds", () => {
+    expect(statusOf([failure("e1", T)], false)).toEqual({ status: "failed", since: T });
+  });
+
+  test("stays failed through a notice or a note, which say nothing of how a session stands", () => {
+    const records = [
+      ...failed,
+      notice("info", "i1", T + 65_002),
+      notice("warning", "w1", T + 65_003),
+      message("n1", "user", T + 90_000, { note: true }),
+    ];
+    expect(statusOf(records)).toEqual({ status: "failed", since: T + 65_001 });
+  });
+
+  test("is working again from a prompt after it", () => {
+    expect(statusOf([...failed, prompt("p2", T + 90_000), updated(T + 90_000)])).toEqual({
+      status: "working",
+      since: T + 90_000,
+    });
+  });
+
+  test("is failed again when the prompt after it fails", () => {
+    const records = [
+      ...failed,
+      prompt("p2", T + 90_000),
+      patch({ removeIds: ["e1", "p2"] }),
+      updated(T + 95_000),
+      failure("e2", T + 95_001),
+    ];
+    expect(statusOf(records)).toEqual({ status: "failed", since: T + 95_001 });
+  });
+
+  test("gives way to a newer message of any kind that says how the session stands", () => {
+    expect(statusOf([...failed, notice("error", "e2", T + 90_000)])).toEqual({
+      status: "idle",
+      since: T + 90_000,
+    });
+    expect(statusOf([...failed, reply("g2", T + 90_000)])).toEqual({
+      status: "idle",
+      since: T + 90_000,
+    });
+    expect(statusOf([...failed, toolResult("r2", T + 90_000)]).status).toBe("working");
+  });
+
+  test("is working again from the results of tools its stream called before it failed", () => {
+    const records = [...failed, batch("g2", T + 90_000), toolResult("r2", T + 95_000)];
+    expect(statusOf(records).status).toBe("working");
+  });
+
+  test("is idle once taken back, or once the session is taken up again", () => {
+    expect(statusOf([...failed, patch({ removeIds: ["e1"] }), updated(T + 90_000)])).toEqual({
+      status: "idle",
+      since: T + 90_000,
+    });
+    const taken: GeminiCliRecord[] = [
+      ...failed,
+      { kind: "set", reattach: true },
+      updated(T + 90_000),
+    ];
+    expect(statusOf(taken)).toEqual({ status: "idle", since: T + 90_000 });
+  });
+});
+
+describe("an error of another kind", () => {
+  test("stays idle after a stopped prompt's take-back, which looks just as a failed request's does", () => {
+    const records = [
+      header(),
+      prompt("p1", T + 60_000),
+      rewind("p1"),
+      updated(T + 65_000),
+      notice("error", "e1", T + 70_000),
+      updated(T + 70_000),
+    ];
+    expect(statusOf(records)).toEqual({ status: "idle", since: T + 70_000 });
+  });
+
+  test("is idle when the line was too long to tell how its text begins", () => {
+    expect(statusOf([header(), message("e1", "error", T, null)])).toEqual({
+      status: "idle",
+      since: T,
+    });
+  });
+
+  test("the words of a failed request mean nothing in any other message", () => {
+    const words = { failedRequest: true };
+    expect(statusOf([header(), message("p1", "user", T, words)]).status).toBe("working");
+    expect(statusOf([header(), message("g1", "gemini", T, words)]).status).toBe("idle");
+    expect(statusOf([header(), message("i1", "info", T, words)]).status).toBe("idle");
   });
 });
 
@@ -314,17 +450,17 @@ describe("replaying a session file by Gemini CLI's own rules", () => {
     expect(statusOf(records)).toEqual({ status: "idle", since: T + 65_000 });
   });
 
-  test("a request that fails ends idle: the prompt is taken back and the error kept", () => {
+  test("a request that fails is failed since its error: the prompt is taken back and the error kept", () => {
     const records = [
       header(),
       prompt("p1", T + 60_000),
       updated(T + 60_000),
       rewind("p1"),
       updated(T + 65_000),
-      notice("error", "e1", T + 65_001),
+      failure("e1", T + 65_001),
       updated(T + 65_001),
     ];
-    expect(statusOf(records)).toEqual({ status: "idle", since: T + 65_001 });
+    expect(statusOf(records)).toEqual({ status: "failed", since: T + 65_001 });
   });
 
   test("with context management, the patch sent with each prompt leaves it working", () => {
