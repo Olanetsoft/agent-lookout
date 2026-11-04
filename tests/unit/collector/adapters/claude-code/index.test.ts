@@ -244,10 +244,12 @@ describe("tmux panes", () => {
       registryIo,
       run: fails("stopped with exit code 1"),
       panes: { ...knownPanes({ [pids.busy]: pane }), installed: () => true },
+      platform: "darwin",
     }).poll();
     const b = await adapterFor("/Users/example/elsewhere", {
       registryIo,
       run: fails("stopped with exit code 1"),
+      platform: "darwin",
     }).poll();
 
     expect(a.health.watching).not.toEqual(b.health.watching);
