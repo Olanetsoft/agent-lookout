@@ -41,6 +41,8 @@ import {
 import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
+import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
+import { piSession } from "@collector/adapters/pi/toSession";
 import { createQwenCodeAdapter, QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { qwenCodeSession, withJump } from "@collector/adapters/qwen-code/toSession";
 import {
@@ -66,6 +68,7 @@ import {
 } from "@core/mapping/gemini-cli/geminiCliMapping";
 import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
 import { mapOpencodeStatus } from "@core/mapping/opencode/opencodeMapping";
+import { mapPiStatus } from "@core/mapping/pi/piMapping";
 import {
   foldQwenCodeRecord,
   mapQwenCodeStatus,
@@ -91,6 +94,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Hermes Agent", HERMES_AGENT_CAPABILITIES],
   ["Cline", CLINE_CAPABILITIES],
   ["Goose", GOOSE_CAPABILITIES],
+  ["Pi", PI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -163,6 +167,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createGooseAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(GOOSE_CAPABILITIES);
+    expect(createPiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities).toBe(
+      PI_CAPABILITIES,
+    );
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -747,6 +754,41 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GOOSE_CAPABILITIES.jump.level).toBe("no");
     expect(GOOSE_CAPABILITIES.stop.level).toBe("no");
     expect(GOOSE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Pi: a session is unknown or finished, and never working, idle, waiting or failed", () => {
+    expect(statuses([mapPiStatus(true), mapPiStatus(false)])).toEqual(
+      new Set(["unknown", "finished"]),
+    );
+    expect(PI_CAPABILITIES["working-and-idle"].level).toBe("no");
+    expect(PI_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(PI_CAPABILITIES.failed.level).toBe("no");
+    expect(PI_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Pi: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = piSession({
+      file: {
+        id: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+        cwd: "/Users/example/code/demo",
+        startedAt: NOW - 60_000,
+        ownName: null,
+      },
+      open: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session.name).toBe("demo");
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(PI_CAPABILITIES.names.level).toBe("partly");
+    expect(PI_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(PI_CAPABILITIES.tokens.level).toBe("no");
+    expect(PI_CAPABILITIES.jump.level).toBe("no");
+    expect(PI_CAPABILITIES.stop.level).toBe("no");
+    expect(PI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Qwen Code: only a reply that asks you a question or for a plan's approval makes a session need you, and no line fails or finishes one", () => {

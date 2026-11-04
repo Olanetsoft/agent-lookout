@@ -67,6 +67,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["hermes-agent", ["database"]],
   ["cline", ["files"]],
   ["goose", ["database", "database-closed", "database-without-processes"]],
+  ["pi", ["files", "files-closed", "files-without-processes"]],
   ["status-files", ["files"]],
 ]);
 

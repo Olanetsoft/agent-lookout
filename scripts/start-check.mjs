@@ -17,7 +17,7 @@
 // tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
 // Antigravity and one for Mistral Vibe, an empty Gemini CLI folder with its
 // tmp/, an empty folder for OpenCode, one for Qwen Code, one for Hermes Agent,
-// one for Cline and one for Goose, a folder with one status file, and a folder for the history the app keeps, so nothing is
+// one for Cline, one for Goose and one for Pi, a folder with one status file, and a folder for the history the app keeps, so nothing is
 // written to this machine's. It starts the app on a port the system picks, with
 // the claude command, tmux and Terminal left alone, and asks only
 // `/api/health`, `/api/sessions`, the dashboard's page and its script. Then it
@@ -99,6 +99,7 @@ const SOURCES = [
   ["cline", "Cline"],
   // Nothing of Goose's is read on Windows.
   ["goose", "Goose", "unavailable"],
+  ["pi", "Pi"],
   ["status-files", "Status files"],
 ];
 
@@ -322,6 +323,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const hermesHome = path.join(dir, "hermes");
   const clineHome = path.join(dir, "cline");
   const gooseHome = path.join(dir, "goose");
+  const piHome = path.join(dir, "pi");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   // Named and never made, so the app reads no settings and starts with every rule off.
@@ -337,6 +339,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(hermesHome, { recursive: true });
   await mkdir(clineHome, { recursive: true });
   await mkdir(gooseHome, { recursive: true });
+  await mkdir(piHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -403,6 +406,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     hermesHome,
     clineHome,
     gooseHome,
+    piHome,
     statusDir,
     historyDir,
     settingsFile,
@@ -413,7 +417,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
 /**
  * The environment `npm start` is given: this one, without any setting of
  * Agent Lookout's own, Codex's, Mistral Vibe's, Gemini CLI's, Qwen Code's,
- * Hermes Agent's, Cline's or Goose's,
+ * Hermes Agent's, Cline's, Goose's or Pi's,
  * and with the folders made for the check. The claude command is not run, tmux
  * and Terminal are not asked, and npm does not look for a newer version of
  * itself.
@@ -432,7 +436,9 @@ function appEnv(folders) {
         name !== "CLINE_DIR" &&
         name !== "CLINE_DATA_DIR" &&
         name !== "CLINE_SESSION_DATA_DIR" &&
-        name !== "GOOSE_PATH_ROOT",
+        name !== "GOOSE_PATH_ROOT" &&
+        name !== "PI_CODING_AGENT_DIR" &&
+        name !== "PI_CODING_AGENT_SESSION_DIR",
     ),
   );
   return {
@@ -451,6 +457,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_HERMES_HOME: folders.hermesHome,
     AGENT_LOOKOUT_CLINE_HOME: folders.clineHome,
     AGENT_LOOKOUT_GOOSE_HOME: folders.gooseHome,
+    AGENT_LOOKOUT_PI_HOME: folders.piHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,
