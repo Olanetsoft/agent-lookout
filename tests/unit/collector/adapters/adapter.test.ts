@@ -407,7 +407,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(MISTRAL_VIBE_CAPABILITIES.finished.level).toBe("partly");
   });
 
-  test("Mistral Vibe: a session has the time of its last write, and no jump, stop, pid or tokens", () => {
+  test("Mistral Vibe: a session has the time of its last write, its tokens, and no jump, stop or pid", () => {
     const session = mistralVibeSession({
       sessionId: "00000000-0000-4000-8000-0000000000e1",
       envelope: {
@@ -418,6 +418,7 @@ describe("each declaration agrees with what its adapter does", () => {
         turnStatus: "in_progress",
         turnStartedAt: NOW - 30_000,
         turnCompletedAt: null,
+        tokens: { input: 2_000, cached: 800, output: 64 },
       },
       title: null,
       cwd: "/Users/example/code/demo",
@@ -427,13 +428,14 @@ describe("each declaration agrees with what its adapter does", () => {
     });
     expect(session.lastWriteAt).toBe(NOW - 10_000);
     expect(session.name).toBe("demo");
-    for (const key of ["jump", "stop", "pid", "alive", "tokens"]) {
+    expect(session.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
+    for (const key of ["jump", "stop", "pid", "alive"]) {
       expect(session, key).not.toHaveProperty(key);
     }
     expect(session.links).toEqual({});
     expect(MISTRAL_VIBE_CAPABILITIES["quiet-for"].level).toBe("yes");
     expect(MISTRAL_VIBE_CAPABILITIES.names.level).toBe("partly");
-    expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("no");
+    expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("yes");
     expect(MISTRAL_VIBE_CAPABILITIES.jump.level).toBe("no");
     expect(MISTRAL_VIBE_CAPABILITIES.stop.level).toBe("no");
     expect(MISTRAL_VIBE_CAPABILITIES.answer.level).toBe("no");

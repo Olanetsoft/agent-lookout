@@ -1,4 +1,6 @@
+import type { TokenCounts } from "../../../core/sessions/session.ts";
 import { sessionName } from "../../../core/text.ts";
+import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
 
 /**
  * The little this adapter keeps of a Vibe session's public state.
@@ -14,7 +16,8 @@ import { sessionName } from "../../../core/text.ts";
  * - `session.title`, cleaned and cut as every session's name is;
  * - `session.status.type`;
  * - `session.createdAt` and `session.updatedAt`;
- * - `latestTurn.status`, `latestTurn.startedAt` and `latestTurn.completedAt`.
+ * - `latestTurn.status`, `latestTurn.startedAt` and `latestTurn.completedAt`;
+ * - the token counts of the newest reply, from `session.contextUsage`.
  *
  * Every other key, and any key a newer Vibe adds, is left where it is. So is
  * every value a newer Vibe gives a field this adapter does not read, such as
@@ -32,6 +35,8 @@ export interface Envelope {
   turnStatus: string | null;
   turnStartedAt: number | null;
   turnCompletedAt: number | null;
+  /** The newest reply's token counts. Null when the state has no turn, or none that could be right. */
+  tokens: TokenCounts | null;
 }
 
 /** The only format of public state this adapter knows. */
@@ -52,8 +57,50 @@ function milliseconds(value: unknown): number | null {
 }
 
 /**
+ * The newest reply's token counts from `session.contextUsage`, through the one
+ * check every reader of token counts makes (`tokenCountsOf`), or null when they
+ * could not be right.
+ *
+ * Vibe sets it to the usage of each reply it commits, with `inputTokens`,
+ * `outputTokens`, `totalTokens` and `cachedInputTokens` (`SessionProjector.apply`
+ * in harness/.../vibe/_projection.py, from 2.26.0 to 3.0.4). `session.tokenUsage`
+ * beside it adds every reply up, so it is never read. So:
+ *
+ * - input is `inputTokens`, the whole prompt, which Vibe makes the cached part
+ *   included for every provider;
+ * - cached is `cachedInputTokens`, left out when it is 0: Vibe writes 0 for a
+ *   provider that sent no cached count, and the state cannot tell that from a
+ *   cache that held none;
+ * - output is `outputTokens`.
+ *
+ * `totalTokens` is read only to check them: Vibe refuses a usage whose total is
+ * not those two together (`validate_token_usage` in its core). The field is null
+ * before the first reply, and every count in it is 0 after a compaction until the
+ * next reply reports, which gives no counts. A rewind leaves it as it was, which
+ * `envelopeOf` answers.
+ */
+function replyTokensOf(usage: unknown): TokenCounts | null {
+  if (!isRecord(usage)) return null;
+  const { inputTokens, cachedInputTokens, outputTokens, totalTokens } = usage;
+  const counts = tokenCountsOf({
+    input: inputTokens,
+    cached: cachedInputTokens === 0 ? undefined : cachedInputTokens,
+    output: outputTokens,
+  });
+  if (counts === null || !Number.isSafeInteger(totalTokens)) return null;
+  return totalTokens === counts.input + counts.output ? counts : null;
+}
+
+/**
  * The kept fields of a public state, or null when it is not one: not an
  * object, of another format, or with no `session` object.
+ *
+ * A state with no turn has no token counts, whatever `session.contextUsage`
+ * holds. A rewind in place cuts the history and sets `latestTurn` to null, the
+ * only code that does, but leaves the usage of a reply that may be gone (`rewind`
+ * in harness/.../vibe/_host.py, at 2.26.1 and 3.0.4). Once the next turn starts,
+ * its state has a turn and the old usage, which nothing tells from a state whose
+ * counts still stand.
  */
 export function envelopeOf(state: unknown): Envelope | null {
   if (!isRecord(state)) return null;
@@ -70,5 +117,6 @@ export function envelopeOf(state: unknown): Envelope | null {
     turnStatus: word(turn?.status),
     turnStartedAt: milliseconds(turn?.startedAt),
     turnCompletedAt: milliseconds(turn?.completedAt),
+    tokens: turn === null ? null : replyTokensOf(session.contextUsage),
   };
 }

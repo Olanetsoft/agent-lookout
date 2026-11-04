@@ -17,6 +17,7 @@ import {
   vibeSessionDirFor,
   WITHOUT_LEASES_NOTE,
 } from "@collector/adapters/mistral-vibe/index";
+import { TAIL_LIMIT_BYTES } from "@collector/adapters/mistral-vibe/journal";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { keepsAwake } from "@core/keep-awake/keepAwakeRule";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
@@ -45,6 +46,7 @@ import {
   savedCallback,
   sessionId,
   storePath,
+  usage,
   type StateFields,
 } from "@tests/fixtures/mistralVibe";
 import {
@@ -394,6 +396,7 @@ describe("listing sessions", () => {
     const { health, sessions } = await vibeAdapterFor(files).poll();
     expect(sessions[0]).toMatchObject({ status: "unknown", name: "demo-project refactor" });
     expect(health.detail).toBe(healthy("~/.vibe/logs/session", NEWER_STORE_NOTE));
+    expect(NEWER_STORE_NOTE).toContain("status and token counts are not shown");
   });
 });
 
@@ -852,7 +855,7 @@ test("declares what it can report, the same on every poll", async () => {
   expect(adapter.capabilities).toBe(MISTRAL_VIBE_CAPABILITIES);
   expect(adapter.lookingIn).toBe("Looking for Mistral Vibe sessions in ~/.vibe/logs/session.");
   expect(MISTRAL_VIBE_CAPABILITIES["needs-you"].level).toBe("partly");
-  expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("no");
+  expect(MISTRAL_VIBE_CAPABILITIES.tokens.level).toBe("yes");
 });
 
 describe("waiting for the person", () => {
@@ -1488,5 +1491,211 @@ describe("waiting for the person", () => {
       clock.advance(2 * SECOND);
     }
     expect(told).toEqual(["needs-you"]);
+  });
+});
+
+describe("the token counts of the newest reply", () => {
+  const FIRST = { input: 12_000, cached: 9_000, output: 340 };
+  const SECOND_REPLY = { input: 13_500, cached: 12_000, output: 96 };
+  const firstUsage = usage(12_000, 340, 9_000);
+  const secondUsage = usage(13_500, 96, 12_000);
+
+  /** A session this test can add to, held by a program that runs. */
+  function heldSession(state: StateFields, journal: string[] = []) {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state, journal });
+    writeLease(files, A);
+    return files;
+  }
+
+  const add = (files: ReturnType<typeof memoryFiles>, line: string, sequence = 4) =>
+    files.append(`${SESSION_DIR}/${journalPath(A, sequence)}`, line, { mtimeMs: NOW + SECOND });
+
+  test("come from the generation while the journal sets no state", async () => {
+    const files = heldSession({ ...idle(A), contextUsage: firstUsage });
+    expect((await vibeAdapterFor(files).poll()).sessions[0]?.tokens).toEqual(FIRST);
+  });
+
+  test("come from the journal when it holds a newer state than the generation", async () => {
+    const files = heldSession({ ...idle(A), contextUsage: firstUsage }, [
+      delta(5, { ...running(A), contextUsage: secondUsage }),
+    ]);
+    expect((await vibeAdapterFor(files).poll()).sessions[0]?.tokens).toEqual(SECOND_REPLY);
+  });
+
+  test("follow each reply as it is added, on the poll that finds it", async () => {
+    const files = heldSession(idle(A), [delta(5, running(A))]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).not.toHaveProperty("tokens");
+    add(files, delta(6, { ...running(A), contextUsage: firstUsage }));
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    add(files, delta(7, { ...running(A), contextUsage: secondUsage }));
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(SECOND_REPLY);
+  });
+
+  test("stand through a record that changes no count, as a rename, and one that sets no state", async () => {
+    const files = heldSession(idle(A), [delta(5, { ...idle(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    add(files, delta(6, { ...idle(A, "a new title"), contextUsage: firstUsage }));
+    add(files, otherRecord("action_intent", 7));
+    add(files, delta(8));
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]).toMatchObject({ name: "a new title", tokens: FIRST });
+  });
+
+  test("stand through a save, from the new generation until its segment sets a state", async () => {
+    const files = heldSession(idle(A), [delta(5, { ...idle(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    writeStore(files, { id: A, sequence: 9, state: { ...idle(A), contextUsage: firstUsage } });
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    add(files, delta(10, { ...running(A), contextUsage: secondUsage }), 9);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(SECOND_REPLY);
+  });
+
+  test("never go back to an older generation's after a save that holds none", async () => {
+    const files = heldSession(idle(A), [delta(5, { ...idle(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    writeStore(files, { id: A, sequence: 9, state: idle(A) });
+    expect((await adapter.poll()).sessions[0]).not.toHaveProperty("tokens");
+  });
+
+  test("are none after a rewind in place, which leaves the usage but no turn, until the next turn", async () => {
+    const rewound = { ...idle(A), turn: null, contextUsage: firstUsage };
+    const files = heldSession(idle(A), [delta(5, { ...idle(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+
+    writeStore(files, { id: A, sequence: 9, state: rewound });
+    const afterRewind = (await adapter.poll()).sessions[0];
+    expect(afterRewind?.status).toBe("idle");
+    expect(afterRewind).not.toHaveProperty("tokens");
+
+    add(files, delta(10, { ...rewound, title: "a new title" }), 9);
+    const renamed = (await adapter.poll()).sessions[0];
+    expect(renamed?.name).toBe("a new title");
+    expect(renamed).not.toHaveProperty("tokens");
+
+    // The next turn's state has a turn and the old usage: the limit Known gaps gives.
+    add(files, delta(11, { ...running(A), contextUsage: firstUsage }), 9);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "working", tokens: FIRST });
+
+    add(files, delta(12, { ...running(A), contextUsage: secondUsage }), 9);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(SECOND_REPLY);
+  });
+
+  test("stand while the session waits for you, and when the wait is settled", async () => {
+    const asked = NOW - 30 * SECOND;
+    const files = heldSession(idle(A), [
+      delta(5, { ...running(A), contextUsage: firstUsage }),
+      callbackRegistered(6, { id: "approval-call-1", createdAt: asked }),
+    ]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      tokens: FIRST,
+    });
+    add(files, callbackResolved(7, "approval-call-1"));
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "working", tokens: FIRST });
+  });
+
+  test("stand once no program holds the session", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: { ...idle(A), contextUsage: firstUsage } });
+    expect((await vibeAdapterFor(files).poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      tokens: FIRST,
+    });
+  });
+
+  test("end at a compaction, with no older reply's in their place, until the next reply reports", async () => {
+    const files = heldSession(idle(A), [delta(5, { ...running(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    add(files, delta(6, { ...running(A), contextUsage: usage(0, 0) }));
+    expect((await adapter.poll()).sessions[0]).not.toHaveProperty("tokens");
+    add(files, delta(7, { ...running(A), contextUsage: secondUsage }));
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(SECOND_REPLY);
+  });
+
+  test("are none, with no older reply's in their place, for counts that could not be right", async () => {
+    const files = heldSession(idle(A), [delta(5, { ...running(A), contextUsage: firstUsage })]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    for (const [sequence, contextUsage] of [
+      "many",
+      { ...secondUsage, inputTokens: "13500" },
+      { ...secondUsage, totalTokens: 1 },
+      usage(Number.MAX_SAFE_INTEGER + 1, 96),
+      usage(13_500, 96, 13_501),
+    ].entries()) {
+      add(files, delta(6 + sequence, { ...running(A), contextUsage }));
+      const { sessions } = await adapter.poll();
+      expect(sessions[0]?.status, JSON.stringify(contextUsage)).toBe("working");
+      expect(sessions[0], JSON.stringify(contextUsage)).not.toHaveProperty("tokens");
+    }
+  });
+
+  test("are none for a store newer than this adapter knows, and read at the newest it knows", async () => {
+    const files = vibeFiles();
+    const state = { ...idle(A), contextUsage: firstUsage };
+    writeStore(files, { id: A, minor: 10, state });
+    writeLease(files, A);
+    writeStore(files, { id: B, minor: 11, state: { ...state, id: B } });
+    writeLease(files, B);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions.map((session) => session.id)).toEqual([
+      `mistral-vibe:${A}`,
+      `mistral-vibe:${B}`,
+    ]);
+    expect(sessions[0]).toMatchObject({ status: "idle", tokens: FIRST });
+    expect(sessions[1]?.status).toBe("unknown");
+    expect(sessions[1]).not.toHaveProperty("tokens");
+  });
+
+  test("are none while the newest state cannot be told, though the generation has some", async () => {
+    const files = heldSession({ ...idle(A), contextUsage: firstUsage });
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.tokens).toEqual(FIRST);
+    add(files, record("projection_advanced", 5, { snapshot: publicState(idle(A)), watermark: 5 }));
+    expect((await adapter.poll()).sessions[0]).not.toHaveProperty("tokens");
+  });
+
+  test("are none while the newest state is past what was read, though the generation has some", async () => {
+    const filler = otherRecord("action_result", 9).replace(PRIVATE_WORDS, "x".repeat(64 * 1024));
+    const lines = [delta(5, { ...running(A), contextUsage: secondUsage })];
+    while (lines.join("").length < TAIL_LIMIT_BYTES + 512 * 1024) lines.push(filler);
+    const files = heldSession({ ...idle(A), contextUsage: firstUsage }, lines);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("unknown");
+    expect(sessions[0]).not.toHaveProperty("tokens");
+  });
+
+  test("are none while a journal not yet read cannot be read, though the generation has some", async () => {
+    const files = heldSession({ ...idle(A), contextUsage: firstUsage }, [delta(5, running(A))]);
+    files.fail(`${SESSION_DIR}/${journalPath(A)}`);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("unknown");
+    expect(sessions[0]).not.toHaveProperty("tokens");
+  });
+
+  test("open no file that is not read for the status", async () => {
+    const opened = async (state: StateFields) => {
+      const files = heldSession(state, [delta(5, state)]);
+      const { io } = files;
+      const paths: string[] = [];
+      const adapter = vibeAdapterFor(files, standInPids(), {
+        io: { ...io, openRegular: (target) => (paths.push(target), io.openRegular(target)) },
+      });
+      await adapter.poll();
+      return { paths, session: (await adapter.poll()).sessions[0] };
+    };
+    const withCounts = await opened({ ...idle(A), contextUsage: firstUsage });
+    const without = await opened(idle(A));
+    expect(withCounts.session?.tokens).toEqual(FIRST);
+    expect(without.session).not.toHaveProperty("tokens");
+    expect(withCounts.paths).toEqual(without.paths);
   });
 });

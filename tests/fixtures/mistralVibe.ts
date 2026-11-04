@@ -80,6 +80,14 @@ export interface TurnFields {
   stopReason?: string | null;
 }
 
+/** A reply's usage as Vibe writes it in `session.contextUsage`: its total is the input and the output together. */
+export const usage = (input: number, output: number, cached = 0) => ({
+  cachedInputTokens: cached,
+  inputTokens: input,
+  outputTokens: output,
+  totalTokens: input + output,
+});
+
 export interface StateFields {
   id: string;
   title?: string | null;
@@ -88,6 +96,8 @@ export interface StateFields {
   createdAt?: number;
   updatedAt?: number;
   turn?: TurnFields | null;
+  /** `session.contextUsage`, as `usage` gives it, or anything a test puts there. Defaults to null. */
+  contextUsage?: unknown;
   /** Keys a newer Vibe could add, at the top of the state and in `session`. */
   extra?: Record<string, unknown>;
 }
@@ -134,7 +144,7 @@ export function publicState(fields: StateFields): Record<string, unknown> {
       createdAt,
       updatedAt: fields.updatedAt ?? createdAt,
       tokenUsage: null,
-      contextUsage: null,
+      contextUsage: fields.contextUsage === undefined ? null : fields.contextUsage,
       ...fields.extra,
     },
     history: { range: "latest", entries: [], cursor: { before: null, after: null } },

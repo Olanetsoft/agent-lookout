@@ -94,7 +94,7 @@ const LEGACY_FOLDER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}_[0-9]{8}_[0-9]{6}_[A-Za-
 /** What is kept of one session's store. */
 export interface Store {
   generation: string;
-  /** True when the store's minor is above the one this adapter knows: its status is not shown. */
+  /** True when the store's minor is above the one this adapter knows: its status and token counts are not shown. */
   tooNew: boolean;
   /** The journal segment the manifest names, relative to the store, or null when it names none that could be right. */
   journal: string | null;

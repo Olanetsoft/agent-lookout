@@ -55,6 +55,9 @@ export interface MistralVibeSessionInput {
  *   has no time.
  * - The last write is the journal segment's modified time, moved by every
  *   record Vibe adds, and by the new segment each save begins.
+ * - Its tokens are the counts of its newest reply, from the same newest public
+ *   state (`envelope.ts`). A store newer than this adapter knows gives none, as
+ *   it gives no status: its counts may not mean what these do.
  * - There is no pid, no `alive`, no link and no Stop: the process that holds
  *   a lease can hold many sessions' leases.
  */
@@ -109,6 +112,7 @@ export function mistralVibeSession(input: MistralVibeSessionInput): Session {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
+  if (envelope?.tokens && input.tooNew !== true) session.tokens = { ...envelope.tokens };
   // The system gives the time with a fraction of a millisecond. A segment cannot
   // have been written before its session began.
   const writtenAt =

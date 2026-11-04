@@ -19,6 +19,7 @@ import {
   publicState,
   record,
   sessionId,
+  usage,
   type StateFields,
 } from "@tests/fixtures/mistralVibe";
 import { memoryFiles, type MemoryFiles } from "@tests/support/adapters/mistralVibeAdapter";
@@ -72,7 +73,17 @@ describe("one line of a journal", () => {
         turnStatus: "in_progress",
         turnStartedAt: NOW - MINUTE,
         turnCompletedAt: null,
+        tokens: null,
       },
+    });
+  });
+
+  test("a projection_delta that sets the state gives the newest reply's token counts", () => {
+    expect(
+      readJournalLine(line(delta(5, { ...running, contextUsage: usage(4_200, 96, 1_024) }))),
+    ).toMatchObject({
+      kind: "state",
+      envelope: { tokens: { input: 4_200, cached: 1_024, output: 96 } },
     });
   });
 

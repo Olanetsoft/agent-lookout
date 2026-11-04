@@ -124,7 +124,7 @@ export const UNCHECKED_NOTE =
 
 /** Said when a store was written by a newer Vibe than this adapter knows. */
 export const NEWER_STORE_NOTE =
-  "Some Mistral Vibe sessions were written by a newer Vibe than Agent Lookout knows, so their status is not shown.";
+  "Some Mistral Vibe sessions were written by a newer Vibe than Agent Lookout knows, so their status and token counts are not shown.";
 
 /** Said when the older engine saved a session in the last day. */
 export const LEGACY_NOTE =
@@ -156,7 +156,8 @@ export const WITHOUT_LEASES_NOTE =
  * - No Jump: the files name no terminal or window, and Vibe documents no link.
  * - Quiet for is the journal segment's own modified time, moved by every
  *   record Vibe adds.
- * - Tokens not yet: this version does not read them.
+ * - Tokens are the counts of the newest reply that has them, from
+ *   `session.contextUsage` in the same public state (`envelope.ts`).
  * - No Stop: the process that holds a session's lease can hold others' too.
  * - No Answer: Vibe takes answers only in its own terminal, editor or app.
  */
@@ -188,7 +189,7 @@ export const MISTRAL_VIBE_CAPABILITIES: SourceCapabilities = {
       "Vibe's files name no terminal or window, and Vibe documents no link that opens a session.",
   },
   "quiet-for": { level: "yes" },
-  tokens: { level: "no", reason: "This version does not read Vibe's token counts." },
+  tokens: { level: "yes" },
   stop: {
     level: "no",
     reason:

@@ -36,6 +36,7 @@ import {
   storeFiles,
   SUBAGENT_ID,
   journalPath,
+  usage,
   type StateFields,
 } from "@tests/fixtures/mistralVibe";
 import { tempDir } from "@tests/support/node/tempFiles";
@@ -461,5 +462,152 @@ describe("a Mistral Vibe session waiting for you, on a real folder", () => {
     expect(opened.some((each) => each.endsWith(".lock"))).toBe(false);
     expect(opened.some((each) => each.endsWith(".registry"))).toBe(false);
     expect(opened.some((each) => each.endsWith("checkpoint.json"))).toBe(false);
+  });
+});
+
+describe("a Mistral Vibe session's token counts, on a real folder", () => {
+  const COUNTED = sessionId("f1");
+  const FIRST = { input: 12_000, cached: 9_000, output: 340 };
+  const SECOND = { input: 13_500, output: 96 };
+
+  const counted = (state: StateFields, contextUsage: unknown): StateFields => ({
+    ...state,
+    contextUsage,
+  });
+
+  /** A session this process holds, with these files, on a folder of its own. */
+  async function countedDir(fields: Parameters<typeof storeFiles>[0]) {
+    const dir = await tempDir();
+    await writeAll(dir, {
+      ...storeFiles(fields),
+      [`active/${COUNTED}.lock`]: "",
+      [`active/${COUNTED}.lock.json`]: leaseFile(COUNTED, process.pid, Date.now() - MINUTE),
+    });
+    return dir;
+  }
+
+  const addTo = (dir: string, line: string, sequence?: number) =>
+    appendFile(path.join(dir, ...journalPath(COUNTED, sequence).split("/")), line);
+
+  async function pollFor(adapter: ReturnType<typeof adapterFor>) {
+    const { sessions } = await adapter.poll();
+    return sessions.find((each) => each.id === `mistral-vibe:${COUNTED}`);
+  }
+
+  test("read the generation's, then each newer reply's from the journal, then the next save's", async () => {
+    const dir = await countedDir({
+      id: COUNTED,
+      minor: 10,
+      state: counted(idle(COUNTED, "demo-project counts"), usage(12_000, 340, 9_000)),
+    });
+    const adapter = adapterFor(dir);
+    expect((await pollFor(adapter))?.tokens).toEqual(FIRST);
+
+    await addTo(dir, delta(5, counted(running(COUNTED, "demo-project counts"), usage(13_500, 96))));
+    expect(await pollFor(adapter)).toMatchObject({ status: "working", tokens: SECOND });
+
+    await writeAll(
+      dir,
+      storeFiles({
+        id: COUNTED,
+        minor: 10,
+        sequence: 9,
+        state: counted(idle(COUNTED, "demo-project counts"), usage(13_500, 96)),
+      }),
+    );
+    expect(await pollFor(adapter)).toMatchObject({ status: "idle", tokens: SECOND });
+
+    await addTo(dir, delta(10, counted(running(COUNTED, "demo-project counts"), usage(0, 0))), 9);
+    expect(await pollFor(adapter)).not.toHaveProperty("tokens");
+  });
+
+  test("are none after a rewind in place, which leaves the usage but no turn, until the next reply", async () => {
+    const dir = await countedDir({
+      id: COUNTED,
+      minor: 10,
+      state: counted(idle(COUNTED, "demo-project counts"), usage(12_000, 340, 9_000)),
+    });
+    const adapter = adapterFor(dir);
+    expect((await pollFor(adapter))?.tokens).toEqual(FIRST);
+
+    await writeAll(
+      dir,
+      storeFiles({
+        id: COUNTED,
+        minor: 10,
+        sequence: 9,
+        state: counted(
+          { ...idle(COUNTED, "demo-project counts"), turn: null },
+          usage(12_000, 340, 9_000),
+        ),
+      }),
+    );
+    const rewound = await pollFor(adapter);
+    expect(rewound?.status).toBe("idle");
+    expect(rewound).not.toHaveProperty("tokens");
+
+    await addTo(
+      dir,
+      delta(10, counted(running(COUNTED, "demo-project counts"), usage(13_500, 96))),
+      9,
+    );
+    expect(await pollFor(adapter)).toMatchObject({ status: "working", tokens: SECOND });
+  });
+
+  test("stand while the session waits for you", async () => {
+    const asked = Date.now() - 1_000;
+    const dir = await countedDir({
+      id: COUNTED,
+      minor: 10,
+      journal: [
+        delta(5, counted(running(COUNTED, "demo-project wait"), usage(12_000, 340, 9_000))),
+        callbackRegistered(6, { id: "approval-call-1", createdAt: asked }),
+      ],
+    });
+    expect(await pollFor(adapterFor(dir))).toMatchObject({
+      status: "needs-you",
+      tokens: FIRST,
+    });
+  });
+
+  test("are none for a state with none, and for counts that could not be right", async () => {
+    const dir = await countedDir({ id: COUNTED, state: idle(COUNTED, "demo-project counts") });
+    const adapter = adapterFor(dir);
+    expect(await pollFor(adapter)).not.toHaveProperty("tokens");
+
+    await addTo(
+      dir,
+      delta(4, counted(running(COUNTED, "demo-project counts"), usage(12_000, 340, 9_000))),
+    );
+    expect((await pollFor(adapter))?.tokens).toEqual(FIRST);
+
+    await addTo(
+      dir,
+      delta(
+        5,
+        counted(running(COUNTED, "demo-project counts"), {
+          ...usage(12_000, 340, 9_000),
+          inputTokens: "12000",
+        }),
+      ),
+    );
+    const session = await pollFor(adapter);
+    expect(session?.status).toBe("working");
+    expect(session).not.toHaveProperty("tokens");
+  });
+
+  test("come with nothing else of the file, and leave every file as it was", async () => {
+    const dir = await countedDir({
+      id: COUNTED,
+      state: counted(idle(COUNTED, "demo-project counts"), {
+        ...usage(12_000, 340, 9_000),
+        modelName: PRIVATE_WORDS,
+      }),
+    });
+    const before = await snapshotOf(dir);
+    const session = await pollFor(adapterFor(dir));
+    expect(session?.tokens).toEqual(FIRST);
+    expect(JSON.stringify(session)).not.toContain(PRIVATE_WORDS);
+    expect(await snapshotOf(dir)).toEqual(before);
   });
 });
