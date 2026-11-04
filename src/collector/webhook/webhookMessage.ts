@@ -26,6 +26,8 @@ import type {
  * in `asking`. That can hold a command, a web address or a file's full path.
  *
  * Nothing else goes in it: no folder path, no prompt, none of the agent's own words.
+ * The session's name is the agent's own title, though, which can echo what was
+ * first asked: PRIVACY.md says how.
  *
  * A reminder of a long wait is the post of a wait with `reminder: true`, and a
  * line that says how long it has waited. A repeat of it says which it is, in

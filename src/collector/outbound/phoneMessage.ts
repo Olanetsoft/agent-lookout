@@ -27,7 +27,8 @@ import type { OverFacts, ReminderFacts, SummaryFacts, WaitFacts } from "./outbou
  *
  * Nothing else goes in it: no folder path, no prompt, none of the agent's own
  * words, no link and no markup. The dashboard's address is not in it either:
- * it opens only on this computer.
+ * it opens only on this computer. The session's name is the agent's own title,
+ * though, which can echo what was first asked: PRIVACY.md says how.
  */
 export interface PhoneMessage {
   /** What it is for, which says how loud the push is. */

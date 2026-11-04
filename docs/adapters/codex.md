@@ -118,7 +118,7 @@ While the folder is missing or cannot be listed, no session is shown as finished
 
 ### The names file
 
-`session_index.jsonl`: one line per name given to a session, `{"id":"<thread id>","thread_name":"<name>","updated_at":"<time>"}`. Codex appends a line on each rename, and the newest line for an id wins. It rewrites the file only to remove a session's names (`codex-rs/rollout/src/session_index.rs`). Only `id` and `thread_name` are kept.
+`session_index.jsonl`: one line per name given to a session, `{"id":"<thread id>","thread_name":"<name>","updated_at":"<time>"}`. Codex appends a line on each rename, and for the title its terminal app has a model write from the first prompt of a session with no name (`codex-rs/tui/src/app/thread_routing.rs:2199-2232`, `codex-rs/tui/src/app/event_dispatch.rs:2702-2716`), and the newest line for an id wins. Such a title can echo what was asked. Codex rewrites the file only to remove a session's names (`codex-rs/rollout/src/session_index.rs`). Only `id` and `thread_name` are kept.
 
 ## Which sessions are listed
 

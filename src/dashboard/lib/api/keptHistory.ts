@@ -136,8 +136,8 @@ export function keptHistoryWords(
         : { title: "This copy is not writing history", detail: kept.problem },
     explanation: [
       kept.problem === null
-        ? "The Events log and the counts behind the charts are written to this folder every few seconds, so they are still there when Agent Lookout starts again. It holds no prompt and nothing a waiting session is asking."
-        : "The copy that writes the history writes the Events log and the counts behind the charts to this folder every few seconds, so they are still there when Agent Lookout starts again. It holds no prompt and nothing a waiting session is asking.",
+        ? "The Events log and the counts behind the charts are written to this folder every few seconds, so they are still there when Agent Lookout starts again. Beyond each session's name, it holds no prompt and nothing a waiting session is asking."
+        : "The copy that writes the history writes the Events log and the counts behind the charts to this folder every few seconds, so they are still there when Agent Lookout starts again. Beyond each session's name, it holds no prompt and nothing a waiting session is asking.",
       `A day's history is deleted ${age} after the day ends, and the oldest goes first once the files would hold more than ${cap}.`,
     ],
   };

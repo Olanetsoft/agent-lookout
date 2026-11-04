@@ -163,7 +163,7 @@ type HomeFrom = "agent-lookout" | "codex" | "default";
  *   when Codex last wrote to each. See `rolloutFile.ts`.
  * - The lock folder `<codex home>/thread-writer-locks`, listed and never
  *   opened, for which sessions a Codex process has open. See `writerLocks.ts`.
- * - `<codex home>/session_index.jsonl`, for the names people give sessions.
+ * - `<codex home>/session_index.jsonl`, for the names of Codex sessions.
  *
  * A session is listed while Codex has it open, and for 24 hours after its last
  * line. Its status is working, idle or finished, never "needs-you": Codex does

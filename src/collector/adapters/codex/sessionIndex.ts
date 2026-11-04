@@ -1,7 +1,7 @@
 import { isMissing, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
- * The names people give Codex sessions, from `<codex home>/session_index.jsonl`.
+ * The names of Codex sessions, from `<codex home>/session_index.jsonl`.
  *
  * Each line is `{"id":"<thread id>","thread_name":"<name>","updated_at":"<time>"}`.
  * Codex appends a line whenever a session is named or renamed, and the newest

@@ -184,7 +184,7 @@ Each `data` is read only once `json_valid` says it is JSON. A message whose `dat
 - Each once. A session in `session_v2` is read from there alone, whatever its row in `session` says.
 - Then each for 24 hours after the newest of its row's `time_updated`, its newest message's and that message's parts', or for a row of `session_v2` its `time_updated`, `time_suspended` and `time_idle`. A time ahead of the clock counts as it is, so a clock set back hides no session.
 
-The name is the title, else, for a row of `session_v2`, the slug, else the folder's name, else the session's id. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop and no `lastWriteAt`. A session of `session` has `tokens`, the counts of its newest reply that has them, as [Token counts](#token-counts) says.
+The name is the title, else, for a row of `session_v2`, the slug, else the folder's name, else the session's id. A title is a model's, written from the first message (`packages/opencode/src/session/prompt.ts:193-253`; at v2.2.5, `packages/core/src/session/title.ts`), or one you set, so it can echo what was asked. `opencode run --title` with no value sets the first 50 characters of the prompt (`packages/opencode/src/cli/cmd/run.ts:450-454`), and no field tells that from any other title. A session's id in Agent Lookout is `opencode:<session id>`. It has no app, no process ID, no link, no Jump, no Stop and no `lastWriteAt`. A session of `session` has `tokens`, the counts of its newest reply that has them, as [Token counts](#token-counts) says.
 
 ## Open or closed
 
