@@ -426,7 +426,7 @@ The question is one fixed text, with nothing from a file or a request in it. For
 
 - `id`;
 - `working_dir`, cut to 4,097 characters;
-- `name`, cut to 1,000 characters, only where `user_set_name` is 1, so that you gave the session that name, or the ACP client you use sent it when it started the session;
+- `name`, cut to 1,000 characters, only where `user_set_name` is 1, so that you gave the session that name, or the ACP client you use sent it;
 - `created_at` and `updated_at`, as whole seconds.
 
 Of `messages` it asks only whether a row has the session's `session_id`, and prints nothing. Only when that question fails does it ask a second fixed question, for the names of the `sessions` and `messages` tables and of their columns, to tell a database of another version from one that cannot be read.
