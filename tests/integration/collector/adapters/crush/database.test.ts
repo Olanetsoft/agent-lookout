@@ -220,7 +220,7 @@ describe.skipIf(sqlite === null)("reading a Crush database with the real sqlite3
     const { file } = await makeDatabase([]);
     execFileSync(
       sqlite as string,
-      ["-init", "/dev/null", file, "ALTER TABLE sessions DROP COLUMN message_count"],
+      ["-init", "/dev/null", file, "ALTER TABLE sessions RENAME COLUMN message_count TO messages"],
       { stdio: "ignore" },
     );
     await rm(`${file}-wal`, { force: true });
