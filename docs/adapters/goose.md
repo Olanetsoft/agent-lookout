@@ -195,7 +195,7 @@ Nothing is read, and `sqlite3` and `ps` are not run, as for OpenCode and Hermes 
 - A Goose started under another name, or built into another program through its SDK, is not seen by `ps`, so its sessions show as finished as they run. Something else called `goose` counts as Goose, and keeps sessions from showing as finished.
 - A session waiting for a tool's approval does not show as waiting, as [What a message could say](#what-a-message-could-say) says.
 - A session Goose named takes its folder's name, so two sessions in one folder share a name. Goose's title is not shown, even where a model wrote it.
-- `user_set_name` 1 also covers `sessionTitle`, which an ACP client sends, and nothing on the row tells it from a person's name. So a session started through such a client shows the title that client sent. No client in Goose's own source sends one at this tag.
+- `user_set_name` 1 also covers `sessionTitle`, which an ACP client sends, and a rename an ACP client asks for later (`on_rename_session`, `crates/goose/src/acp/server/manage_sessions.rs:216`), and nothing on the row tells either from a person's name. So a session started through such a client shows the title that client sent. No client in Goose's own source sends one at this tag.
 - `goose term` and gateway sessions are not listed, as Goose's own lists leave them out. Nor is a session with no message.
 - A session left quiet for a day leaves the list until it is next written.
 - A rename or an extension's change moves `updated_at`, so a session closed long ago can come back for a day.

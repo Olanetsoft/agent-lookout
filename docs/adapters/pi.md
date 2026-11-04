@@ -94,7 +94,7 @@ A session's id in Agent Lookout is `pi:<id>`. A file with no whole first line in
 
 `{"type":"session_info","id":…,"parentId":…,"timestamp":…,"name":…}`, written by `appendSessionInfo` (`session-manager.ts:1315-1326`). The newest one wins and an empty one clears the name, as Pi reads it (`:830-832`, `:1329-1340`).
 
-The adapter looks for these lines in the bytes, with `Buffer.lastIndexOf`, and turns only the newest whole one into text, up to 4 KiB. Every other line is left as bytes. No line is parsed but the header and that one, so no prompt, reply, tool's argument or output is ever turned into text. The search is for a line break followed by `{"type":"session_info"`. JSON writes a line break inside a string as `\n`, two characters, so those bytes can only be the start of a line, and nothing said in a session can look like one. `JSON.stringify` writes `type` first because `appendSessionInfo` does.
+The adapter looks for these lines in the bytes, with `Buffer.lastIndexOf`, and turns only the newest whole one in each part read into text, up to 4 KiB. Every other line is left as bytes. No line is parsed but the header and those, so no prompt, reply, tool's argument or output is ever turned into text. The search is for a line break followed by `{"type":"session_info"`. JSON writes a line break inside a string as `\n`, two characters, so those bytes can only be the start of a line, and nothing said in a session can look like one. `JSON.stringify` writes `type` first because `appendSessionInfo` does.
 
 The first read covers the first 64 KiB, where `--name` puts it, as the first entry, and the last 256 KiB. Each later read starts at the line after the last whole line read, up to 256 KiB from the end, so a name set while Agent Lookout runs is seen and stays once more has been written after it.
 
@@ -139,7 +139,7 @@ The newest lines could say more, and they are not parsed. A `user` or `toolResul
 
 ### Why nothing shows as waiting
 
-Pi has no approval step of its own, so nothing asks before a tool runs. The one wait is for your next prompt, which writes nothing. An extension can stop to ask you something, such as the `permission-gate.ts` example, and that writes nothing either. `agent_settled` says Pi has stopped, to extensions and to a program that drives Pi, and writes nothing to a file. A later version could read it with a small extension that writes a status file, which would mean a person installing it in Pi.
+Pi itself asks for no approval before a tool runs. By default it does ask whether to trust a folder before loading that folder's extensions and settings, at startup and when `/resume` enters a folder it has not settled, and it writes nothing while that prompt waits. The wait for your next prompt writes nothing too. An extension can stop to ask you something, such as the `permission-gate.ts` example, and that writes nothing either. `agent_settled` says Pi has stopped, to extensions and to a program that drives Pi, and writes nothing to a file. A later version could read it with a small extension that writes a status file, which would mean a person installing it in Pi.
 
 ## Names
 

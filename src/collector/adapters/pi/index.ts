@@ -77,8 +77,8 @@ export const NEWER_FORMAT_NOTE =
  *
  * - No Working and idle: nothing ties a session to a process, so a turn a crash
  *   cut off cannot be told from one under way.
- * - No Needs you: Pi asks for no approval, and its wait for your next prompt is
- *   written nowhere.
+ * - No Needs you: Pi itself asks for no approval before a tool runs, and nothing
+ *   on disk says when it waits for you.
  * - Finished is every session while `ps` shows no `pi` program, on macOS and
  *   Linux. Pi writes no end to a session.
  * - No Failed: a failed turn is written inside a message, which is not parsed.
@@ -98,7 +98,8 @@ export const PI_CAPABILITIES: SourceCapabilities = {
   },
   "needs-you": {
     level: "no",
-    reason: "Pi asks for no approval, and nothing on disk says it waits for your next prompt.",
+    reason:
+      "Pi itself asks for no approval before a tool runs, and nothing on disk says when it waits for you.",
   },
   finished: {
     level: "partly",

@@ -124,7 +124,7 @@ export const GOOSE_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The folder's, or one you gave the session. Goose's title can be the start of your first prompt.",
+      "The folder's, or one you gave the session or an ACP client sent. Goose's title can be the start of your first prompt.",
   },
   jump: { level: "no", reason: "Goose's database names no process or terminal." },
   "quiet-for": {
