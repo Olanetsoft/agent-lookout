@@ -5,12 +5,14 @@ import { describe, expect, test } from "vitest";
 
 import { LINE_LIMIT_BYTES } from "@collector/adapters/gemini-cli/chatFile";
 import {
+  BASIS,
   GEMINI_CLI_CAPABILITIES,
   geminiCliFolder,
   geminiCliSeatbeltFolder,
   OLDER_FORMAT_NOTE,
   RECHECK_MS,
   SUBAGENT_FILES,
+  subagentsUnreadNote,
   UNKNOWN_NOTE,
   type GeminiCliAdapterOptions,
 } from "@collector/adapters/gemini-cli/index";
@@ -550,6 +552,221 @@ describe("a subagent's writes", () => {
       expect(sessions.map(({ lastWriteAt }) => lastWriteAt)).toEqual([NOW - 10 * MINUTE]);
       files.heal(target);
     }
+  });
+
+  describe("that could not be looked up", () => {
+    const agentFile = subagentPath(ids.working, AGENT);
+    const idleFile = chatPath(chatName(NOW - 30 * MINUTE, ids.idle));
+    const idleFolder = `${TMP_DIR}/${SLUG}/chats/${ids.idle}`;
+    const refusedOne = subagentsUnreadNote({ refused: 1, failed: 0 });
+
+    /** A session with a subagent that wrote five seconds ago. */
+    function withSubagent() {
+      const files = quietSession();
+      files.write(agentFile, NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+      return files;
+    }
+
+    /** That session, and another whose own file was written half an hour ago. */
+    function twoSessions() {
+      const files = withSubagent();
+      files.write(idleFile, idleSession(), { mtimeMs: NOW - 30 * MINUTE });
+      files.write(subagentPath(ids.idle, AGENT), NEVER_OPENED, { mtimeMs: NOW - 5 * SECOND });
+      return files;
+    }
+
+    test.each([
+      ["folder", folder],
+      ["file", agentFile],
+    ])("a refused %s is said on the card, with the poll still healthy", async (_what, target) => {
+      const files = withSubagent();
+      files.fail(target);
+      const { basis, health, sessions } = await geminiCliAdapterFor(files).poll();
+      expect(health.state).toBe("ok");
+      expect(health.detail).toBe(`${healthy()} ${refusedOne}`);
+      expect(basis).toBe(BASIS);
+      expect(health.parts).toBeUndefined();
+      expect(sessions.map(({ id, status }) => ({ id, status }))).toEqual([
+        { id: idOf(ids.working), status: "working" },
+      ]);
+    });
+
+    test("the rows on the card stay as they were", async () => {
+      const healthyPoll = await geminiCliAdapterFor(withSubagent()).poll();
+      const files = withSubagent();
+      files.fail(folder);
+      const { health } = await geminiCliAdapterFor(files).poll();
+      expect(health.watching).toEqual(healthyPoll.health.watching);
+    });
+
+    test("says how many sessions it touched, and of each kind, whatever the number of files", async () => {
+      const files = twoSessions();
+      files.write(subagentPath(ids.working, "agent-0002"), NEVER_OPENED, { mtimeMs: NOW - HOUR });
+      files.fail(folder);
+      files.fail(idleFolder);
+      const adapter = geminiCliAdapterFor(files);
+      expect((await adapter.poll()).health.detail).toContain(
+        "permission was refused for 2 sessions.",
+      );
+
+      files.heal(folder);
+      files.fail(agentFile);
+      files.fail(subagentPath(ids.working, "agent-0002"));
+      expect((await adapter.poll()).health.detail).toContain(
+        "permission was refused for 2 sessions.",
+      );
+
+      files.heal(idleFolder);
+      files.fail(idleFolder, "EIO");
+      const { detail } = (await adapter.poll()).health;
+      expect(detail).toContain(
+        "permission was refused for 1 session, and the lookup failed for 1 session.",
+      );
+    });
+
+    test("one refused among many leaves the others' times", async () => {
+      const files = twoSessions();
+      files.fail(folder);
+      const { health, sessions } = await geminiCliAdapterFor(files).poll();
+      expect(health.detail).toContain("permission was refused for 1 session.");
+      expect(new Map(sessions.map(({ id, lastWriteAt }) => [id, lastWriteAt]))).toEqual(
+        new Map([
+          [idOf(ids.working), NOW - 10 * MINUTE],
+          [idOf(ids.idle), NOW - 5 * SECOND],
+        ]),
+      );
+    });
+
+    test("says it once the look fails for another reason, by that reason", async () => {
+      const files = withSubagent();
+      files.fail(agentFile, "EIO");
+      const { health } = await geminiCliAdapterFor(files).poll();
+      expect(health.state).toBe("ok");
+      expect(health.detail).toBe(`${healthy()} ${subagentsUnreadNote({ refused: 0, failed: 1 })}`);
+    });
+
+    test("names no session, folder or file on the card", async () => {
+      const files = twoSessions();
+      files.write(subagentPath(ids.working, "agent-0002"), NEVER_OPENED, { mtimeMs: NOW - HOUR });
+      files.fail(folder);
+      files.fail(subagentPath(ids.idle, AGENT), "EIO");
+      const { health, sessions } = await geminiCliAdapterFor(files).poll();
+      const note = subagentsUnreadNote({ refused: 1, failed: 1 });
+      expect(health.detail).toContain(note);
+      for (const word of [
+        ids.working,
+        ids.idle,
+        AGENT,
+        "agent-0002",
+        SLUG,
+        "chats",
+        ".jsonl",
+        TMP_DIR,
+        PROJECT,
+        ...sessions.flatMap(({ id, name }) => [id, name]),
+      ]) {
+        expect(note).not.toContain(word);
+      }
+      expect(note).not.toMatch(/[/\\~]/);
+    });
+
+    test("clears at the next poll once a look works, and the time comes back with it", async () => {
+      const files = withSubagent();
+      const adapter = geminiCliAdapterFor(files);
+      for (const target of [folder, agentFile]) {
+        files.fail(target);
+        expect((await adapter.poll()).health.detail).toBe(`${healthy()} ${refusedOne}`);
+        files.heal(target);
+        const { health, sessions } = await adapter.poll();
+        expect(health.detail).toBe(healthy());
+        expect(sessions[0]?.lastWriteAt).toBe(NOW - 5 * SECOND);
+      }
+    });
+
+    test("does not come and go with the listings while a file stays refused", async () => {
+      const files = withSubagent();
+      files.write(subagentPath(ids.working, "agent-0002"), NEVER_OPENED, { mtimeMs: NOW - HOUR });
+      files.fail(agentFile);
+      const clock = handClock(NOW);
+      const adapter = geminiCliAdapterFor(files, { now: clock.now });
+      for (let poll = 0; poll < 20; poll += 1) {
+        expect((await adapter.poll()).health.detail).toBe(`${healthy()} ${refusedOne}`);
+        clock.advance(2 * SECOND);
+      }
+    });
+
+    test.each([
+      ["folder", folder],
+      ["file", agentFile],
+    ])(
+      "a %s refused later moves neither the last write back nor the status",
+      async (_what, target) => {
+        const files = withSubagent();
+        const adapter = geminiCliAdapterFor(files);
+        const before = (await adapter.poll()).sessions[0];
+        expect(before?.lastWriteAt).toBe(NOW - 5 * SECOND);
+
+        files.fail(target);
+        for (let poll = 0; poll < 2; poll += 1) {
+          expect((await adapter.poll()).sessions[0]).toEqual(before);
+        }
+      },
+    );
+
+    test("a session with no folder shows and costs what it does with no such failure", async () => {
+      const files = quietSession();
+      const adapter = geminiCliAdapterFor(files);
+      const { health } = await adapter.poll();
+      expect(health.detail).toBe(healthy());
+      files.forget();
+      await adapter.poll();
+      expect(files.calls.filter(({ path }) => path.startsWith(folder))).toEqual([
+        { method: "lstat", path: folder },
+      ]);
+    });
+
+    test("a folder that goes between its lstat and its readdir is not said", async () => {
+      const files = withSubagent();
+      const io = {
+        ...files.io,
+        readdir: async (dir: string) => {
+          if (dir.endsWith(ids.working)) {
+            throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+          }
+          return files.io.readdir(dir);
+        },
+      };
+      const { health, sessions } = await geminiCliAdapterFor(files, { io }).poll();
+      expect(health.detail).toBe(healthy());
+      expect(sessions[0]?.lastWriteAt).toBe(NOW - 10 * MINUTE);
+    });
+
+    test("is looked for in the session's own folder alone, in ~/.cache/.gemini too", async () => {
+      const files = withSubagent();
+      const seatbeltSession = chatPath(chatName(NOW - MINUTE, ids.working), SLUG, SEATBELT_TMP_DIR);
+      files.write(seatbeltSession, workingSession(), { mtimeMs: NOW - MINUTE });
+      files.write(subagentPath(ids.working, AGENT, SLUG, SEATBELT_TMP_DIR), NEVER_OPENED, {
+        mtimeMs: NOW - SECOND,
+      });
+      files.write(projectRootPath(SLUG, SEATBELT_TMP_DIR), PROJECT);
+      files.fail(`${SEATBELT_TMP_DIR}/${SLUG}/chats/${ids.working}`);
+      const { health, sessions } = await geminiCliAdapterFor(files).poll();
+      expect(sessions).toHaveLength(2);
+      expect(health.detail).toBe(`${healthy()} ${refusedOne}`);
+    });
+
+    test("the sentence says what was found, and why it matters", () => {
+      expect(subagentsUnreadNote({ refused: 2, failed: 1 })).toBe(
+        "Subagent files could not be looked up: permission was refused for 2 sessions, and the lookup failed for 1 session. Such a session can look quiet while a subagent works, and in the Mac app Keep awake can stop counting it.",
+      );
+    });
+
+    test("the words say one session or many, and nothing when none is touched", () => {
+      expect(subagentsUnreadNote({ refused: 0, failed: 0 })).toBeNull();
+      expect(subagentsUnreadNote({ refused: 1, failed: 0 })).toContain("refused for 1 session.");
+      expect(subagentsUnreadNote({ refused: 3, failed: 0 })).toContain("refused for 3 sessions.");
+      expect(subagentsUnreadNote({ refused: 0, failed: 2 })).toContain("failed for 2 sessions.");
+    });
   });
 
   test("is looked up for no session that is not listed", async () => {

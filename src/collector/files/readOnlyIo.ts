@@ -110,3 +110,9 @@ export function isMissing(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   return code === "ENOENT" || code === "ENOTDIR";
 }
+
+/** Whether a file-system error means the system would not let this user look, whatever is there. */
+export function isRefused(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EACCES" || code === "EPERM";
+}
