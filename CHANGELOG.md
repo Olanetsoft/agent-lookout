@@ -4,6 +4,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## 0.2.18 - 2026-11-04
 
+Cline and OpenCode 2 sessions show, OpenCode 1.x, Qwen Code and Mistral Vibe sessions show when they ask you a question, and Jump reaches Qwen Code sessions.
+
 ### Added
 
 - Cline sessions, from the sessions folder of its newer runtime, which its CLI, its desktop app and the VS Code builds that run it write: working, needing you while Cline waits for a tool's approval, idle, failed or finished, named after its folder. Agent Lookout reads the manifest Cline keeps for each session in `~/.cline/data/sessions`, at most 1 MiB and only when it changes, and keeps its status, times, folder and process ID. It never keeps the prompt, or Cline's title, which is by default the first line of the prompt, and never opens the session's messages file, whose time alone it looks up: Quiet for goes by the newer of that and the manifest's. A session whose manifest still says it is open is finished once its process has gone, and a session in Cline's hub stays idle after you close it, while the hub runs. A question Cline asks you shows as working. A session resumed in a new process with no new prompt keeps the process ID before it, so once that one has gone it shows as finished while it runs. On a Mac `ps` tells a process given a crashed session's ID from the session's own. On Linux and Windows such a session keeps the status its manifest last gave until that program ends, or, if it was idle, until it leaves the list a day after it was last written. The older VS Code extension's tasks are not read. It was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running Cline. (#34)
