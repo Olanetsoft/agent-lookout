@@ -6,7 +6,7 @@
     <title>Agent Lookout: your coding agents on one page</title>
     <meta
       name="description"
-      content="Free and open source. See which coding agent session is waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent, on one page."
+      content="Free and open source. All your coding agent sessions on one page, and which are waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline."
     />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#060605" media="(prefers-color-scheme: dark)" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Agent Lookout" />
     <meta
       property="og:description"
-      content="Free and open source. See which coding agent session is waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent, on one page."
+      content="Free and open source. All your coding agent sessions on one page, and which are waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline."
     />
     <meta property="og:url" content="https://www.agentlookout.app/" />
     <meta property="og:image" content="https://www.agentlookout.app/assets/social-card.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Agent Lookout" />
     <meta
       name="twitter:description"
-      content="Free and open source. See which coding agent session is waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent, on one page."
+      content="Free and open source. All your coding agent sessions on one page, and which are waiting on you: Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline."
     />
     <meta name="twitter:image" content="https://www.agentlookout.app/assets/social-card.png" />
     <meta
@@ -347,6 +347,7 @@
           <li>OpenCode</li>
           <li>Qwen Code</li>
           <li>Hermes Agent</li>
+          <li>Cline</li>
           <li>your own agents</li>
         </ul>
       </div>
@@ -360,8 +361,8 @@
             <h3 id="f-sessions-title">Your sessions, with no&nbsp;setup</h3>
             <p class="feature-body">
               Claude Code, Codex, Antigravity, the Antigravity CLI, Mistral Vibe, Gemini CLI,
-              OpenCode, Qwen Code and Hermes Agent sessions show up on their own, with their folder,
-              branch and status. Any other agent can join by writing one small file
+              OpenCode, Qwen Code, Hermes Agent and Cline sessions show up on their own, with their
+              folder, branch and status. Any other agent can join by writing one small file
               per&nbsp;session.
             </p>
             <a
@@ -433,8 +434,9 @@
               also says what it is&nbsp;asking.
             </p>
             <p class="feature-note">
-              Claude Code reports every wait. Antigravity, the Antigravity CLI, Hermes Agent and
-              status files report some, and the other agents none&nbsp;yet.
+              Claude Code reports every wait. Antigravity, the Antigravity CLI, Mistral Vibe,
+              OpenCode, Qwen Code, Hermes Agent, Cline and status files report some, and Codex and
+              Gemini CLI none&nbsp;yet.
             </p>
             <a
               class="link feature-more"
@@ -662,7 +664,10 @@
               iTerm2 tab. Stop ends one after you confirm, and Resume copies the command that picks
               it up&nbsp;again.
             </p>
-            <p class="feature-note">Claude Code only. On Windows, only Jump to VS&nbsp;Code.</p>
+            <p class="feature-note">
+              Claude Code, and Jump for Qwen Code in tmux or a Mac’s Terminal or iTerm2. On Windows,
+              only Jump to VS&nbsp;Code.
+            </p>
             <a
               class="link feature-more"
               href="https://github.com/Olanetsoft/agent-lookout/blob/main/docs/GUIDE.md#jump"
@@ -1017,8 +1022,9 @@ version number. Tell me what it printed.</pre>
             <dt>Which agents does it work with?</dt>
             <dd>
               Claude Code, Codex, Antigravity, the Antigravity CLI, Mistral Vibe, Gemini CLI,
-              OpenCode, Qwen Code and Hermes Agent, and any agent that writes a small status file.
-              Support for Mistral Vibe, Gemini CLI, OpenCode, Qwen Code and Hermes Agent is new and
+              OpenCode, Qwen Code, Hermes Agent and Cline, and any agent that writes a small status
+              file. The Antigravity IDE and Cline’s older VS Code extension are not read. Support
+              for Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent and Cline is new and
               not yet checked on a computer running them.
               <a
                 class="link"
@@ -1052,7 +1058,8 @@ version number. Tell me what it printed.</pre>
             <dt>Does it run on Linux and Windows?</dt>
             <dd>
               Yes, with npx. It is built and used on macOS. Linux and Windows are tested in CI. On
-              Windows, Stop, Allow and Deny are not there, and OpenCode’s sessions are not read.
+              Windows, Stop, Allow, Deny and Resume are not there, and OpenCode’s and Hermes Agent’s
+              sessions are not read.
             </dd>
           </div>
           <div class="faq-item">
