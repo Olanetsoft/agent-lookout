@@ -210,6 +210,17 @@ describe("createRecordTokenCheck", () => {
     expect(proc.reads).toEqual([[41001, 41002]]);
   });
 
+  test("tells two records of one pid apart by their tokens", async () => {
+    const { check: records } = check({ 41001: startToken(700) });
+    const earlier = { pid: 41001, startedAt: REGISTERED, procStart: startToken(500) };
+    const later = { pid: 41001, startedAt: REGISTERED, procStart: startToken(700) };
+
+    expect([...(await records.matches([earlier, later]))]).toEqual([
+      [earlier, "different"],
+      [later, "same"],
+    ]);
+  });
+
   test("reads the tokens again only after 30 seconds", async () => {
     const { proc, clock, check: records } = check({ 41001: startToken(500) });
     for (let at = 0; at < START_CHECK_TTL_MS; at += 2_000) {

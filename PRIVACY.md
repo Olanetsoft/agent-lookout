@@ -358,9 +358,9 @@ A record can outlive a session that crashed, and its process ID can be given to 
 
 - `/proc/sys/kernel/random/boot_id`, this boot's ID, opened read-only, at most 4 KiB of it, once, the first time it is needed, and again only after a read that failed;
 - `/proc/<pid>/stat` of each such process, the line Linux keeps about it, opened the same way. Of it Agent Lookout keeps one field, field 22, when the process started, in clock ticks since the boot, and joins it to the boot's ID, as Qwen Code writes its start token, to compare with the record's. The program's name and every other field of the line are dropped as it is read;
-- `/proc/self/ns/pid`, Agent Lookout's own pid namespace, with one `stat` for its number, never opened, once, and again only after a read that failed. A record written in another namespace, such as one Qwen Code wrote in a container, is not listed.
+- `/proc/self/ns/pid`, Agent Lookout's own pid namespace, with one `stat` for its number, never opened, once, and again only after a read that failed. A record written in another namespace, such as one Qwen Code wrote in a container, is not listed, and nor is one that names none, which Qwen Code on Linux never writes.
 
-For this it opens no other file of a process, such as its command line or its environment. When `ps` or `/proc` gives no answer, a session is left as the signal-0 check says. On Windows, which has neither a start token in Qwen Code's records nor `ps`, nothing is compared, so a session whose process ID another program has is shown as open.
+For this it opens no other file of a process, such as its command line or its environment. When `ps` or `/proc` gives no answer, a session is left as the signal-0 check says, unless an earlier answer found its process ID another program's: it then stays finished for as long as that process ID runs. On Windows, which has neither a start token in Qwen Code's records nor `ps`, nothing is compared, so a session whose process ID another program has is shown as open.
 
 For Jump, it looks for each such session's process in tmux, and in Terminal and iTerm2, as it does for a Claude Code session, as [`tmux`](#tmux) and [Terminal and iTerm2](#terminal-and-iterm2) describe, and asks `ps` when that process started, as [`ps`](#ps) describes. The dashboard is sent only the place's name, as for Claude Code.
 

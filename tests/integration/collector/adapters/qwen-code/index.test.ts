@@ -23,6 +23,7 @@ import {
   type QwenCodeAdapterOptions,
 } from "@collector/adapters/qwen-code/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createPidNamespaceRead } from "@collector/processes/linuxProcesses";
 import {
   assistantLine,
   chatPath,
@@ -335,6 +336,10 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     const ended = spawnSync(process.execPath, ["-e", ""]);
     expect(ended.status).toBe(0);
     const startedAt = Date.now() - MINUTE;
+    // This process's pid namespace, with none where it has none: with no
+    // stand-in the adapter reads its own on Linux, and lists no record that
+    // names no other.
+    const pidNs = await createPidNamespaceRead()();
     const records: [string, number, string][] = [
       [`${process.pid}.json`, process.pid, sessionIdOf(11)],
       [`${ended.pid}.json`, ended.pid, sessionIdOf(12)],
@@ -344,7 +349,7 @@ describe("the Qwen Code adapter, on a folder laid out as Qwen Code lays it out",
     for (const [name, pid, sessionId] of records) {
       await writeFile(
         path.join(sessions, name),
-        registryRecord({ pid, sessionId, startedAt, kind: "tui" }),
+        registryRecord({ pid, sessionId, startedAt, kind: "tui", pidNs }),
       );
     }
 

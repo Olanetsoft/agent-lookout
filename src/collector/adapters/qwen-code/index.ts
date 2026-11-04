@@ -15,12 +15,17 @@ import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
 import type { TailLimits } from "../../messages/tailReader.ts";
 import {
+  BOOT_ID_FILE,
   createPidNamespaceRead,
   type ReadPidNamespace,
   type ReadStartTokens,
 } from "../../processes/linuxProcesses.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
-import type { ReadProcessStarts, StartMatch } from "../../processes/processStart.ts";
+import {
+  START_CHECK_TTL_MS,
+  type ReadProcessStarts,
+  type StartMatch,
+} from "../../processes/processStart.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { TabAsker } from "../../terminal/tabFinder.ts";
 import type { TerminalTab } from "../../terminal/terminalTabs.ts";
@@ -80,9 +85,9 @@ export const NO_CHAT_NOTE =
 export const NEWER_FORMAT_NOTE =
   "A Qwen Code newer than this Agent Lookout lists a session in a format it does not read, so that session is not shown.";
 
-/** Said when a record was written on Linux and is read on a Mac or Windows, or on Linux comes from another pid namespace. */
+/** Said when a record was written on Linux and is read on a Mac or Windows, or on Linux comes from another pid namespace or names none. */
 export const ELSEWHERE_NOTE =
-  "A Qwen Code session that runs in a container is not listed: its process cannot be checked from here.";
+  "A Qwen Code session that runs in a container or on another system is not listed: its process cannot be checked from here.";
 
 /** Said when a session's status is unknown. */
 export const UNKNOWN_NOTE =
@@ -240,6 +245,30 @@ function liveCheckFor(
   return null;
 }
 
+/**
+ * What Sources says tells a session's process from another program given its
+ * pid, and how often that is asked (`liveCheckFor`). Where nothing is compared,
+ * signal 0 is all there is.
+ */
+function processCheckFacts(platform: NodeJS.Platform, pollIntervalMs: number): SourceFact[] {
+  const shown =
+    platform === "linux"
+      ? `/proc/<pid>/stat and ${BOOT_ID_FILE}`
+      : platform === "darwin"
+        ? "ps -o pid=,lstart= -p <pids>"
+        : null;
+  if (shown === null) {
+    return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
+  }
+  return [
+    { label: "Process check", value: shown },
+    {
+      label: "Process check run",
+      value: `${every(START_CHECK_TTL_MS)} while a session's process runs, and sooner when another appears`,
+    },
+  ];
+}
+
 /** What tells one record's process from another's: its pid, when it registered, and its start token. */
 const reusedKey = (entry: RegistryEntry) =>
   `${entry.pid} ${entry.startedAt} ${entry.procStart ?? ""}`;
@@ -337,10 +366,11 @@ export interface QwenCodeAdapter extends Adapter {
  * that wrote the record: on Linux by comparing the record's start token with
  * that process's, read from `/proc`, and on a Mac by asking `ps` when it
  * started (`processCheck.ts`). On Linux a record from another pid namespace,
- * as one written in a container, is not listed. A session whose process has
- * gone, or was not the record's, or whose record has gone or names another
- * session, shows as finished for 24 hours (`finishedSessions.ts`). Its status
- * is needs-you while Qwen Code 0.25.1 or newer asks a question or for a plan's
+ * as one written in a container, is not listed, and nor is one that names
+ * none, as one written on a Mac or Windows. A session whose process has gone,
+ * or was not the record's, or whose record has gone or names another session,
+ * shows as finished for 24 hours (`finishedSessions.ts`). Its status is
+ * needs-you while Qwen Code 0.25.1 or newer asks a question or for a plan's
  * approval, working, idle, finished or unknown. A wait for a tool's approval
  * is working: Qwen Code does not write it.
  *
@@ -349,8 +379,8 @@ export interface QwenCodeAdapter extends Adapter {
  * is handed something to find panes or tabs with, as the Claude Code adapter
  * is. Before that, `ps` is asked when the process started, to be sure it is
  * the one that wrote the session's record and not one given its pid since. On
- * a Mac that is the same answer, from the same run of `ps`, that keeps the
- * session open.
+ * a Mac that is the same answer, from the same run of `ps`, that decides
+ * whether the session is open.
  *
  * Qwen Code not being installed costs nothing: when neither folder is there,
  * the adapter says so and looks again only once a minute, with two `stat`s.
@@ -423,11 +453,14 @@ export function createQwenCodeAdapter(options: QwenCodeAdapterOptions = {}): Qwe
    */
   let reused = new Set<string>();
 
+  const processCheck = processCheckFacts(platform, pollIntervalMs);
+
   function watching(read: string): SourceFact[] {
     return [
       { label: "Sessions folder", value: sessionsName },
       { label: "Chats folder", value: projectsName },
       { label: "Read", value: read },
+      ...processCheck,
       { label: "Last message read", value: lastMessageRead },
     ];
   }

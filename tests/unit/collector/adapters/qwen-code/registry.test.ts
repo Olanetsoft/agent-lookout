@@ -324,21 +324,27 @@ describe("readRegistry", () => {
     expect(linux.readable && linux.entries.map((entry) => entry.pid).sort()).toEqual([1, 41001]);
   });
 
-  test("on Linux, leaves out a record from another pid namespace, as Qwen Code's own listing does", async () => {
+  test("on Linux, leaves out a record from another pid namespace, or that names none, as Qwen Code's own listing does", async () => {
     const files = memoryFiles();
     const write = (pid: number, n: number, pidNs: number | null) =>
       files.write(
         recordPath(QWEN_DIR, `${pid}.json`),
-        registryRecord({ pid, sessionId: sessionIdOf(n), procStart: startToken(n), pidNs }),
+        registryRecord({
+          pid,
+          sessionId: sessionIdOf(n),
+          procStart: pidNs === null ? null : startToken(n),
+          pidNs,
+        }),
       );
     write(41001, 1, PID_NAMESPACE);
     write(41002, 2, 4026532001);
+    // As Qwen Code on a Mac or Windows writes one, into a folder it shares with Linux.
     write(41003, 3, null);
 
     const read = await readRegistry(SESSIONS, files.io, "linux", undefined, PID_NAMESPACE);
-    // One that names none, which Qwen Code on Linux never writes, is not known to be another's.
-    expect(read.readable && read.entries.map((entry) => entry.pid).sort()).toEqual([41001, 41003]);
-    expect(read).toMatchObject({ elsewhere: 1 });
+    // Qwen Code on Linux never writes one that names none.
+    expect(read.readable && read.entries.map((entry) => entry.pid)).toEqual([41001]);
+    expect(read).toMatchObject({ elsewhere: 2 });
 
     // While Agent Lookout's own namespace is not known, none is left out.
     const unknown = await readRegistry(SESSIONS, files.io, "linux", undefined, null);

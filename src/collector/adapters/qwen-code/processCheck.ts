@@ -16,8 +16,9 @@ import {
  * A record outlives a session that crashed, and the system later gives its pid
  * to another program. Signal 0 then says the record's process runs, for as
  * long as that program does. Each answer here is "same", "different" or
- * "unknown", and only "different" is acted on: a session whose process cannot
- * be told stays as signal 0 says.
+ * "unknown". For whether a session is open only "different" is acted on: a
+ * session whose process cannot be told stays as signal 0 says. Jump is given
+ * only on "same".
  *
  * On Linux, Qwen Code writes a start token into each record, `procStart`:
  * `<boot id>:<start>`, the boot's id and the process's start in clock ticks
@@ -42,9 +43,9 @@ import {
  * That holds only for a `startedAt` that has passed. One more than a minute
  * ahead of the clock, as when the clock was fast as the record was written and
  * has been set back since, may not have come yet, so it proves nothing, and
- * the answer for it is "unknown". The one way it can say "different" for the
- * record's own process is a clock set back, between the process's start and
- * the record's write, which Qwen Code makes as it starts, by more than a
+ * the answer for it is "unknown". On a Mac, the one way it can say "different"
+ * for the record's own process is a clock set back, between the process's start
+ * and the record's write, which Qwen Code makes as it starts, by more than a
  * minute and the time between the two.
  *
  * `ps` gives a start time to the second, and Linux's `ps` works it out again

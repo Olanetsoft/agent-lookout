@@ -49,7 +49,10 @@ import {
 import {
   handClock,
   healthy,
+  LINUX_PROCESS_CHECK,
+  MAC_PROCESS_CHECK,
   memoryFiles,
+  PROCESS_CHECK_RUN,
   qwenCodeAdapterFor,
   standInProcesses,
   standInStarts,
@@ -1244,14 +1247,144 @@ describe("a record whose pid another program was given", () => {
     expect(unread.sessions.map((session) => session.status)).toEqual(["working", "working"]);
   });
 
-  test("on Linux, a record that names no namespace and has no token is checked with signal 0 alone", async () => {
+  test("on Linux, a record that names no namespace, as one written on a Mac or Windows, is not listed, and the Sources view says so", async () => {
     const files = memoryFiles();
     addSession(files, { pid: 41001, sessionId: ID, lines: [promptLine(NOW - MINUTE)] });
+    const tokens = standInTokens({ 41001: startToken(500) });
+    const shared = await qwenCodeAdapterFor(files, onLinux(tokens)).poll();
+
+    expect(shared.sessions).toEqual([]);
+    expect(shared.health.detail).toBe(`${healthy()} ${ELSEWHERE_NOTE}`);
+    expect(tokens.reads).toEqual([]);
+
+    // While Agent Lookout's own namespace cannot be read, it is listed.
+    const unread = await qwenCodeAdapterFor(
+      files,
+      onLinux(tokens, { readPidNamespace: async () => null }),
+    ).poll();
+    expect(statuses(unread.sessions)).toEqual([[`qwen-code:${ID}`, "working", true]]);
+  });
+
+  test("on Linux, a record of this namespace with no token is checked with signal 0 alone", async () => {
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      pidNs: PID_NAMESPACE,
+      lines: [promptLine(NOW - MINUTE)],
+    });
     const tokens = standInTokens({ 41001: startToken(500) });
     const { sessions } = await qwenCodeAdapterFor(files, onLinux(tokens)).poll();
 
     expect(statuses(sessions)).toEqual([[`qwen-code:${ID}`, "working", true]]);
     expect(tokens.reads).toEqual([]);
+  });
+
+  test("of two records of one session, the one whose process runs is listed over a newer one whose pid another program has", async () => {
+    // On Linux, by its token.
+    const files = memoryFiles();
+    addSession(files, {
+      pid: 41004,
+      sessionId: ID,
+      startedAt: REGISTERED,
+      procStart: startToken(900),
+      pidNs: PID_NAMESPACE,
+      lines: [promptLine(NOW - MINUTE)],
+    });
+    addSession(files, {
+      pid: 41001,
+      sessionId: ID,
+      startedAt: NOW - 10 * MINUTE,
+      procStart: startToken(500),
+      pidNs: PID_NAMESPACE,
+    });
+    const tokens = standInTokens({ 41001: startToken(64_000), 41004: startToken(900) });
+    const linux = await qwenCodeAdapterFor(files, onLinux(tokens)).poll();
+
+    // On a Mac, by when ps says each process started.
+    const mac = memoryFiles();
+    addSession(mac, {
+      pid: 41004,
+      sessionId: ID,
+      startedAt: REGISTERED,
+      lines: [promptLine(NOW - MINUTE)],
+    });
+    addSession(mac, { pid: 41001, sessionId: ID, startedAt: NOW - 10 * MINUTE });
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE, 41004: REGISTERED - 2 * SECOND });
+    const darwin = await qwenCodeAdapterFor(mac, { readProcessStarts: ps.read }).poll();
+
+    for (const { sessions } of [linux, darwin]) {
+      expect(sessions).toMatchObject([
+        { id: `qwen-code:${ID}`, status: "working", alive: true, pid: 41004 },
+      ]);
+    }
+  });
+
+  test("a new record at a pid already found another program's is not held closed", async () => {
+    const newLines = [promptLine(NOW, { sessionId: sessionIdOf(2) })];
+
+    // On Linux, by its token.
+    const linuxFiles = memoryFiles();
+    addSession(linuxFiles, {
+      pid: 41001,
+      sessionId: ID,
+      startedAt: REGISTERED,
+      procStart: startToken(500),
+      pidNs: PID_NAMESPACE,
+    });
+    const tokens = standInTokens({ 41001: startToken(64_000) });
+    const linuxClock = handClock();
+    const linux = qwenCodeAdapterFor(linuxFiles, onLinux(tokens, { now: linuxClock.now }));
+
+    // On a Mac, by when ps says its process started.
+    const macFiles = memoryFiles();
+    addSession(macFiles, { pid: 41001, sessionId: ID, startedAt: REGISTERED });
+    const ps = standInStarts({ 41001: NOW - 5 * MINUTE });
+    const macClock = handClock();
+    const darwin = qwenCodeAdapterFor(macFiles, {
+      now: macClock.now,
+      readProcessStarts: ps.read,
+    });
+
+    for (const adapter of [linux, darwin]) {
+      expect((await adapter.poll()).sessions).toMatchObject([{ status: "finished", alive: false }]);
+    }
+
+    // The pid's new owner is Qwen Code, which writes a new record at the same name.
+    linuxFiles.rewrite(
+      recordPath(QWEN_DIR, "41001.json"),
+      registryRecord({
+        pid: 41001,
+        sessionId: sessionIdOf(2),
+        startedAt: NOW + SECOND,
+        kind: "tui",
+        procStart: startToken(70_000),
+        pidNs: PID_NAMESPACE,
+      }),
+    );
+    linuxFiles.write(chatPath(QWEN_DIR, sessionIdOf(2)), chatFile(...newLines));
+    tokens.tokens.set(41001, startToken(70_000));
+    linuxClock.advance(2 * SECOND);
+
+    macFiles.rewrite(
+      recordPath(QWEN_DIR, "41001.json"),
+      registryRecord({
+        pid: 41001,
+        sessionId: sessionIdOf(2),
+        startedAt: NOW + SECOND,
+        kind: "tui",
+      }),
+    );
+    macFiles.write(chatPath(QWEN_DIR, sessionIdOf(2)), chatFile(...newLines));
+    ps.starts.set(41001, NOW);
+    macClock.advance(2 * SECOND);
+
+    for (const adapter of [linux, darwin]) {
+      const { sessions } = await adapter.poll();
+      expect(
+        sessions.find((session) => session.id === `qwen-code:${sessionIdOf(2)}`),
+      ).toMatchObject({ status: "working", alive: true, pid: 41001 });
+    }
   });
 
   test.each(["ask_user_question", "exit_plan_mode"])(
@@ -1367,6 +1500,50 @@ describe("a record whose pid another program was given", () => {
     expect(sessions).toMatchObject([{ status: "needs-you", alive: true }]);
     expect(ps.runs).toEqual([]);
     expect(tokens.reads).toEqual([]);
+  });
+
+  test.each(["darwin", "win32"] as const)(
+    "on %s, the pid namespace is never looked up",
+    async (platform) => {
+      const files = memoryFiles();
+      addSession(files, {
+        pid: 41001,
+        sessionId: ID,
+        procStart: startToken(500),
+        pidNs: PID_NAMESPACE,
+      });
+      let lookups = 0;
+      const adapter = qwenCodeAdapterFor(files, {
+        platform,
+        readPidNamespace: async () => {
+          lookups += 1;
+          return PID_NAMESPACE;
+        },
+      });
+      await adapter.poll();
+      await adapter.poll();
+
+      expect(lookups).toBe(0);
+    },
+  );
+
+  test("Sources names the check each system makes", async () => {
+    const sourcesOf = async (platform: NodeJS.Platform) =>
+      (await qwenCodeAdapterFor(memoryFiles(), { platform }).poll()).health.watching?.filter(
+        (fact) => fact.label.startsWith("Process check"),
+      );
+
+    expect(await sourcesOf("darwin")).toEqual([
+      { label: "Process check", value: MAC_PROCESS_CHECK },
+      { label: "Process check run", value: PROCESS_CHECK_RUN },
+    ]);
+    expect(await sourcesOf("linux")).toEqual([
+      { label: "Process check", value: LINUX_PROCESS_CHECK },
+      { label: "Process check run", value: PROCESS_CHECK_RUN },
+    ]);
+    expect(await sourcesOf("win32")).toEqual([
+      { label: "Process check", value: "signal 0 alone, every 2 seconds" },
+    ]);
   });
 });
 

@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
@@ -8,13 +10,16 @@ import {
   bootIdOf,
   createPidNamespaceRead,
   createStartTokenReader,
+  MAX_PROC_FILE_BYTES,
   PID_NAMESPACE_FILE,
   readProcFile,
   statFileOf,
 } from "@collector/processes/linuxProcesses";
+import { tempDir } from "@tests/support/node/tempFiles";
 
-// Only Linux has /proc as Qwen Code reads it. Each test reads this process's
-// own files and the boot id, and no other process's.
+// Only Linux has /proc as Qwen Code reads it. Between them the tests read this
+// process's own files, the boot id and the stat of a child that has exited, and
+// no other process's.
 describe.skipIf(process.platform !== "linux")("against the real /proc", () => {
   test("this process's token is the boot id and a start, and is the same twice", async () => {
     const read = createStartTokenReader();
@@ -41,5 +46,20 @@ describe.skipIf(process.platform !== "linux")("against the real /proc", () => {
 
   test("this process's pid namespace is the inode Qwen Code reads for its own", async () => {
     expect(await createPidNamespaceRead()()).toBe(statSync(PID_NAMESPACE_FILE).ino);
+  });
+});
+
+// A plain file reader, so this runs on every system, in files of the test's own.
+describe("readProcFile", () => {
+  test("gives a short file whole, and no more than 4 KiB of a long one", async () => {
+    expect(MAX_PROC_FILE_BYTES).toBe(4096);
+    const folder = await tempDir();
+    const short = path.join(folder, "short");
+    const long = path.join(folder, "long");
+    await writeFile(short, "abc\n");
+    await writeFile(long, "x".repeat(3 * MAX_PROC_FILE_BYTES));
+
+    expect(await readProcFile(short)).toBe("abc\n");
+    expect(await readProcFile(long)).toHaveLength(MAX_PROC_FILE_BYTES);
   });
 });

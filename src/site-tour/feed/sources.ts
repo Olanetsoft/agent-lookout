@@ -610,6 +610,11 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Sessions folder", value: "~/.qwen/sessions" },
         { label: "Chats folder", value: "~/.qwen/projects" },
         { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
         {
           label: "Last message read",
           value: "end of a session's chat file, while its details are open",

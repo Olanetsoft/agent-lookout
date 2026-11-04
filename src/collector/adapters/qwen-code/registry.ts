@@ -27,9 +27,11 @@ import { isQwenSessionId } from "./transcriptFile.ts";
  *   Linux alone. On Linux the token tells whether the process with the pid
  *   now is the record's (`processCheck.ts`), and a record whose namespace is
  *   not Agent Lookout's, such as one Qwen Code wrote in a container, is not
- *   listed, as Qwen Code's own listing leaves it out. On a Mac or Windows
- *   either one says the record was written by a process on Linux, which is
- *   one in a container, and that record is not listed either.
+ *   listed, as Qwen Code's own listing leaves it out. Nor is one that names
+ *   none, which Qwen Code on Linux never writes: it was written on a Mac or
+ *   Windows into a folder the two share. On a Mac or Windows either field
+ *   says the record was written by a process on Linux, which is one in a
+ *   container, and that record is not listed either.
  * - `kind` is `tui` for Qwen Code in a terminal, `headless` or `serve` for a
  *   session an editor or Qwen Code's own server drives, and `external` for a
  *   program that is not Qwen Code. A record without one is a terminal's,
@@ -161,7 +163,7 @@ export type RegistryRead =
       /**
        * How many terminal records were written where their pid means nothing
        * here: on a Mac or Windows, ones written on Linux, and on Linux, ones
-       * written in another pid namespace.
+       * written in another pid namespace or on a Mac or Windows.
        */
       elsewhere: number;
     }
@@ -195,9 +197,10 @@ async function readRecordFile(file: string, io: ReadOnlyIo): Promise<string | nu
  * skipped.
  *
  * On Linux, given the pid namespace Agent Lookout runs in, `ownPidNs`, a
- * record that names another is not listed. One that names none, which Qwen
- * Code on Linux never writes, is, and so is every record while Agent
- * Lookout's own namespace is not known.
+ * record that names another, or none, is not listed, as Qwen Code's own
+ * listing leaves it out: Qwen Code on Linux never writes one with none, so it
+ * was written on a Mac or Windows. While Agent Lookout's own namespace is not
+ * known, every record is listed.
  */
 export async function readRegistry(
   sessionsDir: string,
@@ -242,15 +245,15 @@ export async function readRegistry(
 
   // A Linux process's ids mean nothing on a Mac or Windows: one in a container
   // writes into the folder it shares with this computer. On Linux they mean
-  // nothing outside their own pid namespace.
+  // nothing outside their own pid namespace, and a record that names none was
+  // written on a Mac or Windows.
   const foreign = platform === "darwin" || platform === "win32";
   const namespace = platform === "linux" ? ownPidNs : null;
   let elsewhere = 0;
   const entries: RegistryEntry[] = [];
   for (const entry of found) {
     if (entry === null || entry.kind !== TERMINAL_KIND) continue;
-    const otherNamespace =
-      namespace !== null && entry.pidNs !== undefined && entry.pidNs !== namespace;
+    const otherNamespace = namespace !== null && entry.pidNs !== namespace;
     if ((foreign && entry.linux) || otherNamespace) {
       elsewhere += 1;
       continue;

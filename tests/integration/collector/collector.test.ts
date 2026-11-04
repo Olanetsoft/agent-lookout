@@ -21,6 +21,7 @@ import { HANDOVER_GRACE_MS } from "@collector/notifications/heldWait";
 import { NOTIFICATIONS_NOT_SHOWN_LINE } from "@collector/notifications/serverNotifications";
 import { createNtfySender } from "@collector/ntfy/ntfySender";
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
+import { createPidNamespaceRead } from "@collector/processes/linuxProcesses";
 import { createPushoverSender } from "@collector/pushover/pushoverSender";
 import type { WebhookPost } from "@collector/webhook/webhookMessage";
 import { createHttpSender } from "@collector/webhook/webhookSender";
@@ -2379,15 +2380,18 @@ describe("the last messages of every agent, under one set of limits", () => {
         NOW - MINUTE,
       );
     }
-    // Two live Qwen Code sessions, in the same two processes as Claude Code's.
+    // Two live Qwen Code sessions, in the same two processes as Claude Code's,
+    // in this process's pid namespace, with none where it has none: on Linux
+    // the adapter reads its own, and lists no record that names no other.
     const qwen = ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"];
     const qwenHome = await tempDir();
+    const pidNs = await createPidNamespaceRead()();
     await mkdir(path.join(qwenHome, "sessions"));
     for (const [index, pid] of [process.pid, process.ppid].entries()) {
       const id = qwen[index] ?? "";
       await writeFile(
         path.join(qwenHome, "sessions", `${pid}.json`),
-        qwenRecord({ pid, sessionId: id, kind: "tui", startedAt: NOW - 30 * MINUTE }),
+        qwenRecord({ pid, sessionId: id, kind: "tui", startedAt: NOW - 30 * MINUTE, pidNs }),
       );
       const chat = qwenChatPath(qwenHome, id);
       await mkdir(path.dirname(chat), { recursive: true });

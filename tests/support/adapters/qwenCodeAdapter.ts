@@ -2,9 +2,9 @@
 // it: the same file system held in memory that the Codex tests use, a
 // stand-in for signal 0 that says which processes run, which the test
 // changes, and writes down every pid it was asked about, a stand-in for the
-// `ps` that says when each process started, one for the start tokens Linux
-// keeps in `/proc`, and an adapter built from them with a clock the test
-// moves by hand. Nothing here touches a real file or a real process.
+// `ps` that says when each process started, one for the start tokens read from
+// `/proc`, and an adapter built from them with a clock the test moves by hand.
+// Nothing here touches a real file or a real process.
 
 import {
   createQwenCodeAdapter,
@@ -120,7 +120,17 @@ export const healthy = (sessions = "~/.qwen/sessions", projects = "~/.qwen/proje
 /** What Sources says of the last-message read while it is on. */
 export const LAST_MESSAGE_READ = "end of a session's chat file, while its details are open";
 
-/** The four facts, in the order the adapter gives them. */
+/** What Sources says of the process check on a Mac, by `ps`. */
+export const MAC_PROCESS_CHECK = "ps -o pid=,lstart= -p <pids>";
+
+/** What Sources says of the process check on Linux, from `/proc`. */
+export const LINUX_PROCESS_CHECK = "/proc/<pid>/stat and /proc/sys/kernel/random/boot_id";
+
+/** What Sources says of how often the process check runs, on a Mac and on Linux. */
+export const PROCESS_CHECK_RUN =
+  "every 30 seconds while a session's process runs, and sooner when another appears";
+
+/** The facts, in the order the adapter gives them on a Mac, as `qwenCodeAdapterFor` is by default. */
 export function watching(
   read: string,
   sessions = "~/.qwen/sessions",
@@ -131,6 +141,8 @@ export function watching(
     { label: "Sessions folder", value: sessions },
     { label: "Chats folder", value: projects },
     { label: "Read", value: read },
+    { label: "Process check", value: MAC_PROCESS_CHECK },
+    { label: "Process check run", value: PROCESS_CHECK_RUN },
     { label: "Last message read", value: lastMessage },
   ];
 }
