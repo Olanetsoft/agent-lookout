@@ -37,6 +37,14 @@ export const NOT_A_SESSION_LEASE = "process-output-cleanup";
 /** The most of a `.lock.json` read. Vibe writes about a hundred bytes. */
 export const LEASE_FILE_LIMIT_BYTES = 4 * 1024;
 
+/**
+ * The least time between two tries at a `.lock.json` that could not be read,
+ * while it stays as it was. A failed read is no fact about the file, as a file
+ * that names no pid is, so it is not kept until the file changes. A file that
+ * never can be read costs one failed open in this time.
+ */
+export const LEASE_RETRY_MS = 30_000;
+
 const LOCK = ".lock";
 const LOCK_JSON = ".lock.json";
 
@@ -95,15 +103,28 @@ interface Cached {
   size: number;
   mtimeMs: number;
   lease: Lease;
+  /** When a read of this file last failed. Null when it was read, or is not to be read. */
+  failedAt: number | null;
 }
 
 export interface LeaseReader {
-  /** The folder's leases, each `.lock.json` read again only when it changed. */
+  /** The folder's leases, each `.lock.json` read again only when it changed, or `LEASE_RETRY_MS` after a read that failed. */
   read(): Promise<Leases>;
 }
 
-export function createLeaseReader(dir: string, io: ReadOnlyIo): LeaseReader {
+export function createLeaseReader(
+  dir: string,
+  io: ReadOnlyIo,
+  now: () => number = Date.now,
+): LeaseReader {
   const cache = new Map<string, Cached>();
+
+  /** Whether a file whose last read failed is due another. A clock set back counts as time enough. */
+  function retryDue(failedAt: number | null): boolean {
+    if (failedAt === null) return false;
+    const since = now() - failedAt;
+    return since < 0 || since >= LEASE_RETRY_MS;
+  }
 
   async function leaseOf(id: string, withJson: boolean): Promise<Lease> {
     if (!withJson) {
@@ -123,18 +144,23 @@ export function createLeaseReader(dir: string, io: ReadOnlyIo): LeaseReader {
       cached &&
       cached.ino === info.ino &&
       cached.size === info.size &&
-      cached.mtimeMs === info.mtimeMs
+      cached.mtimeMs === info.mtimeMs &&
+      !retryDue(cached.failedAt)
     ) {
       return cached.lease;
     }
     let lease: Lease = { pid: null, acquiredAt: null };
+    let failedAt: number | null = null;
     // A link, or a file far larger than any lease, is not read.
     if (info.kind === "file" && info.size <= LEASE_FILE_LIMIT_BYTES) {
+      // Failed until its bytes are in hand, so a close that fails after them loses nothing.
+      failedAt = now();
       try {
         const handle = await io.openRegular(file);
         try {
           const bytes = await handle.read(0, LEASE_FILE_LIMIT_BYTES);
           lease = readLeaseFile(Buffer.from(bytes).toString("utf8"));
+          failedAt = null;
         } finally {
           await handle.close();
         }
@@ -142,7 +168,7 @@ export function createLeaseReader(dir: string, io: ReadOnlyIo): LeaseReader {
         // Gone, or not readable, between the look and the read: no pid this time.
       }
     }
-    cache.set(id, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lease });
+    cache.set(id, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lease, failedAt });
     return lease;
   }
 

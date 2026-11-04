@@ -60,6 +60,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
   const folders = new Set<string>();
   /** Paths that refuse every call, with the error code they give. */
   const failing = new Map<string, string>();
+  /** Paths that can be looked up but not opened, with the error code an open gives. */
+  const refusingOpens = new Map<string, string>();
   let failEverything: string | null = null;
   const calls: IoCall[] = [];
   /** Each folder's identity, given the first time it is looked at. */
@@ -136,6 +138,8 @@ export function memoryFiles(clock: () => number = () => NOW) {
     async openRegular(given): Promise<OpenFile> {
       const file = asWritten(given);
       check("openRegular", file);
+      const refused = refusingOpens.get(file);
+      if (refused) throw errno(refused, file);
       if (folders.has(file)) throw errno("EISDIR", file);
       const entry = entries.get(file);
       if (!entry) throw errno("ENOENT", file);
@@ -225,8 +229,13 @@ export function memoryFiles(clock: () => number = () => NOW) {
     fail(target: string, code = "EACCES") {
       failing.set(asWritten(target), code);
     },
+    /** Every open of this path fails with this code until `heal`, and looking it up still works, as for a program out of file handles. */
+    failOpen(target: string, code = "EMFILE") {
+      refusingOpens.set(asWritten(target), code);
+    },
     heal(target: string) {
       failing.delete(asWritten(target));
+      refusingOpens.delete(asWritten(target));
     },
     /** Every call on any path fails with this code, or works again with null. */
     failAll(code: string | null) {

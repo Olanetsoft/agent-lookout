@@ -282,8 +282,9 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * 2.26.1 and 3.0.4 writes them:
  *
  * - The folder of leases, `<session folder>/active`, listed on every poll, and
- *   each held lease's `<id>.lock.json` when it changes, for which sessions a
- *   Vibe program holds (`leases.ts`).
+ *   each held lease's `<id>.lock.json` when it changes, or every 30 seconds
+ *   while it cannot be read, for which sessions a Vibe program holds
+ *   (`leases.ts`).
  * - Each session's store, `<session folder>/unified/<id>`: its `CURRENT`, and
  *   the manifest, public state and runtime state of the generation it names,
  *   once each while it follows the session (`stores.ts`).
@@ -370,7 +371,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
   const storesName = tildify(storesDir, homeDir);
   const leasesName = tildify(leaseDir, homeDir);
 
-  const leases = createLeaseReader(leaseDir, io);
+  const leases = createLeaseReader(leaseDir, io, now);
   const stores = createStoreReader(storesDir, io);
   const journals = createJournalReader(io);
 
