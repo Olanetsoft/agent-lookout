@@ -22,7 +22,11 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
-import { START_CHECK_TTL_MS, type ReadProcessStarts } from "../../processes/processStart.ts";
+import {
+  START_CHECK_TTL_MS,
+  type ReadProcessStarts,
+  type StartMatch,
+} from "../../processes/processStart.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { createRecordProcessCheck, type RecordProcess } from "../qwen-code/processCheck.ts";
 import { every } from "../words.ts";
@@ -100,6 +104,14 @@ export const SCAN_MAX_MS = 5 * 60_000;
  * Those sessions are not listed, or shown as open, for that.
  */
 export const OLD_SESSION_LEASE_MS = 30_000;
+
+/**
+ * How long Vibe must have written nothing to a session before its lease is
+ * looked at, unless the session waits. Nothing is written under a lease a
+ * crashed program left behind, so a session Vibe keeps writing to costs no run,
+ * and a lease left behind is looked at this long after the last write.
+ */
+const LEASE_QUIET_MS = 60_000;
 
 /** The usual way this adapter reads, named for the poller. */
 export const BASIS = "files";
@@ -209,7 +221,7 @@ export interface MistralVibeAdapterOptions {
   io?: ReadOnlyIo;
   /** Whether a process runs, for the pid a lease names. Defaults to asking the system. */
   isAlive?: (pid: number) => boolean;
-  /** When processes started, asked about the pid of a lease a wait hangs on. Defaults to `ps`. */
+  /** When processes started, asked about the pid of a lease that could be left behind. Defaults to `ps`. */
   readProcessStarts?: ReadProcessStarts;
   /** The system it runs on, which says whether `ps` is asked. Defaults to this one. */
   platform?: NodeJS.Platform;
@@ -239,6 +251,9 @@ const sameMark = (a: Mark, b: Mark) =>
 const leaseMark = (id: string, pid: number | null, acquiredAt: number | null) =>
   `${id} ${pid} ${acquiredAt}`;
 
+/** Whether a lease's process is the one that took it: an answer that was told for sure. */
+type LeaseAnswer = Exclude<StartMatch, "unknown">;
+
 /**
  * What Sources says tells a lease's process from another program given its
  * pid, and how often that is asked. Where `ps` is not asked, signal 0 is all
@@ -252,7 +267,7 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
     { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
     {
       label: "Process check run",
-      value: `${every(START_CHECK_TTL_MS)} while a session waits, and sooner when another starts to wait`,
+      value: `once for each lease, after a minute with nothing written or as soon as its session waits, then ${every(START_CHECK_TTL_MS)} while it waits or until ps answers`,
     },
   ];
 }
@@ -290,20 +305,34 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * Forks are listed. Sessions the older engine saved are not, and the card
  * says so when it saved one in the last day.
  *
- * A wait counts toward keeping the Mac awake for as long as it is listed, so
- * on a Mac, while a session has one, `ps` is asked when the process its lease
- * names started, again after 30 seconds, and sooner when another session starts
- * to wait. A process that started more than a minute after the lease was taken
- * was given a crashed Vibe's pid: no program holds the session, which is
- * finished, and that lease is not asked about again. No other session is asked
- * about, and while none waits no program is run.
+ * A crashed Vibe leaves its lease behind, and signal 0 says that lease's process
+ * runs once the system gives its pid to another program. So on a Mac `ps` is
+ * asked when the process a lease names started. A process that started more
+ * than a minute after the lease was taken was given the pid since: no program
+ * holds the session, which is finished. One that started earlier, or one `ps`
+ * says nothing of, leaves the session as it is.
+ *
+ * `ps` is asked only while a lease could be left behind. A lease is asked about
+ * once its session has gone a minute with nothing written, or as soon as it
+ * waits, in one run for all that are due. An answer stands while signal 0 keeps
+ * finding the lease's process, so a lease told for sure is not asked about
+ * again, unless its session waits: a wait counts toward keeping the Mac awake
+ * for as long as it is listed, so its lease is asked about every 30 seconds
+ * while it stands, as is a lease with no answer.
+ * With no lease to ask about, no program is run.
  *
  * Only on a Mac, because a comparison acts only when it is sure. Linux's `ps`
  * works a start out again from the clock each time, so a clock set forward by
  * more than a minute makes a Vibe that runs look as if it started after its
  * lease, and a lease holds no start token to read from `/proc` instead, as a
- * Qwen Code record does. Windows has no `ps`. So on Linux and Windows, a wait in
- * a lease whose pid went to another program stands until that program ends.
+ * Qwen Code record does. A program's name cannot say either: a Python program
+ * goes by its interpreter's name or its script's, by how it was started, and
+ * `VIBE_APP_SERVER_CMD` can start Vibe's app server under any. Windows has no
+ * `ps`. So on Linux and Windows one thing is sure, that a process signal 0 found
+ * gone is not coming back: that lease stays left behind, whoever gets its pid,
+ * until a restart, or a poll that cannot read the lease, forgets that. A lease
+ * whose pid another program has by then, or went to one unseen, stands until
+ * that program ends.
  *
  * Vibe not being installed costs nothing: when the session folder is
  * missing, the adapter says so and looks again only once a minute, with a
@@ -365,11 +394,13 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
   /** Each session's wait as the last poll showed it. */
   let waits = new Map<string, VibeWait>();
   /**
-   * Each lease `ps` showed another program has, by `leaseMark`, kept while its
-   * process runs. A pid goes only to a program that starts later, so the answer
-   * stands, and such a lease is not held and not asked about again.
+   * What is known for sure of each lease's process, by `leaseMark`. `ps`'s answer
+   * is kept while the process runs. A lease another program has is not held, and
+   * neither answer is asked for again unless the session waits. Where `ps` is not
+   * asked, a lease whose process was found gone is "different". A poll that
+   * cannot read a lease forgets what is known of it, as a restart does.
    */
-  let ruledOut = new Set<string>();
+  let answers = new Map<string, LeaseAnswer>();
 
   function watching(read: string): SourceFact[] {
     return [
@@ -540,17 +571,27 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
 
     const kept = new Set<string>();
     const journalFiles = new Set<string>();
-    /** Each session to list, with the process a wait of its hangs on, if it has one. */
-    const listed: { input: MistralVibeSessionInput; waitsOn: RecordProcess | null }[] = [];
-    const stillRuledOut = new Set<string>();
+    /** Each session to list, with the process its lease names when that is due a look. */
+    const listed: {
+      input: MistralVibeSessionInput;
+      lookAt: RecordProcess | null;
+      recent: boolean;
+    }[] = [];
+    const stillAnswered = new Map<string, LeaseAnswer>();
     let tooNewSeen = false;
 
     for (const id of [...candidates].sort()) {
       const lease = found.supported ? found.held.get(id) : undefined;
       const alive = lease === undefined || lease.pid === null ? null : isAlive(lease.pid);
       const mark = lease === undefined ? null : leaseMark(id, lease.pid, lease.acquiredAt);
-      const leftBehind = alive === true && mark !== null && ruledOut.has(mark);
-      if (leftBehind) stillRuledOut.add(mark);
+      // An answer stands while its process runs. Where `ps` is not asked, a
+      // process found gone is the one sure answer: it never comes back, so
+      // whatever has its pid later is another program.
+      let known: LeaseAnswer | undefined;
+      if (mark !== null && alive === true) known = answers.get(mark);
+      else if (mark !== null && alive === false && !asksPs) known = "different";
+      if (mark !== null && known !== undefined) stillAnswered.set(mark, known);
+      const leftBehind = known === "different";
       const held = vibeLeaseHeld({
         leaseFolder: found.supported,
         locked: lease !== undefined,
@@ -635,6 +676,10 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
             leaseTakenAt: lease?.pid === null ? null : acquiredAt,
             turnStartedAt: envelope?.turnStartedAt ?? null,
           });
+      // A wait is looked at whatever was said before. The clock only decides
+      // when a lease is looked at here, never what the answer is.
+      const quiet = checkedAt - lastWrite >= LEASE_QUIET_MS;
+      const due = wait !== null || (quiet && known === undefined);
       listed.push({
         input: {
           sessionId: id,
@@ -647,31 +692,35 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
           writtenAt: journalInfo?.mtimeMs,
           now: checkedAt,
         },
-        waitsOn:
-          wait === null || lease?.pid === null || lease?.pid === undefined
+        lookAt:
+          !due || shownHeld !== true || lease?.pid === null || lease?.pid === undefined
             ? null
             : { pid: lease.pid, startedAt: lease.acquiredAt },
+        recent,
       });
     }
 
     // On a Mac, a process that started more than a minute after its lease was
     // taken was given the pid of a Vibe that crashed, and no program holds that
-    // session. Only a wait turns on this: it keeps the Mac awake for as long as
-    // it is listed, where a session left showing as working stops doing so.
-    const matches = await processCheck?.matches(listed.flatMap(({ waitsOn }) => waitsOn ?? []));
+    // session. It leaves the list as any finished session does, so one Vibe last
+    // wrote to more than a day ago, which only its lease kept here, goes at once.
+    const matches = await processCheck?.matches(listed.flatMap(({ lookAt }) => lookAt ?? []));
     const shownWaits = new Map<string, VibeWait>();
-    const sessions: Session[] = listed.map(({ input, waitsOn }) => {
-      if (waitsOn !== null && matches?.get(waitsOn) === "different") {
-        stillRuledOut.add(leaseMark(input.sessionId, waitsOn.pid, waitsOn.startedAt));
-        return mistralVibeSession({ ...input, held: false, wait: null });
+    const sessions: Session[] = listed.flatMap(({ input, lookAt, recent }) => {
+      const match = lookAt === null ? undefined : matches?.get(lookAt);
+      if (lookAt !== null && (match === "same" || match === "different")) {
+        stillAnswered.set(leaseMark(input.sessionId, lookAt.pid, lookAt.startedAt), match);
       }
-      if (!input.wait) return mistralVibeSession(input);
+      if (match === "different") {
+        return recent ? [mistralVibeSession({ ...input, held: false, wait: null })] : [];
+      }
+      if (!input.wait) return [mistralVibeSession(input)];
       const wait = continuedVibeWait(waits.get(input.sessionId), input.wait);
       shownWaits.set(input.sessionId, wait);
-      return mistralVibeSession({ ...input, wait });
+      return [mistralVibeSession({ ...input, wait })];
     });
     waits = shownWaits;
-    ruledOut = stillRuledOut;
+    answers = stillAnswered;
 
     tracked = kept;
     stores.keepOnly(kept);

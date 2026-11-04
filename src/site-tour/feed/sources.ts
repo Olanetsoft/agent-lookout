@@ -564,7 +564,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card on a Mac without Mistral Vibe: its folder is looked for, and `ps` would run only while a session waits.
+      // The adapter's card on a Mac without Mistral Vibe: its folder is looked for, and `ps` would run only while a lease could be left behind.
       id: "mistral-vibe",
       label: "Mistral Vibe",
       state: "unavailable",
@@ -577,7 +577,8 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
         {
           label: "Process check run",
-          value: "every 30 seconds while a session waits, and sooner when another starts to wait",
+          value:
+            "once for each lease, after a minute with nothing written or as soon as its session waits, then every 30 seconds while it waits or until ps answers",
         },
       ],
       capabilities: MISTRAL_VIBE_CAPABILITIES,
