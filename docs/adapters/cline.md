@@ -32,15 +32,15 @@ Cline has other ways in, and none of them can be used that way:
 
 ## What it reads
 
-| Path                           | How                                                                              | How often                                                                             |
-| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `<sessions folder>/`           | Listed                                                                           | Every poll, and once a minute while it is missing                                     |
-| `<id>/<id>.json`, the manifest | One `lstat`                                                                      | Every poll for a session shown or a new folder, and once a minute for every other one |
-| The same file                  | Opened read-only when written in the last day, and read whole when 1 MiB or less | When its size, modified time or identity changes                                      |
-| `<id>/`                        | One `lstat`, to see that it is a folder and not a link                           | Before a manifest is opened                                                           |
-| `<id>/<id>.messages.json`      | One `lstat`, for its modified time. Never opened                                 | Every poll, for a session whose manifest says it is open                              |
+| Path                           | How                                                                                                            | How often                                                                             |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `<sessions folder>/`           | Listed                                                                                                         | Every poll, and once a minute while it is missing                                     |
+| `<id>/<id>.json`, the manifest | One `lstat`                                                                                                    | Every poll for a session shown or a new folder, and once a minute for every other one |
+| The same file                  | Opened read-only when written in the last day or its session is still shown, and read whole when 1 MiB or less | When its size, modified time or identity changes                                      |
+| `<id>/`                        | One `lstat`, to see that it is a folder and not a link                                                         | Before a manifest is opened                                                           |
+| `<id>/<id>.messages.json`      | One `lstat`, for its modified time. Never opened                                                               | Every poll, for a session whose manifest says it is open                              |
 
-Every other manifest is looked up once a minute because Cline keeps every session it ever ran, so that folder can hold thousands. A manifest last written over a day ago is never opened.
+Every other manifest is looked up once a minute because Cline keeps every session it ever ran, so that folder can hold thousands. A manifest last written over a day ago is not opened unless its session is still shown.
 
 A manifest is opened without following a link at its name and without waiting on a pipe, and read only if the open file is an ordinary file. A manifest is not opened through a link at a session's folder. The `lstat` of a manifest or a messages file does not check that folder first, so it can pass through such a link, and it takes only a size, a time and an identity from what is behind it. The sessions folder itself can be a link. A folder's name must be letters, digits, `.`, `_` and `-`, begin with a letter or a digit, and be 200 characters or less. No other folder is read, and neither are `sessions.index.json` and `subagent-spawn-queue.json`, which Cline writes there when it cannot use SQLite (`core/session/services/file-session-service.ts:63,67`).
 
@@ -181,7 +181,7 @@ None. The process can be the hub, which many sessions share and which is in no t
 - On Linux and Windows, after a crash, another program can take the pid. The session then shows as open, with the status its manifest last gave, until that program ends or the session leaves the list. If the manifest says `running` or `pending`, it stays listed for as long as that program runs.
 - On a Mac, a session shows as finished while it runs if the clock was set back by more than a minute between its process's start and `started_at`.
 - An open session left idle for a day leaves the list until it is next written.
-- A session working or waiting whose manifest was last written over a day ago when Agent Lookout starts is not found until its manifest is next written, usually when the turn ends, however recently its messages file moved, because no manifest that old is opened.
+- A session working or waiting whose manifest was last written over a day ago when Agent Lookout starts is not found until its manifest is next written, usually when the turn ends, however recently its messages file moved, because a manifest that old is opened only for a session already shown.
 - A session last written over a day ago that is opened again takes up to a minute to appear.
 - A manifest over 1 MiB is not read, so that session is not listed.
 - A manifest that could not be opened, as on a read error or a permission problem, is not tried again until it is next written or Agent Lookout restarts. Its session is not listed until then, and one that was listed leaves the list as one that ended.
