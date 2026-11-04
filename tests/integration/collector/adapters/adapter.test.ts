@@ -9,6 +9,7 @@ import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index"
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
 import { CONTINUE_CAPABILITIES } from "@collector/adapters/continue/index";
+import { CRUSH_CAPABILITIES } from "@collector/adapters/crush/index";
 import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
@@ -37,6 +38,7 @@ const KIMI_CODE_NOTES = fileURLToPath(
 const CONTINUE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/continue.md", import.meta.url),
 );
+const CRUSH_NOTES = fileURLToPath(new URL("../../../../docs/adapters/crush.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -57,6 +59,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Pi", PI_CAPABILITIES],
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Continue", CONTINUE_CAPABILITIES],
+  ["Crush", CRUSH_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -281,6 +284,35 @@ test("PRIVACY.md and the Continue notes name what is read and from which version
       "title",
       "CONTINUE_GLOBAL_DIR",
       "generated",
+    ]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Crush notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(CRUSH_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const crush = line("For Crush, Agent Lookout reads");
+  expect(crush).toContain("built from Crush's source at v0.99.0");
+  expect(crush).toContain("`ps`");
+  expect(notes).toContain("v0.99.0");
+  expect(notes).toContain("FSL-1.1-MIT");
+
+  const start = privacy.indexOf("### Crush's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.local/share/crush/projects.json",
+      ".crush/crush.db",
+      "parent_session_id",
+      "message_count",
+      "created_at",
+      "updated_at",
+      "ps -A -o comm=",
     ]) {
       expect(text).toContain(field);
     }

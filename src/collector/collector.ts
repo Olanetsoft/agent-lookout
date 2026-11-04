@@ -14,6 +14,7 @@ import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createClineAdapter } from "./adapters/cline/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
 import { createContinueAdapter } from "./adapters/continue/index.ts";
+import { createCrushAdapter } from "./adapters/crush/index.ts";
 import { createGeminiCliAdapter } from "./adapters/gemini-cli/index.ts";
 import { createGooseAdapter } from "./adapters/goose/index.ts";
 import { createHermesAgentAdapter } from "./adapters/hermes-agent/index.ts";
@@ -108,7 +109,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -118,7 +119,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_OPENCODE_HOME`, `AGENT_LOOKOUT_QWEN_HOME`,
    * `AGENT_LOOKOUT_HERMES_HOME`, `AGENT_LOOKOUT_CLINE_HOME`,
    * `AGENT_LOOKOUT_GOOSE_HOME`, `AGENT_LOOKOUT_PI_HOME`,
-   * `AGENT_LOOKOUT_KIMI_CODE_HOME`, `AGENT_LOOKOUT_CONTINUE_HOME` and
+   * `AGENT_LOOKOUT_KIMI_CODE_HOME`, `AGENT_LOOKOUT_CONTINUE_HOME`,
+   * `AGENT_LOOKOUT_CRUSH_HOME` and
    * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
@@ -558,6 +560,7 @@ export function createCollector(options: CollectorOptions): Collector {
       readProcessStarts: options.readProcessStarts,
     }),
     createContinueAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    createCrushAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

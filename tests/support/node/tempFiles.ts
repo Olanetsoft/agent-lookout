@@ -166,6 +166,15 @@ export const EMPTY_CONTINUE_HOME = path.join(
 );
 
 /**
+ * An empty folder for the Crush adapter to read in place of
+ * `~/.local/share/crush`, so that a collector a test builds from `process.env`
+ * finds no sessions: `nodeSetup.ts` makes it and names it there. Nothing is ever
+ * written in it. A test that builds an environment of its own names a `tempDir`
+ * there.
+ */
+export const EMPTY_CRUSH_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-crush", "crush");
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

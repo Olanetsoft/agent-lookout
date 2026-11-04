@@ -18,6 +18,7 @@ import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_CLINE_HOME,
+  EMPTY_CRUSH_HOME,
   EMPTY_GOOSE_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
@@ -140,6 +141,14 @@ delete process.env.KIMI_CODE_HOME;
 mkdirSync(EMPTY_CONTINUE_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_CONTINUE_HOME = EMPTY_CONTINUE_HOME;
 delete process.env.CONTINUE_GLOBAL_DIR;
+
+// Nor does one read Crush's data folder, `~/.local/share/crush` or the one
+// `CRUSH_GLOBAL_DATA` names, or a project's `.crush`: the adapter is pointed at an
+// empty folder, and Crush's own variable is dropped. A test of the adapter names a
+// folder of its own.
+mkdirSync(EMPTY_CRUSH_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_CRUSH_HOME = EMPTY_CRUSH_HOME;
+delete process.env.CRUSH_GLOBAL_DATA;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

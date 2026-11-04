@@ -23,6 +23,8 @@ import { CLINE_CAPABILITIES, createClineAdapter } from "@collector/adapters/clin
 import { clineSession } from "@collector/adapters/cline/toSession";
 import { CODEX_CAPABILITIES, createCodexAdapter } from "@collector/adapters/codex/index";
 import { codexSession } from "@collector/adapters/codex/toSession";
+import { createCrushAdapter, CRUSH_CAPABILITIES } from "@collector/adapters/crush/index";
+import { crushSession } from "@collector/adapters/crush/toSession";
 import { createGooseAdapter, GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { gooseSession } from "@collector/adapters/goose/toSession";
 import { createKimiCodeAdapter, KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
@@ -61,6 +63,7 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
+import { mapCrushStatus } from "@core/mapping/crush/crushMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
@@ -102,6 +105,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Pi", PI_CAPABILITIES],
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Continue", CONTINUE_CAPABILITIES],
+  ["Crush", CRUSH_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -183,6 +187,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createContinueAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(CONTINUE_CAPABILITIES);
+    expect(
+      createCrushAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(CRUSH_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -767,6 +774,40 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GOOSE_CAPABILITIES.jump.level).toBe("no");
     expect(GOOSE_CAPABILITIES.stop.level).toBe("no");
     expect(GOOSE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Crush: a session is unknown or finished, and never working, idle, waiting or failed", () => {
+    expect(statuses([mapCrushStatus(true), mapCrushStatus(false)])).toEqual(
+      new Set(["unknown", "finished"]),
+    );
+    expect(CRUSH_CAPABILITIES["working-and-idle"].level).toBe("no");
+    expect(CRUSH_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(CRUSH_CAPABILITIES.failed.level).toBe("no");
+    expect(CRUSH_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Crush: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = crushSession({
+      folder: "/Users/example/code/demo",
+      row: {
+        id: "00000000-0000-4000-8000-000000000001",
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 10_000,
+      },
+      open: true,
+      now: NOW,
+    });
+    expect(session.name).toBe("demo");
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(CRUSH_CAPABILITIES.names.level).toBe("partly");
+    expect(CRUSH_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(CRUSH_CAPABILITIES.tokens.level).toBe("no");
+    expect(CRUSH_CAPABILITIES.jump.level).toBe("no");
+    expect(CRUSH_CAPABILITIES.stop.level).toBe("no");
+    expect(CRUSH_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Pi: a session is unknown or finished, and never working, idle, waiting or failed", () => {
