@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test, vi } from "vitest";
 
 import type { SessionEvent, SessionStatus } from "@core/sessions/session";
 import type { Span } from "@core/waits/measured";
+import type { WaitSighting } from "@core/waits/waitSightings";
 import {
   isWaitEvent,
   MAX_WAIT_SESSIONS,
@@ -425,4 +426,222 @@ describe("a change of the clocks", () => {
       }
     },
   );
+});
+
+describe("a wait whose session left every listing", () => {
+  const START = at(6, 9);
+  /** Lost sight of at `moment`, having been listed last at `lastSeen`. */
+  const lost = (n: number, moment: number, lastSeen: number): WaitSighting => ({
+    sessionId: id(n),
+    sessionName: `project-${n}`,
+    at: moment,
+    way: "main",
+    lastSeen,
+  });
+  /** Listed at `moment`, without having been a moment before. */
+  const seen = (n: number, moment: number): WaitSighting => ({
+    sessionId: id(n),
+    sessionName: `project-${n}`,
+    at: moment,
+    way: "main",
+  });
+  const input = (more: Partial<WaitTotalsInput>): WaitTotalsInput => ({
+    events: [],
+    measured: [{ from: START, to: NOW }],
+    runStarts: [START],
+    waitingNow: [],
+    since: START,
+    now: NOW,
+    ...more,
+  });
+  const spans = (more: Partial<WaitTotalsInput>) =>
+    waitsOf(input(more)).waits.map(({ from, to, open }) => [from, to, open]);
+
+  test("it runs up to the last poll that listed the session, not to now", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+      }),
+    ).toEqual([[at(6, 10), at(6, 11), false]]);
+  });
+
+  test("a session waiting now is counted once, though the newest sighting says it was lost", () => {
+    expect(
+      spans({
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+        waitingNow: [{ id: id(1), name: "project-1" }],
+      }),
+    ).toEqual([[START, NOW, true]]);
+  });
+
+  test("a session out of sight is named by the latest poll before its sightings", () => {
+    const { names } = waitsOf(
+      input({
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+        names: new Map([[id(1), "renamed-project"]]),
+      }),
+    );
+    expect(names.get(id(1))).toBe("renamed-project");
+  });
+
+  describe("listed again with a status time later than the last poll that listed it", () => {
+    /** Listed at `moment`, waiting since `began`. */
+    const again = (n: number, moment: number, began: number): WaitSighting => ({
+      ...seen(n, moment),
+      began,
+    });
+    const sightings = [lost(1, at(6, 11, 0, 2), at(6, 11)), again(1, at(6, 13), at(6, 12))];
+
+    test("the wait stops at that poll and a new one is open from that time", () => {
+      expect(
+        spans({
+          events: [into(1, at(6, 10))],
+          sightings,
+          waitingNow: [{ id: id(1), name: "project-1" }],
+        }),
+      ).toEqual([
+        [at(6, 10), at(6, 11), false],
+        [at(6, 12), NOW, true],
+      ]);
+    });
+
+    test("it is two waits, and the time between them counts for neither", () => {
+      const { today } = waitTotals(
+        input({
+          events: [into(1, at(6, 10)), out(1, at(6, 14))],
+          sightings,
+        }),
+      );
+      expect(today).toMatchObject({ waitedMs: 3 * HOUR, openMs: 0, waits: 2 });
+    });
+
+    test("a wait found with no event is cut the same way", () => {
+      expect(
+        spans({
+          sightings: [seen(1, at(6, 10)), ...sightings],
+          waitingNow: [{ id: id(1), name: "project-1" }],
+        }),
+      ).toEqual([
+        [START, at(6, 11), false],
+        [at(6, 12), NOW, true],
+      ]);
+    });
+
+    test("lost a second time, the new wait stops at its own last listing", () => {
+      expect(
+        spans({
+          events: [into(1, at(6, 10))],
+          sightings: [...sightings, lost(1, at(6, 14, 0, 2), at(6, 14))],
+        }),
+      ).toEqual([
+        [at(6, 10), at(6, 11), false],
+        [at(6, 12), at(6, 14), false],
+      ]);
+    });
+  });
+
+  test("with nothing to say it was lost it runs to now, as for a session a fallback lists as working", () => {
+    expect(spans({ events: [into(1, at(6, 10))] })).toEqual([[at(6, 10), NOW, false]]);
+    expect(spans({ events: [into(1, at(6, 10))], sightings: [seen(1, at(6, 10))] })).toEqual([
+      [at(6, 10), NOW, false],
+    ]);
+  });
+
+  test("while the session needs the person it is open, and runs to now, from when it began", () => {
+    const { today } = waitTotals(
+      input({
+        events: [into(1, at(6, 10))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+        waitingNow: [{ id: id(1), name: "project-1" }],
+      }),
+    );
+    expect(today).toMatchObject({ waitedMs: 5 * HOUR, openMs: 5 * HOUR, waits: 1 });
+  });
+
+  test("seen again and over later, it runs to its end", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10)), out(1, at(6, 13))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11)), seen(1, at(6, 12))],
+      }),
+    ).toEqual([[at(6, 10), at(6, 13), false]]);
+  });
+
+  test("an end seen once it was lost runs to the last poll that listed it, not to when the end was seen", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10)), out(1, at(6, 13))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+      }),
+    ).toEqual([[at(6, 10), at(6, 11), false]]);
+  });
+
+  test("a wait of a session that was lost before it began is whole", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10)), out(1, at(6, 13)), into(1, at(6, 14)), out(1, at(6, 14, 30))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+      }),
+    ).toEqual([
+      [at(6, 10), at(6, 11), false],
+      [at(6, 14), at(6, 14, 30), false],
+    ]);
+  });
+
+  test("lost before this run, it stops where it was lost, not where this run began", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10))],
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11))],
+        measured: [
+          { from: START, to: at(6, 12) },
+          { from: at(6, 13), to: NOW },
+        ],
+        runStarts: [START, at(6, 13)],
+      }),
+    ).toEqual([[at(6, 10), at(6, 11), false]]);
+  });
+
+  test("a sighting from the future of the moment asked about is not read", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10))],
+        sightings: [lost(1, NOW + MINUTE, at(6, 11))],
+      }),
+    ).toEqual([[at(6, 10), NOW, false]]);
+  });
+
+  test("found waiting with no event and then lost, it counts from that run's start, under its own name", () => {
+    const { waits, names } = waitsOf(
+      input({
+        sightings: [seen(1, at(6, 10)), lost(1, at(6, 11, 0, 2), at(6, 11))],
+        measured: [
+          { from: START, to: at(6, 12) },
+          { from: at(6, 13), to: NOW },
+        ],
+        runStarts: [START, at(6, 10), at(6, 13)],
+      }),
+    );
+    expect(waits).toEqual([{ sessionId: id(1), from: at(6, 10), to: at(6, 11), open: false }]);
+    expect(names.get(id(1))).toBe("project-1");
+  });
+
+  test("found waiting with no event, lost and seen waiting again, it is one wait", () => {
+    expect(
+      spans({
+        sightings: [lost(1, at(6, 11, 0, 2), at(6, 11)), seen(1, at(6, 12))],
+        waitingNow: [{ id: id(1), name: "project-1" }],
+      }),
+    ).toEqual([[START, NOW, true]]);
+  });
+
+  test("a sighting older than the session's last event says nothing of a wait of its own", () => {
+    expect(
+      spans({
+        events: [into(1, at(6, 10)), out(1, at(6, 13))],
+        sightings: [lost(1, at(6, 12), at(6, 11, 59))],
+      }),
+    ).toEqual([[at(6, 10), at(6, 11, 59), false]]);
+  });
 });

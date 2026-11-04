@@ -103,6 +103,79 @@ describe("createWaitLedger", () => {
     expect(answer.today.sessions[0]).toMatchObject({ open: true, waits: 1 });
   });
 
+  test("a wait whose session left every listing stops at the last poll that listed it, from what the history kept or what the poller says", () => {
+    const sighting = {
+      sessionId: ID,
+      sessionName: "demo-project",
+      at: T0 - 20 * MINUTE,
+      way: "main",
+      lastSeen: T0 - 20 * MINUTE - 2 * SECOND,
+    };
+    const asked = {
+      now: T0,
+      snapshot: nobodyWaiting,
+      since: SINCE,
+      runStarts: [T0 - 40 * MINUTE],
+      where: "disk",
+    } as const;
+
+    const restored = createWaitLedger();
+    restored.restore({
+      waitEvents: [changed(T0 - 30 * MINUTE, "working", "needs-you")],
+      measured: [{ from: T0 - 40 * MINUTE, to: T0 }],
+      sightings: [sighting],
+    });
+    expect(restored.answer(asked).today.waitedMs).toBe(10 * MINUTE - 2 * SECOND);
+
+    const told = createWaitLedger();
+    told.restore({
+      waitEvents: [changed(T0 - 30 * MINUTE, "working", "needs-you")],
+      measured: [{ from: T0 - 40 * MINUTE, to: T0 }],
+    });
+    told.addSightings([sighting]);
+    expect(told.answer(asked).today.waitedMs).toBe(10 * MINUTE - 2 * SECOND);
+
+    // Clearing lets it go with the rest: read from nothing, the wait runs to now.
+    told.clear();
+    told.restore({
+      waitEvents: [changed(T0 - 30 * MINUTE, "working", "needs-you")],
+      measured: [{ from: T0 - 40 * MINUTE, to: T0 }],
+    });
+    expect(told.answer(asked).today.waitedMs).toBe(30 * MINUTE);
+  });
+
+  test("it holds no more sightings than it can use: past the most it holds, the oldest go", () => {
+    const ledger = createWaitLedger();
+    ledger.beginRun();
+    pollEvery2s((added) => ledger.addPoint(added), T0 - 40 * MINUTE, T0 - 10 * MINUTE);
+    const sighting = (sessionId: string, at: number) => ({
+      sessionId,
+      sessionName: "demo-project",
+      at,
+      way: "main",
+      lastSeen: at - 2 * SECOND,
+    });
+    const asked = {
+      now: T0,
+      snapshot: nobodyWaiting,
+      since: SINCE,
+      runStarts: [T0 - 40 * MINUTE],
+      where: "disk",
+    } as const;
+    ledger.addSightings([sighting("claude-code:first", T0 - 20 * MINUTE)]);
+    expect(ledger.answer(asked).today.sessions.map((one) => one.sessionId)).toEqual([
+      "claude-code:first",
+    ]);
+
+    ledger.addSightings(
+      Array.from({ length: 50_000 }, () => sighting("claude-code:later", T0 - 15 * MINUTE)),
+    );
+    ledger.addPoint(point(T0 - 10 * MINUTE + 2 * SECOND));
+    expect(ledger.answer(asked).today.sessions.map((one) => one.sessionId)).toEqual([
+      "claude-code:later",
+    ]);
+  });
+
   test("a session is named as the latest poll found it, though it waits no longer", () => {
     const ledger = createWaitLedger();
     ledger.beginRun();

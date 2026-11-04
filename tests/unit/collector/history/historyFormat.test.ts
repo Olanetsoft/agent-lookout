@@ -9,6 +9,7 @@ import {
   parseHistoryText,
   parseRecord,
   readHistoryFileName,
+  recordAt,
   restartsAmong,
   type HistoryFileName,
 } from "@collector/history/historyFormat";
@@ -159,6 +160,23 @@ describe("encoding", () => {
     // Someone this version does not know of spoils the event.
     const odd = JSON.stringify({ event: { ...stopped, by: "somebody" } });
     expect(parseRecord(odd)).toBeNull();
+  });
+
+  test("a move out of a wait out of sight keeps the last poll that listed the session, and reads back as it was written", () => {
+    const ended: SessionEvent = {
+      id: `claude-code:demo@${T0}:ended`,
+      at: T0,
+      sessionId: "claude-code:demo",
+      sessionName: "demo-project",
+      kind: "ended",
+      from: "needs-you",
+      severity: "advisory",
+      lastSeen: T0 - 60_000,
+    };
+    const line = encodeRecord({ kind: "event", event: ended });
+    expect((JSON.parse(line) as { event: object }).event).toEqual(ended);
+    expect(parseRecord(line.trim())).toEqual({ kind: "event", event: ended });
+    expect(parseRecord(JSON.stringify({ event: { ...ended, lastSeen: "soon" } }))).toBeNull();
   });
 
   test("an answered event keeps the decision alone, and reads back as it was written", () => {
@@ -342,6 +360,72 @@ describe("parsing", () => {
   test("a line longer than any record is not read", () => {
     const long = JSON.stringify({ event: { ...EVENT, sessionName: "x".repeat(MAX_LINE_LENGTH) } });
     expect(parseRecord(long)).toBeNull();
+  });
+});
+
+describe("how a session in a wait was seen", () => {
+  const LOST = {
+    sessionId: "opencode:ses_000000000000000000000000a1",
+    sessionName: "demo-project",
+    at: T0,
+    way: "database",
+    lastSeen: T0 - 2_000,
+  };
+
+  test("it reads back as it was written, listed or left out, with the time it was made", () => {
+    const { lastSeen: _none, ...listed } = LOST;
+    for (const sighting of [LOST, listed, { ...listed, began: T0 - 1_000 }]) {
+      const line = encodeRecord({ kind: "sighting", sighting });
+      expect(JSON.parse(line)).toEqual({ sighting });
+      const record = parseRecord(line.trim());
+      expect(record).toEqual({ kind: "sighting", sighting });
+      expect(record && recordAt(record)).toBe(T0);
+    }
+  });
+
+  test("a way can be empty, for a source with one way of reading, and can name a part of a source", () => {
+    for (const way of ["", "remote:devbox:opencode:\ndatabase-closed"]) {
+      const sighting = { ...LOST, way };
+      expect(parseRecord(encodeRecord({ kind: "sighting", sighting }).trim())).toEqual({
+        kind: "sighting",
+        sighting,
+      });
+    }
+  });
+
+  test("only its own fields are written", () => {
+    const carrying = { ...LOST, waitingText: "Run: npm test" };
+    const line = encodeRecord({ kind: "sighting", sighting: carrying });
+    expect(line).not.toContain("npm test");
+  });
+
+  test("a sighting with a field missing or wrong is passed over", () => {
+    for (const sighting of [
+      { ...LOST, sessionId: "" },
+      { ...LOST, sessionName: 1 },
+      { ...LOST, at: -1 },
+      { ...LOST, way: 7 },
+      { ...LOST, way: "x".repeat(2_000) },
+      { ...LOST, lastSeen: "soon" },
+      { ...LOST, began: "soon" },
+      "left out",
+    ]) {
+      expect(parseRecord(JSON.stringify({ sighting }))).toBeNull();
+    }
+  });
+
+  test("a file from before there were sightings reads as it did", () => {
+    const text = [
+      encodeRecord({ kind: "start", at: T0 }),
+      encodeRecord({ kind: "event", event: EVENT }),
+    ].join("");
+    expect(parseHistoryText(text)).toEqual({
+      records: [
+        { kind: "start", at: T0 },
+        { kind: "event", event: EVENT },
+      ],
+      skipped: 0,
+    });
   });
 });
 

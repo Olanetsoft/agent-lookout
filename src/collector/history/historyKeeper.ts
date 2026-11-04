@@ -8,6 +8,7 @@ import type {
 } from "../../core/api.ts";
 import type { HistoryPoint, SessionEvent } from "../../core/sessions/session.ts";
 import { pollRuns, type Span } from "../../core/waits/measured.ts";
+import type { WaitSighting } from "../../core/waits/waitSightings.ts";
 import { isWaitEvent } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
@@ -100,12 +101,14 @@ export interface RestoredHistory {
   lastAt: number | null;
   /**
    * All that the files hold, compactly, for what reads further back than the
-   * stores: every event into or out of needs-you, and the stretches the
-   * points cover, broken at each start. `GET /api/waits` is worked out from it.
+   * stores: every event into or out of needs-you, the stretches the points
+   * cover, broken at each start, and how the sessions in a wait were seen.
+   * `GET /api/waits` is worked out from it.
    */
   whole: {
     waitEvents: SessionEvent[];
     measured: Span[];
+    sightings: WaitSighting[];
   };
 }
 
@@ -126,11 +129,11 @@ export type ClearOutcome =
  * - Nothing is written during a poll. What is added waits in memory and is
  *   written every 5 seconds, by another turn of the event loop, and what is
  *   left is written as Agent Lookout stops.
- * - Only what the stores hold is written: events and points, and when watching
- *   started or the history was cleared. An event holds its session's name as
- *   the dashboard shows it, and never what a waiting session is asking or
- *   anything else a session carries: `historyFormat.ts` writes an event field
- *   by field.
+ * - Only what the stores and the waits hold is written: events, points and
+ *   how a session in a wait was seen, and when watching started or the history
+ *   was cleared. An event or a sighting holds its session's name as the
+ *   dashboard shows it, and never what a waiting session is asking or anything
+ *   else a session carries: `historyFormat.ts` writes each field by field.
  * - The folder is made with mode 700 and each file with mode 600. A file that
  *   is a link, is not an ordinary file, or is larger than a file is allowed to
  *   grow is not read. A line that does not parse is passed over. A file of a
@@ -155,6 +158,8 @@ export interface HistoryKeeper {
   addEvents(events: readonly SessionEvent[]): void;
   /** Holds this point to be written. */
   addPoint(point: HistoryPoint): void;
+  /** Holds these sightings to be written. */
+  addSightings(sightings: readonly WaitSighting[]): void;
   /** Writes what is held now. Resolves once it is written, or could not be. */
   flush(): Promise<void>;
   /** Writes what is left, at once, and lets the lock go. */
@@ -182,6 +187,7 @@ const BEGINNING: Record<HistoryRecord["kind"], HistoryBeginning> = {
   cleared: "cleared",
   point: "trimmed",
   event: "trimmed",
+  sighting: "trimmed",
 };
 
 function byteLength(text: string): number {
@@ -320,6 +326,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     const notFiles = new Set<string>();
     const events = new Map<string, SessionEvent>();
     const points: HistoryPoint[] = [];
+    const sightings: WaitSighting[] = [];
     const starts: number[] = [];
     const times: number[] = [];
     let lastAt: number | null = null;
@@ -355,6 +362,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         if (lastAt === null || recorded > lastAt) lastAt = recorded;
         if (record.kind === "event") events.set(record.event.id, record.event);
         else if (record.kind === "point") points.push(record.point);
+        else if (record.kind === "sighting") sightings.push(record.sighting);
         else if (record.kind === "start") starts.push(record.at);
       }
     }
@@ -374,6 +382,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
             allPoints.map((point) => point.at),
             starts,
           ),
+          sightings: sightings.sort((a, b) => a.at - b.at),
         },
       },
       found,
@@ -642,7 +651,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         points: [],
         restarts: [],
         lastAt: null,
-        whole: { waitEvents: [], measured: [] },
+        whole: { waitEvents: [], measured: [], sightings: [] },
       };
       if (restored) return none;
       restored = true;
@@ -693,6 +702,9 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     },
     addPoint(point) {
       hold({ kind: "point", point });
+    },
+    addSightings(sightings) {
+      for (const sighting of sightings) hold({ kind: "sighting", sighting });
     },
     async flush() {
       // A beat under way may have taken what it writes before the last was

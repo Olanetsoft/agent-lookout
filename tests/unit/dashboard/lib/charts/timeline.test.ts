@@ -631,6 +631,35 @@ test("a session stale since before the window is stale across all of it", () => 
   ]);
 });
 
+test("a wait that ended out of sight is drawn up to the last poll that listed the session, and nothing after it", () => {
+  const events = [
+    changed(1, ago(30), "working", "needs-you"),
+    { ...ended(1, ago(5), "needs-you"), lastSeen: ago(29) },
+  ];
+  expect(minutesByKind(segmentsOf({ events })).working).toBeGreaterThan(0);
+  const waited = segmentsOf({ events }).filter((segment) => segment.kind === "needs-you");
+  expect(waited).toEqual([{ from: ago(30), to: ago(29), kind: "needs-you", startKnown: true }]);
+});
+
+test("a wait answered out of sight is drawn the same way, with the session's status from when that was seen", () => {
+  const events = [
+    changed(1, ago(30), "working", "needs-you"),
+    { ...changed(1, ago(5), "needs-you", "working"), lastSeen: ago(29) },
+  ];
+  const segments = segmentsOf({ sessions: [session(1, { status: "working" })], events });
+  expect(segments.filter((segment) => segment.to > ago(30))).toEqual([
+    { from: ago(30), to: ago(29), kind: "needs-you", startKnown: true },
+    { from: ago(5), to: NOW, kind: "working", startKnown: true, ongoing: true },
+  ]);
+});
+
+test("a wait found waiting and ended out of sight is drawn up to the last poll that listed it too", () => {
+  const events = [{ ...ended(1, ago(5), "needs-you"), lastSeen: ago(29) }];
+  expect(segmentsOf({ events })).toEqual([
+    { from: START, to: ago(29), kind: "needs-you", startKnown: false },
+  ]);
+});
+
 test("a row says what a listed session is doing now, and nothing for one that ended", () => {
   const { rows } = timeline({
     sessions: [

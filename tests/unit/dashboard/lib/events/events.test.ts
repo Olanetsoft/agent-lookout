@@ -82,6 +82,14 @@ test("a move out of a wait says how long it lasted when the event that began it 
   expect(logEntries([answer], [listed(1, "working")])[0]?.waitedMs).toBeNull();
 });
 
+test("a wait that ended out of sight lasted up to the last poll that listed its session", () => {
+  const wait = changed(1, ago(30), "working", "needs-you");
+  const answer = { ...changed(1, ago(5), "needs-you", "working"), lastSeen: ago(29) };
+  const [answered] = logEntries([answer, wait], [listed(1, "working")]);
+
+  expect(answered).toMatchObject({ mark: "working", waitedMs: MINUTE });
+});
+
 test("the start of a wait is the session's own event, not another session's", () => {
   const otherWait = changed(2, ago(29), "working", "needs-you");
   const answer = changed(1, ago(28), "needs-you", "working");

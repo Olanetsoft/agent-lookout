@@ -213,6 +213,61 @@ describe("each session's waits", () => {
   });
 });
 
+describe("a wait whose session left the list", () => {
+  const began = changed(1, at(14, 0), "working", "needs-you");
+
+  test("gone once its end is seen, it ends at the last poll that listed the session", () => {
+    const seen = waits({ events: [began, { ...ended(1, at(14, 25)), lastSeen: at(14, 1) }] });
+
+    expect(seen.sessions[0]?.ms).toBe(MINUTE);
+    expect(seen.totalMs).toBe(MINUTE);
+    expect(seen.lastWait).toMatchObject({ ms: MINUTE, at: at(14, 25), how: "ended" });
+  });
+
+  test("answered once its end is seen, it ends there too", () => {
+    const answered = {
+      ...changed(1, at(14, 25), "needs-you", "working"),
+      lastSeen: at(14, 1),
+    };
+    const seen = waits({
+      sessions: [session(1, { status: "working", statusSince: at(14, 25) })],
+      events: [began, answered],
+    });
+
+    expect(seen.sessions[0]?.ms).toBe(MINUTE);
+    expect(seen.lastWait).toMatchObject({ ms: MINUTE, how: "answered" });
+  });
+
+  test("with no end seen, it has no bar and is no last wait", () => {
+    const seen = waits({ events: [began] });
+
+    expect(seen.sessions).toEqual([]);
+    expect(seen.lastWait).toBeNull();
+  });
+
+  test("seen still waiting, it runs on", () => {
+    const seen = waits({
+      sessions: [session(1, { status: "needs-you", statusSince: at(14, 0) })],
+      events: [began],
+    });
+
+    expect(seen.sessions[0]).toMatchObject({ ms: NOW - at(14, 0), open: true });
+  });
+
+  test("lost as it began, it is no last wait", () => {
+    const seen = waits({ events: [began, { ...ended(1, at(14, 25)), lastSeen: at(14, 0) }] });
+
+    expect(seen.lastWait).toBeNull();
+  });
+
+  test("an end from a version that did not say where sight was lost runs up to when it was seen", () => {
+    const seen = waits({ events: [began, ended(1, at(14, 25))] });
+
+    expect(seen.sessions[0]?.ms).toBe(25 * MINUTE);
+    expect(seen.lastWait).toMatchObject({ ms: 25 * MINUTE, how: "ended" });
+  });
+});
+
 describe("time not measured", () => {
   test("each break is counted out and reported: how many, how long, and when the first began", () => {
     const result = waits({

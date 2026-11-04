@@ -2,6 +2,7 @@ import type { HistoryKept, HistorySince, WaitsResponse } from "../../core/api.ts
 import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "../../core/sessions/session.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { addPoll, type Span } from "../../core/waits/measured.ts";
+import type { WaitSighting } from "../../core/waits/waitSightings.ts";
 import { isWaitEvent, waitTotals } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
@@ -18,12 +19,17 @@ const MAX_EVENTS = 100_000;
 /** The most stretches held: a stretch ends only at a restart, a sleep or a source that stopped answering. */
 const MAX_SPANS = 50_000;
 
+/** The most sightings held: each is a session in a wait listed another way, left out or seen again. */
+const MAX_SIGHTINGS = 50_000;
+
 /** What the history kept on disk held, all of it, for the ledger: see `RestoredHistory` in `history/historyKeeper.ts`. */
 export interface LedgerSeed {
   /** Every event into or out of needs-you, oldest first. */
   waitEvents: readonly SessionEvent[];
   /** The stretches its points cover, oldest first. */
   measured: readonly Span[];
+  /** How the sessions in a wait were seen, oldest first. */
+  sightings?: readonly WaitSighting[];
 }
 
 /** What the answer is worked out from, besides what the ledger holds. */
@@ -40,8 +46,9 @@ export interface WaitsContext {
 
 /**
  * Holds, compactly, what `GET /api/waits` is worked out from, further back than
- * the stores in memory hold: every event into or out of needs-you and the
- * stretches Agent Lookout measured, for nine days. The stores hold a thousand
+ * the stores in memory hold: every event into or out of needs-you, the
+ * stretches Agent Lookout measured and how the sessions in a wait were seen,
+ * for nine days. The stores hold a thousand
  * events and six hours of points, which the charts need; a week of waits needs
  * a few thousand events and a few hundred stretches.
  *
@@ -58,6 +65,7 @@ export interface WaitLedger {
   beginRun(): void;
   addEvents(events: readonly SessionEvent[]): void;
   addPoint(point: HistoryPoint): void;
+  addSightings(sightings: readonly WaitSighting[]): void;
   /** Lets everything go, as clearing the history does. */
   clear(): void;
   /** The answer of `GET /api/waits`. */
@@ -67,6 +75,7 @@ export interface WaitLedger {
 export function createWaitLedger(): WaitLedger {
   let events: SessionEvent[] = [];
   let spans: Span[] = [];
+  let sightings: WaitSighting[] = [];
   let fresh = true;
 
   function prune(at: number): void {
@@ -81,12 +90,22 @@ export function createWaitLedger(): WaitLedger {
     while (firstSpan < spans.length && (spans[firstSpan] as Span).to < cutoff) firstSpan += 1;
     firstSpan = Math.max(firstSpan, spans.length - MAX_SPANS);
     if (firstSpan > 0) spans = spans.slice(firstSpan);
+    let firstSighting = 0;
+    while (
+      firstSighting < sightings.length &&
+      (sightings[firstSighting] as WaitSighting).at < cutoff
+    ) {
+      firstSighting += 1;
+    }
+    firstSighting = Math.max(firstSighting, sightings.length - MAX_SIGHTINGS);
+    if (firstSighting > 0) sightings = sightings.slice(firstSighting);
   }
 
   return {
     restore(seed) {
       events = seed.waitEvents.filter(isWaitEvent).concat(events);
       spans = seed.measured.map((span) => ({ ...span })).concat(spans);
+      sightings = [...(seed.sightings ?? []), ...sightings];
     },
     beginRun() {
       fresh = true;
@@ -99,15 +118,20 @@ export function createWaitLedger(): WaitLedger {
       fresh = false;
       prune(point.at);
     },
+    addSightings(added) {
+      sightings.push(...added);
+    },
     clear() {
       events = [];
       spans = [];
+      sightings = [];
       fresh = true;
     },
     answer({ now, snapshot, since, runStarts, where }) {
       const totals = waitTotals({
         events,
         measured: spans,
+        sightings,
         runStarts,
         // Not a session in a wait Agent Lookout answered, whatever its source still says.
         waitingNow: snapshot.sessions

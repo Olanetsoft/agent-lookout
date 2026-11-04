@@ -8,6 +8,10 @@
 // that was measured, and is still one wait. Each session's waits are added up,
 // so two sessions waiting at once for a minute are two minutes.
 //
+// A wait whose session left every listing counts up to the last poll that
+// listed it, and the time after that counts only if a later poll lists the
+// session and its wait has not ended.
+//
 // Codex and Gemini CLI sessions never show as needing the person, so they never
 // count here, and Antigravity CLI sessions count only while agy asks for
 // approval of a tool.
@@ -15,6 +19,12 @@
 import type { SessionWaitTotal, WaitDay, WaitPeriod } from "../api.ts";
 import { isStatusEvent, type SessionEvent } from "../sessions/session.ts";
 import { coveredWithin, joined, POLL_GAP_MS, type Span } from "./measured.ts";
+import {
+  lastSeenWithin,
+  sightingsBySession,
+  waitStretches,
+  type WaitSighting,
+} from "./waitSightings.ts";
 
 /** The most sessions an answer names for each period, longest first. */
 export const MAX_WAIT_SESSIONS = 10;
@@ -53,6 +63,8 @@ export interface WaitTotalsInput {
   events: readonly SessionEvent[];
   /** The stretches Agent Lookout measured, in any order. */
   measured: readonly Span[];
+  /** Where a session in a wait was lost sight of, or seen again, in any order. */
+  sightings?: readonly WaitSighting[];
   /**
    * When each run of Agent Lookout began, in any order. A wait whose start the
    * history does not hold is counted from the run it was seen in.
@@ -127,6 +139,15 @@ function latestAtOrBefore(starts: readonly number[], at: number, fallback: numbe
  * run, of a session that does not need the person now, ended unseen while
  * Agent Lookout was stopped: this run's polls never saw it waiting, so it runs
  * to this run's start and no further.
+ *
+ * A wait whose session left every listing stops at the last poll that listed
+ * it (`WaitSighting`), whether or not an end is seen later. An end seen once
+ * the session is back says only that the wait ended somewhere in the time
+ * nobody saw it, which is not counted. A session listed again with its wait not
+ * ended is taken to have stood through that time, so it is one wait from when
+ * it began, and nothing is lost. But a status time later than that last poll
+ * shows the wait ended unseen: it stops at that poll, and a new wait starts at
+ * that time (`waitStretches`).
  */
 export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<string, string> } {
   const { now, since } = input;
@@ -134,6 +155,11 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
   const runStart = (at: number) => latestAtOrBefore(starts, at, since);
   const waitingNow = new Map(input.waitingNow.map((session) => [session.id, session.name]));
   const thisRun = runStart(now);
+  const sighted = sightingsBySession(
+    (input.sightings ?? []).filter((sighting) => sighting.at <= now),
+  );
+  const lastSeen = (sessionId: string, from: number, until: number) =>
+    lastSeenWithin(sighted.get(sessionId) ?? [], from, until);
 
   const bySession = new Map<string, SessionEvent[]>();
   for (const event of input.events) {
@@ -159,7 +185,8 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
       }
       const waitsAfter = event.kind !== "ended" && event.to === "needs-you";
       if (began !== null && !waitsAfter) {
-        waits.push({ sessionId, from: began, to: event.at, open: false });
+        const to = lastSeen(sessionId, began, event.at) ?? event.at;
+        waits.push({ sessionId, from: began, to, open: false });
         began = null;
       } else if (began === null && waitsAfter) {
         began = event.at;
@@ -169,7 +196,9 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
     }
     if (began !== null) {
       const open = waitingNow.has(sessionId);
-      waits.push({ sessionId, from: began, to: open || began >= thisRun ? now : thisRun, open });
+      const unseen = open ? null : lastSeen(sessionId, began, Infinity);
+      const to = unseen ?? (open || began >= thisRun ? now : thisRun);
+      waits.push({ sessionId, from: began, to, open });
       unended.add(sessionId);
     }
   }
@@ -185,7 +214,28 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
     waits.push({ sessionId, from: Math.max(thisRun, last), to: now, open: true });
   }
 
+  // A session out of sight that no event says began to wait was found waiting
+  // by the run that last saw it: it is counted from when that run began. One
+  // whose wait an event ended was lost before that event, and comes to nothing.
+  for (const [sessionId, own] of sighted) {
+    const { lastSeen: to, sessionName } = own[own.length - 1] as WaitSighting;
+    if (to === undefined || unended.has(sessionId) || waitingNow.has(sessionId)) continue;
+    const events = bySession.get(sessionId);
+    const last = events?.[events.length - 1]?.at ?? -Infinity;
+    if (!names.has(sessionId)) names.set(sessionId, sessionName);
+    waits.push({ sessionId, from: Math.max(runStart(to), last), to, open: false });
+  }
+
   const kept = waits
+    .flatMap((wait) => {
+      const stretches = waitStretches(sighted.get(wait.sessionId) ?? [], wait.from, wait.to);
+      const newest = stretches.length - 1;
+      return stretches.map((stretch, index) => ({
+        ...wait,
+        ...stretch,
+        open: wait.open && index === newest,
+      }));
+    })
     .map((wait) => ({ ...wait, from: Math.max(wait.from, since) }))
     .filter((wait) => wait.to > wait.from);
   kept.sort((a, b) => a.from - b.from);

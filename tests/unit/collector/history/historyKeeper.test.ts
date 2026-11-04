@@ -15,7 +15,7 @@ const NOTHING = {
   points: [],
   restarts: [],
   lastAt: null,
-  whole: { waitEvents: [], measured: [] },
+  whole: { waitEvents: [], measured: [], sightings: [] },
 };
 
 const file = (name: string) => `${DIR}/${name}`;
@@ -348,6 +348,29 @@ describe("reading back", () => {
     expect(keeper.status()).toMatchObject({ where: "disk", folder: "~/.agent-lookout/history" });
   });
 
+  test("how a session in a wait was seen is written with the rest, and comes back whole, oldest first, beside no other store", async () => {
+    const { keeper, copy, setNow } = setUp();
+    const sighting = {
+      sessionId: "opencode:ses_000000000000000000000000a1",
+      sessionName: "demo-project",
+      at: T0,
+      way: "database",
+    };
+    const lost = { ...sighting, at: T0 + 2_000, lastSeen: T0 };
+    await keeper.restore(LIMITS);
+    keeper.start();
+    keeper.addEvents([event(T0)]);
+    keeper.addSightings([lost, sighting]);
+    await keeper.flush();
+    keeper.stop();
+
+    setNow(T0 + 60_000);
+    const again = await copy(2).restore(LIMITS);
+    expect(again.whole.sightings).toEqual([sighting, lost]);
+    expect(again.events).toEqual([event(T0)]);
+    expect(again.points).toEqual([]);
+  });
+
   test("all of it comes back as well, however much memory takes: every event of a wait, and the stretches measured, broken at each start", async () => {
     const { fs, keeper } = setUp();
     fs.folders.add(DIR);
@@ -393,6 +416,7 @@ describe("reading back", () => {
     expect(restored.points).toEqual([point(T0 - 54_000)]);
     // A move from working to idle is no part of a wait.
     expect(restored.whole.waitEvents).toEqual([event(T0 - DAY + 2_000), answered]);
+    expect(restored.whole.sightings).toEqual([]);
     expect(restored.whole.measured).toEqual([
       { from: T0 - DAY + 2_000, to: T0 - DAY + 6_000 },
       { from: T0 - 58_000, to: T0 - 58_000 },
@@ -469,6 +493,23 @@ describe("reading back", () => {
     );
     await trimmed.keeper.restore(LIMITS);
     expect(trimmed.keeper.since()).toEqual({ at: T0 - DAY, by: "trimmed" });
+
+    const sighted = setUp();
+    sighted.fs.folders.add(DIR);
+    sighted.fs.put(
+      file("v1-2026-10-05-2.jsonl"),
+      lines({
+        kind: "sighting",
+        sighting: {
+          sessionId: "opencode:ses_000000000000000000000000a1",
+          sessionName: "demo-project",
+          at: T0 - DAY,
+          way: "database",
+        },
+      }),
+    );
+    await sighted.keeper.restore(LIMITS);
+    expect(sighted.keeper.since()).toEqual({ at: T0 - DAY, by: "trimmed" });
 
     const empty = setUp();
     await empty.keeper.restore(LIMITS);

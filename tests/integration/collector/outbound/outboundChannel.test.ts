@@ -65,8 +65,11 @@ const pushLine = (body: { title: string; message: string }) =>
  * from the start, and its settings in a file of the test's own. `more` makes
  * further sources, on the collector's clock.
  */
-async function lookout(more: (now: () => number) => Adapter[] = () => []) {
-  const state = { sessions: [] as Session[], now: EVENING };
+async function lookout(
+  more: (now: () => number) => Adapter[] = () => [],
+  events = "needs-you,finished",
+) {
+  const state = { sessions: [] as Session[], now: EVENING, way: undefined as string | undefined };
   const adapter: Adapter = {
     id: "claude-code",
     label: "Claude Code",
@@ -74,6 +77,7 @@ async function lookout(more: (now: () => number) => Adapter[] = () => []) {
     poll: async () => ({
       health: { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: state.now },
       sessions: state.sessions,
+      ...(state.way !== undefined && { basis: state.way }),
     }),
   };
   const mail = await startSmtpServer();
@@ -90,14 +94,14 @@ async function lookout(more: (now: () => number) => Adapter[] = () => []) {
       AGENT_LOOKOUT_NOTIFICATIONS: "on",
       AGENT_LOOKOUT_EMAIL_TO: "notify@example.test",
       AGENT_LOOKOUT_SMTP_URL: mail.url(),
-      AGENT_LOOKOUT_EMAIL_EVENTS: "needs-you,finished",
+      AGENT_LOOKOUT_EMAIL_EVENTS: events,
       AGENT_LOOKOUT_WEBHOOK_URL: hook.url(),
-      AGENT_LOOKOUT_WEBHOOK_EVENTS: "needs-you,finished",
+      AGENT_LOOKOUT_WEBHOOK_EVENTS: events,
       AGENT_LOOKOUT_NTFY_URL: ntfy.url("/agent-lookout-topic"),
-      AGENT_LOOKOUT_NTFY_EVENTS: "needs-you,finished",
+      AGENT_LOOKOUT_NTFY_EVENTS: events,
       AGENT_LOOKOUT_PUSHOVER_TOKEN: "atest0000000000000000000000000",
       AGENT_LOOKOUT_PUSHOVER_USER: "utest0000000000000000000000000",
-      AGENT_LOOKOUT_PUSHOVER_EVENTS: "needs-you,finished",
+      AGENT_LOOKOUT_PUSHOVER_EVENTS: events,
     },
     notifier,
     now: () => state.now,
@@ -135,9 +139,10 @@ async function lookout(more: (now: () => number) => Adapter[] = () => []) {
       expect(response.status).toBe(200);
     },
     /** Moves the clock, replaces the sessions, polls once and waits for what that sent. */
-    async poll(at: number, sessions: Session[]) {
+    async poll(at: number, sessions: Session[], way?: string) {
       state.now = at;
       state.sessions = sessions;
+      state.way = way;
       await collector.poller.pollOnce();
       await collector.email?.settled();
       await collector.webhook?.settled();
@@ -156,6 +161,84 @@ async function lookout(more: (now: () => number) => Adapter[] = () => []) {
       ),
   };
 }
+
+describe("a wait whose session a way of reading leaves out", () => {
+  /** A wait that begins at 21:51, told on every channel by 21:52, and left out from 21:55. */
+  async function lostWait(waiting = asking(1, "checkout-flow", EVENING + MINUTE)) {
+    const server = await lookout(undefined, "needs-you,finished,ended");
+    const asked = EVENING + MINUTE;
+    // The fallback's older poll holds the session from before the wait.
+    await server.poll(EVENING - MINUTE, [busy(1, "checkout-flow")], "fallback");
+    await server.poll(EVENING, [busy(1, "checkout-flow")], "main");
+    await server.poll(asked, [waiting], "main");
+    // Told a minute in, and the page that is not there has seconds to take it.
+    await server.poll(asked + MINUTE, [waiting], "main");
+    await server.poll(asked + MINUTE + 2_000, [waiting], "main");
+    await server.poll(asked + MINUTE + 10_000, [waiting], "main");
+    const sent = () => [
+      server.subjects().length,
+      server.posts().length,
+      ...server.pushes().map((pushes) => pushes.length),
+      server.notifier.shown.length,
+    ];
+    expect(sent()).toEqual([1, 1, 1, 1, 1]);
+    return { server, asked, waiting, sent };
+  }
+
+  test("nothing goes on any channel while it is out of sight, however long, and no reminder", async () => {
+    const { server, asked, sent } = await lostWait();
+    await server.rules({ ...RULES, quietHours: { ...RULES.quietHours, on: false } });
+    for (const minutes of [4, 5, 15, 60, 240]) {
+      await server.poll(asked + minutes * MINUTE, [], "fallback");
+    }
+    expect(sent()).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  test("gone when the main way is back, each channel says it ended, once", async () => {
+    const { server, asked, sent } = await lostWait();
+    await server.poll(asked + 4 * MINUTE, [], "fallback");
+    await server.poll(asked + 5 * MINUTE, [], "fallback");
+    expect(sent()).toEqual([1, 1, 1, 1, 1]);
+
+    await server.poll(asked + 60 * MINUTE, [], "main");
+    await server.poll(asked + 60 * MINUTE + 10_000, [], "main");
+    // The notifications the collector shows itself are of waits alone here.
+    expect(sent()).toEqual([2, 2, 2, 2, 1]);
+    expect(server.posts().map((post) => post.event)).toEqual(["needs-you", "ended"]);
+  });
+
+  test("seen waiting when the main way is back with the same status time, no email, post or push says it again", async () => {
+    const { server, asked, waiting, sent } = await lostWait();
+    await server.poll(asked + 4 * MINUTE, [], "fallback");
+    await server.poll(asked + 5 * MINUTE, [], "fallback");
+    await server.poll(asked + 60 * MINUTE, [waiting], "main");
+    await server.poll(asked + 60 * MINUTE + 10_000, [waiting], "main");
+    // The notification shown here comes again: `waitChanges` takes a wait left
+    // out as stopped, and takes it down, as it did before.
+    expect(sent()).toEqual([1, 1, 1, 1, 2]);
+    expect(server.posts().map((post) => post.event)).toEqual(["needs-you"]);
+  });
+
+  test("seen waiting when the main way is back, an agent that gives no status time sends it again", async () => {
+    const noTime = { ...asking(1, "checkout-flow", EVENING + MINUTE), statusSince: null };
+    const { server, asked, sent } = await lostWait(noTime);
+    await server.poll(asked + 4 * MINUTE, [], "fallback");
+    await server.poll(asked + 60 * MINUTE, [noTime], "main");
+    await server.poll(asked + 61 * MINUTE, [noTime], "main");
+    await server.poll(asked + 61 * MINUTE + 10_000, [noTime], "main");
+    expect(sent()).toEqual([2, 2, 2, 2, 2]);
+    expect(server.posts().map((post) => post.event)).toEqual(["needs-you", "needs-you"]);
+  });
+
+  test("answered when the main way is back, no channel says it ended", async () => {
+    const { server, asked, sent } = await lostWait();
+    await server.poll(asked + 4 * MINUTE, [], "fallback");
+    await server.poll(asked + 5 * MINUTE, [], "fallback");
+    await server.poll(asked + 60 * MINUTE, [busy(1, "checkout-flow")], "main");
+    await server.poll(asked + 60 * MINUTE + 10_000, [busy(1, "checkout-flow")], "main");
+    expect(sent()).toEqual([1, 1, 1, 1, 1]);
+  });
+});
 
 describe("every channel follows the time rules", () => {
   test("in quiet hours nothing goes; when they end, one summary each way, and a wait still open as usual", async () => {

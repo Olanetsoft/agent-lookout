@@ -63,14 +63,18 @@ export interface LastWait {
   /** The session's id. */
   id: string;
   name: string;
-  /** How long it lasted, or, when its start is not known, how long it lasted in the period. */
+  /**
+   * How long it lasted, or, when its start is not known, how long it lasted in
+   * the period, up to the last poll that listed its session when it ended out
+   * of sight.
+   */
   ms: number;
   /**
    * False when the wait was already under way when the period began, as when
    * Agent Lookout started while the session waited, so `ms` is a minimum.
    */
   startKnown: boolean;
-  /** When it was over. */
+  /** When it was seen to be over. */
   at: number;
   /** Answered: the session went on. Ended: the session finished, failed or left. */
   how: "answered" | "ended";
@@ -158,13 +162,14 @@ function lastWaitOver(events: readonly SessionEvent[], period: Period, until: nu
       const waited = began ? began.to === "needs-you" : event.from === "needs-you";
       if (!waited || event.to === "needs-you") return;
       if (event.at < period.from || event.at > until) return;
-      if (began && event.at <= began.at) return;
+      const end = event.lastSeen ?? event.at;
+      if (began && end <= began.at) return;
       if (last && event.at <= last.at) return;
       const ended = event.kind === "ended" || event.to === "finished" || event.to === "failed";
       last = {
         id: event.sessionId,
         name: event.sessionName,
-        ms: event.at - (began ? began.at : period.from),
+        ms: end - (began ? began.at : period.from),
         startKnown: began !== undefined,
         at: event.at,
         how: ended ? "ended" : "answered",

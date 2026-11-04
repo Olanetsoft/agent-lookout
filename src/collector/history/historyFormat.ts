@@ -6,16 +6,20 @@
 // file goes on in `v1-2026-10-06-2.jsonl`, and so on. The `v1` is the format:
 // a later format writes names of its own, which this one leaves alone.
 //
-// A record is one of four, each an object with one field:
+// A record is one of five, each an object with one field:
 //
 //   {"start":1791204000000}                      Agent Lookout started writing
 //   {"cleared":1791204000000}                    the history was cleared
 //   {"point":[1791204000000,1,2,3,6]}            a history point: at, needs you, working, idle, total
 //   {"event":{"id":"…","at":…,"sessionId":…}}    a session event, its own fields and no others
+//   {"sighting":{"sessionId":…,"at":…,"way":…}}  how a session in a wait was seen, its own fields and no others
 //
-// Only what the in-memory stores hold is written. An event is written field by
-// field from the ones a `SessionEvent` has, so nothing else a session carries,
-// such as what a waiting session is asking, can reach a file.
+// Only what the in-memory stores and the waits hold is written. An event or a
+// sighting is written field by field from the ones its type has, so nothing
+// else a session carries, such as what a waiting session is asking, can reach a
+// file. A file from before there were sightings has none, and a version from
+// before then passes over a line that holds one, as it does any record it does
+// not know.
 
 import {
   ANSWER_DECISIONS,
@@ -30,6 +34,7 @@ import {
   type SessionEvent,
   type SessionStatus,
 } from "../../core/sessions/session.ts";
+import type { WaitSighting } from "../../core/waits/waitSightings.ts";
 
 /** The format this version writes and reads. */
 export const HISTORY_FORMAT_VERSION = 1;
@@ -94,12 +99,14 @@ export type HistoryRecord =
   | { kind: "start"; at: number }
   | { kind: "cleared"; at: number }
   | { kind: "point"; point: HistoryPoint }
-  | { kind: "event"; event: SessionEvent };
+  | { kind: "event"; event: SessionEvent }
+  | { kind: "sighting"; sighting: WaitSighting };
 
 /** When a record happened. */
 export function recordAt(record: HistoryRecord): number {
   if (record.kind === "point") return record.point.at;
   if (record.kind === "event") return record.event.at;
+  if (record.kind === "sighting") return record.sighting.at;
   return record.at;
 }
 
@@ -120,13 +127,28 @@ function recordValue(record: HistoryRecord): unknown {
     }
     case "event":
       return { event: eventFields(record.event) };
+    case "sighting":
+      return { sighting: sightingFields(record.sighting) };
   }
+}
+
+/** A sighting's own fields and nothing else, in a fixed order. */
+function sightingFields(sighting: WaitSighting): WaitSighting {
+  const { sessionId, sessionName, at, way, lastSeen, began } = sighting;
+  return {
+    sessionId,
+    sessionName,
+    at,
+    way,
+    ...(lastSeen !== undefined && { lastSeen }),
+    ...(began !== undefined && { began }),
+  };
 }
 
 /** An event's own fields and nothing else, in a fixed order. */
 function eventFields(event: SessionEvent): SessionEvent {
-  const { id, at, sessionId, sessionName, kind, from, to, severity, by, decision, tool, rule } =
-    event;
+  const { id, at, sessionId, sessionName, kind, from, to, severity } = event;
+  const { by, decision, tool, rule, lastSeen } = event;
   return {
     id,
     at,
@@ -143,6 +165,7 @@ function eventFields(event: SessionEvent): SessionEvent {
     ...(rule !== undefined && {
       rule: { tool: rule.tool, ...(rule.command !== undefined && { command: rule.command }) },
     }),
+    ...(lastSeen !== undefined && { lastSeen }),
   };
 }
 
@@ -202,6 +225,8 @@ function readEvent(value: unknown): SessionEvent | null {
   if (value.tool !== undefined && !tool) return null;
   const rule = value.rule === undefined ? undefined : readRule(value.rule);
   if (rule === null) return null;
+  const lastSeen = moment(value.lastSeen);
+  if (value.lastSeen !== undefined && lastSeen === null) return null;
   return {
     id,
     at,
@@ -215,6 +240,7 @@ function readEvent(value: unknown): SessionEvent | null {
     ...(decision && { decision }),
     ...(tool && { tool }),
     ...(rule && { rule }),
+    ...(lastSeen !== null && { lastSeen }),
   };
 }
 
@@ -227,6 +253,29 @@ function readRule(value: unknown): EventRule | null {
   const command = value.command === undefined ? undefined : field(value.command);
   if (!tool || command === null) return null;
   return { tool, ...(command !== undefined && { command }) };
+}
+
+function readSighting(value: unknown): WaitSighting | null {
+  if (!isRecord(value)) return null;
+  const sessionId = field(value.sessionId);
+  const sessionName = field(value.sessionName);
+  const at = moment(value.at);
+  // A source with one way of reading names none, so a way can be empty.
+  const { way } = value;
+  if (!sessionId || !sessionName || at === null) return null;
+  if (typeof way !== "string" || way.length > MAX_FIELD_LENGTH) return null;
+  const lastSeen = moment(value.lastSeen);
+  if (value.lastSeen !== undefined && lastSeen === null) return null;
+  const began = moment(value.began);
+  if (value.began !== undefined && began === null) return null;
+  return {
+    sessionId,
+    sessionName,
+    at,
+    way,
+    ...(lastSeen !== null && { lastSeen }),
+    ...(began !== null && { began }),
+  };
 }
 
 /**
@@ -250,6 +299,10 @@ export function parseRecord(line: string): HistoryRecord | null {
   if ("event" in value) {
     const event = readEvent(value.event);
     return event && { kind: "event", event };
+  }
+  if ("sighting" in value) {
+    const sighting = readSighting(value.sighting);
+    return sighting && { kind: "sighting", sighting };
   }
   if ("start" in value) {
     const at = moment(value.start);

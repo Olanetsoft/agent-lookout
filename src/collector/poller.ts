@@ -9,6 +9,7 @@ import {
   isStatusEvent,
   readWays,
   withoutWaitingText,
+  type ReadWays,
   type Session,
   type SessionEvent,
   type SessionsSnapshot,
@@ -21,9 +22,11 @@ import { sortSessions } from "../core/sessions/sorting.ts";
 import { isStale } from "../core/sessions/staleness.ts";
 import { isQuietAt } from "../core/time-rules/quietHours.ts";
 import { staleAfterMs, type TimeRules } from "../core/time-rules/timeRules.ts";
+import { sightingsBySession, type WaitSighting } from "../core/waits/waitSightings.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
 import type { EventStore } from "./eventStore.ts";
 import type { HistoryStore } from "./historyStore.ts";
+import { LEDGER_KEPT_MS } from "./waits/waitLedger.ts";
 
 /** How often every source is asked for its sessions. */
 export const POLL_INTERVAL_MS = 2_000;
@@ -72,6 +75,11 @@ export interface PollerOptions {
    * it does anyway, none is. Left out, none is.
    */
   answered?: (snapshot: Pick<SessionsSnapshot, "sources" | "sessions">) => ReadonlySet<string>;
+  /**
+   * Hears each change in how a session in a wait is seen. The collector keeps
+   * these with the history, for the waits. None of it goes to the event log.
+   */
+  onSightings?: (sightings: readonly WaitSighting[]) => void;
 }
 
 /**
@@ -158,8 +166,13 @@ export interface Poller {
    * slept is: a new status, a session that ended, or one back after it had
    * ended. A session they say nothing of is taken as it is found. Called
    * before `start`.
+   *
+   * `sightings` say how the sessions in a wait were last seen, in any order.
+   * A session whose wait the history leaves open, that the first good poll
+   * leaves out, is not taken to have ended unless the way that last listed it
+   * is the way that poll was read.
    */
-  resume(events: readonly SessionEvent[]): void;
+  resume(events: readonly SessionEvent[], sightings?: readonly WaitSighting[]): void;
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
 }
@@ -201,6 +214,19 @@ interface LastSeen {
   name: string;
   /** Null for one whose last event is that it ended. */
   status: SessionStatus | null;
+  /** For one in a wait: how it was last seen, when the history says. */
+  sighting?: WaitSighting;
+}
+
+/** A session in a wait, as the poller follows it from one poll to the next. */
+interface FollowedWait {
+  name: string;
+  /** The way of reading that last listed it, as `readWays` keys it. */
+  way: string;
+  /** The last poll that listed it, or for one the last run still listed, when this run began. */
+  lastListed: number;
+  /** Whether a poll has left it out since. */
+  unseen: boolean;
 }
 
 /** What the poller remembers about one source between polls. */
@@ -218,6 +244,135 @@ interface SourceMemory {
   baselines: Map<string, Session[]>;
   /** What the event log has said about this source's sessions so far. */
   reported: ReportedStatuses;
+  /** Each session the log has in a wait. */
+  waits: Map<string, FollowedWait>;
+}
+
+/**
+ * Follows the sessions the log has in a wait through one poll, and says what
+ * changed in how they are seen.
+ *
+ * Absence is no proof that a wait ended. A fallback can leave out a session
+ * that still waits: Claude Code's registry alone has no background jobs, and
+ * the Antigravity CLI without `ps` lists only what was written lately. So only
+ * the way that last listed a session can end its wait by leaving it out
+ * (`endsWaitUnseen`). Until a way does, or shows it moved on, the wait stays
+ * open in the log, which says nothing of it. Told as ended, a wait that goes on
+ * would be a false line in the log, and `sessionChanges` holds its message back
+ * by the same rule. So a session left out only stops the count, at the last
+ * poll that listed it (`waitsOf`), and if it is seen waiting again it carries
+ * on as one wait, unless a status time later than that poll shows a new wait
+ * began unseen. A session listed in any status is followed as seen.
+ *
+ * What is held is a subset of `reported`, and a wait out of sight is let go
+ * once the ledger would have dropped it.
+ */
+function followWaits(
+  memory: SourceMemory,
+  sessions: readonly Session[],
+  ways: ReadWays,
+  at: number,
+): WaitSighting[] {
+  const { reported, waits } = memory;
+  const sightings: WaitSighting[] = [];
+  const listed = new Set<string>();
+  for (const session of sessions) {
+    listed.add(session.id);
+    if (reported.get(session.id) !== "needs-you") continue;
+    const way = ways.keyOf(session.id);
+    const wait = waits.get(session.id);
+    if (!wait || wait.unseen || wait.way !== way) {
+      const began = wait?.unseen ? beganOutOfSight(session, wait.lastListed) : null;
+      sightings.push({
+        sessionId: session.id,
+        sessionName: session.name,
+        at,
+        way,
+        ...(began !== null && { began }),
+      });
+    }
+    waits.set(session.id, { name: session.name, way, lastListed: at, unseen: false });
+  }
+  for (const [id, wait] of waits) {
+    if (reported.get(id) !== "needs-you" || at - wait.lastListed > LEDGER_KEPT_MS) {
+      waits.delete(id);
+    } else if (!listed.has(id) && !wait.unseen) {
+      wait.unseen = true;
+      const { name: sessionName, way, lastListed: lastSeen } = wait;
+      sightings.push({ sessionId: id, sessionName, at, way, lastSeen });
+    }
+  }
+  return sightings;
+}
+
+/**
+ * The status time of a session listed waiting again, when it is later than the
+ * last poll that listed it, or null. That time shows the wait it was lost in
+ * ended unseen and this one began then. It takes a source at its word that a
+ * status time moves only when a status begins, as `waitChanges` does. A source
+ * that gives none leaves it one wait.
+ */
+function beganOutOfSight(session: Session, lastListed: number): number | null {
+  const since = session.statusSince;
+  return session.status === "needs-you" && since !== null && since > lastListed ? since : null;
+}
+
+/**
+ * Whether an `ended` this way of reading shows is of a session in a wait that
+ * another way last listed (`followWaits`). Its leaving the session out proves
+ * nothing, whatever its older poll held: that poll can be hours old, or from an
+ * earlier wait.
+ */
+function endsWaitUnseen(
+  event: SessionEvent,
+  way: string,
+  waits: ReadonlyMap<string, FollowedWait>,
+): boolean {
+  const wait = waits.get(event.sessionId);
+  return event.kind === "ended" && wait !== undefined && wait.way !== way;
+}
+
+/** A move out of a wait, marked with where sight of its session was lost, when it was. */
+function withLastSeen(event: SessionEvent, lastSeen: number | undefined): SessionEvent {
+  if (lastSeen === undefined || event.from !== "needs-you" || event.to === "needs-you") {
+    return event;
+  }
+  return { ...event, lastSeen };
+}
+
+/**
+ * Takes up a wait the history leaves open, of a session whose first good poll
+ * of this run says nothing of it. Left out by a way other than the one that
+ * last listed it, it goes on unseen until that way is read. One listed as the
+ * last run stopped has not been seen by this run, so its count stops where this
+ * run began. A session this poll lists is seen again, as `followWaits` says.
+ */
+function takeUpWait(
+  memory: SourceMemory,
+  session: Pick<LastSeen, "id" | "name">,
+  sighting: WaitSighting,
+  runStart: number,
+  at: number,
+  listed: boolean,
+): WaitSighting[] {
+  const lastListed = sighting.lastSeen ?? runStart;
+  memory.reported.set(session.id, "needs-you");
+  memory.waits.set(session.id, {
+    name: session.name,
+    way: sighting.way,
+    lastListed,
+    unseen: true,
+  });
+  return listed || sighting.lastSeen !== undefined
+    ? []
+    : [{ ...sighting, at, lastSeen: lastListed }];
+}
+
+/** The sessions in a wait a way last listed, as a poll read that way would hold them. */
+function waitsLastListedBy(way: string, waits: ReadonlyMap<string, FollowedWait>) {
+  return [...waits]
+    .filter(([, wait]) => wait.way === way)
+    .map(([id, wait]) => ({ id, name: wait.name, status: "needs-you" as const }));
 }
 
 export function createPoller(options: PollerOptions): Poller {
@@ -379,34 +534,63 @@ export function createPoller(options: PollerOptions): Poller {
     const answered = withAnsweredThere(answeredIn({ sources, sessions: found }), found);
 
     const changes: SessionEvent[] = [];
+    const sightings: WaitSighting[] = [];
     results.forEach((result, index) => {
+      // Each way this poll was read, with its sessions: one, or for another
+      // machine one for each of its sources that says how it was read.
+      const ways = readWays({ basis: result.basis, parts: result.health.parts });
+      const { state } = result.health;
+      const id = (adapters[index] as Adapter).id;
+      // A source that is gone says nothing of its sessions, and is measured
+      // without them, so a wait there is out of sight as any other is.
+      if (state === "unavailable") {
+        const known = memory.get(id);
+        if (known) sightings.push(...followWaits(known, result.sessions, ways, at));
+        return;
+      }
       // A source that is not set up was read as well, and holds no sessions. So
       // what it lists once it is set up has appeared, and is not a baseline.
-      const { state } = result.health;
       if (state !== "ok" && state !== "not-set-up") return;
-      const id = (adapters[index] as Adapter).id;
       let remembered = memory.get(id);
       let lastSeen: LastSeen[] | undefined;
       if (!remembered) {
-        remembered = { baselines: new Map(), reported: new Map() };
+        remembered = { baselines: new Map(), reported: new Map(), waits: new Map() };
         memory.set(id, remembered);
         lastSeen = resumed.get(id);
         resumed.delete(id);
       }
-      const { baselines, reported } = remembered;
+      const { baselines, reported, waits } = remembered;
       if (lastSeen) {
         // The first good poll of all this run is compared with what the history
         // kept from before it says, for the sessions it says anything of.
         const known = new Set(lastSeen.map((session) => session.id));
+        const listed = new Map(result.sessions.map((session) => [session.id, session.status]));
         const before = lastSeen.filter(
           (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
         );
-        const after = result.sessions.filter((session) => known.has(session.id));
-        changes.push(...diffSessions(before, after, at));
+        for (const session of before) {
+          const { sighting } = session;
+          if (!sighting) continue;
+          const status = listed.get(session.id);
+          // Still waiting, or left out by a way that has no say in its wait.
+          const goesOn = status === undefined && !ways.keys.includes(sighting.way);
+          if (status === "needs-you" || goesOn) {
+            const seen = status !== undefined;
+            sightings.push(...takeUpWait(remembered, session, sighting, startedAt, at, seen));
+          }
+        }
+        const after = result.sessions.filter(
+          (session) => known.has(session.id) && !waits.has(session.id),
+        );
+        const compared = before.filter((session) => !waits.has(session.id));
+        const sighted = new Map(before.map((session) => [session.id, session.sighting]));
+        changes.push(
+          ...diffSessions(compared, after, at).map((event) =>
+            withLastSeen(event, sighted.get(event.sessionId)?.lastSeen),
+          ),
+        );
       }
-      // Each way this poll was read, with its sessions: one, or for another
-      // machine one for each of its sources that says how it was read.
-      const ways = readWays({ basis: result.basis, parts: result.health.parts });
+      const moves: SessionEvent[] = [];
       const read = new Map<string, Session[]>(ways.keys.map((key) => [key, []]));
       for (const session of result.sessions) read.get(ways.keyOf(session.id))?.push(session);
       for (const [way, found] of read) {
@@ -416,7 +600,10 @@ export function createPoller(options: PollerOptions): Poller {
         if (previous) {
           // A change seen while another way of reading was in use shows up again
           // here, against this way's older poll. It is reported only once.
-          changes.push(...withoutRepeats(diffSessions(previous, sessions, at), reported));
+          const diff = diffSessions(previous, sessions, at).filter(
+            (event) => !endsWaitUnseen(event, way, waits),
+          );
+          moves.push(...withoutRepeats(diff, reported));
         } else {
           // The first good poll read this way is a baseline. The sessions in it
           // were already running; they did not appear at this moment, so it
@@ -426,12 +613,17 @@ export function createPoller(options: PollerOptions): Poller {
           for (const session of sessions) {
             if (!reported.has(session.id)) reported.set(session.id, session.status);
           }
+          // But a wait this way last listed, before this run, is its to end.
+          const held = waitsLastListedBy(way, waits);
+          const ids = new Set(held.map((session) => session.id));
+          const listed = sessions.filter((session) => ids.has(session.id));
+          moves.push(...withoutRepeats(diffSessions(held, listed, at), reported));
         }
         // Whichever branch that was, a wait begins and ends in the log. A way
         // that lists every session as finished, as when an agent is closed,
         // shows no change on its baseline or against its own older poll. A
         // wait that was answered is no news here either.
-        changes.push(
+        moves.push(
           ...waitMoves(
             sessions.filter((session) => !answered.has(session.id)),
             reported,
@@ -443,6 +635,11 @@ export function createPoller(options: PollerOptions): Poller {
         // without it.
         baselines.set(way, sessions.map(withoutWaitingText));
       }
+      for (const event of moves) {
+        const wait = waits.get(event.sessionId);
+        changes.push(withLastSeen(event, wait?.unseen ? wait.lastListed : undefined));
+      }
+      sightings.push(...followWaits(remembered, result.sessions, ways, at));
     });
 
     const rules = options.timeRules?.();
@@ -455,6 +652,7 @@ export function createPoller(options: PollerOptions): Poller {
 
     latest = snapshot;
     events.add(changes);
+    if (sightings.length > 0) options.onSightings?.(sightings);
     if (measuredEverySource(results)) history.add(historyPointFor(snapshot.sessions, at));
     try {
       options.onSnapshot?.(snapshot);
@@ -492,7 +690,8 @@ export function createPoller(options: PollerOptions): Poller {
       timer = null;
     },
     pollOnce,
-    resume(kept) {
+    resume(kept, sightings = []) {
+      const sighted = sightingsBySession(sightings);
       const newest = new Map<string, SessionEvent>();
       for (const event of kept) {
         // An event of what was done to a session, such as being stopped, says
@@ -509,8 +708,18 @@ export function createPoller(options: PollerOptions): Poller {
         // `remote:devbox:…` for one on another machine.
         const source = sourceOf(event.sessionId);
         if (source === null) continue;
+        const own = sighted.get(event.sessionId);
+        const sighting = own?.[own.length - 1];
+        // A sighting from before this wait's own event is of an earlier wait,
+        // and says nothing of this one.
+        const followed = status === "needs-you" && sighting && sighting.at >= event.at;
         const list = resumed.get(source) ?? [];
-        list.push({ id: event.sessionId, name: event.sessionName, status });
+        list.push({
+          id: event.sessionId,
+          name: event.sessionName,
+          status,
+          ...(followed && { sighting }),
+        });
         resumed.set(source, list);
       }
     },

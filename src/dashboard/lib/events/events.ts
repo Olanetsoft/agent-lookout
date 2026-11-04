@@ -74,8 +74,11 @@ export function logEntries(
     if (event.kind === "answered") return { event, mark: "answered", open: false, waitedMs: null };
 
     const started = olderOf.get(event);
+    // A wait that ended out of sight is known up to the last poll that listed it.
     const waitedMs =
-      event.from === "needs-you" && started?.to === "needs-you" ? event.at - started.at : null;
+      event.from === "needs-you" && started?.to === "needs-you"
+        ? (event.lastSeen ?? event.at) - started.at
+        : null;
     const mark: MarkKind = event.to ?? (event.kind === "ended" ? "ended" : "unknown");
     return { event, mark, open: false, waitedMs };
   });

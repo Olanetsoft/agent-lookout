@@ -518,6 +518,8 @@ export function readEvent(value: unknown): SessionEvent | null {
   if (tool) event.tool = tool;
   const rule = readEventRule(value.rule);
   if (rule) event.rule = rule;
+  const lastSeen = number(value.lastSeen);
+  if (lastSeen !== null) event.lastSeen = lastSeen;
   return event;
 }
 
