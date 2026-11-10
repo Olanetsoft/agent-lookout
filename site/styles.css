@@ -702,7 +702,7 @@ pre {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* The ground keeps still. What moves on this page is the lamp, its switches and the features coming in. */
+/* The ground keeps still. What moves on this page is the lamp and its switches. */
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
@@ -1790,37 +1790,6 @@ html:not(.js) .window-caption {
 .note-banner-body {
   grid-area: body;
   color: var(--ink-secondary);
-}
-
-/*
- * Each feature rises into place the first time it is reached, its words
- * first and its picture a moment after. Only with script, never under reduced
- * motion, and never for the first screen.
- */
-.reveals .reveal > * {
-  opacity: 0;
-  translate: 0 14px;
-  transition:
-    opacity 600ms var(--ease-out),
-    translate 600ms var(--ease-out);
-}
-.reveals .reveal.is-seen > * {
-  opacity: 1;
-  translate: none;
-}
-.reveals .reveal.is-seen > .feature-shot {
-  transition-delay: 80ms;
-}
-.reveals .note-banner {
-  opacity: 0;
-  translate: 0 -12px;
-  transition:
-    opacity 400ms var(--ease-out) 360ms,
-    translate 400ms var(--ease-out) 360ms;
-}
-.reveals .is-seen .note-banner {
-  opacity: 1;
-  translate: none;
 }
 
 /* What the guide has besides, each a quiet capsule. */
