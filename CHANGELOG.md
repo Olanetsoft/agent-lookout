@@ -20,6 +20,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - When Agent Lookout is refused a look at Goose's database or a folder above it, or a disk fails, the card no longer says there is no database, and Goose's sessions no longer show in Events as ended and then as appeared again. The card now says the database could not be looked at, and the sessions come back at the first look that works. (#299)
 
+- When Agent Lookout is refused a look at OpenCode's or Hermes Agent's database, or a disk fails, the card no longer says there is no database, and their sessions no longer show in Events as ended and then as appeared again. The card now says the database could not be looked at, and the sessions come back at the first look that works. A `-wal` or `-shm` that cannot be looked at is no longer taken as no file, and for Hermes Agent the other profiles are still read. (#304)
+
 ## 0.2.19 - 2026-11-04
 
 Goose, Pi and Kimi Code sessions show, a Hermes Agent session no longer takes a title made from your first message, and a running Mistral Vibe session no longer shows as finished when a read of its lease fails after one that worked, but for two rare cases.

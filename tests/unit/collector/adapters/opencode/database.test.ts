@@ -184,6 +184,66 @@ describe("which way the database is opened", () => {
   });
 });
 
+describe("what cannot be looked at", () => {
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("%s that cannot be looked at is not taken for gone", async (_name, target) => {
+    const { files, sqlite, reader } = openDatabase();
+    files.fail(target);
+    expect(await reader.read(NOW)).toEqual({ state: "not-looked-at", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a failing disk is not taken for gone either, as any error but a missing path is not", async () => {
+    const { files, reader } = openDatabase();
+    files.fail(DATABASE, "EIO");
+    expect((await reader.read(NOW)).state).toBe("not-looked-at");
+  });
+
+  test.each([
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("%s on a failing disk is not taken for gone either", async (_name, target) => {
+    const { files, sqlite, reader } = openDatabase();
+    files.fail(target, "EIO");
+    expect(await reader.read(NOW)).toEqual({ state: "not-looked-at", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a file above the database is a database that has gone", async () => {
+    const { files, reader } = openDatabase();
+    files.fail(DATABASE, "ENOTDIR");
+    expect((await reader.read(NOW)).state).toBe("missing");
+  });
+
+  test("a -wal with nothing there is no file, not one that cannot be looked at", async () => {
+    const { files, reader } = openDatabase();
+    files.fail(WAL, "ENOENT");
+    expect((await reader.read(NOW)).state).toBe("read");
+  });
+
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])(
+    "once %s can be looked at again it is read, with what the -wal holds",
+    async (_name, target) => {
+      const { files, sqlite, reader } = openDatabase();
+      await reader.read(NOW);
+      files.fail(target);
+      expect((await reader.read(NOW + SECOND)).rows).toEqual([]);
+      files.heal(target);
+      const read = await reader.read(NOW + 2 * SECOND);
+      expect(read.rows.map((row) => row.id)).toEqual([A]);
+      expect(sqlite.queries()).toHaveLength(2);
+      expect(addresses(sqlite).at(-1)).toBe(`file:${DATABASE}?mode=ro&readonly_shm=1`);
+    },
+  );
+});
+
 describe("when the sessions are asked for again", () => {
   test("not while nothing changed, however long", async () => {
     const { sqlite, reader } = openDatabase();
@@ -464,6 +524,24 @@ describe("one more question, asked with askOnce", () => {
     expect(isMissing(error)).toBe(true);
     expect(sqlite.runs).toEqual([]);
   });
+
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])(
+    "rejects with lstat's error, not a missing file's, when %s cannot be looked at",
+    async (_name, target) => {
+      const { files, sqlite, reader } = asking();
+      files.fail(target);
+      const error: unknown = await reader
+        .askOnce(QUESTION, null)
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: "EACCES" });
+      expect(isMissing(error)).toBe(false);
+      expect(sqlite.runs).toEqual([]);
+    },
+  );
 
   test("rejects, with nothing run, for an empty database, one that is not an ordinary file, files beside it that are not safe, or no sqlite3", async () => {
     const empty = asking();

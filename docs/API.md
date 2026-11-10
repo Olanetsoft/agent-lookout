@@ -272,7 +272,7 @@ One point for each poll, oldest first, each `{ at, needsYou, working, idle, tota
 
 A poll adds no point when no source answered, or when a source that answered before did not. Two points further apart than a few polls had time between them that was not measured: the computer asleep, a source that stopped answering, or Agent Lookout not running. So had two points either side of a restart. The dashboard draws that time hatched.
 
-After a restart, the first poll that reads a source compares each session with the last event the history kept of it. A session whose status changed while Agent Lookout was stopped gets a `status-changed` event, one that ended an `ended` event, and one back after it ended an `appeared` event, all at that poll. A session in a wait that a poll leaves out, read a way other than the one that last listed it, gets no event then: its `ended` event comes when that way is read. A session the history kept no event of is taken as it is found.
+After a restart, the first poll that reads a source compares each session with the last event the history kept of it. A session whose status changed while Agent Lookout was stopped gets a `status-changed` event, one that ended an `ended` event, and one back after it ended an `appeared` event, all at that poll. A session in a wait that a poll leaves out, read a way other than the one that last listed it, gets no event then: its `ended` event comes when that way is read. Any other session of a Hermes Agent profile that poll could not look at gets no event then, and the profile's first read takes it as it is found. A session the history kept no event of is taken as it is found.
 
 ### `GET /api/waits`
 

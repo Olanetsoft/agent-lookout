@@ -387,6 +387,17 @@ describe("which sqlite3 reads it, and a switch to WAL mode while it is read", ()
     expect(read.rows.map((row) => row.id)).toEqual([A]);
   });
 
+  test.each(["rollback", "wal"] as const)(
+    "in %s mode, a -wal that cannot be looked at as it is read counts as changed, so the read is dropped",
+    async (mode) => {
+      const { files, reader } = readWhile((held) => held.fail(WAL), { mode });
+      expect(await reader.read(NOW)).toEqual({ state: "switched", rows: [] });
+      expect((await reader.read(NOW + 2 * SECOND)).state).toBe("not-looked-at");
+      files.heal(WAL);
+      expect((await reader.read(NOW + 4 * SECOND)).rows.map((row) => row.id)).toEqual([A]);
+    },
+  );
+
   test("the same switch while a sqlite3 that passes the test reads it keeps the read", async () => {
     for (const change of [switchedAndClosed, switchedAndOpen]) {
       const { reader } = readWhile(change, { version: "3.53.0" });
@@ -410,6 +421,67 @@ describe("which sqlite3 reads it, and a switch to WAL mode while it is read", ()
     expect((await written.reader.read(NOW)).state).toBe("read");
     expect(headerReads(written.files)).toHaveLength(2);
   });
+});
+
+describe("what cannot be looked at", () => {
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("%s that cannot be looked at is not taken for gone", async (_name, target) => {
+    const { files, sqlite, reader } = databaseIn("live-wal");
+    files.fail(target);
+    expect(await reader.read(NOW)).toEqual({ state: "not-looked-at", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+    expect(headerReads(files)).toEqual([]);
+  });
+
+  test("a failing disk is not taken for gone either, as any error but a missing path is not", async () => {
+    const { files, reader } = databaseIn("live-wal");
+    files.fail(DATABASE, "EIO");
+    expect((await reader.read(NOW)).state).toBe("not-looked-at");
+  });
+
+  test.each([
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])("%s on a failing disk is not taken for gone either", async (_name, target) => {
+    const { files, sqlite, reader } = databaseIn("live-wal");
+    files.fail(target, "EIO");
+    expect(await reader.read(NOW)).toEqual({ state: "not-looked-at", rows: [] });
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a file above the database is a database that has gone", async () => {
+    const { files, reader } = databaseIn("live-wal");
+    files.fail(DATABASE, "ENOTDIR");
+    expect((await reader.read(NOW)).state).toBe("missing");
+  });
+
+  test("a -wal with nothing there is no file, not one that cannot be looked at", async () => {
+    const { files, reader } = databaseIn("live-wal");
+    files.fail(WAL, "ENOENT");
+    expect((await reader.read(NOW)).state).toBe("read");
+  });
+
+  test.each([
+    ["the database", DATABASE],
+    ["the -wal", WAL],
+    ["the -shm", SHM],
+  ])(
+    "once %s can be looked at again it is read, with what the -wal holds",
+    async (_name, target) => {
+      const { files, sqlite, reader } = databaseIn("live-wal");
+      await reader.read(NOW);
+      files.fail(target);
+      expect((await reader.read(NOW + SECOND)).rows).toEqual([]);
+      files.heal(target);
+      const read = await reader.read(NOW + 2 * SECOND);
+      expect(read.rows.map((row) => row.id)).toEqual([A]);
+      expect(sqlite.queries()).toHaveLength(2);
+      expect(addresses(sqlite).at(-1)).toBe(`file:${DATABASE}?mode=ro&readonly_shm=1`);
+    },
+  );
 });
 
 describe("the header", () => {

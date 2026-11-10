@@ -531,6 +531,44 @@ describe("events after a restart, with history kept from before it", () => {
     expect(events.list()).toHaveLength(3);
   });
 
+  test("a part the first poll could not look at gets no event, then or at its first read, and the rest is compared", async () => {
+    const read = makeSession({ id: "claude-code:read/a", status: "idle" });
+    const refused = makeSession({ id: "claude-code:refused/b", status: "working" });
+    const parts = { "claude-code:read/": "files" };
+    const { adapter } = scriptedAdapter(
+      {
+        health: { ...health(), parts },
+        sessions: [read],
+        notLookedAt: ["claude-code:refused/"],
+      },
+      {
+        health: { ...health(), parts: { ...parts, "claude-code:refused/": "files" } },
+        sessions: [read, refused],
+      },
+    );
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      kept("claude-code:read/a", "status-changed", "idle"),
+      kept("claude-code:read/c", "status-changed", "idle"),
+      // Its status differs, and d is gone: neither was seen by a poll that could say.
+      kept("claude-code:refused/b", "status-changed", "idle"),
+      kept("claude-code:refused/d", "status-changed", "idle"),
+      // In a part this poll does not name, and that it did not fail to look at.
+      kept("claude-code:gone/e", "status-changed", "idle"),
+    ]);
+    const logged = () => events.list().map((event) => [event.sessionId, event.kind]);
+
+    await poller.pollOnce();
+    expect(logged()).toEqual([
+      ["claude-code:gone/e", "ended"],
+      ["claude-code:read/c", "ended"],
+    ]);
+
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(logged()).toHaveLength(2);
+  });
+
   test("a source that does not answer at first is compared once it does, and only with its own sessions", async () => {
     const a = makeSession({ id: "claude-code:a", status: "idle" });
     const { adapter } = scriptedAdapter(result([], "error"), result([a]));

@@ -527,6 +527,15 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
           looked,
           checkedAt,
         );
+      // An error, as a look that says nothing of the database says nothing of its
+      // sessions: the poller then sends no ended for them.
+      case "not-looked-at":
+        return result(
+          "error",
+          `OpenCode's database, ${databaseName}, was not read: a file of the database could not be looked at, so no OpenCode sessions are listed.`,
+          looked,
+          checkedAt,
+        );
       case "no-sqlite":
         return result(
           "error",

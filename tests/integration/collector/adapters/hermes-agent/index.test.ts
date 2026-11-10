@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +19,10 @@ import {
   sqliteUri,
 } from "@collector/adapters/hermes-agent/sessionRows";
 import { createSqliteFinder } from "@collector/adapters/hermes-agent/sqlite";
+import { createEventStore } from "@collector/eventStore";
 import { nodeIo, type OpenFile, type ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
 import type { Session } from "@core/sessions/session";
 import {
   databaseHeader,
@@ -201,6 +204,44 @@ function shown(sessions: Session[]) {
     ]),
   );
 }
+
+describe("a look the system refuses", () => {
+  // Windows has no such modes and no sqlite3 to run, and root is refused nothing.
+  const onMacAndLinux = test.runIf(sqlite !== null && process.getuid?.() !== 0);
+
+  onMacAndLinux(
+    "at one profile on macOS and Linux leaves the other read, sends no ended, and resumes when it works again",
+    async () => {
+      const now = Date.now();
+      const { root, coderDatabase } = await makeRoot(now);
+      const folder = path.dirname(coderDatabase);
+      onTestFinished(() => chmod(folder, 0o755));
+      const events = createEventStore();
+      const poller = createPoller({
+        adapters: [adapterFor(root, now).adapter],
+        events,
+        history: createHistoryStore(),
+      });
+      const inCoder = `hermes-agent:coder/${CODER_IDLE}`;
+      const ids = (sessions: Session[]) => sessions.map((session) => session.id);
+      const listed = ids((await poller.pollOnce()).sessions);
+      expect(listed).toContain(inCoder);
+
+      await chmod(folder, 0o000);
+      const refused = await poller.pollOnce();
+      expect(refused.sources[0]?.state).toBe("ok");
+      expect(refused.sources[0]?.detail).toContain(
+        "Not read: the coder profile, because a file of its database could not be looked at.",
+      );
+      expect(refused.sources[0]?.parts).toEqual({ "hermes-agent:default/": BASIS });
+      expect(ids(refused.sessions)).toEqual(listed.filter((id) => id !== inCoder));
+
+      await chmod(folder, 0o755);
+      expect(ids((await poller.pollOnce()).sessions)).toEqual(listed);
+      expect(events.list()).toEqual([]);
+    },
+  );
+});
 
 describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite3", () => {
   test("lists each conversation of both profiles with its name, folder, app and status, and touches nothing it must not", async () => {
