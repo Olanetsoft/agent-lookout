@@ -272,7 +272,6 @@
    */
   --on-ink: #0c0b0a;
   --solid-top: rgba(255, 255, 255, 0.7);
-  --solid-drop: rgba(0, 0, 0, 0.7);
   --solid-hover: #ffffff;
   /* The line that seats a picture in its bezel. */
   --screen-line: 0 0 0 1px rgba(0, 0, 0, 0.62);
@@ -370,7 +369,6 @@
 
     --on-ink: #f3f0ea;
     --solid-top: rgba(255, 255, 255, 0.18);
-    --solid-drop: rgba(38, 32, 26, 0.5);
     --solid-hover: #2b2823;
     --screen-line: 0 0 0 0.5px rgba(38, 32, 26, 0.2);
   }
@@ -461,7 +459,6 @@
 
   --on-ink: #f3f0ea;
   --solid-top: rgba(255, 255, 255, 0.18);
-  --solid-drop: rgba(38, 32, 26, 0.5);
   --solid-hover: #2b2823;
   --screen-line: 0 0 0 0.5px rgba(38, 32, 26, 0.2);
 }
@@ -829,9 +826,7 @@ pre {
 .btn-solid {
   background-color: var(--ink);
   color: var(--on-ink);
-  box-shadow:
-    inset 0 1px 0 var(--solid-top),
-    0 10px 24px -12px var(--solid-drop);
+  box-shadow: inset 0 1px 0 var(--solid-top);
 }
 .btn-solid:hover {
   background-color: var(--solid-hover);
