@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, chmod, copyFile, mkdir, realpath, symlink } from "node:fs/promises";
+import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -17,25 +16,16 @@ import { tempDir } from "@tests/support/node/tempFiles";
 // `ps` only reads, so the real one is asked, for the name each process gives
 // its program and nothing else. Crush is a stand-in that only waits, named
 // `crush`, in a folder of the test's own. On macOS it is this Node, started
-// through a link: macOS kills a copy of a system program such as `sleep` started
-// from elsewhere. On Linux it is a copy of the system's `sleep`: Node 24 names
-// its own main thread, which on Linux is the name `ps` prints. On macOS `ps`
-// prints the full path a program was started by, so only the lines under that
-// folder are looked at, since this machine may run Crush itself. On Linux it
-// prints the name alone, which any Crush running here would share.
-
-/** The system's own `sleep`, which on Linux keeps the name of the file it was started from. */
-async function sleepProgram(): Promise<string> {
-  for (const candidate of ["/bin/sleep", "/usr/bin/sleep"]) {
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // Not there: the next place.
-    }
-  }
-  throw new Error("No sleep program was found at /bin/sleep or /usr/bin/sleep.");
-}
+// through a link: macOS kills a copy of a system program such as `sleep`
+// started from elsewhere. On Linux it is a two-line `sh` script, which `ps`
+// names by its file, as it does any script, and which waits until its input
+// closes. Node won't do there, as Node 24 names its own main thread, which on
+// Linux is the name `ps` prints, and nor will a copy of the system's `sleep`
+// where, as on Ubuntu 26.04, it is one program for all the core tools that acts
+// by the name it was started under. On macOS `ps` prints the full path a
+// program was started by, so only the lines under that folder are looked at,
+// since this machine may run Crush itself. On Linux it prints the name alone,
+// which any Crush running here would share.
 
 /** Starts the stand-in under a folder of the test's own, and stops it when the test ends. */
 async function startStandIn(): Promise<{ dir: string; stop: () => Promise<void> }> {
@@ -44,14 +34,15 @@ async function startStandIn(): Promise<{ dir: string; stop: () => Promise<void> 
   await mkdir(path.dirname(program), { recursive: true });
   let args: string[];
   if (process.platform === "linux") {
-    await copyFile(await sleepProgram(), program);
-    await chmod(program, 0o755);
-    args = ["60"];
+    await writeFile(program, "#!/bin/sh\nread -r line\n", { mode: 0o755 });
+    args = [];
   } else {
     await symlink(process.execPath, program);
     args = ["-e", "setTimeout(() => {}, 60_000)"];
   }
-  const child = spawn(program, args, { stdio: "ignore" });
+  const child = spawn(program, args, {
+    stdio: [process.platform === "linux" ? "pipe" : "ignore", "ignore", "ignore"],
+  });
   const ended = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   const stop = async () => {
     child.kill();
