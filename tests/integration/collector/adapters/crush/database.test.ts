@@ -344,7 +344,7 @@ describe.skipIf(sqlite === null)("reading a Crush database with the real sqlite3
   });
 
   describe("what is asked for", () => {
-    test("is the recent sessions Crush lists to people that have a message, and no other", async () => {
+    test("is the recent sessions with a message, of those Crush lists to people, and no other", async () => {
       const { file } = await makeDatabase([
         sessionSql(),
         sessionSql({ id: "message$$call" }),

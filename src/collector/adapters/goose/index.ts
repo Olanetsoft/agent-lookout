@@ -400,6 +400,15 @@ export function createGooseAdapter(options: GooseAdapterOptions = {}): Adapter {
           looked,
           checkedAt,
         );
+      // An error, as a look that says nothing of the database says nothing of its
+      // sessions: the poller then sends no ended for them.
+      case "not-looked-at":
+        return result(
+          "error",
+          `Goose's database, ${databaseName}, was not read: the data folder, its ${DATABASE_FOLDER} folder or a file of the database could not be looked at, so no Goose sessions are listed.`,
+          looked,
+          checkedAt,
+        );
       case "no-sqlite":
         return result(
           "error",

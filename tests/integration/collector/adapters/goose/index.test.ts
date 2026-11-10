@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -8,7 +8,10 @@ import { findSqlite } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/goose/database";
 import { createGooseAdapter, WINDOWS_DETAIL } from "@collector/adapters/goose/index";
 import { createCollector } from "@collector/collector";
+import { createEventStore } from "@collector/eventStore";
 import { nodeIo } from "@collector/files/readOnlyIo";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
 import {
   PRIVATE_TITLE,
   PRIVATE_WORDS,
@@ -125,6 +128,36 @@ describe("a session through the collector on Windows", () => {
   test.skipIf(sqlite === null)("is not read even with a database to read", async () => {
     const snapshot = await pollOnce(await homeWith([sessionSql()]), "win32");
     expect(snapshot.sessions.filter(({ source }) => source === "goose")).toEqual([]);
+  });
+});
+
+describe("a look the system refuses", () => {
+  // Windows has no such modes and no sqlite3 to run, and root is refused nothing.
+  const onMacAndLinux = test.runIf(sqlite !== null && process.getuid?.() !== 0);
+
+  onMacAndLinux("on macOS and Linux sends no ended, and resumes when it works again", async () => {
+    const home = await homeWith([sessionSql()]);
+    const folder = path.join(home, "sessions");
+    onTestFinished(() => chmod(folder, 0o755));
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [createGooseAdapter({ env: { AGENT_LOOKOUT_GOOSE_HOME: home } })],
+      events,
+      history: createHistoryStore(),
+    });
+    expect((await poller.pollOnce()).sessions).toHaveLength(1);
+
+    await chmod(folder, 0o000);
+    const refused = await poller.pollOnce();
+    expect(refused.sources[0]?.state).toBe("error");
+    expect(refused.sources[0]?.detail).toContain("could not be looked at");
+    expect(refused.sessions).toEqual([]);
+
+    await chmod(folder, 0o755);
+    const resumed = await poller.pollOnce();
+    expect(resumed.sources[0]?.state).toBe("ok");
+    expect(resumed.sessions).toHaveLength(1);
+    expect(events.list()).toEqual([]);
   });
 });
 

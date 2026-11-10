@@ -408,7 +408,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **The status.** The issue said nothing marks a session as running or waiting. That holds for a session's row. It is half true of the file: a tool's approval is written as a message. It is not read, because a crash leaves it there, and nothing ties a session to a process to rule that out. So a session never shows as working or as needing you, and a crash left behind can never look as if it runs.
 
-**The name.** Goose has a model write a title, but with a provider that runs its own program, or any run through ACP, the title is the first four words of the first prompt, word for word. No column says which it is, and `provider_name` can have changed since. So the title stays inside SQLite, as Cline's does, and only `user_set_name` lets a name out.
+**The name.** Goose has a model write a title, but with a provider that runs its own program, or any run through ACP, the title is the first four words of the first prompt, word for word. No column says which it is, and `provider_name` can have changed since. So the title stays inside SQLite, a session is named after its folder, as a Cline session is, and only `user_set_name` lets a name out.
 
 **How sure it is.** Not checked against Goose yet. While any Goose runs, every listed session shows as unknown, even one closed an hour ago.
 
