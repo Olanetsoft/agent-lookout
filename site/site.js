@@ -38,9 +38,6 @@
     // The pictures follow the system until they are pointed at the choice below.
     if ((kept === "light") !== systemDay.matches) root.classList.add("unsettled");
   }
-  // The features come in as they are reached, unless motion is reduced.
-  if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches)
-    root.classList.add("reveals");
 
   // The two switches are set as the parser reaches them, so no frame shows one
   // in a state the page is not in. The page opens lit, as it is without script.
@@ -195,25 +192,6 @@
           timer = setTimeout(() => button.classList.remove("is-copied"), 1600);
           tell(button.dataset.said ?? `Copied ${text}`);
         }, select);
-      });
-    }
-
-    // ── Features coming into view ──────────────────────────────────────────
-    if (root.classList.contains("reveals")) {
-      const seen = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            entry.target.classList.add("is-seen");
-            seen.unobserve(entry.target);
-          }
-        },
-        { rootMargin: "0px 0px -10% 0px", threshold: 0.15 },
-      );
-      for (const feature of document.querySelectorAll(".reveal")) seen.observe(feature);
-      window.addEventListener("beforeprint", () => {
-        for (const feature of document.querySelectorAll(".reveal"))
-          feature.classList.add("is-seen");
       });
     }
 
