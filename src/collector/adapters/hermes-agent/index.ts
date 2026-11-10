@@ -169,7 +169,7 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
 
 /** The command, as Sources shows it: its two questions are fixed text, and a rollback-journal read waits a second. */
 export const COMMAND_SHOWN =
-  'sqlite3 -init /dev/null -batch -json [-cmd ".timeout 1000"] <database> <fixed query>';
+  'sqlite3 -init /dev/null -batch -json [-cmd ".timeout 1000"] -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>';
 
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface HermesAgentAdapterOptions {

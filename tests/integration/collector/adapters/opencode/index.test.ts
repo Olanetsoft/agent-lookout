@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { findSqlite, runSqlite } from "@collector/adapters/antigravity/app/summaries";
+import {
+  findSqlite,
+  runSqlite,
+  TRUSTED_SCHEMA_OFF,
+} from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/opencode/database";
 import { BASIS, BASIS_CLOSED, createOpencodeAdapter } from "@collector/adapters/opencode/index";
 import type { OpencodeProcessReader } from "@collector/adapters/opencode/processes";
@@ -337,13 +341,15 @@ describe.skipIf(sqlite === null)("the OpenCode adapter, with the real sqlite3", 
       for (const left of [CHILD, ARCHIVED, OLD]) expect(said).not.toContain(left);
     }
 
-    // sqlite3 is given only the fixed arguments: its settings off, JSON out, the database and a fixed question.
+    // sqlite3 is given only the fixed arguments: its settings off, JSON out, the
+    // schema not trusted, the database and a fixed question.
     expect(runs.length).toBeGreaterThan(0);
     for (const args of runs) {
       expect(args.slice(0, 4)).toEqual(["-init", "/dev/null", "-batch", "-json"]);
-      expect([sqliteUri(file, "with-wal"), sqliteUri(file, "whole")]).toContain(args[4]);
-      expect([PROBE_QUERY, SESSIONS_QUERY]).toContain(args[5]);
-      expect(args).toHaveLength(6);
+      expect(args.slice(4, 6)).toEqual(["-cmd", TRUSTED_SCHEMA_OFF]);
+      expect([sqliteUri(file, "with-wal"), sqliteUri(file, "whole")]).toContain(args[6]);
+      expect([PROBE_QUERY, SESSIONS_QUERY]).toContain(args[7]);
+      expect(args).toHaveLength(8);
     }
 
     // The adapter itself opens no file: it looks at the folder and the three database files alone.

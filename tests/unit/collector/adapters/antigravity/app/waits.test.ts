@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { RETRY_MS, summariesUri } from "@collector/adapters/antigravity/app/summaries";
+import {
+  RETRY_MS,
+  summariesUri,
+  TRUSTED_SCHEMA_OFF,
+} from "@collector/adapters/antigravity/app/summaries";
 import {
   createWaitReader,
   NEWEST_STEP_QUERY,
@@ -39,6 +43,8 @@ describe("the question sqlite3 is asked", () => {
       "/dev/null",
       "-batch",
       "-json",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       summariesUri(FILE_A),
       "SELECT idx, status FROM steps ORDER BY idx DESC LIMIT 1",
     ]);

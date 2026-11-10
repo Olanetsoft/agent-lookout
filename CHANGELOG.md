@@ -9,6 +9,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 - Continue sessions, from its `cn` command and its VS Code and JetBrains extensions, read from the list in `~/.continue/sessions`, on macOS, Linux and Windows. A session always shows as unknown, since Continue writes nothing that says a session runs and `ps` shows `cn` only as `node`, and it never shows as working, needing you or finished. A tool call waiting for approval is written as one a crash left behind is, so it is not read, and a session's own file is never opened. A session is named after its folder, as Continue's title can be a line of your first prompt, and is listed for a day after its file was last written. It needs no program of Continue's, and no oldest version is named. Built from Continue's source at v1.5.45, and not yet checked on a computer running it. (#42)
 - Crush sessions, for Crush v0.25.0 or later, read with `sqlite3` from `.crush/crush.db` in the newest 20 folders of Crush's list of projects, `~/.local/share/crush/projects.json`, on macOS and Linux. A session is named after its folder, and shows as unknown while a Crush program runs and as finished once none does, since nothing ties a session to a process, so it never shows as working or as needing you. Built from Crush's source at v0.99.0 and not yet checked on a computer running it. (#39)
 
+### Changed
+
+- OpenCode's, Hermes Agent's, Goose's and Antigravity's databases are now read with `PRAGMA trusted_schema=OFF`, as Crush's is, so on a `sqlite3` older than 3.42 a view in a database cannot start a program through `edit()`. The commands on the cards in Sources and in PRIVACY.md show it. (#297)
+
 ## 0.2.19 - 2026-11-04
 
 Goose, Pi and Kimi Code sessions show, a Hermes Agent session no longer takes a title made from your first message, and a running Mistral Vibe session no longer shows as finished when a read of its lease fails after one that worked, but for two rare cases.

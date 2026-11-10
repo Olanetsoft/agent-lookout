@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { TRUSTED_SCHEMA_OFF } from "@collector/adapters/antigravity/app/summaries";
 import {
   BOTH_SESSIONS_QUERY,
   MAX_SESSIONS,
@@ -210,12 +211,14 @@ describe("sqliteUri", () => {
     );
   });
 
-  test("the arguments are sqlite3's settings off, JSON out, the address and the fixed question", () => {
+  test("the arguments are sqlite3's settings off, JSON out, the schema not trusted, the address and the fixed question", () => {
     expect(sqliteArguments("/data/opencode.db", "whole", PROBE_QUERY)).toEqual([
       "-init",
       "/dev/null",
       "-batch",
       "-json",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       "file:/data/opencode.db?mode=ro&immutable=1",
       PROBE_QUERY,
     ]);

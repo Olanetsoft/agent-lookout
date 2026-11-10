@@ -75,6 +75,8 @@ A link at the data folder that leads nowhere, or to a file, is the exception, un
 
 `sqlite3` is found at fixed places only, never on `PATH`, and run directly with no shell, stdin closed, a 5 second timeout, at most 4 MiB of what it prints read, and `-init /dev/null`, so the person's `~/.sqliterc` is not run. Nothing is read on Windows.
 
+`-cmd 'PRAGMA trusted_schema=OFF'`, before the address, keeps a view in the database from calling `edit()`, which the `sqlite3` program adds and which starts a program. `sqlite3` turns that setting off itself from 3.42 on, and one older than 3.33 has no `-json`, so this matters for 3.33 to 3.41. Every agent's read has it.
+
 A shared read lock is the one lock ever taken, and it is the least that reads the `-wal` at all. Reading only the file with `immutable=1` would take none, but would miss a new session until SQLite moved it out of the `-wal`.
 
 If Goose closes the database between the `lstat` and the read, and SQLite removes the `-wal` and `-shm` as it does then, a `sqlite3` built from SQLite's own source, as on Linux, makes an empty `-wal` as it opens the database, and that read does not work. SQLite has no setting that stops it. The same goes for OpenCode's database.

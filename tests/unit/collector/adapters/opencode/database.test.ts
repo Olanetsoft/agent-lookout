@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { MAX_OUTPUT_BYTES } from "@collector/adapters/antigravity/app/summaries";
+import {
+  MAX_OUTPUT_BYTES,
+  TRUSTED_SCHEMA_OFF,
+} from "@collector/adapters/antigravity/app/summaries";
 import {
   createDatabaseReader,
   QUESTION_OUTPUT_BYTES,
@@ -407,6 +410,9 @@ describe("one more question, asked with askOnce", () => {
     expect(new Set(sqlite.runs.map((run) => run.args.slice(0, -1).join(" ")))).toEqual(
       new Set([sqliteArguments(DATABASE, "with-wal", "").slice(0, -1).join(" ")]),
     );
+    for (const run of sqlite.runs) {
+      expect(run.args.slice(-4, -2)).toEqual(["-cmd", TRUSTED_SCHEMA_OFF]);
+    }
   });
 
   test("with an empty -wal, or none, opens it as a file nothing changes, as the poll's read does", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { TRUSTED_SCHEMA_OFF } from "@collector/adapters/antigravity/app/summaries";
 import {
   BUSY_TIMEOUT_MS,
   DATABASE_FILE,
@@ -176,7 +177,7 @@ describe("the two questions", () => {
 });
 
 describe("sqliteArguments", () => {
-  test("in rollback-journal mode: settings off, JSON out, a second's wait for a commit, the database read-only with no -shm written", () => {
+  test("in rollback-journal mode: settings off, JSON out, a second's wait for a commit, the schema not trusted, the database read-only with no -shm written", () => {
     expect(sqliteArguments(DEFAULT_DATABASE, "rollback", PROBE_QUERY)).toEqual([
       "-init",
       "/dev/null",
@@ -184,29 +185,35 @@ describe("sqliteArguments", () => {
       "-json",
       "-cmd",
       ".timeout 1000",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       `file:${DEFAULT_DATABASE}?mode=ro&readonly_shm=1`,
       PROBE_QUERY,
     ]);
     expect(BUSY_TIMEOUT_MS).toBe(1000);
   });
 
-  test("in WAL mode with no -wal: read as a file nothing changes, with no wait", () => {
+  test("in WAL mode with no -wal: read as a file nothing changes, with no wait, the schema not trusted", () => {
     expect(sqliteArguments(DEFAULT_DATABASE, "whole", SESSIONS_QUERY)).toEqual([
       "-init",
       "/dev/null",
       "-batch",
       "-json",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       `file:${DEFAULT_DATABASE}?mode=ro&immutable=1`,
       SESSIONS_QUERY,
     ]);
   });
 
-  test("in WAL mode with a -wal that holds commits: read with it, the -shm read-only, with no wait", () => {
+  test("in WAL mode with a -wal that holds commits: read with it, the -shm read-only, with no wait, the schema not trusted", () => {
     expect(sqliteArguments(DEFAULT_DATABASE, "with-wal", SESSIONS_QUERY)).toEqual([
       "-init",
       "/dev/null",
       "-batch",
       "-json",
+      "-cmd",
+      TRUSTED_SCHEMA_OFF,
       `file:${DEFAULT_DATABASE}?mode=ro&readonly_shm=1`,
       SESSIONS_QUERY,
     ]);

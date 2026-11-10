@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { TokenCounts } from "../../../core/sessions/session.ts";
 import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
+import { readArguments } from "../antigravity/app/summaries.ts";
 
 /**
  * The two questions Agent Lookout asks OpenCode's database, `opencode.db`, on
@@ -382,7 +383,7 @@ export function sqliteUri(file: string, mode: DatabaseMode): string {
 
 /** The arguments `sqlite3` is given for one question, each as it is. */
 export function sqliteArguments(file: string, mode: DatabaseMode, query: string): string[] {
-  return ["-init", "/dev/null", "-batch", "-json", sqliteUri(file, mode), query];
+  return readArguments(sqliteUri(file, mode), query);
 }
 
 /** The tables the adapter needs of OpenCode 1.x, and the columns of `session` it asks for. */

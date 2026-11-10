@@ -1,4 +1,4 @@
-import { jsonRows, sqliteUri, type DatabaseMode } from "../opencode/sessionRows.ts";
+import { jsonRows } from "../opencode/sessionRows.ts";
 
 /**
  * The two questions Agent Lookout asks a project's Crush database, `crush.db`,
@@ -66,31 +66,6 @@ export const PROBE_QUERY = [
   "SELECT 'table' AS kind, name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
   "UNION ALL SELECT 'sessions', name FROM pragma_table_info('sessions')",
 ].join(" ");
-
-/**
- * Set before `sqlite3` reads a database. A database lies in a project's folder,
- * so a repository can ship one, and `sessions` could be a view that calls
- * `edit()`, which the `sqlite3` program adds and which starts a program. From 3.42
- * on `sqlite3` turns this off itself, and every version that has `-json` has it.
- */
-export const TRUSTED_SCHEMA_OFF = "PRAGMA trusted_schema=OFF";
-
-/**
- * The arguments `sqlite3` is given for one question, each as it is: those of the
- * databases in an agent's own folder, with `TRUSTED_SCHEMA_OFF` before the address.
- */
-export function sqliteArguments(file: string, mode: DatabaseMode, query: string): string[] {
-  return [
-    "-init",
-    "/dev/null",
-    "-batch",
-    "-json",
-    "-cmd",
-    TRUSTED_SCHEMA_OFF,
-    sqliteUri(file, mode),
-    query,
-  ];
-}
 
 /** The columns of `sessions` the first question names, each there since Crush's first release. */
 const NEEDED_COLUMNS = ["id", "parent_session_id", "message_count", "created_at", "updated_at"];

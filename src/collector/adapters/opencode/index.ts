@@ -197,7 +197,8 @@ export const OPENCODE_CAPABILITIES: SourceCapabilities = {
 };
 
 /** The command, as Sources shows it: its questions are fixed text. */
-export const COMMAND_SHOWN = "sqlite3 -init /dev/null -batch -json <database> <fixed query>";
+export const COMMAND_SHOWN =
+  'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>';
 
 /** What Sources says of the last-message read while it is on. */
 export const LAST_MESSAGE_READ =

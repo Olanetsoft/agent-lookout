@@ -19,17 +19,13 @@ import {
   findSqlite,
   MAX_OUTPUT_BYTES,
   runSqlite,
+  TRUSTED_SCHEMA_OFF,
   type RunSqlite,
 } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/crush/database";
 import { databaseOf } from "@collector/adapters/crush/projects";
-import {
-  MAX_SESSIONS,
-  PROBE_QUERY,
-  SESSIONS_QUERY,
-  sqliteArguments,
-} from "@collector/adapters/crush/sessionRows";
-import { sqliteArguments as sharedSqliteArguments } from "@collector/adapters/opencode/sessionRows";
+import { MAX_SESSIONS, PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/crush/sessionRows";
+import { sqliteArguments, sqliteUri } from "@collector/adapters/opencode/sessionRows";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import {
   OTHER_SESSION_ID,
@@ -299,31 +295,52 @@ describe.skipIf(sqlite === null)("reading a Crush database with the real sqlite3
       return { file, marker };
     }
 
+    /** Arguments with the setting every read is given taken out again, which no read of the app's has. */
+    const withoutTheSetting = (args: readonly string[]) =>
+      args.filter((arg, at) => arg !== TRUSTED_SCHEMA_OFF && args[at + 1] !== TRUSTED_SCHEMA_OFF);
+
     const isThere = (file: string) =>
       stat(file).then(
         () => true,
         () => false,
       );
 
-    test("cannot run a command through a view, where sqlite3 would trust it", async () => {
-      // Without the adapter's setting, the command runs, so this proves something.
-      const trusted = await hostileProject();
-      await trustingSchema(
-        sqlite as string,
-        sharedSqliteArguments(trusted.file, "whole", SESSIONS_QUERY),
-      );
-      expect(await isThere(trusted.marker)).toBe(true);
+    // The setting comes from the arguments all the agents' reads share, so one
+    // database stands for them all, opened by each of the two addresses in use.
+    test.each(["whole", "with-wal"] as const)(
+      "cannot run a command through a view, where sqlite3 would trust it, opened %s",
+      async (mode) => {
+        /** Leaves a commit in the database's -wal, for the address that reads one. */
+        const prepare = async (file: string) => {
+          if (mode === "with-wal") await holdOpen(file).write(["CREATE TABLE later (id TEXT);"]);
+        };
 
-      const { file, marker } = await hostileProject();
-      const reader = createDatabaseReader({
-        file,
-        io: nodeIo,
-        platform: process.platform,
-        run: trustingSchema,
-      });
-      expect((await reader.read(Date.now())).rows).toEqual([]);
-      expect(await isThere(marker)).toBe(false);
-    });
+        // Without the setting, the command runs, so this proves something.
+        const trusted = await hostileProject();
+        await prepare(trusted.file);
+        await trustingSchema(
+          sqlite as string,
+          withoutTheSetting(sqliteArguments(trusted.file, mode, SESSIONS_QUERY)),
+        );
+        expect(await isThere(trusted.marker)).toBe(true);
+
+        const { file, marker } = await hostileProject();
+        await prepare(file);
+        const runs: (readonly string[])[] = [];
+        const reader = createDatabaseReader({
+          file,
+          io: nodeIo,
+          platform: process.platform,
+          run(binary, args, timeoutMs) {
+            runs.push(args);
+            return trustingSchema(binary, args, timeoutMs);
+          },
+        });
+        expect((await reader.read(Date.now())).rows).toEqual([]);
+        expect(runs[0]).toContain(sqliteUri(file, mode));
+        expect(await isThere(marker)).toBe(false);
+      },
+    );
   });
 
   describe("what is asked for", () => {
