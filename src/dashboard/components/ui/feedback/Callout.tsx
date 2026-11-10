@@ -1,6 +1,6 @@
-import { CircleAlert, Info } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AlertIcon, InfoIcon } from "@dashboard/assets/Icons";
 import { cn } from "@dashboard/lib/utils";
 
 /**
@@ -11,13 +11,13 @@ const TONES = {
   info: {
     box: "bg-fill-quiet inset-ring inset-ring-hairline",
     icon: "text-ink-muted",
-    Icon: Info,
+    Icon: InfoIcon,
   },
   error: {
     // The 3px ink edge runs down the leading side, inside the stronger rule.
     box: "bg-fill-selected inset-ring inset-ring-rule-strong shadow-edge",
     icon: "text-ink",
-    Icon: CircleAlert,
+    Icon: AlertIcon,
   },
 } as const;
 
@@ -63,7 +63,7 @@ export function Callout({
       role={live ? (tone === "info" ? "status" : "alert") : undefined}
       className={cn("flex items-start gap-3 rounded-inner px-4 py-3", box, className)}
     >
-      <Icon aria-hidden className={cn("mt-px size-4.5 shrink-0", icon)} strokeWidth={1.75} />
+      <Icon className={cn("mt-px", icon)} />
       <div className='min-w-0 flex-1'>
         <p id={titleId} className='text-row font-semibold text-ink'>
           {title}

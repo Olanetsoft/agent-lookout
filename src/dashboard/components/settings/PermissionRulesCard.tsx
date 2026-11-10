@@ -1,4 +1,3 @@
-import { ArrowDown, ArrowUp } from "lucide-react";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { RuleAnswer } from "@core/api";
@@ -9,6 +8,7 @@ import {
   type RuleDecision,
 } from "@core/permission-rules/permissionRules";
 import type { AnsweringStatus } from "@core/sessions/session";
+import { ArrowDownIcon, ArrowUpIcon } from "@dashboard/assets/Icons";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { SegmentedControl } from "@dashboard/components/ui/controls/SegmentedControl";
 import { TextField } from "@dashboard/components/ui/controls/TextField";
@@ -118,11 +118,7 @@ function MoveButton({
         }}
         className='aria-disabled:cursor-default aria-disabled:opacity-50'
       >
-        {to === "up" ? (
-          <ArrowUp aria-hidden className='size-3.5' strokeWidth={1.75} />
-        ) : (
-          <ArrowDown aria-hidden className='size-3.5' strokeWidth={1.75} />
-        )}
+        {to === "up" ? <ArrowUpIcon /> : <ArrowDownIcon />}
       </Button>
     </Tooltip>
   );

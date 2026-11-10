@@ -1,6 +1,6 @@
-import { Check } from "lucide-react";
 import { Checkbox as RadixCheckbox } from "radix-ui";
 
+import { CheckIcon } from "@dashboard/assets/Icons";
 import { cn } from "@dashboard/lib/utils";
 
 interface CheckboxProps {
@@ -48,7 +48,7 @@ export function Checkbox({
       {...rest}
     >
       <RadixCheckbox.Indicator>
-        <Check aria-hidden className='size-3' strokeWidth={2.5} />
+        <CheckIcon />
       </RadixCheckbox.Indicator>
     </RadixCheckbox.Root>
   );

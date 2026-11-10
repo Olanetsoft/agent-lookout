@@ -1,17 +1,24 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Command, type LucideIcon } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, type ComponentType } from "react";
 
+import {
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  CommandIcon,
+  type IconProps,
+} from "@dashboard/assets/Icons";
 import { FactList, FactRow } from "@dashboard/components/ui/facts/FactRow";
 import { DetailsModal } from "@dashboard/components/ui/surfaces/DetailsModal";
 import { onMac, shortcutGroups, type Key } from "@dashboard/lib/shell/shortcuts";
 
 /** Signs drawn as icons: as characters they come out smaller and thinner than the words beside them. */
-const SIGNS: Record<string, LucideIcon> = {
-  "⌘": Command,
-  "↑": ArrowUp,
-  "↓": ArrowDown,
-  "←": ArrowLeft,
-  "→": ArrowRight,
+const SIGNS: Record<string, ComponentType<IconProps>> = {
+  "⌘": CommandIcon,
+  "↑": ArrowUpIcon,
+  "↓": ArrowDownIcon,
+  "←": ArrowLeftIcon,
+  "→": ArrowRightIcon,
 };
 
 /** A key as it is drawn: its signs as icons and the rest as letters. */
@@ -21,17 +28,7 @@ function Shown({ shown }: { shown: string }) {
     .filter(Boolean)
     .map((part, index) => {
       const Sign = SIGNS[part];
-      return Sign ? (
-        <Sign
-          key={index}
-          aria-hidden
-          data-sign={part}
-          strokeWidth={1.75}
-          className='inline-block size-3.5'
-        />
-      ) : (
-        part
-      );
+      return Sign ? <Sign key={index} data-sign={part} className='inline-block' /> : part;
     });
 }
 
