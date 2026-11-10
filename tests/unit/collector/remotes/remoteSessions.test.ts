@@ -24,11 +24,16 @@ import {
   readRemoteSnapshot,
 } from "@collector/remotes/remoteSessions";
 import { repositoryId } from "@collector/git/repository";
+import { readSource } from "@dashboard/lib/api/readApi";
 import type { RemoteSourceId, SourceHealth, SourceId, SourceState } from "@core/sessions/session";
 import { sessionChanges, EMPTY_CHANGE_MEMORY } from "@core/notices/sessionChanges";
 import { readWays } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import {
+  CRUSH_PROJECTS_THERE,
+  crushSessionThere,
+  everySourceThere,
+  HERMES_PROFILES_THERE,
   NOW,
   snapshotThere,
   sourcesThere,
@@ -471,6 +476,81 @@ describe("readRemoteSnapshot", () => {
         told.push(...result.changes.map(({ event }) => event), ...result.stopped);
       }
       expect(told).toEqual([]);
+    });
+  });
+
+  describe("a machine whose sources name every part they can", () => {
+    const NAMED = KNOWN_WAYS.size - 2 + CRUSH_PROJECTS_THERE.length + HERMES_PROFILES_THERE.length;
+    const SESSIONS = CRUSH_PROJECTS_THERE.map(crushSessionThere);
+    const [FAILED, ...READ] = CRUSH_PROJECTS_THERE as [string, ...string[]];
+
+    /** The other machine's answer as this machine's snapshot holds it. */
+    const here = (value: unknown) => {
+      const snapshot = read(value);
+      const health: SourceHealth = {
+        id: "remote:devbox",
+        label: "devbox",
+        state: "ok",
+        basis: "api",
+        parts: snapshot.parts,
+        checkedAt: NOW,
+      };
+      return { generatedAt: NOW, sources: [health], sessions: snapshot.sessions };
+    };
+
+    /** What each answer, compared with the last, would tell. */
+    const toldOf = (answers: unknown[]) => {
+      let memory = EMPTY_CHANGE_MEMORY;
+      const told: string[] = [];
+      for (const each of answers) {
+        const result = sessionChanges(memory, here(each));
+        memory = result.memory;
+        told.push(...result.changes.map(({ event }) => event), ...result.stopped);
+      }
+      return told;
+    };
+
+    test("each is kept: each Crush project, each Hermes Agent profile and each other source", () => {
+      const { parts } = read(everySourceThere(CRUSH_PROJECTS_THERE));
+      expect(Object.keys(parts)).toHaveLength(NAMED);
+      for (const start of [...CRUSH_PROJECTS_THERE, ...HERMES_PROFILES_THERE]) {
+        expect(parts[`remote:devbox:${start}`], start).toBe("database");
+      }
+    });
+
+    test("the page reads as many as are taken, so it compares that machine's sessions alike", () => {
+      const parts = Object.fromEntries(
+        Array.from({ length: MAX_REMOTE_PARTS + 1 }, (_, index) => [
+          `crush:p${index}/`,
+          "database",
+        ]),
+      );
+      const kept = readSource({ id: "remote:devbox", state: "ok", parts }, NOW)?.parts;
+      expect(Object.keys(kept ?? {})).toHaveLength(MAX_REMOTE_PARTS);
+    });
+
+    test("a Crush project not read there for one poll ends none of its sessions here", () => {
+      const every = everySourceThere(CRUSH_PROJECTS_THERE, SESSIONS);
+      const oneNotRead = everySourceThere(
+        READ,
+        SESSIONS.filter((session) => !session.id.startsWith(FAILED)),
+      );
+      expect(toldOf([every, every, oneNotRead, every])).toEqual([]);
+    });
+
+    test("past the limit each source is one part, so a project not read there shows its session as ended here", () => {
+      const more = Array.from({ length: MAX_REMOTE_PARTS }, (_, index) => `crush:more-${index}/`);
+      const past = [...CRUSH_PROJECTS_THERE, ...more];
+      const { parts } = read(everySourceThere(past));
+      expect(Object.keys(parts)).toHaveLength(KNOWN_WAYS.size);
+      expect(parts["remote:devbox:crush:"]).toBe("database");
+
+      const every = everySourceThere(past, SESSIONS);
+      const oneNotRead = everySourceThere(
+        past.filter((start) => start !== FAILED),
+        SESSIONS.filter((session) => !session.id.startsWith(FAILED)),
+      );
+      expect(toldOf([every, every, oneNotRead])).toEqual(["ended"]);
     });
   });
 

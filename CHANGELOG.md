@@ -14,6 +14,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 - OpenCode's, Hermes Agent's, Goose's and Antigravity's databases are now read with `PRAGMA trusted_schema=OFF`, as Crush's is, so on a `sqlite3` older than 3.42 a view in a database cannot start a program through `edit()`. The commands on the cards in Sources and in PRIVACY.md show it. (#297)
 - The small icons are drawn to match the rail's, with the same 1.5px line: the tick of a checkbox, the close button, the magnifier of the search, the marks of a note and an error, the arrows that move a permission rule, and the arrow and ⌘ keys in the shortcuts sheet. (#308)
 
+### Fixed
+
+- A Crush project or a Hermes Agent profile that cannot be read on another machine no longer shows its sessions as ended when that machine has many of them. Another machine's sources now share 60 parts, not 20, so each project and profile is compared on its own. (#298)
+
 ## 0.2.19 - 2026-11-04
 
 Goose, Pi and Kimi Code sessions show, a Hermes Agent session no longer takes a title made from your first message, and a running Mistral Vibe session no longer shows as finished when a read of its lease fails after one that worked, but for two rare cases.

@@ -3,8 +3,13 @@
 
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CODEX_CAPABILITIES } from "@collector/adapters/codex/index";
+import { MAX_PROJECTS } from "@collector/adapters/crush/projects";
+import { projectPrefix } from "@collector/adapters/crush/toSession";
+import { DEFAULT_PROFILE, MAX_PROFILES } from "@collector/adapters/hermes-agent/home";
+import { profilePrefix } from "@collector/adapters/hermes-agent/toSession";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
-import type { Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
+import { KNOWN_WAYS } from "@collector/remotes/remoteSessions";
+import type { Session, SessionsSnapshot, SourceHealth, SourceId } from "@core/sessions/session";
 
 /** A clock in the middle of a working day. */
 export const NOW = Date.UTC(2026, 9, 5, 12, 0, 0);
@@ -108,4 +113,51 @@ export function snapshotThere(
   sessions: Session[] = [waitingThere(), workingThere()],
 ): SessionsSnapshot {
   return { generatedAt: NOW, sources: sourcesThere(), sessions };
+}
+
+/** The start of the ids of the sessions of each project Crush there can name. */
+export const CRUSH_PROJECTS_THERE = Array.from({ length: MAX_PROJECTS }, (_, index) =>
+  projectPrefix(`/Users/example/code/demo-${index}`),
+);
+
+/** The same of each profile Hermes Agent there can name: its default one and each named one. */
+export const HERMES_PROFILES_THERE = [
+  DEFAULT_PROFILE,
+  ...Array.from({ length: MAX_PROFILES }, (_, index) => `demo-${index}`),
+].map((profile) => profilePrefix(profile));
+
+/** A Crush session there, in the project with this start to its ids. */
+export function crushSessionThere(project: string): Session {
+  return workingThere({
+    id: `${project}session-a`,
+    source: "crush",
+    agent: "Crush",
+    status: "unknown",
+  });
+}
+
+/**
+ * The other machine's answer of `/api/sessions` with every source this version
+ * knows there, each read its first way: Hermes Agent's profiles all named, and
+ * of Crush's projects those given, as Crush there names only those it read.
+ */
+export function everySourceThere(
+  projects: readonly string[],
+  sessions: Session[] = [],
+): SessionsSnapshot {
+  const sources = [...KNOWN_WAYS].map(([id, ways]): SourceHealth => {
+    const basis = ways[0] as string;
+    const named = (starts: readonly string[]) =>
+      Object.fromEntries(starts.map((start) => [start, basis]));
+    return {
+      id: id as SourceId,
+      label: id,
+      state: "ok",
+      basis,
+      ...(id === "crush" && { parts: named(projects) }),
+      ...(id === "hermes-agent" && { parts: named(HERMES_PROFILES_THERE) }),
+      checkedAt: NOW,
+    };
+  });
+  return { generatedAt: NOW, sources, sessions };
 }
