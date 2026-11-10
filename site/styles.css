@@ -1356,9 +1356,9 @@ html:not(.js) :is(.copy, .copy-text) {
 }
 
 /*
- * The window's bar: three dots in the colours of a window that is not in
- * front, the state the dashboard is in, and the lamp's switch. The dashboard
- * draws its own header, so the bar names nothing.
+ * The window's bar: the state the dashboard is in, in the middle, and the
+ * lamp's switch at the right. The dashboard draws its own header, so the bar
+ * names nothing.
  */
 .window-bar {
   position: relative;
@@ -1369,20 +1369,10 @@ html:not(.js) :is(.copy, .copy-text) {
   height: var(--bar-h);
   margin-top: calc(-1 * var(--bezel) / 2);
   margin-bottom: calc(var(--bezel) / 2);
-  padding: 0 6px 0 10px;
-}
-.window-dots {
-  display: flex;
-  gap: 7px;
-}
-.window-dots i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: var(--fill-selected);
-  box-shadow: inset 0 0 0 1px var(--control-rim);
+  padding: 0 6px;
 }
 .window-title {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2190,7 +2180,6 @@ main:has(> .lost) {
     justify-items: center;
     padding: 0;
   }
-  .window-dots,
   .window-title {
     display: none;
   }
