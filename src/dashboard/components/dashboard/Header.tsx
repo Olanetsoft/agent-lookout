@@ -1,6 +1,5 @@
-import { Search } from "lucide-react";
-
 import type { SessionsSnapshot } from "@core/sessions/session";
+import { SearchIcon } from "@dashboard/assets/Icons";
 import { ThemeToggle } from "@dashboard/components/dashboard/ThemeToggle";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { Tooltip } from "@dashboard/components/ui/surfaces/Tooltip";
@@ -37,7 +36,7 @@ function SearchButton({ onSearch }: { onSearch: () => void }) {
         data-part='search'
         onClick={onSearch}
       >
-        <Search aria-hidden className='size-4' strokeWidth={1.75} />
+        <SearchIcon />
       </Button>
     </Tooltip>
   );

@@ -1,7 +1,7 @@
-import { X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useRef, type ReactNode } from "react";
 
+import { CloseIcon } from "@dashboard/assets/Icons";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { wrapTab } from "@dashboard/lib/dom/dialogFocus";
 import { cn } from "@dashboard/lib/utils";
@@ -128,7 +128,7 @@ export function DetailsModal({
                 {actions}
                 <Dialog.Close asChild>
                   <Button size='icon' aria-label='Close'>
-                    <X aria-hidden className='size-4' strokeWidth={1.75} />
+                    <CloseIcon />
                   </Button>
                 </Dialog.Close>
               </div>

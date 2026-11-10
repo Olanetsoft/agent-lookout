@@ -1,8 +1,8 @@
-import { Search } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Session } from "@core/sessions/session";
+import { SearchIcon } from "@dashboard/assets/Icons";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { wrapTab } from "@dashboard/lib/dom/dialogFocus";
@@ -245,11 +245,7 @@ function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
     <>
       <Dialog.Title className='sr-only'>Find a session</Dialog.Title>
       <div className='relative'>
-        <Search
-          aria-hidden
-          strokeWidth={1.75}
-          className='pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-ink-muted'
-        />
+        <SearchIcon className='pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-muted' />
         <input
           type='text'
           role='combobox'

@@ -125,7 +125,7 @@ test("a sign is drawn as an icon as large as the letters beside it, in the ink o
     expect(sign.getAttribute("aria-hidden")).toBe("true");
     const box = sign.getBoundingClientRect();
     expect([box.width, box.height]).toEqual([14, 14]);
-    expect(sign.getAttribute("stroke-width")).toBe("1.75");
+    expect(sign.getAttribute("stroke-width")).toBe("1.5");
     expect(getComputedStyle(sign).color).toBe(rgbOf("var(--ink)"));
     // It sits on the line of the letters, not above or below them.
     const key = sign.closest("kbd")!.getBoundingClientRect();
