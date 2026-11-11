@@ -24,6 +24,9 @@ import { validPid } from "../../processes/pids.ts";
  *   can hold a system prompt, and anything Cline adds are dropped with the
  *   parsed file, never copied, kept or logged. The folder's other files are
  *   never opened.
+ * - Of `metadata`, only `importedFrom.importedAt` is read, and only to tell a
+ *   session the desktop app imported and you never resumed. Of such a session
+ *   nothing is kept but that answer, and it is not listed.
  * - The title is dropped because it is by default the first line of the first
  *   prompt, and no field says when it is not. Comparing it with `prompt` does
  *   not tell: a fork or a restored session keeps the title it came with while
@@ -85,6 +88,8 @@ export type ManifestRead =
   | { state: "broken" }
   /** Of a newer format than this reads. */
   | { state: "newer" }
+  /** A session Cline's desktop app imported and you never resumed, which is not listed. */
+  | { state: "never-resumed" }
   /** Over `MAX_MANIFEST_BYTES`. */
   | { state: "too-large" };
 
@@ -118,15 +123,34 @@ function folder(value: unknown, platform: NodeJS.Platform): string | null {
 }
 
 /**
- * The kept fields of a manifest, `"newer"` for one of a newer format, or null
- * for anything else: not a JSON object, or another session's. A bad value in a
- * field is treated as none.
+ * Whether this is a session Cline's desktop app imported and you never resumed.
+ * An import writes `completed` and the end the session had in the other tool,
+ * and last adds `metadata.importedFrom`, with the time of the import
+ * (`services/session-import/service.ts:325-366`). That mark does not say this
+ * alone: a resume keeps it and pid 0, and a fork copies it. But a session's first
+ * turn removes `ended_at` and its end writes a new one, so an `ended_at` no later
+ * than `importedAt` is still the import's. Anything else is listed: a session
+ * wrongly left out is worse than one shown twice.
+ */
+function importedAndNeverResumed(manifest: Record<string, unknown>): boolean {
+  if (manifest.status !== "completed" || !isRecord(manifest.metadata)) return false;
+  const { importedFrom } = manifest.metadata;
+  const importedAt = isRecord(importedFrom) ? timeOf(importedFrom.importedAt) : null;
+  const endedAt = timeOf(manifest.ended_at);
+  return importedAt !== null && endedAt !== null && endedAt <= importedAt;
+}
+
+/**
+ * The kept fields of a manifest, `"newer"` for one of a newer format,
+ * `"never-resumed"` for a session imported and never resumed, or null for
+ * anything else: not a JSON object, or another session's. A bad value in a field
+ * is treated as none.
  */
 export function parseManifest(
   content: string,
   sessionId: string,
   platform: NodeJS.Platform,
-): Manifest | "newer" | null {
+): Manifest | "newer" | "never-resumed" | null {
   let value: unknown;
   try {
     value = JSON.parse(content);
@@ -138,6 +162,7 @@ export function parseManifest(
   if (typeof version !== "number") return null;
   if (version > MANIFEST_VERSION) return "newer";
   if (version !== MANIFEST_VERSION || value.session_id !== sessionId) return null;
+  if (importedAndNeverResumed(value)) return "never-resumed";
   return {
     sessionId,
     pid: validPid(value.pid) ?? null,
@@ -208,6 +233,7 @@ export function createManifestReader(
     if (text === "too-large") return { state: "too-large" };
     const parsed = parseManifest(text, sessionId, platform);
     if (parsed === "newer") return { state: "newer" };
+    if (parsed === "never-resumed") return { state: "never-resumed" };
     if (parsed === null) return { state: "broken" };
     const before = known?.read.state === "ok" ? known.read : null;
     return {
