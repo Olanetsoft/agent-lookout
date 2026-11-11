@@ -84,9 +84,16 @@ jobs:
       - run: npx playwright install chromium
       # Its system packages come from Ubuntu's archive. The runner has every
       # library Chromium needs, and this adds only fonts no test depends on, so
-      # an archive that can't be reached doesn't stop the tests. A library that
-      # is missing still fails them: Playwright names it when Chromium starts.
-      - run: npx playwright install-deps chromium
+      # it is skipped, with a warning, when the archive's name doesn't resolve,
+      # and can't stop the job. A library that is missing still fails the
+      # tests: Chromium can't start, and its log names the library.
+      - name: Install Chromium's system packages
+        run: |
+          if getent hosts archive.ubuntu.com > /dev/null; then
+            npx playwright install-deps chromium
+          else
+            echo "::warning::archive.ubuntu.com does not resolve, so Chromium's system packages were not installed."
+          fi
         continue-on-error: true
         timeout-minutes: 5
       - run: npm test
