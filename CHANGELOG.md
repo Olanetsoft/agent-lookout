@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.20 - 2026-11-11
+
+Continue and Crush sessions show, every agent's database is read with `trusted_schema` off, a refused look at Goose's, OpenCode's or Hermes Agent's database no longer shows its sessions as ended, and a session Cline's desktop app imported no longer shows as a finished Cline session.
 
 ### Added
 
@@ -11,17 +13,14 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Changed
 
-- OpenCode's, Hermes Agent's, Goose's and Antigravity's databases are now read with `PRAGMA trusted_schema=OFF`, as Crush's is, so on a `sqlite3` older than 3.42 a view in a database cannot start a program through `edit()`. The commands on the cards in Sources and in PRIVACY.md show it. (#297)
+- OpenCode's, Hermes Agent's, Goose's and Antigravity's databases are now read with `PRAGMA trusted_schema=OFF`, as Crush's is, so on a `sqlite3` older than 3.42 a view in a database cannot start a program through `edit()`. The commands on OpenCode's, Hermes Agent's and Goose's cards in Sources, and in PRIVACY.md, show it. (#297)
 - The small icons are drawn to match the rail's, with the same 1.5px line: the tick of a checkbox, the close button, the magnifier of the search, the marks of a note and an error, the arrows that move a permission rule, and the arrow and ⌘ keys in the shortcuts sheet. (#308)
 
 ### Fixed
 
 - A Crush project or a Hermes Agent profile that cannot be read on another machine no longer shows its sessions as ended when that machine has many of them. Another machine's sources now share 60 parts, not 20, so each project and profile is compared on its own. (#298)
-
 - When Agent Lookout is refused a look at Goose's database or a folder above it, or a disk fails, the card no longer says there is no database, and Goose's sessions no longer show in Events as ended and then as appeared again. The card now says the database could not be looked at, and the sessions come back at the first look that works. (#299)
-
 - When Agent Lookout is refused a look at OpenCode's or Hermes Agent's database, or a disk fails, the card no longer says there is no database, and their sessions no longer show in Events as ended and then as appeared again. The card now says the database could not be looked at, and the sessions come back at the first look that works. A `-wal` or `-shm` that cannot be looked at is no longer taken as no file, and for Hermes Agent the other profiles are still read. (#304)
-
 - A session Cline's desktop app imported from Claude Code, Codex or OpenCode no longer shows as a finished Cline session for a day, or twice when Agent Lookout also lists it under that tool. It shows once you send it a prompt in Cline. This was built from Cline's source at cli-v3.0.74, and has not yet been checked on a computer running it. (#280)
 
 ## 0.2.19 - 2026-11-04
