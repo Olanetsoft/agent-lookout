@@ -80,8 +80,22 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      # Component tests run in real Chromium.
-      - run: npx playwright install --with-deps chromium
+      # Component tests run in real Chromium, from Playwright's own download.
+      - run: npx playwright install chromium
+      # Its system packages come from Ubuntu's archive. The runner has every
+      # library Chromium needs, and this adds only fonts no test depends on, so
+      # it is skipped, with a warning, when the archive's name doesn't resolve,
+      # and can't stop the job. A library that is missing still fails the
+      # tests: Chromium can't start, and its log names the library.
+      - name: Install Chromium's system packages
+        run: |
+          if getent hosts archive.ubuntu.com > /dev/null; then
+            npx playwright install-deps chromium
+          else
+            echo "::warning::archive.ubuntu.com does not resolve, so Chromium's system packages were not installed."
+          fi
+        continue-on-error: true
+        timeout-minutes: 5
       - run: npm test
       # A browser test that fails leaves a picture of the page in
       # tests/.artifacts/, kept for a week so a failure can be seen, not guessed.
