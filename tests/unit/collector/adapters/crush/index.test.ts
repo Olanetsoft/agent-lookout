@@ -23,6 +23,10 @@ import {
 } from "@collector/adapters/crush/index";
 import { MAX_LIST_BYTES, MAX_PROJECTS } from "@collector/adapters/crush/projects";
 import { projectPrefix } from "@collector/adapters/crush/toSession";
+import { createEventStore } from "@collector/eventStore";
+import { createHistoryStore } from "@collector/historyStore";
+import { createPoller } from "@collector/poller";
+import type { SessionEvent } from "@core/sessions/session";
 import {
   DATA_DIR,
   DATA_FOLDER,
@@ -54,6 +58,8 @@ import {
   memoryFiles,
   standInProcesses,
   standInSqlite,
+  type MemoryFiles,
+  type StandInSqlite,
 } from "@tests/support/adapters/crush/crushAdapter";
 import { asWritten } from "@tests/support/paths";
 
@@ -854,6 +860,86 @@ describe("a project", () => {
     expect(health.detail).toBe(
       `No Crush project could be read. Not read: demo-project, other-project, because sqlite3 could not read its database, which is tried again when it changes, or ${RETRY_MS / 1000} seconds on.`,
     );
+  });
+});
+
+describe("a project not read on the first poll after a restart", () => {
+  type Make = (
+    files: MemoryFiles,
+    sqlite: StandInSqlite,
+    clock: ReturnType<typeof handClock>,
+  ) => void;
+
+  /** A session of the first project that ended while Agent Lookout was stopped. */
+  const GONE = idOf(PROJECT, OTHER_SESSION_ID);
+
+  /**
+   * The real poller after a restart, over two projects as the history kept
+   * them, and one of the first project's sessions that has since gone, once
+   * `make` has kept the other project from being read. What its first poll
+   * shows and logs.
+   */
+  async function firstPollAfterRestart(make: Make) {
+    const files = crushFiles([PROJECT, OTHER_PROJECT]);
+    const sqlite = standInSqlite([printedRow()]);
+    const clock = handClock();
+    const before = (await crushAdapterFor(files, sqlite, { now: clock.now }).poll()).sessions;
+    make(files, sqlite, clock);
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [crushAdapterFor(files, sqlite, { now: clock.now })],
+      events,
+      history: createHistoryStore(),
+      now: clock.now,
+    });
+    const at = clock.now() - MINUTE;
+    const kept = [...before, { id: GONE, status: "unknown" as const }].map(
+      ({ id, status }): SessionEvent => ({
+        id: `${id}@${at}`,
+        at,
+        sessionId: id,
+        sessionName: "demo-project",
+        kind: "appeared",
+        to: status,
+        severity: "advisory",
+      }),
+    );
+    poller.resume(kept);
+    const snapshot = await poller.pollOnce();
+    const logged = events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
+    return { snapshot, logged };
+  }
+
+  test.each<[string, Make]>([
+    ["sqlite3 cannot read", (_files, sqlite) => sqlite.failFor(OTHER_DATABASE)],
+    ["cannot be looked at", (files) => files.fail(`${OTHER_PROJECT}/.crush`)],
+    [
+      "has a link in place of its database",
+      (files) => {
+        files.remove(OTHER_DATABASE);
+        files.special(OTHER_DATABASE);
+      },
+    ],
+    [
+      "is not read for want of time",
+      (_files, sqlite, clock) => sqlite.beforeEach(() => clock.advance(READ_BUDGET_MS)),
+    ],
+  ])("that %s sends no ended for its sessions, and the other is compared", async (_what, make) => {
+    const { snapshot, logged } = await firstPollAfterRestart(make);
+    expect(snapshot.sources[0]).toMatchObject({
+      state: "ok",
+      parts: { [projectPrefix(PROJECT)]: BASIS },
+      notRead: [projectPrefix(OTHER_PROJECT)],
+    });
+    expect(snapshot.sessions.map(({ id }) => id)).toEqual([idOf(PROJECT)]);
+    expect(logged).toEqual([{ kind: "ended", sessionId: GONE }]);
+  });
+
+  test("none is named when every project is read", async () => {
+    const files = crushFiles([PROJECT, OTHER_PROJECT]);
+    const { health } = await crushAdapterFor(files, standInSqlite([printedRow()])).poll();
+    expect(health.state).toBe("ok");
+    expect(health).not.toHaveProperty("notRead");
   });
 });
 

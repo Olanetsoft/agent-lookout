@@ -651,10 +651,13 @@ export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}
       ...withParts(result("ok", detail, looked, checkedAt, advice), parts),
       sessions,
     };
-    const refused = failures.filter((failure) => failure.state === "not-looked-at");
-    if (refused.length > 0) {
-      answer.notLookedAt = refused.map((failure) => profilePrefix(failure.profile));
-    }
+    // Each profile not read, whether it failed or waits for time, says nothing
+    // of its sessions.
+    const notRead = profiles.filter(
+      (profile) =>
+        unread.includes(profile) || failures.some((failure) => failure.profile === profile),
+    );
+    if (notRead.length > 0) answer.health.notRead = notRead.map(profilePrefix);
     return answer;
   }
 

@@ -202,6 +202,9 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
     if (state === "ok" && snapshot && Object.keys(snapshot.parts).length > 0) {
       health.parts = snapshot.parts;
     }
+    if (state === "ok" && snapshot && snapshot.notRead.length > 0) {
+      health.notRead = snapshot.notRead;
+    }
     return state === "ok" ? { health, sessions, basis: BASIS } : { health, sessions };
   }
 

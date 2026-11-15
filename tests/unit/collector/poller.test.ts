@@ -531,15 +531,19 @@ describe("events after a restart, with history kept from before it", () => {
     expect(events.list()).toHaveLength(3);
   });
 
-  test("a part the first poll could not look at gets no event, then or at its first read, and the rest is compared", async () => {
+  test("a part the first poll did not read gets no event then, and is compared with the history at its first read", async () => {
     const read = makeSession({ id: "claude-code:read/a", status: "idle" });
     const refused = makeSession({ id: "claude-code:refused/b", status: "working" });
     const parts = { "claude-code:read/": "files" };
     const { adapter } = scriptedAdapter(
       {
-        health: { ...health(), parts },
+        health: { ...health(), parts, notRead: ["claude-code:refused/"] },
         sessions: [read],
-        notLookedAt: ["claude-code:refused/"],
+      },
+      // Still not read.
+      {
+        health: { ...health(), parts, notRead: ["claude-code:refused/"] },
+        sessions: [read],
       },
       {
         health: { ...health(), parts: { ...parts, "claude-code:refused/": "files" } },
@@ -553,20 +557,66 @@ describe("events after a restart, with history kept from before it", () => {
       // Its status differs, and d is gone: neither was seen by a poll that could say.
       kept("claude-code:refused/b", "status-changed", "idle"),
       kept("claude-code:refused/d", "status-changed", "idle"),
-      // In a part this poll does not name, and that it did not fail to look at.
+      // In a part this poll does not name, and does not say it did not read.
       kept("claude-code:gone/e", "status-changed", "idle"),
     ]);
-    const logged = () => events.list().map((event) => [event.sessionId, event.kind]);
+    const logged = () =>
+      events.list().map((event) => [event.at - T0, event.sessionId, event.kind, event.to]);
 
     await poller.pollOnce();
     expect(logged()).toEqual([
-      ["claude-code:gone/e", "ended"],
-      ["claude-code:read/c", "ended"],
+      [0, "claude-code:gone/e", "ended", undefined],
+      [0, "claude-code:read/c", "ended", undefined],
     ]);
 
     vi.setSystemTime(T0 + 2_000);
     await poller.pollOnce();
     expect(logged()).toHaveLength(2);
+
+    // The first poll that reads it finds what changed while Agent Lookout was stopped.
+    vi.setSystemTime(T0 + 4_000);
+    await poller.pollOnce();
+    expect(logged()).toEqual([
+      [4_000, "claude-code:refused/d", "ended", undefined],
+      [4_000, "claude-code:refused/b", "status-changed", "working"],
+      [0, "claude-code:gone/e", "ended", undefined],
+      [0, "claude-code:read/c", "ended", undefined],
+    ]);
+
+    // Once, and only then.
+    vi.setSystemTime(T0 + 6_000);
+    await poller.pollOnce();
+    expect(logged()).toHaveLength(4);
+  });
+
+  test("a session listed in a part named not read gets no event from the history, then or later", async () => {
+    // Another machine's list cut short can name a whole source not read while listing some of it.
+    const listed = makeSession({ id: "claude-code:whole/a", status: "idle" });
+    const { adapter } = scriptedAdapter(
+      { health: { ...health(), notRead: ["claude-code:whole/"] }, sessions: [listed] },
+      result([listed]),
+    );
+    const { poller, events } = setUp(adapter);
+    poller.resume([kept("claude-code:whole/a", "status-changed", "working")]);
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+  });
+
+  test("a part first read under a way with an older poll of its own is not told as appeared", async () => {
+    // As another machine's source whose way this version does not know, compared under the machine's own.
+    const back = makeSession({ id: "claude-code:new/a", status: "idle" });
+    const { adapter } = scriptedAdapter(
+      { health: { ...health(), notRead: ["claude-code:new/"] }, sessions: [] },
+      result([back]),
+    );
+    const { poller, events } = setUp(adapter);
+    poller.resume([kept("claude-code:new/a", "status-changed", "idle")]);
+    await poller.pollOnce();
+    vi.setSystemTime(T0 + 2_000);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
   });
 
   test("a source that does not answer at first is compared once it does, and only with its own sessions", async () => {

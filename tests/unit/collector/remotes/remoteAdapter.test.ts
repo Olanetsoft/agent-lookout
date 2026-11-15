@@ -10,6 +10,7 @@ import type { Remote } from "@collector/remotes/remoteSettings";
 import type { TunnelEnd, TunnelState } from "@collector/remotes/tunnel";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import type {
+  SessionEvent,
   SessionsSnapshot,
   SessionStatus,
   SourceHealth,
@@ -529,5 +530,121 @@ describe("the way a machine is read", () => {
       expect(polled.basis, basis).toBe(BASIS);
       expect(polled.health, basis).not.toHaveProperty("parts");
     }
+  });
+});
+
+describe("the first poll after Agent Lookout restarts here", () => {
+  const DEFAULT_ID = "hermes-agent:default/20261001_110000_0000a1";
+  const CODER_ID = "hermes-agent:coder/20261001_110000_0000b1";
+  /** A session of the default profile there that ended while Agent Lookout here was stopped. */
+  const GONE_ID = "hermes-agent:default/20261001_110000_0000c1";
+  const CODEX_ID = "codex:job";
+
+  /** Hermes Agent there with its default profile read, and Codex there in the state given. */
+  function there(hermes: Partial<SourceHealth>, codex: SourceHealth["state"]): SessionsSnapshot {
+    return {
+      generatedAt: NOW,
+      sources: [
+        {
+          id: "hermes-agent",
+          label: "Hermes Agent",
+          state: "ok",
+          basis: "database",
+          parts: { "hermes-agent:default/": "database" },
+          checkedAt: NOW,
+          ...hermes,
+        },
+        { id: "codex", label: "Codex", state: codex, checkedAt: NOW },
+      ],
+      sessions: [
+        workingThere({ id: DEFAULT_ID, source: "hermes-agent" as SourceId, status: "idle" }),
+      ],
+    };
+  }
+
+  /**
+   * What the event log holds after the first poll, from a history that kept
+   * each session idle, and a poll for each answer after it.
+   */
+  async function firstPoll(snapshot: SessionsSnapshot, ...later: SessionsSnapshot[]) {
+    let clock = NOW;
+    let answer = snapshot;
+    const adapter = createRemoteAdapter({
+      remote: REMOTE,
+      version: "0.2.3",
+      tunnel: { state: () => RUNNING, connected: () => {} },
+      read: async () => ({ kind: "read", version: REMOTE_VERSION, snapshot: answer }),
+      now: () => clock,
+      answerWaitMs: 50,
+    });
+    const events = createEventStore();
+    const poller = createPoller({
+      adapters: [adapter],
+      events,
+      history: createHistoryStore(),
+      now: () => clock,
+    });
+    const at = NOW - 60_000;
+    poller.resume(
+      [DEFAULT_ID, CODER_ID, GONE_ID, CODEX_ID].map((id): SessionEvent => ({
+        id: `remote:devbox:${id}@${at}`,
+        at,
+        sessionId: `remote:devbox:${id}`,
+        sessionName: id,
+        kind: "appeared",
+        to: "idle",
+        severity: "advisory",
+      })),
+    );
+    const polled = await poller.pollOnce();
+    const logged = () => events.list().map(({ kind, sessionId }) => `${kind} ${sessionId}`);
+    const first = logged();
+    for (const next of later) {
+      answer = next;
+      clock += 2_000;
+      await poller.pollOnce();
+    }
+    return { health: polled.sources[0], logged: first, after: logged() };
+  }
+
+  test("sends no ended for a profile not read there, nor for a source there that did not answer, and compares the rest", async () => {
+    const { health, logged } = await firstPoll(
+      there({ notRead: ["hermes-agent:coder/"] }, "error"),
+    );
+    expect(health?.notRead).toEqual(["remote:devbox:hermes-agent:coder/", "remote:devbox:codex:"]);
+    expect(logged).toEqual([`ended remote:devbox:${GONE_ID}`]);
+  });
+
+  test("compares them with the history once that machine reads them", async () => {
+    const coder = workingThere({
+      id: CODER_ID,
+      source: "hermes-agent" as SourceId,
+      status: "working",
+    });
+    const read = there(
+      { parts: { "hermes-agent:default/": "database", "hermes-agent:coder/": "database" } },
+      "ok",
+    );
+    const { after } = await firstPoll(
+      there({ notRead: ["hermes-agent:coder/"] }, "error"),
+      { ...read, sessions: [...read.sessions, coder] },
+      { ...read, sessions: [...read.sessions, coder] },
+    );
+    // Newest first: the profile and Codex there at their first reads, the other at the first poll.
+    expect(after).toEqual([
+      `ended remote:devbox:${CODEX_ID}`,
+      `status-changed remote:devbox:${CODER_ID}`,
+      `ended remote:devbox:${GONE_ID}`,
+    ]);
+  });
+
+  test("ends them when that machine read them, and they had gone", async () => {
+    const { health, logged } = await firstPoll(there({}, "ok"));
+    expect(health).not.toHaveProperty("notRead");
+    expect(logged.toSorted()).toEqual([
+      `ended remote:devbox:${CODEX_ID}`,
+      `ended remote:devbox:${CODER_ID}`,
+      `ended remote:devbox:${GONE_ID}`,
+    ]);
   });
 });

@@ -479,6 +479,99 @@ describe("readRemoteSnapshot", () => {
     });
   });
 
+  describe("what a machine's answer says nothing of", () => {
+    const hermesThere = (notRead: unknown): SourceHealth =>
+      ({
+        id: "hermes-agent",
+        label: "Hermes Agent",
+        state: "ok",
+        basis: hermesAgent.BASIS,
+        notRead,
+        checkedAt: NOW,
+      }) as SourceHealth;
+    const sourceThere = (id: string, state: SourceState): SourceHealth => ({
+      id: id as SourceId,
+      label: id,
+      state,
+      checkedAt: NOW,
+    });
+
+    test("is each source there that did not answer, whole, and none that did", () => {
+      expect(read(snapshotThere()).notRead).toEqual(["remote:devbox:codex:"]);
+      const sources = [
+        sourceThere("claude-code", "ok"),
+        sourceThere("codex", "error"),
+        sourceThere("opencode", "searching"),
+        sourceThere("gemini-cli", "not-set-up"),
+        sourceThere("qwen-code", "unavailable"),
+      ];
+      expect(read({ generatedAt: NOW, sources, sessions: [] }).notRead).toEqual([
+        "remote:devbox:codex:",
+        "remote:devbox:opencode:",
+        "remote:devbox:qwen-code:",
+      ]);
+    });
+
+    test("is each part a source there names as not read, when it is clean and starts with that source's id, once", () => {
+      const named = read({
+        generatedAt: NOW,
+        sources: [
+          hermesThere([
+            "hermes-agent:coder/",
+            "opencode:x/",
+            "hermes-agent:a\nb/",
+            3,
+            "hermes-agent:coder/",
+            "hermes-agent:writer/",
+          ]),
+        ],
+        sessions: [],
+      }).notRead;
+      expect(named).toEqual([
+        "remote:devbox:hermes-agent:coder/",
+        "remote:devbox:hermes-agent:writer/",
+      ]);
+      for (const odd of [undefined, "hermes-agent:coder/", { "hermes-agent:coder/": true }]) {
+        expect(
+          read({ generatedAt: NOW, sources: [hermesThere(odd)], sessions: [] }).notRead,
+        ).toEqual([]);
+      }
+    });
+
+    test("past the limit is each source with any, whole", () => {
+      const parts = (count: number, source: string) =>
+        Array.from({ length: count }, (_, index) => `${source}:p${index}/`);
+      expect(
+        read({
+          generatedAt: NOW,
+          sources: [hermesThere(parts(MAX_REMOTE_PARTS + 1, "hermes-agent"))],
+          sessions: [],
+        }).notRead,
+      ).toEqual(["remote:devbox:hermes-agent:"]);
+      const crushThere = { ...hermesThere(parts(2, "crush")), id: "crush", basis: crush.BASIS };
+      const fit = read({
+        generatedAt: NOW,
+        sources: [hermesThere(parts(MAX_REMOTE_PARTS - 2, "hermes-agent")), crushThere],
+        sessions: [],
+      }).notRead;
+      expect(fit).toHaveLength(MAX_REMOTE_PARTS);
+      const past = read({
+        generatedAt: NOW,
+        sources: [
+          hermesThere(parts(MAX_REMOTE_PARTS - 1, "hermes-agent")),
+          crushThere,
+          sourceThere("codex", "error"),
+        ],
+        sessions: [],
+      }).notRead;
+      expect(past).toEqual([
+        "remote:devbox:hermes-agent:",
+        "remote:devbox:crush:",
+        "remote:devbox:codex:",
+      ]);
+    });
+  });
+
   describe("a machine whose sources name every part they can", () => {
     const NAMED = KNOWN_WAYS.size - 2 + CRUSH_PROJECTS_THERE.length + HERMES_PROFILES_THERE.length;
     const SESSIONS = CRUSH_PROJECTS_THERE.map(crushSessionThere);

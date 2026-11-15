@@ -691,6 +691,31 @@ describe("when a profile cannot be read", () => {
 });
 
 // The stand-in files, with each system's rules, so these pass on Windows too.
+/** The real poller over one adapter, and what its event log holds, as kind and session. */
+function pollerOf(adapter: Adapter, now: () => number) {
+  const events = createEventStore();
+  const poller = createPoller({
+    adapters: [adapter],
+    events,
+    history: createHistoryStore(),
+    now,
+  });
+  const logged = () => events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
+  return { poller, logged };
+}
+
+/** Each session as an earlier run's history kept it: idle, as each is listed. */
+const keptOf = (at: number, ...sessionIds: string[]): SessionEvent[] =>
+  sessionIds.map((sessionId) => ({
+    id: `${sessionId}@${at}`,
+    at,
+    sessionId,
+    sessionName: "Write the notes",
+    kind: "appeared",
+    to: "idle",
+    severity: "advisory",
+  }));
+
 describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (platform) => {
   const IN_DEFAULT = `hermes-agent:default/${A}`;
   const IN_CODER = `hermes-agent:coder/${B}`;
@@ -711,30 +736,6 @@ describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (pla
     const adapter = hermesAgentAdapterFor(files, sqlite, { now: clock.now, platform });
     return { files, sqlite, clock, adapter };
   }
-
-  function pollerOf(adapter: Adapter, now: () => number) {
-    const events = createEventStore();
-    const poller = createPoller({
-      adapters: [adapter],
-      events,
-      history: createHistoryStore(),
-      now,
-    });
-    const logged = () => events.list().map(({ kind, sessionId }) => ({ kind, sessionId }));
-    return { poller, logged };
-  }
-
-  /** Each session as an earlier run's history kept it: idle, as both are listed. */
-  const keptOf = (at: number, ...sessionIds: string[]): SessionEvent[] =>
-    sessionIds.map((sessionId) => ({
-      id: `${sessionId}@${at}`,
-      at,
-      sessionId,
-      sessionName: "Write the notes",
-      kind: "appeared",
-      to: "idle",
-      severity: "advisory",
-    }));
 
   test.each([
     ["the database", DEFAULT_DATABASE],
@@ -965,6 +966,97 @@ describe.each(["darwin", "linux"] as const)("a look that is refused on %s", (pla
     clock.advance(2 * SECOND);
     await poller.pollOnce();
     expect(logged()).toEqual([{ kind: "ended", sessionId: IN_CODER }]);
+  });
+});
+
+describe("a profile not read on the first poll after a restart", () => {
+  const IN_DEFAULT = `hermes-agent:default/${A}`;
+  const IN_CODER = `hermes-agent:coder/${B}`;
+  /** A session of the default profile that ended while Agent Lookout was stopped. */
+  const GONE = `hermes-agent:default/${C}`;
+  const ids = (sessions: readonly { id: string }[]) => sessions.map((session) => session.id);
+
+  const cases: [string, (files: MemoryFiles, sqlite: StandInSqlite) => void][] = [
+    ["sqlite3 failing on it", (_files, sqlite) => sqlite.fail(PROFILE_DATABASE)],
+    [
+      "a -wal without its -shm",
+      (files) => {
+        writeLiveWalDatabase(files, PROFILE_DATABASE);
+        files.remove(`${PROFILE_DATABASE}-shm`);
+      },
+    ],
+    [
+      "tables of a version Agent Lookout does not read",
+      (_files, sqlite) => sqlite.probe(probeJson("v0.21.5"), PROFILE_DATABASE),
+    ],
+    [
+      "a live -wal and only a sqlite3 with the WAL-reset bug",
+      (files, sqlite) => {
+        writeLiveWalDatabase(files, PROFILE_DATABASE);
+        sqlite.install("/usr/bin/sqlite3", "3.51.0");
+      },
+    ],
+  ];
+  test.each(cases)(
+    "with %s, while another is read, sends no ended for its sessions, and the other is compared",
+    async (_what, make) => {
+      const { files, sqlite } = hermesHome();
+      make(files, sqlite);
+      const clock = handClock();
+      const { poller, logged } = pollerOf(
+        hermesAgentAdapterFor(files, sqlite, { now: clock.now }),
+        clock.now,
+      );
+      poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER, GONE));
+      const first = await poller.pollOnce();
+      expect(first.sources[0]).toMatchObject({
+        state: "ok",
+        parts: { "hermes-agent:default/": BASIS },
+        notRead: ["hermes-agent:coder/"],
+      });
+      expect(ids(first.sessions)).toEqual([IN_DEFAULT]);
+      expect(logged()).toEqual([{ kind: "ended", sessionId: GONE }]);
+    },
+  );
+
+  test("one not read for want of time sends no ended then, and is compared with the history at its first read", async () => {
+    const { files, sqlite } = hermesHome();
+    files.mkdir(`${ROOT}/profiles/${PROFILE}`);
+    const clock = handClock();
+    const finder = await knownFinder(sqlite);
+    // The default profile is read in 4 seconds, and the coder profile's probe is cut short at 5.
+    sqlite.slowly({ clock, takesMs: 2_000 });
+    const { poller, logged } = pollerOf(
+      hermesAgentAdapterFor(files, sqlite, { now: clock.now, finder }),
+      clock.now,
+    );
+    // The coder profile's other session ended while Agent Lookout was stopped.
+    const GONE_FROM_CODER = `hermes-agent:coder/${sessionId("d4")}`;
+    poller.resume(keptOf(clock.now() - MINUTE, IN_DEFAULT, IN_CODER, GONE, GONE_FROM_CODER));
+    const first = await poller.pollOnce();
+    expect(first.sources[0]?.notRead).toEqual(["hermes-agent:coder/"]);
+    expect(ids(first.sessions)).toEqual([IN_DEFAULT]);
+    expect(logged()).toEqual([{ kind: "ended", sessionId: GONE }]);
+
+    clock.advance(2_000);
+    const next = await poller.pollOnce();
+    expect(next.sources[0]).not.toHaveProperty("notRead");
+    expect(ids(next.sessions)).toEqual([IN_DEFAULT, IN_CODER]);
+    expect(logged()).toEqual([
+      { kind: "ended", sessionId: GONE_FROM_CODER },
+      { kind: "ended", sessionId: GONE },
+    ]);
+
+    clock.advance(2_000);
+    await poller.pollOnce();
+    expect(logged()).toHaveLength(2);
+  });
+
+  test("names none when every profile is read", async () => {
+    const { files, sqlite } = hermesHome();
+    const { health } = await hermesAgentAdapterFor(files, sqlite).poll();
+    expect(health.state).toBe("ok");
+    expect(health).not.toHaveProperty("notRead");
   });
 });
 
