@@ -170,9 +170,9 @@ export interface Poller {
    * `sightings` say how the sessions in a wait were last seen, in any order.
    * A session whose wait the history leaves open, that the first good poll
    * leaves out, is not taken to have ended unless the way that last listed it
-   * is the way that poll was read. Nor is a session of a part that poll could
-   * not look at (`notLookedAt`), which that part's first read takes as it is
-   * found.
+   * is the way that poll was read. Nor is a session of a part that poll did
+   * not read (`notRead`), which is compared the same way at the first poll
+   * that reads its part.
    */
   resume(events: readonly SessionEvent[], sightings?: readonly WaitSighting[]): void;
   /** When the collector began. History before this was not measured. */
@@ -248,6 +248,44 @@ interface SourceMemory {
   reported: ReportedStatuses;
   /** Each session the log has in a wait. */
   waits: Map<string, FollowedWait>;
+  /**
+   * What the history kept from before this run says of the sessions of each
+   * part the source has not read yet this run (`notRead`): compared, as the
+   * first good poll's are, at the first poll that reads their part.
+   */
+  held: LastSeen[];
+}
+
+/** Whether a session is of a part an answer did not read (`notRead`). */
+function unreadBy(health: Pick<SourceHealth, "notRead">): (sessionId: string) => boolean {
+  const starts = health.notRead ?? [];
+  return (sessionId) => starts.some((start) => sessionId.startsWith(start));
+}
+
+/**
+ * What changed while Agent Lookout was stopped, of the sessions the history
+ * kept: a new status, a session that ended, or one back after it had ended,
+ * each an event of the poll that found it. Only those kept are compared, and
+ * each of them the poll lists is taken by the log as it is listed, so a way of
+ * reading that lists it again, with an older poll of its own, does not tell it
+ * as new.
+ */
+function againstHistory(
+  kept: readonly LastSeen[],
+  sessions: readonly Session[],
+  reported: ReportedStatuses,
+  at: number,
+): SessionEvent[] {
+  const known = new Set(kept.map((session) => session.id));
+  const before = kept.filter(
+    (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
+  );
+  const after = sessions.filter((session) => known.has(session.id));
+  for (const session of after) reported.set(session.id, session.status);
+  const sighted = new Map(before.map((session) => [session.id, session.sighting]));
+  return diffSessions(before, after, at).map((event) =>
+    withLastSeen(event, sighted.get(event.sessionId)?.lastSeen),
+  );
 }
 
 /**
@@ -556,7 +594,7 @@ export function createPoller(options: PollerOptions): Poller {
       let remembered = memory.get(id);
       let lastSeen: LastSeen[] | undefined;
       if (!remembered) {
-        remembered = { baselines: new Map(), reported: new Map(), waits: new Map() };
+        remembered = { baselines: new Map(), reported: new Map(), waits: new Map(), held: [] };
         memory.set(id, remembered);
         lastSeen = resumed.get(id);
         resumed.delete(id);
@@ -565,7 +603,6 @@ export function createPoller(options: PollerOptions): Poller {
       if (lastSeen) {
         // The first good poll of all this run is compared with what the history
         // kept from before it says, for the sessions it says anything of.
-        const known = new Set(lastSeen.map((session) => session.id));
         const listed = new Map(result.sessions.map((session) => [session.id, session.status]));
         const before = lastSeen.filter(
           (session): session is LastSeen & { status: SessionStatus } => session.status !== null,
@@ -581,19 +618,39 @@ export function createPoller(options: PollerOptions): Poller {
             sightings.push(...takeUpWait(remembered, session, sighting, startedAt, at, seen));
           }
         }
-        const after = result.sessions.filter(
-          (session) => known.has(session.id) && !waits.has(session.id),
-        );
-        // A part this poll could not look at says nothing of its sessions.
-        const notLookedAt = result.notLookedAt ?? [];
-        const compared = before.filter(
-          (session) =>
-            !waits.has(session.id) && !notLookedAt.some((start) => session.id.startsWith(start)),
-        );
-        const sighted = new Map(before.map((session) => [session.id, session.sighting]));
+        // A part this poll did not read says nothing of its sessions, which
+        // wait for the first poll that reads it. One listed all the same, which
+        // only a cut-short list of another machine's can do, is taken as it is
+        // found.
+        const unread = unreadBy(result.health);
+        const kept = lastSeen.filter((session) => !waits.has(session.id));
+        remembered.held = kept.filter((session) => unread(session.id) && !listed.has(session.id));
         changes.push(
-          ...diffSessions(compared, after, at).map((event) =>
-            withLastSeen(event, sighted.get(event.sessionId)?.lastSeen),
+          ...againstHistory(
+            kept.filter((session) => !unread(session.id)),
+            result.sessions.filter((session) => !waits.has(session.id)),
+            reported,
+            at,
+          ),
+        );
+      } else if (remembered.held.length > 0) {
+        // Each part read at last is compared with the history as the first
+        // good poll was, and one listed while its part is still named not read
+        // is taken as it is found.
+        const unread = unreadBy(result.health);
+        const listed = new Set(result.sessions.map((session) => session.id));
+        const ready = remembered.held.filter(
+          (session) => !unread(session.id) && !waits.has(session.id),
+        );
+        remembered.held = remembered.held.filter(
+          (session) => unread(session.id) && !listed.has(session.id) && !waits.has(session.id),
+        );
+        changes.push(
+          ...againstHistory(
+            ready,
+            result.sessions.filter((session) => !waits.has(session.id)),
+            reported,
+            at,
           ),
         );
       }

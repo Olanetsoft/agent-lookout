@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- After Agent Lookout restarts, a Hermes Agent profile or a Crush project its first poll could not read, or had no time for, no longer shows its sessions as ended, nor does an agent on another machine that did not answer there, or a profile there that machine could not read. What changed in them while Agent Lookout was stopped is found once they are read. (#306)
+
 ## 0.2.20 - 2026-11-11
 
 Continue and Crush sessions show, every agent's database is read with `trusted_schema` off, a refused look at Goose's, OpenCode's or Hermes Agent's database no longer shows its sessions as ended, and a session Cline's desktop app imported no longer shows as a finished Cline session.

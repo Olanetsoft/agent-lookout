@@ -115,6 +115,16 @@ export interface RemoteSnapshot {
    * to more than `MAX_REMOTE_PARTS`, each source is one part again.
    */
   parts: Record<string, string>;
+  /**
+   * What that machine's answer says nothing of, by the start of the ids those
+   * sessions have here: each of its sources that did not answer there, as
+   * `remote:<name>:<source id>:`, and each part a source there names as not
+   * read, such as `remote:<name>:hermes-agent:coder/`. So the first good poll
+   * here after a restart leaves them out of its compare with the history, as
+   * that machine itself would. When those parts would come to more than
+   * `MAX_REMOTE_PARTS`, each source with any is named whole instead.
+   */
+  notRead: string[];
   /** What each agent there can report, for each source it found. */
   agents: AgentCapabilities[];
 }
@@ -140,6 +150,23 @@ function ownParts(value: unknown, sourceId: string): [string, string][] {
     parts.push([start, way]);
   }
   return parts;
+}
+
+/**
+ * The parts a source on the other machine did not read, each by the start of
+ * its sessions' ids there, such as Hermes Agent's `hermes-agent:coder/`: only
+ * those that are clean text and start with that source's own id, each once.
+ * More than `MAX_REMOTE_PARTS` is that whole source.
+ */
+function notReadThere(value: unknown, sourceId: string): string[] {
+  if (!Array.isArray(value)) return [];
+  const starts = new Set<string>();
+  for (const start of value) {
+    if (exact(start, MAX_ID_LENGTH) === null || !start.startsWith(`${sourceId}:`)) continue;
+    starts.add(start);
+    if (starts.size > MAX_REMOTE_PARTS) return [`${sourceId}:`];
+  }
+  return [...starts];
 }
 
 function oneOf<T extends string>(allowed: readonly T[], value: unknown): T | null {
@@ -354,6 +381,9 @@ export function readRemoteSnapshot(
   const agents: AgentCapabilities[] = [];
   /** Each source compared apart: as one part, and as its own parts when it names any. */
   const compared: { whole: [string, string]; own: [string, string][] }[] = [];
+  /** Each source that answered there with parts it did not read, or did not answer. */
+  const unread: { whole: string; own: string[] }[] = [];
+  const here = remoteSourceId(machine);
   for (const item of value.sources) {
     if (sources.length >= MAX_REMOTE_SOURCES) break;
     if (!isRecord(item)) continue;
@@ -367,8 +397,11 @@ export function readRemoteSnapshot(
     // Only a source there that answered is compared, as only one that answers
     // there names a way.
     const answered = state === "ok" || state === "not-set-up";
+    // One that did not answer says nothing of its sessions, as a part not read does.
+    const whole = `${here}:${id}:`;
+    const own = answered ? notReadThere(item.notRead, id).map((start) => `${here}:${start}`) : [];
+    if (!answered || own.length > 0) unread.push({ whole, own: answered ? own : [whole] });
     if (answered && typeof item.basis === "string" && KNOWN_WAYS.get(id)?.includes(item.basis)) {
-      const here = remoteSourceId(machine);
       compared.push({
         whole: [`${here}:${id}:`, item.basis],
         own: ownParts(item.parts, id).map(([start, way]) => [`${here}:${start}`, way]),
@@ -389,6 +422,10 @@ export function readRemoteSnapshot(
     }
   }
 
+  // The same for what was not read: each source whole, once they are more.
+  const many = unread.reduce((total, each) => total + each.own.length, 0) > MAX_REMOTE_PARTS;
+  const notRead = unread.flatMap(({ whole, own }) => (many ? [whole] : own));
+
   const sessions: Session[] = [];
   const seen = new Set<string>();
   for (const item of value.sessions) {
@@ -398,5 +435,5 @@ export function readRemoteSnapshot(
     seen.add(session.id);
     sessions.push(session);
   }
-  return { sessions, sources, agents, parts };
+  return { sessions, sources, agents, parts, notRead };
 }

@@ -574,11 +574,16 @@ export function createCrushAdapter(options: CrushAdapterOptions = {}): Adapter {
     const { reads, waiting } = await readProjects(folders, checkedAt);
     const answered: string[] = [];
     const failures: NotRead[] = [];
+    /** Each project not read, whether it failed or waits for time. */
+    const notRead: string[] = [];
     const found: { folder: string; row: SessionRow }[] = [];
     let databases = 0;
     for (const folder of folders) {
       const answer = reads.get(folder);
-      if (answer === undefined) continue;
+      if (answer === undefined) {
+        notRead.push(folder);
+        continue;
+      }
       switch (answer.state) {
         case "missing":
           answered.push(folder);
@@ -592,6 +597,7 @@ export function createCrushAdapter(options: CrushAdapterOptions = {}): Adapter {
           break;
         default:
           failures.push({ folder, state: answer.state });
+          notRead.push(folder);
           continue;
       }
       answered.push(folder);
@@ -649,10 +655,13 @@ export function createCrushAdapter(options: CrushAdapterOptions = {}): Adapter {
     }
     if (failures.length > 0) detail += ` ${notReadSentence(failures)}`;
     const parts = Object.fromEntries(answered.map((folder) => [projectPrefix(folder), basis]));
-    return {
+    const answer = {
       ...withParts(result("ok", detail, looked, checkedAt, basis, advice), parts),
       sessions,
     };
+    // A project not read says nothing of its sessions.
+    if (notRead.length > 0) answer.health.notRead = notRead.map(projectPrefix);
+    return answer;
   }
 
   return {

@@ -656,6 +656,21 @@ export interface SourceHealth {
    */
   parts?: Record<string, string>;
   /**
+   * The start of the ids of the sessions of each part this answer has no read
+   * of, for a source read in parts: one a look or a read failed at, one not
+   * safe or not laid out to be read, or one not reached for want of time that
+   * has no earlier read. The answer says nothing of their sessions, so the
+   * first good poll of a run leaves them out of its compare with the history,
+   * and the first poll that reads their part compares them instead.
+   *
+   * - Hermes Agent names each such profile, as `hermes-agent:<profile>/`.
+   * - Crush names each such project, as `crush:<hash of its folder>/`.
+   * - Another machine's source names each source there that did not answer,
+   *   as `remote:<name>:<source id>:`, and each part a source there that
+   *   answered names in its own `notRead`, as `remote:<name>:<start there>`.
+   */
+  notRead?: string[];
+  /**
    * What the source's agent can report at all, whatever state the source is in:
    * fixed for each adapter, which declares it. The Sources view draws its table
    * of what each agent can report from this and from `agents`.
