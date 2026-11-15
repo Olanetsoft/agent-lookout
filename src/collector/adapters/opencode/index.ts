@@ -1,5 +1,4 @@
 import os from "node:os";
-import path from "node:path";
 
 import { isWithinRetention } from "../../../core/sessions/retention.ts";
 import type {
@@ -20,13 +19,29 @@ import { createDatabaseReader, type DatabaseReader } from "./database.ts";
 import { createOpencodeLastMessages } from "./lastMessages.ts";
 import {
   createOpencodeProcessReader,
+  OPENCODE_PROGRAMS,
   OPENCODE_TABLE_ARGS,
   opencodeLiveness,
   type OpencodeProcessReader,
   type ProcessAnswer,
 } from "./processes.ts";
-import { DATABASE_FILE, SESSION_ID, type SessionRow } from "./sessionRows.ts";
+import {
+  databaseFor,
+  dataFolderFor,
+  DEFAULT_DATA_HOME,
+  type OpencodeProfile,
+  type ProfilePaths,
+} from "./profile.ts";
+import {
+  DATABASE_FILE,
+  OPENCODE_TOOLS,
+  SESSION_ID,
+  v1SessionsQuery,
+  type SessionRow,
+} from "./sessionRows.ts";
 import { isListed, lastActivity, opencodeSession, SOURCE_ID } from "./toSession.ts";
+
+export { DEFAULT_DATA_HOME, type OpencodeProfile };
 
 /** The variable that replaces OpenCode's data folder, for Agent Lookout alone. */
 export const OPENCODE_HOME_ENV = "AGENT_LOOKOUT_OPENCODE_HOME";
@@ -34,8 +49,13 @@ export const OPENCODE_HOME_ENV = "AGENT_LOOKOUT_OPENCODE_HOME";
 /** OpenCode's own variable for its database: a path, one in its data folder, or `:memory:`. */
 export const OPENCODE_DB_ENV = "OPENCODE_DB";
 
-/** Where OpenCode keeps its data, under the home folder, when `XDG_DATA_HOME` names no other place. */
-export const DEFAULT_DATA_HOME = [".local", "share"] as const;
+/** Where OpenCode's files are: the parts of its profile `opencodeHomeFor` and `opencodeDatabaseFor` read. */
+const OPENCODE_PATHS: ProfilePaths = {
+  homeEnv: OPENCODE_HOME_ENV,
+  dbEnv: OPENCODE_DB_ENV,
+  folder: "opencode",
+  databaseFile: DATABASE_FILE,
+};
 
 /**
  * OpenCode's data folder: the one `AGENT_LOOKOUT_OPENCODE_HOME` names, else
@@ -43,11 +63,7 @@ export const DEFAULT_DATA_HOME = [".local", "share"] as const;
  * `~/.local/share/opencode`, on macOS as on Linux.
  */
 export function opencodeHomeFor(env: NodeJS.ProcessEnv, homeDir: string): string {
-  const override = env[OPENCODE_HOME_ENV]?.trim() || undefined;
-  if (override !== undefined) return path.resolve(override);
-  const xdg = env.XDG_DATA_HOME;
-  const data = xdg && path.isAbsolute(xdg) ? xdg : path.join(homeDir, ...DEFAULT_DATA_HOME);
-  return path.resolve(data, "opencode");
+  return dataFolderFor(OPENCODE_PATHS, env, homeDir);
 }
 
 /**
@@ -58,12 +74,7 @@ export function opencodeHomeFor(env: NodeJS.ProcessEnv, homeDir: string): string
  * `opencode.db` in the data folder.
  */
 export function opencodeDatabaseFor(env: NodeJS.ProcessEnv, homeDir: string): string | null {
-  const home = opencodeHomeFor(env, homeDir);
-  if (env[OPENCODE_HOME_ENV]?.trim()) return path.join(home, DATABASE_FILE);
-  const own = env[OPENCODE_DB_ENV];
-  if (!own) return path.join(home, DATABASE_FILE);
-  if (own === ":memory:") return null;
-  return path.isAbsolute(own) ? own : path.join(home, own);
+  return databaseFor(OPENCODE_PATHS, env, homeDir);
 }
 
 /** How long a data folder that was not there is taken to be still missing before it is looked for again. */
@@ -204,6 +215,28 @@ export const COMMAND_SHOWN =
 export const LAST_MESSAGE_READ =
   "an OpenCode 1.x session's newest reply, with sqlite3, while its details are open";
 
+/**
+ * OpenCode's profile: its names, its files, its programs and its words, for
+ * the shared body of `createOpencodeFamilyAdapter`, which Kilo Code's adapter
+ * gives a profile of its own.
+ */
+export const OPENCODE_PROFILE: OpencodeProfile = {
+  sourceId: SOURCE_ID,
+  label: LABEL,
+  ...OPENCODE_PATHS,
+  programs: OPENCODE_PROGRAMS,
+  readsV2: true,
+  tools: OPENCODE_TOOLS,
+  capabilities: OPENCODE_CAPABILITIES,
+  notes: {
+    needsYou: NEEDS_YOU_NOTE,
+    unchecked: UNCHECKED_NOTE,
+    unknownMessage: UNKNOWN_MESSAGE_NOTE,
+    windows: WINDOWS_DETAIL,
+  },
+  lastMessageRead: LAST_MESSAGE_READ,
+};
+
 /** Everything the adapter touches outside itself. Tests replace these. */
 export interface OpencodeAdapterOptions {
   env?: NodeJS.ProcessEnv;
@@ -233,14 +266,18 @@ export interface OpencodeAdapterOptions {
   lastMessageLimits?: TailLimits;
 }
 
-/** The OpenCode adapter, which reads what its sessions last said when asked. */
-export interface OpencodeAdapter extends Adapter {
-  lastMessage: NonNullable<Adapter["lastMessage"]>;
+/** An adapter of the shared body, with a `lastMessage` when its profile reads one. */
+export interface OpencodeFamilyAdapter extends Adapter {
   /**
    * How many sessions it keeps a last message for, in memory. For the tests
    * that check none is kept once its session has left the list.
    */
   readonly lastMessagesKept: number;
+}
+
+/** The OpenCode adapter, which reads what its sessions last said when asked. */
+export interface OpencodeAdapter extends OpencodeFamilyAdapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
 }
 
 /** Where the data folder was named. */
@@ -295,6 +332,23 @@ type HomeFrom = "agent-lookout" | "default";
  * v2.2.5, and has not yet been checked on a computer running OpenCode.
  */
 export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): OpencodeAdapter {
+  // OpenCode's profile reads last messages, so the adapter has its `lastMessage`.
+  return createOpencodeFamilyAdapter(OPENCODE_PROFILE, options) as OpencodeAdapter;
+}
+
+/**
+ * The adapter of an agent whose database is laid out as OpenCode's, as
+ * `createOpencodeAdapter` describes it, with the names, files, programs, tools
+ * and words of `profile`. OpenCode's adapter is this with `OPENCODE_PROFILE`,
+ * and Kilo Code's with its own (`../kilo-code/index.ts`). A profile with no
+ * `lastMessageRead` reads no last message, and its adapter has no
+ * `lastMessage`.
+ */
+export function createOpencodeFamilyAdapter(
+  profile: OpencodeProfile,
+  options: OpencodeAdapterOptions = {},
+): OpencodeFamilyAdapter {
+  const { label, notes } = profile;
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -303,21 +357,31 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const processCheckMs = options.processCheckMs ?? PROCESS_CHECK_MS;
-  const processes = options.processes ?? createOpencodeProcessReader({ platform });
+  const processes =
+    options.processes ?? createOpencodeProcessReader({ platform, programs: profile.programs });
 
-  const homeFrom: HomeFrom = env[OPENCODE_HOME_ENV]?.trim() ? "agent-lookout" : "default";
-  const home = opencodeHomeFor(env, homeDir);
-  const database = opencodeDatabaseFor(env, homeDir);
+  const homeFrom: HomeFrom = env[profile.homeEnv]?.trim() ? "agent-lookout" : "default";
+  const home = dataFolderFor(profile, env, homeDir);
+  const database = databaseFor(profile, env, homeDir);
   const homeName = tildify(home, homeDir);
   const databaseName = database === null ? ":memory:" : tildify(database, homeDir);
   const reader =
     options.reader ??
-    (database === null ? null : createDatabaseReader({ file: database, io, platform }));
+    (database === null
+      ? null
+      : createDatabaseReader({
+          file: database,
+          io,
+          platform,
+          v1Query: v1SessionsQuery(profile.tools),
+          readsV2: profile.readsV2,
+        }));
   // What a session last said, asked only when it is asked for. With either
-  // setting off, nothing is asked for it.
+  // setting off, or for a profile that reads none, nothing is asked for it.
+  const readsLastMessage = profile.lastMessageRead !== null;
   const lastMessagesOff = lastMessageStoppedBy(env);
   const lastMessages =
-    lastMessagesOff === null && reader !== null && database !== null
+    readsLastMessage && lastMessagesOff === null && reader !== null && database !== null
       ? createOpencodeLastMessages({
           reader,
           database,
@@ -325,13 +389,14 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
           limits: options.lastMessageLimits,
         })
       : null;
-  /** What Sources says of the last-message read: when it asks, Off, or not on Windows. */
-  const lastMessageRead =
-    lastMessagesOff !== null
+  /** What Sources says of the last-message read: when it asks, Off, or not on Windows. Null for a profile that reads none. */
+  const lastMessageRead = !readsLastMessage
+    ? null
+    : lastMessagesOff !== null
       ? "Off"
       : platform === "win32"
         ? "not read on Windows"
-        : LAST_MESSAGE_READ;
+        : profile.lastMessageRead;
 
   /** When the data folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -360,14 +425,14 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
   const commandRun = platform === "win32" ? "not run on Windows" : "when the database changes";
   const sooner =
     processCheckMs > PROMPT_PROCESS_CHECK_MS
-      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no OpenCode`
+      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no ${label}`
       : "";
   const processCheckRun = psRuns
     ? `${every(processCheckMs)} at most${sooner}`
     : `not run on ${platform === "win32" ? "Windows" : "this system"}`;
 
   function watching(read: string): SourceFact[] {
-    return [
+    const facts: SourceFact[] = [
       { label: "Data folder", value: homeName },
       { label: "Database", value: databaseName },
       { label: "Read", value: read },
@@ -375,8 +440,10 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       { label: "Command run", value: commandRun },
       { label: "Process check", value: `ps ${OPENCODE_TABLE_ARGS.join(" ")}` },
       { label: "Process check run", value: processCheckRun },
-      { label: "Last message read", value: lastMessageRead },
     ];
+    if (lastMessageRead !== null)
+      facts.push({ label: "Last message read", value: lastMessageRead });
+    return facts;
   }
 
   function result(
@@ -388,8 +455,8 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     advice?: string,
   ): AdapterResult {
     const health: SourceHealth = {
-      id: SOURCE_ID,
-      label: LABEL,
+      id: profile.sourceId,
+      label,
       state,
       detail,
       watching: watching(read),
@@ -431,7 +498,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
   function notFound(checkedAt: number): AdapterResult {
     return result(
       "unavailable",
-      `OpenCode was not found: there is no ${homeName} folder. Agent Lookout looks again ${every(recheckMs)}.`,
+      `${label} was not found: there is no ${homeName} folder. Agent Lookout looks again ${every(recheckMs)}.`,
       "not found",
       checkedAt,
     );
@@ -457,13 +524,15 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     return (lastActivity(row, checkedAt) ?? -Infinity) <= readAt;
   }
 
-  const alwaysNotes = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
+  const alwaysNotes = `${notes.needsYou} ${notes.unchecked}`;
+  /** What the detail adds when the data folder has no database yet, with its space. */
+  const noDatabase = notes.noDatabase === undefined ? "" : ` ${notes.noDatabase}`;
 
   /** Reads the sessions, and adds each one read from `session_v2` to `fromOpencode2`, by its id. */
   async function poll(fromOpencode2: Set<string>): Promise<AdapterResult> {
     const checkedAt = now();
     if (platform === "win32") {
-      return result("unavailable", WINDOWS_DETAIL, "not on Windows", checkedAt);
+      return result("unavailable", notes.windows, "not on Windows", checkedAt);
     }
 
     // A missing OpenCode is believed missing for a while, so a machine without
@@ -486,7 +555,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     if (reader === null) {
       return result(
         "ok",
-        `${OPENCODE_DB_ENV} is set to :memory:, so OpenCode keeps its sessions in memory, where Agent Lookout cannot read them. ${alwaysNotes}`,
+        `${profile.dbEnv} is set to :memory:, so ${label} keeps its sessions in memory, where Agent Lookout cannot read them. ${alwaysNotes}`,
         "in memory, not read",
         checkedAt,
       );
@@ -496,12 +565,12 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     const looked = every(pollIntervalMs);
     switch (read.state) {
       case "not-on-windows":
-        return result("unavailable", WINDOWS_DETAIL, "not on Windows", checkedAt);
+        return result("unavailable", notes.windows, "not on Windows", checkedAt);
       case "missing": {
         if (homeFrom === "agent-lookout") {
           return result(
             "ok",
-            `${OPENCODE_HOME_ENV} is set to ${homeName}, which has no ${DATABASE_FILE}, so no OpenCode sessions are listed. ${alwaysNotes}`,
+            `${profile.homeEnv} is set to ${homeName}, which has no ${profile.databaseFile}, so no ${label} sessions are listed. ${alwaysNotes}`,
             looked,
             checkedAt,
           );
@@ -515,7 +584,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
         homeSeen = true;
         return result(
           "ok",
-          `OpenCode has not saved a database at ${databaseName} yet. ${alwaysNotes}`,
+          `${label} has not saved a database at ${databaseName} yet.${noDatabase} ${alwaysNotes}`,
           looked,
           checkedAt,
         );
@@ -523,7 +592,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       case "not-safe":
         return result(
           "error",
-          `OpenCode's database, ${databaseName}, was not read: its -wal file holds something but has no -shm file beside it, or one of them is not an ordinary file, so it cannot be read without writing to it.`,
+          `${label}'s database, ${databaseName}, was not read: its -wal file holds something but has no -shm file beside it, or one of them is not an ordinary file, so it cannot be read without writing to it.`,
           looked,
           checkedAt,
         );
@@ -532,14 +601,14 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       case "not-looked-at":
         return result(
           "error",
-          `OpenCode's database, ${databaseName}, was not read: a file of the database could not be looked at, so no OpenCode sessions are listed.`,
+          `${label}'s database, ${databaseName}, was not read: a file of the database could not be looked at, so no ${label} sessions are listed.`,
           looked,
           checkedAt,
         );
       case "no-sqlite":
         return result(
           "error",
-          `No sqlite3 program was found to read OpenCode's database, ${databaseName}, so no OpenCode sessions are listed.`,
+          `No sqlite3 program was found to read ${label}'s database, ${databaseName}, so no ${label} sessions are listed.`,
           looked,
           checkedAt,
           BASIS,
@@ -548,14 +617,14 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
       case "failed":
         return result(
           "error",
-          `sqlite3 could not read OpenCode's database, ${databaseName}, so no OpenCode sessions are listed.`,
+          `sqlite3 could not read ${label}'s database, ${databaseName}, so no ${label} sessions are listed.`,
           looked,
           checkedAt,
         );
       case "unsupported":
         return result(
           "error",
-          `OpenCode's database, ${databaseName}, is laid out as a version of OpenCode that Agent Lookout does not read.`,
+          `${label}'s database, ${databaseName}, is laid out as a version of ${label} that Agent Lookout does not read.`,
           looked,
           checkedAt,
         );
@@ -579,35 +648,40 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
     const sessions: Session[] = [];
     let unknown = false;
     for (const row of listed) {
-      const session = opencodeSession({ row, open, now: checkedAt, noOpencodeAt });
+      const session = opencodeSession({
+        row,
+        open,
+        now: checkedAt,
+        noOpencodeAt,
+        sourceId: profile.sourceId,
+      });
       if (session === null) continue;
       if (session.status === "unknown") unknown = true;
       if (row.turn !== null) fromOpencode2.add(session.id);
       sessions.push(session);
     }
-    let detail = `Sessions are read from OpenCode's database, ${databaseName}, with sqlite3. ${alwaysNotes}`;
+    let detail = `Sessions are read from ${label}'s database, ${databaseName}, with sqlite3. ${alwaysNotes}`;
     let basis = BASIS;
     if (asked !== null && !asked.ok) {
       detail += psRuns
-        ? " ps could not be run to tell whether OpenCode runs, so no session is shown as finished."
-        : " Agent Lookout cannot tell on this system whether OpenCode runs, so no session is shown as finished.";
+        ? ` ps could not be run to tell whether ${label} runs, so no session is shown as finished.`
+        : ` Agent Lookout cannot tell on this system whether ${label} runs, so no session is shown as finished.`;
       basis = BASIS_WITHOUT_PROCESSES;
     } else if (asked?.ok && !asked.running) {
-      detail +=
-        " No OpenCode program runs, so each session shows as finished, unless it failed or cannot be read.";
+      detail += ` No ${label} program runs, so each session shows as finished, unless it failed or cannot be read.`;
       basis = BASIS_CLOSED;
     }
     if (fromOpencode2.size > 0) detail += ` ${OPENCODE_2_SESSIONS_NOTE}`;
-    if (unknown) detail += ` ${UNKNOWN_MESSAGE_NOTE}`;
+    if (unknown) detail += ` ${notes.unknownMessage}`;
     const answer = result("ok", detail, looked, checkedAt, basis);
     return { ...answer, sessions };
   }
 
-  return {
-    id: SOURCE_ID,
-    label: LABEL,
-    capabilities: OPENCODE_CAPABILITIES,
-    lookingIn: `Looking for OpenCode sessions in ${databaseName}.`,
+  const adapter: OpencodeFamilyAdapter = {
+    id: profile.sourceId,
+    label,
+    capabilities: profile.capabilities,
+    lookingIn: `Looking for ${label} sessions in ${databaseName}.`,
     async poll() {
       try {
         const fromOpencode2 = new Set<string>();
@@ -621,7 +695,7 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
           new Map(
             answer.sessions
               .filter((session) => !fromOpencode2.has(session.id))
-              .map((session) => [session.id, rawIdOf(session.id)]),
+              .map((session) => [session.id, rawIdOf(profile.sourceId, session.id)]),
           ),
         );
         return answer;
@@ -633,33 +707,38 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
         lastMessages?.forget();
         return result(
           "error",
-          "Something unexpected went wrong while reading OpenCode sessions.",
+          `Something unexpected went wrong while reading ${label} sessions.`,
           every(pollIntervalMs),
           now(),
         );
       }
     },
-    async lastMessage(sessionId) {
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
+    },
+  };
+  // A profile that reads no last message leaves `lastMessage` out, so the
+  // route answers its sessions `not-read` with nothing asked.
+  if (readsLastMessage) {
+    adapter.lastMessage = async (sessionId) => {
       if (lastMessagesOff !== null) {
         return { message: null, reason: "off", setting: lastMessagesOff };
       }
       if (opencode2Sessions.has(sessionId)) return { message: null, reason: "not-read" };
       return lastMessages?.read(sessionId) ?? null;
-    },
-    get lastMessagesKept() {
-      return lastMessages?.size ?? 0;
-    },
-  };
+    };
+  }
+  return adapter;
 }
 
 /**
- * OpenCode's own id for a session this adapter listed, from its id in the
- * session model, `opencode:<id>`, or null for any other, and for one that is
- * not an id OpenCode makes, which is then answered `not-found` with nothing
- * asked.
+ * The agent's own id for a session this adapter listed, from its id in the
+ * session model, `opencode:<id>` for OpenCode, or null for any other, and for
+ * one that is not an id OpenCode makes, which is then answered `not-found`
+ * with nothing asked.
  */
-function rawIdOf(id: string): string | null {
-  const prefix = `${SOURCE_ID}:`;
+function rawIdOf(sourceId: string, id: string): string | null {
+  const prefix = `${sourceId}:`;
   if (!id.startsWith(prefix)) return null;
   const raw = id.slice(prefix.length);
   return SESSION_ID.test(raw) ? raw : null;

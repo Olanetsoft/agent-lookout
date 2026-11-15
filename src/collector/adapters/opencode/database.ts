@@ -5,6 +5,7 @@ import {
   PROBE_QUERY,
   readSchema,
   readSessionRows,
+  SESSIONS_QUERY,
   sessionsQueryFor,
   sqliteArguments,
   type DatabaseMode,
@@ -165,11 +166,17 @@ export function createDatabaseReader(options: {
   run?: RunSqlite;
   find?: () => Promise<string | null>;
   retryMs?: number;
+  /** The question of a database laid out as OpenCode 1.x's. Defaults to `SESSIONS_QUERY`. */
+  v1Query?: string;
+  /** Whether `session_v2` is read. Defaults to true. False, a database with one is `unsupported`. */
+  readsV2?: boolean;
 }): DatabaseReader {
   const { file, io, platform } = options;
   const run = options.run ?? runSqlite;
   const find = options.find ?? (() => findSqlite());
   const retryMs = options.retryMs ?? RETRY_MS;
+  const readsV2 = options.readsV2 ?? true;
+  const v1Query = options.v1Query ?? SESSIONS_QUERY;
   /** The last read, with the files as they were then and when it was made. */
   let last: (DatabaseRead & { files: Files; at: number }) | null = null;
 
@@ -261,11 +268,12 @@ export function createDatabaseReader(options: {
     if (binary === null) return { state: "no-sqlite", rows: NONE };
     const mode = modeOf(files);
     const probe = await run(binary, sqliteArguments(file, mode, PROBE_QUERY));
-    const found: Schema | null = probe.ok ? readSchema(probe.stdout) : null;
+    const found: Schema | null = probe.ok ? readSchema(probe.stdout, { v2: readsV2 }) : null;
     if (found === null) return { state: "failed", rows: NONE };
     const { layout } = found;
     if (layout === "unsupported") return { state: "unsupported", rows: NONE };
-    const answer = await run(binary, sqliteArguments(file, mode, sessionsQueryFor(layout)));
+    const query = layout === "v1" ? v1Query : sessionsQueryFor(layout);
+    const answer = await run(binary, sqliteArguments(file, mode, query));
     const rows = answer.ok ? readSessionRows(answer.stdout) : null;
     if (rows === null) return { state: "failed", rows: NONE };
     return { state: "read", rows };

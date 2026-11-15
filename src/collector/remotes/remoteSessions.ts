@@ -71,6 +71,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["kimi-code", ["files"]],
   ["continue", ["files"]],
   ["crush", ["database", "database-closed", "database-without-processes"]],
+  ["kilo-code", ["database", "database-closed", "database-without-processes"]],
   ["status-files", ["files"]],
 ]);
 
@@ -79,9 +80,9 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
  * source (`MAX_PARTS` in `src/dashboard/lib/api/readApi.ts`), so the page
  * compares that machine's sessions as this one does.
  *
- * A machine's sources can name 51: 20 Crush projects, 17 Hermes Agent profiles,
- * its default one and 16 named, and one for each of the other 14 sources. The
- * other 9 leave room for the sources to come, as a machine past this goes back
+ * A machine's sources can name 52: 20 Crush projects, 17 Hermes Agent profiles,
+ * its default one and 16 named, and one for each of the other 15 sources. The
+ * other 8 leave room for the sources to come, as a machine past this goes back
  * to one part for each source. A test fails when the limits of Crush and Hermes
  * Agent, with the count of sources, no longer fit. A new source that names
  * parts of its own must be added to `everySourceThere`, in

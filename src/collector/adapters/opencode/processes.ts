@@ -55,11 +55,18 @@ export const OPENCODE_PROGRAMS: ReadonlySet<string> = new Set([
   "opencode-cli",
 ]);
 
-/** Whether one line of what `ps -A -o comm=` printed is OpenCode's program: one of its names, or a path ending in one. */
-export function opencodeInTable(stdout: string): boolean {
+/**
+ * Whether one line of what `ps -A -o comm=` printed is OpenCode's program: one
+ * of its names, or a path ending in one. Kilo Code's adapter passes its own
+ * names.
+ */
+export function opencodeInTable(
+  stdout: string,
+  programs: ReadonlySet<string> = OPENCODE_PROGRAMS,
+): boolean {
   return stdout.split("\n").some((line) => {
     const program = line.trim();
-    return OPENCODE_PROGRAMS.has(program.slice(program.lastIndexOf("/") + 1));
+    return programs.has(program.slice(program.lastIndexOf("/") + 1));
   });
 }
 
@@ -75,16 +82,24 @@ export interface OpencodeProcessReader {
 }
 
 export function createOpencodeProcessReader(
-  options: { platform?: NodeJS.Platform; run?: RunPs } = {},
+  options: {
+    platform?: NodeJS.Platform;
+    run?: RunPs;
+    /** The names of the program looked for. Defaults to OpenCode's. */
+    programs?: ReadonlySet<string>;
+  } = {},
 ): OpencodeProcessReader {
   const run = options.run ?? runPs;
   const platform = options.platform ?? process.platform;
+  const programs = options.programs ?? OPENCODE_PROGRAMS;
   return {
     async read() {
       if (platform !== "darwin" && platform !== "linux") return { ok: false };
       try {
         const table = await run(OPENCODE_TABLE_ARGS);
-        return table.ok ? { ok: true, running: opencodeInTable(table.stdout) } : { ok: false };
+        return table.ok
+          ? { ok: true, running: opencodeInTable(table.stdout, programs) }
+          : { ok: false };
       } catch {
         return { ok: false };
       }

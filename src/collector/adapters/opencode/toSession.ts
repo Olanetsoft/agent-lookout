@@ -55,6 +55,8 @@ export function isListed(row: SessionRow, now: number): boolean {
 
 export interface OpencodeSessionInput {
   row: SessionRow;
+  /** The source it is listed under. Defaults to OpenCode's. Kilo Code's adapter passes its own. */
+  sourceId?: SourceId;
   /** Whether OpenCode may have it open: an OpenCode program runs, or whether one does is not known. */
   open: boolean;
   now: number;
@@ -90,6 +92,8 @@ function withoutLeftWait(
  *   approval. It never has a `waitingText`: what OpenCode asks is never read.
  *   A wait ends with OpenCode: a session it left waiting is finished, with no
  *   reason, and no longer asks once OpenCode runs again (`withoutLeftWait`).
+ *   A Kilo Code session whose one call not yet over is its `suggest` is idle,
+ *   as Kilo Code shows it.
  * - The status of a row of `session_v2` comes from how its turn stands and
  *   whether OpenCode may have it open (`mapOpencode2Status`). It is never
  *   "needs-you": OpenCode 2 keeps its waits in memory.
@@ -105,11 +109,11 @@ function withoutLeftWait(
  * - There is no pid, Jump, Stop or link.
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
-  const { row, open, now, noOpencodeAt = null } = input;
+  const { row, open, now, noOpencodeAt = null, sourceId = SOURCE_ID } = input;
   if (!isListed(row, now)) return null;
   const activityAt = lastActivity(row, now);
 
-  const id = `${SOURCE_ID}:${row.id}`;
+  const id = `${sourceId}:${row.id}`;
   const cwd = row.folder;
   const project = projectOf(cwd);
   const message = withoutLeftWait(row.message, noOpencodeAt);
@@ -134,7 +138,7 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
       : opencode2StatusSince(status, { turn: row.turn, activityAt }, now);
   const session: Session = {
     id,
-    source: SOURCE_ID,
+    source: sourceId,
     surface: "unknown",
     // A title made only of spaces is no name. It is cleaned and cut as every other agent's is.
     name: sessionName(row.title ?? "") || project || id,

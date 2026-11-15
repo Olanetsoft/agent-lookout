@@ -9,6 +9,7 @@ import * as crush from "@collector/adapters/crush/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
 import * as pi from "@collector/adapters/pi/index";
+import * as kiloCode from "@collector/adapters/kilo-code/index";
 import * as kimiCode from "@collector/adapters/kimi-code/index";
 import * as cline from "@collector/adapters/cline/index";
 import * as hermesAgent from "@collector/adapters/hermes-agent/index";
@@ -314,6 +315,7 @@ describe("readRemoteSnapshot", () => {
       "hermes-agent": hermesAgent,
       "kimi-code": kimiCode,
       crush,
+      "kilo-code": kiloCode,
       "mistral-vibe": mistralVibe,
       opencode,
       pi,

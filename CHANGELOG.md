@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Kilo Code sessions, from its `kilo` command and its VS Code and JetBrains extensions, read with `sqlite3` from `~/.local/share/kilo/kilo.db`, or the file `KILO_DB` names, on macOS and Linux, the way OpenCode's database is read. A session shows as needing you while Kilo Code asks you a question, as idle while it suggests a review, and as finished once no Kilo Code program runs, with the token counts of its newest reply. Its status comes from the database alone: no request is made to Kilo Code's server, and no last message is read. Built from Kilo Code's source at v7.8.27 and not yet checked on a computer running it. (#43)
+
 ### Fixed
 
 - After Agent Lookout restarts, a Hermes Agent profile or a Crush project its first poll could not read, or had no time for, no longer shows its sessions as ended, nor does an agent on another machine that did not answer there, or a profile there that machine could not read. What changed in them while Agent Lookout was stopped is found once they are read. (#306)

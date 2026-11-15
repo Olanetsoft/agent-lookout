@@ -10,11 +10,13 @@ import {
   QUERY_WINDOW_MS,
   readSchema,
   readSessionRows,
+  OPENCODE_TOOLS,
   SESSION_ID,
   SESSIONS_QUERY,
   sessionsQueryFor,
   sqliteArguments,
   sqliteUri,
+  v1SessionsQuery,
 } from "@collector/adapters/opencode/sessionRows";
 import {
   answerRow,
@@ -589,5 +591,58 @@ describe("the token counts of the newest reply that ended with some", () => {
     expect(
       tokensOf({ ...right, input: Number.MAX_SAFE_INTEGER, read: 1, total: undefined }),
     ).toBeNull();
+  });
+});
+
+// Kilo Code's database is laid out as OpenCode 1.x's, and is asked the same
+// question with Kilo Code's own tools (`../kilo-code/index.ts`).
+describe("the 1.x question for another agent's tools", () => {
+  const kilo = v1SessionsQuery({ asking: ["question"], idle: ["suggest"] });
+
+  test("with OpenCode's tools is SESSIONS_QUERY, and names no call that leaves a session idle", () => {
+    expect(v1SessionsQuery(OPENCODE_TOOLS)).toBe(SESSIONS_QUERY);
+    expect(sessionsQueryFor("v1")).toBe(SESSIONS_QUERY);
+    expect(SESSIONS_QUERY).not.toContain("m_idle_call");
+  });
+
+  test("asks of each tool by its name alone, and of an idle one whether it is the one call not over", () => {
+    expect(kilo).toContain("json_extract(p.data, '$.tool') IN ('question') AND");
+    expect(kilo).not.toContain("plan_exit");
+    expect(kilo).toContain(
+      "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IN ('suggest') AND json_extract(p.data, '$.state.status') IS 'running') = 1 FROM part p WHERE p.message_id = m.id AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool' AND json_extract(p.data, '$.state.status') IS NOT 'completed' AND json_extract(p.data, '$.state.status') IS NOT 'error' END) AS m_idle_call,",
+    );
+    // The rest of it is SESSIONS_QUERY's, and it reads no more of a part.
+    expect(kilo.replaceAll("count(*)", "").replaceAll("* 1000", "")).not.toContain("*");
+    expect(kilo).not.toMatch(/[\n?]|\$\{/);
+    expect(kilo).not.toMatch(/\b(LIKE|GLOB|REGEXP|MATCH)\b/);
+  });
+
+  test("takes only a tool's name of letters, _ and -, which no file or request gives", () => {
+    for (const name of ["", "Question", "it's", "a b", "x)", "1tool"]) {
+      expect(() => v1SessionsQuery({ asking: [name], idle: [] }), name).toThrow();
+      expect(() => v1SessionsQuery({ asking: ["question"], idle: [name] }), name).toThrow();
+    }
+  });
+
+  test("a row keeps whether the one call not over leaves the session idle only when it was asked", () => {
+    const fieldsOf = (fields: Record<string, unknown>) =>
+      readSessionRows(sqliteJson([answerRow({ id: A, ...fields })]))?.[0]?.message;
+    // OpenCode's rows have no such field, and keep none.
+    expect(fieldsOf({})).not.toHaveProperty("idleCall");
+    expect(fieldsOf({ m_idle_call: 1 })?.idleCall).toBe(1);
+    expect(fieldsOf({ m_idle_call: 0 })?.idleCall).toBe(0);
+    expect(fieldsOf({ m_idle_call: null })?.idleCall).toBeNull();
+    expect(fieldsOf({ m_idle_call: "x".repeat(65) })?.idleCall).toBeUndefined();
+  });
+});
+
+describe("readSchema, for an agent that never writes session_v2", () => {
+  test("reads 1.x's tables as ever, and takes any session_v2 for a version it does not read", () => {
+    expect(readSchema(probeJson("v1"), { v2: false })).toEqual({ layout: "v1" });
+    expect(readSchema(probeJson("v1+v2"), { v2: false })).toEqual({ layout: "unsupported" });
+    expect(readSchema(probeJson("v2-only"), { v2: false })).toEqual({ layout: "unsupported" });
+    // OpenCode's own reads both, as it did.
+    expect(readSchema(probeJson("v1+v2"))).toEqual({ layout: "both" });
+    expect(readSchema(probeJson("v1+v2"), { v2: true })).toEqual({ layout: "both" });
   });
 });

@@ -7,8 +7,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue and Crush, none of the thirteen installed here, and status
- * files. Then the other machine, connected over SSH.
+ * Kimi Code, Continue, Crush and Kilo Code, none of the fourteen installed here,
+ * and status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -666,6 +666,50 @@ export const CRUSH_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const KILO_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Read with sqlite3 on macOS and Linux. Agent Lookout reads nothing of Kilo Code's on Windows.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While Kilo Code asks you a question. Tool approvals show as working, and a plan's approval as idle.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once ps shows no Kilo Code program, on macOS and Linux. Its editor server and daemon keep every session open while they run.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When a reply ends on an error Kilo Code records. One that fails before its first step shows as working.",
+  },
+  names: { level: "yes" },
+  jump: {
+    level: "no",
+    reason:
+      "Kilo Code's database names no process or terminal, and Kilo Code documents no link to a session.",
+  },
+  "quiet-for": {
+    level: "no",
+    reason:
+      "Kilo Code keeps every session in one database, so no file shows when one session was last written.",
+  },
+  tokens: { level: "yes" },
+  stop: {
+    level: "no",
+    reason: "Kilo Code's database names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Agent Lookout makes no request to Kilo Code's server, and Kilo Code keeps a wait for a tool's approval in memory.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1084,6 +1128,33 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Kilo Code is not installed: its folder is looked for, and nothing more.
+      id: "kilo-code",
+      label: "Kilo Code",
+      state: "unavailable",
+      detail:
+        "Kilo Code was not found: there is no ~/.local/share/kilo folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Data folder", value: "~/.local/share/kilo" },
+        { label: "Database", value: "~/.local/share/kilo/kilo.db" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Command",
+          value:
+            'sqlite3 -init /dev/null -batch -json -cmd "PRAGMA trusted_schema=OFF" <database> <fixed query>',
+        },
+        { label: "Command run", value: "when the database changes" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Kilo Code",
+        },
+      ],
+      capabilities: KILO_CODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1125,6 +1196,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Kimi Code there", value: "Not found" },
         { label: "Continue there", value: "Not found" },
         { label: "Crush there", value: "Not found" },
+        { label: "Kilo Code there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

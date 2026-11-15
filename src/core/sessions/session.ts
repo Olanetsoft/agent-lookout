@@ -33,6 +33,8 @@ export type RemoteSourceId = `remote:${string}`;
  * sessions are read from the list it keeps of them.
  * `crush` is Charm's Crush, whose sessions are read from the database it keeps in
  * each project.
+ * `kilo-code` is Kilo Code, in its command `kilo` and its editor extensions,
+ * whose sessions are read from its database.
  */
 export type SourceId =
   | "claude-code"
@@ -50,6 +52,7 @@ export type SourceId =
   | "kimi-code"
   | "continue"
   | "crush"
+  | "kilo-code"
   | "status-files"
   | RemoteSourceId;
 

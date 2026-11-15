@@ -17,7 +17,7 @@
 // tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
 // Antigravity and one for Mistral Vibe, an empty Gemini CLI folder with its
 // tmp/, an empty folder for OpenCode, one for Qwen Code, one for Hermes Agent,
-// one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue and one for Crush, a folder with one status file, and a folder for the history the app keeps, so nothing is
+// one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue, one for Crush and one for Kilo Code, a folder with one status file, and a folder for the history the app keeps, so nothing is
 // written to this machine's. It starts the app on a port the system picks, with
 // the claude command, tmux and Terminal left alone, and asks only
 // `/api/health`, `/api/sessions`, the dashboard's page and its script. Then it
@@ -104,6 +104,8 @@ const SOURCES = [
   ["continue", "Continue"],
   // Nothing of Crush's is read on Windows.
   ["crush", "Crush", "unavailable"],
+  // Nothing of Kilo Code's is read on Windows.
+  ["kilo-code", "Kilo Code", "unavailable"],
   ["status-files", "Status files"],
 ];
 
@@ -331,6 +333,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const kimiCodeHome = path.join(dir, "kimi-code");
   const continueHome = path.join(dir, "continue");
   const crushHome = path.join(dir, "crush");
+  const kiloHome = path.join(dir, "kilo");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   // Named and never made, so the app reads no settings and starts with every rule off.
@@ -350,6 +353,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(kimiCodeHome, { recursive: true });
   await mkdir(continueHome, { recursive: true });
   await mkdir(crushHome, { recursive: true });
+  await mkdir(kiloHome, { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -420,6 +424,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     kimiCodeHome,
     continueHome,
     crushHome,
+    kiloHome,
     statusDir,
     historyDir,
     settingsFile,
@@ -477,6 +482,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_KIMI_CODE_HOME: folders.kimiCodeHome,
     AGENT_LOOKOUT_CONTINUE_HOME: folders.continueHome,
     AGENT_LOOKOUT_CRUSH_HOME: folders.crushHome,
+    AGENT_LOOKOUT_KILO_HOME: folders.kiloHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,
