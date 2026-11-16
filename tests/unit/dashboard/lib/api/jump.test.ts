@@ -139,16 +139,11 @@ test("an editor's Jump says where it went, and that it found no window rather th
   expect(jumpOutcomeWords("no-pane", "Terminal")).toBe("No tab found");
 });
 
-test("a press of an editor's Jump is the same request, with the short wait, which outlasts the collector's", async () => {
+test("an editor's answer is a switch, and the short wait outlasts the collector's look at the folder and its run of the editor's command", async () => {
   answering(200, { ok: true, kind: "editor", app: "VS Code", place: "VS Code" });
-  vi.spyOn(AbortSignal, "timeout");
 
   expect(await requestJump(SESSION)).toBe("selected");
-  expect(AbortSignal.timeout).toHaveBeenCalledWith(JUMP_TIMEOUT_MS);
-  // The collector's look at the folder and its run of the editor's command
-  // both end before the page stops waiting.
   expect(EDITOR_FOLDER_CHECK_TIMEOUT_MS + EDITOR_JUMP_TIMEOUT_MS).toBeLessThan(JUMP_TIMEOUT_MS);
-  vi.restoreAllMocks();
 });
 
 test("the two lines about macOS name the app, and where to allow it, calmly", () => {

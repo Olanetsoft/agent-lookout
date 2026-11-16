@@ -13,6 +13,7 @@ import {
 } from "@dashboard/hooks/actions/useJump";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import { AUTOMATION_NOTE_STORAGE_KEY } from "@dashboard/lib/api/automationNote";
+import { JUMP_TIMEOUT_MS, TERMINAL_JUMP_WAIT_MS } from "@dashboard/lib/api/jump";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
@@ -547,12 +548,17 @@ test("a running session in VS Code has a Jump that is a button, named for the se
   );
 });
 
-test("a press of an editor's Jump asks the collector once, names the session alone, and says it switched to VS Code, with no line about macOS", async () => {
+test("a press of an editor's Jump asks the collector once, names the session alone, with the short wait, and says it switched to VS Code, with no line about macOS", async () => {
   const sent = collector(json(200, { ok: true, kind: "editor", app: "VS Code", place: "VS Code" }));
+  const timeout = vi.spyOn(AbortSignal, "timeout");
+  onTestFinished(() => timeout.mockRestore());
   const screen = await render(<Row session={IN_EDITOR} />);
   await screen.getByRole("button", { name: /^Jump to docs-site/ }).click();
 
   await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to VS Code");
+  // Not the wait a Terminal Jump has, which leaves time to answer macOS: no question comes here.
+  expect(timeout).toHaveBeenCalledWith(JUMP_TIMEOUT_MS);
+  expect(timeout).not.toHaveBeenCalledWith(TERMINAL_JUMP_WAIT_MS);
   expect(sent).toHaveLength(1);
   expect(sent[0]?.path).toBe("/api/jump");
   expect(sent[0]?.body).toBe(JSON.stringify({ sessionId: ID }));
