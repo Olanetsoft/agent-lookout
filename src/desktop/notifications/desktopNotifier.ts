@@ -322,8 +322,8 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
             });
         });
       }
-      // Shown before it takes the place of the last, so one that will not show
-      // leaves the last on show, and in its place.
+      // Shown before it takes the place of the last, so one whose `show()`
+      // throws leaves the last on show, and in its place.
       notification.show();
       shownAt = now();
       if (place.kind === "wait") {

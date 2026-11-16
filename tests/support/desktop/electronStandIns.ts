@@ -25,7 +25,7 @@ export class FakeNotification implements NotificationLike {
   private readonly listeners = new Map<string, Listener[]>();
   constructor(
     readonly options: NotificationConstructorOptions,
-    /** Whether its `show()` throws, as Electron's can. */
+    /** Whether its `show()` throws, which the notifier catches. */
     private readonly showThrows = false,
   ) {}
 

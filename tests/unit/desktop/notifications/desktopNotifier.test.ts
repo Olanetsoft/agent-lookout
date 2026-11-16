@@ -440,7 +440,7 @@ describe("one notification of a session at a time, as the page's tags keep", () 
     expect(nextShown).toEqual([true, true, true]);
   });
 
-  test("one that will not show leaves the last on show and in its place, so the end of its wait takes that one down", async () => {
+  test("one whose show() throws leaves the last on show and in its place, so the end of its wait takes that one down", async () => {
     const { notifier, made, notifications } = setUp({ held: { ask: ask("npm test") } });
     notifier.show(WAIT, { kind: "wait", sessionId: ID });
     await vi.waitFor(() => expect(made).toHaveLength(1));
