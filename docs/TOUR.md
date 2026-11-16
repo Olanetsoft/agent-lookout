@@ -517,7 +517,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 - `ps` is asked for `kilo`, `.kilo`, the copy npm's launcher starts, and `.kilo-wrapped`, Nix's. npm's `kilocode` link runs as `node`, so it is not one.
 - Only `question` asks. Kilo Code's `plan_exit` asks nothing, and the plan's approval comes after it, from memory.
-- Kilo Code's `suggest` waits inside its call while Kilo Code shows the session as idle, so a step whose one call not over is that is idle here too. Only Kilo Code's question asks for it, `m_idle_call`, so OpenCode's questions are as they were.
+- Kilo Code's `suggest` waits inside its call while Kilo Code shows the session as idle, so a step whose one call not yet over is its `suggest` is idle here too. Only Kilo Code's question asks for it, `m_idle_call`, so OpenCode's questions are as they were.
 - `session_v2` is never read. A database with one is a version Agent Lookout does not read.
 - No last message is read, so the adapter has no `lastMessage`. Its token counts come from the poll, as for OpenCode 1.x.
 
