@@ -43,6 +43,11 @@ import {
   MISTRAL_VIBE_CAPABILITIES,
 } from "@collector/adapters/mistral-vibe/index";
 import { mistralVibeSession } from "@collector/adapters/mistral-vibe/toSession";
+import {
+  createKiloCodeAdapter,
+  KILO_CODE_CAPABILITIES,
+  SOURCE_ID as KILO_CODE_SOURCE_ID,
+} from "@collector/adapters/kilo-code/index";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
@@ -106,6 +111,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Continue", CONTINUE_CAPABILITIES],
   ["Crush", CRUSH_CAPABILITIES],
+  ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -190,6 +196,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createCrushAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(CRUSH_CAPABILITIES);
+    expect(
+      createKiloCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(KILO_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -739,6 +748,112 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OPENCODE_CAPABILITIES.jump.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.stop.level).toBe("no");
     expect(OPENCODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Kilo Code: a question needs you, a suggestion waits as idle, and only an error Kilo Code records fails", () => {
+    const messages = [
+      null,
+      ...["user", "assistant", "system"].flatMap((role) =>
+        [null, NOW - 1_000, NOW - 60_000].flatMap((completedAt) =>
+          [null, "MessageAbortedError", "APIError", "SomeNewError"].flatMap((error) =>
+            [null, "stop", "tool-calls"].flatMap((finish) =>
+              [null, NOW - 60_000].flatMap((askedAt) =>
+                [0, 1].map((idleCall) => ({
+                  role,
+                  completedAt,
+                  error,
+                  finish,
+                  tools: 1,
+                  shell: 0,
+                  askedAt,
+                  idleCall,
+                })),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+    const mapped = statuses(
+      messages.flatMap((message) =>
+        [true, false].map((open) => mapOpencodeStatus({ message, open, now: NOW })),
+      ),
+    );
+    expect(mapped).toEqual(
+      new Set(["needs-you", "working", "idle", "finished", "failed", "unknown"]),
+    );
+    // A step under way whose one call not over is a suggestion is idle, as Kilo Code shows it.
+    const suggesting = {
+      role: "assistant",
+      completedAt: null,
+      error: null,
+      finish: null,
+      tools: 1,
+      shell: 0,
+      askedAt: null,
+      idleCall: 1,
+    };
+    expect(mapOpencodeStatus({ message: suggesting, open: true, now: NOW })).toBe("idle");
+    expect(
+      mapOpencodeStatus({ message: { ...suggesting, idleCall: 0 }, open: true, now: NOW }),
+    ).toBe("working");
+    // Only a call that waits for the person needs you, whatever else the step holds.
+    for (const message of messages) {
+      if (mapOpencodeStatus({ message, open: true, now: NOW }) !== "needs-you") continue;
+      expect(message).toMatchObject({ completedAt: null, error: null, askedAt: NOW - 60_000 });
+    }
+    expect(KILO_CODE_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(KILO_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(KILO_CODE_CAPABILITIES.finished.level).toBe("partly");
+    expect(KILO_CODE_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("Kilo Code: a session has its newest finished reply's token counts, no time of its last write, jump, stop or link, and its title for a name", () => {
+    const session = opencodeSession({
+      row: {
+        id: "ses_000000000000000000000000a1",
+        folder: "/Users/example/code/demo",
+        title: "Rename the helper",
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 30_000,
+        message: {
+          createdAt: NOW - 30_000,
+          updatedAt: NOW - 30_000,
+          role: "assistant",
+          completedAt: NOW - 20_000,
+          error: null,
+          finish: "stop",
+          tools: 0,
+          shell: 0,
+          askedAt: null,
+          idleCall: 0,
+          partsUpdatedAt: NOW - 20_000,
+        },
+        userCreatedAt: NOW - 40_000,
+        tokens: { input: 2_000, cached: 800, output: 64 },
+        turn: null,
+      },
+      sourceId: KILO_CODE_SOURCE_ID,
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "kilo-code:ses_000000000000000000000000a1",
+      source: "kilo-code",
+      status: "idle",
+      name: "Rename the helper",
+    });
+    expect(session?.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
+    for (const absent of ["lastWriteAt", "jump", "stop", "pid", "ask", "tokensNotRead"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session?.links).toEqual({});
+    expect(KILO_CODE_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(KILO_CODE_CAPABILITIES.tokens.level).toBe("yes");
+    expect(KILO_CODE_CAPABILITIES.names.level).toBe("yes");
+    expect(KILO_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(KILO_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(KILO_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Goose: a session is unknown or finished, and never working, idle, waiting or failed", () => {

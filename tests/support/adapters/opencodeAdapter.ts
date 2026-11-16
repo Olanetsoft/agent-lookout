@@ -42,9 +42,13 @@ export interface SqliteRun {
  * query prints and what the question of each session's last text prints,
  * which the test changes, every argument list it was given, and a way to make
  * it fail, or not be there at all. A question it was not given an answer for
- * fails.
+ * fails. `sessionsQuestions` are the questions of the sessions it answers,
+ * OpenCode's unless a test of another agent of its family names its own.
  */
-export function standInSqlite(initial: Record<string, unknown>[] = []) {
+export function standInSqlite(
+  initial: Record<string, unknown>[] = [],
+  sessionsQuestions: readonly string[] = SESSIONS_QUESTIONS,
+) {
   let rows: Record<string, unknown>[] | string = initial;
   let probe = probeJson("v1");
   let failing = false;
@@ -65,7 +69,7 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
       if (failing) return { ok: false };
       const question = args.at(-1) ?? "";
       if (question === PROBE_QUERY) return { ok: true, stdout: probe };
-      if (SESSIONS_QUESTIONS.includes(question)) {
+      if (sessionsQuestions.includes(question)) {
         return { ok: true, stdout: typeof rows === "string" ? rows : sqliteJson(rows) };
       }
       const said = lastTexts.get(question);
@@ -103,14 +107,14 @@ export function standInSqlite(initial: Record<string, unknown>[] = []) {
     },
     runs,
     /** The runs that asked for the sessions. */
-    queries: () => runs.filter((run) => SESSIONS_QUESTIONS.includes(run.args.at(-1) ?? "")),
+    queries: () => runs.filter((run) => sessionsQuestions.includes(run.args.at(-1) ?? "")),
     /** The runs that asked for the tables. */
     probes: () => runs.filter((run) => run.args.at(-1) === PROBE_QUERY),
     /** The runs that asked anything but those two: the questions of a session's last text. */
     questions: () =>
       runs.filter(
         (run) =>
-          !SESSIONS_QUESTIONS.includes(run.args.at(-1) ?? "") && run.args.at(-1) !== PROBE_QUERY,
+          !sessionsQuestions.includes(run.args.at(-1) ?? "") && run.args.at(-1) !== PROBE_QUERY,
       ),
   };
 }

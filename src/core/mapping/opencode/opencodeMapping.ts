@@ -12,6 +12,11 @@
 // from OpenCode's source at v1.19.0, with the waits checked at v1.19.5, and
 // has not yet been checked on a computer running OpenCode. See
 // docs/adapters/opencode.md for where each value comes from.
+//
+// Kilo Code's sessions map the same way (docs/adapters/kilo-code.md), with
+// one more rule: Kilo Code's `suggest` waits inside its call while Kilo Code
+// shows the session as idle, so a step whose one call not yet over is that is
+// idle here too.
 
 import type { SessionStatus } from "../../sessions/session.ts";
 import { CLOCK_SLACK_MS, plausibleTime } from "../../time.ts";
@@ -62,6 +67,13 @@ export interface OpencodeMessageFields {
   shell: unknown;
   /** When the oldest `question` or `plan_exit` tool part of it began, while one of them is in the state `running`. Null when none is. */
   askedAt: unknown;
+  /**
+   * 1 when its one tool part not yet over is a running call that waits for the
+   * person while the agent shows the session as idle, as Kilo Code's
+   * `suggest` does, else 0. Left out, or null, when it was not asked for, as
+   * for OpenCode.
+   */
+  idleCall?: unknown;
 }
 
 export interface OpencodeStatusFields {
@@ -81,7 +93,7 @@ const isTime = (value: unknown) => typeof value === "number" && Number.isSafeInt
 /** What the newest message says while OpenCode may have the session open, or `unknown`. */
 function openStatus(message: OpencodeMessageFields | null, now: number): SessionStatus {
   if (message === null) return "idle";
-  const { role, completedAt, error, finish, tools, shell, askedAt } = message;
+  const { role, completedAt, error, finish, tools, shell, askedAt, idleCall = null } = message;
   if (role === "user") return "working";
   if (role !== "assistant") return "unknown";
   if (completedAt !== null && !isTime(completedAt)) return "unknown";
@@ -90,11 +102,17 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
   if (tools !== null && !(isTime(tools) && (tools as number) >= 0)) return "unknown";
   if (shell !== null && shell !== 0 && shell !== 1) return "unknown";
   if (askedAt !== null && !isTime(askedAt)) return "unknown";
+  if (idleCall !== null && idleCall !== 0 && idleCall !== 1) return "unknown";
   if (error === ABORTED_ERROR) return "idle";
   if (typeof error === "string") return FAILED_ERRORS.includes(error) ? "failed" : "unknown";
   // A step that waits for the person has not ended: OpenCode ends it only once
-  // every tool part of it has left `running`.
-  if (completedAt === null) return askedAt === null ? "working" : "needs-you";
+  // every tool part of it has left `running`. A step whose one call not yet
+  // over is one the agent shows as idle while it waits, Kilo Code's
+  // `suggest`, is idle, as the agent shows it.
+  if (completedAt === null) {
+    if (askedAt !== null) return "needs-you";
+    return idleCall === 1 ? "idle" : "working";
+  }
   // A command the person ran with `!` is a step with no reason it ended and
   // one tool part, the shell's, which no next step follows.
   if (finish === null && shell === 1) return "idle";
@@ -116,6 +134,7 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
  * | none                                                                | idle    | finished |
  * | `user`                                                              | working | finished |
  * | `assistant`, no `time.completed`, a `question` or `plan_exit` part `running` | needs-you | finished |
+ * | `assistant`, no `time.completed`, its one call not over an idle one's `running` (`idleCall`) | idle | finished |
  * | `assistant`, no `time.completed`, and no such part                  | working | finished |
  * | `assistant`, error `MessageAbortedError`                            | idle    | finished |
  * | `assistant`, error that is one of the other seven names             | failed  | failed   |

@@ -24,6 +24,7 @@ import {
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
+  EMPTY_KILO_HOME,
   EMPTY_KIMI_CODE_HOME,
   EMPTY_CONTINUE_HOME,
   EMPTY_OPENCODE_HOME,
@@ -149,6 +150,13 @@ delete process.env.CONTINUE_GLOBAL_DIR;
 mkdirSync(EMPTY_CRUSH_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_CRUSH_HOME = EMPTY_CRUSH_HOME;
 delete process.env.CRUSH_GLOBAL_DATA;
+
+// Nor does one read Kilo Code's database, in `~/.local/share/kilo`, or run
+// `sqlite3` for it, whatever the shell running the tests has set: the adapter
+// is pointed at an empty folder, which also sets Kilo Code's own `KILO_DB` and
+// `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_KILO_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_KILO_HOME = EMPTY_KILO_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

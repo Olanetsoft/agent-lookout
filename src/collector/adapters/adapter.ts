@@ -91,6 +91,11 @@ export interface AdapterResult {
    * the start of the ids of that project's sessions, `crush:<hash of its folder>/`,
    * so a database that could not be read on one poll leaves its sessions as they
    * were.
+   *
+   * The Kilo Code adapter has the OpenCode adapter's three, since it is that
+   * adapter with Kilo Code's names: `database`, while `ps` shows a Kilo Code
+   * program running, `database-closed`, while it shows none, and
+   * `database-without-processes`, while it cannot say.
    */
   basis?: string;
 }

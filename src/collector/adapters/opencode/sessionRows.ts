@@ -41,6 +41,10 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  * This was built from OpenCode's source at v1.19.0, with the waits checked at
  * v1.19.5 and `session_v2` read at v2.2.5, and has not yet been checked on a
  * computer running OpenCode.
+ *
+ * Kilo Code's `kilo.db` is laid out as OpenCode 1.x's, so the Kilo Code
+ * adapter asks the same probe and `v1SessionsQuery` with its own tools, and
+ * reads no `session_v2` (`../kilo-code/index.ts`).
  */
 
 /** The file OpenCode keeps its sessions in, in its data folder. */
@@ -77,20 +81,57 @@ const OPENCODE_OWN_PART = [
 ].join(" ");
 
 /**
- * Whether a part `p` of a message is a call that asks the person: a `tool`
- * part of OpenCode's `question` or `plan_exit` that OpenCode has started, so
- * its state is `running`, or `completed` or `error` once it is over. Both tools
- * wait inside their call, and OpenCode moves the part out of `running` once
- * the person answers, declines or presses Esc (docs/adapters/opencode.md). A
- * `pending` part is one the model is still writing, which has no start and
- * asks nothing yet. The name and the state are compared exactly, and neither
- * is printed. 1 when it is such a part, else 0 or null.
+ * The tools of OpenCode's that ask the person and wait inside their call:
+ * `question` and `plan_exit`.
  */
-const ASKING_PART = [
-  "CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') IS 'tool'",
-  "AND json_extract(p.data, '$.tool') IN ('question', 'plan_exit')",
-  "AND json_extract(p.data, '$.state.status') IN ('running', 'completed', 'error') ELSE 0 END",
-].join(" ");
+export const OPENCODE_ASKING_TOOLS: readonly string[] = ["question", "plan_exit"];
+
+/** A tool's name as a question may hold it: fixed text of this adapter's, never anything read. */
+const TOOL_NAME = /^[a-z][a-z_-]{0,63}$/;
+
+/** These tools' names as SQL writes a list of them, each checked first. */
+function toolList(tools: readonly string[]): string {
+  for (const tool of tools) {
+    if (!TOOL_NAME.test(tool)) throw new Error(`Not a tool's name: ${tool}`);
+  }
+  return tools.map((tool) => `'${tool}'`).join(", ");
+}
+
+/**
+ * Whether a part `p` of a message is a call that asks the person: a `tool`
+ * part of one of these tools, for OpenCode `question` or `plan_exit`, that the
+ * agent has started, so its state is `running`, or `completed` or `error` once
+ * it is over. Both of OpenCode's tools wait inside their call, and OpenCode
+ * moves the part out of `running` once the person answers, declines or presses
+ * Esc (docs/adapters/opencode.md). A `pending` part is one the model is still
+ * writing, which has no start and asks nothing yet. The name and the state are
+ * compared exactly, and neither is printed. 1 when it is such a part, else 0
+ * or null.
+ */
+const askingPart = (tools: readonly string[]) =>
+  [
+    "CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') IS 'tool'",
+    `AND json_extract(p.data, '$.tool') IN (${toolList(tools)})`,
+    "AND json_extract(p.data, '$.state.status') IN ('running', 'completed', 'error') ELSE 0 END",
+  ].join(" ");
+
+/**
+ * Whether the tool parts of the newest message `m` that are not over are one
+ * call of these tools in the state `running`, and nothing else: a call that
+ * waits for the person while the agent shows the session as idle, as Kilo
+ * Code's `suggest` does. A part is over once its state is `completed` or
+ * `error`, and any other state, or none, counts as not over. The name and the
+ * state are compared exactly, and neither is printed. 1 when it is so, else 0.
+ */
+const idleCall = (tools: readonly string[]) =>
+  [
+    "(SELECT count(*) = 1 AND sum(json_extract(p.data, '$.tool') IN",
+    `(${toolList(tools)}) AND json_extract(p.data, '$.state.status') IS 'running') = 1`,
+    "FROM part p WHERE p.message_id = m.id",
+    "AND CASE WHEN json_valid(p.data) THEN json_extract(p.data, '$.type') = 'tool'",
+    "AND json_extract(p.data, '$.state.status') IS NOT 'completed'",
+    "AND json_extract(p.data, '$.state.status') IS NOT 'error' END) AS m_idle_call",
+  ].join(" ");
 
 /**
  * How many of a session's newest messages, by `time_created` and `id`, are
@@ -160,8 +201,26 @@ const REPLY_COUNTS = (
 /** When 48 hours ago was, by SQLite's clock, in milliseconds. */
 const WRITTEN_SINCE = `CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${QUERY_WINDOW_MS}`;
 
-/** What is asked of a session of OpenCode 1.x. `SESSIONS_QUERY` says what each is. */
-const V1_FIELDS = [
+/**
+ * Which tools of an agent's a 1.x query treats apart: those that ask the
+ * person, and those that wait for the person while the agent shows the
+ * session as idle. Each name is fixed text of this adapter's.
+ */
+export interface V1Tools {
+  /** The tools whose `running` call is a wait for the person: for OpenCode `question` and `plan_exit`. */
+  asking: readonly string[];
+  /** The tools whose `running` call, alone, leaves the session idle: none for OpenCode, `suggest` for Kilo Code. */
+  idle: readonly string[];
+}
+
+/** OpenCode's: `question` and `plan_exit` ask, and no call leaves a session idle. */
+export const OPENCODE_TOOLS: V1Tools = { asking: OPENCODE_ASKING_TOOLS, idle: [] };
+
+/**
+ * What is asked of a session of OpenCode 1.x. `SESSIONS_QUERY` says what each
+ * is. `m_idle_call` is asked only when there are tools for it.
+ */
+const v1Fields = (tools: V1Tools) => [
   "s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000) AS title,",
   "s.time_created, s.time_updated,",
   "m.id AS m_id, m.time_created AS m_created, m.time_updated AS m_updated,",
@@ -181,7 +240,8 @@ const V1_FIELDS = [
   "(SELECT CASE WHEN max(json_extract(p.data, '$.state.status') IS 'running') THEN",
   "min(CASE WHEN json_type(p.data, '$.state.time.start') IS 'integer'",
   "THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p",
-  `WHERE p.message_id = m.id AND ${ASKING_PART}) AS m_asked_at,`,
+  `WHERE p.message_id = m.id AND ${askingPart(tools.asking)}) AS m_asked_at,`,
+  ...(tools.idle.length > 0 ? [`${idleCall(tools.idle)},`] : []),
   "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
   "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
   "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
@@ -190,6 +250,9 @@ const V1_FIELDS = [
   "ORDER BY u.time_created DESC, u.id DESC LIMIT 1) AS u_created,",
   REPLY_COUNTS,
 ];
+
+/** What is asked of a session of OpenCode 1.x, with OpenCode's own tools. */
+const V1_FIELDS = v1Fields(OPENCODE_TOOLS);
 
 /** The tables those are read from, and which sessions are asked for. */
 const V1_TABLES = [
@@ -208,7 +271,7 @@ const V1_TABLES = [
  * itself, and not one OpenCode marked as cut off when it cleaned up a step.
  * `m_shell` is 1 when the message's one tool part is the shell's, `bash`, as
  * OpenCode writes for a command the person runs with `!`. `m_asked_at` is
- * null unless one of the message's calls that ask the person (`ASKING_PART`)
+ * null unless one of the message's calls that ask the person (`askingPart`)
  * is still `running`, and then it is the oldest `$.state.time.start` among all
  * of them, or the time OpenCode wrote the part for one with no whole number
  * there. All of them, not only those still `running`: one message is one step,
@@ -230,12 +293,22 @@ const V1_TABLES = [
  * a folder are cut inside SQLite to a little more than is ever kept, so long
  * ones cannot fill the answer.
  */
-export const SESSIONS_QUERY = [
-  "SELECT",
-  ...V1_FIELDS,
-  ...V1_TABLES,
-  `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
-].join(" ");
+export const SESSIONS_QUERY = v1SessionsQuery(OPENCODE_TOOLS);
+
+/**
+ * The question `SESSIONS_QUERY` asks, for an agent whose database is laid out
+ * as OpenCode 1.x's with tools of its own. With OpenCode's, it is
+ * `SESSIONS_QUERY`. With any `idle` tool, each row has `m_idle_call` too
+ * (`idleCall`).
+ */
+export function v1SessionsQuery(tools: V1Tools): string {
+  return [
+    "SELECT",
+    ...v1Fields(tools),
+    ...V1_TABLES,
+    `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
+  ].join(" ");
+}
 
 /** A whole number from a column of `session_v2`, and null for anything else. */
 const WHOLE = (column: string) => `CASE WHEN typeof(${column}) = 'integer' THEN ${column} END`;
@@ -440,8 +513,13 @@ export function jsonRows(stdout: string): Record<string, unknown>[] | null {
   );
 }
 
-/** What the probe's answer says of the database, or null when it is not an answer. */
-export function readSchema(stdout: string): Schema | null {
+/**
+ * What the probe's answer says of the database, or null when it is not an
+ * answer. With `v2` false, for an agent that never writes `session_v2`, a
+ * database that has one is laid out as a version that is not read, rather
+ * than read with OpenCode 2's meaning.
+ */
+export function readSchema(stdout: string, options: { v2?: boolean } = {}): Schema | null {
   const rows = jsonRows(stdout);
   if (rows === null) return null;
   const tables = new Set<string>();
@@ -454,6 +532,7 @@ export function readSchema(stdout: string): Schema | null {
     else if (kind === "session_v2") v2Columns.add(name);
   }
   const hasV2 = tables.has("session_v2");
+  if (hasV2 && options.v2 === false) return { layout: "unsupported" };
   const v1 =
     NEEDED_TABLES.every((table) => tables.has(table)) &&
     NEEDED_COLUMNS.every((column) => columns.has(column));
@@ -542,6 +621,13 @@ export interface MessageRow {
   shell: unknown;
   /** When the oldest `question` or `plan_exit` call of it began, while one of them waits for the person. Null when none does. */
   askedAt: unknown;
+  /**
+   * 1 when the message's one tool part not yet over is a running call that
+   * leaves the session idle, such as Kilo Code's `suggest`, else 0. Only a
+   * question that asks for it (`v1SessionsQuery` with `idle` tools) gives it,
+   * so it is left out of OpenCode's rows.
+   */
+  idleCall?: unknown;
   /** The newest `time_updated` of the message's parts. */
   partsUpdatedAt: number | null;
 }
@@ -641,6 +727,9 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
             tools: shortField(row.m_tools),
             shell: shortField(row.m_shell),
             askedAt: shortField(row.m_asked_at),
+            // Only a question that asks for it prints it, so a row without it
+            // has no such call, rather than one of the wrong type.
+            ...("m_idle_call" in row ? { idleCall: shortField(row.m_idle_call) } : {}),
             partsUpdatedAt: wholeNumber(row.p_updated),
           }
         : null;

@@ -23,6 +23,11 @@ import {
   COMMAND_SHOWN as HERMES_AGENT_COMMAND,
   HERMES_AGENT_CAPABILITIES,
 } from "@collector/adapters/hermes-agent/index";
+import {
+  COMMAND_SHOWN as KILO_CODE_COMMAND,
+  KILO_CODE_CAPABILITIES,
+  UNCHECKED_NOTE as KILO_CODE_UNCHECKED_NOTE,
+} from "@collector/adapters/kilo-code/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import {
@@ -55,6 +60,9 @@ const CONTINUE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/continue.md", import.meta.url),
 );
 const CRUSH_NOTES = fileURLToPath(new URL("../../../../docs/adapters/crush.md", import.meta.url));
+const KILO_CODE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/kilo-code.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -76,6 +84,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kimi Code", KIMI_CODE_CAPABILITIES],
   ["Continue", CONTINUE_CAPABILITIES],
   ["Crush", CRUSH_CAPABILITIES],
+  ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -195,7 +204,13 @@ test("PRIVACY.md and the Cline notes name what is read and from which version", 
 });
 
 test("every read Agent Lookout runs with sqlite3 that a card, PRIVACY.md or the Antigravity notes print keeps the schema from being trusted", async () => {
-  for (const command of [OPENCODE_COMMAND, HERMES_AGENT_COMMAND, GOOSE_COMMAND, CRUSH_COMMAND]) {
+  for (const command of [
+    OPENCODE_COMMAND,
+    HERMES_AGENT_COMMAND,
+    GOOSE_COMMAND,
+    CRUSH_COMMAND,
+    KILO_CODE_COMMAND,
+  ]) {
     expect(command).toContain(`-cmd "${TRUSTED_SCHEMA_OFF}" <database>`);
   }
   for (const file of [PRIVACY, ANTIGRAVITY_NOTES]) {
@@ -343,6 +358,36 @@ test("PRIVACY.md and the Crush notes name what is read and from which version", 
       "message_count",
       "created_at",
       "updated_at",
+      "ps -A -o comm=",
+    ]) {
+      expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Kilo Code notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(KILO_CODE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const kilo = line("For Kilo Code, Agent Lookout runs");
+  expect(kilo).toContain("built from Kilo Code's source at v7.8.27");
+  expect(kilo).toContain("`ps`");
+  expect(KILO_CODE_UNCHECKED_NOTE).toContain("v7.8.27");
+  expect(notes).toContain("v7.8.27");
+  expect(notes).toContain("03a6f07");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### Kilo Code's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.local/share/kilo/kilo.db",
+      "KILO_DB",
+      "account",
+      "control_account",
+      "credential",
       "ps -A -o comm=",
     ]) {
       expect(text).toContain(field);

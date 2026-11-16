@@ -233,6 +233,64 @@ describe("mapOpencodeStatus", () => {
   });
 });
 
+// Kilo Code's `suggest` waits inside its call while Kilo Code shows the session
+// as idle. Only Kilo Code's question asks for `idleCall`, so OpenCode's
+// messages leave it out.
+describe("mapOpencodeStatus, with a call the agent shows as idle while it waits", () => {
+  const underWay = (fields: Partial<OpencodeMessageFields> = {}) =>
+    assistant({ completedAt: null, finish: null, tools: 1, ...fields });
+
+  test("a step whose one call not yet over is such a call is idle while open, and finished once closed", () => {
+    expect(both(underWay({ idleCall: 1 }))).toEqual(["idle", "finished"]);
+  });
+
+  test("a step with any other call not yet over goes on working, as one that leaves it out does", () => {
+    expect(both(underWay({ idleCall: 0 }))).toEqual(["working", "finished"]);
+    expect(both(underWay({ idleCall: null }))).toEqual(["working", "finished"]);
+    expect(both(underWay())).toEqual(["working", "finished"]);
+  });
+
+  test("a question that waits still needs the person", () => {
+    expect(both(underWay({ idleCall: 1, askedAt: NOW - MINUTE }))).toEqual([
+      "needs-you",
+      "finished",
+    ]);
+  });
+
+  test("a step that ended, or ended on an error, is read as ever", () => {
+    expect(both(assistant({ idleCall: 1 }))).toEqual(["idle", "finished"]);
+    expect(
+      both(assistant({ idleCall: 0, finish: "tool-calls", completedAt: NOW - 1_000 })),
+    ).toEqual(["working", "finished"]);
+    expect(both(underWay({ idleCall: 1, error: "APIError" }))).toEqual(["failed", "failed"]);
+    expect(both(underWay({ idleCall: 1, error: ABORTED_ERROR }))).toEqual(["idle", "finished"]);
+  });
+
+  test("a value of the wrong type is unknown, open or closed", () => {
+    for (const wrong of [2, -1, "1", 0.5, true]) {
+      expect(both(underWay({ idleCall: wrong })), String(wrong)).toEqual(["unknown", "unknown"]);
+    }
+  });
+
+  test("an idle step's time is the newest write, since it has not ended", () => {
+    const status = mapOpencodeStatus({ message: underWay({ idleCall: 1 }), open: true, now: NOW });
+    expect(
+      opencodeStatusSince(
+        status,
+        {
+          sessionCreatedAt: NOW - 30 * MINUTE,
+          messageCreatedAt: NOW - 2 * MINUTE,
+          userCreatedAt: NOW - 3 * MINUTE,
+          completedAt: null,
+          askedAt: null,
+          activityAt: NOW - MINUTE,
+        },
+        NOW,
+      ),
+    ).toBe(NOW - MINUTE);
+  });
+});
+
 describe("opencodeStatusSince", () => {
   const times = {
     sessionCreatedAt: NOW - 30 * MINUTE,

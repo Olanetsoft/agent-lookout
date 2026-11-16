@@ -107,6 +107,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ CONTINUE_GLOBAL_DIR: "relative/continue" }, HOME)).toBe(defaults);
   // A relative folder of Crush's cannot be followed.
   expect(sourcesFingerprint({ CRUSH_GLOBAL_DATA: "relative/crush" }, HOME)).toBe(defaults);
+  // Kilo Code's own variable names its database, as OpenCode's does.
+  expect(sourcesFingerprint({ KILO_DB: "kilo.db" }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -150,6 +152,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ CONTINUE_GLOBAL_DIR: path.resolve("/tmp/empty-continue") }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_CRUSH_HOME: "/tmp/empty-crush" }, HOME),
     sourcesFingerprint({ CRUSH_GLOBAL_DATA: path.resolve("/tmp/empty-crush") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_KILO_HOME: "/tmp/empty-kilo" }, HOME),
+    sourcesFingerprint({ KILO_DB: "/tmp/empty-kilo.db" }, HOME),
+    sourcesFingerprint({ KILO_DB: ":memory:" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);
