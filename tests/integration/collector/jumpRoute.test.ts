@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -29,8 +29,11 @@ import {
   tempDir,
 } from "@tests/support/node/tempFiles";
 import {
+  EDITOR_FAILED,
+  fakeEditor,
   fakeOsascript,
   fakeProcesses,
+  inEditor,
   ITERM_PATH,
   MISSING,
   NOT_ALLOWED,
@@ -38,6 +41,7 @@ import {
   TAB_CHECK_RUN,
   TERMINAL_PATH,
   TIMED_OUT,
+  VSCODE_BUNDLE,
   type ProcessRow,
 } from "@tests/support/node/terminal";
 import { startStandIn } from "@tests/support/node/standIns";
@@ -136,8 +140,8 @@ function inOneTab(app: string): ProcessRow[] {
  * down what it is asked, a table of processes of the test's own, a `ps` of
  * start times that says each process started when a test says, by default a
  * moment before the Qwen Code session's record was written, and an osascript
- * that runs nothing and writes down what it is asked. Served over real HTTP on
- * a free loopback port.
+ * and an editor's command that run nothing and write down what they are
+ * asked. Served over real HTTP on a free loopback port.
  */
 async function serve(
   env: Record<string, string> = {},
@@ -150,6 +154,7 @@ async function serve(
     clients: ["$0 /dev/ttys003", "$4 /dev/ttys004"],
   });
   const osascript = fakeOsascript();
+  const editor = fakeEditor();
   const ps = fakeProcesses(processes);
   const clock = { now: T0 };
   const startedAt = more.startedAt ?? QWEN_REGISTERED - 2_000;
@@ -181,6 +186,7 @@ async function serve(
     notifier: fakeSystemNotifier(),
     tmux: tmux.run,
     osascript: osascript.run,
+    editor: editor.run,
     readProcesses: ps.read,
     readProcessStarts: async (pids) => {
       starts.push([...pids]);
@@ -201,7 +207,20 @@ async function serve(
   /** What tmux was asked after the first look for panes. */
   const asked = () => tmux.ran.slice(1);
 
-  return { port, tmux, osascript, ps, starts, clock, collector, jump, sessions, sources, asked };
+  return {
+    port,
+    tmux,
+    osascript,
+    editor,
+    ps,
+    starts,
+    clock,
+    collector,
+    jump,
+    sessions,
+    sources,
+    asked,
+  };
 }
 
 /** What a source's card says of tmux and its `ps`. */
@@ -317,6 +336,7 @@ async function serveStubTmux(env: Record<string, string>, qwenPid?: number) {
     },
     notifier: fakeSystemNotifier(),
     osascript: fakeOsascript().run,
+    editor: fakeEditor().run,
     readProcesses: fakeProcesses().read,
     readProcessStarts: async (pids) =>
       new Map(pids.map((pid) => [pid, lstart(QWEN_REGISTERED - 2_000)])),
@@ -522,7 +542,7 @@ describe("POST /api/jump", () => {
 
     expect(response.status).toBe(404);
     expect(response.json()).toEqual({
-      error: "No tmux pane or terminal tab is known for that session.",
+      error: "No tmux pane, terminal tab or editor is known for that session.",
       reason: "no-pane",
     });
     expect(server.asked()).toEqual([]);
@@ -724,12 +744,25 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
     expect((await first).status).toBe(200);
   });
 
-  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, ps is not asked for tabs and no session has a tab", async () => {
-    const server = await serve({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" }, inOneTab(TERMINAL_PATH));
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP and AGENT_LOOKOUT_EDITOR_JUMP off, ps is not asked for tabs and no session has a tab", async () => {
+    const server = await serve(
+      { AGENT_LOOKOUT_TERMINAL_JUMP: "off", AGENT_LOOKOUT_EDITOR_JUMP: "off" },
+      inOneTab(TERMINAL_PATH),
+    );
 
     expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
     // The one read is the tmux pane finder's, for the pane tmux lists.
     expect(server.ps.runs).toBe(1);
+    expect((await server.jump(ELSEWHERE)).status).toBe(404);
+    expect(server.osascript.ran).toEqual([]);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off alone, the table is read once more for editors, and still no session has a tab", async () => {
+    const server = await serve({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" }, inOneTab(TERMINAL_PATH));
+
+    expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
+    // The tmux pane finder's read, and the one look for editors.
+    expect(server.ps.runs).toBe(2);
     expect((await server.jump(ELSEWHERE)).status).toBe(404);
     expect(server.osascript.ran).toEqual([]);
   });
@@ -740,6 +773,227 @@ describe("POST /api/jump for a Terminal or iTerm2 tab", () => {
     expect(named(await server.sessions(), "docs-site")).not.toHaveProperty("jump");
     expect((await server.jump(ELSEWHERE)).status).toBe(404);
     expect(server.osascript.ran).toEqual([]);
+  });
+});
+
+// Each test starts a stand-in for the session's process and makes the
+// session's folder, both POSIX ones. Agent Lookout asks an editor on a Mac
+// alone, and the stand-in command runs nothing anywhere.
+describe.skipIf(process.platform === "win32")("POST /api/jump for a session in VS Code", () => {
+  const VSCODE_SESSION = `claude-code:${ids.question}`;
+  const COMMAND = `${VSCODE_BUNDLE}/Contents/Resources/app/bin/code`;
+  /** Where `serve`'s two sessions are: a tab of an app that has no Jump, so each is looked for once. */
+  const ELSEWHERE_ROWS = inOneTab("/Applications/Warp.app/Contents/MacOS/stable");
+
+  /** The folder `serveVsCode` gives its session unless a test makes another. */
+  async function storefront(root: string): Promise<string> {
+    const folder = path.join(root, "storefront");
+    await mkdir(folder);
+    return folder;
+  }
+
+  /**
+   * The collector of `serve`, with a session of Claude Code's VS Code
+   * extension beside its two, whose process is a stand-in this test starts and
+   * whose folder is one the test makes, in a folder of its own. The table of
+   * processes lists the stand-in under VS Code, through its extension host,
+   * unless a test lists it elsewhere.
+   */
+  async function serveVsCode(
+    env: Record<string, string> = {},
+    rows: (pid: number) => ProcessRow[] = (pid) => inEditor(VSCODE_BUNDLE, pid),
+    makeFolder: (root: string) => Promise<string> = storefront,
+  ) {
+    const standIn = await startStandIn();
+    const folder = await makeFolder(await tempDir());
+    const home = await makeClaudeHome({
+      ...registry(),
+      [`${standIn.pid}.json`]: registryFile({
+        pid: standIn.pid,
+        sessionId: ids.question,
+        name: "storefront",
+        entrypoint: "claude-vscode",
+        cwd: folder,
+        procStart: undefined,
+      }),
+    });
+    const server = await serve({ AGENT_LOOKOUT_CLAUDE_HOME: home, ...env }, [
+      ...ELSEWHERE_ROWS,
+      ...rows(standIn.pid),
+    ]);
+    const listed = async () => named(await server.sessions(), "storefront");
+    return { ...server, standIn, folder, listed };
+  }
+
+  test("a running session is reached through VS Code, names only the editor, and keeps its link", async () => {
+    const server = await serveVsCode();
+    const response = await request(server.port, "/api/sessions");
+    const listed = named(response.json<SessionsSnapshot>().sessions, "storefront");
+
+    expect(listed?.jump).toEqual({ kind: "editor", app: "VS Code", place: "VS Code" });
+    expect(listed?.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.question}`);
+    expect(response.body).not.toContain("Visual Studio Code.app");
+    expect(response.body).not.toContain("Code Helper");
+  });
+
+  test("a press runs VS Code's own command with --new-window and the session's folder, and nothing else", async () => {
+    const server = await serveVsCode();
+    const response = await server.jump(VSCODE_SESSION);
+
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({ ok: true, kind: "editor", app: "VS Code", place: "VS Code" });
+    expect(server.editor.ran).toEqual([[COMMAND, "--new-window", server.folder]]);
+    // Neither tmux nor osascript was asked to do anything.
+    expect(server.asked()).toEqual([]);
+    expect(server.osascript.ran).toEqual([]);
+  });
+
+  test.each([
+    ["the session's folder", "/Users/example/code/storefront"],
+    ["the editor's app", VSCODE_BUNDLE],
+    ["the editor's command", COMMAND],
+  ])("a body that names %s finds nothing, and no command is run", async (_what, sessionId) => {
+    const server = await serveVsCode();
+    const response = await server.jump(sessionId);
+
+    expect(response.status).toBe(404);
+    expect(response.json()).toMatchObject({ reason: "no-pane" });
+    expect(server.editor.ran).toEqual([]);
+  });
+
+  test("a folder that has gone is said, and nothing is run", async () => {
+    const server = await serveVsCode();
+    await rm(server.folder, { recursive: true });
+    const response = await server.jump(VSCODE_SESSION);
+
+    expect(response.status).toBe(409);
+    expect(response.json()).toEqual({
+      error: "That folder is no longer there.",
+      reason: "folder-gone",
+    });
+    expect(server.editor.ran).toEqual([]);
+  });
+
+  test("a folder that is now a link is a 500 that says so, nothing is run, and the editor is not looked for again", async () => {
+    const server = await serveVsCode();
+    const elsewhere = `${server.folder}-elsewhere`;
+    await mkdir(elsewhere);
+    await rm(server.folder, { recursive: true });
+    await symlink(elsewhere, server.folder);
+    const response = await server.jump(VSCODE_SESSION);
+    const reads = server.ps.runs;
+
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({
+      error: "The session's folder is a link, so VS Code was not asked.",
+      reason: "failed",
+    });
+    expect(server.editor.ran).toEqual([]);
+    server.clock.now += TAB_LOOK_SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    expect(server.ps.runs).toBe(reads);
+    expect((await server.listed())?.jump).toMatchObject({ kind: "editor" });
+  });
+
+  test("a folder whose real path leads into an app is a 500 that says so, nothing is run, and the editor is not looked for again", async () => {
+    const server = await serveVsCode({}, undefined, async (root) => {
+      await mkdir(path.join(root, "Other.app", "Contents", "Resources"), { recursive: true });
+      await symlink(path.join(root, "Other.app", "Contents"), path.join(root, "via"));
+      return path.join(root, "via", "Resources");
+    });
+    // Its folder's name has no part that is an app, so the session is given the editor.
+    expect((await server.listed())?.jump).toMatchObject({ kind: "editor" });
+    const response = await server.jump(VSCODE_SESSION);
+    const reads = server.ps.runs;
+
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({
+      error:
+        "The session's folder could not be checked, or is not one Jump opens, so VS Code was not asked.",
+      reason: "failed",
+    });
+    expect(server.editor.ran).toEqual([]);
+    server.clock.now += TAB_LOOK_SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    expect(server.ps.runs).toBe(reads);
+  });
+
+  test("a run of the command that fails is a 500, and the editor is looked for again", async () => {
+    const server = await serveVsCode();
+    server.editor.answer = EDITOR_FAILED;
+    const response = await server.jump(VSCODE_SESSION);
+
+    expect(response.status).toBe(500);
+    expect(response.json()).toEqual({
+      error: "VS Code could not be asked to open the folder.",
+      reason: "failed",
+    });
+
+    // The first look read the table twice, once for the tabs and editors and
+    // once for the tmux panes. Every process was found then, so the next look
+    // is for the one forgotten.
+    expect(server.ps.runs).toBe(2);
+    server.clock.now += TAB_LOOK_SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    expect(server.ps.runs).toBe(3);
+    expect((await server.listed())?.jump).toMatchObject({ kind: "editor" });
+  });
+
+  test("one jump a second holds for an editor", async () => {
+    const server = await serveVsCode();
+    expect((await server.jump(VSCODE_SESSION)).status).toBe(200);
+    const second = await server.jump(VSCODE_SESSION);
+
+    expect(second.status).toBe(429);
+    expect(server.editor.ran).toHaveLength(1);
+  });
+
+  test("a session whose process has ended is no longer reached through VS Code: a press finds nothing and runs nothing", async () => {
+    const server = await serveVsCode();
+    process.kill(server.standIn.pid, "SIGTERM");
+    await server.standIn.exited;
+    server.clock.now += 2_000;
+    await server.collector.poller.pollOnce();
+
+    // A session known from its registry file alone leaves the list once its
+    // process has ended. One still listed keeps its link and has no jump, as
+    // the unit tests of toSession.ts show.
+    expect(await server.listed()).toBeUndefined();
+    expect((await server.jump(VSCODE_SESSION)).status).toBe(404);
+    expect(server.editor.ran).toEqual([]);
+  });
+
+  test("with AGENT_LOOKOUT_EDITOR_JUMP off the session keeps its link, and no command is run", async () => {
+    const server = await serveVsCode({ AGENT_LOOKOUT_EDITOR_JUMP: "off" });
+    const listed = await server.listed();
+
+    expect(listed).not.toHaveProperty("jump");
+    expect(listed?.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.question}`);
+    expect((await server.jump(VSCODE_SESSION)).status).toBe(404);
+    expect(server.editor.ran).toEqual([]);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off the session is still reached through VS Code", async () => {
+    const server = await serveVsCode({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+
+    expect((await server.listed())?.jump).toEqual({
+      kind: "editor",
+      app: "VS Code",
+      place: "VS Code",
+    });
+    expect((await server.jump(VSCODE_SESSION)).status).toBe(200);
+    expect(server.editor.ran).toEqual([[COMMAND, "--new-window", server.folder]]);
+  });
+
+  test("a session whose first app above it is not VS Code keeps its link", async () => {
+    const server = await serveVsCode({}, (pid) => [
+      [700, 1, "??", TERMINAL_PATH],
+      [pid, 700, "??", "claude"],
+    ]);
+
+    expect(await server.listed()).not.toHaveProperty("jump");
+    expect((await server.jump(VSCODE_SESSION)).status).toBe(404);
+    expect(server.editor.ran).toEqual([]);
   });
 });
 
@@ -845,9 +1099,9 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
       expect(server.ps.runs).toBe(reads);
     });
 
-    test("on a Mac, with AGENT_LOOKOUT_TERMINAL_JUMP off it says not run", async () => {
+    test("on a Mac, with AGENT_LOOKOUT_TERMINAL_JUMP and AGENT_LOOKOUT_EDITOR_JUMP off it says not run", async () => {
       const server = await serveQwen(
-        { AGENT_LOOKOUT_TERMINAL_JUMP: "off" },
+        { AGENT_LOOKOUT_TERMINAL_JUMP: "off", AGENT_LOOKOUT_EDITOR_JUMP: "off" },
         (pid) => inTabOf(TERMINAL_PATH, pid),
         { inPane: false, platform: "darwin" },
       );
@@ -855,6 +1109,18 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
       expect(jumpRowsOf(await sourcesAfterAPoll(server), "qwen-code")).toEqual(tabRows("not run"));
       // Each read is the tmux pane finder's, for the pane tmux lists.
       expect(server.ps.runs).toBe(server.tmux.names().length);
+    });
+
+    test("on a Mac, with AGENT_LOOKOUT_TERMINAL_JUMP off alone it says not run, since no editor reaches its session, while Claude Code's says its look ran", async () => {
+      const server = await serveQwen(
+        { AGENT_LOOKOUT_TERMINAL_JUMP: "off" },
+        (pid) => inTabOf(TERMINAL_PATH, pid),
+        { inPane: false, platform: "darwin" },
+      );
+      const sources = await sourcesAfterAPoll(server);
+
+      expect(jumpRowsOf(sources, "qwen-code")).toEqual(tabRows("not run"));
+      expect(jumpRowsOf(sources, "claude-code")).toEqual(tabRows(TAB_CHECK_RUN));
     });
 
     test("on a Mac, a look for a Claude Code session alone leaves it at not run", async () => {

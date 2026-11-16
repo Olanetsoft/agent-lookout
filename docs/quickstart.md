@@ -56,7 +56,7 @@ Not using Claude Code? Do step 1, then read [Using another agent](#using-another
      <img alt="The Needs you panel. checkout-flow, a Claude Code session in Terminal, has waited 4 minutes 12 seconds for permission to run npm test, with Deny, Allow and Jump." src="../site/assets/features/needs-you-night-1000.webp">
    </picture>
 
-4. **Jump to it.** Press Jump, beside the timer. Agent Lookout brings the session's Terminal or iTerm2 tab to the front, selects its tmux pane, or opens it in VS Code. The row then says "Switched to Terminal", "Switched to iTerm2" or "Selected in tmux". For VS Code it says nothing, and VS Code opens the session.
+4. **Jump to it.** Press Jump, beside the timer. Agent Lookout brings the session's Terminal or iTerm2 tab to the front, selects its tmux pane, or on a Mac brings its VS Code window forward. The row then says "Switched to Terminal", "Switched to iTerm2", "Switched to VS Code" or "Selected in tmux". Off a Mac, VS Code opens the session from a link, and the row says nothing.
 
    The first jump to a Terminal or iTerm2 tab makes macOS ask whether the app you started Agent Lookout from may control it. Choose Allow.
 

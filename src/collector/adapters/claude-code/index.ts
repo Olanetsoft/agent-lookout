@@ -12,6 +12,7 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { plausibleTime } from "../../../core/time.ts";
 import { STOP_ENV, stopOff, type StopTargets } from "../../actions/stopTargets.ts";
+import { homeFolders } from "../../editor/openFolder.ts";
 import { pathsOf, tildify } from "../../files/paths.ts";
 import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { LAST_MESSAGE_ENV, lastMessageOff } from "../../messages/lastMessageSettings.ts";
@@ -94,9 +95,10 @@ const LABEL = "Claude Code";
  * - Finished and failed are a background job's state, which only jobs have.
  *   Any other session leaves the list when it ends, with no word on how.
  * - Its name is the one Claude Code gives it (`toSession.ts`).
- * - Jump is a link for VS Code, a pane for tmux, and a tab for Terminal or
- *   iTerm2 on a Mac (`toSession.ts`). The desktop app documents no link to a
- *   session, and no other terminal is found.
+ * - Jump is, for a VS Code session on a Mac while its process runs, the
+ *   window of the editor it runs under, and otherwise its link; a pane for
+ *   tmux; and a tab for Terminal or iTerm2 on a Mac (`toSession.ts`). The
+ *   desktop app documents no link to a session, and no other terminal is found.
  * - Quiet for needs a file the agent rewrites as it works, and the registry
  *   file is not one: see `registry.ts`.
  * - Tokens are the counts of its newest reply, read with what it last said
@@ -236,10 +238,18 @@ export interface ClaudeCodeAdapterOptions {
   panes?: PaneAsker;
   /**
    * Finds the Terminal or iTerm2 tab each live session's process runs in, for
-   * a session in no tmux pane. The collector passes an asker of the finder
-   * the jump route reads. Left out, no tab is looked for and `ps` is not asked.
+   * a session in no tmux pane, and the editor a VS Code session's process runs
+   * under. The collector passes an asker of the finder the jump route reads.
+   * Left out, no tab or editor is looked for and `ps` is not asked.
    */
   terminals?: TabAsker;
+  /**
+   * The home folder as it is named and with its links followed, which no
+   * editor is handed. Asked once, at the first poll, when there is a
+   * `terminals` to find editors with. Defaults to `homeFolders`, which asks
+   * `realpath`.
+   */
+  homeFolders?: (homeDir: string) => Promise<[string, ...string[]]>;
   /**
    * Told, after each poll, which sessions can be stopped and what each is
    * stopped by, and asks for the command to be run again at the next poll
@@ -363,7 +373,9 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * The finder keeps its own slow beat, so tmux is not asked on every poll. One
  * in no pane whose process runs in a tab of Terminal or iTerm2 is given a
  * `jump` that names the app, when the adapter is handed something to find
- * tabs with, which asks `ps` once about each new process.
+ * tabs with, which asks `ps` once about each new process. A live session of
+ * the VS Code extension whose process runs under VS Code is given a `jump`
+ * that names the editor, from the same look, ahead of a pane or a tab.
  *
  * A session that needs the person is given what it is asking, `waitingText`,
  * from the last message of its transcript, `<claude home>/projects/<folder>/
@@ -457,6 +469,8 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   let feedSoon = false;
   /** The registry files the last read parsed, for a file read while it was being written. */
   let lastParsed: ReadonlyMap<string, RegistryEntry> | undefined;
+  /** The home folder's names, once the first poll that can find an editor has asked. */
+  let homeDirs: Promise<[string, ...string[]]> | undefined;
   stops?.onAskFeedSoon(() => {
     feedSoon = true;
   });
@@ -642,11 +656,14 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
+    if (options.terminals) homeDirs ??= (options.homeFolders ?? homeFolders)(homeDir);
     const context: SessionContext = {
       now: checkedAt,
       isAlive,
       paneOf: (pid) => options.panes?.paneOf(pid),
       tabOf: (pid) => options.terminals?.tabOf(pid),
+      editorOf: (pid) => options.terminals?.editorOf(pid),
+      homeDirs: await homeDirs,
     };
 
     // How often the command is due depends on whether the registry can be relied

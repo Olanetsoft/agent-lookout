@@ -2,6 +2,7 @@ import { CLAUDE_CODE_OPEN_LINK } from "@core/mapping/claudeCodeMapping";
 import {
   SOURCE_STATE_LABEL,
   surfaceLabel,
+  type EditorApp,
   type Session,
   type SessionEvent,
   type SessionStatus,
@@ -133,21 +134,33 @@ export function safeJumpLink(session: Pick<Session, "source" | "links">): string
  * link      an address the browser opens, which hands the session to its own app
  * tmux      a pane the collector selects when the page asks it to
  * terminal  a tab of Terminal or iTerm2 the collector brings forward when the page asks it to
+ * editor    the window of the editor a running VS Code session is in, which the
+ *           collector brings forward when the page asks it to
  */
 export type JumpWay =
   | { by: "link"; href: string; where: string }
   | { by: "tmux"; where: string }
-  | { by: "terminal"; app: TerminalApp; where: string };
+  | { by: "terminal"; app: TerminalApp; where: string }
+  | { by: "editor"; app: EditorApp; where: string };
 
 /**
  * The way Jump reaches this session, or null when it has none and gets no
- * button. A session with a safe link keeps it. Otherwise a session the
- * collector found in a tmux pane is reached there, "tmux, work:2.1", and one
- * it found in a tab of Terminal or iTerm2 there, "Terminal".
+ * button. A running session in VS Code whose editor the collector found is
+ * reached through that editor's window, "VS Code". Otherwise a session with a
+ * safe link keeps it, a session the collector found in a tmux pane is reached
+ * there, "tmux, work:2.1", and one it found in a tab of Terminal or iTerm2
+ * there, "Terminal".
  */
 export function jumpWay(
   session: Pick<Session, "source" | "surface" | "links" | "jump">,
 ): JumpWay | null {
+  // The link opens in whichever window of the editor has focus, so while the
+  // collector knows the editor a session runs under, its window is reached
+  // instead. A session whose process has ended has no such jump, and keeps
+  // its link.
+  if (session.jump?.kind === "editor") {
+    return { by: "editor", app: session.jump.app, where: session.jump.place };
+  }
   const href = safeJumpLink(session);
   if (href !== null) {
     return { by: "link", href, where: surfaceLabel(session.surface) ?? "its app" };

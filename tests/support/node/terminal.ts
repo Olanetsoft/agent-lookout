@@ -1,9 +1,13 @@
-// Stand-ins for a person's Terminal and iTerm2. `fakeOsascript` runs nothing:
-// it writes down each run's arguments and answers as osascript would.
-// `processTable` is a table of processes as `ps` would print it, so a test
-// chooses which app a session seems to run in. No test asks, or changes, the
-// terminal a person is using.
+// Stand-ins for a person's Terminal, iTerm2 and VS Code. `fakeOsascript` runs
+// nothing: it writes down each run's arguments and answers as osascript would.
+// `fakeEditor` runs nothing either: it writes down each run of an editor's
+// command. `processTable` is a table of processes as `ps` would print it, so a
+// test chooses which app a session seems to run in, and `inEditor` lists a
+// session of the VS Code extension under VS Code. No test asks, or changes, the
+// terminal or the editor a person is using, and no test runs an editor's own
+// command.
 
+import type { EditorResult, RunEditor } from "@collector/editor/program";
 import type { ProcessFacts, ReadProcessTable } from "@collector/processes/processTable";
 import type { OsascriptResult, RunOsascript } from "@collector/terminal/program";
 import { ITERM_PATH, TERMINAL_PATH } from "@collector/terminal/terminalTabs";
@@ -100,5 +104,60 @@ export function inTab(app: string, session: number, tty = "ttys004", appPid = 60
     [base + 2, base + 1, tty, "-zsh"],
     [base + 3, base + 2, tty, "node"],
     [session, base + 3, tty, "claude"],
+  ];
+}
+
+export interface FakeEditor {
+  run: RunEditor;
+  /** Every run, in order, as the program and then its arguments. */
+  ran: string[][];
+  /** What each run answers until a test changes it. */
+  answer: EditorResult;
+}
+
+/** What an editor's command answers when it handed the folder on, and when it failed. */
+export const EDITOR_OPENED: EditorResult = { ok: true };
+export const EDITOR_FAILED: EditorResult = { ok: false, timedOut: false };
+
+export function fakeEditor(answer: EditorResult = EDITOR_OPENED): FakeEditor {
+  const fake: FakeEditor = {
+    ran: [],
+    answer,
+    run: async (program, args) => {
+      fake.ran.push([program, ...args]);
+      return fake.answer;
+    },
+  };
+  return fake;
+}
+
+/** Where VS Code's app is when it is installed the usual way. */
+export const VSCODE_BUNDLE = "/Applications/Visual Studio Code.app";
+
+/**
+ * A session of Claude Code's VS Code extension under the editor whose bundle is
+ * given: the editor's own program, its extension host, which is a helper app
+ * inside its bundle, and the session, none of them on a terminal.
+ */
+export function inEditor(
+  bundle: string,
+  session: number,
+  hostPid = 900,
+  mainPid = 800,
+): ProcessRow[] {
+  return [
+    [mainPid, 1, "??", `${bundle}/Contents/MacOS/Code`],
+    [
+      hostPid,
+      mainPid,
+      "??",
+      `${bundle}/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)`,
+    ],
+    [
+      session,
+      hostPid,
+      "??",
+      "/Users/example/.vscode/extensions/anthropic.claude-code-2.1.0-darwin-arm64/resources/native-binary/claude",
+    ],
   ];
 }

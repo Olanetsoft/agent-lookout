@@ -11,6 +11,7 @@ import {
 } from "@collector/adapters/claude-code/index";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
+import type { EditorWindow } from "@collector/editor/editorWindows";
 import { createTabFinder } from "@collector/terminal/tabFinder";
 import type { TerminalTab } from "@collector/terminal/terminalTabs";
 import { createPaneFinder } from "@collector/tmux/paneFinder";
@@ -264,8 +265,14 @@ describe("Terminal and iTerm2 tabs", () => {
     readFile: async (file) => registryFiles[path.basename(file)] ?? "",
   };
 
-  /** A stand-in for the collector's tab finder: it knows some tabs, and writes down who it was asked about. */
-  function knownTabs(tabs: Record<number, TerminalTab>) {
+  /**
+   * A stand-in for the collector's tab finder: it knows some tabs and some
+   * editors, and writes down who it was asked about.
+   */
+  function knownTabs(
+    tabs: Record<number, TerminalTab>,
+    editors: Record<number, EditorWindow> = {},
+  ) {
     const looked: number[][] = [];
     return {
       looked,
@@ -273,6 +280,7 @@ describe("Terminal and iTerm2 tabs", () => {
         looked.push([...asked].sort());
       },
       tabOf: (pid: number) => tabs[pid],
+      editorOf: (pid: number) => editors[pid],
       asked: () => looked.length > 0,
     };
   }
@@ -318,6 +326,56 @@ describe("Terminal and iTerm2 tabs", () => {
       place: "search-indexing:0.1",
     });
     expect(terminals.looked).toEqual(looked);
+  });
+
+  test("a VS Code session the finder found under its editor is given the editor's jump, and the app's path stays here", async () => {
+    const bundle = "/Applications/Visual Studio Code.app";
+    const terminals = knownTabs({}, { [pids.busy]: { app: "VS Code", bundle } });
+    const { sessions } = await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      terminals,
+    }).poll();
+
+    const inEditor = sessions.find((session) => session.pid === pids.busy);
+    expect(inEditor?.jump).toEqual({ kind: "editor", app: "VS Code", place: "VS Code" });
+    expect(inEditor?.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.busy}`);
+    expect(sessions.filter((session) => session.jump !== undefined)).toHaveLength(1);
+    expect(JSON.stringify(sessions)).not.toContain("Visual Studio Code.app");
+  });
+
+  test("a VS Code session in the home folder, as the home folder's links lead, keeps its link, and the home folder is asked about once", async () => {
+    const bundle = "/Applications/Visual Studio Code.app";
+    const terminals = knownTabs({}, { [pids.busy]: { app: "VS Code", bundle } });
+    const asked: string[] = [];
+    const adapter = adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      terminals,
+      // The busy session's folder is where the home folder's links lead.
+      homeFolders: async (home) => {
+        asked.push(home);
+        return [home, "/Users/example/code/demo"];
+      },
+    });
+    const { sessions } = await adapter.poll();
+    await adapter.poll();
+
+    const inHome = sessions.find((session) => session.pid === pids.busy);
+    expect(inHome).not.toHaveProperty("jump");
+    expect(inHome?.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.busy}`);
+    expect(asked).toEqual([HOME]);
+  });
+
+  test("without a tab finder the home folder is not asked about", async () => {
+    const asked: string[] = [];
+    await adapterFor("/Users/example/elsewhere", {
+      registryIo,
+      homeFolders: async (home) => {
+        asked.push(home);
+        return [home];
+      },
+    }).poll();
+
+    expect(asked).toEqual([]);
   });
 
   test("without a tab finder no tab is looked for, and the sessions are as they were", async () => {
@@ -682,14 +740,27 @@ describe("what Sources says of ps", () => {
     ]);
   });
 
-  test("with AGENT_LOOKOUT_TERMINAL_JUMP off the look for a tab says not run, since none is made", async () => {
-    const processes = standIns({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP and AGENT_LOOKOUT_EDITOR_JUMP off the look for a tab says not run, since none is made", async () => {
+    const processes = standIns({
+      AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+      AGENT_LOOKOUT_EDITOR_JUMP: "off",
+    });
 
     expect(await processRows(adapterOn("darwin", {}, processes))).toContainEqual({
       label: "Tab check run",
       value: "not run",
     });
     expect(processes.counted.tables).toBe(0);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off alone the same ps still looks for editors, and says so", async () => {
+    const processes = standIns({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+
+    expect(await processRows(adapterOn("darwin", {}, processes))).toContainEqual({
+      label: "Tab check run",
+      value: TAB_CHECK_RUN,
+    });
+    expect(processes.counted.tables).toBe(1);
   });
 
   test("a poll that goes wrong gives the same rows", async () => {
@@ -891,8 +962,8 @@ describe("what Sources says of tmux", () => {
     expect(looked).toEqual([]);
   });
 
-  test("AGENT_LOOKOUT_TERMINAL_JUMP is for tabs alone, so with it off tmux runs and the card says so", async () => {
-    const env = { AGENT_LOOKOUT_TERMINAL_JUMP: "off" };
+  test("AGENT_LOOKOUT_TERMINAL_JUMP and AGENT_LOOKOUT_EDITOR_JUMP are for tabs and editors alone, so with them off tmux runs and the card says so", async () => {
+    const env = { AGENT_LOOKOUT_TERMINAL_JUMP: "off", AGENT_LOOKOUT_EDITOR_JUMP: "off" };
     const processes = standIns({
       isInstalled: () => tmuxInstalled({ env, isExecutable: async () => true, platform: "darwin" }),
     });

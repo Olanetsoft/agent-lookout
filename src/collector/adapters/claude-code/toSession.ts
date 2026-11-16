@@ -9,6 +9,8 @@ import type { Session, SourceId } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { sessionName } from "../../../core/text.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import type { EditorWindow } from "../../editor/editorWindows.ts";
+import { isFolderPath } from "../../editor/openFolder.ts";
 import type { TerminalTab } from "../../terminal/terminalTabs.ts";
 import type { TmuxPane } from "../../tmux/panes.ts";
 import type { FeedEntry } from "./feed.ts";
@@ -24,6 +26,14 @@ export interface SessionContext {
   paneOf?: (pid: number) => TmuxPane | undefined;
   /** The Terminal or iTerm2 tab a process was found in, when tabs are looked for. */
   tabOf?: (pid: number) => TerminalTab | undefined;
+  /** The editor a process was found under, when editors are looked for. */
+  editorOf?: (pid: number) => EditorWindow | undefined;
+  /**
+   * The person's home folder, which is never opened in an editor, as it is
+   * named and with its links followed (`homeFolders`). Without it no session is
+   * reached through its editor.
+   */
+  homeDirs?: readonly [string, ...string[]];
 }
 
 /**
@@ -85,12 +95,23 @@ function build(fields: Fields, origin: ClaudeCodeOrigin, context: SessionContext
   if (fields.pid !== undefined) {
     session.pid = fields.pid;
     session.alive = context.isAlive(fields.pid);
-    // Only the place's name goes to the dashboard. The pane's id and the tab's
-    // terminal stay with the collector, which is the one that acts on them. A
-    // pane comes first: a session in tmux is reached through tmux.
-    const pane = session.alive ? context.paneOf?.(fields.pid) : undefined;
-    const tab = session.alive && !pane ? context.tabOf?.(fields.pid) : undefined;
-    if (pane) session.jump = { kind: "tmux", place: pane.place };
+    // Only the place's name goes to the dashboard. The pane's id, the tab's
+    // terminal and the path of the editor's app stay with the collector, which
+    // is the one that acts on them. A session of the VS Code extension is
+    // reached through the window of the editor its process runs under, when
+    // its folder is one an editor may be handed. For any other a pane comes
+    // first: a session in tmux is reached through tmux.
+    const editor =
+      session.alive &&
+      surface === "vscode" &&
+      context.homeDirs !== undefined &&
+      isFolderPath(session.cwd, ...context.homeDirs)
+        ? context.editorOf?.(fields.pid)
+        : undefined;
+    const pane = session.alive && !editor ? context.paneOf?.(fields.pid) : undefined;
+    const tab = session.alive && !editor && !pane ? context.tabOf?.(fields.pid) : undefined;
+    if (editor) session.jump = { kind: "editor", app: editor.app, place: editor.app };
+    else if (pane) session.jump = { kind: "tmux", place: pane.place };
     else if (tab) session.jump = { kind: "terminal", app: tab.app, place: tab.app };
   }
   return session;

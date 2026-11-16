@@ -211,6 +211,7 @@ describe("the Cline adapter, through the collector", () => {
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+        AGENT_LOOKOUT_EDITOR_JUMP: "off",
         AGENT_LOOKOUT_ANSWER: "off",
         AGENT_LOOKOUT_STOP: "off",
       },

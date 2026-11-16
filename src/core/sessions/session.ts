@@ -155,12 +155,22 @@ export const TERMINAL_APPS = ["Terminal", "iTerm2"] as const;
 export type TerminalApp = (typeof TERMINAL_APPS)[number];
 
 /**
+ * The editors whose window the collector can bring forward on a Mac, for a
+ * session of Claude Code's VS Code extension, as they are named.
+ */
+export const EDITOR_APPS = ["VS Code", "VS Code Insiders"] as const;
+
+export type EditorApp = (typeof EDITOR_APPS)[number];
+
+/**
  * A place the collector can take the person to itself, when the dashboard asks
- * it to with `POST /api/jump`: a tmux pane, or a tab of Terminal or iTerm2.
+ * it to with `POST /api/jump`: a tmux pane, a tab of Terminal or iTerm2, or on
+ * a Mac the window of the editor a running session of the VS Code extension
+ * runs in.
  *
  * It names the place in words, for a label, and holds nothing a command could
- * be made of. What the collector acts on, the pane or the tab's terminal device
- * it found, never leaves it.
+ * be made of. What the collector acts on, the pane, the tab's terminal device
+ * or the path of the editor's app it found, never leaves it.
  */
 export type JumpTarget =
   | {
@@ -172,6 +182,12 @@ export type JumpTarget =
       kind: "terminal";
       app: TerminalApp;
       /** The app, in words for the button: `Terminal` or `iTerm2`. */
+      place: string;
+    }
+  | {
+      kind: "editor";
+      app: EditorApp;
+      /** The editor, in words for the button: `VS Code` or `VS Code Insiders`. */
       place: string;
     };
 
@@ -492,7 +508,10 @@ export interface Session {
   pid?: number;
   /** Whether the process still exists, when a pid is known. */
   alive?: boolean;
-  /** Deep links. `open` jumps to the session in its own app. */
+  /**
+   * Deep links. `open` jumps to the session in its own app. A session in VS
+   * Code keeps it beside an editor's `jump`, for when its process has ended.
+   */
   links: { open?: string };
   /** Present when the collector can take the person to the session: see `JumpTarget`. */
   jump?: JumpTarget;

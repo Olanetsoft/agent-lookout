@@ -4,21 +4,28 @@ import { createTabFinder, TAB_LOOK_SOONEST_MS } from "@collector/terminal/tabFin
 import { HOME } from "@tests/fixtures/claudeCode";
 import {
   fakeProcesses,
+  inEditor,
   inTab,
   ITERM_PATH,
   TERMINAL_PATH,
+  VSCODE_BUNDLE,
   type ProcessRow,
 } from "@tests/support/node/terminal";
 
 const IN_TERMINAL = 5001;
 const IN_ITERM = 5002;
 const IN_WARP = 5003;
+const IN_VSCODE = 5004;
 
 const ROWS: ProcessRow[] = [
   ...inTab(TERMINAL_PATH, IN_TERMINAL, "ttys004", 600),
   ...inTab(ITERM_PATH, IN_ITERM, "ttys007", 700),
   ...inTab("/Applications/Warp.app/Contents/MacOS/stable", IN_WARP, "ttys009", 800),
+  ...inEditor(VSCODE_BUNDLE, IN_VSCODE, 910, 900),
 ];
+
+/** Both settings off, so nothing is looked for. */
+const BOTH_OFF = { AGENT_LOOKOUT_TERMINAL_JUMP: "off", AGENT_LOOKOUT_EDITOR_JUMP: "off" };
 
 /**
  * A finder over a table of processes, with a clock the test moves, and one
@@ -45,7 +52,7 @@ function finder(env: NodeJS.ProcessEnv = {}) {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("createTabFinder", () => {
-  test("says nothing has been asked until ps is, and with AGENT_LOOKOUT_TERMINAL_JUMP off it never is", async () => {
+  test("says nothing has been asked until ps is, and with both settings off it never is", async () => {
     const { found } = finder();
     expect(found.asked()).toBe(false);
     await found.look([]);
@@ -53,7 +60,7 @@ describe("createTabFinder", () => {
     await found.look([IN_TERMINAL]);
     expect(found.asked()).toBe(true);
 
-    const off = finder({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+    const off = finder(BOTH_OFF);
     await off.found.look([IN_TERMINAL]);
     expect(off.found.asked()).toBe(false);
     expect(off.ps.runs).toBe(0);
@@ -148,14 +155,77 @@ describe("createTabFinder", () => {
   });
 
   test.each([
-    ["AGENT_LOOKOUT_TERMINAL_JUMP is off", { AGENT_LOOKOUT_TERMINAL_JUMP: "off" }],
-    ["it is said in capitals and spaces", { AGENT_LOOKOUT_TERMINAL_JUMP: " OFF " }],
-  ] as const)("when %s, ps is never run and no tab is found", async (_what, env) => {
+    ["AGENT_LOOKOUT_TERMINAL_JUMP and AGENT_LOOKOUT_EDITOR_JUMP are off", BOTH_OFF],
+    [
+      "they are said in capitals and spaces",
+      { AGENT_LOOKOUT_TERMINAL_JUMP: " OFF ", AGENT_LOOKOUT_EDITOR_JUMP: " Off" },
+    ],
+  ] as const)("when %s, ps is never run and no tab or editor is found", async (_what, env) => {
     const { ps, found } = finder(env);
-    await found.look([IN_TERMINAL, IN_ITERM]);
+    await found.look([IN_TERMINAL, IN_ITERM, IN_VSCODE]);
 
     expect(ps.runs).toBe(0);
     expect(found.tabOf(IN_TERMINAL)).toBeUndefined();
+    expect(found.editorOf(IN_VSCODE)).toBeUndefined();
+  });
+});
+
+describe("the editor a process runs under", () => {
+  test("one look finds a process's editor with the tabs, and a forget drops it", async () => {
+    const { ps, clock, shared, found } = finder();
+    await found.look([IN_TERMINAL, IN_VSCODE]);
+
+    expect(found.editorOf(IN_VSCODE)).toEqual({ app: "VS Code", bundle: VSCODE_BUNDLE });
+    expect(found.tabOf(IN_VSCODE)).toBeUndefined();
+    expect(found.tabOf(IN_TERMINAL)?.app).toBe("Terminal");
+    expect(found.editorOf(IN_TERMINAL)).toBeUndefined();
+    expect(ps.runs).toBe(1);
+
+    shared.forget(IN_VSCODE);
+    expect(shared.editorOf(IN_VSCODE)).toBeUndefined();
+    clock.now += TAB_LOOK_SOONEST_MS;
+    await found.look([IN_TERMINAL, IN_VSCODE]);
+    expect(ps.runs).toBe(2);
+    expect(shared.editorOf(IN_VSCODE)?.app).toBe("VS Code");
+  });
+
+  test("what was found is kept while the process is named, even once its parents change", async () => {
+    const { ps, clock, found } = finder();
+    await found.look([IN_VSCODE]);
+    // The extension host has gone, and the session was left with process 1.
+    ps.rows = [[IN_VSCODE, 1, "??", "claude"]];
+    clock.now += TAB_LOOK_SOONEST_MS;
+    await found.look([IN_VSCODE]);
+
+    expect(ps.runs).toBe(1);
+    expect(found.editorOf(IN_VSCODE)?.app).toBe("VS Code");
+  });
+
+  test("a process no asker names any more is forgotten, editor and all", async () => {
+    const { found } = finder();
+    await found.look([IN_VSCODE]);
+    await found.look([]);
+
+    expect(found.editorOf(IN_VSCODE)).toBeUndefined();
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off the same one ps still finds editors, and no tab", async () => {
+    const { ps, found } = finder({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+    await found.look([IN_TERMINAL, IN_VSCODE]);
+
+    expect(ps.runs).toBe(1);
+    expect(found.asked()).toBe(true);
+    expect(found.editorOf(IN_VSCODE)?.app).toBe("VS Code");
+    expect(found.tabOf(IN_TERMINAL)).toBeUndefined();
+  });
+
+  test("with AGENT_LOOKOUT_EDITOR_JUMP off tabs are still found, and no editor", async () => {
+    const { ps, found } = finder({ AGENT_LOOKOUT_EDITOR_JUMP: "off" });
+    await found.look([IN_TERMINAL, IN_VSCODE]);
+
+    expect(ps.runs).toBe(1);
+    expect(found.tabOf(IN_TERMINAL)?.app).toBe("Terminal");
+    expect(found.editorOf(IN_VSCODE)).toBeUndefined();
   });
 });
 
@@ -264,12 +334,40 @@ describe("a tab finder two askers share", () => {
     expect(ps.runs).toBe(1);
   });
 
-  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, no asker's process is looked for", async () => {
-    const { ps, shared } = finder({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+  test("with both settings off, no asker's process is looked for", async () => {
+    const { ps, shared } = finder(BOTH_OFF);
     await shared.asker().look([IN_TERMINAL]);
     await shared.asker().look([IN_ITERM]);
 
     expect(ps.runs).toBe(0);
     expect(shared.tabOf(IN_ITERM)).toBeUndefined();
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off, an asker no editor reaches names nothing, and the other is still looked for", async () => {
+    const { ps, clock, shared } = finder({ AGENT_LOOKOUT_TERMINAL_JUMP: "off" });
+    const claude = shared.asker();
+    const qwen = shared.asker({ editors: false });
+
+    await qwen.look([IN_ITERM]);
+    expect(ps.runs).toBe(0);
+    expect(qwen.asked()).toBe(false);
+
+    await claude.look([IN_VSCODE]);
+    clock.now += TAB_LOOK_SOONEST_MS;
+    await qwen.look([IN_ITERM]);
+    expect(ps.runs).toBe(1);
+    expect(claude.asked()).toBe(true);
+    expect(qwen.asked()).toBe(false);
+    expect(shared.editorOf(IN_VSCODE)?.app).toBe("VS Code");
+  });
+
+  test("with tabs on, an asker no editor reaches is looked for as any other", async () => {
+    const { ps, shared } = finder();
+    const qwen = shared.asker({ editors: false });
+    await qwen.look([IN_ITERM]);
+
+    expect(ps.runs).toBe(1);
+    expect(qwen.asked()).toBe(true);
+    expect(qwen.tabOf(IN_ITERM)?.app).toBe("iTerm2");
   });
 });

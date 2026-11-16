@@ -281,23 +281,34 @@ export interface JumpRequest {
 
 /**
  * `POST /api/jump`, when the place was selected. For a tmux pane, `place` is
- * where, as tmux gives it now. For a terminal tab, it is the app.
+ * where, as tmux gives it now. For a terminal tab, it is the app. For an
+ * editor's window, it is the editor.
  */
 export type JumpResponse = JumpTarget & { ok: true };
 
 /**
  * Why a jump was not made, for the dashboard to say in its own words.
  *
- * no-pane       404: the session is not listed, or no pane or tab is known for it
+ * no-pane       404: the session is not listed, or no pane, tab or editor is known for it
  * pane-gone     409: tmux says the pane is no longer there
  * tmux-stopped  409: no tmux server answered
  * tab-gone      409: Terminal or iTerm2 has no tab on the session's terminal
+ * folder-gone   409: nothing or a file is at the session's folder
  * not-allowed   403: macOS did not allow Agent Lookout to control the app
  * too-soon      429: another jump was made less than a second ago, or one is under way
- * failed        500: tmux or osascript could not be run, or did not answer in time
+ * failed        500: tmux, osascript or the editor's command could not be run, or did
+ *                    not answer in time, or the session's folder could not be checked,
+ *                    is a link, or is not one Jump opens
  */
 export type JumpFailure =
-  "no-pane" | "pane-gone" | "tmux-stopped" | "tab-gone" | "not-allowed" | "too-soon" | "failed";
+  | "no-pane"
+  | "pane-gone"
+  | "tmux-stopped"
+  | "tab-gone"
+  | "folder-gone"
+  | "not-allowed"
+  | "too-soon"
+  | "failed";
 
 /**
  * How long the collector waits for Terminal or iTerm2 to bring a tab forward.
@@ -305,6 +316,20 @@ export type JumpFailure =
  * answer until they have, so this is long enough to read the question.
  */
 export const TERMINAL_JUMP_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the collector waits for an editor's own command to hand it a
+ * session's folder. The command passes it on and ends, and the dashboard's
+ * page waits a little longer than this, with the folder's check, for the answer.
+ */
+export const EDITOR_JUMP_TIMEOUT_MS = 3_000;
+
+/**
+ * How long the collector waits to learn what is at a session's folder before
+ * an editor is asked to open it, so a folder on a disk that has stopped
+ * answering cannot hold every other Jump back.
+ */
+export const EDITOR_FOLDER_CHECK_TIMEOUT_MS = 500;
 
 /** The body of an answer of `POST /api/jump` that says why no jump was made. */
 export interface JumpRefusal extends ErrorResponse {

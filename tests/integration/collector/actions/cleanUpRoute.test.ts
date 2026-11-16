@@ -63,6 +63,7 @@ async function serve(files: Record<string, string>) {
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+      AGENT_LOOKOUT_EDITOR_JUMP: "off",
     },
     notifier: fakeSystemNotifier(),
   });

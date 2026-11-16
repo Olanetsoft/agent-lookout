@@ -345,8 +345,8 @@ export interface QwenCodeAdapterOptions {
   /**
    * Finds the Terminal or iTerm2 tab each open session's process runs in, for
    * a session in no tmux pane. The collector passes an asker of the finder the
-   * jump route reads, which also says whether it has asked. Left out, no tab is
-   * looked for.
+   * jump route reads, made with `editors: false`, which also says whether it
+   * has asked. Left out, no tab is looked for.
    */
   terminals?: TabAsker;
   /**

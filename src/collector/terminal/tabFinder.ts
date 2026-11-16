@@ -1,5 +1,7 @@
 import os from "node:os";
 
+import { editorOfProcess, type EditorWindow } from "../editor/editorWindows.ts";
+import { editorJumpOff } from "../editor/program.ts";
 import { readProcessTableWithPs, type ReadProcessTable } from "../processes/processTable.ts";
 import { terminalJumpOff } from "./program.ts";
 import { tabOfProcess, type TerminalTab } from "./terminalTabs.ts";
@@ -8,7 +10,7 @@ import { tabOfProcess, type TerminalTab } from "./terminalTabs.ts";
 export const TAB_LOOK_SOONEST_MS = 5_000;
 
 export interface TabFinderOptions {
-  /** Where `AGENT_LOOKOUT_TERMINAL_JUMP` is read. */
+  /** Where `AGENT_LOOKOUT_TERMINAL_JUMP` and `AGENT_LOOKOUT_EDITOR_JUMP` are read. */
   env: NodeJS.ProcessEnv;
   /** Where iTerm2 keeps its server. Defaults to this user's home folder. */
   homeDir?: string;
@@ -32,6 +34,8 @@ export interface TabAsker {
   look(pids: readonly number[]): Promise<void>;
   /** The tab a process was found in, if one was. */
   tabOf(pid: number): TerminalTab | undefined;
+  /** The editor a process was found under, if one was: see `editorOfProcess`. */
+  editorOf(pid: number): EditorWindow | undefined;
   /**
    * Whether a look has been made for a process this asker named, at its own
    * look or another's. Only on macOS does that run `ps`, so Sources reads this
@@ -40,37 +44,58 @@ export interface TabAsker {
   asked(): boolean;
 }
 
+/** What an asker is for. */
+export interface TabAskerOptions {
+  /**
+   * Whether the sessions of the adapter that asks can be reached through an
+   * editor, as Claude Code's of the VS Code extension can. Defaults to true.
+   * An asker made with false names no process while
+   * `AGENT_LOOKOUT_TERMINAL_JUMP` is `off`, since nothing it could be told of
+   * is then looked for.
+   */
+  editors?: boolean;
+}
+
 export interface TabFinder {
   /**
    * A new asker. Each adapter that has sessions in terminals asks through one
    * of its own, so a look one of them makes never forgets the processes
    * another named.
    */
-  asker(): TabAsker;
+  asker(options?: TabAskerOptions): TabAsker;
   /** The tab a process was found in, if one was, whichever asker named it. */
   tabOf(pid: number): TerminalTab | undefined;
+  /** The editor a process was found under, if one was, whichever asker named it. */
+  editorOf(pid: number): EditorWindow | undefined;
   /** Forgets what was found for a process, so it is looked for again. */
   forget(pid: number): void;
 }
 
 /**
- * Finds which tab of Terminal or iTerm2 a process runs in, and remembers it.
+ * Finds which tab of Terminal or iTerm2 a process runs in, and which editor it
+ * runs under, and remembers both.
  *
- * A process keeps its terminal and its parents for as long as it runs, so each
- * is looked for once. A look runs `ps` once for every process that turned up
+ * A process keeps its terminal for as long as it runs, so each process is
+ * looked for once. A look runs `ps` once for every process that turned up
  * since the last, never within 5 seconds of the last look. With no new process,
- * nothing is run.
+ * nothing is run. The editor found by that look is kept as long as the tab is,
+ * even if the process is later left with another parent.
  *
  * Each adapter names its own processes through an asker of its own, and one
  * `ps` covers the new processes of every asker. A process no asker names any
  * more is forgotten. A look already under way is waited for, so each asker
  * knows what it found.
  *
- * Nothing is looked for while `AGENT_LOOKOUT_TERMINAL_JUMP` is `off`, and
- * `ps` is not asked anywhere but macOS.
+ * No tab is looked for while `AGENT_LOOKOUT_TERMINAL_JUMP` is `off`, and no
+ * editor while `AGENT_LOOKOUT_EDITOR_JUMP` is. With one of them on, the same
+ * one `ps` serves it, and with both off nothing is looked for. With tabs off,
+ * an asker whose sessions no editor reaches names nothing, so its sessions
+ * alone never run `ps`. `ps` is not asked anywhere but macOS.
  */
 export function createTabFinder(options: TabFinderOptions): TabFinder {
-  const off = terminalJumpOff(options.env);
+  const tabsOff = terminalJumpOff(options.env);
+  const editorsOff = editorJumpOff(options.env);
+  const off = tabsOff && editorsOff;
   const homeDir = options.homeDir ?? os.homedir();
   const readProcesses = options.readProcesses ?? readProcessTableWithPs;
   const now = options.now ?? Date.now;
@@ -78,6 +103,8 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
 
   /** What each process asked about came to: its tab, or null when it has none. */
   const found = new Map<number, TerminalTab | null>();
+  /** The editor each process asked about runs under, or null when it has none. */
+  const editors = new Map<number, EditorWindow | null>();
   let lookedAt: number | null = null;
   /** The processes each asker named at its latest look. */
   const named = new Map<object, ReadonlySet<number>>();
@@ -103,18 +130,22 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
     // A process `ps` did not list, as when it did not answer or was not
     // asked, is asked about again at the next look.
     for (const pid of unasked) {
-      if (table.has(pid)) found.set(pid, tabOfProcess(pid, table, homeDir) ?? null);
+      if (!table.has(pid)) continue;
+      found.set(pid, tabsOff ? null : (tabOfProcess(pid, table, homeDir) ?? null));
+      editors.set(pid, editorsOff ? null : (editorOfProcess(pid, table) ?? null));
     }
   }
 
-  async function look(asker: object, pids: readonly number[]): Promise<void> {
-    if (off) return;
+  async function look(asker: object, editorsToo: boolean, pids: readonly number[]): Promise<void> {
+    if (off || (tabsOff && !editorsToo)) return;
     named.set(asker, new Set(pids));
     while (underWay !== null) await underWay;
 
     const current = wanted();
     for (const pid of found.keys()) {
-      if (!current.has(pid)) found.delete(pid);
+      if (current.has(pid)) continue;
+      found.delete(pid);
+      editors.delete(pid);
     }
     const unasked = [...current].filter((pid) => !found.has(pid));
     if (unasked.length === 0) return;
@@ -137,15 +168,24 @@ export function createTabFinder(options: TabFinderOptions): TabFinder {
   }
 
   const tabOf = (pid: number) => found.get(pid) ?? undefined;
+  const editorOf = (pid: number) => editors.get(pid) ?? undefined;
 
   return {
-    asker() {
+    asker(askerOptions = {}) {
       const asker = {};
-      return { look: (pids) => look(asker, pids), tabOf, asked: () => askedFor.has(asker) };
+      const editorsToo = askerOptions.editors ?? true;
+      return {
+        look: (pids) => look(asker, editorsToo, pids),
+        tabOf,
+        editorOf,
+        asked: () => askedFor.has(asker),
+      };
     },
     tabOf,
+    editorOf,
     forget(pid) {
       found.delete(pid);
+      editors.delete(pid);
     },
   };
 }

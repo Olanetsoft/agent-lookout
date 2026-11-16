@@ -1,6 +1,10 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { NOTIFICATIONS_HEADER } from "@core/api";
+import {
+  EDITOR_FOLDER_CHECK_TIMEOUT_MS,
+  EDITOR_JUMP_TIMEOUT_MS,
+  NOTIFICATIONS_HEADER,
+} from "@core/api";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   AUTOMATION_REFUSED_LINE,
@@ -68,6 +72,7 @@ test.each([
   [409, "pane-gone"],
   [409, "tmux-stopped"],
   [409, "tab-gone"],
+  [409, "folder-gone"],
   [403, "not-allowed"],
   [429, "too-soon"],
   [500, "failed"],
@@ -103,6 +108,7 @@ test("every outcome has its own few words, in sentence case and with no exclamat
     "pane-gone": "That pane has closed",
     "tmux-stopped": "tmux has stopped",
     "tab-gone": "That tab has closed",
+    "folder-gone": "That folder is gone",
     "not-allowed": "macOS did not allow it",
     "too-soon": "Try again in a moment",
     failed: "Jump did not work",
@@ -121,6 +127,23 @@ test("a terminal tab's Jump says where it went, and that it found no tab rather 
   // A pane's are as they were.
   expect(jumpOutcomeWords("selected")).toBe("Selected in tmux");
   expect(jumpOutcomeWords("no-pane")).toBe("No tmux pane found");
+});
+
+test("an editor's Jump says where it went, and that it found no window rather than no pane", () => {
+  expect(jumpOutcomeWords("selected", "VS Code")).toBe("Switched to VS Code");
+  expect(jumpOutcomeWords("selected", "VS Code Insiders")).toBe("Switched to VS Code Insiders");
+  expect(jumpOutcomeWords("no-pane", "VS Code")).toBe("No window found");
+  expect(jumpOutcomeWords("folder-gone", "VS Code")).toBe("That folder is gone");
+  expect(jumpOutcomeWords("failed", "VS Code")).toBe("Jump did not work");
+  // A terminal tab's are as they were.
+  expect(jumpOutcomeWords("no-pane", "Terminal")).toBe("No tab found");
+});
+
+test("an editor's answer is a switch, and the short wait outlasts the collector's look at the folder and its run of the editor's command", async () => {
+  answering(200, { ok: true, kind: "editor", app: "VS Code", place: "VS Code" });
+
+  expect(await requestJump(SESSION)).toBe("selected");
+  expect(EDITOR_FOLDER_CHECK_TIMEOUT_MS + EDITOR_JUMP_TIMEOUT_MS).toBeLessThan(JUMP_TIMEOUT_MS);
 });
 
 test("the two lines about macOS name the app, and where to allow it, calmly", () => {

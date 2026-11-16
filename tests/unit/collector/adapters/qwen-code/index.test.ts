@@ -682,6 +682,7 @@ describe("Jump", () => {
         looked.push([...asked].sort());
       },
       tabOf: (pid: number) => tabs[pid],
+      editorOf: () => undefined,
       asked: () => looked.length > 0,
     };
   }
@@ -1138,7 +1139,7 @@ describe("Jump", () => {
             tables += 1;
             return new Map();
           },
-        }).asker(),
+        }).asker({ editors: false }),
       });
       await adapter.poll();
 
@@ -1252,7 +1253,7 @@ describe("Jump", () => {
         platform,
         now: processes.clock.now,
         panes: processes.panes.asker(),
-        terminals: processes.tabs.asker(),
+        terminals: processes.tabs.asker({ editors: false }),
         readProcessStarts: processes.starts.read,
       });
     }
@@ -1343,7 +1344,7 @@ describe("Jump", () => {
       expect(await rows(adapter)).toEqual(tabRows(TAB_CHECK_RUN));
     });
 
-    test("with AGENT_LOOKOUT_TERMINAL_JUMP off the look for a tab says not run, since none is made", async () => {
+    test("with AGENT_LOOKOUT_TERMINAL_JUMP off the look for a tab says not run, since none is made and no editor reaches a session", async () => {
       const processes = standIns({ env: { AGENT_LOOKOUT_TERMINAL_JUMP: "off" } });
       const adapter = adapterOn("darwin", processes);
       await adapter.poll();
@@ -1540,7 +1541,7 @@ describe("Jump", () => {
         platform: "linux",
         now: processes.clock.now,
         panes: processes.panes.asker(),
-        terminals: processes.tabs.asker(),
+        terminals: processes.tabs.asker({ editors: false }),
         readProcessStarts: processes.starts.read,
       });
       await adapter.poll();
