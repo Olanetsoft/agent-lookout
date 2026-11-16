@@ -30,9 +30,13 @@
 // Night or Day, and 900 high, except Sources, whose cards and table run past
 // 900: its window is as tall as the whole view, so one picture holds the
 // agents found, the other machine and the table, with the ground behind all of
-// it. The Overview with nothing waiting, which the guide shows beside what it
-// says of the Needs you panel, ends where the row under the panel and the
-// Last hour chart begins, so no row of the list is cut through.
+// it. Chromium draws nothing past about 16,384 pixels in one screenshot, which
+// that view now runs past at twice the density, so its window is taken in
+// slices 4,096 CSS pixels high, stacked into the one picture, and the script
+// stops if any band of it, down to the last card, is plain background. The
+// Overview with nothing waiting, which the guide shows beside what it says of
+// the Needs you panel, ends where the row under the panel and the Last hour
+// chart begins, so no row of the list is cut through.
 //
 // The clock is held at 09:12:00 UTC on 5 October 2026, the moment the landing
 // page's own pictures show, with the locale en-US and reduced motion, and the
@@ -78,6 +82,12 @@ const out = path.resolve(outAt === -1 ? path.join(root, "docs/images") : args[ou
 
 const VIEWPORT = { width: 1440, height: 900 };
 const DENSITY = 2;
+/** The height of each slice of a whole view, in CSS pixels: 8,192 at twice the density, half what Chromium draws. */
+const SLICE = 4096;
+/** A band of a picture this high, in its own pixels, is checked to hold more colours than plain background has. */
+const BAND = 200;
+/** Fewer colours than this in a band is plain background: Chromium's blank left 7 to 31, any band of cards hundreds. */
+const PLAIN = 64;
 
 /**
  * Each picture: the tour's scene and step it shows, its theme, whether its
@@ -247,6 +257,7 @@ async function take(browser, origin, picture, problems) {
     if (missing.length > 0) {
       throw new Error(`${picture.file}: the page does not show ${missing.join(", ")}.`);
     }
+    if (picture.whole) return packed(await wholeView(page, picture));
     const clip = picture.topRow ? await topRow(page) : undefined;
     const shot = await page.screenshot({
       animations: "disabled",
@@ -258,6 +269,70 @@ async function take(browser, origin, picture, problems) {
   } finally {
     await context.close();
   }
+}
+
+/**
+ * The whole view, as one image: its window taken in slices no taller than
+ * Chromium draws, stacked. It throws when a band of the image, down to the
+ * bottom of the last card, is plain background, as Chromium leaves where it
+ * drew nothing.
+ */
+async function wholeView(page, picture) {
+  const { width, height } = page.viewportSize();
+  const slices = [];
+  for (let top = 0; top < height; top += SLICE) {
+    const png = await page.screenshot({
+      animations: "disabled",
+      caret: "hide",
+      scale: "device",
+      clip: { x: 0, y: top, width, height: Math.min(SLICE, height - top) },
+    });
+    const slice = decode(png);
+    if (!slice)
+      throw new Error(`${picture.file}: Playwright gave a PNG this script does not read.`);
+    slices.push(slice);
+  }
+  const [first] = slices;
+  if (slices.some((slice) => slice.width !== first.width || slice.channels !== first.channels)) {
+    throw new Error(`${picture.file}: its slices differ in width or kind.`);
+  }
+  const image = {
+    width: first.width,
+    height: slices.reduce((sum, slice) => sum + slice.height, 0),
+    channels: first.channels,
+    pixels: Buffer.concat(slices.map((slice) => slice.pixels)),
+    kept: first.kept,
+  };
+  const cards = await page.evaluate(() =>
+    Math.max(
+      ...[...document.querySelectorAll("section[aria-labelledby]")].map(
+        (card) => card.getBoundingClientRect().bottom,
+      ),
+    ),
+  );
+  const plain = plainBand(image, Math.floor(cards * DENSITY));
+  if (plain !== null) {
+    throw new Error(
+      `${picture.file}: rows ${plain} to ${plain + BAND} are plain background, where the page has its cards.`,
+    );
+  }
+  return image;
+}
+
+/** The top row of the first band, BAND high, between the top and `bottom` with fewer than PLAIN colours, or null. */
+function plainBand(image, bottom) {
+  const { width, channels, pixels } = image;
+  for (let top = 0; top + BAND <= Math.min(bottom, image.height); top += BAND) {
+    const colours = new Set();
+    for (let y = top; y < top + BAND && colours.size < PLAIN; y++) {
+      for (let x = 0; x < width && colours.size < PLAIN; x++) {
+        const at = (y * width + x) * channels;
+        colours.add((pixels[at] << 16) | (pixels[at + 1] << 8) | pixels[at + 2]);
+      }
+    }
+    if (colours.size < PLAIN) return top;
+  }
+  return null;
 }
 
 // The smallest lossless PNG of what Playwright gives.
@@ -420,6 +495,12 @@ function filtered(pixels, width, height, bpp, choice) {
 function smallestPng(png) {
   const decoded = decode(png);
   if (!decoded) return png;
+  const written = packed(decoded);
+  return written.length < png.length ? written : png;
+}
+
+/** The smallest lossless PNG this script writes of an image's pixels. */
+function packed(decoded) {
   const image = withoutAlpha(decoded);
   const palette = asPalette(image);
   const { width, height } = image;
@@ -446,8 +527,7 @@ function smallestPng(png) {
     if (palette.alpha) parts.push(chunk("tRNS", palette.alpha));
   }
   parts.push(chunk("IDAT", best), chunk("IEND", Buffer.alloc(0)));
-  const written = Buffer.concat(parts);
-  return written.length < png.length ? written : png;
+  return Buffer.concat(parts);
 }
 
 const mb = (bytes) => `${(bytes / 1_000_000).toFixed(2)} MB`;
