@@ -61,8 +61,8 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
 /**
  * The app over one session, working until the test says it waits. The
  * collector polls only when asked, keeps its own clock, and shows its own
- * notifications for a wait, as with no window open. The app's notifier,
- * answers and menu bar keep a clock the test moves ahead.
+ * notifications for a wait, as it does with the window open or closed. The
+ * app's notifier, answers and menu bar keep a clock the test moves ahead.
  */
 async function app(env: Record<string, string> = {}) {
   const standIn = await startStandIn();

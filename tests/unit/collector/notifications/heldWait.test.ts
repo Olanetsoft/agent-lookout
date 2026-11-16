@@ -78,6 +78,32 @@ describe("with notifications off", () => {
   });
 });
 
+describe("with pages that show no notifications of their own, as the Mac app's window", () => {
+  test("a wait is shown at once, though a page that said on keeps asking and has fetched the sessions since", () => {
+    const fetched = pageOn(1_000, { lastOnAt: T0 + 1, lastOnSessionsAt: T0 + 1 });
+    expect(heldWaitOutcome(T0, fetched, T0 + 1, false)).toBe("show");
+    expect(heldWaitOutcome(T0, pageOn(0, { lastOnAt: T0 }), T0, false)).toBe("show");
+    expect(heldWaitOutcome(T0, noPageReports(true), T0, false)).toBe("show");
+  });
+
+  test("a wait is still dropped while notifications are off", () => {
+    expect(heldWaitOutcome(T0, noPageReports(false), T0, false)).toBe("drop");
+    expect(heldWaitOutcome(T0, { ...pageOn(1_000), on: false }, T0 + 60_000, false)).toBe("drop");
+  });
+
+  test("left out, or true, pages are taken to show their own, and a wait is held or dropped for them as before", () => {
+    const asking = pageOn(1_000, { lastOnAt: T0 });
+    const fetched = pageOn(1_000, { lastOnAt: T0 + 1_500, lastOnSessionsAt: T0 + 1_500 });
+    expect(heldWaitOutcome(T0, asking, T0)).toBe("hold");
+    expect(heldWaitOutcome(T0, asking, T0, true)).toBe("hold");
+    expect(heldWaitOutcome(T0, fetched, T0 + 1_500)).toBe("drop");
+    expect(heldWaitOutcome(T0, fetched, T0 + 1_500, true)).toBe("drop");
+    // With them off, the same two are shown at once.
+    expect(heldWaitOutcome(T0, asking, T0, false)).toBe("show");
+    expect(heldWaitOutcome(T0, fetched, T0 + 1_500, false)).toBe("show");
+  });
+});
+
 describe("the two lengths of time", () => {
   test("the grace period is five seconds at most, and leaves a page one full turn of its own polling", () => {
     expect(HANDOVER_GRACE_MS).toBeLessThanOrEqual(5_000);

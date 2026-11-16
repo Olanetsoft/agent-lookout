@@ -615,8 +615,9 @@ describe("in the Mac app", () => {
       "This setting is the app's own. Turning notifications on in a browser does not turn them on here.",
     );
     expect(words).toContain(
-      "They also arrive while this window is closed, for as long as Agent Lookout keeps running, and those stay until you clear them.",
+      "They come from Agent Lookout itself, with this window open or closed, for as long as it keeps running. While it holds a session's permission request, the notification of its wait has Deny, and Allow too for a short command it can show whole.",
     );
+    expect(words).not.toContain("while this window is closed");
     expect(words).toContain(
       "macOS hides their banners while the display is shared or mirrored, unless Allow notifications when mirroring or sharing the display is on, in System Settings under Notifications.",
     );

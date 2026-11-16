@@ -598,15 +598,16 @@ export const MAX_EVENTS_PER_RESPONSE = 200;
 
 /**
  * The request header in which a dashboard page says, on every request, whether
- * its own notifications are on, and for which events. The collector keeps the
- * last thing a page said and shows its own notifications only of those events,
- * so the switches in Settings cover both.
+ * its notifications are on, and for which events. The collector keeps the last
+ * thing a page said and shows its own notifications only of those events, so
+ * the switches in Settings cover both. In the Mac app's window the page shows
+ * none of its own, and the app's are all there are.
  */
 export const NOTIFICATIONS_HEADER = "X-Agent-Lookout-Notifications";
 
 /**
- * What a page says in `NOTIFICATIONS_HEADER`: the events it shows a
- * notification of. None is off.
+ * What a page says in `NOTIFICATIONS_HEADER`: the events its notifications are
+ * on for, which a page in a browser shows a notification of. None is off.
  */
 export type NotificationsSaid = readonly NoticeEvent[];
 

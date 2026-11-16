@@ -2,7 +2,9 @@
 //
 // It may show notifications and write text to the clipboard, as it does in a
 // browser tab, and nothing else: no camera, no clipboard reading, no opening
-// of other apps by itself, no devices. Electron asks this session whether the
+// of other apps by itself, no devices. It shows no notification of its own,
+// since the app shows every one itself, but the permission is what lets its
+// notification setting read on. Electron asks this session whether the
 // page's `navigator.clipboard.writeText` may write, which the page calls only
 // when the person presses a button that copies, such as a finished session's
 // Resume. It may load nothing from the network either. The page's own policy

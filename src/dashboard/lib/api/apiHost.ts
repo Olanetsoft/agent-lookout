@@ -12,9 +12,10 @@ import { notificationEventsInForce } from "@dashboard/lib/notifications/notifica
  *
  * Every request also says whether this page's notifications are on, and for
  * which events, in a header. The collector shows a notification itself when no
- * page is open to, and what the pages say is all it knows of the setting, so
- * turning notifications off here turns the collector's off at the next
- * request. It is added here, at the seam, so no request can go without it.
+ * page is open to, and in the Mac app always, and what the pages say is all it
+ * knows of the setting, so turning notifications off here turns the
+ * collector's off at the next request. It is added here, at the seam, so no
+ * request can go without it.
  */
 
 /** Fetch-shaped on purpose, so a call site only swaps `fetch(` for `apiRequest(`. */
@@ -48,9 +49,11 @@ function staysOnThisServer(path: string): boolean {
 }
 
 /**
- * What this page says of its notifications: the events it shows them of, which
- * is none unless the person has turned them on and the browser allows them.
- * Read at each request, because either can change in between.
+ * What this page says of its notifications: the events they are on for, which
+ * is none unless the person has turned them on and the browser allows them. In
+ * a browser the page shows them of those events, and in the Mac app's window,
+ * where the page shows none, the app does. Read at each request, because
+ * either can change in between.
  */
 function notificationsSaid(): string {
   return notificationsHeaderValue(notificationEventsInForce());

@@ -5,9 +5,11 @@
  * Notifications API, and shown by the operating system. Nothing is sent to a
  * server and no service worker is registered, so the page can only make one
  * while it is open. With no page open the collector shows its own, in
- * `src/collector/notifications/`. A later desktop host installs its own, native
- * notifications with `setNotificationHost` before React renders, and nothing
- * else in the dashboard changes.
+ * `src/collector/notifications/`. In the Mac app's window the page shows none:
+ * the app shows every one itself (`useWaitNotifications`), and this host's
+ * permission still decides whether the setting reads on. A host whose page
+ * cannot use the browser's installs its own with `setNotificationHost` before
+ * React renders, and nothing else in the dashboard changes.
  */
 
 /** Whether notifications may be shown. "unsupported" means the host has no way to show one. */

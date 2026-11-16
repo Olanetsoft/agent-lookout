@@ -11,6 +11,7 @@ import {
   subscribeToNotificationSetting,
 } from "@dashboard/lib/notifications/notificationSetting";
 import { createWaitNotifier } from "@dashboard/lib/notifications/waitNotifier";
+import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 
 const notifiesOf = (event: NoticeEvent) => notificationEventsInForce().includes(event);
 /** What every request tells the collector of the setting. */
@@ -19,13 +20,14 @@ const headerNow = () => notificationsHeaderValue(notificationEventsInForce());
 /**
  * Tells the collector what the setting is now, in a request of its own.
  *
- * The collector shows notifications itself when no page is open, and knows the
- * setting only from the header `apiRequest` puts on every request. The next
- * poll can be two seconds off, and a tab closed before it would leave the
- * collector with the old setting until a dashboard is opened again. So the
- * change is said at once, and `keepalive` lets the request finish when the tab
- * is closed straight after. The store's `refresh` would not do: it is skipped
- * while a poll is under way, and that poll left with the old setting.
+ * The collector shows notifications itself when no page is open, and in the
+ * Mac app always, and knows the setting only from the header `apiRequest` puts
+ * on every request. The next poll can be two seconds off, and a tab closed
+ * before it would leave the collector with the old setting until a dashboard
+ * is opened again. So the change is said at once, and `keepalive` lets the
+ * request finish when the tab is closed straight after. The store's `refresh`
+ * would not do: it is skipped while a poll is under way, and that poll left
+ * with the old setting.
  */
 async function tellCollector(): Promise<void> {
   try {
@@ -61,9 +63,24 @@ async function tellCollector(): Promise<void> {
  *
  * When notifications go on or off, or an event is switched, the collector is
  * told at once, because its own notifications follow the same setting.
+ *
+ * In the Mac app's window it shows nothing: the app's own notifier shows every
+ * notification, with the window open or closed, with Deny and Allow on a wait
+ * whose permission request Agent Lookout holds. The page still tells the
+ * collector at once when the setting changes, and says which events are on in
+ * every request, as in a browser.
  */
-export function useWaitNotifications(store: CollectorStore): void {
+export function useWaitNotifications(store: CollectorStore, inApp: boolean = inAppWindow()): void {
   useEffect(() => {
+    let said = headerNow();
+    /** Tells the collector at once when what every request says has changed. */
+    const sayChange = () => {
+      const saying = headerNow();
+      if (saying !== said) void tellCollector();
+      said = saying;
+    };
+    if (inApp) return subscribeToNotificationSetting(sayChange);
+
     const notifier = createWaitNotifier({
       // Asked for at each notification, so a host installed later is the one used.
       host: { show: (content) => notificationHost().show(content) },
@@ -77,12 +94,9 @@ export function useWaitNotifications(store: CollectorStore): void {
     onAnswer();
     const stopListening = store.subscribe(onAnswer);
 
-    let said = headerNow();
     let showedWaits = notifiesOf("needs-you");
     const stopWatchingSetting = subscribeToNotificationSetting(() => {
-      const saying = headerNow();
-      if (saying !== said) void tellCollector();
-      said = saying;
+      sayChange();
       // Off is the same choice in every page at this address, so nothing is handed over.
       const showsWaits = notifiesOf("needs-you");
       if (showedWaits && !showsWaits) notifier.closeAll();
@@ -100,5 +114,5 @@ export function useWaitNotifications(store: CollectorStore): void {
       leave();
       handover.close();
     };
-  }, [store]);
+  }, [store, inApp]);
 }

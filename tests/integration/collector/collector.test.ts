@@ -589,10 +589,15 @@ function standInSource(initial: Session[] = []) {
  * A collector over that source, served over real HTTP, with a notifier that
  * writes down what it is asked to show and shows nothing. The environment is
  * the test's own, so a setting in the shell that runs the tests changes nothing.
+ * `pagesNotify` is the notifier's, as a host's notifier says it.
  */
-async function watch(source = standInSource(), env: Record<string, string> = {}) {
+async function watch(
+  source = standInSource(),
+  env: Record<string, string> = {},
+  options: { pagesNotify?: boolean } = {},
+) {
   const { state, adapter } = source;
-  const notifier = fakeSystemNotifier();
+  const notifier = fakeSystemNotifier({ pagesNotify: options.pagesNotify });
   const collector = createCollector({
     version: "9.9.9-test",
     adapters: [adapter],
@@ -667,6 +672,31 @@ describe("the collector's own notifications", () => {
     await server.poll(60_000, [waiting("billing-webhooks")]);
 
     expect(server.notifier.shown).toEqual([]);
+  });
+
+  test("with a notifier that says the pages show none of their own, as the Mac app's does, a page that says on and stays open leaves the wait to the collector, shown at once and once, and its end is told", async () => {
+    const server = await watch(standInSource(), {}, { pagesNotify: false });
+    await server.poll(0, [working("billing-webhooks")]);
+    await server.page(1_000, "on");
+
+    await server.poll(2_000, [waiting("billing-webhooks")]);
+    expect(server.notifier.shown).toEqual([
+      { title: "billing-webhooks", body: "Waiting for permission" },
+    ]);
+    expect(server.notifier.about).toEqual([{ kind: "wait", sessionId: id }]);
+    // The page's next turns: it has the wait, and shows nothing of it.
+    const answer = await server.page(3_000, "on");
+    expect(answer.json<SessionsSnapshot>().sessions[0]?.status).toBe("needs-you");
+    await server.poll(4_000, [waiting("billing-webhooks")]);
+    await server.page(5_000, "on");
+    await server.poll(6_000, [waiting("billing-webhooks")]);
+    expect(server.notifier.shown).toHaveLength(1);
+
+    await server.poll(8_000, [working("billing-webhooks")]);
+    expect(server.notifier.ended).toEqual([id]);
+    // The page switches notifications off, and the notifier is told.
+    await server.page(9_000, "off");
+    expect(server.notifier.waitsOffs).toBe(1);
   });
 
   test("a page that said on and was closed leaves the collector to show the next wait", async () => {

@@ -11,12 +11,13 @@
 //
 // It is a Mac app in the usual way: one copy runs at a time, and opening it
 // again brings its window forward; closing the window leaves it running, so
-// the collector keeps watching, shows its own notifications and keeps the
-// count of sessions that need you on the Dock icon and in the menu bar, whose
-// menu lists them and opens one's details; clicking its Dock icon opens the
-// window again; Cmd+Q quits, and the collector stops. A permission request
-// Agent Lookout holds can be answered from the app's own notification and
-// from the menu bar too, through the collector's own answer in this process
+// the collector keeps watching, shows its own notifications (with the window
+// open too, since the page in it shows none) and keeps the count of sessions
+// that need you on the Dock icon and in the menu bar, whose menu lists them
+// and opens one's details; clicking its Dock icon opens the window again;
+// Cmd+Q quits, and the collector stops. A permission request Agent Lookout
+// holds can be answered from the app's own notification and from the menu
+// bar too, through the collector's own answer in this process
 // (`answers/desktopAnswers.ts`), with every check a press on the page makes.
 //
 // Its own code asks the internet one thing: whether GitHub has a newer version
@@ -297,8 +298,8 @@ function start(): void {
       applySessionRules(session.defaultSession);
 
       // Built the way every host builds it, so every feature the standalone
-      // server has, the app has. Its own notifications are the app's, and its
-      // warnings go to the app's log.
+      // server has, the app has. Its notifications are all the app's own, with
+      // the window open or closed, and its warnings go to the app's log.
       const badge = createDockBadge((text) => app.dock?.setBadge(text));
       // Deny and Allow in the app's own notifications and its menu bar. The
       // answers are made first, and reach the notifier, the menu bar and the

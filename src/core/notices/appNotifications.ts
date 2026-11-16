@@ -49,8 +49,8 @@ export interface AppNotificationsStatus {
   /**
    * The reason macOS gave the last time it would not show a notification the
    * app's main process made, a test or any other, or null when it has not
-   * refused one since one was last shown, or since the app started. The page's
-   * own notifications are not heard.
+   * refused one since one was last shown, or since the app started. The page
+   * in the window shows none of its own.
    */
   lastRefusal: string | null;
 }
