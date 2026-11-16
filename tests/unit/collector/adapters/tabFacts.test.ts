@@ -9,6 +9,7 @@ import { TAB_CHECK, TAB_CHECK_RUN } from "@tests/support/node/terminal";
 const asker = (asked: boolean): TabAsker => ({
   look: async () => {},
   tabOf: () => undefined,
+  editorOf: () => undefined,
   asked: () => asked,
 });
 

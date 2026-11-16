@@ -175,6 +175,24 @@ test("Jump reaches a session the collector found in a tab of Terminal or iTerm2 
   expect(jumpWay(session)).toEqual({ by: "terminal", app: "iTerm2", where: "iTerm2" });
 });
 
+test("a running VS Code session the collector found under its editor is reached through that window, not its link", () => {
+  const session = makeSession({
+    surface: "vscode",
+    links: { open: JUMP },
+    jump: { kind: "editor", app: "VS Code Insiders", place: "VS Code Insiders" },
+  });
+  expect(jumpWay(session)).toEqual({
+    by: "editor",
+    app: "VS Code Insiders",
+    where: "VS Code Insiders",
+  });
+});
+
+test("the same session with no editor, as once its process has ended, keeps its link", () => {
+  const session = makeSession({ surface: "vscode", links: { open: JUMP } });
+  expect(jumpWay(session)?.by).toBe("link");
+});
+
 test("a session with both keeps its link", () => {
   const session = makeSession({
     surface: "vscode",

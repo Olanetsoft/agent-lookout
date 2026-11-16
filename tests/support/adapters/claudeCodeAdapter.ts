@@ -48,10 +48,11 @@ export const noTranscripts: ReadOnlyIo = {
 
 /**
  * An adapter cut off from this machine: its own claude home, a pretend binary,
- * a fixed clock, and every process alive unless a test says otherwise. The
- * claude home is only a path to it, so a test that also replaces `registryIo`
- * can name a folder that does not exist: its transcripts are then read from a
- * stand-in too, unless the test hands one in.
+ * a fixed clock, every process alive unless a test says otherwise, and a home
+ * folder whose name has no link to follow. The claude home is only a path to
+ * it, so a test that also replaces `registryIo` can name a folder that does
+ * not exist: its transcripts are then read from a stand-in too, unless the
+ * test hands one in.
  */
 export function adapterFor(claudeHome: string, options: ClaudeCodeAdapterOptions = {}) {
   return createClaudeCodeAdapter({
@@ -62,6 +63,7 @@ export function adapterFor(claudeHome: string, options: ClaudeCodeAdapterOptions
     isExecutable: async (candidate) => asWritten(candidate) === BIN,
     run: prints(feedJson),
     readProcessStarts: noStartTimes,
+    homeFolders: async (home) => [home],
     ...(options.registryIo !== undefined && { transcriptIo: noTranscripts }),
     ...options,
   });

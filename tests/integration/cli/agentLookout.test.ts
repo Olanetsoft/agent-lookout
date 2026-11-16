@@ -646,6 +646,7 @@ describe("agent-lookout start, as a process", () => {
         AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+        AGENT_LOOKOUT_EDITOR_JUMP: "off",
         AGENT_LOOKOUT_HISTORY: "off",
         AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
       },

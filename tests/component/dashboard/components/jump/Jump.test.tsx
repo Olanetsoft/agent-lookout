@@ -35,6 +35,17 @@ const IN_VSCODE = makeSession({
   surface: "vscode",
   links: { open: LINK },
 });
+/** A running session in VS Code that the collector found under the editor. */
+const IN_EDITOR = makeSession({
+  id: ID,
+  name: "docs-site",
+  surface: "vscode",
+  status: "working",
+  links: { open: LINK },
+  pid: 4245,
+  alive: true,
+  jump: { kind: "editor", app: "VS Code", place: "VS Code" },
+});
 const NOWHERE = makeSession({ id: ID, name: "search-indexing" });
 /** A session the collector found in a tab of Terminal. */
 const IN_TERMINAL = makeSession({
@@ -508,6 +519,59 @@ test("the line is said once for each app, since macOS asks about each", async ()
     UNTIL_ASKED,
   );
   expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBe("Terminal,iTerm2");
+});
+
+test("a running session in VS Code has a Jump that is a button, named for the session and the editor, drawn as every Jump is, and it opens no link", async () => {
+  const screen = await render(
+    <>
+      <Row session={IN_EDITOR} />
+      <Row session={{ ...IN_TMUX, id: `${ID}-2` }} />
+    </>,
+  );
+  const jump = screen.getByRole("button", { name: "Jump to docs-site in VS Code" });
+  const tmux = screen.getByRole("button", { name: "Jump to checkout-flow in tmux, work:2.1" });
+
+  expect(jump.element().getAttribute("data-way")).toBe("editor");
+  expect(jump.element().textContent).toBe("Jump");
+  for (const property of ["height", "width", "backgroundColor", "color", "fontSize"] as const) {
+    expect([property, getComputedStyle(jump.element())[property]]).toEqual([
+      property,
+      getComputedStyle(tmux.element())[property],
+    ]);
+  }
+  expect(screen.container.querySelector('a[href^="vscode:"]')).toBeNull();
+  await pointAway();
+  await jump.hover();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="tooltip"]')?.textContent).toContain("VS Code"),
+  );
+});
+
+test("a press of an editor's Jump asks the collector once, names the session alone, and says it switched to VS Code, with no line about macOS", async () => {
+  const sent = collector(json(200, { ok: true, kind: "editor", app: "VS Code", place: "VS Code" }));
+  const screen = await render(<Row session={IN_EDITOR} />);
+  await screen.getByRole("button", { name: /^Jump to docs-site/ }).click();
+
+  await expect.element(screen.getByRole("status")).toHaveTextContent("Switched to VS Code");
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.path).toBe("/api/jump");
+  expect(sent[0]?.body).toBe(JSON.stringify({ sessionId: ID }));
+  expect(note(screen.container)?.textContent).toBe("Switched to VS Code");
+  await askWaitOver();
+  expect(line(screen.container)).toBeNull();
+  expect(localStorage.getItem(AUTOMATION_NOTE_STORAGE_KEY)).toBeNull();
+});
+
+test.each([
+  ["no window is known", json(404, { error: "x", reason: "no-pane" }), "No window found"],
+  ["the folder has gone", json(409, { error: "x", reason: "folder-gone" }), "That folder is gone"],
+  ["the command failed", json(500, { error: "x", reason: "failed" }), "Jump did not work"],
+])("when %s, an editor's Jump says so in its own words", async (_what, answer, words) => {
+  collector(answer);
+  const screen = await render(<Row session={IN_EDITOR} />);
+  await screen.getByRole("button", { name: /^Jump to docs-site/ }).click();
+
+  await expect.element(screen.getByRole("status")).toHaveTextContent(words);
 });
 
 test("a press of a tmux Jump says nothing about macOS", async () => {

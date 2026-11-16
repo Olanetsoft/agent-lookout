@@ -241,6 +241,7 @@ describe("with a real collector", () => {
         AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE,
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+        AGENT_LOOKOUT_EDITOR_JUMP: "off",
       },
       notifier: fakeSystemNotifier(),
       now: () => now,

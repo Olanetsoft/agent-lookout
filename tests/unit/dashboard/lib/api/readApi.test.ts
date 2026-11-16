@@ -122,10 +122,48 @@ test("a tab of Terminal or iTerm2 is read when it names an app this page knows",
   });
 });
 
+test("an editor's window is read when it names an editor this page knows, and nothing beside it is kept", () => {
+  for (const app of ["VS Code", "VS Code Insiders"] as const) {
+    const sent = makeSession({
+      pid: 4242,
+      alive: true,
+      surface: "vscode",
+      jump: { kind: "editor", app, place: app },
+    });
+    expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+  }
+
+  const padded = {
+    ...makeSession(),
+    jump: {
+      kind: "editor",
+      app: "VS Code",
+      place: "VS Code",
+      bundle: "/Applications/Visual Studio Code.app",
+    },
+  };
+  expect(readSession(padded)?.jump).toEqual({ kind: "editor", app: "VS Code", place: "VS Code" });
+
+  // One on another machine is no jump, as every jump there is.
+  const there = readSession({
+    ...makeSession({
+      id: "remote:devbox:claude-code:1",
+      source: "remote:devbox",
+      agent: "Claude Code",
+      machine: "devbox",
+    }),
+    jump: { kind: "editor", app: "VS Code", place: "VS Code" },
+  });
+  expect(there).not.toHaveProperty("jump");
+});
+
 test.each([
   ["nothing", undefined],
   ["null", null],
   ["a text", "tmux, work:2.1"],
+  ["an editor this page does not know", { kind: "editor", app: "Zed", place: "Zed" }],
+  ["an editor that names no app", { kind: "editor", place: "VS Code" }],
+  ["a terminal app named as an editor", { kind: "editor", app: "Terminal", place: "Terminal" }],
   ["a tab of an app this page does not know", { kind: "terminal", app: "Warp", place: "Warp" }],
   ["a tab that names no app", { kind: "terminal", place: "Terminal" }],
   ["a tab with no place", { kind: "terminal", app: "Terminal" }],

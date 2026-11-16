@@ -222,7 +222,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 - What a session last said is read only when a page asks for it. [A session's last message](#a-sessions-last-message) covers it.
 - `AGENT_LOOKOUT_WAITING_TEXT=off` stops any transcript being opened.
 
-**What it hands on.** On each poll it gives its live process IDs to the tmux pane finder and the Terminal tab finder, for [Jump](#jump). It also tells the stop routes what each session would be stopped by, for [Stop](#stop-and-clean-up).
+**What it hands on.** On each poll it gives its live process IDs to the tmux pane finder and the Terminal tab finder, which also notes the editor a VS Code session runs under, for [Jump](#jump). It also tells the stop routes what each session would be stopped by, for [Stop](#stop-and-clean-up).
 
 ### Codex
 
@@ -1333,16 +1333,17 @@ Agent Lookout started as a watcher. The README in the first commit said it "only
 
 This part covers what Agent Lookout does when you ask it to act: Jump, Stop and the clean-up of sessions left running, Resume, Allow and Deny, and the permission rules. It also covers the checks every such request has to pass. The time rules, which change only what is sent and what counts as stale, are under [Time rules](#time-rules-reminders-quiet-hours-and-the-idle-time).
 
-| What you do                       | Route                                             | Main code                                                            | Asked for in            | First release    |
-| --------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------- | ---------------- |
-| Jump to a session in VS Code      | none, it is a link                                | `src/core/mapping/claudeCodeMapping.ts`                              | First commit            | 0.2.0            |
-| Jump to a tmux pane               | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/tmux/`                  | #7                      | 0.2.0            |
-| Jump to a Terminal or iTerm2 tab  | `POST /api/jump`                                  | `src/collector/terminal/`                                            | #7                      | 0.2.0            |
-| Stop one session                  | `POST /api/sessions/stop`                         | `src/collector/actions/`                                             | #5                      | 0.2.4            |
-| End the sessions left running     | `POST /api/sessions/clean-up`                     | `src/collector/actions/cleanUpRoute.ts`                              | #6                      | 0.2.4            |
-| Resume an ended session           | none, it copies text                              | `src/core/mapping/claudeCodeResume.ts`                               | #8                      | 0.2.5            |
-| Allow or Deny a permission prompt | `POST /api/permission/answer`, plus a Unix socket | `src/collector/answers/`, `plugins/agent-lookout/`                   | #9, and #81 for the app | 0.2.5, app 0.2.8 |
-| Permission rules                  | `POST /api/settings/permission-rules`             | `src/core/permission-rules/`, `src/collector/answers/ruleAnswers.ts` | #11                     | 0.2.6            |
+| What you do                                 | Route                                             | Main code                                                            | Asked for in            | First release    |
+| ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------- | ---------------- |
+| Jump to a session in VS Code by its link    | none, it is a link                                | `src/core/mapping/claudeCodeMapping.ts`                              | First commit            | 0.2.0            |
+| Jump to a session's VS Code window on a Mac | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/editor/`                | #332                    | Unreleased       |
+| Jump to a tmux pane                         | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/tmux/`                  | #7                      | 0.2.0            |
+| Jump to a Terminal or iTerm2 tab            | `POST /api/jump`                                  | `src/collector/terminal/`                                            | #7                      | 0.2.0            |
+| Stop one session                            | `POST /api/sessions/stop`                         | `src/collector/actions/`                                             | #5                      | 0.2.4            |
+| End the sessions left running               | `POST /api/sessions/clean-up`                     | `src/collector/actions/cleanUpRoute.ts`                              | #6                      | 0.2.4            |
+| Resume an ended session                     | none, it copies text                              | `src/core/mapping/claudeCodeResume.ts`                               | #8                      | 0.2.5            |
+| Allow or Deny a permission prompt           | `POST /api/permission/answer`, plus a Unix socket | `src/collector/answers/`, `plugins/agent-lookout/`                   | #9, and #81 for the app | 0.2.5, app 0.2.8 |
+| Permission rules                            | `POST /api/settings/permission-rules`             | `src/core/permission-rules/`, `src/collector/answers/ruleAnswers.ts` | #11                     | 0.2.6            |
 
 On the dashboard, the buttons live in `src/dashboard/components/jump/`, `stop/`, `resume/`, `answer/` and `settings/`. The hooks behind them are `useJump`, `useStop`, `useResume` and `useAnswer` in `src/dashboard/hooks/actions/`, plus `useTimeRules` and `usePermissionRules` in `src/dashboard/hooks/settings/`. [The routes that act](ARCHITECTURE.md#the-routes-that-act) and [API.md](API.md) have every detail of each route.
 
@@ -1384,12 +1385,12 @@ Thirteen files call `actionRefusalFor`:
 - **The API has no password or token.** Any other program on this computer can send these requests with `curl`, since no browser is involved. On a shared computer, so can another user account. [SECURITY.md](../SECURITY.md#out-of-scope) lists this as a known limit, and [For this computer only](API.md#for-this-computer-only) explains why.
 - **The Mac app opens no port,** so there only its own window can call these routes. It does share the settings file with any other copy that runs, as PRIVACY.md explains.
 - **Some things never act.** `agent-lookout mcp` only reads. Sessions read from another machine have no Jump, Stop or Answer.
-- **Each action has an off switch:** `AGENT_LOOKOUT_TMUX=off`, `AGENT_LOOKOUT_TERMINAL_JUMP=off`, `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off`.
-- **On Windows (#22)** these are all off: Stop, clean-up, Allow and Deny, rules, Resume, and the tmux and Terminal jumps. The Sources view says why.
+- **Each action has an off switch:** `AGENT_LOOKOUT_TMUX=off`, `AGENT_LOOKOUT_TERMINAL_JUMP=off`, `AGENT_LOOKOUT_EDITOR_JUMP=off`, `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off`.
+- **On Windows (#22)** these are all off: Stop, clean-up, Allow and Deny, rules, Resume, and the tmux and Terminal jumps. The Sources view says why. A VS Code session there has its link, since the editor's window is brought forward on a Mac alone.
 
 ### Jump
 
-**In VS Code, Jump is a link.** `claudeCodeOpenLink` in `src/core/mapping/claudeCodeMapping.ts` builds `vscode://anthropic.claude-code/open?session=<id>` for a session whose registry `entrypoint` is `claude-vscode`. The browser opens the link, and Agent Lookout's server takes no part. Session data comes from other tools, so the link is used only when it matches `CLAUDE_CODE_OPEN_LINK` exactly: on the dashboard through `jumpWay` in `src/dashboard/lib/sessions/status.ts`, and in the Mac app through `src/desktop/navigation/links.ts`. The link has existed since the first commit. #7 was filed because a session in a terminal had no such link.
+**In VS Code, Jump is a link** off a Mac, and once a session's process has ended. `claudeCodeOpenLink` in `src/core/mapping/claudeCodeMapping.ts` builds `vscode://anthropic.claude-code/open?session=<id>` for a session whose registry `entrypoint` is `claude-vscode`. The browser opens the link, and Agent Lookout's server takes no part. Session data comes from other tools, so the link is used only when it matches `CLAUDE_CODE_OPEN_LINK` exactly: on the dashboard through `jumpWay` in `src/dashboard/lib/sessions/status.ts`, and in the Mac app through `src/desktop/navigation/links.ts`. The link has existed since the first commit. #7 was filed because a session in a terminal had no such link.
 
 **In tmux, Jump selects the pane (51f2e05).**
 
@@ -1409,7 +1410,14 @@ Thirteen files call `actionRefusalFor`:
 - The first time, macOS asks whether the program running Agent Lookout may control that app. macOS's error -1743 becomes a 403 `not-allowed`, which the dashboard explains with `automationAskLine` and `AUTOMATION_REFUSED_LINE` in `src/dashboard/lib/api/jump.ts`.
 - osascript gets up to a minute, because macOS holds the first run until the person answers its question.
 
-**Why it works this way.** The request holds only a session ID. The pane or tab is whatever the collector found for that session's process. So the most a request can do is choose which already-found place comes to the front. The comment on `createJumpRoute` says the same.
+**In VS Code on a Mac, Jump brings the editor's window forward (#332).** The link opens in whichever VS Code window has focus, and the extension starts a new conversation when that window has another folder open.
+
+- `editorOfProcess` in `src/collector/editor/editorWindows.ts` walks up from the session's process to the first program inside an app, takes its outermost `.app`, and keeps it only when it is one of `EDITOR_BUNDLES`: VS Code or VS Code Insiders. The tab finder's one `ps` serves both.
+- `openFolder` in `openFolder.ts` checks the session's folder by its text, then with `lstat` and `realpath`, within half a second, and runs the editor's own `Contents/Resources/app/bin/code` with `--new-window` and the folder, through `runEditor` in `program.ts`: no shell of the collector's, stdin closed, 3 seconds, and no `VSCODE_*`, `ELECTRON_*` or `NODE_OPTIONS` in its environment.
+- With `--new-window`, VS Code focuses a window that has exactly that folder open, restoring it from the Dock, and otherwise opens a new window, so a subfolder or a multi-folder workspace gets one. Its setting `window.openFoldersInNewWindow` cannot make it reuse another window, as it can for a folder handed over by `open -a`.
+- It cannot select the Claude Code tab in the window.
+
+**Why it works this way.** The request holds only a session ID. The pane, tab or editor is whatever the collector found for that session's process. So the most a request can do is choose which already-found place comes to the front. The comment on `createJumpRoute` says the same.
 
 ### Stop and clean up
 
@@ -1550,7 +1558,8 @@ sequenceDiagram
 
 ### Things you would not guess about acting
 
-- **VS Code may not find the session.** The VS Code Jump only works when the session's folder is open in the VS Code window that has focus. Otherwise VS Code starts a new conversation.
+- **The VS Code link may not find the session.** Off a Mac, and once a session's process has ended, Jump is the `vscode://` link, which works only when the session's folder is open in the VS Code window that has focus. Otherwise VS Code starts a new conversation.
+- **The VS Code window Jump cannot choose a tab.** On a Mac it brings forward the window that has exactly the session's folder open, and cannot select the Claude Code tab there. A session in a subfolder of the window's folder, or in a workspace with more than one folder, gets a new window.
 - **Stop ends the session, it does not pause it.** Whatever the session was doing stops part-way.
 - **Agent Lookout refuses to stop a session that started it.** If you run Agent Lookout from inside a Claude Code session and press Stop on that session, it is refused as not allowed. That is deliberate.
 - **A Deny from the dashboard does not end the turn.** Claude carries on without the tool. A No in the terminal stops the turn.

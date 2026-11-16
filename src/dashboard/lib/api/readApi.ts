@@ -31,6 +31,7 @@ import {
   CAPABILITIES,
   CHECKS_STATES,
   DENY_ONLY_REASONS,
+  EDITOR_APPS,
   EVENT_ACTORS,
   EVENT_KINDS,
   EVENT_SEVERITIES,
@@ -354,14 +355,18 @@ const MAX_PLACE_LENGTH = 200;
 
 /**
  * Where the collector can take the person, or null when the answer names no
- * kind of place this page knows, names a terminal app it does not know, or
- * names the place with anything but a short text.
+ * kind of place this page knows, names a terminal app or an editor it does not
+ * know, or names the place with anything but a short text.
  */
 function readJump(value: unknown): JumpTarget | null {
   if (!isRecord(value)) return null;
   const place = text(value.place);
   if (!place || place.length > MAX_PLACE_LENGTH) return null;
   if (value.kind === "tmux") return { kind: "tmux", place };
+  if (value.kind === "editor") {
+    const editor = oneOf(EDITOR_APPS, value.app);
+    return editor ? { kind: "editor", app: editor, place } : null;
+  }
   const app = value.kind === "terminal" ? oneOf(TERMINAL_APPS, value.app) : null;
   return app ? { kind: "terminal", app, place } : null;
 }

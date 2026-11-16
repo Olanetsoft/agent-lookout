@@ -4,7 +4,7 @@ import {
   type JumpFailure,
   type JumpRequest,
 } from "@core/api";
-import type { TerminalApp } from "@core/sessions/session";
+import { EDITOR_APPS, type EditorApp, type TerminalApp } from "@core/sessions/session";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { inAppWindow } from "@dashboard/lib/shell/appWindow";
 
@@ -26,6 +26,7 @@ const FAILURES: readonly JumpFailure[] = [
   "pane-gone",
   "tmux-stopped",
   "tab-gone",
+  "folder-gone",
   "not-allowed",
   "too-soon",
   "failed",
@@ -38,18 +39,29 @@ export const JUMP_OUTCOME_WORDS: Record<JumpOutcome, string> = {
   "pane-gone": "That pane has closed",
   "tmux-stopped": "tmux has stopped",
   "tab-gone": "That tab has closed",
+  "folder-gone": "That folder is gone",
   "not-allowed": "macOS did not allow it",
   "too-soon": "Try again in a moment",
   failed: "Jump did not work",
 };
 
+/** Whether an app is one of the editors, not a terminal app. */
+const isEditorApp = (app: TerminalApp | EditorApp): app is EditorApp =>
+  (EDITOR_APPS as readonly string[]).includes(app);
+
 /**
- * The words for an outcome. A press of a terminal tab's Jump says where it
- * went, "Switched to Terminal", and that it found no tab rather than no pane.
+ * The words for an outcome. A press of a terminal tab's or an editor's Jump
+ * says where it went, "Switched to Terminal" or "Switched to VS Code", and that
+ * it found no tab or no window rather than no pane.
  */
-export function jumpOutcomeWords(outcome: JumpOutcome, app: TerminalApp | null = null): string {
+export function jumpOutcomeWords(
+  outcome: JumpOutcome,
+  app: TerminalApp | EditorApp | null = null,
+): string {
   if (app !== null && outcome === "selected") return `Switched to ${app}`;
-  if (app !== null && outcome === "no-pane") return "No tab found";
+  if (app !== null && outcome === "no-pane") {
+    return isEditorApp(app) ? "No window found" : "No tab found";
+  }
   return JUMP_OUTCOME_WORDS[outcome];
 }
 
@@ -71,7 +83,8 @@ export const AUTOMATION_REFUSED_LINE =
 
 /**
  * Asks the collector to take the person to a session: to select the tmux pane
- * it runs in, or to bring forward its tab of Terminal or iTerm2.
+ * it runs in, to bring forward its tab of Terminal or iTerm2, or to bring
+ * forward its editor's window.
  *
  * The request names the session and nothing else: the collector decides what
  * that comes to from what it found itself. It never rejects. No answer, an

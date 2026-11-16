@@ -24,13 +24,15 @@ interface JumpProps {
 /**
  * A session's Jump, or nothing when there is no way to reach it.
  *
- * A session with a link, one in VS Code, gets a link the browser opens. A
- * session the collector found in a tmux pane gets a button that asks the
- * collector to select that pane, and one it found in a tab of Terminal or
- * iTerm2 a button that asks it to bring that tab forward. They look the same
- * and sit in the same place. Each is named for the session and where it goes,
- * and a button says where when pointed at or reached with Tab:
- * "tmux, work:2.1", or "Terminal".
+ * A running session in VS Code that the collector found under its editor gets
+ * a button that asks the collector to bring that editor's window forward. Any
+ * other session with a link, such as one in VS Code whose process has ended,
+ * gets a link the browser opens. A session the collector found in a tmux pane
+ * gets a button that asks the collector to select that pane, and one it found
+ * in a tab of Terminal or iTerm2 a button that asks it to bring that tab
+ * forward. They look the same and sit in the same place. Each is named for the
+ * session and where it goes, and a button says where when pointed at or
+ * reached with Tab: "tmux, work:2.1", "Terminal" or "VS Code".
  */
 export function Jump({ session, jump, variant, size = "sm", className }: JumpProps) {
   const way = jumpWay(session);
@@ -93,8 +95,8 @@ export function JumpNote({
   const { outcome, asking } = jump;
   const way = jumpWay(session);
   if (outcome === null && asking === null && (way === null || way.by === "link")) return null;
-  const words =
-    outcome === null ? null : jumpOutcomeWords(outcome, way?.by === "terminal" ? way.app : null);
+  const app = way?.by === "terminal" || way?.by === "editor" ? way.app : null;
+  const words = outcome === null ? null : jumpOutcomeWords(outcome, app);
   const line =
     outcome === "not-allowed"
       ? AUTOMATION_REFUSED_LINE

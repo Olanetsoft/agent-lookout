@@ -25,6 +25,7 @@ import { createOpencodeAdapter } from "./adapters/opencode/index.ts";
 import { createPiAdapter } from "./adapters/pi/index.ts";
 import { createQwenCodeAdapter } from "./adapters/qwen-code/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
+import { createEditorRunner, type RunEditor } from "./editor/program.ts";
 import {
   createEmailNotifications,
   emailOffStatus,
@@ -168,14 +169,21 @@ export interface CollectorOptions {
    */
   osascript?: RunOsascript;
   /**
+   * What runs an editor's own command, VS Code's `code`, to bring forward the
+   * window of a session in VS Code when the dashboard asks. Defaults to
+   * running it on macOS, unless `AGENT_LOOKOUT_EDITOR_JUMP` is `off`. Tests
+   * pass one that runs nothing.
+   */
+  editor?: RunEditor;
+  /**
    * How long `claude agents --json` gets. Defaults to 5 seconds. Tests that run
    * a stand-in for claude give it longer, for a busy machine.
    */
   claudeFeedTimeoutMs?: number;
   /**
    * Reads every process's parent, terminal and program, to find the tmux pane
-   * and the Terminal or iTerm2 tab a session runs in. Defaults to asking `ps`.
-   * Tests pass a table of their own.
+   * and the Terminal or iTerm2 tab a session runs in, and the editor a session
+   * in VS Code runs under. Defaults to asking `ps`. Tests pass a table of their own.
    */
   readProcesses?: ReadProcessTable;
   /**
@@ -378,10 +386,12 @@ export function createCollector(options: CollectorOptions): Collector {
     readParents: readProcesses && (async () => parentsIn(await readProcesses())),
     now,
   });
-  // The same for the tabs of Terminal and iTerm2: the adapters find them and
-  // the jump route brings them forward.
+  // The same for the tabs of Terminal and iTerm2, and the editors sessions in
+  // VS Code run under: the adapters find them and the jump route brings them
+  // forward.
   const tabs = createTabFinder({ env, readProcesses: options.readProcesses, now });
   const osascript = options.osascript ?? createOsascriptRunner({ env });
+  const editor = options.editor ?? createEditorRunner({ env });
   // What each Claude Code session is stopped by: the adapter finds it, and the
   // routes that stop sessions act on it. With AGENT_LOOKOUT_STOP off there are
   // neither the targets nor the routes, and nor are there on Windows, which
@@ -541,7 +551,9 @@ export function createCollector(options: CollectorOptions): Collector {
       platform,
       lastMessageLimits,
       panes: panes.asker(),
-      terminals: tabs.asker(),
+      // No editor reaches a Qwen Code session, so with tabs off its
+      // processes are not looked for.
+      terminals: tabs.asker({ editors: false }),
       readProcessStarts: options.readProcessStarts,
     }),
     createHermesAgentAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
@@ -666,7 +678,7 @@ export function createCollector(options: CollectorOptions): Collector {
       now,
     }),
     pullRequests: () => pullRequests?.status() ?? pullRequestsOff,
-    jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, now }),
+    jump: createJumpRoute({ poller, panes, run: tmux, tabs, osascript, editor, now }),
     // Only this computer's own adapters read what a session last said. A
     // session on another machine is answered as not read, and nothing is
     // asked of that machine.

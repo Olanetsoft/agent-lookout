@@ -369,6 +369,84 @@ describe("sessionFromFeed", () => {
     expect("jump" in session).toBe(false);
   });
 
+  describe("a session of the VS Code extension found under its editor", () => {
+    const bundle = "/Applications/Visual Studio Code.app";
+    const editor = { app: "VS Code", bundle } as const;
+    const inEditor: SessionContext = {
+      ...context,
+      homeDirs: ["/Users/example"],
+      editorOf: (pid) => (pid === pids.busy ? editor : undefined),
+    };
+    const vscode = {
+      pid: pids.busy,
+      sessionId: ids.busy,
+      status: "busy",
+      entrypoint: "claude-vscode",
+      cwd: "/Users/example/code/demo",
+    };
+
+    test("is reached through the editor's window, names only the editor, and keeps its link", () => {
+      const found = sessionFromRegistry(vscode, inEditor);
+
+      expect(found.jump).toEqual({ kind: "editor", app: "VS Code", place: "VS Code" });
+      expect(found.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.busy}`);
+      expect(JSON.stringify(found)).not.toContain("Visual Studio Code.app");
+      // From the command's answer as well, enriched from its registry file.
+      expect(
+        sessionFromFeed(
+          {
+            pid: pids.busy,
+            sessionId: ids.busy,
+            status: "busy",
+            cwd: "/Users/example/code/demo",
+          },
+          { pid: pids.busy, sessionId: ids.busy, entrypoint: "claude-vscode" },
+          inEditor,
+        ).jump,
+      ).toEqual({ kind: "editor", app: "VS Code", place: "VS Code" });
+    });
+
+    test("the editor comes before a pane and a tab", () => {
+      const all: SessionContext = {
+        ...inEditor,
+        paneOf: () => ({ pid: 4100, id: "%7", place: "checkout-flow:2.1" }),
+        tabOf: () => ({ app: "Terminal", tty: "/dev/ttys004" }),
+      };
+      expect(sessionFromRegistry(vscode, all).jump?.kind).toBe("editor");
+    });
+
+    test.each<[string, Record<string, unknown>, Partial<SessionContext>]>([
+      ["a session in a terminal", { entrypoint: "cli" }, {}],
+      ["a session whose process has gone", {}, { isAlive: () => false }],
+      ["a session with no folder", { cwd: undefined }, {}],
+      ["a session in a relative folder", { cwd: "code/demo" }, {}],
+      ["a session in a folder inside an app", { cwd: "/Applications/Calculator.app" }, {}],
+      ["a session in the home folder", { cwd: "/Users/example" }, {}],
+      [
+        "a session in the home folder as its links lead",
+        { cwd: "/Volumes/Data/example" },
+        { homeDirs: ["/Users/example", "/Volumes/Data/example"] },
+      ],
+      ["a session in /", { cwd: "/" }, {}],
+      ["a session read with no home folder to compare", {}, { homeDirs: undefined }],
+    ])("%s is given no editor, and keeps what it had", (_what, fields, changes) => {
+      const session = sessionFromRegistry({ ...vscode, ...fields }, { ...inEditor, ...changes });
+
+      expect("jump" in session).toBe(false);
+      if (fields.entrypoint === undefined) {
+        expect(session.links.open).toBe(`vscode://anthropic.claude-code/open?session=${ids.busy}`);
+      }
+    });
+
+    test("a session in a terminal found under the editor keeps its tab", () => {
+      const session = sessionFromRegistry(
+        { ...vscode, entrypoint: "cli" },
+        { ...inEditor, tabOf: () => ({ app: "Terminal", tty: "/dev/ttys004" }) },
+      );
+      expect(session.jump).toEqual({ kind: "terminal", app: "Terminal", place: "Terminal" });
+    });
+  });
+
   test("a background session with no live process has no pid and no liveness", () => {
     const session = sessionFromFeed(
       {

@@ -488,6 +488,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",
+    AGENT_LOOKOUT_EDITOR_JUMP: "off",
     npm_config_update_notifier: "false",
   };
 }
