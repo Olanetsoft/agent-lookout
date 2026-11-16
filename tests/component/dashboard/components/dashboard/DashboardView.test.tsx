@@ -718,7 +718,7 @@ test("the hero is told why a wait for permission has no Deny or Allow, from the 
       ...snapshotOf(SESSIONS),
       answering: { state: "on", plugin: "missed", holdMs: 300_000 },
     },
-    seenAsks: rememberAsks(NO_ASKS_SEEN, [{ ...blocked, ask }]),
+    seenAsks: rememberAsks(NO_ASKS_SEEN, [{ ...blocked, ask }], NOW),
   });
   await screen.rerender(<DashboardView state={on} now={NOW} onRetry={() => {}} />);
   expect(hero.querySelector('[data-part="no-ask"]')).toBeNull();

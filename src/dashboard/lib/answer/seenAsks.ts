@@ -18,9 +18,9 @@ import { inAnsweredWait } from "@core/waits/answeredWaits";
  * The store that reads the snapshot keeps it, poll by poll, so the hero and
  * the details go by the same memory, however often a row is drawn afresh. It
  * holds no word of what was asked. It is lost when the page is reloaded, and
- * the store starts it again when the collector restarts, since the run before
- * let every request it held go as it stopped, and once history is first read
- * after it was kept, since the run it was kept in is not known.
+ * the store forgets each request read before the collector's run began
+ * (`seenInRun`), since the run before let every request it held go as it
+ * stopped.
  */
 
 export interface SeenAsk {
@@ -34,6 +34,11 @@ export interface SeenAsk {
   until: number | null;
   /** The status time of the wait it was seen in, or null while the session's source gave none. */
   statusSince: number | null;
+  /**
+   * When the page last read it, as the `generatedAt` of the snapshot it was
+   * in, on the collector's clock, so a restart can tell which run held it.
+   */
+  seenAt: number;
 }
 
 /** By session id. */
@@ -51,17 +56,22 @@ export const NO_ASKS_SEEN: SeenAsks = new Map();
  * `inAnsweredWait`, and a time the source gives only once a request was seen
  * is taken as that wait's, so the next wait is told from it.
  */
-export function rememberAsks(seen: SeenAsks, sessions: readonly Session[]): SeenAsks {
+export function rememberAsks(
+  seen: SeenAsks,
+  sessions: readonly Session[],
+  /** The snapshot's `generatedAt`. */
+  at: number,
+): SeenAsks {
   const kept = new Map<string, SeenAsk>();
   for (const session of sessions) {
     const { statusSince } = session;
     if (session.ask !== undefined) {
       const { requestId, until } = session.ask;
-      kept.set(session.id, { requestId, until, statusSince });
+      kept.set(session.id, { requestId, until, statusSince, seenAt: at });
       continue;
     }
     if (session.askNotRead === true) {
-      kept.set(session.id, { requestId: null, until: null, statusSince });
+      kept.set(session.id, { requestId: null, until: null, statusSince, seenAt: at });
       continue;
     }
     const before = seen.get(session.id);
@@ -69,4 +79,20 @@ export function rememberAsks(seen: SeenAsks, sessions: readonly Session[]): Seen
     kept.set(session.id, before.statusSince === null ? { ...before, statusSince } : before);
   }
   return kept;
+}
+
+/**
+ * The requests seen in the run of the collector that began at `startedAt`.
+ * One last read in a snapshot made before then was held by a run before it,
+ * which let every request it held go as it stopped, so it is forgotten. One
+ * read since is of this run, however late history said it had begun.
+ */
+export function seenInRun(seen: SeenAsks, startedAt: number): SeenAsks {
+  let kept: Map<string, SeenAsk> | null = null;
+  for (const [id, ask] of seen) {
+    if (ask.seenAt >= startedAt) continue;
+    kept ??= new Map(seen);
+    kept.delete(id);
+  }
+  return kept ?? seen;
 }

@@ -539,7 +539,12 @@ test("the requests the page has seen are kept, poll by poll, for as long as thei
   expect(store.getState().seenAsks.size).toBe(0);
   const stop = store.subscribe(() => {});
   await settle();
-  const seen = { requestId: ask.requestId, until: ask.until, statusSince: T0 - 30_000 };
+  const seen = {
+    requestId: ask.requestId,
+    until: ask.until,
+    statusSince: T0 - 30_000,
+    seenAt: T0,
+  };
   expect(store.getState().seenAsks.get(waiting.id)).toEqual(seen);
 
   // Answered somewhere else: the request has gone, and the session still reads as waiting.
@@ -692,6 +697,56 @@ test("requests seen before history was first read are forgotten once it is, as t
   expect(state.seenAsks.size).toBe(0);
   const facts = noAskFacts(state) as NoAskFacts;
   expect(noAskReason(state.snapshot?.sessions[0] as Session, facts)).toBe("before-start");
+  stop();
+});
+
+test("a request read in a new run before its history answers is kept once history does", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const newer = { ...ask, requestId: "fedcba9876543210fedcba9876543210", until: T0 + 302_000 };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  collector.sessionsAnswer = () =>
+    json({
+      generatedAt: Date.now(),
+      sources: [],
+      sessions,
+      answering: { state: "on", plugin: "seen", holdMs: 300_000 },
+    });
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().seenAsks.get(waiting.id)?.requestId).toBe(ask.requestId);
+
+  // The collector restarts while history does not answer, and the new run holds a request of the same wait.
+  collector.startedAt = T0 + 500;
+  collector.historyUp = false;
+  sessions = [{ ...waiting, ask: newer }];
+  await beat();
+  expect(store.getState().seenAsks.get(waiting.id)?.requestId).toBe(newer.requestId);
+
+  // It is answered somewhere else, and then history answers with the new run's start.
+  sessions = [waiting];
+  await beat();
+  collector.historyUp = true;
+  await beat();
+  const state = store.getState();
+  expect(state.history?.startedAt).toBe(T0 + 500);
+  expect(state.seenAsks.get(waiting.id)?.requestId).toBe(newer.requestId);
+  const facts = noAskFacts(state) as NoAskFacts;
+  expect(noAskReason(state.snapshot?.sessions[0] as Session, facts)).toBeNull();
   stop();
 });
 

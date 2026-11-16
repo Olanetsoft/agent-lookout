@@ -372,7 +372,7 @@ describe("with no request held", () => {
     await page.viewport(1280, 900);
     const held = waiting({ ...BASH, until: SINCE + 300_000 });
     // The page saw the request, and then a read with none, as after a press in the menu bar.
-    const seen = rememberAsks(NO_ASKS_SEEN, [held]);
+    const seen = rememberAsks(NO_ASKS_SEEN, [held], SINCE);
     const screen = await render(told(waiting(null), facts({ seen })));
     expect(part("no-ask")).toBeNull();
     expect(screen.container.querySelector('[data-slot="answer"]')).toBeNull();

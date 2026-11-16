@@ -48,7 +48,7 @@ function facts(overrides: Partial<NoAskFacts> = {}): NoAskFacts {
 
 /** The memory after the page saw `ask` in the session's wait. */
 function seenWith(ask: PermissionAsk, session: Session = waiting()): SeenAsks {
-  return rememberAsks(NO_ASKS_SEEN, [{ ...session, ask }]);
+  return rememberAsks(NO_ASKS_SEEN, [{ ...session, ask }], NOW);
 }
 
 test.each<[string, Session]>([
@@ -141,7 +141,7 @@ describe("a request the page saw in this wait", () => {
   });
 
   test("that the page could not read leaves no line for the rest of the wait", () => {
-    const seen = rememberAsks(NO_ASKS_SEEN, [waiting({ askNotRead: true })]);
+    const seen = rememberAsks(NO_ASKS_SEEN, [waiting({ askNotRead: true })], NOW);
     expect(noAskReason(waiting(), facts({ seen, at: NOW + 60 * MINUTE }))).toBeNull();
   });
 });

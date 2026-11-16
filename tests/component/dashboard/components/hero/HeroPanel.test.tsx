@@ -1743,7 +1743,7 @@ describe("why a wait for permission has no Deny or Allow", () => {
         />
       </div>
     );
-    const seen = rememberAsks(NO_ASKS_SEEN, [{ ...WAITING, ask }]);
+    const seen = rememberAsks(NO_ASKS_SEEN, [{ ...WAITING, ask }], NOW);
     const screen = await render(shown([{ ...WAITING, ask }, BUSY], facts({ seen })));
     expect(hero(screen.container).querySelector('[data-slot="answer"]')).not.toBeNull();
     // Answered in the menu bar: the next read has no request, and the poll that marks it answered has not come.
