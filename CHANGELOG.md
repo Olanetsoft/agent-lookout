@@ -2,7 +2,7 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## 0.2.21 - 2026-11-16
+## 0.2.21 - 2026-11-17
 
 Kilo Code sessions show, a permission wait with no Deny or Allow says why, the Mac app's notification of a wait has Deny and Allow with the window open too, on a Mac Jump brings forward the VS Code window of a running Claude Code session, and after a restart a Hermes Agent profile or Crush project the first poll missed no longer shows its sessions as ended.
 
