@@ -20,6 +20,7 @@ import { Loading } from "@dashboard/components/ui/feedback/Loading";
 import { StatusMark } from "@dashboard/components/ui/status/StatusMark";
 import { Tooltip, Truncated } from "@dashboard/components/ui/surfaces/Tooltip";
 import { useJump } from "@dashboard/hooks/actions/useJump";
+import type { NoAskFacts } from "@dashboard/lib/answer/noAsk";
 import { MAX_EVENTS, type CollectorHistory } from "@dashboard/lib/api/collectorStore";
 import {
   durationInWords,
@@ -71,6 +72,12 @@ interface HeroPanelProps {
   onOpenHistory?: (metric: HistoryMetric) => void;
   /** Told once a permission prompt was answered from here, so the page reads the sessions again. */
   onAnswered?: () => void;
+  /**
+   * What the page holds that says why a Claude Code session waiting for
+   * permission has no Deny or Allow (`noAskFacts` in `lib/answer/noAsk.ts`).
+   * Left out, nothing says why.
+   */
+  noAsk?: NoAskFacts | null;
   /** How long a session is idle before it is stale, as the snapshot's time rules say. */
   staleAfterMs?: number;
   className?: string;
@@ -292,21 +299,24 @@ function Name({ session, className }: { session: Session; className: string }) {
 
 /**
  * The longest wait, in full: its name large, why it waits, what it is asking
- * and where it runs on the left; the wait at the hero's largest size, when it
- * began, and the Jump on the right. Its Jump is the lamp's fill, the one solid
- * button on the screen, because the session needs the person now.
+ * and where it runs, and its Deny and Allow, or why there are none, on the
+ * left; the wait at the hero's largest size, when it began, and the Jump on
+ * the right. Its Jump is the lamp's fill, the one solid button on the screen,
+ * because the session needs the person now.
  */
 function Lead({
   session,
   asOf,
   agent,
   onAnswered,
+  noAsk,
   titleId,
 }: {
   session: Session;
   asOf: number;
   agent?: string;
   onAnswered?: () => void;
+  noAsk?: NoAskFacts | null;
   /** The hero's title, which takes focus when this row leaves with focus in its answer. */
   titleId?: string;
 }) {
@@ -338,6 +348,8 @@ function Lead({
           session={session}
           onAnswered={onAnswered}
           focusOnLeave={titleId}
+          noAsk={noAsk}
+          brief
           className='mt-3'
         />
       </div>
@@ -384,12 +396,14 @@ function Other({
   asOf,
   agent,
   onAnswered,
+  noAsk,
   titleId,
 }: {
   session: Session;
   asOf: number;
   agent?: string;
   onAnswered?: () => void;
+  noAsk?: NoAskFacts | null;
   titleId?: string;
 }) {
   const waited = waitedFor(session, asOf);
@@ -422,6 +436,8 @@ function Other({
           session={session}
           onAnswered={onAnswered}
           focusOnLeave={titleId}
+          noAsk={noAsk}
+          brief
           className='mt-2'
         />
       </div>
@@ -642,10 +658,11 @@ function Uncounted({
  *   quiet            "Nothing needs you", and the last wait that is over; or,
  *                    while another machine is not read, "Nothing on this
  *                    computer needs you" and which machine is not known
- *   one waiting      its name large, why, what it asks and where, a timer
- *                    and the Jump
+ *   one waiting      its name large, why, what it asks and where, Deny and
+ *                    Allow or why there are none, a timer and the Jump
  *   several waiting  the longest in full, then each of the others, each with
- *                    its reason, timer and Jump
+ *                    its reason, timer and Jump, and Deny and Allow or why
+ *                    there are none
  *
  * Each waiting session's name is a link to its details. The Sessions list
  * leaves waiting sessions to the hero, so this is where they open from.
@@ -663,6 +680,7 @@ export function HeroPanel({
   asOf = now,
   onOpenHistory,
   onAnswered,
+  noAsk = null,
   staleAfterMs,
   className,
 }: HeroPanelProps) {
@@ -733,6 +751,7 @@ export function HeroPanel({
           asOf={asOf}
           agent={agentOf(first)}
           onAnswered={onAnswered}
+          noAsk={noAsk}
           titleId={titleId}
         />
         {rest.length > 0 && (
@@ -744,6 +763,7 @@ export function HeroPanel({
                 asOf={asOf}
                 agent={agentOf(session)}
                 onAnswered={onAnswered}
+                noAsk={noAsk}
                 titleId={titleId}
               />
             ))}

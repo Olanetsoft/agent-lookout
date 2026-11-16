@@ -6,6 +6,12 @@ import {
 } from "@core/api";
 import { DEFAULT_HISTORY_WINDOW_MS } from "@core/history";
 import type { SessionEvent, SessionsSnapshot } from "@core/sessions/session";
+import {
+  NO_ASKS_SEEN,
+  rememberAsks,
+  seenInRun,
+  type SeenAsks,
+} from "@dashboard/lib/answer/seenAsks";
 import { apiRequest } from "@dashboard/lib/api/apiHost";
 import { timerBeat, type Beat } from "@dashboard/lib/api/beat";
 import { clearedSince, mergeHistory } from "@dashboard/lib/charts/historyChart";
@@ -16,7 +22,9 @@ import { readEvents, readHistory, readLastMessage, readSnapshot } from "@dashboa
  *
  * One store polls the three routes on one beat and never overlaps a slow poll.
  * It keeps the last good answer when the collector stops answering, so a failure
- * shows as stale data rather than as an empty screen.
+ * shows as stale data rather than as an empty screen. With each answer of the
+ * sessions it remembers the permission requests it has seen, for the waits
+ * still under way, and forgets them when the collector restarts.
  */
 
 export const POLL_INTERVAL_MS = 2_000;
@@ -80,6 +88,13 @@ export interface CollectorState {
   problem: string | null;
   /** The kind of failure that was. Null when the poll was answered. */
   problemKind: ProblemKind | null;
+  /**
+   * The permission requests the page has seen in the waits still under way,
+   * by session, in this run of the collector, so a wait whose request was
+   * answered somewhere else a moment ago is not taken for one whose request
+   * never came: see `seenAsks.ts`.
+   */
+  seenAsks: SeenAsks;
 }
 
 export interface CollectorStore {
@@ -104,6 +119,7 @@ const INITIAL_STATE: CollectorState = {
   lastOkAt: null,
   problem: null,
   problemKind: null,
+  seenAsks: NO_ASKS_SEEN,
 };
 
 /** A failure with a message that is fit to show to a person. */
@@ -279,10 +295,10 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         // A new start time means the collector restarted. Its event ids start
         // again, so the old list is dropped rather than merged into. So it is
         // once the history has been cleared: what came before is gone.
+        const newRun =
+          state.history !== null && state.history.startedAt !== history.value.startedAt;
         const restarted =
-          state.history !== null &&
-          (state.history.startedAt !== history.value.startedAt ||
-            clearedSince(state.history, history.value));
+          newRun || (state.history !== null && clearedSince(state.history, history.value));
         let held: CollectorHistory;
         if (wholeHour) {
           held = history.value;
@@ -304,6 +320,10 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
             points: held.points.filter((point) => point.at >= oldest),
           },
           events: restarted ? [] : next.events,
+          // The run before let every request it held go as it stopped, so no
+          // request last read before this run began is held now. One read
+          // since is kept, even when history answers only after a restart.
+          seenAsks: seenInRun(next.seenAsks, history.value.startedAt),
         };
       }
       if (events.status === "fulfilled") {
@@ -319,6 +339,11 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
           lastOkAt: now(),
           problem: null,
           problemKind: null,
+          seenAsks: rememberAsks(
+            next.seenAsks,
+            sessions.value.sessions,
+            sessions.value.generatedAt,
+          ),
         };
       } else {
         failures += 1;

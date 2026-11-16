@@ -1,10 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, type Ref } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { answerOutcomeWords, askHeading, denyOnlyWords } from "@core/answers/askWords";
 import type { PermissionAsk, Session } from "@core/sessions/session";
+import { FactText } from "@dashboard/components/ui/facts/FactText";
 import { Button } from "@dashboard/components/ui/controls/Button";
 import { useAnswer, type AnswerPress } from "@dashboard/hooks/actions/useAnswer";
 import type { requestAnswer } from "@dashboard/lib/answer/answerRequest";
+import {
+  noAskLine,
+  PERMISSION_PROMPTS_LINK,
+  type NoAskFacts,
+  type NoAskLine,
+} from "@dashboard/lib/answer/noAsk";
 import { cn } from "@dashboard/lib/utils";
 
 /**
@@ -85,6 +92,70 @@ function Asked({ ask, again }: { ask: PermissionAsk; again: boolean }) {
   );
 }
 
+/** The underline the page's links in a sentence have. */
+const LINK =
+  "rounded-bar underline decoration-rule-strong underline-offset-2 transition-colors duration-120 hover:text-ink";
+
+/**
+ * Why there is no Deny or Allow, in the block's place: one plain line, quiet
+ * and never warm. It is a standing fact, read where it stands, so it is no
+ * live region. Where Settings, under Permission prompts, has what it points
+ * to, the install commands or the problem sentence too long for the hero, it
+ * links to Settings. When it is taken away with focus in it, `onLeave` is
+ * told.
+ */
+function NoAsk({
+  line,
+  lineRef,
+  onLeave,
+  className,
+}: {
+  line: NoAskLine;
+  lineRef?: (element: HTMLElement | null) => void;
+  onLeave?: () => void;
+  className?: string;
+}) {
+  const own = useRef<HTMLParagraphElement | null>(null);
+  const leave = useRef(onLeave);
+  useEffect(() => {
+    leave.current = onLeave;
+  }, [onLeave]);
+  useLayoutEffect(
+    () => () => {
+      // Run as the line is taken away, while what had focus is still on the page.
+      if (own.current?.contains(document.activeElement)) leave.current?.();
+    },
+    [],
+  );
+  const ref = useCallback(
+    (element: HTMLParagraphElement | null) => {
+      own.current = element;
+      lineRef?.(element);
+    },
+    [lineRef],
+  );
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      data-part='no-ask'
+      data-reason={line.reason}
+      className={cn("min-w-0 text-body text-ink-secondary outline-none", className)}
+    >
+      <FactText>{line.text}</FactText>
+      {line.settings !== null && (
+        <>
+          {" "}
+          <a href='#settings' className={LINK}>
+            {PERMISSION_PROMPTS_LINK}
+          </a>{" "}
+          {line.settings}
+        </>
+      )}
+    </p>
+  );
+}
+
 /**
  * A held permission request of a session's, with Deny and Allow: in the hero
  * under the session's reason, and at the top of its details.
@@ -100,6 +171,19 @@ function Asked({ ask, again }: { ask: PermissionAsk; again: boolean }) {
  * stays said once the request has gone, and above a newer request of the
  * session's. When the block leaves the page with focus in it, as a hero row
  * does once its session stops waiting, focus goes to `focusOnLeave`.
+ *
+ * Given `noAsk`, a Claude Code session on this computer waiting for permission
+ * with no request held has one line in the block's place saying why, from
+ * `noAskLine` in `lib/answer/noAsk.ts`, `brief` in the hero, linking to
+ * Settings where Settings, under Permission prompts, has what the line points
+ * to: the commands that install the plugin, or a problem sentence too long for
+ * the hero. It is not drawn while a press is under way, nor beside what one
+ * came to in the same wait, which says why already. In a later wait it is
+ * drawn under what the last press came to. When the line is taken away with focus
+ * in it, focus goes to what is drawn in its place, a request or another line.
+ * With nothing there, it goes to `focusOnLeave`, unless the page has put it
+ * somewhere by then, as the Overview gives it to the row's Jump when the row
+ * is still drawn and has one.
  */
 export function AnswerAsk({
   session,
@@ -107,6 +191,8 @@ export function AnswerAsk({
   request,
   settleMs,
   focusOnLeave,
+  noAsk,
+  brief = false,
   className,
 }: {
   session: Session;
@@ -115,10 +201,17 @@ export function AnswerAsk({
   settleMs?: number;
   /** The id of what takes focus when the block leaves the page with focus in it. */
   focusOnLeave?: string;
+  /** What the page holds that says why there is no Deny or Allow. Left out, nothing says why. */
+  noAsk?: NoAskFacts | null;
+  /** Whether the line is the hero's, which leaves a long sentence to Settings. */
+  brief?: boolean;
   className?: string;
 }) {
   const answer = useAnswer(session, { onAnswered, request, settleMs });
   const block = useRef<HTMLElement | null>(null);
+  const setBlock = useCallback((element: HTMLElement | null) => {
+    block.current = element;
+  }, []);
   const leaveTo = useRef(focusOnLeave);
   useEffect(() => {
     leaveTo.current = focusOnLeave;
@@ -138,35 +231,95 @@ export function AnswerAsk({
     },
     [],
   );
-  return <AnswerBlock session={session} answer={answer} className={className} blockRef={block} />;
+  // Set as the line is taken away with focus in it, for the effect below.
+  const lineHadFocus = useRef(false);
+  const lineLeft = useCallback(() => {
+    lineHadFocus.current = true;
+  }, []);
+  // In the same change that took the line away, and before the effects of
+  // what holds the block, such as the Overview's, which would give focus to
+  // the row's Jump: focus goes to what is drawn in the line's place. With
+  // nothing there, it goes to `focusOnLeave` once the page has done, unless
+  // something has taken it by then.
+  useLayoutEffect(() => {
+    if (!lineHadFocus.current) return;
+    lineHadFocus.current = false;
+    const lost = () => {
+      const now = document.activeElement;
+      return now === null || now === document.body || !now.isConnected;
+    };
+    const drawn = block.current;
+    if (drawn?.isConnected) {
+      if (lost()) drawn.focus();
+      return;
+    }
+    const target = leaveTo.current;
+    if (target === undefined) return;
+    setTimeout(() => {
+      if (lost()) document.getElementById(target)?.focus();
+    }, 0);
+  });
+  const line = noAsk == null ? null : noAskLine(session, noAsk, { brief });
+  return (
+    <AnswerBlock
+      session={session}
+      answer={answer}
+      line={line}
+      onLineLeft={lineLeft}
+      className={className}
+      blockRef={setBlock}
+    />
+  );
 }
 
-/** The block itself, for one press's state. */
+/** The block itself, for one press's state, or in its place, while no press is under way, the line that says why there is none. */
 export function AnswerBlock({
   session,
   answer,
+  line = null,
+  onLineLeft,
   className,
   blockRef,
 }: {
-  session: Pick<Session, "name" | "ask">;
+  session: Pick<Session, "name" | "ask" | "statusSince">;
   answer: AnswerPress;
+  line?: NoAskLine | null;
+  onLineLeft?: () => void;
   className?: string;
-  blockRef?: Ref<HTMLElement>;
+  blockRef?: (element: HTMLElement | null) => void;
 }) {
   const { ask } = session;
   const { step } = answer;
   const answered = step.kind === "answered" ? step : null;
   // The request shown is offered unless it is the one already answered.
   const offered = ask !== undefined && ask.requestId !== answered?.requestId ? ask : null;
-  if (offered === null && answered === null) return null;
+  // What a press came to is said of the wait it was made in. In a later wait
+  // with no request held, the line that says why is drawn under it.
+  const later =
+    offered === null && answered !== null && answered.since !== session.statusSince ? line : null;
+  if (offered === null && answered === null) {
+    if (line === null || step.kind !== "idle") return null;
+    return (
+      <NoAsk
+        // A line for another reason, or with or without its link, is a line of its own.
+        key={`${line.reason}:${line.settings !== null}`}
+        line={line}
+        lineRef={blockRef}
+        onLeave={onLineLeft}
+        className={className}
+      />
+    );
+  }
   const busy = step.kind === "busy";
   const inactive = busy || answer.settling;
   return (
     <section
       ref={blockRef}
+      // Focus can be given to it, as when it takes the place of a line that had focus.
+      tabIndex={-1}
       data-slot='answer'
       aria-label={`Permission request of ${session.name}`}
-      className={cn("flex min-w-0 flex-col", className)}
+      className={cn("flex min-w-0 flex-col outline-none", className)}
     >
       {answered !== null && (
         <p
@@ -175,10 +328,20 @@ export function AnswerBlock({
           role='status'
           data-part='answer-outcome'
           data-outcome={answered.outcome}
-          className={cn("text-body text-ink outline-none", offered !== null && "mb-2.5")}
+          className={cn(
+            "text-body text-ink outline-none",
+            (offered !== null || later !== null) && "mb-2.5",
+          )}
         >
           {answerOutcomeWords(answered.outcome)}
         </p>
+      )}
+      {later !== null && (
+        <NoAsk
+          key={`${later.reason}:${later.settings !== null}`}
+          line={later}
+          onLeave={onLineLeft}
+        />
       )}
       {offered !== null && (
         <>

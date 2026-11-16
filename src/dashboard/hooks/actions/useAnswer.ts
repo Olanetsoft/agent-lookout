@@ -8,7 +8,13 @@ import { requestAnswer, type AnswerOutcome } from "@dashboard/lib/answer/answerR
 export type AnswerStep =
   | { kind: "idle" }
   | { kind: "busy"; decision: AnswerDecision; requestId: string }
-  | { kind: "answered"; outcome: AnswerOutcome; requestId: string };
+  | {
+      kind: "answered";
+      outcome: AnswerOutcome;
+      requestId: string;
+      /** The `statusSince` of the wait the press was made in, so a later wait can be told apart. */
+      since: number | null;
+    };
 
 export interface AnswerPress {
   step: AnswerStep;
@@ -30,7 +36,7 @@ export interface AnswerPress {
  * whole of what it answers is on the screen beside the buttons.
  */
 export function useAnswer(
-  session: Pick<Session, "id" | "ask">,
+  session: Pick<Session, "id" | "ask" | "statusSince">,
   options: {
     /** Told once an answer was handed over, so the page reads the sessions again at once. */
     onAnswered?: () => void;
@@ -42,6 +48,7 @@ export function useAnswer(
   const { onAnswered, request = requestAnswer, settleMs = ANSWER_SETTLE_MS } = options;
   const [step, setStep] = useState<AnswerStep>({ kind: "idle" });
   const requestId = session.ask?.requestId ?? null;
+  const since = session.statusSince;
   const [settledFor, setSettledFor] = useState<string | null>(null);
   const settling = requestId !== null && settledFor !== requestId;
   const outcomeId = `${useId()}-answer-outcome`;
@@ -78,10 +85,10 @@ export function useAnswer(
         if (!drawn.current) return;
         if (outcome === "allowed" || outcome === "denied") onAnswered?.();
         focusOutcome.current = true;
-        setStep({ kind: "answered", outcome, requestId });
+        setStep({ kind: "answered", outcome, requestId, since });
       });
     },
-    [session.id, requestId, settling, request, onAnswered],
+    [session.id, requestId, since, settling, request, onAnswered],
   );
 
   return { step, press, settling, outcomeId };

@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import { LAST_MESSAGE_PATH, type LastMessageResponse } from "@core/api";
 import type {
+  AnsweringStatus,
   HistoryPoint,
   PullRequest,
   Session,
@@ -12,6 +13,7 @@ import type {
   SourceHealth,
 } from "@core/sessions/session";
 import { SessionPanel } from "@dashboard/components/panels/SessionPanel";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { readSession } from "@dashboard/lib/api/readApi";
@@ -155,6 +157,7 @@ function state(overrides: Partial<CollectorState> = {}): CollectorState {
     lastOkAt: NOW,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
     ...overrides,
   };
 }
@@ -907,6 +910,48 @@ test("a request held for the plugin is at the top of the details, whole, with Al
   expect(document.activeElement?.textContent).not.toBe("Allow");
 });
 
+test("a Claude Code session waiting for permission with no request held says why at the top of its details, the problem whole, and links to Settings for the commands", async () => {
+  const windows =
+    "Permission prompts are not answered from Agent Lookout on Windows: the plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket.";
+  const answering = (status: AnsweringStatus) =>
+    state({
+      snapshot: { generatedAt: NOW, sources: SOURCES, sessions: sessions(), answering: status },
+    });
+  const screen = await renderPanel(
+    CLAUDE_ID,
+    answering({ state: "unavailable", plugin: "unknown", holdMs: 300_000, problem: windows }),
+  );
+  const panel = dialog("checkout-flow");
+  await expect.element(panel).toBeVisible();
+  const root = panel.element();
+  const line = root.querySelector('[data-part="no-ask"]') as HTMLElement;
+  // The details give the collector's own sentence, however long, and need no link for it.
+  expect(line.textContent).toBe(windows);
+  expect(line.querySelector("a")).toBeNull();
+  expect(root.querySelector('[data-slot="answer"]')).toBeNull();
+  // It comes before the facts, where a request would be.
+  expect(line.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    (root.querySelector('[data-slot="fact-list"], dl') as HTMLElement).getBoundingClientRect().top +
+      0.5,
+  );
+  expect(warmBeyondTheSignals(root)).toEqual([]);
+
+  await screen.rerender(
+    <SessionPanel
+      sessionId={CLAUDE_ID}
+      onClose={vi.fn()}
+      state={answering({ state: "on", plugin: "missed", holdMs: 300_000 })}
+      now={NOW}
+    />,
+  );
+  await expect
+    .element(panel.getByRole("link", { name: "Settings, Permission prompts" }))
+    .toHaveAttribute("href", "#settings");
+  expect(root.querySelector('[data-part="no-ask"]')?.textContent).toBe(
+    "Its request is not held here, and the plugin may not be installed for it. Settings, Permission prompts has the commands that install it.",
+  );
+});
+
 /** The listed sessions, with the Claude Code one changed as a test says. */
 function withClaude(overrides: Partial<Session>): CollectorState {
   return state({
@@ -1425,6 +1470,7 @@ test("a session on another machine waiting for permission, as the page reads it,
         generatedAt: NOW,
         sources: [...SOURCES, devbox],
         sessions: [...sessions(), there],
+        answering: { state: "on", plugin: "missed", holdMs: 300_000 },
       },
     }),
   );
@@ -1432,6 +1478,8 @@ test("a session on another machine waiting for permission, as the page reads it,
   await expect.element(panel).toBeVisible();
   const root = panel.element();
   expect(root.querySelector('[data-slot="answer"]')).toBeNull();
+  // Nor a line saying why: the machine's note says that.
+  expect(root.querySelector('[data-part="no-ask"]')).toBeNull();
   const buttons = [...root.querySelectorAll("button")].map((button) => button.textContent);
   expect(buttons).not.toContain("Allow");
   expect(buttons).not.toContain("Deny");

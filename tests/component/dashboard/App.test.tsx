@@ -8,6 +8,7 @@ import App from "@dashboard/App";
 import Page from "@dashboard/Page";
 import { LAST_LOOKED_STORAGE_KEY } from "@dashboard/hooks/data/useNewSince";
 import { ASK_AFTER_MS } from "@dashboard/hooks/actions/useJump";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import {
   createCollectorStore,
@@ -159,6 +160,7 @@ function liveState(overrides: Partial<CollectorState> = {}): CollectorState {
     lastOkAt: Date.now(),
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
     ...overrides,
   };
 }
@@ -1771,6 +1773,7 @@ test("a session already waiting in the first answer the page ever gets sends not
     lastOkAt: null,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
   });
   await render(<App store={store} />);
 

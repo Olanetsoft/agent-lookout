@@ -3,8 +3,16 @@ import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import type { HistoryResponse } from "@core/api";
-import type { HistoryPoint, Session, SessionEvent, SourceHealth } from "@core/sessions/session";
+import type {
+  AnsweringStatus,
+  HistoryPoint,
+  Session,
+  SessionEvent,
+  SourceHealth,
+} from "@core/sessions/session";
 import { HeroPanel } from "@dashboard/components/hero/HeroPanel";
+import type { NoAskFacts } from "@dashboard/lib/answer/noAsk";
+import { NO_ASKS_SEEN, rememberAsks } from "@dashboard/lib/answer/seenAsks";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { readSession } from "@dashboard/lib/api/readApi";
 import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
@@ -1620,6 +1628,166 @@ describe("what a waiting session is asking", () => {
       await userEvent.keyboard("{Escape}");
     },
   );
+});
+
+describe("why a wait for permission has no Deny or Allow", () => {
+  const MISSED: AnsweringStatus = { state: "on", plugin: "missed", holdMs: 300_000 };
+  /** Another Claude Code session waiting for permission, for a minute. */
+  const SHORTER = session(10, {
+    name: "billing-api",
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: NOW - MINUTE,
+  });
+  const MISSED_WORDS =
+    "Its request is not held here, and the plugin may not be installed for it. Settings, Permission prompts has the commands that install it.";
+
+  function facts(overrides: Partial<NoAskFacts> = {}): NoAskFacts {
+    return {
+      answering: MISSED,
+      startedAt: at(13, 30),
+      at: NOW,
+      seen: NO_ASKS_SEEN,
+      ...overrides,
+    };
+  }
+
+  test("a Claude Code session with no request held says why where Deny and Allow would be, in the longest wait and in a later one, never warm", async () => {
+    const screen = await renderHero({ sessions: [WAITING, SHORTER, BUSY], noAsk: facts() });
+    const panel = hero(screen.container);
+    const lead = panel.querySelector(`[data-session="${WAITING.id}"]`) as HTMLElement;
+    const later = panel.querySelector(`[data-session="${SHORTER.id}"]`) as HTMLElement;
+    for (const row of [lead, later]) {
+      const line = part(row, "no-ask");
+      expect(line.textContent).toBe(MISSED_WORDS);
+      expect(line.querySelector("a")?.getAttribute("href")).toBe("#settings");
+      // The hero's quieter ink, never the muted one, and nothing warm.
+      expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+      expect(getComputedStyle(line).color).not.toBe(rgbOf("var(--ink-muted)"));
+      expect(warmPaint(line)).toEqual([]);
+      // In the left column, where a request would be: under the reason, beside the wait and the Jump.
+      expect(line.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        part(row, "reason").getBoundingClientRect().bottom - 0.5,
+      );
+      expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+        part(row, "wait").getBoundingClientRect().left + 0.5,
+      );
+      expect(row.querySelector('[data-slot="answer"]')).toBeNull();
+    }
+    expect(part(lead, "no-ask").getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      part(lead, "place").getBoundingClientRect().bottom - 0.5,
+    );
+  });
+
+  test("a held request, a question, another agent's wait and a session on another machine have no such line", async () => {
+    const held = {
+      ...WAITING,
+      ask: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        tool: "Bash",
+        command: "npm test",
+        allow: true,
+        until: NOW + 300_000,
+      },
+    };
+    const codex = session(11, {
+      id: `codex:${uuid(11)}`,
+      source: "codex",
+      name: "api-rate-limits",
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: NOW - 2 * MINUTE,
+    });
+    const there = readSession({
+      ...makeSession({
+        ...SHORTER,
+        id: `remote:devbox:claude-code:${uuid(12)}`,
+        source: "remote:devbox",
+        agent: "Claude Code",
+        machine: "devbox",
+      }),
+      ask: held.ask,
+    });
+    if (!there) throw new Error("expected a session");
+    const screen = await renderHero({
+      sessions: [held, LATER, codex, there, SHORTER],
+      noAsk: facts(),
+    });
+    const lines = [...hero(screen.container).querySelectorAll<HTMLElement>('[data-part="no-ask"]')];
+    expect(
+      lines.map((line) => line.closest<HTMLElement>("[data-session]")?.dataset.session),
+    ).toEqual([SHORTER.id]);
+  });
+
+  test("with no answering in the snapshot, the hero says nothing more than before", async () => {
+    const screen = await renderHero({ sessions: [WAITING, SHORTER, BUSY] });
+    expect(hero(screen.container).querySelector('[data-part="no-ask"]')).toBeNull();
+  });
+
+  test("a request answered from elsewhere leaves no line while the session still reads as waiting, and its hold running out is said", async () => {
+    const ask = {
+      requestId: "0123456789abcdef0123456789abcdef",
+      tool: "Bash",
+      command: "npm test",
+      allow: true,
+      until: NOW + 30_000,
+    };
+    const shown = (sessions: Session[], noAsk: NoAskFacts) => (
+      <div style={{ width: 820, padding: 24 }}>
+        <HeroPanel
+          sessions={sessions}
+          sources={[CLAUDE]}
+          history={watched()}
+          now={NOW}
+          noAsk={noAsk}
+        />
+      </div>
+    );
+    const seen = rememberAsks(NO_ASKS_SEEN, [{ ...WAITING, ask }], NOW);
+    const screen = await render(shown([{ ...WAITING, ask }, BUSY], facts({ seen })));
+    expect(hero(screen.container).querySelector('[data-slot="answer"]')).not.toBeNull();
+    // Answered in the menu bar: the next read has no request, and the poll that marks it answered has not come.
+    await screen.rerender(shown([WAITING, BUSY], facts({ seen })));
+    const panel = hero(screen.container);
+    expect(panel.querySelector('[data-part="no-ask"]')).toBeNull();
+    expect(panel.querySelector('[data-slot="answer"]')).toBeNull();
+    // Still waiting once the request's hold has run out.
+    await screen.rerender(shown([WAITING, BUSY], facts({ seen, at: ask.until })));
+    expect(part(panel, "no-ask").textContent).toBe(
+      "The hold of 5 minutes on its request has run out, so answer it in the session.",
+    );
+  });
+
+  test("a problem too long for the hero is left to Settings, with a link, and one that fits is said whole", async () => {
+    const windows =
+      "Permission prompts are not answered from Agent Lookout on Windows: the plugin's hook is a POSIX sh script, and it reaches Agent Lookout through a Unix socket.";
+    const screen = await renderHero({
+      sessions: [WAITING, BUSY],
+      noAsk: facts({ answering: { ...MISSED, state: "unavailable", problem: windows } }),
+    });
+    const line = part(hero(screen.container), "no-ask");
+    expect(line.textContent).toBe(
+      "Permission prompts cannot be answered from here. Settings, Permission prompts says why.",
+    );
+    await expect
+      .element(screen.getByRole("link", { name: "Settings, Permission prompts" }))
+      .toHaveAttribute("href", "#settings");
+
+    const another = "Another copy of Agent Lookout answers permission prompts on this computer.";
+    await screen.rerender(
+      <div style={{ width: 820, padding: 24 }}>
+        <HeroPanel
+          sessions={[WAITING, BUSY]}
+          sources={[CLAUDE]}
+          history={watched()}
+          now={NOW}
+          noAsk={facts({ answering: { ...MISSED, state: "unavailable", problem: another } })}
+        />
+      </div>,
+    );
+    expect(part(hero(screen.container), "no-ask").textContent).toBe(another);
+    expect(hero(screen.container).querySelector('[data-part="no-ask"] a')).toBeNull();
+  });
 });
 
 describe("a session whose prompt was answered, while its source still says it waits", () => {
