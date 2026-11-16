@@ -4,6 +4,7 @@ import { renderHook } from "vitest-browser-react";
 import { NOTIFICATIONS_HEADER } from "@core/api";
 import type { Session, SessionsSnapshot } from "@core/sessions/session";
 import { useWaitNotifications } from "@dashboard/hooks/notifications/useWaitNotifications";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState, CollectorStore } from "@dashboard/lib/api/collectorStore";
 import { setNotificationHost } from "@dashboard/lib/notifications/notificationHost";
@@ -68,6 +69,7 @@ function stateWith(session: Session): CollectorState {
     lastOkAt: now,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
   };
 }
 
