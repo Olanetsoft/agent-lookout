@@ -41,11 +41,19 @@ function snapshot(sessions: Session[], state: SourceState = "ok"): SessionsSnaps
   };
 }
 
-/** The collector's notifications over a fake notifier, with a clock the test moves. */
-function setUp(onAtStart: boolean) {
-  const notifier = fakeSystemNotifier();
+/**
+ * The collector's notifications over a fake notifier, with a clock the test
+ * moves, and pages that show their own unless the notifier's `pagesNotify`
+ * says not.
+ */
+function setUp(onAtStart: boolean, pagesNotify?: boolean) {
+  const notifier = fakeSystemNotifier({ pagesNotify });
   const clock = { now: T0 };
-  const notifications = createServerNotifications({ notifier, onAtStart, now: () => clock.now });
+  const notifications = createServerNotifications({
+    notifier,
+    onAtStart,
+    now: () => clock.now,
+  });
   return {
     notifier,
     notifications,
@@ -353,6 +361,60 @@ describe("never twice", () => {
   });
 });
 
+describe("with pages that show none of their own, as in the Mac app", () => {
+  test("a wait is shown at the poll that sees it, and once, while a page that said on keeps fetching the sessions", () => {
+    const { notifier, poll, page } = setUp(false, false);
+    poll(0, [working(1, "search-indexing")]);
+    page(1_000, "on");
+
+    poll(2_000, [waiting(1, "search-indexing")]);
+    expect(notifier.shown).toEqual([{ title: "search-indexing", body: "Waiting for permission" }]);
+    // The page's next turns: it has the wait, and shows nothing of it.
+    page(3_000, "on");
+    poll(4_000, [waiting(1, "search-indexing")]);
+    page(5_000, "on");
+    poll(6_000, [waiting(1, "search-indexing")]);
+    expect(notifier.shown).toHaveLength(1);
+  });
+
+  test("a finish the page chose is shown at once, and an event it did not choose is not", () => {
+    const { notifier, poll, page } = setUp(false, false);
+    poll(0, [working(1, "billing-webhooks"), working(2, "docs-site")]);
+    page(1_000, ["needs-you", "finished"]);
+    poll(2_000, [
+      makeSession({ id: id(1), name: "billing-webhooks", status: "finished" }),
+      makeSession({ id: id(2), name: "docs-site", status: "failed" }),
+    ]);
+    page(3_000, ["needs-you", "finished"]);
+    poll(4_000, [
+      makeSession({ id: id(1), name: "billing-webhooks", status: "finished" }),
+      makeSession({ id: id(2), name: "docs-site", status: "failed" }),
+    ]);
+    expect(notifier.shown).toEqual([{ title: "billing-webhooks", body: "Finished" }]);
+  });
+
+  test("a page that says off drops them all, and wins over the environment", () => {
+    const { notifier, poll, page } = setUp(true, false);
+    poll(0, [working(1, "checkout-flow")]);
+    page(1_000, "off");
+    poll(2_000, [waiting(1, "checkout-flow")]);
+    poll(10_000, [waiting(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("before any page has said anything they are off, unless the environment turned them on", () => {
+    const off = setUp(false, false);
+    off.poll(0, [working(1, "email-templates")]);
+    off.poll(2_000, [waiting(1, "email-templates")]);
+    expect(off.notifier.shown).toEqual([]);
+
+    const on = setUp(true, false);
+    on.poll(0, [working(1, "email-templates")]);
+    on.poll(2_000, [waiting(1, "email-templates")]);
+    expect(on.notifier.shown).toHaveLength(1);
+  });
+});
+
 describe("finished, failed and ended", () => {
   function over(n: number, name: string, status: "finished" | "failed"): Session {
     return makeSession({ id: id(n), name, status });
@@ -496,10 +558,14 @@ describe("the time rules", () => {
   };
 
   /** The collector's notifications, with the rules in every snapshot and a clock the test sets. */
-  function ruled(rules: TimeRules, onAtStart = true) {
-    const notifier = fakeSystemNotifier();
+  function ruled(rules: TimeRules, onAtStart = true, pagesNotify?: boolean) {
+    const notifier = fakeSystemNotifier({ pagesNotify });
     const clock = { now: EVENING };
-    const notifications = createServerNotifications({ notifier, onAtStart, now: () => clock.now });
+    const notifications = createServerNotifications({
+      notifier,
+      onAtStart,
+      now: () => clock.now,
+    });
     return {
       notifier,
       poll(at: number, sessions: Session[]) {
@@ -566,6 +632,52 @@ describe("the time rules", () => {
     poll(MORNING + 2_000, [working(1, "checkout-flow")]);
     poll(MORNING + 10_000, [working(1, "checkout-flow")]);
     expect(notifier.shown).toEqual([]);
+  });
+
+  test("with pages that show none of their own, as in the Mac app, the summary and a wait still open are shown when quiet hours end, though a page keeps asking", () => {
+    const { notifier, poll, page } = ruled(QUIET, false, false);
+    page(EVENING, ["needs-you"]);
+    poll(EVENING, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    page(EVENING + MINUTE, ["needs-you"]);
+    poll(EVENING + 3 * MINUTE, [
+      since(1, EVENING + 3 * MINUTE, "checkout-flow"),
+      working(2, "docs-site"),
+    ]);
+    page(EVENING + 4 * MINUTE, ["needs-you"]);
+    poll(EVENING + 5 * MINUTE, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 5 * MINUTE, "docs-site"),
+    ]);
+    expect(notifier.shown).toEqual([]);
+
+    page(MORNING - 1_000, ["needs-you"]);
+    poll(MORNING, [working(1, "checkout-flow"), since(2, EVENING + 5 * MINUTE, "docs-site")]);
+    expect(notifier.shown).toEqual([
+      { title: "While quiet", body: "checkout-flow waited 2 minutes" },
+      { title: "docs-site", body: "Waiting for permission" },
+    ]);
+    page(MORNING + 1_000, ["needs-you"]);
+    poll(MORNING + 2_000, [
+      working(1, "checkout-flow"),
+      since(2, EVENING + 5 * MINUTE, "docs-site"),
+    ]);
+    expect(notifier.shown).toHaveLength(2);
+  });
+
+  test("with pages that show none of their own, a reminder is shown at the poll it comes due on, though a page keeps asking", () => {
+    const rules: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 10 } };
+    const noon = new Date(2026, 9, 5, 12, 0).getTime();
+    const { notifier, poll, page } = ruled(rules, false, false);
+    page(noon, ["needs-you"]);
+    poll(noon, [working(1, "checkout-flow")]);
+    page(noon + 1_000, ["needs-you"]);
+    poll(noon + 2_000, [since(1, noon + 2_000, "checkout-flow")]);
+    page(noon + 10 * MINUTE + 1_000, ["needs-you"]);
+    poll(noon + 10 * MINUTE + 2_000, [since(1, noon + 2_000, "checkout-flow")]);
+    expect(notifier.shown).toEqual([
+      { title: "checkout-flow", body: "Waiting for permission" },
+      { title: "checkout-flow", body: "Has waited 10 minutes for permission" },
+    ]);
   });
 
   test("a wait that lasts the long wait reminder's minutes is reminded of once, unless it ends while the reminder is held", () => {
@@ -736,7 +848,7 @@ describe("the time rules", () => {
   });
 });
 
-test("a wait and its reminder name the session they are about, for a host that opens it or answers it; a summary and a finish do not", () => {
+test("each notification says what it is about: a wait and its reminder their session's wait, and a finish its session", () => {
   const notifier = fakeSystemNotifier();
   const noon = new Date(2026, 9, 5, 12, 0).getTime();
   const clock = { now: noon };
@@ -768,8 +880,136 @@ test("a wait and its reminder name the session they are about, for a host that o
     "Has waited 10 minutes for permission",
   ]);
   expect(notifier.about).toEqual([
-    { sessionId: id(1) },
-    undefined,
-    { sessionId: id(1), waitedMs: 10 * 60_000 },
+    { kind: "wait", sessionId: id(1) },
+    { kind: "over", sessionId: id(2) },
+    { kind: "wait", sessionId: id(1), waitedMs: 10 * 60_000 },
   ]);
+});
+
+test("the summary of quiet hours says it is the summary, and names no session", () => {
+  const notifier = fakeSystemNotifier();
+  const evening = new Date(2026, 9, 5, 21, 58).getTime();
+  const morning = new Date(2026, 9, 6, 8, 0).getTime();
+  const clock = { now: evening };
+  const notifications = createServerNotifications({
+    notifier,
+    onAtStart: true,
+    now: () => clock.now,
+  });
+  const rules: TimeRules = {
+    ...DEFAULT_TIME_RULES,
+    quietHours: { ...DEFAULT_TIME_RULES.quietHours, on: true, from: "22:00", to: "08:00" },
+  };
+  const poll = (at: number, sessions: Session[]) => {
+    clock.now = at;
+    notifications.handle({
+      generatedAt: at,
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+      sessions,
+      timeRules: rules,
+    });
+  };
+  // A page chose these, and closed.
+  notifications.pageSaid(["needs-you", "finished"], true);
+  poll(evening, [working(1, "checkout-flow")]);
+  poll(evening + 10 * 60_000, [
+    makeSession({ id: id(1), name: "checkout-flow", status: "finished" }),
+  ]);
+  poll(morning, [makeSession({ id: id(1), name: "checkout-flow", status: "finished" })]);
+  poll(morning + 10_000, [makeSession({ id: id(1), name: "checkout-flow", status: "finished" })]);
+  expect(notifier.shown.map((notice) => notice.title)).toEqual(["While quiet"]);
+  expect(notifier.about).toEqual([{ kind: "summary" }]);
+});
+
+describe("a notifier that can take a notification down", () => {
+  test("is told of each wait that ends, by its session, and of no finish", () => {
+    const { notifier, poll } = setUp(true);
+    poll(0, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    poll(2_000, [waiting(1, "checkout-flow"), working(2, "docs-site")]);
+    poll(4_000, [
+      working(1, "checkout-flow"),
+      makeSession({ id: id(2), name: "docs-site", status: "finished" }),
+    ]);
+    poll(6_000, [working(1, "checkout-flow")]);
+    expect(notifier.ended).toEqual([id(1)]);
+  });
+
+  test("is told of a wait answered from Agent Lookout at the poll that marks it, and of none whose source stops answering", () => {
+    const { notifier, poll } = setUp(true);
+    poll(0, [working(1, "infra-terraform"), working(2, "docs-site")]);
+    poll(2_000, [waiting(1, "infra-terraform"), waiting(2, "docs-site")]);
+    poll(4_000, [waiting(1, "infra-terraform", { answered: true }), waiting(2, "docs-site")]);
+    expect(notifier.ended).toEqual([id(1)]);
+    poll(6_000, [], "error");
+    expect(notifier.ended).toEqual([id(1)]);
+  });
+
+  test("a session answered and waiting again inside one poll has its first wait ended before its second is shown", () => {
+    const { notifier, poll } = setUp(true);
+    const first = waiting(1, "email-templates", { statusSince: T0 + 1_500 });
+    const second = waiting(1, "email-templates", { statusSince: T0 + 3_500 });
+    poll(0, [working(1, "email-templates")]);
+    poll(2_000, [first]);
+    poll(4_000, [second]);
+    expect(notifier.calls).toEqual(["show", "waitEnded", "show"]);
+    expect(notifier.ended).toEqual([id(1)]);
+  });
+
+  test("is told once when a page switches the notifications of waits off, and not when they were off already or another event is switched", () => {
+    const { notifier, page } = setUp(false);
+    page(0, "off");
+    expect(notifier.waitsOffs).toBe(0);
+    page(1_000, "on");
+    page(2_000, ["needs-you", "finished"]);
+    expect(notifier.waitsOffs).toBe(0);
+    // Needs you off, finished still on.
+    page(3_000, ["finished"]);
+    expect(notifier.waitsOffs).toBe(1);
+    page(4_000, "off");
+    expect(notifier.waitsOffs).toBe(1);
+    page(5_000, "on");
+    page(6_000, "off");
+    expect(notifier.waitsOffs).toBe(2);
+
+    // On from the environment, a page that says off switches them off.
+    const fromEnvironment = setUp(true);
+    fromEnvironment.page(0, "off");
+    expect(fromEnvironment.notifier.waitsOffs).toBe(1);
+  });
+
+  test("one with neither, as the system's own, still shows each wait, and nothing throws", () => {
+    const shown: string[] = [];
+    const clock = { now: T0 };
+    const notifications = createServerNotifications({
+      notifier: { show: (notice) => void shown.push(notice.title) },
+      onAtStart: true,
+      now: () => clock.now,
+    });
+    const poll = (at: number, sessions: Session[]) => {
+      clock.now = T0 + at;
+      notifications.handle(snapshot(sessions));
+    };
+    poll(0, [working(1, "checkout-flow")]);
+    poll(2_000, [waiting(1, "checkout-flow")]);
+    expect(() => poll(4_000, [working(1, "checkout-flow")])).not.toThrow();
+    poll(6_000, [waiting(1, "checkout-flow", { statusSince: T0 + 5_000 })]);
+    expect(shown).toEqual(["checkout-flow", "checkout-flow"]);
+    expect(() => notifications.pageSaid([], true)).not.toThrow();
+  });
+
+  test("one that throws when told does not stop the poll, or the page's request", () => {
+    const { notifier, poll, page } = setUp(true);
+    notifier.waitEnded = () => {
+      throw new Error("The notifier was told to throw.");
+    };
+    notifier.waitsOff = () => {
+      throw new Error("The notifier was told to throw.");
+    };
+    poll(0, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    poll(2_000, [waiting(1, "checkout-flow"), working(2, "docs-site")]);
+    // The first wait ends as the second begins, in one poll.
+    expect(() => poll(4_000, [working(1, "checkout-flow"), waiting(2, "docs-site")])).not.toThrow();
+    expect(notifier.shown.map((notice) => notice.title)).toEqual(["checkout-flow", "docs-site"]);
+    expect(() => page(5_000, "off")).not.toThrow();
+  });
 });

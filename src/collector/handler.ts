@@ -400,9 +400,10 @@ function sendWhenReady(res: ServerResponse, answer: Promise<ApiAnswer>): void {
 }
 
 /**
- * What a page said about its notifications, the events it shows them of, or
- * null when the request carries no such header or one that cannot be read.
- * Node gives header names in lower case.
+ * What a page said about its notifications, the events they are on for, which
+ * a page in a browser shows a notification of and, in the Mac app, the app
+ * does, or null when the request carries no such header or one that cannot be
+ * read. Node gives header names in lower case.
  */
 export function notificationsSaid(req: IncomingMessage): NotificationsSaid | null {
   const value = req.headers[NOTIFICATIONS_HEADER.toLowerCase()];

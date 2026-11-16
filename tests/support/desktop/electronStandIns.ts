@@ -2,9 +2,9 @@
 // modules: a notification, the class that makes them, a menu and the item in
 // the menu bar. Each writes down what it is told and shows nothing, so no
 // test raises a notification or puts an icon in the menu bar of the machine
-// it runs on. A test plays the person on them: it clicks a notification or
-// presses one of its buttons, and opens a menu, a submenu of it, and clicks
-// an item.
+// it runs on. A test plays the person on them: it clicks a notification,
+// presses one of its buttons or clears it, and opens a menu, a submenu of it,
+// and clicks an item.
 
 import type { MenuItemConstructorOptions, NotificationConstructorOptions } from "electron";
 
@@ -16,19 +16,36 @@ type Listener = (...args: never[]) => void;
 /** One notification, as `new Notification(options)` makes it. */
 export class FakeNotification implements NotificationLike {
   shown = false;
+  /** Whether the app took it down. */
   closed = false;
+  /** How many times the app asked to take it down. */
+  closes = 0;
+  /** Whether the person cleared it. */
+  dismissed = false;
   private readonly listeners = new Map<string, Listener[]>();
-  constructor(readonly options: NotificationConstructorOptions) {}
+  constructor(
+    readonly options: NotificationConstructorOptions,
+    /** Whether its `show()` throws, which the notifier catches. */
+    private readonly showThrows = false,
+  ) {}
 
   on(event: string, listener: Listener): this {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
     return this;
   }
   show(): void {
+    if (this.showThrows) throw new Error("The notification could not be shown.");
     this.shown = true;
   }
+  /**
+   * The app takes it down. As Electron's does, the first `close()` says
+   * `close` before it returns, and a later one does nothing more.
+   */
   close(): void {
+    this.closes += 1;
+    if (this.closed) return;
     this.closed = true;
+    this.emit("close");
   }
 
   private emit(event: string, ...args: unknown[]): void {
@@ -54,26 +71,43 @@ export class FakeNotification implements NotificationLike {
   fail(error: string): void {
     this.emit("failed", {}, error);
   }
+  /**
+   * The person clears it. macOS tells Electron so only for one with buttons,
+   * a reply field or a close button's text, since Electron asks to be told
+   * only then, so only such a one says `close`.
+   */
+  dismiss(): void {
+    this.dismissed = true;
+    const { actions, hasReply, closeButtonText } = this.options;
+    if ((actions ?? []).length > 0 || hasReply === true || closeButtonText !== undefined) {
+      this.emit("close");
+    }
+  }
   /** The labels of its buttons, in order. */
   get buttons(): string[] {
     return (this.options.actions ?? []).map((action) => action.text ?? "");
   }
 }
 
-/** Electron's `Notification` class: what it made, in order. */
+/**
+ * Electron's `Notification` class: what it made, in order. With `showThrows`
+ * set, the `show()` of each it makes from then on throws.
+ */
 export function fakeNotifications(
   supported = true,
-): NotificationMaker & { made: FakeNotification[] } {
+): NotificationMaker & { made: FakeNotification[]; showThrows: boolean } {
   const made: FakeNotification[] = [];
-  return {
+  const maker = {
     made,
+    showThrows: false,
     isSupported: () => supported,
-    create(options) {
-      const notification = new FakeNotification(options);
+    create(options: NotificationConstructorOptions) {
+      const notification = new FakeNotification(options, maker.showThrows);
       made.push(notification);
       return notification;
     },
   };
+  return maker;
 }
 
 /**

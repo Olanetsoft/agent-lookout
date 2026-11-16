@@ -219,7 +219,8 @@ function refusedByMacOS({ step, lastRefusal }: NotificationTest): boolean {
  * the events are listed under it, each with a switch of its own.
  *
  * Every request the page makes tells the app what these are set to, and the
- * notifications the app shows itself, when no page is open, follow them.
+ * notifications the app shows itself, when no page is open, follow them: in
+ * the Mac app those are all of them, since its page shows none.
  *
  * In the Mac app the card speaks of macOS and this app, not of a browser and
  * a tab, and says the app's setting is its own: its page keeps the choice
@@ -325,7 +326,7 @@ function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
         )}
         <p className='mt-2 text-body text-ink-secondary'>
           {inApp
-            ? "They also arrive while this window is closed, for as long as Agent Lookout keeps running, and those stay until you clear them."
+            ? "They come from Agent Lookout itself, with this window open or closed, for as long as it keeps running. While it holds a session's permission request, the notification of its wait has Deny, and Allow too for a short command it can show whole."
             : "On a Mac they also arrive when no dashboard tab is open, for as long as Agent Lookout keeps running, and those stay until you clear them."}{" "}
           What each agent can report, under{" "}
           <a

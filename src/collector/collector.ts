@@ -144,7 +144,8 @@ export interface CollectorOptions {
   /**
    * What shows a notification on this machine when no dashboard page will.
    * Defaults to the system's own, which is `osascript` on macOS and nothing
-   * anywhere else. Tests pass one that shows nothing.
+   * anywhere else. The Mac app passes its own, which says the page in its
+   * window shows none (`pagesNotify`). Tests pass one that shows nothing.
    */
   notifier?: SystemNotifier;
   /**

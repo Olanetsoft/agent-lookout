@@ -43,10 +43,16 @@ import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
  *
  * Every notification is held back for a moment before it is shown, so that a
  * page that is open shows it and the collector does not show it as well.
- * `heldWait.ts` has that timing.
+ * `heldWait.ts` has that timing. A notifier whose host's pages show none of
+ * their own, as the Mac app's, says so (`pagesNotify`), and then nothing is
+ * held for a page: each is shown at the poll it is due on.
  *
- * A notification shown here cannot be taken down again, so a wait that ends is
- * only forgotten.
+ * The system's own notifier cannot take a notification down again, so there a
+ * wait that ends is only forgotten. A notifier that can, as the Mac app's, is
+ * told when a wait ends (`waitEnded`), and when a page switches the
+ * notifications of waits off (`waitsOff`), and each notification says what it
+ * is about, a wait, a finish, a failure or an end of a session, or the
+ * summary, so that host can keep one at a time of each, as the page's tags do.
  *
  * The time rules each snapshot carries are followed as the page follows them,
  * by the same rules in the core and at the same poll, so a page that is open
@@ -133,6 +139,8 @@ export function createServerNotifications(
 ): ServerNotifications {
   const { notifier } = options;
   const now = options.now ?? Date.now;
+  /** Whether the pages show their own, as the notifier says. Left out, they do. */
+  const pagesNotify = notifier.pagesNotify ?? true;
 
   let memory: ChangeMemory = EMPTY_CHANGE_MEMORY;
   let pages: PageReports = noPageReports(options.onAtStart);
@@ -145,11 +153,29 @@ export function createServerNotifications(
   /** What quiet hours hold back. */
   const quiet = createQuietHold();
 
-  function show(notice: Notice, about?: NoticeAbout): void {
+  function show(notice: Notice, about: NoticeAbout): void {
     try {
       notifier.show(notice, about);
     } catch {
       // A notifier should not throw. One that does must not stop the poll.
+    }
+  }
+
+  /** Tells a notifier that can take a wait's notification down that the wait has ended. */
+  function ended(sessionId: string): void {
+    try {
+      notifier.waitEnded?.(sessionId);
+    } catch {
+      // As with `show`: it must not stop the poll.
+    }
+  }
+
+  /** Tells a notifier that can take a wait's notification down that waits were switched off. */
+  function waitsOff(): void {
+    try {
+      notifier.waitsOff?.();
+    } catch {
+      // As with `show`: it must not stop the request that said it.
     }
   }
 
@@ -166,16 +192,18 @@ export function createServerNotifications(
   return {
     pageSaid(said, fetchedSessions) {
       const at = now();
+      const toldWaits = wants("needs-you");
       chosen = new Set(said);
-      if (said.length === 0) {
-        pages = { ...pages, on: false };
-        return;
-      }
-      pages = {
-        on: true,
-        lastOnAt: at,
-        lastOnSessionsAt: fetchedSessions ? at : pages.lastOnSessionsAt,
-      };
+      pages =
+        said.length === 0
+          ? { ...pages, on: false }
+          : {
+              on: true,
+              lastOnAt: at,
+              lastOnSessionsAt: fetchedSessions ? at : pages.lastOnSessionsAt,
+            };
+      // As the page closes its own when notifications, or Needs you, go off.
+      if (toldWaits && !wants("needs-you")) waitsOff();
     },
 
     handle(snapshot) {
@@ -189,11 +217,16 @@ export function createServerNotifications(
       const result = sessionChanges(memory, snapshot);
       memory = result.memory;
 
-      // A wait that ended while it was held is never shown, nor is its reminder.
+      // A wait that ended while it was held is never shown, nor is its reminder,
+      // and one that was shown is taken down by a notifier that can. This comes
+      // before any change of this poll is shown, so a session answered and
+      // waiting again inside one poll has its first notification taken down
+      // before its second is shown.
       for (const id of result.stopped) {
         held.delete(heldKey("needs-you", id));
         held.delete(reminderKey(id));
         quiet.waitEnded(id, at);
+        ended(id);
       }
       reminders.observe(snapshot, result.stopped, at);
 
@@ -259,7 +292,7 @@ export function createServerNotifications(
         const event = entry.kind === "change" ? entry.change.event : "needs-you";
         const outcome =
           entry.kind === "summary" || chosen.has(event)
-            ? heldWaitOutcome(entry.since, pages, at)
+            ? heldWaitOutcome(entry.since, pages, at, pagesNotify)
             : "drop";
         if (outcome === "hold") continue;
         held.delete(key);
@@ -275,15 +308,22 @@ export function createServerNotifications(
         }
         if (entry.kind === "change") {
           const { change } = entry;
+          const sessionId = change.session.id;
           show(
             changeNotice(change),
-            change.event === "needs-you" ? { sessionId: change.session.id } : undefined,
+            change.event === "needs-you"
+              ? { kind: "wait", sessionId }
+              : { kind: "over", sessionId },
           );
         } else if (entry.kind === "reminder") {
           const { session, begunAt } = entry.reminder;
           const waitedMs = at - begunAt;
-          show(reminderNotice(session, waitedMs), { sessionId: session.id, waitedMs });
-        } else show(summaryNotice(entry.summary.items));
+          show(reminderNotice(session, waitedMs), {
+            kind: "wait",
+            sessionId: session.id,
+            waitedMs,
+          });
+        } else show(summaryNotice(entry.summary.items), { kind: "summary" });
       }
     },
   };

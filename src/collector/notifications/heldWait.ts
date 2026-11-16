@@ -1,7 +1,7 @@
 /**
  * The timing of a notification the collector holds back: whether to show it,
  * go on holding it, or drop it. It is all here, in one function of three times
- * and a switch, so it can be tested without a clock.
+ * and two switches, so it can be tested without a clock.
  *
  * A dashboard page that has notifications on shows a wait itself, a moment
  * after it fetches the sessions. The collector sees the wait first, because
@@ -14,6 +14,10 @@
  *
  * A session that finishes, fails or ends is held back by the same rule, so
  * "wait" below stands for any of those.
+ *
+ * A host whose pages show no notifications of their own, as the Mac app's
+ * window does, has no page to wait for: each is shown at once, while
+ * notifications are on.
  */
 
 /**
@@ -61,6 +65,8 @@ export type HeldWaitOutcome = "show" | "hold" | "drop";
  *
  * - Notifications off, by the last thing a page said: dropped. Turning them off
  *   in Settings covers a wait that is being held as well.
+ * - Pages that show none of their own (`pagesNotify` false): shown at once, as
+ *   long as notifications are on. None of the rules below applies to them.
  * - A page that said "on" has fetched the sessions since the wait was seen: it
  *   has the wait and shows it, so it is dropped. A fetch in the same millisecond
  *   is not counted, because it may have been answered just before the wait was
@@ -74,8 +80,15 @@ export type HeldWaitOutcome = "show" | "hold" | "drop";
  * A wait that ends while it is held is not this function's business: the
  * caller forgets it.
  */
-export function heldWaitOutcome(since: number, pages: PageReports, now: number): HeldWaitOutcome {
+export function heldWaitOutcome(
+  since: number,
+  pages: PageReports,
+  now: number,
+  pagesNotify = true,
+): HeldWaitOutcome {
   if (!pages.on) return "drop";
+  // No page shows one of its own, so there is nobody to wait for.
+  if (!pagesNotify) return "show";
   if (pages.lastOnSessionsAt !== null && pages.lastOnSessionsAt > since) return "drop";
   if (pages.lastOnAt === null || now - pages.lastOnAt > PAGE_GONE_AFTER_MS) return "show";
   return now - since >= HANDOVER_GRACE_MS ? "show" : "hold";

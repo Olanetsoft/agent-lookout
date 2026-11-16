@@ -11,28 +11,60 @@ export { OSASCRIPT };
  * going to. On macOS it does so by running `osascript`, the system's own
  * program for AppleScript, so macOS shows the notification as coming from
  * Script Editor. Nothing is sent anywhere. On any other system nothing is
- * shown. A later desktop host passes its own notifier to `createCollector`,
- * and tests pass one that shows nothing.
+ * shown. The Mac app passes its own notifier to `createCollector`, and tests
+ * pass one that shows nothing.
  */
 export interface SystemNotifier {
   /**
+   * Whether the dashboard pages the collector serves show notifications of
+   * their own beside this notifier's. Left out, they do, as a page in a
+   * browser does, and each notification is held back a moment for an open
+   * page to show (`heldWait.ts`). The Mac app's notifier says false: the page
+   * in its window shows none, so that notifier shows every one, at once, with
+   * the window open or closed. The pages still say which events are on.
+   */
+  readonly pagesNotify?: boolean;
+  /**
    * Shows a notification on this machine. It never throws, and a notification
-   * that could not be shown is dropped without a word. `about` names the
-   * session of a wait, or of a reminder of one, for a host that can do more
-   * with that than show it: the Mac app opens that session's details on a
-   * click, and offers Deny and Allow for a permission request Agent Lookout
+   * that could not be shown is dropped without a word. `about` says what it is
+   * about, for a host that can do more with that than show it. The Mac app
+   * has a later one of a session take the place of the earlier, and a new
+   * summary the place of the last, as the page's tags do, apart from what
+   * `desktopNotifier.ts` says, opens a session's details on a click on its
+   * wait's, and offers Deny and Allow for a permission request Agent Lookout
    * holds. `osascript` takes no notice of it.
    */
   show(notice: Notice, about?: NoticeAbout): void;
+  /**
+   * Told that a session's wait has ended, by the rule the page takes down its
+   * own notification of a wait by (`sessionChanges` in the core). A host that
+   * can take a notification down again, as the Mac app can, takes down the
+   * one of that wait, or of a reminder of it. `osascript` cannot, so the
+   * system's own notifier has none.
+   */
+  waitEnded?(sessionId: string): void;
+  /**
+   * Told that the notifications of waits were switched off, as notifications
+   * or Needs you being turned off in Settings is. A host that can take a
+   * notification down again takes down every one of a wait, as the page does
+   * its own, and leaves one that says a session finished, failed or ended.
+   */
+  waitsOff?(): void;
 }
 
 /** What a notification is about, beyond its words. */
-export interface NoticeAbout {
-  /** The session that waits. */
-  sessionId: string;
-  /** For a reminder, how long the session has waited, in milliseconds. */
-  waitedMs?: number;
-}
+export type NoticeAbout =
+  /** A session that waits, or a reminder of its wait. */
+  | {
+      kind: "wait";
+      sessionId: string;
+      /** For a reminder, how long the session has waited, in milliseconds. */
+      waitedMs?: number;
+    }
+  /** A session that finished, failed or ended. */
+  | { kind: "over"; sessionId: string }
+  /** The one summary of quiet hours, "While quiet". */
+  | { kind: "summary" };
 
 /** How long `osascript` gets. It normally answers in well under a second. */
 const OSASCRIPT_TIMEOUT_MS = 5_000;

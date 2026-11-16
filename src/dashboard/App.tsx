@@ -117,7 +117,8 @@ function Ground() {
  * the Overview.
  *
  * A session that starts waiting sends a notification from here, whichever view
- * is showing, once the person has turned that on in Settings.
+ * is showing, once the person has turned that on in Settings. In the Mac app's
+ * window the app sends it itself.
  *
  * Coming back to the page after it was out of sight, the events log draws a
  * line under what arrived meanwhile. Where it goes is worked out here, on every

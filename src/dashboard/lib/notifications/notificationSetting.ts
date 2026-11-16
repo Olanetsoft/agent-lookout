@@ -29,9 +29,10 @@ import {
  * chosen one by one and kept in local storage beside the choice. Until the
  * person changes them, a wait alone sends one.
  *
- * The collector's own notifications, shown when no page is open, follow this
- * setting too: `apiRequest` tells the collector which events are on with every
- * request.
+ * The collector's own notifications, shown when no page is open, and in the
+ * Mac app, where they are the only ones, with the window open or closed,
+ * follow this setting too: `apiRequest` tells the collector which events are
+ * on with every request.
  */
 
 export type NotificationChoice = "on" | "off";

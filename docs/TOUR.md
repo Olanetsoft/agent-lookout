@@ -616,7 +616,7 @@ No answer ever has a CORS header. `send` even removes any `Access-Control-*` hea
 Two more things live in the handler:
 
 - `ready`: while the collector reads its history back from disk at start, requests wait. No page is told of an empty history that is about to fill.
-- The `X-Agent-Lookout-Notifications` header: the dashboard sends it to say which notifications its page shows, so the collector knows whether to show its own (see [The collector's own notifications](#the-collectors-own-notifications)). A program that only reads should not send it. `status`, `mcp` and the SSH reader never do.
+- The `X-Agent-Lookout-Notifications` header: the dashboard sends it to say which events its notifications are on for, so the collector knows whether to show its own (see [The collector's own notifications](#the-collectors-own-notifications)). In the Mac app the page shows none, and the header says which events the app shows. A program that only reads should not send it. `status`, `mcp` and the SSH reader never do.
 
 **When.** The handler is in the first commit. It was documented for outside readers in docs/API.md on 6 October (c2d3f9b), for #13. Each feature since added its route there.
 
@@ -829,7 +829,7 @@ In this part, a bare path such as `lib/shell/view.ts` is under `src/dashboard/`.
 Every request the dashboard makes goes through `apiRequest(path, init)` in `lib/api/apiHost.ts`. It has the shape of `fetch`, and by default it is a same-origin `fetch`.
 
 - It accepts only a root-relative path. It rejects any path that a browser would resolve to another host, such as one with a tab or a backslash in it. So no code in the dashboard can call another machine.
-- It adds one header to every request, `X-Agent-Lookout-Notifications`, which names the events this page shows notifications for, or says none. The header is added at the seam so that no request can go out without it (#28).
+- It adds one header to every request, `X-Agent-Lookout-Notifications`, which names the events this page's notifications are on for, which a browser tab shows itself and the Mac app shows for its window, or says none. The header is added at the seam so that no request can go out without it (#28).
 - `setApiHost` swaps the transport. It was built for a Mac app (#2) and a browser extension (#19). In the end the Mac app did not need it, because its page and its API share one origin. Today only the landing page's tour calls it.
 
 Two more seams work the same way. `setNotificationHost` in `lib/notifications/notificationHost.ts` defaults to the browser's Notifications API. `setAddressHost` in `lib/shell/addressHost.ts` defaults to setting `location.hash`.
@@ -979,7 +979,7 @@ The fix (cd9dfef) sets `-webkit-app-region: none` on those fields of light in `s
 
 #### Notifications, the Dock and the menu bar
 
-- **Notifications.** While the window is open, the page shows its own notifications through the browser's API, and Electron shows them as coming from the app. Those have no buttons. While the window is closed, the collector shows them through `notifications/desktopNotifier.ts`. It uses Electron's `Notification` in place of `osascript`, so macOS files them under Agent Lookout, not Script Editor. Clicking a wait's notification opens that session's details.
+- **Notifications (#330).** With the window open or closed, the collector shows every notification through `notifications/desktopNotifier.ts`. The page in the window shows none (`useWaitNotifications`, by `inAppWindow`), and the notifier says so to the collector (`pagesNotify: false`), so nothing is held back for a page. The notifier uses Electron's `Notification` in place of `osascript`, so macOS files them under Agent Lookout, not Script Editor. Clicking a wait's notification opens that session's details, a held request's has Deny and Allow, and a wait's is taken down when the wait ends (`waitEnded`) or notifications or Needs you are switched off (`waitsOff`). As the page's tags do, it keeps one notification of a session at a time, and one While quiet summary. Unlike a tag, it keeps track of no more than the newest 20 that say a session finished, failed or ended, and a line about a press that sent nothing (`tell`) stays beside the session's. Before #330 the page showed them while the window was open, with no buttons.
 - **The Dock.** `notifications/dockBadge.ts` puts the count of sessions that need you on the Dock icon. It counts by `needsYou`, the same rule that lights the lamp, and never names a session.
 - **The menu bar (#3, 8ff0d4e).** The code is in `menu-bar/`.
   - `menuBar.ts` keeps an Electron `Tray` with template images, which macOS paints in the menu bar's own colour. `scripts/render-menu-bar-icon.mjs` draws those images into `build/menu-bar/`.
@@ -1156,7 +1156,7 @@ There are four events: `needs-you`, `finished`, `failed` and `ended`. Needs you 
 
 ### The collector's own notifications
 
-**What it does.** A page can only notify while it is open. The collector polls whether or not a page is open, so it shows the notification itself when no page will. On macOS it runs `/usr/bin/osascript`. On Linux and Windows it shows nothing. In the Mac app, the app's own notifier takes the place of osascript.
+**What it does.** A page can only notify while it is open. The collector polls whether or not a page is open, so it shows the notification itself when no page will. On macOS it runs `/usr/bin/osascript`. On Linux and Windows it shows nothing. In the Mac app, the app's own notifier takes the place of osascript, and shows every notification, since the page in its window shows none.
 
 **Where the code is.** In `src/collector/notifications/`:
 
@@ -1176,15 +1176,15 @@ This was asked for in #28 (abc93e6, 5 October).
 
 **Held waits.** The page learns of a change from the collector, so the collector always sees it first. To avoid a second notification, the collector holds its own back. At each poll, `heldWaitOutcome` decides what happens to it:
 
-- **drop:** notifications or that event are off, or a page that said `on` has fetched `/api/sessions` since the change was seen. That page has it and shows it.
-- **show:** no page that said `on` has asked for anything in the last 5 seconds (`PAGE_GONE_AFTER_MS`).
+- **drop:** notifications or that event are off, or, where pages show their own, a page that said `on` has fetched `/api/sessions` since the change was seen. That page has it and shows it.
+- **show:** the host's pages show none of their own, as in the Mac app (`pagesNotify: false`), or no page that said `on` has asked for anything in the last 5 seconds (`PAGE_GONE_AFTER_MS`).
 - **hold:** anything else. After 3 seconds (`HANDOVER_GRACE_MS`) it is shown.
 
-It is a pure function of three times, so it is tested without a clock.
+It is a pure function of three times and two switches, so it is tested without a clock.
 
 **Keeping osascript safe.** The script never changes. The title and the text go in as arguments after `--`, so a session named `-e` cannot run a script. Each is made one line by `oneLine` in `src/core/text.ts`: the title at most 80 characters and the text at most 240. osascript gets 5 seconds, and a failure is dropped.
 
-**Limits.** macOS files these notifications under Script Editor. Agent Lookout cannot take one down after it is shown. A wait can be announced twice when a browser slows a hidden tab past those few seconds. A wait that begins within one poll of a page reload is announced by neither the page nor the collector. [ARCHITECTURE.md](ARCHITECTURE.md#notifications-from-the-collector) has the full timing.
+**Limits.** Outside the Mac app, macOS files these notifications under Script Editor, and Agent Lookout cannot take one down after it is shown. A wait can be announced twice when a browser slows a hidden tab past those few seconds. A wait that begins within one poll of a page reload is announced by neither the page nor the collector. Neither of those two happens in the Mac app, whose page shows none. [ARCHITECTURE.md](ARCHITECTURE.md#notifications-from-the-collector) has the full timing.
 
 The Mac app's notifications, Dock badge and menu bar are under [The Mac app](#notifications-the-dock-and-the-menu-bar).
 
