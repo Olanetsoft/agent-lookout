@@ -230,10 +230,10 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
   }
 
   /**
-   * Puts a notification in its session's place, and takes down the one that
-   * was there, of a wait or of a finish, a failure or an end: a session has
-   * one at a time. The new one is set first, so the older one's `close`,
-   * which Electron emits as it is taken down, lets go of nothing new.
+   * Puts a notification already shown in its session's place, and takes down
+   * the one that was there, of a wait or of a finish, a failure or an end: a
+   * session has one at a time. The new one is set first, so the older one's
+   * `close`, which Electron emits as it is taken down, lets go of nothing new.
    */
   function placeBySession(
     notification: NotificationLike,
@@ -260,7 +260,7 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
     for (const each of older) if (each !== undefined && each !== notification) takeDown(each);
   }
 
-  /** Puts the summary of quiet hours in the place of the last, which is taken down. */
+  /** Puts the summary of quiet hours, already shown, in the place of the last, which is taken down. */
   function placeSummary(notification: NotificationLike): void {
     const older = summary;
     summary = notification;
@@ -322,6 +322,10 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
             });
         });
       }
+      // Shown before it takes the place of the last, so one that will not show
+      // leaves the last on show, and in its place.
+      notification.show();
+      shownAt = now();
       if (place.kind === "wait") {
         // Only one with buttons is kept with its request, for `observe`.
         const buttons = held !== null && decisions.length > 0;
@@ -332,8 +336,6 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
       } else if (place.kind === "over") placeBySession(notification, place);
       else if (place.kind === "summary") placeSummary(notification);
       else keep(notification);
-      notification.show();
-      shownAt = now();
     } catch {
       // Not shown. There is nobody to tell.
     }

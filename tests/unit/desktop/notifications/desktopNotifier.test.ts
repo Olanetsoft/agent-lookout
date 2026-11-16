@@ -61,6 +61,7 @@ function setUp(
   });
   return {
     notifier,
+    notifications,
     made: notifications.made,
     pressed,
     onClick,
@@ -418,6 +419,58 @@ describe("one notification of a session at a time, as the page's tags keep", () 
     expect(made.map((notification) => notification.closed)).toEqual([true, false]);
     made[1]?.click();
     expect(onClick).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  test("a new one is on show before the session's last, or the last summary, is taken down", async () => {
+    const { notifier, made } = setUp({ held: { ask: ask("npm test") } });
+    /** Whether the one made after each was on show as that one was taken down. */
+    const nextShown: boolean[] = [];
+    const watch = (index: number) =>
+      made[index]?.on("close", () => nextShown.push(made[index + 1]?.shown === true));
+    notifier.show(WAIT, { kind: "wait", sessionId: ID });
+    await vi.waitFor(() => expect(made).toHaveLength(1));
+    watch(0);
+    notifier.show(REMINDER, { kind: "wait", sessionId: ID, waitedMs: 10 * 60_000 });
+    await vi.waitFor(() => expect(made).toHaveLength(2));
+    watch(1);
+    notifier.show(FINISHED, { kind: "over", sessionId: ID });
+    notifier.show({ title: "While quiet", body: "checkout-flow finished" }, { kind: "summary" });
+    watch(3);
+    notifier.show({ title: "While quiet", body: "docs-site failed" }, { kind: "summary" });
+    expect(nextShown).toEqual([true, true, true]);
+  });
+
+  test("one that will not show leaves the last on show and in its place, so the end of its wait takes that one down", async () => {
+    const { notifier, made, notifications } = setUp({ held: { ask: ask("npm test") } });
+    notifier.show(WAIT, { kind: "wait", sessionId: ID });
+    await vi.waitFor(() => expect(made).toHaveLength(1));
+    notifier.show({ title: "While quiet", body: "checkout-flow finished" }, { kind: "summary" });
+    notifications.showThrows = true;
+    notifier.show(REMINDER, { kind: "wait", sessionId: ID, waitedMs: 10 * 60_000 });
+    await vi.waitFor(() => expect(made).toHaveLength(3));
+    notifier.show(FINISHED, { kind: "over", sessionId: ID });
+    notifier.show({ title: "While quiet", body: "docs-site failed" }, { kind: "summary" });
+    expect(made.map((notification) => notification.shown)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(made.map((notification) => notification.closed)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(made[0]?.buttons).toEqual(["Deny", "Allow"]);
+
+    notifications.showThrows = false;
+    notifier.waitEnded(ID);
+    expect(made[0]?.closed).toBe(true);
+    notifier.show({ title: "While quiet", body: "docs-site failed" }, { kind: "summary" });
+    expect(made[1]?.closed).toBe(true);
   });
 
   test("a line the app tells about a press is left beside a later notification of its session, and a click on it opens the session's details", async () => {

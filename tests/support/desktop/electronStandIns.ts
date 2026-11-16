@@ -23,13 +23,18 @@ export class FakeNotification implements NotificationLike {
   /** Whether the person cleared it. */
   dismissed = false;
   private readonly listeners = new Map<string, Listener[]>();
-  constructor(readonly options: NotificationConstructorOptions) {}
+  constructor(
+    readonly options: NotificationConstructorOptions,
+    /** Whether its `show()` throws, as Electron's can. */
+    private readonly showThrows = false,
+  ) {}
 
   on(event: string, listener: Listener): this {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
     return this;
   }
   show(): void {
+    if (this.showThrows) throw new Error("The notification could not be shown.");
     this.shown = true;
   }
   /**
@@ -84,20 +89,25 @@ export class FakeNotification implements NotificationLike {
   }
 }
 
-/** Electron's `Notification` class: what it made, in order. */
+/**
+ * Electron's `Notification` class: what it made, in order. With `showThrows`
+ * set, the `show()` of each it makes from then on throws.
+ */
 export function fakeNotifications(
   supported = true,
-): NotificationMaker & { made: FakeNotification[] } {
+): NotificationMaker & { made: FakeNotification[]; showThrows: boolean } {
   const made: FakeNotification[] = [];
-  return {
+  const maker = {
     made,
+    showThrows: false,
     isSupported: () => supported,
-    create(options) {
-      const notification = new FakeNotification(options);
+    create(options: NotificationConstructorOptions) {
+      const notification = new FakeNotification(options, maker.showThrows);
       made.push(notification);
       return notification;
     },
   };
+  return maker;
 }
 
 /**
