@@ -261,6 +261,12 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
    * the 15 minutes polled on each beat would no longer join on to what is held.
    */
   let hourCurrentAt: number | null = null;
+  /**
+   * The `startedAt` of the run the requests in `seenAsks` were seen in, as
+   * history last said it when they were, or null when history had not been
+   * read yet, so the run they belong to is not known.
+   */
+  let asksRun: number | null = null;
 
   function setState(next: CollectorState): void {
     state = next;
@@ -316,8 +322,12 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
           },
           events: restarted ? [] : next.events,
           // The run before let every request it held go as it stopped, so no
-          // request seen in it is held now.
-          seenAsks: newRun ? NO_ASKS_SEEN : next.seenAsks,
+          // request seen in it is held now. Requests seen before history was
+          // first read are of a run not known, and are forgotten as well.
+          seenAsks:
+            next.seenAsks.size > 0 && asksRun !== history.value.startedAt
+              ? NO_ASKS_SEEN
+              : next.seenAsks,
         };
       }
       if (events.status === "fulfilled") {
@@ -335,6 +345,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
           problemKind: null,
           seenAsks: rememberAsks(next.seenAsks, sessions.value.sessions),
         };
+        asksRun = next.history?.startedAt ?? null;
       } else {
         failures += 1;
         const reason: unknown = sessions.reason;

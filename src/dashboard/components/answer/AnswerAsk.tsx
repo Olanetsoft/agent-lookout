@@ -177,8 +177,9 @@ function NoAsk({
  * `noAskLine` in `lib/answer/noAsk.ts`, `brief` in the hero, linking to
  * Settings where Settings, under Permission prompts, has what the line points
  * to: the commands that install the plugin, or a problem sentence too long for
- * the hero. It is not drawn while a press is under way, or once what one came
- * to is said, which says why already. When the line is taken away with focus
+ * the hero. It is not drawn while a press is under way, nor beside what one
+ * came to in the same wait, which says why already. In a later wait it is
+ * drawn under what the last press came to. When the line is taken away with focus
  * in it, focus goes to what is drawn in its place, a request or another line.
  * With nothing there, it goes to `focusOnLeave`, unless the page has put it
  * somewhere by then, as the Overview gives it to the row's Jump when the row
@@ -280,7 +281,7 @@ export function AnswerBlock({
   className,
   blockRef,
 }: {
-  session: Pick<Session, "name" | "ask">;
+  session: Pick<Session, "name" | "ask" | "statusSince">;
   answer: AnswerPress;
   line?: NoAskLine | null;
   onLineLeft?: () => void;
@@ -292,6 +293,10 @@ export function AnswerBlock({
   const answered = step.kind === "answered" ? step : null;
   // The request shown is offered unless it is the one already answered.
   const offered = ask !== undefined && ask.requestId !== answered?.requestId ? ask : null;
+  // What a press came to is said of the wait it was made in. In a later wait
+  // with no request held, the line that says why is drawn under it.
+  const later =
+    offered === null && answered !== null && answered.since !== session.statusSince ? line : null;
   if (offered === null && answered === null) {
     if (line === null || step.kind !== "idle") return null;
     return (
@@ -323,10 +328,20 @@ export function AnswerBlock({
           role='status'
           data-part='answer-outcome'
           data-outcome={answered.outcome}
-          className={cn("text-body text-ink outline-none", offered !== null && "mb-2.5")}
+          className={cn(
+            "text-body text-ink outline-none",
+            (offered !== null || later !== null) && "mb-2.5",
+          )}
         >
           {answerOutcomeWords(answered.outcome)}
         </p>
+      )}
+      {later !== null && (
+        <NoAsk
+          key={`${later.reason}:${later.settings !== null}`}
+          line={later}
+          onLeave={onLineLeft}
+        />
       )}
       {offered !== null && (
         <>

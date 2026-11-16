@@ -648,6 +648,92 @@ test("a restart read while the sessions do not answer still forgets the requests
   stop();
 });
 
+test("requests seen before history was first read are forgotten once it is, as they may be of a run before a restart", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  collector.sessionsAnswer = () =>
+    json({
+      generatedAt: Date.now(),
+      sources: [],
+      sessions,
+      answering: { state: "on", plugin: "unknown", holdMs: 300_000 },
+    });
+  collector.historyUp = false;
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().history).toBeNull();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+
+  // The collector restarts, letting the request go, while history still does not answer.
+  collector.startedAt = T0 + 500;
+  sessions = [waiting];
+  await beat();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+
+  collector.historyUp = true;
+  await beat();
+  const state = store.getState();
+  expect(state.history?.startedAt).toBe(T0 + 500);
+  expect(state.seenAsks.size).toBe(0);
+  const facts = noAskFacts(state) as NoAskFacts;
+  expect(noAskReason(state.snapshot?.sessions[0] as Session, facts)).toBe("before-start");
+  stop();
+});
+
+test("requests seen in the run history names are kept as history goes on answering", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  collector.sessionsAnswer = () =>
+    json({
+      generatedAt: Date.now(),
+      sources: [],
+      sessions,
+      answering: { state: "on", plugin: "unknown", holdMs: 300_000 },
+    });
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+
+  // History stops answering, then answers again, for the same run.
+  sessions = [waiting];
+  collector.historyUp = false;
+  await beat();
+  collector.historyUp = true;
+  await beat();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+  stop();
+});
+
 test("a longer window of history is asked for by its length, and read like any other answer", async () => {
   const collector = fakeCollector();
   setApiHost(collector.host);

@@ -19,7 +19,8 @@ import { inAnsweredWait } from "@core/waits/answeredWaits";
  * the details go by the same memory, however often a row is drawn afresh. It
  * holds no word of what was asked. It is lost when the page is reloaded, and
  * the store starts it again when the collector restarts, since the run before
- * let every request it held go as it stopped.
+ * let every request it held go as it stopped, and once history is first read
+ * after it was kept, since the run it was kept in is not known.
  */
 
 export interface SeenAsk {

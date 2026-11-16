@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { answerOutcomeWords } from "@core/answers/askWords";
 import { ANSWER_SETTLE_MS } from "@core/answers/settle";
 import type { AnsweringStatus, PermissionAsk, Session } from "@core/sessions/session";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
@@ -341,6 +342,30 @@ describe("with no request held", () => {
       .element(page.getByRole("status"))
       .toHaveTextContent("That request is no longer held, so nothing was sent.");
     expect(part("no-ask")).toBeNull();
+  });
+
+  test("in a later wait with no request held, the line is drawn under what the last press came to", async () => {
+    await page.viewport(1280, 900);
+    const { request, answer } = heldAnswer();
+    const screen = await render(told(waiting(), facts(), request));
+    await settled();
+    await userEvent.click(allow());
+    answer("allowed");
+    await expect.element(page.getByRole("status")).toHaveTextContent("Allowed");
+    // The same wait, with its request gone: what the press came to says why.
+    await screen.rerender(told(waiting(null), facts(), request));
+    expect(part("no-ask")).toBeNull();
+    // A later wait of the session, a minute into it, with no request held.
+    const later = SINCE + 120_000;
+    await screen.rerender(
+      told(waiting(null, { statusSince: later }), facts({ at: later + 60_000 }), request),
+    );
+    expect(part("answer-outcome")?.textContent).toBe(answerOutcomeWords("allowed"));
+    const line = part("no-ask") as HTMLElement;
+    expect(line.dataset.reason).toBe("missed");
+    expect(
+      part("answer-outcome")!.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   test("a request answered from elsewhere leaves no line while its wait still reads as waiting, and its hold running out is said", async () => {
