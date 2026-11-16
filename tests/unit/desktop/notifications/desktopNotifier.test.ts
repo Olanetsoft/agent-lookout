@@ -534,7 +534,7 @@ describe("as the app wires it to the collector's notifications", () => {
     expect(notification?.closed).toBe(true);
   });
 
-  test("Needs you switched off in the window takes down the notification of a wait, and leaves a finish", async () => {
+  test("Needs you switched off in the window takes down the notification of a wait", async () => {
     const app = wired({});
     app.page(0, ["needs-you", "finished"]);
     app.poll(0, "working");

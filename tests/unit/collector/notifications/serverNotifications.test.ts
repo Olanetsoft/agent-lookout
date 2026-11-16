@@ -977,7 +977,7 @@ describe("a notifier that can take a notification down", () => {
     expect(fromEnvironment.notifier.waitsOffs).toBe(1);
   });
 
-  test("one with neither, as the system's own, is asked for neither, and still shows each wait", () => {
+  test("one with neither, as the system's own, still shows each wait, and nothing throws", () => {
     const shown: string[] = [];
     const clock = { now: T0 };
     const notifications = createServerNotifications({
