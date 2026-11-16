@@ -1,6 +1,7 @@
 import type { PermissionRule } from "@core/permission-rules/permissionRules";
 import type { AnswerDecision } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import type { CollectorState, CollectorStore } from "@dashboard/lib/api/collectorStore";
 import { HISTORY_KEPT_MS } from "@dashboard/lib/api/collectorStore";
 import type { Feed, Shown, StoppedSession } from "@site-tour/feed/derive";
@@ -114,6 +115,8 @@ export function createTourStore({
       lastOkAt: at,
       problem: null,
       problemKind: null,
+      // The hour's one wait for permission has its request for as long as it waits.
+      seenAsks: NO_ASKS_SEEN,
     };
   }
 

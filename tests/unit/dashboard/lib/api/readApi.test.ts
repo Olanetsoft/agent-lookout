@@ -1222,6 +1222,27 @@ describe("a permission request held for the dashboard", () => {
     expect(readSession({ ...waiting, ask: value })).not.toHaveProperty("ask");
   });
 
+  test("that was sent but could not be read marks the session, so nothing says none is held", () => {
+    // An input named "" reads as half a request, and so does text past what the page reads.
+    for (const value of [
+      { ...ask, command: undefined, inputs: [{ name: "", value: "x" }] },
+      { ...ask, command: "x".repeat(8_001) },
+      "not a request",
+    ]) {
+      const read = readSession({ ...waiting, ask: value });
+      expect(read).not.toHaveProperty("ask");
+      expect(read?.askNotRead).toBe(true);
+    }
+    expect(readSession({ ...waiting, ask })).not.toHaveProperty("askNotRead");
+    expect(readSession(waiting)).not.toHaveProperty("askNotRead");
+    expect(readSession({ ...waiting, status: "working", ask: "x" })).not.toHaveProperty(
+      "askNotRead",
+    );
+    // A session on another machine is never given a request, so none is marked.
+    const there = { ...waiting, id: "remote:devbox:claude-code:a", machine: "devbox" };
+    expect(readSession({ ...there, ask: "x" })).not.toHaveProperty("askNotRead");
+  });
+
   test("whether answering is on is read with the snapshot", () => {
     const read = readSnapshot({
       generatedAt: 1,

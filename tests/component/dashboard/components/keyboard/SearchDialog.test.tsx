@@ -6,6 +6,7 @@ import { render } from "vitest-browser-react";
 import type { Session, SourceHealth } from "@core/sessions/session";
 import { SearchDialog } from "@dashboard/components/keyboard/SearchDialog";
 import { Button } from "@dashboard/components/ui/controls/Button";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { makeSession } from "@tests/fixtures/session";
 import { pointAway, startAtTop } from "@tests/support/browser/browser";
@@ -111,6 +112,7 @@ function stateWith(sessions: Session[] | null, overrides: Partial<CollectorState
     lastOkAt: NOW,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
     ...overrides,
   } satisfies CollectorState;
 }

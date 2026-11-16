@@ -6,7 +6,8 @@ import {
   type HistoryKept,
   type HistorySince,
 } from "@core/api";
-import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
+import type { HistoryPoint, Session, SessionEvent, SessionsSnapshot } from "@core/sessions/session";
+import { noAskFacts, noAskReason, type NoAskFacts } from "@dashboard/lib/answer/noAsk";
 import { setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 import type { Beat } from "@dashboard/lib/api/beat";
 import {
@@ -507,6 +508,143 @@ test("one wrongly shaped session does not take the others, or the page, down wit
     expect(typeof session.name).toBe("string");
     expect(session.links).toBeTypeOf("object");
   }
+  stop();
+});
+
+test("the requests the page has seen are kept, poll by poll, for as long as their wait goes on", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  collector.sessionsAnswer = () =>
+    json({
+      generatedAt: Date.now(),
+      sources: [],
+      sessions,
+      answering: { state: "on", plugin: "seen", holdMs: 300_000 },
+    });
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  expect(store.getState().seenAsks.size).toBe(0);
+  const stop = store.subscribe(() => {});
+  await settle();
+  const seen = { requestId: ask.requestId, until: ask.until, statusSince: T0 - 30_000 };
+  expect(store.getState().seenAsks.get(waiting.id)).toEqual(seen);
+
+  // Answered somewhere else: the request has gone, and the session still reads as waiting.
+  sessions = [waiting];
+  await beat();
+  expect(store.getState().snapshot?.sessions[0]).not.toHaveProperty("ask");
+  expect(store.getState().seenAsks.get(waiting.id)).toEqual(seen);
+
+  // A failed read of the sessions forgets nothing.
+  collector.up = false;
+  await beat();
+  expect(store.getState().seenAsks.get(waiting.id)).toEqual(seen);
+  collector.up = true;
+
+  sessions = [{ ...waiting, status: "working", waitingReason: undefined }];
+  await beat();
+  expect(store.getState().seenAsks.size).toBe(0);
+  stop();
+});
+
+test("a restarted collector holds none of the requests the page saw before, so a wait from before its start is said to be one", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  collector.sessionsAnswer = () =>
+    json({
+      generatedAt: Date.now(),
+      sources: [],
+      sessions,
+      answering: { state: "on", plugin: "unknown", holdMs: 300_000 },
+    });
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+
+  // The run before let the request go as it stopped. The session waits on, in the same wait.
+  collector.startedAt = T0 + 500;
+  sessions = [waiting];
+  await beat();
+
+  const state = store.getState();
+  expect(state.history?.startedAt).toBe(T0 + 500);
+  expect(state.seenAsks.size).toBe(0);
+  const facts = noAskFacts(state) as NoAskFacts;
+  expect(facts).not.toBeNull();
+  expect(noAskReason(state.snapshot?.sessions[0] as Session, facts)).toBe("before-start");
+  stop();
+});
+
+test("a restart read while the sessions do not answer still forgets the requests seen before it", async () => {
+  const collector = fakeCollector();
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: T0 + 300_000,
+  };
+  const waiting = makeSession({
+    status: "needs-you",
+    waitingReason: "permission",
+    statusSince: T0 - 30_000,
+    alive: true,
+  });
+  let sessions: unknown[] = [{ ...waiting, ask }];
+  let sessionsUp = true;
+  collector.sessionsAnswer = () =>
+    sessionsUp
+      ? json({
+          generatedAt: Date.now(),
+          sources: [],
+          sessions,
+          answering: { state: "on", plugin: "unknown", holdMs: 300_000 },
+        })
+      : json({ error: "Not now." }, 500);
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+  expect(store.getState().seenAsks.has(waiting.id)).toBe(true);
+
+  collector.startedAt = T0 + 500;
+  sessionsUp = false;
+  await beat();
+  expect(store.getState().history?.startedAt).toBe(T0 + 500);
+  expect(store.getState().seenAsks.size).toBe(0);
+
+  sessions = [waiting];
+  sessionsUp = true;
+  await beat();
+  expect(store.getState().seenAsks.size).toBe(0);
   stop();
 });
 

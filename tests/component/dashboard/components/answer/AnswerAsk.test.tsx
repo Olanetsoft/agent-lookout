@@ -1,14 +1,16 @@
-import { expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { ANSWER_SETTLE_MS } from "@core/answers/settle";
-import type { PermissionAsk, Session } from "@core/sessions/session";
+import type { AnsweringStatus, PermissionAsk, Session } from "@core/sessions/session";
 import { AnswerAsk } from "@dashboard/components/answer/AnswerAsk";
 import type { AnswerOutcome } from "@dashboard/lib/answer/answerRequest";
+import type { NoAskFacts } from "@dashboard/lib/answer/noAsk";
+import { NO_ASKS_SEEN, rememberAsks } from "@dashboard/lib/answer/seenAsks";
 import { makeSession } from "@tests/fixtures/session";
 import { startAtTop } from "@tests/support/browser/browser";
-import { warmPaint } from "@tests/support/browser/colours";
+import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
 const REQUEST_ID = "0123456789abcdef0123456789abcdef";
@@ -250,9 +252,165 @@ test("what an answer came to stays said once the request has gone from the sessi
   await expect.element(page.getByRole("status")).toHaveTextContent("Allowed from Agent Lookout.");
 });
 
-test("a session with no request held shows nothing", async () => {
+test("a session with no request held, and nothing told of why, shows nothing", async () => {
   const screen = await renderAt(1280, waiting(null));
   expect(screen.container.querySelector('[data-slot="answer"]')).toBeNull();
+  expect(screen.container.querySelector('[data-part="no-ask"]')).toBeNull();
+});
+
+describe("with no request held", () => {
+  /** When the wait began, from the fixture. */
+  const SINCE = makeSession().statusSince as number;
+  const MISSED: AnsweringStatus = { state: "on", plugin: "missed", holdMs: 300_000 };
+
+  /** What the page holds, a minute into the wait, with the plugin missed. */
+  function facts(overrides: Partial<NoAskFacts> = {}): NoAskFacts {
+    return {
+      answering: MISSED,
+      startedAt: SINCE - 3_600_000,
+      at: SINCE + 60_000,
+      seen: NO_ASKS_SEEN,
+      ...overrides,
+    };
+  }
+
+  /** The block, told what the page holds, at a width. */
+  function told(
+    session: Session,
+    noAsk: NoAskFacts,
+    request = heldAnswer().request,
+    width: 375 | 1280 = 1280,
+  ) {
+    return (
+      <div style={{ width: width === 375 ? 375 - 32 : 712 }}>
+        <h2 id='after-answer' tabIndex={-1}>
+          Needs you
+        </h2>
+        <AnswerAsk
+          session={session}
+          request={request}
+          settleMs={0}
+          focusOnLeave='after-answer'
+          noAsk={noAsk}
+        />
+      </div>
+    );
+  }
+
+  const link = () => page.getByRole("link", { name: "Settings, Permission prompts" });
+
+  test("a wait for permission says why in the block's place, quiet, never warm, with the link to Settings, Permission prompts", async () => {
+    await page.viewport(1280, 900);
+    const screen = await render(told(waiting(null), facts()));
+    const line = part("no-ask") as HTMLElement;
+    expect(line.dataset.reason).toBe("missed");
+    expect(line.textContent).toBe(
+      "Its request is not held here, and the plugin may not be installed for it. Settings, Permission prompts has the commands that install it.",
+    );
+    await expect.element(link()).toHaveAttribute("href", "#settings");
+    expect(getComputedStyle(line).color).toBe(rgbOf("var(--ink-secondary)"));
+    expect(warmPaint(screen.container)).toEqual([]);
+    expect(screen.container.querySelector('[data-slot="answer"]')).toBeNull();
+    // A standing fact, read where it stands: no status and no live region.
+    expect(line.closest('[role="status"], [aria-live]')).toBeNull();
+    expect(screen.container.querySelector("button")).toBeNull();
+  });
+
+  test("AGENT_LOOKOUT_ANSWER off is said with the variable in the mono, and no link", async () => {
+    await page.viewport(1280, 900);
+    const screen = await render(
+      told(waiting(null), facts({ answering: { ...MISSED, state: "off" } })),
+    );
+    const line = part("no-ask") as HTMLElement;
+    expect(line.textContent).toBe("AGENT_LOOKOUT_ANSWER is off, so answer it in the session.");
+    expect(line.querySelector('code[data-slot="fact"]')?.textContent).toBe("AGENT_LOOKOUT_ANSWER");
+    expect(screen.container.querySelector("a")).toBeNull();
+  });
+
+  test("while a press is under way, and once what it came to is said, no line is drawn", async () => {
+    await page.viewport(1280, 900);
+    const { request, answer } = heldAnswer();
+    const screen = await render(told(waiting(), facts(), request));
+    await settled();
+    await userEvent.click(deny());
+    // The collector hides a request while it is answered.
+    await screen.rerender(told(waiting(null), facts(), request));
+    expect(part("no-ask")).toBeNull();
+    answer("no-ask");
+    await expect
+      .element(page.getByRole("status"))
+      .toHaveTextContent("That request is no longer held, so nothing was sent.");
+    expect(part("no-ask")).toBeNull();
+  });
+
+  test("a request answered from elsewhere leaves no line while its wait still reads as waiting, and its hold running out is said", async () => {
+    await page.viewport(1280, 900);
+    const held = waiting({ ...BASH, until: SINCE + 300_000 });
+    // The page saw the request, and then a read with none, as after a press in the menu bar.
+    const seen = rememberAsks(NO_ASKS_SEEN, [held]);
+    const screen = await render(told(waiting(null), facts({ seen })));
+    expect(part("no-ask")).toBeNull();
+    expect(screen.container.querySelector('[data-slot="answer"]')).toBeNull();
+    await screen.rerender(told(waiting(null), facts({ seen, at: SINCE + 299_999 })));
+    expect(part("no-ask")).toBeNull();
+    await screen.rerender(told(waiting(null), facts({ seen, at: SINCE + 300_000 })));
+    expect(part("no-ask")?.dataset.reason).toBe("ran-out");
+    expect(part("no-ask")?.textContent).toBe(
+      "The hold of 5 minutes on its request has run out, so answer it in the session.",
+    );
+  });
+
+  test("a request that arrives replaces the line with Deny and Allow, and focus on its link goes to the request", async () => {
+    await page.viewport(1280, 900);
+    const screen = await render(told(waiting(null), facts()));
+    (link().element() as HTMLElement).focus();
+    await screen.rerender(told(waiting(), facts()));
+    await expect.element(deny()).toBeVisible();
+    await expect.element(allow()).toBeVisible();
+    expect(part("no-ask")).toBeNull();
+    // Focus is on the request, and on neither button: an answer is a deliberate press.
+    await expect.poll(() => document.activeElement?.getAttribute("data-slot")).toBe("answer");
+  });
+
+  test("when the line changes with focus on its link, focus stays on the line", async () => {
+    await page.viewport(1280, 900);
+    const screen = await render(told(waiting(null), facts()));
+    (link().element() as HTMLElement).focus();
+    // Another session's request reached Agent Lookout: the plugin is seen again.
+    await screen.rerender(told(waiting(null), facts({ answering: { ...MISSED, plugin: "seen" } })));
+    expect(part("no-ask")?.dataset.reason).toBe("not-held");
+    await expect.poll(() => document.activeElement).toBe(part("no-ask"));
+  });
+
+  test("when the line leaves the page with focus on its link, focus goes where it is told", async () => {
+    await page.viewport(1280, 900);
+    const screen = await render(told(waiting(null), facts()));
+    (link().element() as HTMLElement).focus();
+    await screen.rerender(told(waiting(null, { status: "working" }), facts()));
+    expect(part("no-ask")).toBeNull();
+    await expect.poll(() => document.activeElement?.id).toBe("after-answer");
+  });
+
+  test("at 375px the line wraps inside the block", async () => {
+    await page.viewport(375, 812);
+    const problem =
+      "Other users can open /Users/example/.agent-lookout-with-a-folder-name-longer-than-a-phone, so answering is off. Name a socket in a folder only you can open.";
+    const screen = await render(
+      told(
+        waiting(null),
+        facts({ answering: { ...MISSED, state: "unavailable", problem } }),
+        heldAnswer().request,
+        375,
+      ),
+    );
+    const line = part("no-ask") as HTMLElement;
+    expect(line.textContent).toBe(problem);
+    expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth);
+    expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(
+      (screen.container.firstElementChild as HTMLElement).getBoundingClientRect().right + 0.5,
+    );
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  });
 });
 
 test("Deny and then Allow are reached with Tab after the command, and pressed with Enter", async () => {

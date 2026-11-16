@@ -12,6 +12,7 @@ import { SectionCard } from "@dashboard/components/ui/surfaces/SectionCard";
 import { WaitsCard } from "@dashboard/components/waits/WaitsCard";
 import { useFocusFollowsRow } from "@dashboard/hooks/dom/useFocusFollowsRow";
 import { SESSION_ROWS } from "@dashboard/hooks/dom/useShowSession";
+import { noAskFacts } from "@dashboard/lib/answer/noAsk";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import type { HistoryMetric } from "@dashboard/lib/charts/historyChart";
 import { countState, heroLight } from "@dashboard/lib/sessions/sessions";
@@ -143,6 +144,7 @@ export function DashboardView({
           asOf={asOf}
           onOpenHistory={onOpenHistory}
           onAnswered={onAnswered}
+          noAsk={noAskFacts(state)}
           staleAfterMs={staleAfter}
           className={cn("z-1", PLACE.hero)}
         />

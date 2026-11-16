@@ -269,7 +269,9 @@ export interface PermissionAsk {
 }
 
 /**
- * Whether Agent Lookout can answer permission prompts, for the Settings view:
+ * Whether Agent Lookout can answer permission prompts, for the Settings view,
+ * and for the line that says why a waiting Claude Code session has no Deny or
+ * Allow:
  *
  * - `state`: `on` while it listens for the plugin's requests, `off` with
  *   `AGENT_LOOKOUT_ANSWER=off`, and `unavailable` when it could not listen.
@@ -503,6 +505,15 @@ export interface Session {
    * the plugin.
    */
   ask?: PermissionAsk;
+  /**
+   * Present, and true, on a session on this computer waiting for the person
+   * whose snapshot carried a request the page could not read whole, which it
+   * leaves out, and with it Allow and Deny. With it the page never says that
+   * no request is held. Only the page sets it, as it reads a snapshot
+   * (`readSession` in `src/dashboard/lib/api/readApi.ts`): the collector
+   * never sends it.
+   */
+  askNotRead?: true;
   /**
    * Present, and true, on a Claude Code session that still reads as waiting
    * for permission, in a wait whose request Agent Lookout has answered, from a

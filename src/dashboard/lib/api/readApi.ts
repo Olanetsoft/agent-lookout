@@ -149,8 +149,13 @@ export function readSession(value: unknown): Session | null {
     if (detail) session.waitingDetail = detail;
     const asking = text(value.waitingText);
     if (asking) session.waitingText = asking;
-    const ask = here ? readAsk(value.ask) : null;
-    if (ask) session.ask = ask;
+    if (here && value.ask !== undefined) {
+      const ask = readAsk(value.ask);
+      // A request sent that cannot be read whole is still held, so nothing
+      // says there is none.
+      if (ask) session.ask = ask;
+      else session.askNotRead = true;
+    }
     // A wait Agent Lookout answered, here or on the session's own machine,
     // which the notifications take as over, as the collector's do.
     if (value.answered === true) session.answered = true;

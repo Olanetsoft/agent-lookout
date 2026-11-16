@@ -838,14 +838,14 @@ Two more seams work the same way. `setNotificationHost` in `lib/notifications/no
 
 The Overview is `components/dashboard/DashboardView.tsx`. It has six parts.
 
-| Part      | What it shows                                                                                      | Code                                                                              | Came from                 |
-| --------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------- |
-| Needs you | The sessions waiting on you, longest wait first, with what each one asks, Jump, and Deny and Allow | `components/hero/`, `components/answer/AnswerAsk.tsx`, `components/jump/Jump.tsx` | First commit, #56, #7, #9 |
-| Last hour | The mean counts over each five minutes                                                             | `components/last-hour/`, `lib/charts/lastHour.ts`                                 | First commit              |
-| Sessions  | The list, the repos or the board                                                                   | `components/sessions/`                                                            | First commit, #46, #49    |
-| Events    | What changed, with a line under what is new since you last looked                                  | `components/events/`, `lib/events/`, `hooks/data/useNewSince.ts`                  | First commit, #53         |
-| Timeline  | Each session's status over the hour                                                                | `components/timeline/`, `lib/charts/timeline.ts`                                  | First commit              |
-| Waits     | How long sessions waited on you today and over seven days                                          | `components/waits/`, `hooks/data/useWaitTotals.ts`                                | #59                       |
+| Part      | What it shows                                                                                                             | Code                                                                                                     | Came from                       |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Needs you | The sessions waiting on you, longest wait first, with what each one asks, Jump, and Deny and Allow, or why there are none | `components/hero/`, `components/answer/AnswerAsk.tsx`, `lib/answer/noAsk.ts`, `components/jump/Jump.tsx` | First commit, #56, #7, #9, #331 |
+| Last hour | The mean counts over each five minutes                                                                                    | `components/last-hour/`, `lib/charts/lastHour.ts`                                                        | First commit                    |
+| Sessions  | The list, the repos or the board                                                                                          | `components/sessions/`                                                                                   | First commit, #46, #49          |
+| Events    | What changed, with a line under what is new since you last looked                                                         | `components/events/`, `lib/events/`, `hooks/data/useNewSince.ts`                                         | First commit, #53               |
+| Timeline  | Each session's status over the hour                                                                                       | `components/timeline/`, `lib/charts/timeline.ts`                                                         | First commit                    |
+| Waits     | How long sessions waited on you today and over seven days                                                                 | `components/waits/`, `hooks/data/useWaitTotals.ts`                                                       | #59                             |
 
 Waits is the only part the collector works out, from `/api/waits`, because a day or a week is far more history than the page holds. The Timeline, the Last hour chart and the Waited on you bars all take measured time from `lib/charts/measured.ts`. So they agree on what was measured, and they hatch what was not.
 
@@ -877,7 +877,7 @@ The panel also shows:
 - the branch and its pull request (`components/panels/PullRequestFact.tsx`, #51)
 - the token counts of a session's newest reply (`components/panels/TokensFact.tsx`, #55)
 - Resume, which copies the command that resumes a finished Claude Code session (#8)
-- Deny and Allow (#9)
+- Deny and Allow (#9), or why there are none (#331)
 - the session's own events and timeline
 
 #### Sources

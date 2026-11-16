@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import type { SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { SourcesView } from "@dashboard/components/sources/SourcesView";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import { sourcesAt } from "@site-tour/feed/sources";
 import { makeSession } from "@tests/fixtures/session";
@@ -48,6 +49,7 @@ function state(overrides: Partial<CollectorState> = {}): CollectorState {
     lastOkAt: NOW,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
     ...overrides,
   };
 }

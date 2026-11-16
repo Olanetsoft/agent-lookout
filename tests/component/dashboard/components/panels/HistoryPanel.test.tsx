@@ -3,6 +3,7 @@ import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { HistoryPanel } from "@dashboard/components/panels/HistoryPanel";
+import { NO_ASKS_SEEN } from "@dashboard/lib/answer/seenAsks";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 
 const MINUTE = 60_000;
@@ -21,6 +22,7 @@ function state(now: number): CollectorState {
     lastOkAt: now,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
   };
 }
 

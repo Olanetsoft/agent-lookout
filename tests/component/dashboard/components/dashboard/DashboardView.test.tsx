@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 
 import type { HistoryPoint, Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { DashboardView } from "@dashboard/components/dashboard/DashboardView";
+import { NO_ASKS_SEEN, rememberAsks } from "@dashboard/lib/answer/seenAsks";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { CollectorState } from "@dashboard/lib/api/collectorStore";
 import {
@@ -88,6 +89,7 @@ function state(overrides: Partial<CollectorState>): CollectorState {
     lastOkAt: NOW,
     problem: null,
     problemKind: null,
+    seenAsks: NO_ASKS_SEEN,
     ...overrides,
   };
 }
@@ -684,6 +686,97 @@ test("only the hero holds amber while sessions wait: the table below it has none
       button.getAttribute("aria-label") ?? "",
     ).not.toBeNull();
   }
+});
+
+test("the hero is told why a wait for permission has no Deny or Allow, from the snapshot, the history and the requests the page has seen", async () => {
+  const off = state({
+    snapshot: {
+      ...snapshotOf(SESSIONS),
+      answering: { state: "off", plugin: "unknown", holdMs: 300_000 },
+    },
+  });
+  const screen = await render(<DashboardView state={off} now={NOW} onRetry={() => {}} />);
+  const hero = screen.container.querySelector('[data-slot="hero"]') as HTMLElement;
+  const lines = [...hero.querySelectorAll<HTMLElement>('[data-part="no-ask"]')];
+  // The wait for permission says why. The question has no such line.
+  expect(lines.map((line) => line.textContent)).toEqual([
+    "AGENT_LOOKOUT_ANSWER is off, so answer it in the session.",
+  ]);
+  expect(lines[0]?.closest('[data-slot="hero-session"]')?.textContent).toContain("blocked-one");
+
+  // A request the page saw for that wait, which has gone from the snapshot, leaves no line.
+  const blocked = SESSIONS[0] as Session;
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: NOW + 60_000,
+  };
+  const on = state({
+    snapshot: {
+      ...snapshotOf(SESSIONS),
+      answering: { state: "on", plugin: "missed", holdMs: 300_000 },
+    },
+    seenAsks: rememberAsks(NO_ASKS_SEEN, [{ ...blocked, ask }]),
+  });
+  await screen.rerender(<DashboardView state={on} now={NOW} onRetry={() => {}} />);
+  expect(hero.querySelector('[data-part="no-ask"]')).toBeNull();
+});
+
+test("keyboard focus on the hero's line goes to what takes its place, a line or a request, not to the row's Jump", async () => {
+  await page.viewport(1440, 1000);
+  const blocked = SESSIONS[0] as Session;
+  const view = (plugin: "missed" | "seen", sessions: Session[] = SESSIONS) => (
+    <DashboardView
+      state={state({
+        snapshot: {
+          ...snapshotOf(sessions),
+          answering: { state: "on", plugin, holdMs: 300_000 },
+        },
+      })}
+      now={NOW}
+      onRetry={() => {}}
+    />
+  );
+  const screen = await render(view("missed"));
+  const row = () =>
+    slot(screen.container, "hero").querySelector(
+      `[data-slot="hero-session"][data-session="${blocked.id}"]`,
+    ) as HTMLElement;
+  const link = row().querySelector('[data-part="no-ask"] a') as HTMLElement;
+  expect(link.textContent).toBe("Settings, Permission prompts");
+  link.focus();
+  expect(document.activeElement).toBe(link);
+
+  // Another session's request reached Agent Lookout: the line changes, and has no link.
+  await screen.rerender(view("seen"));
+  const line = row().querySelector('[data-part="no-ask"]') as HTMLElement;
+  expect(line.dataset.reason).toBe("not-held");
+  await expect.poll(() => document.activeElement).toBe(line);
+
+  // Its request arrives.
+  const ask = {
+    requestId: "0123456789abcdef0123456789abcdef",
+    tool: "Bash",
+    command: "npm test",
+    allow: true,
+    until: NOW + 60_000,
+  };
+  await screen.rerender(
+    view(
+      "seen",
+      SESSIONS.map((s) => (s.id === blocked.id ? { ...s, ask } : s)),
+    ),
+  );
+  const request = row().querySelector('[data-slot="answer"]') as HTMLElement;
+  expect(request).not.toBeNull();
+  expect(row().querySelector('[data-part="no-ask"]')).toBeNull();
+  await expect.poll(() => document.activeElement).toBe(request);
+  // It stays there once the page has settled.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(document.activeElement).toBe(request);
+  expect(document.activeElement).not.toBe(row().querySelector('[data-part="jump"]'));
 });
 
 test("keyboard focus on a session's Jump in the table follows it up into the hero when it starts waiting", async () => {

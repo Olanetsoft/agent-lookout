@@ -25,6 +25,7 @@ import { useResume } from "@dashboard/hooks/actions/useResume";
 import { useStop } from "@dashboard/hooks/actions/useStop";
 import { useLastMessage, type LastMessageReading } from "@dashboard/hooks/data/useLastMessage";
 import { useDocumentHidden } from "@dashboard/hooks/dom/useDocumentHidden";
+import { noAskFacts } from "@dashboard/lib/answer/noAsk";
 import { MAX_EVENTS, type CollectorState } from "@dashboard/lib/api/collectorStore";
 import { buildTimeline } from "@dashboard/lib/charts/timeline";
 import {
@@ -521,7 +522,14 @@ function SessionDialog({
           </div>
         )}
         {stopSaying && <StopNote session={session} stop={stop} className='mt-3' />}
-        {!gone && <AnswerAsk session={session} onAnswered={onAnswered} className='mt-3' />}
+        {!gone && (
+          <AnswerAsk
+            session={session}
+            onAnswered={onAnswered}
+            noAsk={noAskFacts(state)}
+            className='mt-3'
+          />
+        )}
         <ResumeBlock resume={resume} className='mt-3' />
         <Details
           session={session}
@@ -615,7 +623,10 @@ interface SessionPanelProps {
  * A Claude Code session that is over, or that Stop has just ended here and
  * that no list read since has running again, has Resume there, which copies
  * the command that resumes it, and the command itself is at the top of the
- * details, to read and to select.
+ * details, to read and to select. A held permission request is at the top of
+ * the details too, with Deny and Allow, and a Claude Code session waiting for
+ * permission with none held says there why, giving whole the collector's own
+ * sentence when answering is unavailable and it sends one.
  * Under them, as facts: its status with how long and since when, its agent,
  * the other machine it runs on, when it runs on one, its app when known, its
  * folder's whole path, its branch, with `AGENT_LOOKOUT_PULL_REQUESTS=on` the

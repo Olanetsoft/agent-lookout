@@ -36,9 +36,11 @@ function stateWords(answering: AnsweringStatus): string {
  * is held, or, once a Claude Code session has waited for permission and its
  * request did not reach Agent Lookout, that the plugin may not be installed
  * for it. Where the plugin is needed, the two commands that install it follow,
- * each a literal block on its own line. This card, and not every waiting row,
- * is where that is said. Before the app has answered, the card says nothing.
- * Nothing in it is warm.
+ * each a literal block on its own line. This card holds the commands. A
+ * waiting Claude Code session with no request held says why where Deny and
+ * Allow would be, and links here, to Settings, when the commands or a
+ * problem too long for the hero are here. Before the app has answered, the
+ * card says nothing. Nothing in it is warm.
  */
 export function AnswerCard({ answering }: { answering: AnsweringStatus | null }) {
   let line = null;

@@ -6,6 +6,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Added
 
+- A Claude Code session on this computer waiting for permission with no Deny or Allow now says why where they would be, in Needs you and at the top of its details: answering is off, Agent Lookout cannot listen for the plugin, the hold on its request has run out, it was already waiting when Agent Lookout started, it has waited longer than a request is held, the plugin may not be installed for it, with a link to Settings, where Permission prompts has the commands that install it, or only that its request is not held here. While answering is on, a wait with no request read for it says nothing in its first 10 seconds, and a wait whose request the page read says nothing until that request's hold has run out, since it may have been answered a moment ago from the menu bar, a notification or another tab. (#331)
 - Kilo Code sessions, from its `kilo` command and its VS Code and JetBrains extensions, read with `sqlite3` from `~/.local/share/kilo/kilo.db`, or the file `KILO_DB` names, on macOS and Linux, the way OpenCode's database is read. A session shows as needing you while Kilo Code asks you a question, as idle while it suggests a review, and as finished once no Kilo Code program runs, with the token counts of its newest reply. Its status comes from the database alone: no request is made to Kilo Code's server, and no last message is read. Built from Kilo Code's source at v7.8.27 and not yet checked on a computer running it. (#43)
 
 ### Fixed
