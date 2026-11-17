@@ -12,6 +12,7 @@ import {
   type DeepseekHarnessFamily,
   type DeepseekHarnessLine,
   type DeepseekHarnessTurn,
+  type DeepseekHarnessWriter,
 } from "@core/mapping/deepseek-harness/deepseekHarnessMapping";
 import { KEEP_AWAKE_WORKING_MS } from "@core/keep-awake/keepAwakeRule";
 import { MINUTE, NOW, SECOND, STARTED_AT } from "@tests/fixtures/deepseek-harness/deepseekHarness";
@@ -51,9 +52,11 @@ const question = (
 const child = (
   turn: DeepseekHarnessTurn,
   writtenAt: number | null = NOW - MINUTE,
+  writer: DeepseekHarnessWriter = "maybe",
 ): DeepseekHarnessChild => ({
   turn,
   writtenAt,
+  writer,
 });
 
 function family(own: DeepseekHarnessTurn | null, extra: Partial<DeepseekHarnessFamily> = {}) {
@@ -349,6 +352,41 @@ describe("the status", () => {
         waitingReason: "permission",
         wait: { ids: ["question:call_1", `approval:${B}`] },
       });
+    });
+
+    test("a subagent's wait is held by its own log alone, as a crash leaves it open there for good", () => {
+      const left = (writer: DeepseekHarnessWriter = "maybe") =>
+        child(
+          fold([start(NOW - 45 * MINUTE), ask(B, NOW - 44 * MINUTE)]),
+          NOW - QUIET_MS - MINUTE,
+          writer,
+        );
+      const ended = fold([start(), end("completed")]);
+      // Its session's own writes do not hold it, so the session's own turn is working.
+      expect(
+        family(fold([start()]), { writtenAt: NOW - MINUTE, children: [left()] }),
+      ).toMatchObject({ status: "working" });
+      // With that turn ended, it cannot be told.
+      expect(family(ended, { writtenAt: NOW - MINUTE, children: [left()] }).status).toBe("unknown");
+      // With no program left that could write its log, it is passed over.
+      expect(family(ended, { writtenAt: NOW - MINUTE, children: [left("gone")] }).status).toBe(
+        "idle",
+      );
+      // The desktop app, started before its last write, holds it.
+      expect(family(ended, { writtenAt: NOW - MINUTE, children: [left("backed")] })).toMatchObject({
+        status: "needs-you",
+        since: NOW - 44 * MINUTE,
+      });
+    });
+
+    test("a subagent no program could still write neither waits nor works", () => {
+      const idle = fold([start(), end("completed")]);
+      expect(
+        family(idle, { children: [child(fold([start()]), NOW - MINUTE, "gone")] }).status,
+      ).toBe("idle");
+      expect(
+        family(idle, { children: [child(fold([start(), ask(B)]), NOW - MINUTE, "gone")] }).status,
+      ).toBe("idle");
     });
 
     test("a subagent's turn does not make a session working whose end this does not know", () => {

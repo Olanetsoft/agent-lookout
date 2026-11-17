@@ -320,6 +320,32 @@ describe("a session", () => {
     expect(sessions[0]).toMatchObject({ status: "working", lastWriteAt: NOW - MINUTE });
   });
 
+  test("a subagent a crash left mid-approval does not make its reopened session need you", async () => {
+    const files = memoryFiles();
+    const left = NOW - 40 * MINUTE;
+    plain(files, childHeaderLine() + batch(line.turnStart(0, left), line.approvalAsked(1, left)), {
+      id: CHILD_ID,
+      mtimeMs: left,
+    });
+    const parent = (...more: string[]) =>
+      headerLine() +
+      batch(...endedTurn(0, left - MINUTE), line.endSeed(4, NOW - 2 * MINUTE, false), ...more);
+    // Reopened by a node started since the subagent's last write: reopening a session reopens none of its subagents.
+    const ps = () => standInPs([psLine(100, NOW - 35 * MINUTE, "node")]);
+    plain(files, parent(line.turnStart(5, NOW - MINUTE, 2)), { mtimeMs: NOW - MINUTE });
+    expect((await deepseekHarnessAdapterFor(files, { ps: ps() }).poll()).sessions[0]?.status).toBe(
+      "working",
+    );
+    plain(
+      files,
+      parent(line.turnStart(5, NOW - 2 * MINUTE, 2), line.turnEnd(6, NOW - MINUTE, "completed", 2)),
+      { mtimeMs: NOW - MINUTE },
+    );
+    expect((await deepseekHarnessAdapterFor(files, { ps: ps() }).poll()).sessions[0]?.status).toBe(
+      "idle",
+    );
+  });
+
   test("an open turn quiet for 30 minutes is unknown, and a wait too, unless the desktop app runs", async () => {
     const files = memoryFiles();
     const quiet = NOW - QUIET_MS;

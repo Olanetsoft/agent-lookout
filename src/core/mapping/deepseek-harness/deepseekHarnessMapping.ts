@@ -181,6 +181,8 @@ export interface DeepseekHarnessChild {
   turn: DeepseekHarnessTurn;
   /** When its log was last written, or null when that time cannot be right. */
   writtenAt: number | null;
+  /** Whether a program that could write its log may still run, from its own last write. */
+  writer: DeepseekHarnessWriter;
 }
 
 export interface DeepseekHarnessFamily {
@@ -237,17 +239,25 @@ const IDLE_ENDS: ReadonlySet<DeepseekHarnessEnd> = new Set([
  * 2. Its last turn ended on an error: failed, since then.
  * 3. Its last turn was aborted as DeepSeek Harness closed it: finished, since then.
  * 4. No process that could write it runs: finished, since its last write.
- * 5. A turn of its own or a subagent's waits for an approval, a question or
- *    a plan review, and the desktop app backs it or it wrote within 30
- *    minutes: needs you, since the wait began.
- * 6. Such a wait, with neither: unknown, as a crash leaves a wait behind.
+ * 5. A turn of its own waits for an approval, a question or a plan review,
+ *    and the desktop app backs it or it wrote within 30 minutes, or a
+ *    subagent's turn waits, and the desktop app backs that subagent's last
+ *    write, or its log was written within 30 minutes and a program that
+ *    could write it may run: needs you, since the wait began.
+ * 6. Its own wait, with neither: unknown, as a crash leaves a wait behind.
  * 7. Its own turn is open and it wrote within 30 minutes: working, since the turn began.
  * 8. Its own turn is open, quiet longer: unknown.
  * 9. Its last turn ended in a way this does not know: unknown.
- * 10. A subagent's turn is open and its log was written within 30 minutes:
- *     working, since the earliest such turn began.
- * 11. Its last turn ended otherwise: idle, since then.
- * 12. No turn yet: idle, since the session began or was reopened.
+ * 10. A subagent's turn is open, its log was written within 30 minutes and a
+ *     program that could write it may run: working, since the earliest such
+ *     turn began.
+ * 11. A subagent's wait with neither, unless no program that could write
+ *     that subagent's log runs: unknown.
+ * 12. Its last turn ended otherwise: idle, since then.
+ * 13. No turn yet: idle, since the session began or was reopened.
+ *
+ * A subagent's turn and wait are judged by its own log: a crash leaves a
+ * wait open there for good, and its session's writes say nothing of it.
  *
  * A log's times are kept as written, and each is judged against `now` here,
  * on every poll: one more than a minute ahead of it is none.
@@ -268,14 +278,19 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
   if (writer === "gone") return { status: "finished", since: writtenAt, showsLastWrite: false };
 
   const quiet = quietFor(writtenAt, now);
-  const turns = [own, ...children.map((child) => child.turn)];
-  const open = turns.filter(
-    (turn): turn is Extract<DeepseekHarnessTurn, { state: "open" }> => turn.state === "open",
+  if (own.state === "open" && waits(own) && writer !== "backed" && quiet) {
+    return { status: "unknown", since: null, showsLastWrite: false };
+  }
+  const childWaits = children.filter((child) => child.turn.state === "open" && waits(child.turn));
+  const held = childWaits.filter(
+    (child) =>
+      child.writer === "backed" || (child.writer !== "gone" && !quietFor(child.writtenAt, now)),
   );
-  const waiting = open.filter(waits);
+  const waiting = [own, ...held.map((child) => child.turn)].filter(
+    (turn): turn is Extract<DeepseekHarnessTurn, { state: "open" }> =>
+      turn.state === "open" && waits(turn),
+  );
   if (waiting.length > 0) {
-    if (writer !== "backed" && quiet)
-      return { status: "unknown", since: null, showsLastWrite: false };
     const ids = waiting.flatMap((turn) => [
       ...[...turn.approvals.keys()].map((id) => `approval:${id}`),
       ...[...turn.questions.keys()].map((id) => `question:${id}`),
@@ -298,13 +313,17 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
     return { status: "unknown", since: null, showsLastWrite: false };
   }
   const working = children.filter(
-    (child) => child.turn.state === "open" && !quietFor(child.writtenAt, now),
+    (child) =>
+      child.turn.state === "open" && child.writer !== "gone" && !quietFor(child.writtenAt, now),
   );
   if (working.length > 0) {
     const since = earliest(
       working.map((child) => (child.turn.state === "open" ? believed(child.turn.since) : null)),
     );
     return { status: "working", since, showsLastWrite: true };
+  }
+  if (childWaits.some((child) => child.writer !== "gone")) {
+    return { status: "unknown", since: null, showsLastWrite: false };
   }
   return {
     status: "idle",

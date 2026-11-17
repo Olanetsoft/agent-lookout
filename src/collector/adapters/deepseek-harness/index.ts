@@ -560,7 +560,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           checkedAt,
         ),
       ];
-      const children: DeepseekHarnessChild[] = [];
+      const children: Omit<DeepseekHarnessChild, "writer">[] = [];
       for (const child of family.children) {
         const childWrite = lastWriteOf(
           Math.max(child.ref.info.mtimeMs, child.log?.writtenAt ?? 0),
@@ -603,16 +603,26 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     let tooLong = false;
     let unread = false;
     const sessions = facts.map(({ family, own, children, writtenAt }) => {
-      const writer = dshWriter({
-        platform,
+      const writerOf = (at: number | null) =>
+        dshWriter({
+          platform,
+          writtenAt: at,
+          bootAt,
+          answer,
+          answerAt,
+          clockSetBack,
+          startFloor: clock.startFloor,
+        });
+      const writer = writerOf(writtenAt);
+      // Each subagent's by its own last write, as reopening a session reopens none of them.
+      const judged = children.map((child) => ({ ...child, writer: writerOf(child.writtenAt) }));
+      const status = deepseekHarnessStatusOf({
+        own,
+        children: judged,
         writtenAt,
-        bootAt,
-        answer,
-        answerAt,
-        clockSetBack,
-        startFloor: clock.startFloor,
+        writer,
+        now: checkedAt,
       });
-      const status = deepseekHarnessStatusOf({ own, children, writtenAt, writer, now: checkedAt });
       const id = sessionIdOf(family.folderName);
       if (status.wait !== undefined) {
         const wait = continuedDeepseekHarnessWait(waits.get(id), status.wait);
