@@ -36,7 +36,10 @@ export const PRIVATE_WORDS = "placeholder words that must never leave the sessio
 /** Written where a command or a tool's arguments go. */
 export const PRIVATE_ARGUMENTS = "placeholder arguments that must never leave the session file";
 
-/** Written where an ID can be anything: a runner's message ID, a provider's call or reply ID. */
+/**
+ * Written where an ID can be anything: a provider's call or reply ID, and a
+ * message's, since Unreal Agent's store takes any input ID that is not empty.
+ */
 export const PRIVATE_ID = "call.Private.1 placeholder";
 
 /** A session file's path. */

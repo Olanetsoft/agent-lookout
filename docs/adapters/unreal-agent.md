@@ -117,7 +117,7 @@ Every append first cuts the file to the size its writer believes it has (`localf
 
 - **A reply.** `Stop` is `complete`, `refused`, `max_output_tokens` or empty (`model.go:122-126`). Its output, which holds the model's text, reasoning and tool calls, and its token counts come after and are never looked at. Its last field is `Failure`, null or `{"Code":…,"Message":…}` (`model.go:128-134`, `:162-165`), and nothing follows a reply in its line (`codec.go:35-38`, `:149-155`). So a line that ends `,"Failure":null}}}}}` has no failure, one that ends `"}}}}}}` has one, and any other ending is a line this does not read. The reply is complete with `Stop` `complete` and no failure, failed with a failure or `Stop` `refused` or `max_output_tokens`, as MiMo Code's are, and unclear with an empty or unknown `Stop`.
 - **A tool call's status.** An error that is not empty means the call failed at once, and the error is never read on. Otherwise it waits for 1 to 64 commands, each a UUID, whose snapshots follow at the line's end as `"Operations":[…]` (`localfile/store.go:180-205`). The first status has its commands at `ready` (`loop.go:813-861`), and the second, written once they have all ended, at `completed`, `failed` or `canceled` (`loop.go:863-900`). It waits for every command the call started (`localfile/state.go:228-242`). A status with no error and nothing to wait for is not written at v0.3.1, and an empty error marked as cut, or a status with no commands after it, as a fork's parent's are, is a line this does not read.
-- The IDs of inputs, replies and tool calls can hold any character: a runner's caller chooses its messages' IDs (runner `run.go:391-396`), and a provider chooses its own. They are passed over, minding `\`, up to 4 KiB, and never turned into text or kept.
+- The IDs of replies and tool calls can hold any character, since a provider chooses them. An input's ID is a UUID at v0.3.1, and a runner refuses a message ID of its caller's that is not one (runner `run.go:634-637`), but Unreal Agent's store takes any input ID that is not empty (`inbox.go:30-33`), so every ID is read the same way. They are passed over, minding `\`, up to 4 KiB, and never turned into text or kept.
 
 ### Operation lines
 
@@ -125,7 +125,7 @@ Every append first cuts the file to the size its writer believes it has (`localf
 {"type":"operation","data":{"Operation":{["MaxOutputLength":<n>,]"ID":"<uuid>","Type":"<type>","Version":<n>,"Status":"<status>","State":{…}}}}
 ```
 
-(`localfile/store.go:207-229`; `harness/operation/operation.go:39-47`). A command's newest state, written at each step it takes. The status is `ready`, `awaiting`, `canceling`, `completed`, `failed`, `canceled` or empty (`operation.go:21-29`). The last three end it (`loop.go:997-1004`). Any other status is a line this does not read. Its state, which holds the command and, once it ends, its output, comes after.
+(`localfile/store.go:207-229`; `harness/operation/operation.go:39-47`). A command's newest state, written at each step it takes. The status is `ready`, `awaiting`, `canceling`, `completed`, `failed`, `canceled` or empty (`operation.go:21-29`). `completed`, `failed` and `canceled` end it, and empty does not (`loop.go:997-1004`). Any other status is a line this does not read. Its state, which holds the command and, once it ends, its output, comes after.
 
 ### The one decoded token
 
