@@ -29,6 +29,12 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * and at each sweep. A folder that cannot be looked up, or is a link, is
  * listed as before, so a missing one still rejects and a linked one is still
  * followed.
+ *
+ * Unreal Agent's adapter uses this finder too, flat, with a test of its own
+ * for which names are session files (`fileName`): its files are
+ * `<id>.session.jsonl`, beside its `operations` folder and its `.session-*.tmp`
+ * copies, whose names are dropped before anything is looked up
+ * (`../unreal-agent/index.ts`). Pi, Kimchi and Prime Agent set none.
  */
 
 /** How often every project folder is listed and every session file looked up. */
@@ -75,12 +81,15 @@ export interface SessionFileFinderOptions {
   sweepMs?: number;
   /** Whether every file sits in the sessions folder itself, with no project folders. */
   flat?: boolean;
+  /** Which names are session files. Defaults to any name that ends in `.jsonl`. */
+  fileName?: (name: string) => boolean;
 }
 
 export function createSessionFileFinder(options: SessionFileFinderOptions): SessionFileFinder {
   const { sessionsDir, io } = options;
   const sweepMs = options.sweepMs ?? SWEEP_MS;
   const flat = options.flat ?? false;
+  const isFile = options.fileName ?? isSessionFileName;
   /** What each project folder held when it was last listed, by the folder. */
   const listed = new Map<string, Listed>();
   /** What a flat sessions folder held when it was last listed, with its modified time then. */
@@ -115,7 +124,7 @@ export function createSessionFileFinder(options: SessionFileFinderOptions): Sess
     if (!sweep && known?.mtimeMs === folder.mtimeMs) return known.files;
     try {
       const files = (await io.readdir(dir))
-        .filter(isSessionFileName)
+        .filter(isFile)
         .sort()
         .map((name) => path.join(dir, name));
       listed.set(dir, { mtimeMs: folder.mtimeMs, files });
@@ -154,7 +163,7 @@ export function createSessionFileFinder(options: SessionFileFinderOptions): Sess
       const folders = flat
         ? []
         : names.filter(isProjectFolderName).map((name) => path.join(sessionsDir, name));
-      const files = names.filter(isSessionFileName).map((name) => path.join(sessionsDir, name));
+      const files = names.filter(isFile).map((name) => path.join(sessionsDir, name));
       for (const dir of folders) files.push(...(await filesIn(dir, sweep)));
       const here = new Set(folders);
       for (const dir of listed.keys()) if (!here.has(dir)) listed.delete(dir);
