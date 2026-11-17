@@ -102,7 +102,7 @@ Crush support reads `.crush/crush.db` in the projects Crush lists in `~/.local/s
 
 Kilo Code support reads its database, `~/.local/share/kilo/kilo.db`, on macOS and Linux, the way OpenCode's is read: Kilo Code keeps the same tables. A session shows as needing you while Kilo Code asks you a question. It was built from its source at v7.8.27 and has not yet been checked on a computer running it.
 
-MiMo Code support reads its database, `~/.local/share/mimocode/mimocode.db`, on macOS and Linux, the way OpenCode's is read. A session shows as needing you while MiMo Code asks you a question or to approve a plan, and as working while one of its subagents works. It was built from its source at v0.1.17 and has not yet been checked on a computer running it.
+MiMo Code support reads its database, `~/.local/share/mimocode/mimocode.db`, on macOS and Linux, the way OpenCode's is read. A session shows as needing you while MiMo Code's main agent asks you a question or to approve a plan, and as working while one of its subagents works, a question a subagent asks you included. It was built from its source at v0.1.17 and has not yet been checked on a computer running it.
 
 Kimchi support reads its session files, in `~/.config/kimchi/harness/sessions`, the way Pi's are read: Kimchi runs Pi's coding agent. A session shows as unknown while a `kimchi` program runs and as finished once none does, and takes its folder's name. On Windows it stays unknown. It was built from its source at v1.35.0 and has not yet been checked on a computer running it.
 
