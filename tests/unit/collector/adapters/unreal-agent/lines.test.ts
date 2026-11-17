@@ -319,6 +319,11 @@ describe("the folder of a shell command", () => {
     const line = operationLine(shellOperation(OP, "awaiting")).replace(/\n$/, "");
     const cut = line.slice(0, line.indexOf('"Command":"') + 20);
     expect(folderOf(cut + headerLine())).toBeNull();
+    // Nor from a second command's record: its folder is not this line's.
+    const other = operationLine(
+      shellOperation(OP, "awaiting", shellState({ directory: "/Users/example/work/other" })),
+    );
+    expect(folderOf(cut + other)).toBeNull();
   });
 
   test("is none when it is not a folder this system could have", () => {

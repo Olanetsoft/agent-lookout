@@ -179,6 +179,16 @@ describe("what a session goes through", () => {
     expect(status(replayOf([settings, turn, reply("failed"), hard]), "closed")).toBe("failed");
   });
 
+  test("lines after a hard stop, as of commands it cancels, do not change what it said", () => {
+    const stopped = replayOf([settings, turn, reply("failed"), hard]);
+    applyUnrealAgentLine(stopped, { kind: "operation", id: OP, terminal: false });
+    expect(unrealAgentPhaseNow(stopped, NOW - MINUTE, NOW)).toEqual({
+      phase: "waiting",
+      reply: "failed",
+    });
+    expect(status(stopped, "may-be-open")).toBe("failed");
+  });
+
   test("a hard stop in a run before a resume does not end the new run", () => {
     const resumed = replayOf([
       settings,
