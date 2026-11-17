@@ -13,6 +13,7 @@ import {
   type UnrealAgentSessionRead,
 } from "@collector/adapters/unreal-agent/sessionFile";
 import type { OpenFile, ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { mapUnrealAgentStatus } from "@core/mapping/unreal-agent/unrealAgentMapping";
 import {
   applyUnrealAgentLine,
   startUnrealAgentReplay,
@@ -151,6 +152,48 @@ describe("what is read", () => {
     files.forget();
     expect(phaseOf(await read())).toEqual({ phase: "waiting", reply: "complete" });
     expect(wholeReads(files, lines.text())).toBe(1);
+  });
+
+  /**
+   * A session stopped hard while a command from before `FILL` ran, after a
+   * reply that failed. After the stop, the command is canceled and its call's
+   * second status written, so its end is busy.
+   */
+  function stoppedHardWithFill(): string {
+    const lines = new SessionLines();
+    lines.settings(AT).message(AT).turn(AT);
+    const firstTurn = lines.turnId;
+    const op = shellCall(lines, AT, 1, { end: false });
+    lines.heartbeat(AT).turn(AT).reply(AT, { text: FILL });
+    lines.heartbeat(AT).turn(AT).reply(AT, { stop: "max_output_tokens" });
+    lines.hard(AT);
+    const done = shellState({ operationId: op, ended: true });
+    lines.operation(shellOperation(op, "canceling"));
+    lines.operation(shellOperation(op, "canceled", done));
+    lines.completed(AT, "call_1", [shellOperation(op, "canceled", done)], firstTurn);
+    return lines.text();
+  }
+
+  test("of a file read from its end that stopped hard while an older command ran, one whole read", async () => {
+    const { files, read } = setup();
+    const text = stoppedHardWithFill();
+    files.write(FILE, bytesOf(text, 9 * MiB));
+    const file = okFile(await read());
+    expect(file.replay.complete).toBe(true);
+    expect(file.replay.run.hard?.phase).toBe("busy");
+    expect(wholeReads(files, text)).toBe(1);
+    expect(
+      mapUnrealAgentStatus({ replay: file.replay, liveness: "closed", writtenAt: NOW, now: NOW }),
+    ).toBe("finished");
+  });
+
+  test("of a 70 MiB file that stopped hard while an older command ran, too long to read whole", async () => {
+    const { files, read } = setup();
+    files.write(FILE, bytesOf(stoppedHardWithFill(), 70 * MiB));
+    const file = okFile(await read());
+    expect(file.replay.run.hard).toEqual({ phase: "unsure", reply: "failed" });
+    expect(file.tooLong).toBe(true);
+    expect(bytesRead(files)).toBeLessThanOrEqual(FIRST_TAIL_BYTES + HEAD_BYTES);
   });
 
   test("of a 70 MiB file that waits, no more than its first 1 KiB and last 8 MiB: too long to read whole", async () => {

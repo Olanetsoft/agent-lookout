@@ -31,9 +31,10 @@ import {
  *   lines in the last `FIRST_TAIL_BYTES`. Later reads take only what was
  *   added, up to `ONWARD_LIMIT_BYTES` at a time.
  * - Lines that do not reach the session's start can miss a command that
- *   still runs. So when they say the session waits, the whole file is read
- *   once, up to `FULL_READ_LIMIT_BYTES`, and only once for each time the file
- *   is read afresh, and not within `FULL_READ_MIN_INTERVAL_MS` of the last.
+ *   still runs. So when they say the session waits, or said so at a hard
+ *   stop, the whole file is read once, up to `FULL_READ_LIMIT_BYTES`, and
+ *   only once for each time the file is read afresh, and not within
+ *   `FULL_READ_MIN_INTERVAL_MS` of the last.
  * - Every append first cuts the file to the size its writer believes it has
  *   (store.go:423), so two programs that write one session cut each other's
  *   lines. A file that shrank, was replaced or was rewritten is read afresh.
@@ -261,8 +262,9 @@ export function createUnrealAgentSessionReader(
 
   /**
    * Reads the file whole when its lines do not reach its start and say it
-   * waits, as far as the budget allows: once for each time it is read
-   * afresh, not within 10 minutes of the last, and only up to 64 MiB.
+   * waits, or said so at a hard stop, as far as the budget allows: once for
+   * each time it is read afresh, not within 10 minutes of the last, and only
+   * up to 64 MiB.
    */
   async function wholeIfNeeded(
     path: string,
@@ -272,7 +274,8 @@ export function createUnrealAgentSessionReader(
   ): Promise<Cached> {
     const { file } = cached.read;
     const { reading } = cached;
-    if (file.replay.complete || unrealAgentPhase(file.replay).phase !== "unsure") {
+    const { phase } = file.replay.run.hard ?? unrealAgentPhase(file.replay);
+    if (file.replay.complete || phase !== "unsure") {
       return { ...cached, reading: { ...reading, fullReadDue: false } };
     }
     if (handle.info.size > FULL_READ_LIMIT_BYTES) {
