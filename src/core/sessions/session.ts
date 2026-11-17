@@ -44,6 +44,9 @@ export type RemoteSourceId = `remote:${string}`;
  * its session leases and its workers' journals.
  * `fx` is Vercel Labs' fx, in its command `fx`, in `fx ask` and in editors
  * over ACP, whose sessions are read from the log it keeps for each.
+ * `unreal-agent` is Unreal Labs' Unreal Agent, in its terminal app
+ * `unreal-agent-tui` and its runner `unreal-agent-runner`, whose sessions are
+ * read from the file it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -66,6 +69,7 @@ export type SourceId =
   | "kimchi"
   | "prime-agent"
   | "fx"
+  | "unreal-agent"
   | "status-files"
   | RemoteSourceId;
 

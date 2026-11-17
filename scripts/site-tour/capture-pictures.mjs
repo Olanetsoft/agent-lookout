@@ -341,6 +341,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Kimchi",
         "Prime Agent",
         "fx",
+        "Unreal Agent",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

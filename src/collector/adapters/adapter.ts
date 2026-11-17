@@ -115,6 +115,15 @@ export interface AdapterResult {
    *   finished, unless it failed or cannot be read.
    * - `files-without-processes`: the same while `ps` cannot say, when no
    *   session can be shown as working or finished.
+   *
+   * The Unreal Agent adapter has three:
+   * - `files`: Unreal Agent's session files, read while `ps` shows an Unreal
+   *   Agent program running. The usual one.
+   * - `files-closed`: the same while `ps` shows none, when every session is
+   *   finished, unless its last reply failed or its end cannot be told.
+   * - `files-without-processes`: the same while `ps` cannot say, when no
+   *   session can be shown as idle, nor as finished unless its file says it
+   *   ended.
    */
   basis?: string;
 }
