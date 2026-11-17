@@ -54,6 +54,11 @@ import {
   MIMO_FAILED_ERRORS,
   SOURCE_ID as MIMO_CODE_SOURCE_ID,
 } from "@collector/adapters/mimo-code/index";
+import {
+  createKimchiAdapter,
+  KIMCHI_CAPABILITIES,
+  SOURCE_ID as KIMCHI_SOURCE_ID,
+} from "@collector/adapters/kimchi/index";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
@@ -119,6 +124,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Crush", CRUSH_CAPABILITIES],
   ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
+  ["Kimchi", KIMCHI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -209,6 +215,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createMimoCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(MIMO_CODE_CAPABILITIES);
+    expect(
+      createKimchiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(KIMCHI_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1063,6 +1072,48 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(PI_CAPABILITIES.jump.level).toBe("no");
     expect(PI_CAPABILITIES.stop.level).toBe("no");
     expect(PI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Kimchi: a session is unknown or finished, and never working, idle, waiting or failed", () => {
+    // Kimchi's sessions are mapped as Pi's are.
+    expect(statuses([mapPiStatus(true), mapPiStatus(false)])).toEqual(
+      new Set(["unknown", "finished"]),
+    );
+    expect(KIMCHI_CAPABILITIES["working-and-idle"].level).toBe("no");
+    expect(KIMCHI_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.failed.level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Kimchi: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = piSession({
+      file: {
+        id: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+        cwd: "/Users/example/code/demo",
+        startedAt: NOW - 60_000,
+        // The Kimchi profile reads no name, so a file never has one.
+        ownName: null,
+      },
+      open: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+      sourceId: KIMCHI_SOURCE_ID,
+    });
+    expect(session).toMatchObject({
+      id: "kimchi:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+      source: "kimchi",
+      name: "demo",
+    });
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(KIMCHI_CAPABILITIES.names.level).toBe("partly");
+    expect(KIMCHI_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.tokens.level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.jump.level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.stop.level).toBe("no");
+    expect(KIMCHI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Continue: a session is unknown, and never working, idle, waiting, finished or failed", () => {

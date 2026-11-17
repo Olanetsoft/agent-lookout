@@ -17,6 +17,8 @@ export interface PiSessionInput {
   /** The file's modified time. */
   writtenAt: number;
   now: number;
+  /** The source it is listed under. Defaults to Pi's: Kimchi's adapter gives its own. */
+  sourceId?: SourceId;
 }
 
 /**
@@ -26,16 +28,23 @@ export interface PiSessionInput {
  *   (`mapPiStatus`). It never shows as working or as needing you.
  * - The name is the one a person or an extension gave it, else its folder's, else
  *   its id. Pi names no session by itself: its own list shows the first prompt
- *   where there is no name, and that is never parsed.
+ *   where there is no name, and that is never parsed. A profile that reads no
+ *   names, as Kimchi's, gives a file with none, so its folder's name is taken.
  * - The status time of a finished session is the file's last write, the last
  *   thing known of it. An unknown status has no time.
  * - The app is not known: the file does not say which of Pi's modes wrote it. It
  *   has no pid, no link, no Jump and no Stop. There is no last write: the page
  *   says how quiet a working session is, and this is never one.
  */
-export function piSession({ file, open, writtenAt, now }: PiSessionInput): Session {
+export function piSession({
+  file,
+  open,
+  writtenAt,
+  now,
+  sourceId = SOURCE_ID,
+}: PiSessionInput): Session {
   const status = mapPiStatus(open);
-  const id = `${SOURCE_ID}:${file.id}`;
+  const id = `${sourceId}:${file.id}`;
   const project = projectOf(file.cwd);
   const startedAt = plausibleTime(file.startedAt, now);
   const lastWrite = plausibleTime(Math.floor(writtenAt), now);
@@ -43,7 +52,7 @@ export function piSession({ file, open, writtenAt, now }: PiSessionInput): Sessi
     startedAt !== null && lastWrite !== null && lastWrite < startedAt - WRITE_ORDER_SLACK_MS;
   return {
     id,
-    source: SOURCE_ID,
+    source: sourceId,
     surface: "unknown",
     // A name made only of spaces is no name. It is cleaned and cut as every other agent's is.
     name: sessionName(file.ownName ?? "") || project || id,

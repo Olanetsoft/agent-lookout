@@ -26,6 +26,7 @@ import {
   EMPTY_HOME,
   EMPTY_KILO_HOME,
   EMPTY_MIMO_CODE_HOME,
+  EMPTY_KIMCHI_HOME,
   EMPTY_KIMI_CODE_HOME,
   EMPTY_CONTINUE_HOME,
   EMPTY_OPENCODE_HOME,
@@ -164,6 +165,14 @@ process.env.AGENT_LOOKOUT_KILO_HOME = EMPTY_KILO_HOME;
 // and `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
 mkdirSync(EMPTY_MIMO_CODE_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_MIMO_CODE_HOME = EMPTY_MIMO_CODE_HOME;
+
+// Nor Kimchi's, in `~/.config/kimchi/harness`, or the sessions folder
+// `KIMCHI_CODING_AGENT_SESSION_DIR` names: the adapter is pointed at an empty
+// folder, and Kimchi's own variable is dropped. A test of the adapter names a
+// folder of its own.
+mkdirSync(EMPTY_KIMCHI_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_KIMCHI_HOME = EMPTY_KIMCHI_HOME;
+delete process.env.KIMCHI_CODING_AGENT_SESSION_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

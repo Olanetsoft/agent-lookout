@@ -29,6 +29,15 @@ import type { SessionFileRef } from "./sessionFiles.ts";
  *
  * Each file is opened only when its size, modified time or identity changes.
  * Nothing here writes, renames, deletes or locks anything.
+ *
+ * A profile can ask for less, as Kimchi's does (`profile.ts`). With no names
+ * read, no `session_info` line is turned into text, and only the first
+ * `MAX_HEAD_BYTES` are read, and a file found to hold a session is not opened
+ * again while it only grows: nothing past the first two lines is needed.
+ * With markers, a file whose second line is a `custom` entry with one of them
+ * as its `customType` is left out. That line is compared as bytes, and never
+ * turned into text. A file found to be left out is not opened again while it
+ * only grows.
  */
 
 /** The most of a file's start read for its header, which holds two paths at most. */
@@ -59,6 +68,15 @@ const NEWLINE = 0x0a;
 /** How a name's line begins, after the line before it ended. */
 const NAME_LINE = Buffer.from('\n{"type":"session_info"');
 
+/** How a `custom` entry's line begins, as `JSON.stringify` writes one with `type` first. */
+const CUSTOM_LINE = Buffer.from('{"type":"custom",');
+
+/** The key a `custom` entry's kind follows. */
+const CUSTOM_TYPE_KEY = Buffer.from('"customType":');
+
+const COMMA = 0x2c;
+const CLOSE = 0x7d;
+
 /** What is kept of one session file. */
 export interface PiSessionFile {
   id: string;
@@ -77,7 +95,9 @@ export type SessionFileRead =
   /** Not a session file this reads: broken, or wrong types where it counts. */
   | { state: "broken" }
   /** Of a newer format than this reads. */
-  | { state: "newer" };
+  | { state: "newer" }
+  /** Marked as a session the agent made for itself, by one of the profile's markers. */
+  | { state: "hidden" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -146,6 +166,39 @@ export function newestName(bytes: Buffer): string | null | undefined {
   return undefined;
 }
 
+/**
+ * Whether a whole line, as bytes, is a `custom` entry whose `customType` is one
+ * of these markers. A JSON string writes `"` as `\"`, so the bytes of
+ * `"customType":` can only be a key. The first is taken: Kimchi writes its
+ * markers with `customType` before `data`, the one value that can hold an
+ * object. Nothing of the line is turned into text.
+ */
+export function markedBy(line: Buffer, markers: readonly string[]): boolean {
+  if (!line.subarray(0, CUSTOM_LINE.byteLength).equals(CUSTOM_LINE)) return false;
+  const key = line.indexOf(CUSTOM_TYPE_KEY);
+  if (key < 0) return false;
+  const from = key + CUSTOM_TYPE_KEY.byteLength;
+  return markers.some((marker) => {
+    const value = Buffer.from(JSON.stringify(marker));
+    const after = line[from + value.byteLength];
+    return (
+      line.subarray(from, from + value.byteLength).equals(value) &&
+      (after === COMMA || after === CLOSE)
+    );
+  });
+}
+
+/**
+ * The second line of a file, from the bytes of its start, given where the first
+ * ends: only its start when it runs past those bytes, which is where a marker
+ * is, and "unwritten" when the file ends before it does, as while a file is made.
+ */
+function secondLine(head: Buffer, firstEnd: number): Buffer | "unwritten" {
+  const end = head.indexOf(NEWLINE, firstEnd + 1);
+  if (end >= 0) return head.subarray(firstEnd + 1, end);
+  return head.byteLength < MAX_HEAD_BYTES ? "unwritten" : head.subarray(firstEnd + 1);
+}
+
 function sameFile(a: FileInfo, b: FileInfo): boolean {
   return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
 }
@@ -173,14 +226,36 @@ interface Remembered extends Reading {
 
 const NONE: Reading = { read: { state: "none" }, readTo: 0 };
 const BROKEN: Reading = { read: { state: "broken" }, readTo: 0 };
+const HIDDEN: Reading = { read: { state: "hidden" }, readTo: 0 };
+
+/** What a profile asks of the reader. Left out, as for Pi: names are read, and no file is left out. */
+export interface SessionFileReaderOptions {
+  /** Whether the name on a `session_info` line is read. */
+  readsNames?: boolean;
+  /** The `customType` of a second line that leaves a file out. */
+  hiddenMarkers?: readonly string[];
+}
 
 /** A reader of session files, which keeps what it read of each until it changes. */
 export function createSessionFileReader(
   sessionsDir: string,
   io: ReadOnlyIo,
   platform: NodeJS.Platform,
+  options: SessionFileReaderOptions = {},
 ): SessionFileReader {
   const remembered = new Map<string, Remembered>();
+  const readsNames = options.readsNames ?? true;
+  const markers = options.hiddenMarkers ?? [];
+
+  /**
+   * Whether what was read of a file still stands without opening it: it only
+   * grew, and nothing past its first two lines is read. True of a file left
+   * out by a marker, and of every file when no name is read.
+   */
+  function stands(known: Remembered, info: FileInfo): boolean {
+    const settled = known.read.state === "hidden" || (!readsNames && known.read.state === "ok");
+    return settled && known.info.ino === info.ino && known.info.size <= info.size;
+  }
 
   /** The bytes from the line at `from` to the end, at most `MAX_TAIL_BYTES`, for a name. */
   async function scan(
@@ -203,7 +278,15 @@ export function createSessionFileReader(
     const header = parseHeader(head.toString("utf8", 0, end), platform);
     if (header === "newer") return { read: { state: "newer" }, readTo: 0 };
     if (header === null) return BROKEN;
+    if (markers.length > 0) {
+      const second = secondLine(head, end);
+      // Not listed until the line that can mark it is written, and read again then.
+      if (second === "unwritten") return NONE;
+      if (markedBy(second, markers)) return HIDDEN;
+    }
     const readTo = head.lastIndexOf(NEWLINE) + 1;
+    if (!readsNames)
+      return { read: { state: "ok", session: { ...header, ownName: null } }, readTo };
     const ownName = newestName(head) ?? null;
     const session = { ...header, ownName };
     if (readTo >= file.info.size) return { read: { state: "ok", session }, readTo };
@@ -223,7 +306,10 @@ export function createSessionFileReader(
     if (parent !== sessionsDir && (await io.lstat(parent)).kind !== "directory") return NONE;
     const file = await io.openRegular(ref.path);
     try {
+      // With no names read, a file that changed other than by growing is read
+      // from its start again, as nothing past its first two lines is read.
       if (
+        readsNames &&
         known?.read.state === "ok" &&
         known.info.ino === file.info.ino &&
         known.readTo <= file.info.size
@@ -240,6 +326,10 @@ export function createSessionFileReader(
     async read(ref) {
       const known = remembered.get(ref.path);
       if (known && sameFile(known.info, ref.info)) return known.read;
+      if (known && stands(known, ref.info)) {
+        remembered.set(ref.path, { ...known, info: ref.info });
+        return known.read;
+      }
       try {
         const reading = await readFile(ref, known);
         remembered.set(ref.path, { ...reading, info: ref.info });

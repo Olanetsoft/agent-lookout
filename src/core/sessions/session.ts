@@ -37,6 +37,8 @@ export type RemoteSourceId = `remote:${string}`;
  * whose sessions are read from its database.
  * `mimo-code` is Xiaomi's MiMo Code, in its command `mimo`, whose sessions are
  * read from its database.
+ * `kimchi` is Kimchi, in its command `kimchi`, built on Pi's coding agent,
+ * whose sessions are read from the file it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -56,6 +58,7 @@ export type SourceId =
   | "crush"
   | "kilo-code"
   | "mimo-code"
+  | "kimchi"
   | "status-files"
   | RemoteSourceId;
 

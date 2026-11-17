@@ -112,6 +112,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   // So does MiMo Code's, and a home of MiMo Code's that is not absolute is passed over, as MiMo Code refuses it.
   expect(sourcesFingerprint({ MIMOCODE_DB: "mimocode.db" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ MIMOCODE_HOME: "relative/mimo" }, HOME)).toBe(defaults);
+  // Kimchi sets its agent folder's variables itself, so they move nothing, nor does a relative sessions folder.
+  expect(sourcesFingerprint({ KIMCHI_CODING_AGENT_DIR: "/tmp/kimchi" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ KIMCHI_CODING_AGENT_SESSION_DIR: "relative" }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -162,6 +165,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ MIMOCODE_HOME: path.resolve("/tmp/mimo-home") }, HOME),
     sourcesFingerprint({ MIMOCODE_DB: "/tmp/empty-mimocode.db" }, HOME),
     sourcesFingerprint({ MIMOCODE_DB: ":memory:" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_KIMCHI_HOME: "/tmp/empty-kimchi" }, HOME),
+    sourcesFingerprint({ KIMCHI_CODING_AGENT_SESSION_DIR: path.resolve("/tmp/kimchi") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

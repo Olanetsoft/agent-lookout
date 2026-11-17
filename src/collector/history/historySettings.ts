@@ -13,6 +13,7 @@ import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli
 import { gooseDatabaseFor } from "../adapters/goose/index.ts";
 import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
 import { kiloDatabaseFor } from "../adapters/kilo-code/index.ts";
+import { kimchiSessionsDirFor } from "../adapters/kimchi/index.ts";
 import { kimiCodeHomeFor } from "../adapters/kimi-code/index.ts";
 import { mimoCodeDatabaseFor } from "../adapters/mimo-code/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
@@ -64,7 +65,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the fourteen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the fifteen other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -100,6 +101,7 @@ export function sourcesFingerprint(
     crushDataDirFor(env, homeDir),
     kiloDatabaseFor(env, homeDir) ?? ":memory:",
     mimoCodeDatabaseFor(env, homeDir) ?? ":memory:",
+    kimchiSessionsDirFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

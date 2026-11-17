@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   createSessionFileReader,
+  markedBy,
   MAX_HEAD_BYTES,
   MAX_NAME_LINE_BYTES,
   MAX_TAIL_BYTES,
@@ -441,5 +442,119 @@ describe("reading a session file", () => {
     await read();
     files.write(FILE, sessionText(SESSION_ID, nameLine("BBBB")));
     expect(await read()).toEqual(session("BBBB"));
+  });
+});
+
+/** A marker a profile can name, as Kimchi's do. */
+const MARKER = "agent:own-session";
+
+/** A `custom` entry of this kind, with `type` and `customType` first, as a marker is written. */
+const customLine = (customType: string, data: unknown = { type: "explore" }) =>
+  line({
+    type: "custom",
+    customType,
+    data,
+    id: "a1b2c3d4",
+    parentId: null,
+    timestamp: new Date(STARTED_AT).toISOString(),
+  });
+
+describe("a marker on the second line", () => {
+  const markers = [MARKER];
+  const bytes = (text: string) => Buffer.from(text.replace(/\n$/, ""));
+
+  test("is a custom entry whose kind is one, followed by another key or the line's end", () => {
+    expect(markedBy(bytes(customLine(MARKER)), markers)).toBe(true);
+    expect(
+      markedBy(Buffer.from(JSON.stringify({ type: "custom", customType: MARKER })), markers),
+    ).toBe(true);
+  });
+
+  test("is no other custom line, nor one whose kind only starts with a marker", () => {
+    expect(markedBy(bytes(customLine("work_identity")), markers)).toBe(false);
+    expect(markedBy(bytes(customLine(`${MARKER}-x`)), markers)).toBe(false);
+    expect(markedBy(bytes(customLine("agent_end", { at: STARTED_AT })), markers)).toBe(false);
+  });
+
+  test("is no line that is not a custom entry", () => {
+    const message = JSON.stringify({ type: "message", customType: MARKER });
+    expect(markedBy(Buffer.from(message), markers)).toBe(false);
+    const customMessage = JSON.stringify({ type: "custom_message", customType: MARKER });
+    expect(markedBy(Buffer.from(customMessage), markers)).toBe(false);
+  });
+
+  test("is not a marker inside the data of another kind", () => {
+    const nested = JSON.stringify({
+      type: "custom",
+      customType: "work_identity",
+      data: { customType: MARKER },
+    });
+    expect(markedBy(Buffer.from(nested), markers)).toBe(false);
+  });
+
+  test("matches nothing with no markers, as for Pi", () => {
+    expect(markedBy(bytes(customLine(MARKER)), [])).toBe(false);
+  });
+});
+
+describe("reading a session file with no names read, and a marker", () => {
+  function readerOfProfile(files: MemoryFiles) {
+    const reader = createSessionFileReader(path.resolve(SESSIONS_DIR), files.io, "darwin", {
+      readsNames: false,
+      hiddenMarkers: [MARKER],
+    });
+    return async () => reader.read({ path: path.resolve(FILE), info: await files.io.lstat(FILE) });
+  }
+
+  test("a file marked on its second line is left out, and not opened again while it grows", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(SESSION_ID, customLine(MARKER) + conversationLines()));
+    const read = readerOfProfile(files);
+    expect(await read()).toEqual({ state: "hidden" });
+    files.append(FILE, conversationLines(), { mtimeMs: NOW + SECOND });
+    expect(await read()).toEqual({ state: "hidden" });
+    expect(files.count("openRegular")).toBe(1);
+  });
+
+  test("a file with only its header is nothing, and is read again once its second line is written", async () => {
+    const files = memoryFiles();
+    files.write(FILE, line(headerFields(SESSION_ID)));
+    const read = readerOfProfile(files);
+    expect(await read()).toEqual({ state: "none" });
+    files.append(FILE, conversationLines(), { mtimeMs: NOW + SECOND });
+    expect(await read()).toEqual(session());
+    expect(files.count("openRegular")).toBe(2);
+  });
+
+  test("a name added later stays unread, and the file is not opened for it", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(SESSION_ID));
+    const read = readerOfProfile(files);
+    expect(await read()).toEqual(session());
+    files.append(FILE, nameLine(PRIVATE_WORDS), { mtimeMs: NOW + SECOND });
+    expect(await read()).toEqual(session());
+    expect(files.count("openRegular")).toBe(1);
+  });
+
+  test("a file rewritten shorter in place is read from its first 64 KiB again", async () => {
+    const files = memoryFiles();
+    const padding = line({
+      type: "custom",
+      customType: "work_identity",
+      data: "x".repeat(MAX_HEAD_BYTES),
+    });
+    const shorter = sessionText(
+      SESSION_ID,
+      conversationLines() + padding + nameLine(PRIVATE_WORDS),
+    );
+    files.write(FILE, shorter + conversationLines());
+    const read = readerOfProfile(files);
+    expect(await read()).toEqual(session());
+    files.rewrite(FILE, shorter, { mtimeMs: NOW + SECOND });
+    expect(await read()).toEqual(session());
+    expect(files.count("openRegular")).toBe(2);
+    expect(
+      files.reads.every(({ position, length }) => position === 0 && length <= MAX_HEAD_BYTES),
+    ).toBe(true);
   });
 });
