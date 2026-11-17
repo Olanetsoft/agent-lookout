@@ -2,7 +2,7 @@ import { findSqlite, runSqlite, type RunSqlite } from "../antigravity/app/summar
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { TRANSCRIPT_TAIL_BYTES } from "../../files/transcriptTail.ts";
 import {
-  PROBE_QUERY,
+  probeQueryFor,
   readSchema,
   readSessionRows,
   SESSIONS_QUERY,
@@ -11,6 +11,7 @@ import {
   type DatabaseMode,
   type Schema,
   type SessionRow,
+  type V1Extras,
 } from "./sessionRows.ts";
 
 /**
@@ -170,6 +171,12 @@ export function createDatabaseReader(options: {
   v1Query?: string;
   /** Whether `session_v2` is read. Defaults to true. False, a database with one is `unsupported`. */
   readsV2?: boolean;
+  /**
+   * What the 1.x layout has beyond OpenCode's, which `v1Query` asks about:
+   * the probe then asks for its tables and columns too, and a database
+   * without them is `unsupported`. Defaults to none.
+   */
+  v1Extras?: V1Extras;
 }): DatabaseReader {
   const { file, io, platform } = options;
   const run = options.run ?? runSqlite;
@@ -177,6 +184,8 @@ export function createDatabaseReader(options: {
   const retryMs = options.retryMs ?? RETRY_MS;
   const readsV2 = options.readsV2 ?? true;
   const v1Query = options.v1Query ?? SESSIONS_QUERY;
+  const extras = options.v1Extras ?? {};
+  const probeQuery = probeQueryFor(extras);
   /** The last read, with the files as they were then and when it was made. */
   let last: (DatabaseRead & { files: Files; at: number }) | null = null;
 
@@ -267,8 +276,10 @@ export function createDatabaseReader(options: {
     const binary = await find();
     if (binary === null) return { state: "no-sqlite", rows: NONE };
     const mode = modeOf(files);
-    const probe = await run(binary, sqliteArguments(file, mode, PROBE_QUERY));
-    const found: Schema | null = probe.ok ? readSchema(probe.stdout, { v2: readsV2 }) : null;
+    const probe = await run(binary, sqliteArguments(file, mode, probeQuery));
+    const found: Schema | null = probe.ok
+      ? readSchema(probe.stdout, { v2: readsV2, extras })
+      : null;
     if (found === null) return { state: "failed", rows: NONE };
     const { layout } = found;
     if (layout === "unsupported") return { state: "unsupported", rows: NONE };

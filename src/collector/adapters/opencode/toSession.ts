@@ -19,7 +19,8 @@ export const SOURCE_ID: SourceId = "opencode";
 /**
  * The times OpenCode wrote anything of a session: its own row, its newest
  * message and that message's parts, or for OpenCode 2 when its turn began and
- * ended, which leave `time_updated` alone.
+ * ended, which leave `time_updated` alone. For MiMo Code, also when a
+ * subagent of it that is pending or running was last written.
  */
 function writeTimes(row: SessionRow): number[] {
   return [
@@ -28,6 +29,7 @@ function writeTimes(row: SessionRow): number[] {
     row.message?.partsUpdatedAt,
     row.turn?.claimedAt,
     row.turn?.idleAt,
+    row.subagentsAt,
   ].filter((value): value is number => typeof value === "number");
 }
 
@@ -55,13 +57,15 @@ export function isListed(row: SessionRow, now: number): boolean {
 
 export interface OpencodeSessionInput {
   row: SessionRow;
-  /** The source it is listed under. Defaults to OpenCode's. Kilo Code's adapter passes its own. */
+  /** The source it is listed under. Defaults to OpenCode's. The Kilo Code and MiMo Code adapters pass their own. */
   sourceId?: SourceId;
   /** Whether OpenCode may have it open: an OpenCode program runs, or whether one does is not known. */
   open: boolean;
   now: number;
   /** When `ps` last showed no OpenCode program, if it has. */
   noOpencodeAt?: number | null;
+  /** The error names that end a reply as failed. Defaults to OpenCode's. MiMo Code's adapter passes its own. */
+  failedErrors?: readonly string[];
 }
 
 /**
@@ -83,6 +87,20 @@ function withoutLeftWait(
 }
 
 /**
+ * Whether a subagent of the session is at work: one is `pending` or
+ * `running`, and was written since `ps` last showed no OpenCode program. A
+ * subagent lives in a running program, so one whose row was last written
+ * before none ran was left so by a program that was killed or crashed, until
+ * MiMo Code settles it (`sweepAbandonedZombies` in its `actor/registry.ts`).
+ */
+function subagentsAtWork(row: SessionRow, noOpencodeAt: number | null): boolean {
+  const { subagentsAt } = row;
+  if (subagentsAt === undefined || subagentsAt === null) return false;
+  if (typeof subagentsAt !== "number") return false;
+  return noOpencodeAt === null || subagentsAt >= noOpencodeAt;
+}
+
+/**
  * One OpenCode session in the shared model, or null when nothing of it was
  * written in the last 24 hours, or no time of it is known.
  *
@@ -93,7 +111,8 @@ function withoutLeftWait(
  *   A wait ends with OpenCode: a session it left waiting is finished, with no
  *   reason, and no longer asks once OpenCode runs again (`withoutLeftWait`).
  *   A Kilo Code session whose one call not yet over is its `suggest` is idle,
- *   as Kilo Code shows it.
+ *   as Kilo Code shows it. A MiMo Code session with a subagent at work
+ *   (`subagentsAtWork`) is working where its main agent's step says idle.
  * - The status of a row of `session_v2` comes from how its turn stands and
  *   whether OpenCode may have it open (`mapOpencode2Status`). It is never
  *   "needs-you": OpenCode 2 keeps its waits in memory.
@@ -109,7 +128,7 @@ function withoutLeftWait(
  * - There is no pid, Jump, Stop or link.
  */
 export function opencodeSession(input: OpencodeSessionInput): Session | null {
-  const { row, open, now, noOpencodeAt = null, sourceId = SOURCE_ID } = input;
+  const { row, open, now, noOpencodeAt = null, sourceId = SOURCE_ID, failedErrors } = input;
   if (!isListed(row, now)) return null;
   const activityAt = lastActivity(row, now);
 
@@ -119,7 +138,13 @@ export function opencodeSession(input: OpencodeSessionInput): Session | null {
   const message = withoutLeftWait(row.message, noOpencodeAt);
   const status =
     row.turn === null
-      ? mapOpencodeStatus({ message, open, now })
+      ? mapOpencodeStatus({
+          message,
+          open,
+          now,
+          subagents: subagentsAtWork(row, noOpencodeAt),
+          failedErrors,
+        })
       : mapOpencode2Status({ turn: row.turn, open });
   const statusSince =
     row.turn === null

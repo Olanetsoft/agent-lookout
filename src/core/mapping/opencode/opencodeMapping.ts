@@ -17,6 +17,11 @@
 // one more rule: Kilo Code's `suggest` waits inside its call while Kilo Code
 // shows the session as idle, so a step whose one call not yet over is that is
 // idle here too.
+//
+// MiMo Code's map the same way from its main agent's newest message
+// (docs/adapters/mimo-code.md), with two more rules: a session with a
+// subagent pending or running is working where its main agent's newest step
+// says idle, and MiMo Code's own error names are failures too.
 
 import type { SessionStatus } from "../../sessions/session.ts";
 import { CLOCK_SLACK_MS, plausibleTime } from "../../time.ts";
@@ -86,12 +91,27 @@ export interface OpencodeStatusFields {
    */
   open: boolean;
   now: number;
+  /**
+   * Whether a subagent of the session is pending or running, as MiMo Code
+   * records each in `actor_registry`. While one is, a session whose newest
+   * step says idle is working. Left out, as for OpenCode, none is.
+   */
+  subagents?: boolean;
+  /**
+   * The error names, besides `MessageAbortedError`, that end a reply as
+   * failed. Left out, OpenCode 1.19.0's (`FAILED_ERRORS`).
+   */
+  failedErrors?: readonly string[];
 }
 
 const isTime = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value);
 
 /** What the newest message says while OpenCode may have the session open, or `unknown`. */
-function openStatus(message: OpencodeMessageFields | null, now: number): SessionStatus {
+function openStatus(
+  message: OpencodeMessageFields | null,
+  now: number,
+  failedErrors: readonly string[],
+): SessionStatus {
   if (message === null) return "idle";
   const { role, completedAt, error, finish, tools, shell, askedAt, idleCall = null } = message;
   if (role === "user") return "working";
@@ -104,7 +124,7 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
   if (askedAt !== null && !isTime(askedAt)) return "unknown";
   if (idleCall !== null && idleCall !== 0 && idleCall !== 1) return "unknown";
   if (error === ABORTED_ERROR) return "idle";
-  if (typeof error === "string") return FAILED_ERRORS.includes(error) ? "failed" : "unknown";
+  if (typeof error === "string") return failedErrors.includes(error) ? "failed" : "unknown";
   // A step that waits for the person has not ended: OpenCode ends it only once
   // every tool part of it has left `running`. A step whose one call not yet
   // over is one the agent shows as idle while it waits, Kilo Code's
@@ -150,11 +170,19 @@ function openStatus(message: OpencodeMessageFields | null, now: number): Session
  * that waits for the person is finished once OpenCode is closed, since the
  * wait lives in OpenCode's memory. A wait for a tool's approval is in memory
  * alone, so a session in one shows as working.
+ *
+ * With `subagents`, each row that says idle while open says working: MiMo
+ * Code's subagents work in the session after the main agent's step has
+ * ended. A session that needs you, failed or cannot be read is as the table
+ * says, and one that is closed is finished. With `failedErrors`, those names
+ * are the failures in place of OpenCode's seven.
  */
 export function mapOpencodeStatus(fields: OpencodeStatusFields): SessionStatus {
-  const open = openStatus(fields.message, fields.now);
+  const open = openStatus(fields.message, fields.now, fields.failedErrors ?? FAILED_ERRORS);
   if (open === "failed" || open === "unknown") return open;
-  return fields.open ? open : "finished";
+  if (!fields.open) return "finished";
+  // The main agent's turn is over, or stopped, while a subagent still works.
+  return open === "idle" && fields.subagents === true ? "working" : open;
 }
 
 export interface OpencodeTimes {

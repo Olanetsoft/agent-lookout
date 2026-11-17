@@ -44,7 +44,11 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  *
  * Kilo Code's `kilo.db` is laid out as OpenCode 1.x's, so the Kilo Code
  * adapter asks the same probe and `v1SessionsQuery` with its own tools, and
- * reads no `session_v2` (`../kilo-code/index.ts`).
+ * reads no `session_v2` (`../kilo-code/index.ts`). MiMo Code's `mimocode.db`
+ * is too, with three differences its adapter asks about (`V1Extras`): its
+ * subagents' messages are in the session beside the main agent's, each
+ * subagent has a row of `actor_registry`, and a title may be the first line
+ * of the person's prompt (`../mimo-code/index.ts`).
  */
 
 /** The file OpenCode keeps its sessions in, in its data folder. */
@@ -61,6 +65,24 @@ export const PROBE_QUERY = [
   "UNION ALL SELECT 'session', name FROM pragma_table_info('session')",
   "UNION ALL SELECT 'session_v2', name FROM pragma_table_info('session_v2')",
 ].join(" ");
+
+/**
+ * The probe for an agent with `V1Extras`: `PROBE_QUERY`, and also whether
+ * `actor_registry` is there and the names of the columns of `message` and
+ * `actor_registry`, so that the question names none the database lacks.
+ * With no extras, it is `PROBE_QUERY`.
+ */
+export function probeQueryFor(extras: V1Extras = {}): string {
+  if (!hasExtras(extras)) return PROBE_QUERY;
+  return [
+    "SELECT 'table' AS kind, name FROM sqlite_master",
+    "WHERE type = 'table' AND name IN ('session', 'message', 'part', 'session_v2', 'session_message', 'actor_registry')",
+    "UNION ALL SELECT 'session', name FROM pragma_table_info('session')",
+    "UNION ALL SELECT 'session_v2', name FROM pragma_table_info('session_v2')",
+    "UNION ALL SELECT 'message', name FROM pragma_table_info('message')",
+    "UNION ALL SELECT 'actor_registry', name FROM pragma_table_info('actor_registry')",
+  ].join(" ");
+}
 
 /** How far back a session's own row may have been written for it to be asked for: 48 hours. */
 export const QUERY_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -155,9 +177,12 @@ const COUNTED_STEP = [
   "OR json_extract(y.data, '$.tokens.cache.write') > 0) ELSE 0 END",
 ].join(" ");
 
-/** One column of the 10th newest message of session `s`, by `time_created` and `id`, or null when it has fewer. */
-const TENTH_NEWEST = (column: "time_created" | "id") =>
-  `(SELECT z.${column} FROM message z WHERE z.session_id = s.id` +
+/**
+ * One column of the 10th newest message of session `s`, by `time_created` and
+ * `id`, or null when it has fewer. `main` keeps to the main agent's messages.
+ */
+const tenthNewest = (column: "time_created" | "id", main: MainOnly) =>
+  `(SELECT z.${column} FROM message z WHERE z.session_id = s.id${main("z")}` +
   ` ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET ${MESSAGES_FOR_TOKENS - 1})`;
 
 /**
@@ -168,13 +193,15 @@ const TENTH_NEWEST = (column: "time_created" | "id") =>
  * gives newest first and which stops at the first such step, so no more than
  * 10 messages are read, even when some were written in the same millisecond
  * as the 10th. With fewer than 10, every one is looked at: OpenCode's times
- * are never below 0, and no id is below the empty text.
+ * are never below 0, and no id is below the empty text. With `main`, only the
+ * main agent's messages are counted, walked and read.
  */
-const COUNTED_REPLY = [
-  "LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id",
-  `AND (y.time_created, y.id) >= (coalesce(${TENTH_NEWEST("time_created")}, 0), coalesce(${TENTH_NEWEST("id")}, ''))`,
-  `AND ${COUNTED_STEP} ORDER BY y.time_created DESC, y.id DESC LIMIT 1)`,
-].join(" ");
+const countedReply = (main: MainOnly) =>
+  [
+    `LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id${main("y")}`,
+    `AND (y.time_created, y.id) >= (coalesce(${tenthNewest("time_created", main)}, 0), coalesce(${tenthNewest("id", main)}, ''))`,
+    `AND ${COUNTED_STEP} ORDER BY y.time_created DESC, y.id DESC LIMIT 1)`,
+  ].join(" ");
 
 /**
  * The six token counts of `r`, as fixed paths of its `$.tokens`, each printed
@@ -217,11 +244,89 @@ export interface V1Tools {
 export const OPENCODE_TOOLS: V1Tools = { asking: OPENCODE_ASKING_TOOLS, idle: [] };
 
 /**
- * What is asked of a session of OpenCode 1.x. `SESSIONS_QUERY` says what each
- * is. `m_idle_call` is asked only when there are tools for it.
+ * What sets the 1.x layout of an agent built from OpenCode apart from
+ * OpenCode's own, beyond its tools, as MiMo Code's differs. Each part is fixed
+ * text of this adapter's. Left out, the question is OpenCode's.
  */
-const v1Fields = (tools: V1Tools) => [
-  "s.id, substr(s.directory, 1, 4097) AS directory, substr(s.title, 1, 1000) AS title,",
+export interface V1Extras {
+  /**
+   * The `message.agent_id` of the agent whose messages say how a session
+   * stands, for an agent that writes its subagents' messages into the session
+   * beside its own: MiMo Code's `main`. Only that agent's messages are read
+   * for the newest message, the newest prompt and the token counts.
+   */
+  mainAgent?: string;
+  /**
+   * Whether the agent keeps a row for each subagent in `actor_registry`, with
+   * a `status` of `pending`, `running` or `idle`, as MiMo Code does. Then
+   * each row has `a_active_at` (`activeSubagents`).
+   */
+  actors?: boolean;
+  /**
+   * The values of `session.title_source` whose title is printed. Any other's
+   * is not, so it never leaves SQLite: MiMo Code writes the first line of the
+   * person's prompt as a session's title, with the source `fallback`, until a
+   * model names it.
+   */
+  titleSources?: readonly string[];
+}
+
+/** Whether any of the extras is set, so that a question differs from OpenCode's. */
+function hasExtras(extras: V1Extras): boolean {
+  return (
+    extras.mainAgent !== undefined || extras.actors === true || extras.titleSources !== undefined
+  );
+}
+
+/** A filter that keeps a message, by its alias, to the main agent's, or nothing when every message is. */
+type MainOnly = (alias: string) => string;
+
+/** The filter for these extras: ` AND <alias>.agent_id = '<main>'`, or nothing. */
+function mainOnly(extras: V1Extras): MainOnly {
+  const { mainAgent } = extras;
+  if (mainAgent === undefined) return () => "";
+  // Checked as a tool's name is: fixed text of this adapter's.
+  const [main] = toolList([mainAgent]).split(", ");
+  return (alias) => ` AND ${alias}.agent_id = ${main}`;
+}
+
+/**
+ * The title, cut inside SQLite, printed only when `session.title_source` is
+ * one of these, and else null.
+ */
+function titleField(extras: V1Extras): string {
+  const { titleSources } = extras;
+  if (titleSources === undefined) return "substr(s.title, 1, 1000) AS title";
+  return `CASE WHEN s.title_source IN (${toolList(titleSources)}) THEN substr(s.title, 1, 1000) END AS title`;
+}
+
+/**
+ * A time of a row of `actor_registry` `a`: the column when it is a whole
+ * number, else 0, which no time of a session's is below.
+ */
+const ACTOR_TIME = (column: string) =>
+  `CASE WHEN typeof(a.${column}) = 'integer' THEN a.${column} ELSE 0 END`;
+
+/**
+ * The newest time a subagent of session `s` that is `pending` or `running`
+ * was written: its row's `time_updated`, or its `last_activity_time`, which
+ * MiMo Code moves as the subagent writes its parts. Null when none is, and 0
+ * when one is but neither time is a whole number. Only the status and the two
+ * times are read, and only the newest time is printed.
+ */
+const ACTIVE_SUBAGENTS = [
+  `(SELECT max(max(${ACTOR_TIME("time_updated")}, ${ACTOR_TIME("last_activity_time")}))`,
+  "FROM actor_registry a WHERE a.session_id = s.id",
+  "AND a.status IN ('pending', 'running')) AS a_active_at,",
+].join(" ");
+
+/**
+ * What is asked of a session of OpenCode 1.x. `SESSIONS_QUERY` says what each
+ * is. `m_idle_call` is asked only when there are tools for it, and
+ * `a_active_at` only with `actors`.
+ */
+const v1Fields = (tools: V1Tools, extras: V1Extras = {}) => [
+  `s.id, substr(s.directory, 1, 4097) AS directory, ${titleField(extras)},`,
   "s.time_created, s.time_updated,",
   "m.id AS m_id, m.time_created AS m_created, m.time_updated AS m_updated,",
   "CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.role') END AS m_role,",
@@ -242,8 +347,9 @@ const v1Fields = (tools: V1Tools) => [
   "THEN json_extract(p.data, '$.state.time.start') ELSE p.time_created END) END FROM part p",
   `WHERE p.message_id = m.id AND ${askingPart(tools.asking)}) AS m_asked_at,`,
   ...(tools.idle.length > 0 ? [`${idleCall(tools.idle)},`] : []),
+  ...(extras.actors === true ? [ACTIVE_SUBAGENTS] : []),
   "(SELECT max(p.time_updated) FROM part p WHERE p.message_id = m.id) AS p_updated,",
-  "(SELECT u.time_created FROM message u WHERE u.session_id = s.id",
+  `(SELECT u.time_created FROM message u WHERE u.session_id = s.id${mainOnly(extras)("u")}`,
   "AND CASE WHEN json_valid(u.data) THEN json_extract(u.data, '$.role') = 'user' END",
   `AND NOT (EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND ${OPENCODE_OWN_PART})`,
   `AND NOT EXISTS (SELECT 1 FROM part q WHERE q.message_id = u.id AND NOT ${OPENCODE_OWN_PART}))`,
@@ -254,15 +360,24 @@ const v1Fields = (tools: V1Tools) => [
 /** What is asked of a session of OpenCode 1.x, with OpenCode's own tools. */
 const V1_FIELDS = v1Fields(OPENCODE_TOOLS);
 
-/** The tables those are read from, and which sessions are asked for. */
-const V1_TABLES = [
-  "FROM session s",
-  "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id",
-  "ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
-  COUNTED_REPLY,
-  "WHERE s.parent_id IS NULL AND s.time_archived IS NULL",
-  `AND s.time_updated >= ${WRITTEN_SINCE}`,
-];
+/**
+ * The tables those are read from, and which sessions are asked for. With a
+ * `mainAgent`, the newest message is the main agent's.
+ */
+const v1Tables = (extras: V1Extras = {}) => {
+  const main = mainOnly(extras);
+  return [
+    "FROM session s",
+    `LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id${main("x")}`,
+    "ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
+    countedReply(main),
+    "WHERE s.parent_id IS NULL AND s.time_archived IS NULL",
+    `AND s.time_updated >= ${WRITTEN_SINCE}`,
+  ];
+};
+
+/** OpenCode's own. */
+const V1_TABLES = v1Tables();
 
 /**
  * Each root session of OpenCode 1.x that is not archived, written in the last
@@ -297,15 +412,18 @@ export const SESSIONS_QUERY = v1SessionsQuery(OPENCODE_TOOLS);
 
 /**
  * The question `SESSIONS_QUERY` asks, for an agent whose database is laid out
- * as OpenCode 1.x's with tools of its own. With OpenCode's, it is
- * `SESSIONS_QUERY`. With any `idle` tool, each row has `m_idle_call` too
- * (`idleCall`).
+ * as OpenCode 1.x's with tools of its own. With OpenCode's, and no extras, it
+ * is `SESSIONS_QUERY`. With any `idle` tool, each row has `m_idle_call` too
+ * (`idleCall`). With `extras` (`V1Extras`), the newest message, the newest
+ * prompt and the counted reply are the main agent's, each row has
+ * `a_active_at` (`ACTIVE_SUBAGENTS`), and a title is printed only for the
+ * sources named.
  */
-export function v1SessionsQuery(tools: V1Tools): string {
+export function v1SessionsQuery(tools: V1Tools, extras: V1Extras = {}): string {
   return [
     "SELECT",
-    ...v1Fields(tools),
-    ...V1_TABLES,
+    ...v1Fields(tools, extras),
+    ...v1Tables(extras),
     `ORDER BY s.time_updated DESC LIMIT ${MAX_SESSIONS}`,
   ].join(" ");
 }
@@ -514,28 +632,57 @@ export function jsonRows(stdout: string): Record<string, unknown>[] | null {
 }
 
 /**
+ * The columns the extras ask for: `session.title_source`, `message.agent_id`,
+ * and of `actor_registry` the three `ACTIVE_SUBAGENTS` reads, by table.
+ */
+function extraColumns(
+  extras: V1Extras,
+): Record<"session" | "message" | "actor_registry", string[]> {
+  return {
+    session: extras.titleSources === undefined ? [] : ["title_source"],
+    message: extras.mainAgent === undefined ? [] : ["agent_id"],
+    actor_registry:
+      extras.actors === true ? ["session_id", "status", "time_updated", "last_activity_time"] : [],
+  };
+}
+
+/**
  * What the probe's answer says of the database, or null when it is not an
  * answer. With `v2` false, for an agent that never writes `session_v2`, a
  * database that has one is laid out as a version that is not read, rather
- * than read with OpenCode 2's meaning.
+ * than read with OpenCode 2's meaning. With `extras`, a 1.x layout needs the
+ * tables and columns they ask for too (`probeQueryFor`), and lacking any is a
+ * version that is not read.
  */
-export function readSchema(stdout: string, options: { v2?: boolean } = {}): Schema | null {
+export function readSchema(
+  stdout: string,
+  options: { v2?: boolean; extras?: V1Extras } = {},
+): Schema | null {
   const rows = jsonRows(stdout);
   if (rows === null) return null;
   const tables = new Set<string>();
   const columns = new Set<string>();
   const v2Columns = new Set<string>();
+  const messageColumns = new Set<string>();
+  const actorColumns = new Set<string>();
   for (const { kind, name } of rows) {
     if (typeof name !== "string") continue;
     if (kind === "table") tables.add(name);
     else if (kind === "session") columns.add(name);
     else if (kind === "session_v2") v2Columns.add(name);
+    else if (kind === "message") messageColumns.add(name);
+    else if (kind === "actor_registry") actorColumns.add(name);
   }
   const hasV2 = tables.has("session_v2");
   if (hasV2 && options.v2 === false) return { layout: "unsupported" };
+  const extra = extraColumns(options.extras ?? {});
   const v1 =
     NEEDED_TABLES.every((table) => tables.has(table)) &&
-    NEEDED_COLUMNS.every((column) => columns.has(column));
+    NEEDED_COLUMNS.every((column) => columns.has(column)) &&
+    extra.session.every((column) => columns.has(column)) &&
+    extra.message.every((column) => messageColumns.has(column)) &&
+    (extra.actor_registry.length === 0 || tables.has("actor_registry")) &&
+    extra.actor_registry.every((column) => actorColumns.has(column));
   const v2 = hasV2 && NEEDED_V2_COLUMNS.every((column) => v2Columns.has(column));
   if (v1 && !hasV2) return { layout: "v1" };
   if (v1 && v2) return { layout: "both" };
@@ -658,6 +805,12 @@ export interface SessionRow {
   tokens: TokenCounts | null;
   /** How its turn stands, for a row of `session_v2`. Null for a row of `session`. */
   turn: TurnRow | null;
+  /**
+   * When a subagent of it that is `pending` or `running` was last written, as
+   * `a_active_at` was read: null when none is. Only a question with `actors`
+   * (`V1Extras`) gives it, so it is left out of OpenCode's rows.
+   */
+  subagentsAt?: unknown;
 }
 
 /** A count of tokens: a whole number, 0 or more. Null for anything else. */
@@ -750,6 +903,8 @@ export function readSessionRows(stdout: string): SessionRow[] | null {
               outcome: shortField(row.idle_outcome),
             }
           : null,
+      // Only a question that asks for it prints it.
+      ...("a_active_at" in row ? { subagentsAt: shortField(row.a_active_at) } : {}),
     });
   }
   return sessions;

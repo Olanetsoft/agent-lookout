@@ -57,8 +57,8 @@ export const OPENCODE_PROGRAMS: ReadonlySet<string> = new Set([
 
 /**
  * Whether one line of what `ps -A -o comm=` printed is OpenCode's program: one
- * of its names, or a path ending in one. Kilo Code's adapter passes its own
- * names.
+ * of its names, or a path ending in one. The Kilo Code and MiMo Code adapters
+ * pass their own names.
  */
 export function opencodeInTable(
   stdout: string,
