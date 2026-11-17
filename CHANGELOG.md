@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.22 - 2026-11-17
+
+MiMo Code, Kimchi and Prime Agent sessions show.
 
 ### Added
 
