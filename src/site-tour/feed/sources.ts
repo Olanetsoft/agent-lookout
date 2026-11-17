@@ -7,9 +7,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx
- * and Unreal Agent, none of the nineteen installed here, and status files.
- * Then the other machine, connected over SSH.
+ * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
+ * Unreal Agent and Autohand Code, none of the twenty installed here, and
+ * status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -932,6 +932,57 @@ export const UNREAL_AGENT_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From the heartbeat Autohand Code rewrites every 5 seconds. A run with --no-daemon, or with its heartbeats moved, shows as unknown.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While Autohand Code asks you to approve a tool or answer a question. Some of its other prompts show as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once Autohand Code closes it, or its process ends or leaves it. One that ended unclosed before Agent Lookout started is unknown.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When Autohand Code marks it crashed and saves nothing after. A failed -p run is written as completed and shows as finished.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words, so it is never read.",
+  },
+  jump: {
+    level: "no",
+    reason: "Agent Lookout does not yet look for the terminal an Autohand Code session runs in.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "When Autohand Code last saved the session. Nothing is saved while a prompt waits or a tool runs.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "Autohand Code's files hold a session's running totals. A reply's own counts are in its conversation file, which is never opened.",
+  },
+  stop: {
+    level: "no",
+    reason: "Agent Lookout stops Claude Code sessions only so far.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Agent Lookout never connects to Autohand Code's peer socket or its RPC client, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1482,6 +1533,22 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when Autohand Code is not installed: its folders are looked for, and nothing more.
+      id: "autohand-code",
+      label: "Autohand Code",
+      state: "unavailable",
+      detail:
+        "Autohand Code was not found: there is no ~/.autohand/sessions or ~/.autohand/active-agents folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Heartbeats folder", value: "~/.autohand/active-agents" },
+        { label: "Sessions folder", value: "~/.autohand/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "signal 0 alone, every 2 seconds" },
+      ],
+      capabilities: AUTOHAND_CODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1529,6 +1596,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Prime Agent there", value: "Not found" },
         { label: "fx there", value: "Not found" },
         { label: "Unreal Agent there", value: "Not found" },
+        { label: "Autohand Code there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

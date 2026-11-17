@@ -11,6 +11,15 @@ export interface FileInfo {
   mtimeMs: number;
   /** The file's identity on its disk, so a file replaced under the same name is noticed. */
   ino: number;
+  /**
+   * The user who owns it, its permission bits and how many names it has, as
+   * the system gives them. Only the Autohand Code adapter asks, to read only
+   * what Autohand Code itself would. On Windows the first two mean little. A
+   * stand-in may leave them out.
+   */
+  uid?: number;
+  mode?: number;
+  nlink?: number;
 }
 
 /** An ordinary file, open to read. */
@@ -54,6 +63,9 @@ function infoOf(stats: Stats): FileInfo {
     size: stats.size,
     mtimeMs: stats.mtimeMs,
     ino: stats.ino,
+    uid: stats.uid,
+    mode: stats.mode,
+    nlink: stats.nlink,
   };
 }
 

@@ -1,4 +1,4 @@
-import { isMissing, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { SWEEP_MS } from "../pi/sessionFiles.ts";
 
 /**
@@ -10,6 +10,10 @@ import { SWEEP_MS } from "../pi/sessionFiles.ts";
  * removes something in it, and once a minute. A link at its name is not
  * followed: it would lead out of Prime Agent's folder, so it counts as a
  * folder that cannot be listed. Nothing in it is opened here.
+ *
+ * A caller may also say which folders it reads at all, from the folder's
+ * `lstat`: the Autohand Code adapter reads only one that belongs to the user
+ * it runs as. One it does not accept counts as a folder that cannot be listed.
  */
 
 /** What a folder holds: its names, or why there are none. */
@@ -25,7 +29,12 @@ export interface FolderLister {
   list(now: number): Promise<FolderListing>;
 }
 
-export function createFolderLister(dir: string, io: ReadOnlyIo, sweepMs = SWEEP_MS): FolderLister {
+export function createFolderLister(
+  dir: string,
+  io: ReadOnlyIo,
+  sweepMs = SWEEP_MS,
+  accept: (info: FileInfo) => boolean = () => true,
+): FolderLister {
   let known: { mtimeMs: number; names: readonly string[]; at: number } | null = null;
 
   return {
@@ -37,7 +46,7 @@ export function createFolderLister(dir: string, io: ReadOnlyIo, sweepMs = SWEEP_
         known = null;
         return isMissing(error) ? { state: "missing" } : { state: "unlistable" };
       }
-      if (info.kind !== "directory") {
+      if (info.kind !== "directory" || !accept(info)) {
         known = null;
         return { state: "unlistable" };
       }
