@@ -36,10 +36,11 @@ import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/t
 // The adapter end to end, on real files this test writes, laid out as
 // DeepSeek Harness dsh-v0.2.2-rc.3 lays them out, beside the files of its
 // home that are never read, and through the collector. Each log's time is
-// set a few minutes back, and the program reader is a stand-in whose table
-// shows a node that started before every session, so what a status is never
-// depends on whether DeepSeek Harness runs on the machine under test, nor on
-// what the real clock does between two lines.
+// set a few minutes back, the program reader is a stand-in whose table shows
+// a node that started before every session, and the computer's start is set
+// a month back, so what a status is never depends on whether DeepSeek
+// Harness runs on the machine under test, nor on when that machine started,
+// nor on what the real clock does between two lines.
 
 const ID = `deepseek-harness:${SESSION_ID}`;
 const OWN = process.pid;
@@ -116,6 +117,8 @@ const adapterFor = (home: string, options: DeepseekHarnessAdapterOptions = {}) =
   createDeepseekHarnessAdapter({
     env: { AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: home },
     runPs: nodeRuns,
+    // A computer on for 30 days, so the boot rule never finishes these sessions, whenever this machine started.
+    uptimeMs: () => 30 * 24 * 60 * 60_000,
     platform:
       process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
     ...options,
