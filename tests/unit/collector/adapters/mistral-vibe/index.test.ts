@@ -569,7 +569,8 @@ describe("open and closed", () => {
     // Times in milliseconds after NOW: writes as a disk that keeps fractions of
     // a second gives them, none at a whole second, and leases.
     const writes = [
-      1_001, 1_500, 1_999, 2_001, 2_500, 2_999, 2_999.5, 3_001, 3_001.5, 3_499, 3_999,
+      1_000.5, 1_001, 1_500, 1_999, 2_000.25, 2_000.5, 2_001, 2_500, 2_999, 2_999.5, 3_000.5, 3_001,
+      3_001.5, 3_499, 3_999,
     ];
     const leases = [3_000, 3_001, 3_500, 3_999];
     const shown: string[] = [];
@@ -637,6 +638,111 @@ describe("open and closed", () => {
       clock.advance(2 * SECOND);
     }
     expect(seen).toEqual(["working", "finished", "finished", "finished"]);
+    expect(told).toEqual(["finished"]);
+  });
+
+  test("a write a poll looked up after the lease's time counts as one after it, though the poll began before", async () => {
+    // A program takes A back and writes to it at once while a poll that began at
+    // NOW + 2 s runs: before the poll lists the leases, or after. The disk keeps
+    // whole seconds, so the write's time is NOW + 2 s.
+    const shown: Record<string, { seen: string[]; told: string[] }> = {};
+    for (const leaseIn of ["stat", "lstat"] as const) {
+      const clock = handClock();
+      const files = vibeFiles(clock.now);
+      writeStore(files, { id: A, state: idle(A) });
+      makeOld(files, A, NOW - 2 * HOUR);
+      const currentFile = `${SESSION_DIR}/${storePath(A)}/CURRENT`;
+      let armed = false;
+      const takeBack = () => {
+        takeLease(files, A, NOW + 2_500);
+        clock.set(NOW + 2_500);
+      };
+      const io: ReadOnlyIo = {
+        ...files.io,
+        async stat(target) {
+          if (armed && leaseIn === "stat" && asWritten(target) === SESSION_DIR) takeBack();
+          return files.io.stat(target);
+        },
+        async lstat(target) {
+          if (armed && asWritten(target) === currentFile) {
+            armed = false;
+            if (leaseIn === "lstat") takeBack();
+            files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, running(A)), {
+              mtimeMs: NOW + 2 * SECOND,
+            });
+            clock.set(NOW + 2_600);
+          }
+          return files.io.lstat(target);
+        },
+      };
+      const adapter = vibeAdapterFor(files, standInPids(), { io, now: clock.now });
+
+      let memory = EMPTY_CHANGE_MEMORY;
+      const seen: string[] = [];
+      const told: string[] = [];
+      for (const at of [NOW, NOW + 2 * SECOND, NOW + 4 * SECOND]) {
+        clock.set(at);
+        armed = at === NOW + 2 * SECOND;
+        const result = await adapter.poll();
+        seen.push(statuses(result.sessions)[A] ?? "not listed");
+        const next = sessionChanges(memory, {
+          generatedAt: clock.now(),
+          sources: [{ ...result.health, basis: result.basis }],
+          sessions: result.sessions,
+        });
+        memory = next.memory;
+        told.push(...next.changes.map(({ event }) => event));
+      }
+      shown[leaseIn] = { seen, told };
+    }
+    expect(shown).toEqual({
+      // Taken before the poll lists the leases: open from that poll on.
+      stat: { seen: ["finished", "working", "working"], told: [] },
+      // Taken after: open from the next poll, which finds the lease.
+      lstat: { seen: ["finished", "finished", "working"], told: [] },
+    });
+  });
+
+  test("a poll that ends in an error keeps a write seen before the lease's time counted as before it", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - HOUR);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+
+    let memory = EMPTY_CHANGE_MEMORY;
+    const seen: string[] = [];
+    const told: string[] = [];
+    const steps = [
+      () => undefined,
+      // Vibe ends the turn, then lets go of the session.
+      () => {
+        files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, idle(A)), {
+          mtimeMs: NOW + SECOND,
+        });
+        releaseLease(files, A);
+      },
+      // Vibe takes the lease to clear old output, and the next poll cannot look at `unified/`.
+      () => {
+        takeLease(files, A, NOW + 2_500);
+        files.fail(`${SESSION_DIR}/unified`);
+      },
+      () => files.heal(`${SESSION_DIR}/unified`),
+    ];
+    for (const step of steps) {
+      step();
+      const result = await adapter.poll();
+      seen.push(result.health.state === "error" ? "error" : (statuses(result.sessions)[A] ?? ""));
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+    }
+    expect(seen).toEqual(["working", "finished", "error", "finished"]);
     expect(told).toEqual(["finished"]);
   });
 
