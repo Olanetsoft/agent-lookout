@@ -235,11 +235,11 @@ interface Listed {
  * folder. A poll lists that folder, without going into any folder in it, and
  * looks up each name of a session file with `lstat`: those written in the
  * last day, the 200 newest (`../pi/sessionFiles.ts`). It opens a file only
- * when it changes, and reads its first line, its last 8 MiB, and then only
- * what was added, and for a session that looks idle, or did at a hard stop,
- * and was not read from its start, the whole file once, up to 64 MiB
- * (`sessionFile.ts`). Each line is compared, as bytes, with the shapes Unreal
- * Agent writes (`lines.ts`).
+ * when it changes or a whole read is due, and reads its first line, its last
+ * 8 MiB, and then only what was added, and for a session that looks idle, or
+ * did at a hard stop, and was not read from its start, the whole file once,
+ * up to 64 MiB (`sessionFile.ts`). Each line is compared, as bytes, with the
+ * shapes Unreal Agent writes (`lines.ts`).
  * Nothing else of Unreal Agent's is opened: not the `operations` folder that
  * holds every command's output, not a `.session-*.tmp` file, and no setting
  * or key. While there are sessions to show, it asks `ps` when each Unreal

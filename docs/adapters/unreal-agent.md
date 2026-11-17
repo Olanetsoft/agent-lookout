@@ -61,12 +61,12 @@ When the folder is missing, Unreal Agent is reported as not found, with no advic
 
 The sessions folder holds each session's file, `<id>.session.jsonl`, `.session-<random>.tmp` copies of a session being made (`localfile/store.go:386-411`), and `operations/<session ID>/<operation ID>/out` and `err`, the whole output of every shell command (`harness/operation/shell.go:466-477`; TUI `run.go:235-238`; runner `run.go:311-314`).
 
-| Path                           | How                                                                                    | How often                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| The sessions folder            | One `lstat`, and listed when its modified time moves                                   | Every poll, and listed once a minute                              |
-| Each `<id>.session.jsonl`      | One `lstat`. Only a name of 1 to 241 letters, digits and dashes, then `.session.jsonl` | Every poll, for the files written in the last day, the newest 200 |
-| Every other session file       | One `lstat`. Never opened                                                              | Once a minute                                                     |
-| A file written in the last day | Opened read-only, without following a link, as below                                   | When its size, modified time or identity changes                  |
+| Path                           | How                                                                                    | How often                                                                          |
+| ------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| The sessions folder            | One `lstat`, and listed when its modified time moves                                   | Every poll, and listed once a minute                                               |
+| Each `<id>.session.jsonl`      | One `lstat`. Only a name of 1 to 241 letters, digits and dashes, then `.session.jsonl` | Every poll, for the files written in the last day, the newest 200                  |
+| Every other session file       | One `lstat`. Never opened                                                              | Once a minute                                                                      |
+| A file written in the last day | Opened read-only, without following a link, as below                                   | When its size, modified time or identity changes, or a held-back whole read is due |
 
 The finder is Pi's, flat: it never goes into a folder in the sessions folder, and drops every name that is not a session file's before anything is looked up. So the `operations` folder and the `.session-*.tmp` files are never opened or looked up, though the listing returns their names. A link at a session file's name is not followed. Unreal Agent's own listing takes only ordinary files with a valid id too (`localfile/list.go:33-40`).
 
