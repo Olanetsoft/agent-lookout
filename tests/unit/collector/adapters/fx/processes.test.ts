@@ -109,6 +109,8 @@ describe("whether the log's writer is gone", () => {
   test("an fx missing only from an answer within 2 seconds after the write's kept time could have made it", () => {
     // A disk that keeps whole seconds keeps a write at M + 900 ms as M.
     expect(after([ok(), M + 400], [ok(200), M + 10_400])).toBe(false);
+    // One that keeps steps of 2 seconds keeps a write at M + 1950 ms as M.
+    expect(after([ok(), M + 1_900], [ok(200), M + 11_900])).toBe(false);
     expect(after([ok(), M + WRITE_TIME_STEP_MS], [ok(200), M + 15 * SECOND])).toBe(false);
     expect(after([ok(), M + WRITE_TIME_STEP_MS + 1], [ok(200), M + 15 * SECOND])).toBe(true);
   });

@@ -187,7 +187,7 @@ Another program can be named `fx`, such as the JSON viewer of that name. While o
 
 ### A crash
 
-A crash writes nothing. The next time fx opens that session to write, it first writes `turn_interrupted` with `crash`, at that time (`session.zig:1401-1407`). Until then the log shows an open turn: finished once no fx runs, or once every fx running started after the last write, and otherwise working for up to 30 quiet minutes and then unknown. `crash` is not a failure, so once fx writes it the session is finished or unknown.
+A crash writes nothing. The next time fx opens that session to write, it first writes `turn_interrupted` with `crash`, at that time (`session.zig:1401-1407`). Until then the log shows an open turn: finished once no fx runs, or once every fx running was missing from a `ps` answer taken more than 2 seconds after the last write, and otherwise working for up to 30 quiet minutes and then unknown. `crash` is not a failure, so once fx writes it the session is finished or unknown.
 
 ### Thirty quiet minutes
 
@@ -204,7 +204,7 @@ A session takes its folder's name, else its id. fx names a session from the firs
 ## Quiet for, tokens, Jump, Stop and Answer
 
 - **Quiet for** is the time since the log was last written, its modified time, for up to 30 minutes.
-- **Tokens:** fx keeps a session's running totals in a `set` line, not a reply's counts, and it is not read.
+- **Tokens:** fx keeps a session's running totals in a `set` line, not a reply's counts, and they are not read.
 - **Jump and Stop:** the log names no process or terminal.
 - **Answer:** Agent Lookout makes no request to fx, and fx keeps its approvals in memory.
 

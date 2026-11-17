@@ -759,6 +759,38 @@ describe("ps", () => {
     expect(statusOf(await adapter.poll())).toBe("working");
   });
 
+  test("is asked again when a log's kept time is up to 2 seconds before an answer that showed no fx", async () => {
+    const files = withLog(fxLog().turnStarted().item().text(), NOW - MINUTE);
+    const clock = handClock(NOW + 1_900);
+    const processes = standInFxProcesses({ ok: true, pids: [], unparsed: 0 });
+    const adapter = fxAdapterFor(files, { now: clock.now, processes });
+    expect(statusOf(await adapter.poll())).toBe("finished");
+    // fx starts and writes at NOW + 1950 ms, which a disk keeping steps of 2 seconds keeps as NOW.
+    processes.running(FX_PID);
+    files.append(logPath(SESSION_ID), fxLog().turnStarted().item().item().since(3), {
+      mtimeMs: NOW,
+    });
+    clock.set(NOW + 3_900);
+    expect(statusOf(await adapter.poll())).toBe("working");
+    expect(processes.asked.count).toBe(2);
+  });
+
+  test("is not asked early when every log was written more than 2 seconds before an answer that showed no fx", async () => {
+    const files = withLog(fxLog().turnStarted().item().text(), NOW - 2_001);
+    const clock = handClock();
+    const processes = standInFxProcesses({ ok: true, pids: [], unparsed: 0 });
+    const adapter = fxAdapterFor(files, { now: clock.now, processes });
+    await adapter.poll();
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    await adapter.poll();
+    clock.advance(PROCESS_CHECK_MS - PROMPT_PROCESS_CHECK_MS - 1);
+    await adapter.poll();
+    expect(processes.asked.count).toBe(1);
+    clock.advance(1);
+    await adapter.poll();
+    expect(processes.asked.count).toBe(2);
+  });
+
   test("the ways it reads are the ones another machine's are taken under", () => {
     expect(KNOWN_WAYS.get("fx")).toEqual([BASIS, BASIS_CLOSED, BASIS_WITHOUT_PROCESSES]);
   });
