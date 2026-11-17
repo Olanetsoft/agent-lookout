@@ -14,6 +14,7 @@ import {
   CWD,
   event,
   headerLine,
+  importedEvent,
   line,
   NOW,
   PRIVATE_WORDS,
@@ -271,6 +272,114 @@ describe("an event line", () => {
       arguments: "{}",
     });
     expect(read(late).line).toEqual({ kind: "other" });
+  });
+});
+
+describe("an event line the chat import wrote, its data before its number and time", () => {
+  test("gives its number, time and kind as a line in the usual order does", () => {
+    expect(read(importedEvent("turn/start", 0, T, { turn: 1 }))).toEqual({
+      seq: 0,
+      line: { kind: "turn-start", time: T },
+    });
+    for (const kind of ["completed", "error"]) {
+      const reason = kind === "error" ? { kind, error: { message: PRIVATE_WORDS[5] } } : { kind };
+      expect(read(importedEvent("turn/end", 6, T, { turn: 1, reason })), kind).toEqual({
+        seq: 6,
+        line: { kind: "turn-end", end: kind, time: T },
+      });
+    }
+    const call = { turn: 1, step: 1, callId: "call_1", name: "ask_user_question", arguments: "{}" };
+    expect(read(importedEvent("tool/call", 4, T, call))).toEqual({
+      seq: 4,
+      line: { kind: "question-asked", callId: "call_1", time: T },
+    });
+    const bash = { ...call, name: "bash" };
+    expect(read(importedEvent("tool/call", 4, T, bash))).toEqual({
+      seq: 4,
+      line: { kind: "other" },
+    });
+  });
+
+  test("of any other kind is nothing, with its surface keys too", () => {
+    expect(read(importedEvent("step/start", 1, T, { turn: 1, step: 1 }))).toEqual({
+      seq: 1,
+      line: { kind: "other" },
+    });
+    const message = { role: "user", content: [{ type: "text", text: PRIVATE_WORDS[0] }] };
+    expect(
+      read(importedEvent("user/message", 3, T, { turn: 1, message }, { surfaceOp: "append" })),
+    ).toEqual({ seq: 3, line: { kind: "other" } });
+    const result = importedEvent(
+      "tool/result",
+      5,
+      T,
+      { turn: 1, step: 1, message: { role: "assistant" } },
+      { surfaceOp: "append", sourceEventSeqs: [4] },
+    );
+    expect(read(result)).toEqual({ seq: 5, line: { kind: "tool-result", callId: null } });
+  });
+
+  test("gives a title marked as the person's", () => {
+    const title = importedEvent("session/title", 7, T, {
+      title: "Imported chat",
+      messageSeqs: [],
+      source: { kind: "user" },
+    });
+    expect(isTitleLine(bytes(title))).toBe(true);
+    expect(read(title)).toEqual({ seq: 7, line: { kind: "other" }, title: "Imported chat" });
+  });
+
+  test(`over ${LINE_HEAD_BYTES} bytes keeps its kind, with no number or time`, () => {
+    const long = importedEvent("turn/end", 6, T, {
+      turn: 1,
+      reason: { kind: "error", error: { message: PRIVATE_WORDS[5].repeat(40) } },
+    });
+    const data = bytes(long);
+    expect(data.byteLength).toBeGreaterThan(LINE_HEAD_BYTES);
+    expect(readEvent(data.subarray(0, LINE_HEAD_BYTES), data.byteLength, NOW, true)).toEqual({
+      seq: null,
+      line: { kind: "turn-end", end: "error", time: null },
+    });
+    // Its first bytes end as a line's own number and time would, inside its data.
+    const start = `{"type":"turn/start","data":{"turn":1,"pad":"`;
+    const inner = `","o":{"a":1,"seq":5,"time":${T}}`;
+    const pad = "p".repeat(LINE_HEAD_BYTES - start.length - inner.length);
+    const cut = JSON.stringify({
+      type: "turn/start",
+      data: { turn: 1, pad, o: { a: 1, seq: 5, time: T }, more: "m".repeat(64) },
+      seq: 0,
+      time: T,
+    });
+    expect(cut.slice(0, LINE_HEAD_BYTES).endsWith(`,"seq":5,"time":${T}}`)).toBe(true);
+    const cutData = bytes(cut);
+    expect(readEvent(cutData.subarray(0, LINE_HEAD_BYTES), cutData.byteLength, NOW, true)).toEqual({
+      seq: null,
+      line: { kind: "turn-start", time: null },
+    });
+  });
+
+  test("takes its number and time only from its very end", () => {
+    // A number and time inside its data, and none of its own.
+    const inner = JSON.stringify({
+      type: "turn/start",
+      data: { turn: 1, o: { a: 1, seq: 5, time: T } },
+      note: "x",
+    });
+    expect(read(inner)).toEqual({ seq: null, line: { kind: "turn-start", time: null } });
+    const extra = `${importedEvent("turn/start", 0, T, { turn: 1 }).slice(0, -1)},"x":1}`;
+    expect(read(extra)).toEqual({ seq: null, line: { kind: "turn-start", time: null } });
+    // A time that cannot be right is none, and the line is still read.
+    expect(read(importedEvent("turn/start", 0, 5, { turn: 1 }))).toEqual({
+      seq: 0,
+      line: { kind: "turn-start", time: null },
+    });
+  });
+
+  test("a wanted kind in neither order is unsure", () => {
+    const other = JSON.stringify({ type: "turn/start", time: T, seq: 0, data: { turn: 1 } });
+    expect(read(other)).toEqual({ seq: null, line: { kind: "unsure" } });
+    const between = JSON.stringify({ type: "turn/start", seq: 0, data: { turn: 1 }, time: T });
+    expect(read(between)).toEqual({ seq: null, line: { kind: "unsure" } });
   });
 });
 

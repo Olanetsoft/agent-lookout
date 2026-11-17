@@ -28,6 +28,7 @@ import {
   endedTurn,
   HOME,
   headerLine,
+  importedEvent,
   line,
   logPath,
   MINUTE,
@@ -367,7 +368,7 @@ describe("a session", () => {
     });
   });
 
-  test("an error is failed whatever ps says, until the session is reopened", async () => {
+  test("an error is failed whatever ps says, until the next turn or a reopen", async () => {
     const files = memoryFiles();
     const file = plain(files, headerLine() + batch(...endedTurn(0, T, "error")));
     const adapter = deepseekHarnessAdapterFor(files);
@@ -378,6 +379,94 @@ describe("a session", () => {
     files.append(file, batch(line.endSeed(4, NOW - MINUTE, false)));
     const reopened = await deepseekHarnessAdapterFor(files, { ps: nodeRuns() }).poll();
     expect(reopened.sessions[0]).toMatchObject({ status: "idle", statusSince: NOW - MINUTE });
+
+    // In a session that stays open, the next prompt's turn ends it.
+    const open = memoryFiles();
+    const log = plain(open, headerLine() + batch(...endedTurn(0, T, "error")));
+    const clock = handClock();
+    const running = deepseekHarnessAdapterFor(open, { now: clock.now, ps: nodeRuns() });
+    expect((await running.poll()).sessions[0]?.status).toBe("failed");
+    open.append(log, batch(line.turnStart(4, NOW - SECOND, 2)));
+    clock.advance(2 * SECOND);
+    expect((await running.poll()).sessions[0]).toMatchObject({
+      status: "working",
+      statusSince: NOW - SECOND,
+    });
+  });
+
+  test("imported from chat.deepseek.com, its lines written data first, is read as any other", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    // A reply longer than a line's first bytes, so its number is taken as the one after the last.
+    const message = (role: string) => ({
+      role,
+      content: [
+        {
+          type: "text",
+          text: role === "assistant" ? PRIVATE_WORDS[1].repeat(40) : PRIVATE_WORDS[0],
+        },
+      ],
+    });
+    const file = plain(
+      files,
+      headerLine() +
+        batch(
+          importedEvent("turn/start", 0, T, { turn: 1 }),
+          importedEvent("step/start", 1, T, { turn: 1, step: 1 }),
+          importedEvent("system/message", 2, T, { turn: 1, step: 1 }, { surfaceOp: "append" }),
+          importedEvent("user/message", 3, T, message("user"), { surfaceOp: "append" }),
+          importedEvent(
+            "assistant/message",
+            4,
+            T + 1,
+            { turn: 1, step: 1, message: message("assistant"), stream: [] },
+            { surfaceOp: "append" },
+          ),
+          importedEvent("step/end", 5, T + 1, { turn: 1, step: 1 }),
+          importedEvent("turn/end", 6, T + 1, { turn: 1, reason: { kind: "completed" } }),
+          importedEvent("session/title", 7, T + 1, {
+            title: "Imported chat",
+            messageSeqs: [],
+            source: { kind: "user" },
+          }),
+        ),
+    );
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() });
+    const imported = await adapter.poll();
+    expect(imported.sessions[0]).toMatchObject({
+      name: "Imported chat",
+      status: "idle",
+      statusSince: T + 1,
+    });
+    expect(imported.health.detail).not.toContain(UNREAD_NOTE);
+    for (const word of PRIVATE_WORDS) expect(JSON.stringify(imported), word).not.toContain(word);
+    // Reopened, in the usual order.
+    files.append(file, batch(line.endSeed(8, NOW - MINUTE, false)));
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      name: "Imported chat",
+      status: "idle",
+      statusSince: NOW - MINUTE,
+    });
+
+    // One whose last reply the import closed on an error.
+    const failed = memoryFiles();
+    plain(
+      failed,
+      headerLine() +
+        batch(
+          importedEvent("turn/start", 0, T, { turn: 1 }),
+          importedEvent("step/start", 1, T, { turn: 1, step: 1 }),
+          importedEvent("step/end", 2, T, { turn: 1, step: 1 }),
+          importedEvent("turn/end", 3, T, {
+            turn: 1,
+            reason: { kind: "error", error: { message: PRIVATE_WORDS[5] } },
+          }),
+        ),
+    );
+    expect(
+      (await deepseekHarnessAdapterFor(failed, { ps: nodeRuns() }).poll()).sessions[0],
+    ).toMatchObject({ status: "failed", statusSince: T });
   });
 
   test("a fork's copied end, and the closers after it, are not its own", async () => {
@@ -528,6 +617,28 @@ describe("a session", () => {
     const { sessions, health } = await deepseekHarnessAdapterFor(files, { ps: nodeRuns() }).poll();
     expect(sessions[0]).toMatchObject({ name: "demo-project", status: "unknown" });
     expect(health.detail).toContain(TOO_LONG_NOTE);
+  });
+
+  test("named by its title, whose log then grows too long, shows its folder's name, as a fresh read does", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const file = plain(
+      files,
+      headerLine() + batch(line.turnStart(0, T), line.title(1, T, "Fix the build", "provider")),
+    );
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      name: "Fix the build",
+      status: "working",
+    });
+    files.append(file, new Uint8Array(64 * 1024 * 1024).fill(0x0a));
+    clock.advance(2 * SECOND);
+    const polled = (await adapter.poll()).sessions;
+    expect(polled[0]).toMatchObject({ name: "demo-project", status: "unknown" });
+    const fresh = (
+      await deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() }).poll()
+    ).sessions;
+    expect(polled).toEqual(fresh);
   });
 
   test("a log older than a day is left out", async () => {

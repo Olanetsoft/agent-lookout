@@ -1,10 +1,16 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  LINE_HEAD_BYTES,
+  TITLE_LINE_MAX,
+  TITLE_MAX,
+} from "@collector/adapters/deepseek-harness/lines";
 import type { LogRef } from "@collector/adapters/deepseek-harness/logFiles";
 import {
   createDeepseekHarnessLogReader,
   HEADER_FIRST_BYTES,
   HEADER_MAX_BYTES,
+  PIECE_BYTES,
   READ_MAX_COMPRESSED,
   READ_MAX_PLAIN,
 } from "@collector/adapters/deepseek-harness/logReader";
@@ -75,6 +81,14 @@ async function readOnce(
 
 const readerFor = (files: MemoryFiles, decoder: ZstdDecoder | null = ZSTD) =>
   createDeepseekHarnessLogReader(files.io, decoder, "darwin");
+
+/** A title its model wrote, with `count` message numbers, as a long conversation gives one. */
+const providerTitle = (seq: number, title: string, count: number) =>
+  event("session/title", seq, T, {
+    title,
+    messageSeqs: Array.from({ length: count }, (_, n) => n),
+    source: { kind: "provider", provider: "demo-provider", model: "demo-model" },
+  });
 
 describe("an uncompressed log", () => {
   test("is read from its first line, then only what was added", async () => {
@@ -210,6 +224,49 @@ describe("an uncompressed log", () => {
     expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.title).toBeNull();
   });
 
+  test(`keeps a title line past its first ${LINE_HEAD_BYTES} bytes, up to ${TITLE_LINE_MAX}, as a compressed log does`, async () => {
+    const long = line.title(0, T, "t".repeat(TITLE_MAX), "provider");
+    const seqs = providerTitle(0, "Fix the build", 150);
+    for (const title of [long, seqs]) {
+      expect(title.length).toBeGreaterThan(LINE_HEAD_BYTES);
+      expect(title.length).toBeLessThanOrEqual(TITLE_LINE_MAX);
+    }
+    const files = memoryFiles();
+    files.write(PLAIN, headerLine() + batch(long));
+    expect((await readOnce(readerFor(files), files, PLAIN))?.title).toBe("t".repeat(TITLE_MAX));
+    files.write(PLAIN, headerLine() + batch(seqs));
+    const plainRead = await readOnce(readerFor(files), files, PLAIN);
+    expect(plainRead).toMatchObject({ title: "Fix the build", mark: "ok" });
+    if (HAS_ZSTD) {
+      files.write(COMPRESSED, compressedLog(headerLine(), batch(seqs)));
+      expect(await readOnce(readerFor(files), files, COMPRESSED)).toEqual(plainRead);
+    }
+  });
+
+  test(`keeps a title line whose first ${LINE_HEAD_BYTES} bytes span two pieces`, async () => {
+    const files = memoryFiles();
+    const header = headerLine();
+    // A first line whose end, and so the next line's start, falls 300 bytes before a piece ends.
+    const empty = event("assistant/message", 0, T, { text: "" });
+    const filler = event("assistant/message", 0, T, {
+      text: "w".repeat(PIECE_BYTES - 300 - empty.length - 1),
+    });
+    const title = providerTitle(1, "Fix the build", 150);
+    files.write(PLAIN, header + batch(filler, title));
+    const reader = readerFor(files);
+    expect((await readOnce(reader, files, PLAIN))?.title).toBe("Fix the build");
+    // Its start is 300 bytes before the first piece's end.
+    expect(header.length + filler.length + 1 + 300).toBe(header.length + PIECE_BYTES);
+  });
+
+  test(`a title line over ${TITLE_LINE_MAX} bytes gives no name`, async () => {
+    const files = memoryFiles();
+    const long = providerTitle(1, "Fix the build", 2000);
+    expect(long.length).toBeGreaterThan(TITLE_LINE_MAX);
+    files.write(PLAIN, headerLine() + batch(line.title(0, T, "First name", "provider"), long));
+    expect((await readOnce(readerFor(files), files, PLAIN))?.title).toBeNull();
+  });
+
   test("of a subagent keeps no title", async () => {
     const files = memoryFiles();
     files.write(PLAIN, headerLine() + batch(line.title(0, T, "Child title", "provider")));
@@ -237,6 +294,31 @@ describe("an uncompressed log", () => {
       mark: "too-long",
     });
     expect(files.count("openRegular")).toBe(0);
+  });
+
+  test("read before it grew too long keeps nothing of that read, as a fresh read of it", async () => {
+    const files = memoryFiles();
+    const start =
+      headerLine() + batch(line.title(0, T, "Fix the build", "provider"), line.turnStart(1, T));
+    files.write(PLAIN, start);
+    const reader = readerFor(files);
+    expect(await readOnce(reader, files, PLAIN)).toMatchObject({
+      title: "Fix the build",
+      turn: { state: "open" },
+    });
+    files.append(PLAIN, new Uint8Array(READ_MAX_PLAIN).fill(0x0a));
+    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    expect(read).toMatchObject({ mark: "too-long", title: null, turn: { state: "none" } });
+    expect(read).toEqual(await readOnce(readerFor(files), files, PLAIN));
+    // Shorter again, past where it was read, with a line of no number: read from its first line, as a fresh read reads it.
+    files.rewrite(PLAIN, `${start}\n`);
+    const shorter = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    expect(shorter).toMatchObject({
+      mark: "ok",
+      title: "Fix the build",
+      turn: { state: "unsure" },
+    });
+    expect(shorter).toEqual(await readOnce(readerFor(files), files, PLAIN));
   });
 
   test("a read that fails leaves what was known, and is tried again", async () => {
@@ -473,6 +555,36 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
       expect(files.count("openRegular")).toBe(0);
       files.write(COMPRESSED, compressedLog(headerLine(), batch(line.turnStart(0, T))));
       expect(await readOnce(reader, files, COMPRESSED)).toMatchObject({ mark: "ok" });
+    }
+  });
+
+  test("stuck after it was read keeps nothing of that read, as a fresh read of it", async () => {
+    const titled = compressedLog(
+      headerLine(),
+      batch(line.title(0, T, "Fix the build", "provider"), line.turnStart(1, T)),
+    );
+    const flagless = withDescriptor(frame(batch(line.turnEnd(2, T + 1, "completed"))), 0x20);
+    const unended = frame(line.turnEnd(2, T + 1, "completed"));
+    for (const bad of [flagless, unended]) {
+      const files = memoryFiles();
+      files.write(COMPRESSED, titled);
+      const reader = readerFor(files);
+      expect((await readOnce(reader, files, COMPRESSED))?.title).toBe("Fix the build");
+      files.append(COMPRESSED, bad);
+      const read = await reader.readOn(await refOf(files, COMPRESSED), true, NOW);
+      expect(read).toMatchObject({ mark: "stuck", title: null, turn: { state: "none" } });
+      expect(read).toEqual(await readOnce(readerFor(files), files, COMPRESSED));
+      // Shorter again: read on from its first line, as a fresh read reads on, not from its start.
+      files.rewrite(COMPRESSED, titled);
+      files.forget();
+      const shorter = await reader.readOn(await refOf(files, COMPRESSED), true, NOW);
+      expect(shorter).toMatchObject({
+        mark: "ok",
+        title: "Fix the build",
+        turn: { state: "open" },
+      });
+      expect(files.reads.every((one) => one.position > 0)).toBe(true);
+      expect(shorter).toEqual(await readOnce(readerFor(files), files, COMPRESSED));
     }
   });
 

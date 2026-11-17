@@ -26,12 +26,13 @@ import {
  * Reading a DeepSeek Harness log. Built from DeepSeek Harness's source at
  * dsh-v0.2.2-rc.3 and not yet checked on a computer running it.
  *
- * DeepSeek Harness makes a log whole, with its first line, and publishes it
- * by a link (session-persistence-jsonl/src/index.ts:1361-1371). After that it
- * only adds to it, a batch of lines at a time, in one frame when it is
- * compressed (:1385-1394, :1414-1440). It cuts the log back when an append
- * fails (:1442-1451) and when it repairs a torn end (:1454-1462), and a
- * migration publishes a new file (:1328-1347). So:
+ * DeepSeek Harness makes a log whole, with its first line, in a temporary
+ * file (session-persistence-jsonl/src/index.ts:1361-1371), and publishes it by
+ * a link (:1298-1305, a move on Windows, :1339-1341). After that it only adds
+ * to it, a batch of lines at a time, in one frame when it is compressed
+ * (:1385-1394, :1414-1440). It cuts the log back when an append fails
+ * (:1442-1451) and when it repairs a torn end (:1454-1462), and a migration
+ * publishes a new file (generation.ts:817-834). So:
  *
  * - A log's first line is read once for each file: at most `HEADER_MAX_BYTES`,
  *   `HEADER_FIRST_BYTES` first. Nothing else of a subagent's log whose session
@@ -163,14 +164,15 @@ class LineGatherer {
 
   add(part: Buffer) {
     this.length += part.byteLength;
-    const room = this.limit - this.kept;
-    if (room > 0) {
-      const taken = part.byteLength <= room ? part : part.subarray(0, room);
+    let rest = part;
+    while (rest.byteLength > 0 && this.kept < this.limit) {
+      const taken = rest.subarray(0, this.limit - this.kept);
       this.parts.push(taken);
       this.kept += taken.byteLength;
+      rest = rest.subarray(taken.byteLength);
+      // Once its first bytes are in, a title line of a session shown is kept up to its most, from this part too.
+      if (!this.decided && this.kept >= LINE_HEAD_BYTES) this.decide();
     }
-    // Once its first bytes are in, a title line of a session shown is kept up to its most.
-    if (!this.decided && this.kept >= LINE_HEAD_BYTES) this.decide();
   }
 
   private decide() {
@@ -457,19 +459,22 @@ export function createDeepseekHarnessLogReader(
       // Another file since the lstat, or shorter than was read: from its start.
       if (!stillOf(known, opened) || known.header === null)
         return await fromStart(ref, handle, titles, now);
-      const limit = ref.zstd ? READ_MAX_COMPRESSED : READ_MAX_PLAIN;
-      if (opened.size > limit) {
-        return { ...known, info: opened, titles, mark: "too-long", writtenAt: opened.mtimeMs };
-      }
-      // A log first read for a subagent's turns is read from its start for a session's titles.
       const header = known.header;
-      const stuck = (): Cached => ({
+      // Too long or stuck: what a read from its start keeps, its first line alone, nothing of earlier reads.
+      const settledAs = (mark: "too-long" | "stuck"): Cached => ({
         ...known,
         info: opened,
+        readTo: mark === "stuck" ? known.headerEnd : null,
+        nextSeq: 0,
+        turn: startDeepseekHarnessTurn(header.createdAt),
+        title: null,
         titles,
-        mark: "stuck",
+        mark,
         writtenAt: opened.mtimeMs,
       });
+      const limit = ref.zstd ? READ_MAX_COMPRESSED : READ_MAX_PLAIN;
+      if (opened.size > limit) return settledAs("too-long");
+      const stuck = () => settledAs("stuck");
       // Read only for its first line, or for a subagent's turns and now for a session's titles: from its first line on.
       if (known.readTo === null || (titles && !known.titles)) {
         const start: Cached & { header: DeepseekHarnessHeader } = {

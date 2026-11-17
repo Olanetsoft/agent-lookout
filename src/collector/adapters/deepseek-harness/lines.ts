@@ -14,18 +14,25 @@ import { pathsOf } from "../../files/paths.ts";
  * first bytes are a header's. Every other line is one event, written by
  * `JSON.stringify` with its keys in the order its writer builds the object:
  * `type`, `seq`, `time`, `data`, then others (core/session/src/index.ts:
- * 538-544, session-persistence-jsonl/src/format.ts:321-324). `JSON.stringify`
- * writes every `"` inside a string as `\"`, so bytes such as `","seq":` or
- * `,"data":{"turn":` can only be the line's own structure, never text in it.
+ * 538-544, session-persistence-jsonl/src/format.ts:321-324). A chat imported
+ * from chat.deepseek.com is written by the import itself, not by a session,
+ * with `type`, `data`, then others, then `seq` and `time` (deepseek-chat-
+ * import/src/conversation.ts:180-183, importer.ts:564-568). Both orders are
+ * read.
+ * `JSON.stringify` writes every `"` inside a string as `\"`, so bytes such as
+ * `","seq":` or `,"data":{"turn":` can only be the line's own structure, never
+ * text in it.
  *
  * Of an event line only its first `LINE_HEAD_BYTES` are looked at, and
- * compared with the bytes each wanted kind begins with. Everything a status
- * needs comes before any text: the kind, number and time, a turn's reason,
- * an approval's ID, a call's ID and its tool's name. These become text only
- * once their bytes pass a check of what they can hold: the IDs, with
- * `latin1`. A title its model wrote, or one marked as the person's, is the
- * one part of a line decoded with JSON's own rules, and only for a session
- * shown, never for a subagent's.
+ * compared with the bytes each wanted kind begins with. What a status needs
+ * of a kind comes before any text: a turn's reason, an approval's ID, a
+ * call's ID and its tool's name. So do the kind, number and time, except in
+ * the chat import's order, where the number and time are its last bytes and
+ * are taken only when the whole line is within those first bytes. These
+ * become text only once their bytes pass a check of what they can hold: the
+ * IDs, with `latin1`. A title its model wrote, or one marked as the person's,
+ * is the one part of a line decoded with JSON's own rules, and only for a
+ * session shown, never for a subagent's.
  */
 
 /** The most of a line looked at, except a title's. */
@@ -57,6 +64,11 @@ const TYPE_START = bytes('{"type":"');
 const SEQ = bytes('","seq":');
 const TIME = bytes(',"time":');
 const DATA = bytes(',"data":');
+/** After the kind, in the chat import's order. */
+const DATA_FIRST = bytes('","data":');
+/** Before the number, at a line's end in the chat import's order. */
+const SEQ_KEY = bytes(',"seq":');
+const CLOSE = bytes("}");
 
 const TURN = bytes('{"turn":');
 const REASON = bytes(',"reason":{"kind":"');
@@ -189,8 +201,12 @@ class Cursor {
   }
 }
 
+function asBuffer(data: Uint8Array): Buffer {
+  return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+}
+
 function latin1(data: Uint8Array, start: number, end: number): string {
-  return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("latin1", start, end);
+  return asBuffer(data).toString("latin1", start, end);
 }
 
 /** Whether `data` from `at` is `literal`. */
@@ -283,7 +299,10 @@ export function readHeader(
 
 /** One event line, as far as it was read. */
 export interface ReadEvent {
-  /** Its number, or null when the line is not an event this can read. */
+  /**
+   * Its number, or null when the line is not an event this can read, or is
+   * in the chat import's order and its end was not read.
+   */
   seq: number | null;
   line: DeepseekHarnessLine;
   /** For a title line of a session shown: its title, or null for none of its own. */
@@ -297,19 +316,48 @@ const OTHER: DeepseekHarnessLine = { kind: "other" };
 interface Envelope {
   typeStart: number;
   typeEnd: number;
-  seq: number;
+  /** Its number, or null for a line in the chat import's order whose end was not read. */
+  seq: number | null;
   time: number | null;
   /** Where `data`'s value begins. */
   dataAt: number;
 }
 
-function envelopeOf(head: Uint8Array, now: number): Envelope | null {
+/**
+ * The number and time a line in the chat import's order ends with,
+ * `,"seq":<n>,"time":<n>}`, from its last `,"seq":`; or null. They are taken
+ * only when they end the whole line, `length` bytes, so only when it is all
+ * in `head`.
+ */
+function endOf(head: Uint8Array, length: number): { seq: number; time: number } | null {
+  const at = asBuffer(head).lastIndexOf(SEQ_KEY);
+  if (at < 0) return null;
+  const cursor = new Cursor(head, at + SEQ_KEY.byteLength);
+  const seq = cursor.digits();
+  if (seq === null || !cursor.expect(TIME)) return null;
+  const time = cursor.digits();
+  if (time === null || !cursor.expect(CLOSE) || cursor.at !== length) return null;
+  return { seq, time };
+}
+
+function envelopeOf(head: Uint8Array, length: number, now: number): Envelope | null {
   const cursor = new Cursor(head);
   if (!cursor.expect(TYPE_START)) return null;
   const typeStart = cursor.at;
   const typeEnd = cursor.plain(TYPE_MAX);
   if (typeEnd < 0) return null;
   cursor.at = typeEnd;
+  if (cursor.expect(DATA_FIRST)) {
+    // The chat import's order: its data first, and its number and time last.
+    const end = endOf(head, length);
+    return {
+      typeStart,
+      typeEnd,
+      seq: end?.seq ?? null,
+      time: end === null ? null : plausibleTime(end.time, now),
+      dataAt: cursor.at,
+    };
+  }
   if (!cursor.expect(SEQ)) return null;
   const seq = cursor.digits();
   if (seq === null || !cursor.expect(TIME)) return null;
@@ -411,13 +459,20 @@ function titleOf(line: Uint8Array, length: number, at: number): string | null {
 }
 
 function utf8Of(data: Uint8Array, start: number, end: number): string {
-  return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8", start, end);
+  return asBuffer(data).toString("utf8", start, end);
 }
 
-/** Whether a line's first bytes say it is a title, which is then read up to `TITLE_LINE_MAX`. */
+/**
+ * Whether a line's first bytes say it is a title, in either order, which is
+ * then read up to `TITLE_LINE_MAX`.
+ */
 export function isTitleLine(head: Uint8Array): boolean {
   const cursor = new Cursor(head);
-  return cursor.expect(TYPE_START) && cursor.expect(TYPES.title) && cursor.sees(SEQ);
+  return (
+    cursor.expect(TYPE_START) &&
+    cursor.expect(TYPES.title) &&
+    (cursor.sees(SEQ) || cursor.sees(DATA_FIRST))
+  );
 }
 
 /**
@@ -434,7 +489,7 @@ export function readEvent(
   titles: boolean,
 ): ReadEvent {
   const head = line.subarray(0, Math.min(line.byteLength, LINE_HEAD_BYTES));
-  const envelope = envelopeOf(head, now);
+  const envelope = envelopeOf(head, length, now);
   if (envelope === null) return { seq: null, line: UNSURE };
   const { typeStart, typeEnd, seq, time, dataAt } = envelope;
   const is = (type: Uint8Array) => same(head, typeStart, typeEnd, type);

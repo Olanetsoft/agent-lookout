@@ -1,7 +1,8 @@
 // Test fixtures only. Every id, name, path and word here is invented and
 // generic. A log follows the shape DeepSeek Harness's source writes at
 // dsh-v0.2.2-rc.3: the header as `session-format-v1-to-v2/src/codec.ts`
-// builds it, each event as `core/session/src/index.ts` builds it, and the data
+// builds it, each event as `core/session/src/index.ts` builds it, or as the
+// chat import from chat.deepseek.com builds it, and the data
 // of each kind as its writer builds it, key by key in that order, as written
 // up in docs/adapters/deepseek-harness.md. Nothing in it is copied from a real
 // machine: DeepSeek Harness was not run to make it. It uses no Node.js API:
@@ -113,6 +114,21 @@ export function event(
   surface: Record<string, unknown> = {},
 ): string {
   return JSON.stringify({ type, seq, time, data, ...surface });
+}
+
+/**
+ * One event's line as the chat import writes it, `{type, data}` and then any
+ * surface keys, then `seq` and `time` (deepseek-chat-import/src/conversation.ts:
+ * 180-183, importer.ts:564-568).
+ */
+export function importedEvent(
+  type: string,
+  seq: number,
+  time: number,
+  data: unknown,
+  surface: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({ type, data, ...surface, seq, time });
 }
 
 /** Lines joined as one batch, with the newline after the last, as DeepSeek Harness writes a batch. */
