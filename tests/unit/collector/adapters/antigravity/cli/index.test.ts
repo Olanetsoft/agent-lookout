@@ -248,6 +248,52 @@ describe("with agy's folder there", () => {
     expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [NEW]: "finished" });
   });
 
+  test.each([
+    // agy starts just after ps ran, so ps gives its start as NOW, and writes at NOW + 900 ms, kept as NOW.
+    ["a disk that keeps whole seconds", 400, NOW, BASIS],
+    // agy starts at NOW + 1.9 s, which ps gives as NOW + 1 s, and writes at NOW + 1950 ms, kept as NOW:
+    // before its start, so its write is not its own, and the answer is incomplete.
+    ["one that keeps steps of 2 seconds", 1_900, NOW + SECOND, BASIS_UNMATCHED],
+  ])(
+    "a conversation an agy started since ps last ran wrote, kept as up to 2 seconds before that run, as %s can, is not finished, and ps is asked again within seconds",
+    async (_disk, askedAfter, startedAt, basis) => {
+      const { adapter, clock, processes, write } = setUp();
+      clock.set(NOW + askedAfter);
+      await adapter.poll();
+      expect(processes.asked()).toBe(1);
+      const NEW = conversationId("e5");
+      processes.set([{ startedAt }]);
+      write(NEW, finishedTurn(0, NOW), NOW);
+      // The next poll comes a little sooner than ps may be asked again.
+      clock.advance(PROMPT_PROCESS_CHECK_MS - 10);
+      expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [NEW]: "idle" });
+      expect(processes.asked()).toBe(1);
+      clock.advance(10);
+      const asked = await adapter.poll();
+      expect(processes.asked()).toBe(2);
+      expect(statuses(asked.sessions)).toMatchObject({ [NEW]: "idle" });
+      expect(asked.basis).toBe(basis);
+    },
+  );
+
+  test("a conversation whose program ended just after writing it is not finished until ps is asked again, 2 seconds later, and is finished then", async () => {
+    const { adapter, clock, processes, write } = setUp();
+    processes.set([{ startedAt: NOW - 60 * MINUTE }]);
+    await adapter.poll();
+    // The program's last step, a second before ps finds it gone.
+    write(WORKING, workingTurn(0, NOW - 3 * MINUTE), NOW + 9 * SECOND);
+    processes.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({
+      [WORKING]: "working",
+      [IDLE]: "finished",
+    });
+    expect(processes.asked()).toBe(2);
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(processes.asked()).toBe(3);
+  });
+
   test("only the transcript says an agy program may have a conversation open, while its database gives Quiet for", async () => {
     const { adapter, files, processes } = setUp();
     // agy writes a conversation's database at other times too, as a program exits.

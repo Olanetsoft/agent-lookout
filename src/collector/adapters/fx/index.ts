@@ -8,6 +8,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
+import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -27,7 +28,6 @@ import {
   createFxProcessReader,
   FX_TABLE_ARGS,
   programsOf,
-  WRITE_TIME_STEP_MS,
   type FxProcessAnswer,
   type FxProcessReader,
 } from "./processes.ts";

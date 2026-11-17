@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { antigravityLiveness, holdConversations } from "@core/mapping/antigravityLiveness";
-import { conversationId, MINUTE, NOW } from "@tests/fixtures/antigravity";
+import { conversationId, MINUTE, NOW, SECOND } from "@tests/fixtures/antigravity";
 
 const A = conversationId("a1");
 const B = conversationId("b2");
@@ -65,14 +65,24 @@ describe("holdConversations", () => {
     expect(antigravityLiveness(C, holding)).toBe(false);
   });
 
-  test("a conversation written after the process table was read may be open in a program started since", () => {
+  test("a conversation written after the process table was read, or up to 2 seconds before, may be open in a program started since", () => {
     const listedAt = NOW - 6 * MINUTE;
     // The table showed no agy program. B was written after it was read, A before.
     const holding = holdConversations([], conversations, listedAt);
     expect(holding).toEqual({ held: new Set([B]), complete: true });
     expect(antigravityLiveness(A, holding)).toBe(false);
-    // Written in the same millisecond the table was read is not after it.
-    expect(holdConversations([], conversations, NOW - 5 * MINUTE).held.has(B)).toBe(false);
+    // A disk can keep a write's time up to 2 seconds behind it, rounded down.
+    const heldAt = (at: number) => holdConversations([], conversations, at).held.has(B);
+    expect(heldAt(NOW - 5 * MINUTE)).toBe(true);
+    expect(heldAt(NOW - 5 * MINUTE + 2 * SECOND - 1)).toBe(true);
+    expect(heldAt(NOW - 5 * MINUTE + 2 * SECOND)).toBe(false);
+  });
+
+  test("a write a moment before a program started is not its own, so a conversation closed just before another agy starts is not held all day, and until it writes nothing is taken as closed", () => {
+    expect(holdConversations([{ startedAt: NOW - 5 * MINUTE + SECOND }], conversations)).toEqual({
+      held: new Set(),
+      complete: false,
+    });
   });
 
   test("a conversation whose files could not be looked at is held by nothing but its name", () => {

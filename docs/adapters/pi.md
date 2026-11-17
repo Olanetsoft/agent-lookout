@@ -127,7 +127,7 @@ Closing the last `pi` finishes every session at once, and opening one shows them
 
 So `processes.ts` asks only whether any `pi` runs, with `ps -A -o comm=`, the name each process gives its program. Pi sets `process.title` to `pi` as it starts, or `pi-rpc` from its entry point for RPC (`src/cli/setup.ts:5`, `src/bun/runtime-setup.ts:8`, `src/rpc-entry.ts:6`), so a Pi run by Node shows as that and not as `node`. On macOS `ps` prints what Node wrote over the process's first argument, and on Linux the name Node gave the process. A Node program that sets its title that way shows as `pi` on the Mac the adapter was written on, and a test holds the real `ps` to that on macOS and Linux. No real Pi was seen.
 
-It compares each line with `pi` and `pi-rpc`, or a path ending in one, and drops it. It asks at most every 10 seconds while there are sessions to show, and sooner, though not within 2 seconds of the last ask, when a session is written after `ps` said none runs. On macOS and Linux only.
+It compares each line with `pi` and `pi-rpc`, or a path ending in one, and drops it. It asks at most every 10 seconds while there are sessions to show, and sooner, though not within 2 seconds of the last ask, when a session is written after `ps` said none runs, or up to 2 seconds before, as some disks keep a write's time in whole seconds, or steps of 2 seconds, rounded down. On macOS and Linux only.
 
 A session whose process has gone never shows as running, since no session does. Recent writes cannot say whether Pi is working: nothing is written while a reply comes in or a tool runs, so a quiet file says nothing, and a file written a moment ago may belong to a process that has just crashed.
 

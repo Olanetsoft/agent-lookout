@@ -1,4 +1,5 @@
 import type { FxPrograms } from "../../../core/mapping/fx/fxMapping.ts";
+import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { runPs } from "../../processes/ps.ts";
 import type { RunPs } from "../opencode/processes.ts";
 
@@ -33,9 +34,6 @@ export const FX_TABLE_ARGS = ["-A", "-o", "pid=,comm="] as const;
 
 /** The name of fx's program. */
 export const FX_PROGRAM = "fx";
-
-/** How far a log's modified time can fall behind its write: some disks keep whole seconds, or steps of 2 seconds, rounded down. */
-export const WRITE_TIME_STEP_MS = 2_000;
 
 /** What `ps` said: the IDs of the fx programs it lists, or that it could not say. */
 export type FxProcessAnswer =

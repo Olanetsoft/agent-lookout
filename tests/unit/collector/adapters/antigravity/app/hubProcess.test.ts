@@ -119,6 +119,18 @@ describe("hubLiveness", () => {
     expect(hubLiveness(closed, NOW, null)).toBe(false);
   });
 
+  test("one written up to 2 seconds before ps was asked may be open too, when ps said the app was closed the time before as well, as a disk can keep a write's time rounded down", () => {
+    const closed = { ok: true, running: false } as const;
+    expect(hubLiveness(closed, NOW, NOW - 60 * SECOND, true)).toBe(false);
+    expect(hubLiveness(closed, NOW, NOW - 2 * SECOND, true)).toBe(false);
+    expect(hubLiveness(closed, NOW, NOW - 2 * SECOND + 1, true)).toBe(true);
+    expect(hubLiveness(closed, NOW, NOW - SECOND, true)).toBe(true);
+    expect(hubLiveness(closed, NOW, NOW, true)).toBe(true);
+    expect(hubLiveness(closed, NOW, null, true)).toBe(false);
+    // After a run that found the app open, such a write is its last before it was closed.
+    expect(hubLiveness(closed, NOW, NOW - SECOND, false)).toBe(false);
+  });
+
   test("is not known when ps was not asked or could not say", () => {
     expect(hubLiveness(null, null, NOW)).toBe("unknown");
     expect(hubLiveness({ ok: false }, NOW, NOW + SECOND)).toBe("unknown");

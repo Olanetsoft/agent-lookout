@@ -19,6 +19,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../../core/sessions/session.ts";
+import { WRITE_TIME_STEP_MS } from "../../../../core/time.ts";
 import { sameFolderOnDisk, tildify } from "../../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 import { lastMessageStoppedBy } from "../../../messages/lastMessageSettings.ts";
@@ -59,8 +60,10 @@ export const RECHECK_MS = 60_000;
 export const PROCESS_CHECK_MS = 10_000;
 
 /**
- * How soon `ps` is asked again when a conversation is written that no agy
- * program known to run could have open, as when agy has just started.
+ * How soon `ps` is asked again, as when agy has just started, when a
+ * conversation that no agy program known to run could have open is written
+ * after the last ask, or up to 2 seconds before, since a disk can keep a
+ * write's time rounded down.
  */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
@@ -406,8 +409,9 @@ export function createAntigravityAdapter(
 
   /**
    * Asks `ps` again when it is due: every 10 seconds, and sooner when a
-   * conversation was written since the last answer that no program in it
-   * could have open.
+   * conversation that no program in the last answer could have open was written
+   * after that answer, or up to 2 seconds before, as a disk can keep a write's
+   * time rounded down.
    */
   async function processesFor(
     conversations: readonly ConversationFiles[],
@@ -424,7 +428,7 @@ export function createAntigravityAdapter(
       due = conversations.some(
         (files) =>
           files.writtenAt !== null &&
-          files.writtenAt > (processesAt as number) &&
+          files.writtenAt + WRITE_TIME_STEP_MS > (processesAt as number) &&
           !holding.held.has(files.id),
       );
     }
@@ -504,8 +508,10 @@ export function createAntigravityAdapter(
     // Each running program's log, read on every poll, so a wait shows at once.
     const logStates = list?.ok ? await logs.read(list.sessions) : [];
     const programs = list?.ok ? withLoggedConversations(list.sessions, logStates) : [];
-    // When `ps` was not asked this poll, a conversation written since it last
-    // was may be open in an agy program started since, which it did not show.
+    // A conversation written since `ps` was last asked, or up to 2 seconds
+    // before, as a disk can keep a write's time rounded down, may be open in an
+    // agy program started since, which `ps` did not show. That holds on a poll
+    // that asked too, for a write just before it.
     const holding = list?.ok ? holdConversations(programs, conversations, processesAt) : null;
     lastHolding = holding;
     const logged = logStates.filter((state): state is AgyLogState => state !== null);

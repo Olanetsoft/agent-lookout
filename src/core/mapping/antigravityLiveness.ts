@@ -8,6 +8,7 @@
 // program writes to the conversation it has open, so a conversation written
 // since a program started may be that program's.
 
+import { WRITE_TIME_STEP_MS } from "../time.ts";
 import type { AntigravityLiveness } from "./antigravityMapping.ts";
 
 /** One agy program that runs a session, as the process table gives it. */
@@ -45,10 +46,16 @@ export interface Holding {
  * - A program may have open any conversation written since it started: the
  *   one it began, one it moved on to with `/new` or `/resume`, or, as far as
  *   the files can tell, one another agy program wrote to and closed meanwhile.
+ *   A write a moment before it started is not taken for its own, though a
+ *   disk can keep a write's time rounded down and Linux's `ps` can give a
+ *   start a second or so off: that would hold a conversation closed just
+ *   before for as long as the program runs.
  * - A program whose start is not known, or that names no conversation and
  *   has written none since it started, makes the answer incomplete.
  * - A conversation written after the process table was read, at `listedAt`,
- *   may be open in a program started since, which the table does not show.
+ *   or up to 2 seconds before, as a disk can keep a write's time rounded
+ *   down, may be open in a program started since, which the table does not
+ *   show.
  *
  * It errs towards open: a conversation is closed only when no agy program
  * running could have it open. With one agy program open all day, every
@@ -80,7 +87,7 @@ export function holdConversations(
   }
   if (listedAt !== null) {
     for (const { id, writtenAt } of conversations) {
-      if (writtenAt !== null && writtenAt > listedAt) held.add(id);
+      if (writtenAt !== null && writtenAt + WRITE_TIME_STEP_MS > listedAt) held.add(id);
     }
   }
   return { held, complete };
