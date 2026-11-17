@@ -599,7 +599,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - Only the first line's `workspace` is turned into text, for the session's folder. Every other line is read by its header, and a turn line by its turn and reason too. Prompts, replies, tool output and titles stay as bytes.
 - The first line is read once, then the end backwards, at most 8 MiB, to the newest line that decides the last turn, then only what was added (`logFile.ts`). Nothing but numbers, flags and short strings is kept.
 - `index.jsonl`, a session's lock and its blobs are never opened, and `fx sessions --live` is never run: it tries each session's lock.
-- `ps -A -o pid=,comm=` says which fx programs run, by ID (`processes.ts`). A session whose turn is open is finished once each fx running was missing from an answer after its last write, as fx would have written that the turn was cut off had one opened it since.
+- `ps -A -o pid=,comm=` says which fx programs run, by ID (`processes.ts`). A session whose turn is open is finished once each fx running was missing from an answer more than 2 seconds after its last write, as fx would have written that the turn was cut off had one opened it since.
 
 **How sure it is.** Not checked against fx yet. fx writes nothing while it waits for you or between turns, so a waiting session shows as working, then unknown after 30 quiet minutes, and a session between turns shows as unknown while an fx program runs. Another program named `fx` can keep sessions from showing as finished.
 

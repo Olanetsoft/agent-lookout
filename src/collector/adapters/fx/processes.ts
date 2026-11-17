@@ -34,6 +34,9 @@ export const FX_TABLE_ARGS = ["-A", "-o", "pid=,comm="] as const;
 /** The name of fx's program. */
 export const FX_PROGRAM = "fx";
 
+/** How far a log's modified time can fall behind its write: some disks keep whole seconds, or steps of 2 seconds, rounded down. */
+export const WRITE_TIME_STEP_MS = 2_000;
+
 /** What `ps` said: the IDs of the fx programs it lists, or that it could not say. */
 export type FxProcessAnswer =
   | { ok: false }
@@ -131,12 +134,13 @@ export function createAbsenceTracker() {
     },
     /**
      * Whether every fx program running, by the last answer, was missing from
-     * an answer taken after `writtenAt`, so none of them made that write.
+     * an answer taken more than 2 seconds after `writtenAt`, so none of them
+     * made that write.
      */
     writerGone(writtenAt: number): boolean {
       if (last === null || last.unparsed > 0 || last.absentAt.size === 0) return false;
       for (const since of last.absentAt.values()) {
-        if (since === null || since <= writtenAt) return false;
+        if (since === null || since <= writtenAt + WRITE_TIME_STEP_MS) return false;
       }
       return true;
     },

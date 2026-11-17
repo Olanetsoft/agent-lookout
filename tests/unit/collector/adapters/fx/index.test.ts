@@ -490,6 +490,21 @@ describe("whether an open turn's writer runs", () => {
     });
   }
 
+  test("an fx missing only from an answer less than 2 seconds after the write may have made it", async () => {
+    expect(
+      await polls([
+        [400, []],
+        [10_400, [200]],
+      ]),
+    ).toBe("working");
+    expect(
+      await polls([
+        [2_100, []],
+        [12_100, [200]],
+      ]),
+    ).toBe("finished");
+  });
+
   test("a line naming fx with no ID keeps the turn from finishing", async () => {
     const files = withLog(fxLog().turnStarted().item().text(), NOW);
     const clock = handClock(NOW + 5 * SECOND);
@@ -724,6 +739,24 @@ describe("ps", () => {
     clock.advance(-MINUTE);
     await adapter.poll();
     expect(processes.asked.count).toBe(3);
+  });
+
+  test("is asked again when a log's kept time is a moment before an answer that showed no fx", async () => {
+    const files = withLog(fxLog().turnStarted().item().text(), NOW - MINUTE);
+    const clock = handClock(NOW + 400);
+    const processes = standInFxProcesses({ ok: true, pids: [], unparsed: 0 });
+    const adapter = fxAdapterFor(files, { now: clock.now, processes });
+    expect(statusOf(await adapter.poll())).toBe("finished");
+    // fx starts and writes at NOW + 900 ms, which a disk keeping whole seconds keeps as NOW.
+    processes.running(FX_PID);
+    files.append(logPath(SESSION_ID), fxLog().turnStarted().item().item().since(3), {
+      mtimeMs: NOW,
+    });
+    clock.set(NOW + 2_400);
+    expect(statusOf(await adapter.poll())).toBe("working");
+    expect(processes.asked.count).toBe(2);
+    clock.set(NOW + 12_400);
+    expect(statusOf(await adapter.poll())).toBe("working");
   });
 
   test("the ways it reads are the ones another machine's are taken under", () => {

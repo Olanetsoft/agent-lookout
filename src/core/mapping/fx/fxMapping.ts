@@ -36,7 +36,8 @@ export interface FxStatusFacts {
   programs: FxPrograms;
   /**
    * Whether every fx program running now was missing from a `ps` answer
-   * taken after the log's last write, so none of them made it.
+   * taken more than 2 seconds after the log's last write, so none of them
+   * made it.
    */
   writerGone: boolean;
   /** The log's modified time, in epoch milliseconds. */
@@ -63,9 +64,10 @@ export interface FxStatusFacts {
  *   no session is held.
  * - Row 5: a session fx holds between turns looks on disk as one it has let
  *   go, so it cannot be told from one that is over.
- * - Row 6: a running fx that was missing at an answer after the last write
- *   did not make it, and an fx that opened the log for writing since would
- *   have written that the turn was cut off, which moves the write.
+ * - Row 6: a running fx that was missing at an answer taken more than 2
+ *   seconds after the log's last write did not make it, and an fx that
+ *   opened the log for writing since would have written that the turn was
+ *   cut off, which moves the write.
  * - Row 7: fx sets no limit on a turn, so a turn a crash cut off, while some
  *   other fx runs, is believed for 30 quiet minutes and then shown as
  *   unknown. A write further ahead of the clock than the slack is not

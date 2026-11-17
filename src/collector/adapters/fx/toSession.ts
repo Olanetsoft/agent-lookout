@@ -14,7 +14,7 @@ export interface FxSessionInput {
   log: FxLog;
   /** Whether an fx program runs, by the last `ps` answer. */
   programs: FxPrograms;
-  /** Whether every fx program running was missing from an answer taken after the log's last write. */
+  /** Whether every fx program running was missing from an answer taken more than 2 seconds after the log's last write. */
   writerGone: boolean;
   /** The log's modified time. */
   writtenAt: number;

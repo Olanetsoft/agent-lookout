@@ -21,6 +21,7 @@ import {
   createFxProcessReader,
   FX_TABLE_ARGS,
   programsOf,
+  WRITE_TIME_STEP_MS,
   type FxProcessAnswer,
   type FxProcessReader,
 } from "./processes.ts";
@@ -110,7 +111,8 @@ export const DOTTED_DETAIL =
  *   hold it. Never idle: fx writes nothing between turns.
  * - No Needs you: fx keeps its approvals and questions in memory.
  * - Finished once `ps` shows no fx program, or once every fx program running
- *   was missing from `ps` after a cut-off turn's last write.
+ *   was missing from `ps` more than 2 seconds after a cut-off turn's last
+ *   write.
  * - Failed when fx ends a turn as failed.
  * - The name is the folder's. fx's titles are most often the first line of
  *   the person's prompt.
@@ -225,7 +227,8 @@ interface Listed {
  * blobs, and no setting or key. While there are sessions to show, it asks
  * `ps` which fx programs run, at most every 10 seconds, and sooner, though
  * not within 2 seconds of the last ask, when a session is written after `ps`
- * said none runs (`processes.ts`).
+ * said none runs, or up to 2 seconds before, as a disk can keep a write's
+ * time rounded down (`processes.ts`).
  *
  * fx's own list of open sessions, `fx sessions --live`, is never run: it
  * tries each session's lock, which can make an fx that opens the session at
@@ -235,7 +238,8 @@ interface Listed {
  * fx keeps beside its parent's. Its status is `fxMapping.ts`'s: working
  * while its turn is open and an fx program runs, failed when fx ended its
  * turn as failed, finished once no fx program runs, or once each one running
- * was missing from `ps` after the last write, and unknown otherwise. It never
+ * was missing from `ps` more than 2 seconds after the last write, and unknown
+ * otherwise. It never
  * shows as idle or as needing you.
  *
  * fx runs on macOS and Linux only, so nothing is read on any other system.
@@ -324,8 +328,9 @@ export function createFxAdapter(options: FxAdapterOptions = {}): Adapter {
   /**
    * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
    * though not within 2 seconds of the last ask, when a session was written
-   * after it said no fx program runs, since one may have been started since.
-   * A clock set back counts as time enough. Each answer is noted by the
+   * after it said no fx program runs, or up to 2 seconds before, as a disk
+   * can keep a write's time rounded down, since one may have been started
+   * since. A clock set back counts as time enough. Each answer is noted by the
    * tracker, at the time taken before `ps` ran.
    */
   async function processesFor(listed: readonly Listed[], checkedAt: number) {
@@ -337,7 +342,7 @@ export function createFxAdapter(options: FxAdapterOptions = {}): Adapter {
       lastAnswer !== null &&
       programsOf(lastAnswer) === "none"
     ) {
-      due = listed.some(({ writtenAt }) => writtenAt > answeredAt);
+      due = listed.some(({ writtenAt }) => writtenAt + WRITE_TIME_STEP_MS > answeredAt);
     }
     if (lastAnswer === null || due) {
       lastAnswer = await processes.read();

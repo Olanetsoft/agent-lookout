@@ -6,6 +6,7 @@ import {
   FX_TABLE_ARGS,
   fxInTable,
   programsOf,
+  WRITE_TIME_STEP_MS,
 } from "@collector/adapters/fx/processes";
 
 const SECOND = 1_000;
@@ -103,6 +104,13 @@ describe("whether the log's writer is gone", () => {
     expect(
       after([ok(100), M - 10 * SECOND], [ok(100), M + 5 * SECOND], [ok(100, 200), M + 15 * SECOND]),
     ).toBe(false);
+  });
+
+  test("an fx missing only from an answer within 2 seconds after the write's kept time could have made it", () => {
+    // A disk that keeps whole seconds keeps a write at M + 900 ms as M.
+    expect(after([ok(), M + 400], [ok(200), M + 10_400])).toBe(false);
+    expect(after([ok(), M + WRITE_TIME_STEP_MS], [ok(200), M + 15 * SECOND])).toBe(false);
+    expect(after([ok(), M + WRITE_TIME_STEP_MS + 1], [ok(200), M + 15 * SECOND])).toBe(true);
   });
 
   test("an fx in the first answer, or missing only from one before the write, could have made it", () => {

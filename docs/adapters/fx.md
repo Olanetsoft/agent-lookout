@@ -151,23 +151,23 @@ A subagent's session is its own folder in `v2`, with `role` `child` in its first
 
 `mapFxStatus` in `src/core/mapping/fx/fxMapping.ts`. The rows are taken in order:
 
-| Row | Last turn                  | fx programs                                       | Status     |
-| --- | -------------------------- | ------------------------------------------------- | ---------- |
-| 1   | Cannot be read             | Any                                               | `unknown`  |
-| 2   | Ended as failed            | Any                                               | `failed`   |
-| 3   | Open, ended or none        | `ps` cannot say                                   | `unknown`  |
-| 4   | Open, ended or none        | None                                              | `finished` |
-| 5   | Ended, not failed, or none | Some                                              | `unknown`  |
-| 6   | Open                       | Some, each missing from an answer after the write | `finished` |
-| 7   | Open                       | Some, quiet for 30 minutes, or written ahead      | `unknown`  |
-| 8   | Open                       | Some                                              | `working`  |
+| Row | Last turn                  | fx programs                                                           | Status     |
+| --- | -------------------------- | --------------------------------------------------------------------- | ---------- |
+| 1   | Cannot be read             | Any                                                                   | `unknown`  |
+| 2   | Ended as failed            | Any                                                                   | `failed`   |
+| 3   | Open, ended or none        | `ps` cannot say                                                       | `unknown`  |
+| 4   | Open, ended or none        | None                                                                  | `finished` |
+| 5   | Ended, not failed, or none | Some                                                                  | `unknown`  |
+| 6   | Open                       | Some, each missing from an answer more than 2 seconds after the write | `finished` |
+| 7   | Open                       | Some, quiet for 30 minutes, or written ahead                          | `unknown`  |
+| 8   | Open                       | Some                                                                  | `working`  |
 
 The last turn is read from the log's end backwards: the newest `item` or `turn_started` says open, the newest `turn_committed` or `turn_interrupted` says ended, and reaching the first line, or the lines a fork copied, says none. A `closed` before an open turn is passed over, since fx writes it as it lets a session go, after the turn's end (`session.zig:893-956`). After the first read, each line added is folded in the same way, so a log read in two parts says what it says when read whole.
 
 - **Row 2.** fx writes a failed turn as `turn_interrupted` with `failed` (`core/session/session_adapter.zig:2129-2134`), and a failure stands whether fx runs or not.
 - **Row 4.** fx's lock is the only sign a session is open, and the system lets it go when fx's process ends, however it ends (`storage.zig:291-296`; `tests/tla/session/LiveSessions.tla:6-15`). With no fx program, no session is held.
 - **Row 5.** A resume writes nothing unless it has something to repair (`session.zig:1401-1448`), and only fx's index records it (`api.zig:319-321`, `:626-645`). So a session fx holds between turns looks on disk as one it has let go.
-- **Row 6.** A running fx that was missing from a `ps` answer taken after the log's last write did not make that write. An fx that opened the log for writing since would have repaired it first, writing `turn_interrupted` with `crash` (`session.zig:1177-1201`, `:1401-1407`), which moves the write.
+- **Row 6.** A running fx that was missing from a `ps` answer taken more than 2 seconds after the log's last write did not make that write. Some disks keep a write's time in whole seconds, or 2 seconds, rounded down. An fx that opened the log for writing since would have repaired it first, writing `turn_interrupted` with `crash` (`session.zig:1177-1201`, `:1401-1407`), which moves the write.
 - **Row 7.** fx sets no time limit on a command (`core/execution/command_runner.zig:36`), so a turn can be quiet for long. A turn a crash cut off, while another fx runs, would look open for good, so a working session quiet for 30 minutes shows as unknown, as does one written further ahead of the clock than a minute.
 - **Row 8.** fx writes each finished piece before the next request (`core/agent/runtime/orchestrator.zig:4374-4375`).
 
@@ -179,11 +179,11 @@ A session's last write is its log's modified time. A finished session's status t
 
 ### The process, and the other program named fx
 
-The program is built as `fx` (`build.zig:73`), and the installer puts it in `~/.local/bin` (`README.md:42`). `ps -A -o pid=,comm=` prints each process's ID and the name it gives its program, and nothing else. A line whose program is `fx`, or a path ending in `/fx`, counts, and only its ID is kept, in memory. A line that names `fx` without an ID that can be read counts too, and keeps every session from finishing by row 6. `ps` is asked while a session is listed, at most every 10 seconds, and sooner, though not within 2 seconds of the last ask, when a log is written after `ps` listed no fx.
+The program is built as `fx` (`build.zig:73`), and the installer puts it in `~/.local/bin` (`README.md:42`). `ps -A -o pid=,comm=` prints each process's ID and the name it gives its program, and nothing else. A line whose program is `fx`, or a path ending in `/fx`, counts, and only its ID is kept, in memory. A line that names `fx` without an ID that can be read counts too, and keeps every session from finishing by row 6. `ps` is asked while a session is listed, at most every 10 seconds, and sooner, though not within 2 seconds of the last ask, when a log is written after `ps` listed no fx, or up to 2 seconds before.
 
 For row 6, each fx process ID is kept with the time of the answer before the one that first listed it, when it was missing. A clock set back drops every such time. The rule holds on macOS and Linux alike, and needs no start time from `ps`.
 
-Another program can be named `fx`, such as the JSON viewer of that name. While one runs, a session between turns stays unknown, by row 5. It can never make a session idle or needing you, keep a turn working past 30 quiet minutes, or keep a turn working once it was missing from an answer taken after that turn's last write.
+Another program can be named `fx`, such as the JSON viewer of that name. While one runs, a session between turns stays unknown, by row 5. It can never make a session idle or needing you, keep a turn working past 30 quiet minutes, or keep a turn working once it was missing from an answer taken more than 2 seconds after that turn's last write.
 
 ### A crash
 
@@ -227,6 +227,7 @@ fx runs on macOS and Linux only (`README.md:42`), and its storage is for those s
 - For up to 2 seconds after an fx starts, a session can show as finished.
 - A turn a crash cut off that Agent Lookout first sees while another fx runs, as after Agent Lookout starts, shows as working for up to 30 minutes and then as unknown.
 - With two fx programs, one of which left a turn open, the same.
+- A turn a crash cut off, when another fx starts up to 12 seconds after its last write, the same.
 - A converted session with an unended turn, written in the last day, shows as failed.
 
 ## Not yet checked
