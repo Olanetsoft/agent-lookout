@@ -617,7 +617,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - The files are found with Pi's finder, flat, with a test of its own for names, so the `operations` folder of command output and the `.session-*.tmp` copies are never opened or looked up.
 - Each line is compared, from its start, with the bytes Unreal Agent writes for its kind (`lines.ts`). Go writes a struct's fields in the order they are declared and every `"` in a string as `\"`, so a field is found where the shape puts it, and a string that may hold text is passed over to its closing quote.
 - Only the session's ID, times, the IDs of turns and commands, and the folder of the newest shell command are turned into text. A reply's failure is told from its line's last bytes.
-- The first line, the last 8 MiB and then what was added are read (`sessionFile.ts`). When those lines do not reach the start and say the session waits, the whole file is read once, up to 64 MiB, at most once in 10 minutes.
+- The first line, the last 8 MiB and then what was added are read (`sessionFile.ts`). When those lines do not reach the start and say the session waits, or said so at a hard stop, the whole file is read once, up to 64 MiB, at most once in 10 minutes.
 - `ps -A -o lstart=,comm=` says when each Unreal Agent program started (`processes.ts`). A session last written before every running program started is held by none of them.
 
 **How sure it is.** Not checked against Unreal Agent yet. A request that fails outright is not written, so it shows as working until 30 quiet minutes pass, then unknown, then finished. An older Unreal Agent program, or any program named `uat`, can keep an idle session from showing as finished.

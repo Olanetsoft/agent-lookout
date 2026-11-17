@@ -75,7 +75,7 @@ Of a file it reads at most:
 - its first 1 KiB, for its first line. A first line that does not end inside it is not a session file's, and the file is read again when it changes;
 - its last 8 MiB, the first time, and the lines in them;
 - after that, what was added, of at most 64 MiB, from the end of the last whole line read. The byte before must be a newline, and the first item added must be the one after the last item read. Otherwise, or when the file shrank, has another identity, did not grow but changed, or grew by more than 64 MiB, it is read as for the first time;
-- the whole file, once, when the lines read do not reach its start and say the session waits, as [Reading the whole file](#reading-the-whole-file) says.
+- the whole file, once, when the lines read do not reach its start and say the session waits, or said so at a hard stop, as [Reading the whole file](#reading-the-whole-file) says.
 
 Every read goes in pieces of 1 MiB, each of which must come back whole, or the read is dropped and what was known stands. Bytes after the last newline are a line Unreal Agent is still writing, and are left until it ends, as Unreal Agent's own reader leaves them (`localfile/codec.go:88-94`). Of a line longer than 1 MiB, only its first 1 MiB and its last 32 bytes are kept while it is read. Lines are applied only once every one was read.
 
