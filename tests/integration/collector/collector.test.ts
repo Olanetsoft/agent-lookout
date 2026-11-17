@@ -204,7 +204,7 @@ const FX_STATE = process.platform === "win32" ? "unavailable" : "ok";
 const UNREAL_AGENT_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent and Autohand Code, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code and DeepSeek Harness, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -230,6 +230,7 @@ describe("createCollector", () => {
       ["fx", "fx", FX_STATE],
       ["unreal-agent", "Unreal Agent", UNREAL_AGENT_STATE],
       ["autohand-code", "Autohand Code", "ok"],
+      ["deepseek-harness", "DeepSeek Harness", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -279,6 +280,7 @@ describe("createCollector", () => {
       { id: "fx", state: FX_STATE },
       { id: "unreal-agent", state: UNREAL_AGENT_STATE },
       { id: "autohand-code", state: "ok" },
+      { id: "deepseek-harness", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -3137,6 +3139,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "fx",
       "unreal-agent",
       "autohand-code",
+      "deepseek-harness",
       "status-files",
       "remote:",
     ]);
