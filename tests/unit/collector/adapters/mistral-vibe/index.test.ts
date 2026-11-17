@@ -516,21 +516,87 @@ describe("open and closed", () => {
     });
 
     // Between two polls, each program writes its session's last turn and lets
-    // go, and Vibe takes the lease at once to clear old output.
-    const closed = { [A]: NOW + SECOND, [B]: NOW + 500, [C]: NOW + 1_001 };
+    // go, and Vibe takes the lease at once to clear old output. The disk keeps
+    // whole seconds.
+    const closed = { [A]: NOW + SECOND, [B]: NOW, [C]: NOW + 2 * SECOND };
     for (const [id, at] of Object.entries(closed)) {
       files.append(`${SESSION_DIR}/${journalPath(id)}`, delta(5, idle(id)), { mtimeMs: at });
       releaseLease(files, id);
       takeLease(files, id, NOW + 3 * SECOND);
     }
     clock.set(NOW + 4 * SECOND);
-    // A's write is 2 seconds before the lease's time, and B's more. C's is less,
-    // so it may have come after the lease, and C shows as open.
+    // A's write is 2 seconds before the lease's time, and B's 3. C's is 1, so it
+    // may have come after the lease, and C shows as open.
     expect(statuses((await adapter.poll()).sessions)).toEqual({
       [A]: "finished",
       [B]: "finished",
       [C]: "idle",
     });
+  });
+
+  test("a write with a fraction of a second just before the lease's time leaves a closed session finished", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    for (const id of [A, B]) {
+      writeStore(files, { id, state: running(id) });
+      takeLease(files, id, NOW - HOUR);
+    }
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working", [B]: "working" });
+
+    // On a disk that keeps fractions of a second, each program writes its
+    // session's last turn and lets go, and Vibe takes the lease to clear old
+    // output, A's 1 millisecond after its write and B's 1,999.
+    const closed = { [A]: NOW + 2_999, [B]: NOW + 1_001 };
+    for (const [id, at] of Object.entries(closed)) {
+      files.append(`${SESSION_DIR}/${journalPath(id)}`, delta(5, idle(id)), { mtimeMs: at });
+      releaseLease(files, id);
+      takeLease(files, id, NOW + 3 * SECOND);
+    }
+    clock.set(NOW + 4 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [A]: "finished",
+      [B]: "finished",
+    });
+    clock.advance(2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [A]: "finished",
+      [B]: "finished",
+    });
+  });
+
+  test("a write whose time has a fraction of a second counts as one after the lease only from the lease's time on", async () => {
+    // Times in milliseconds after NOW: writes as a disk that keeps fractions of
+    // a second gives them, none at a whole second, and leases.
+    const writes = [
+      1_001, 1_500, 1_999, 2_001, 2_500, 2_999, 2_999.5, 3_001, 3_001.5, 3_499, 3_999,
+    ];
+    const leases = [3_000, 3_001, 3_500, 3_999];
+    const shown: string[] = [];
+    const before: string[] = [];
+    for (const takenAt of leases) {
+      for (const writtenAt of writes) {
+        const clock = handClock();
+        const files = vibeFiles(clock.now);
+        writeStore(files, { id: A, state: idle(A) });
+        makeOld(files, A, NOW - 2 * HOUR);
+        const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+        expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+
+        takeLease(files, A, NOW + takenAt);
+        files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, running(A)), {
+          mtimeMs: NOW + writtenAt,
+        });
+        clock.set(NOW + 5 * SECOND);
+        const status = statuses((await adapter.poll()).sessions)[A];
+        shown.push(`lease ${takenAt}, write ${writtenAt}: ${status}`);
+        // The check before the allowance: the write's time, to the millisecond,
+        // is not before the lease's.
+        const opens = Math.floor(writtenAt) >= takenAt;
+        before.push(`lease ${takenAt}, write ${writtenAt}: ${opens ? "working" : "finished"}`);
+      }
+    }
+    expect(shown).toEqual(before);
   });
 
   test("a lease Vibe takes to clear old output leaves a session finished once a poll has seen it so, however soon after its last write", async () => {

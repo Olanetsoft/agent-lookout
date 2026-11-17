@@ -260,15 +260,19 @@ const writeMark = (current: FileInfo, journal: FileInfo | null) =>
 
 /**
  * Whether Vibe wrote to a session after it took the lease at `takenAt`, as far
- * as the time of its newest write, `writtenAt`, can tell. Some disks keep a
- * file's modified time in whole seconds, or steps of 2 seconds, rounded down,
- * so a write up to 2 seconds before `takenAt` counts too, unless a poll saw it
- * before then, at `seenAt`. Then it came before the lease, as when Vibe takes
- * the lease of a session it has just closed to clear its old output.
+ * as the time of its newest write, `writtenAt`, can tell. A disk that keeps a
+ * file's modified time in whole seconds, or steps of 2 seconds, rounds it down,
+ * so a write at a whole second up to 2 seconds before `takenAt` counts too,
+ * unless a poll saw it before then, at `seenAt`, and every poll since did too
+ * (`writesSeen`). Then it came before the lease, as when Vibe takes the lease
+ * of a session it has just closed to clear its old output. Such a disk gives
+ * only whole seconds, so a time with a fraction of a second counts from
+ * `takenAt` on.
  */
 function writtenSince(writtenAt: number, seenAt: number, takenAt: number): boolean {
   const at = Math.floor(writtenAt);
-  return at >= takenAt || (seenAt >= takenAt && at + WRITE_TIME_STEP_MS > takenAt);
+  if (at >= takenAt) return true;
+  return at % 1_000 === 0 && seenAt >= takenAt && at + WRITE_TIME_STEP_MS > takenAt;
 }
 
 /** Whether a lease's process is the one that took it: an answer that was told for sure. */
@@ -316,10 +320,11 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * its journal, and while a Vibe program holds it. One older than that is
  * listed only once its lease is 30 seconds old (`OLD_SESSION_LEASE_MS`), and
  * nothing of its store is opened before. A lease younger than that, with
- * nothing written to the session since, does not show it as open. A write up
- * to 2 seconds before counts, as a disk can keep a write's time rounded down,
- * unless a poll saw it before then. A lease whose `.lock.json` gives no time
- * yet counts from the poll that first found it so. The stores
+ * nothing written to the session since, does not show it as open. On a disk
+ * that keeps a file's time in whole seconds, or steps of 2 seconds, a write up
+ * to 2 seconds before counts, unless a poll saw it before then and every poll
+ * since did too. A lease whose `.lock.json` gives no time yet counts from the
+ * poll that first found it so. The stores
  * of sessions no program holds are looked through on the first poll, and then
  * at most every 30 seconds, when `unified/` or the session folder changed, and
  * at least every 5 minutes.
@@ -414,9 +419,10 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
    */
   const untimedSince = new Map<string, number>();
   /**
-   * Each session's newest write, by `writeMark`, and when a poll first saw it,
-   * so that a write a poll saw before a lease's time is not counted as one
-   * after it (`writtenSince`).
+   * Each session's newest write as the last poll saw it, by `writeMark`, and
+   * when the polls that saw it, one after another up to the last, began. A
+   * write they saw from before a lease's time is not counted as one after it
+   * (`writtenSince`).
    */
   let writesSeen = new Map<string, { mark: string; at: number }>();
   /** Each session's wait as the last poll showed it. */
@@ -698,9 +704,10 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       // Vibe takes the lease of a closed session for a moment, as it does for
       // every session with old process output while it clears that output. So
       // a lease taken less than 30 seconds ago opens the session only once Vibe
-      // writes to it, as a program that uses the session does at once. A write
-      // up to 2 seconds before the lease's time counts, unless a poll saw it
-      // before then (`writtenSince`).
+      // writes to it, as a program that uses the session does at once. On a disk
+      // that keeps whole seconds, or steps of 2, a write up to 2 seconds before
+      // the lease's time counts, unless a poll saw it before then and every
+      // poll since did too (`writtenSince`).
       const justTaken =
         takenAt !== null &&
         checkedAt >= takenAt &&
