@@ -6,7 +6,7 @@ Written on 2026-11-17 from Kimchi's source at `v1.35.0`, released 2026-11-16 (co
 
 Each citation is `path:line` at Kimchi's `v1.35.0`, or `pi:path:line` at Pi's `v1.3.0`, where every Pi path is in `packages/coding-agent/`. The lines were counted on the raw files.
 
-The code is in `src/collector/adapters/kimchi/index.ts`. It is the Pi adapter's body, `createPiFamilyAdapter` in `src/collector/adapters/pi/index.ts`, with `KIMCHI_PROFILE`, a `PiProfile` from `src/collector/adapters/pi/profile.ts`. The status mapping is Pi's, in `src/core/mapping/pi/piMapping.ts`. Everything [the Pi notes](pi.md) say holds here unless this page says otherwise, and a change to those modules changes Kimchi too.
+The code is in `src/collector/adapters/kimchi/index.ts`. It is the Pi adapter's body, `createPiFamilyAdapter` in `src/collector/adapters/pi/index.ts`, with `KIMCHI_PROFILE`, a `PiProfile` from `src/collector/adapters/pi/profile.ts`. The status mapping is Pi's, in `src/core/mapping/pi/piMapping.ts`. Everything [the Pi notes](pi.md) say holds here unless this page says otherwise, and a change to those modules changes Kimchi too. Pi's finder, `sessionFiles.ts`, also finds Unreal Agent's files, with options Kimchi does not set, which leave what it finds for Kimchi as it was.
 
 ## What the issue said, and what holds
 
