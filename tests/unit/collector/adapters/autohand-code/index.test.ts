@@ -458,6 +458,18 @@ describe("what is remembered once a heartbeat goes", () => {
       pc.clock.advance(2 * SECOND);
       expect(only((await adapter.poll()).sessions).status).toBe("unknown");
     });
+
+    test("ends at its heartbeat's time when first seen after its process ended", async () => {
+      const pc = computer([]);
+      session(pc, metadata({ status: "completed", closedAt, lastActiveAt: closedAt }), {
+        mtimeMs: closedAt,
+      });
+      writeHeartbeat(pc.files, heartbeat({ updatedAt: NOW - 20 * SECOND }));
+      expect(only((await pc.adapter().poll()).sessions)).toMatchObject({
+        status: "finished",
+        statusSince: NOW - 20 * SECOND,
+      });
+    });
   });
 
   test("a session the idle timeout closed, with a heartbeat after its close, is finished at its close", async () => {
