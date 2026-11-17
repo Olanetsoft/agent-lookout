@@ -160,7 +160,11 @@ describe("the adapter", () => {
       { label: "Read", value: "every 2 seconds" },
       { label: "Zstandard", value: "node:zlib" },
       { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
-      { label: "Process check run", value: "every 10 seconds at most" },
+      {
+        label: "Process check run",
+        value:
+          "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no node or DeepSeek Harness",
+      },
     ]);
     expect(health.detail).toBe(
       `Sessions are read from the logs DeepSeek Harness keeps in ~/.dsh/sessions. ${STATUS_NOTE} ${UNCHECKED_NOTE}`,
@@ -817,6 +821,64 @@ describe("ps", () => {
       uptimeMs: () => NOW - T - 2 * MINUTE,
     }).poll();
     expect(booted.sessions[0]?.status).toBe("finished");
+  });
+
+  test("is asked again within seconds when a session was written up to 2 seconds before an answer that showed no program, as a disk can round a write's time down", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const ps = standInPs([]);
+    plain(files, headerLine() + batch(line.turnStart(0, NOW - SECOND)), { mtimeMs: NOW - SECOND });
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    expect(ps.runs).toHaveLength(1);
+    // Not within 2 seconds of the last ask.
+    clock.advance(SECOND);
+    await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+    // A clock set back to just after the write asks again and allows nothing for a rounded time, so it stays finished.
+    clock.set(NOW - SECOND + 500);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(3);
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+  });
+
+  test("on macOS, a clock set back by more than a minute does not finish a session a node started before then writes", async () => {
+    const files = memoryFiles();
+    files.mkdir(SESSIONS_DIR);
+    const clock = handClock();
+    const ps = standInPs([psLine(100, NOW - 2 * MINUTE, "node")]);
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps });
+    await adapter.poll();
+    // Set back 10 minutes: the node's start stays as it was taken, after every write it makes since.
+    clock.set(NOW - 10 * MINUTE + 10 * SECOND);
+    const written = NOW - 10 * MINUTE + 5 * SECOND;
+    plain(files, headerLine() + batch(line.turnStart(0, written)), { mtimeMs: written });
+    const { sessions } = await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    expect(sessions[0]?.status).toBe("working");
+  });
+
+  test("that cannot say keeps the way of reading named apart once every session is settled", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const ps = standInPs();
+    const file = plain(files, headerLine() + batch(line.turnStart(0, T)), { mtimeMs: T });
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps });
+    ps.fail();
+    const working = await adapter.poll();
+    expect(working.sessions[0]?.status).toBe("working");
+    expect(working.basis).toBe(BASIS_WITHOUT_PROCESSES);
+    files.append(file, batch(line.turnEnd(1, T + 1, "error")));
+    clock.advance(20 * SECOND);
+    const failed = await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    expect(failed.sessions[0]?.status).toBe("failed");
+    expect(failed.basis).toBe(BASIS_WITHOUT_PROCESSES);
+    expect(failed.health.detail).toContain(PS_FAILED_NOTE);
   });
 
   test("a node started after the last write, beyond a minute, does not keep a session open; one before does", async () => {

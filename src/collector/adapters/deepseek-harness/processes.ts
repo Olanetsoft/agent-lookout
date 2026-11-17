@@ -1,4 +1,5 @@
 import type { DeepseekHarnessWriter } from "../../../core/mapping/deepseek-harness/deepseekHarnessMapping.ts";
+import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { processStartTime, SAME_START_WITHIN_MS } from "../../processes/processStart.ts";
 import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
 
@@ -12,7 +13,9 @@ import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
  * a lock on `session.lock`, which is never touched (session-persistence-
  * jsonl/src/lease.ts:19), and no pid is written. A program writes to a
  * session only after it started. So a session is finished once every
- * program that could write it started after its last write, or the computer
+ * program that could write it started after its last write, by a `ps` asked
+ * 2 seconds or more after that write, as a disk can keep a write's time in
+ * whole seconds or steps of 2 seconds, rounded down, or once the computer
  * started after it.
  *
  * Its command `dsh` is a Node.js script that names no title, so `ps` shows
@@ -121,6 +124,41 @@ export interface WriterInput {
   /** What `ps` last said, and when it was asked. */
   answer: DshPrograms | null;
   answerAt: number;
+  /** Whether that answer was asked because the clock was set back, which then allows nothing for a rounded write time. */
+  clockSetBack?: boolean;
+  /** The earliest last write the start rule may finish (`DshClockGuard`). */
+  startFloor: number;
+}
+
+/** What the clock guard keeps between polls, in memory only. */
+export interface DshClockGuard {
+  /** The earliest last write the start rule may finish. */
+  startFloor: number;
+  /** The latest time a poll has seen. */
+  highAt: number;
+}
+
+export const startDshClockGuard = (): DshClockGuard => ({
+  startFloor: -Infinity,
+  highAt: -Infinity,
+});
+
+/**
+ * The guard after one more poll at `at`. On macOS a start stays as it was
+ * taken, so after the clock is set back by more than a minute a program that
+ * started before then looks started after the writes it makes since. Writes
+ * before the latest time a poll saw are then not finished by the start rule.
+ */
+export function guardDshClock(
+  guard: DshClockGuard,
+  platform: NodeJS.Platform,
+  at: number,
+): DshClockGuard {
+  let { startFloor } = guard;
+  if (platform === "darwin" && at < guard.highAt - SAME_START_WITHIN_MS) {
+    startFloor = Math.max(startFloor, guard.highAt);
+  }
+  return { startFloor, highAt: Math.max(guard.highAt, at) };
 }
 
 /**
@@ -128,23 +166,30 @@ export interface WriterInput {
  * Linux:
  *
  * - None could when its last write was more than a minute before the
- *   computer started, or when `ps`, asked at or after that write, shows no
- *   such program that started before it, or within a minute after, as Linux
- *   can move a start by that much. A start that cannot be read counts as
- *   before.
+ *   computer started, or when `ps`, asked 2 seconds or more after that write,
+ *   as a disk can keep a write's time rounded down, shows no such program
+ *   that started before it, or within a minute after, as Linux can move a
+ *   start by that much. A start that cannot be read counts as before. An
+ *   answer asked because the clock was set back allows nothing for that. On
+ *   macOS, while such a program runs, a write before the latest time a poll
+ *   saw, once the clock was set back past it by more than a minute, is never
+ *   finished this way.
  * - The desktop app backs it when such a program of its names runs.
  * - Otherwise one may. So it is on Windows, with no time that can be right,
  *   when `ps` could not say, and when its table did not list Agent Lookout's
  *   own process.
  */
 export function dshWriter(input: WriterInput): DeepseekHarnessWriter {
-  const { platform, writtenAt, bootAt, answer, answerAt } = input;
+  const { platform, writtenAt, bootAt, answer, answerAt, startFloor } = input;
   if ((platform !== "darwin" && platform !== "linux") || writtenAt === null) return "maybe";
   if (bootAt !== null && writtenAt < bootAt - SAME_START_WITHIN_MS) return "gone";
   if (!usable(answer)) return "maybe";
   const before = answer.programs.filter(
     ({ start }) => start === null || start <= writtenAt + SAME_START_WITHIN_MS,
   );
-  if (answerAt >= writtenAt && before.length === 0) return "gone";
+  const step = input.clockSetBack === true ? 0 : WRITE_TIME_STEP_MS;
+  // A program that started after the write finishes it only past the clock guard's floor.
+  const startsTrusted = answer.programs.length === 0 || writtenAt >= startFloor;
+  if (answerAt >= writtenAt + step && before.length === 0 && startsTrusted) return "gone";
   return before.some(({ desktop }) => desktop) ? "backed" : "maybe";
 }

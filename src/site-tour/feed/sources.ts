@@ -1604,7 +1604,11 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "not found" },
         { label: "Zstandard", value: "node:zlib" },
         { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
-        { label: "Process check run", value: "every 10 seconds at most" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no node or DeepSeek Harness",
+        },
       ],
       capabilities: DEEPSEEK_HARNESS_CAPABILITIES,
       checkedAt,

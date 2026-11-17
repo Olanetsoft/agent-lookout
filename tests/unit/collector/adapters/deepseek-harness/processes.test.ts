@@ -5,6 +5,8 @@ import {
   DSH_TABLE_ARGS,
   dshInTable,
   dshWriter,
+  guardDshClock,
+  startDshClockGuard,
   usable,
   type DshPrograms,
 } from "@collector/adapters/deepseek-harness/processes";
@@ -27,6 +29,7 @@ const writer = (answer: DshPrograms | null, extra: Partial<Parameters<typeof dsh
     bootAt: NOW - 24 * 60 * MINUTE,
     answer,
     answerAt: NOW,
+    startFloor: -Infinity,
     ...extra,
   });
 
@@ -154,8 +157,25 @@ describe("whether a program that could write a session may still run", () => {
     expect(writer(table(psLine(13, WRITTEN + 2 * MINUTE, "DeepSeek Harness")))).toBe("gone");
   });
 
-  test("a table taken before the last write says nothing of a program started since", () => {
+  test("a table taken before the last write, or less than 2 seconds after it, as a disk can round a write's time down, says nothing of a program started since", () => {
     expect(writer(table(), { answerAt: WRITTEN - SECOND })).toBe("maybe");
+    expect(writer(table(), { answerAt: WRITTEN + SECOND })).toBe("maybe");
+    expect(writer(table(), { answerAt: WRITTEN + 2 * SECOND - 1 })).toBe("maybe");
+    expect(writer(table(), { answerAt: WRITTEN + 2 * SECOND })).toBe("gone");
+  });
+
+  test("a table asked because the clock was set back allows nothing for a rounded write time", () => {
+    expect(writer(table(), { answerAt: WRITTEN + SECOND, clockSetBack: true })).toBe("gone");
+    expect(writer(table(), { answerAt: WRITTEN - SECOND, clockSetBack: true })).toBe("maybe");
+  });
+
+  test("on macOS, after the clock was set back, a write before the latest time a poll saw is not finished by a program's start", () => {
+    const answer = table(psLine(11, WRITTEN + 8 * MINUTE, "node"));
+    expect(writer(answer)).toBe("gone");
+    expect(writer(answer, { startFloor: WRITTEN + 10 * MINUTE })).toBe("maybe");
+    expect(writer(answer, { startFloor: WRITTEN })).toBe("gone");
+    // With no such program at all, none could write it, whatever the clock did.
+    expect(writer(table(), { startFloor: WRITTEN + 10 * MINUTE })).toBe("gone");
   });
 
   test("a table that does not list Agent Lookout's own process, or no answer, cannot say", () => {
@@ -176,5 +196,28 @@ describe("whether a program that could write a session may still run", () => {
   test("on Windows, or with no last write that can be right, nothing is told", () => {
     expect(writer(table(), { platform: "win32", bootAt: WRITTEN + 2 * MINUTE })).toBe("maybe");
     expect(writer(table(), { writtenAt: null })).toBe("maybe");
+  });
+});
+
+describe("the clock guard", () => {
+  test("on macOS, a poll more than a minute behind the latest one keeps writes before that time from the start rule", () => {
+    const seen = guardDshClock(startDshClockGuard(), "darwin", NOW);
+    expect(seen).toEqual({ startFloor: -Infinity, highAt: NOW });
+    const back = guardDshClock(seen, "darwin", NOW - 10 * MINUTE);
+    expect(back).toEqual({ startFloor: NOW, highAt: NOW });
+    // It stays raised, as the clock comes back.
+    expect(guardDshClock(back, "darwin", NOW + MINUTE)).toEqual({
+      startFloor: NOW,
+      highAt: NOW + MINUTE,
+    });
+    expect(guardDshClock(seen, "darwin", NOW - 59 * SECOND)).toEqual({
+      startFloor: -Infinity,
+      highAt: NOW,
+    });
+  });
+
+  test("on Linux, nothing is raised", () => {
+    const seen = guardDshClock(startDshClockGuard(), "linux", NOW);
+    expect(guardDshClock(seen, "linux", NOW - 10 * MINUTE).startFloor).toBe(-Infinity);
   });
 });

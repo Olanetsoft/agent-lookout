@@ -16,6 +16,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
+import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -31,6 +32,8 @@ import {
   createDshProcessReader,
   DSH_TABLE_ARGS,
   dshWriter,
+  guardDshClock,
+  startDshClockGuard,
   usable,
   type DshPrograms,
 } from "./processes.ts";
@@ -57,6 +60,13 @@ export const RECHECK_MS = 60_000;
 /** How often, at most, `ps` is asked which programs run, while a session's status depends on it. */
 export const PROCESS_CHECK_MS = 10_000;
 
+/**
+ * How soon `ps` is asked again when a session is written after it showed no
+ * program that could write one, or up to 2 seconds before, as a disk can keep
+ * a write's time rounded down, since one may have been started since.
+ */
+export const PROMPT_PROCESS_CHECK_MS = 2_000;
+
 /** The most sessions shown, newest first. */
 export const MAX_SESSIONS = 200;
 
@@ -73,8 +83,8 @@ export const MAX_PARENT_LINKS = 16;
 export const BASIS = "files";
 
 /**
- * The way it reads while `ps` cannot say which programs run, and always on
- * Windows: no session is finished then unless DeepSeek Harness closed it
+ * The way it reads while `ps` cannot say which programs run, as its last
+ * answer could not, and always on Windows: no session is finished then unless DeepSeek Harness closed it
  * mid-turn or it was last written before the computer started, and no wait
  * outlasts 30 quiet minutes. Named apart, so every finished session does not
  * seem to start again.
@@ -256,8 +266,10 @@ interface Family {
  * 200 newest, are read on (`logReader.ts`), one at a time, as bytes
  * (`lines.ts`), undoing Zstandard with `node:zlib` one frame at a time
  * (`zstdFrames.ts`). While a session's status depends on it, it asks `ps`,
- * at most every 10 seconds, when each program that could write a session
- * started (`processes.ts`). Nothing else is opened: not `session.lock`, which
+ * at most every 10 seconds, and sooner, though not within 2 seconds of the
+ * last ask, when a session is written after `ps` showed no program that
+ * could write one, or up to 2 seconds before, when each program that could
+ * write a session started (`processes.ts`). Nothing else is opened: not `session.lock`, which
  * is never looked up, not DeepSeek Harness's settings or keys.
  *
  * A session's status is `deepseekHarnessStatusOf`'s. A Node.js that cannot
@@ -300,14 +312,22 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   /** What `ps` last said, null before it was first asked, and when it was asked. */
   let lastAnswer: DshPrograms | null = null;
   let answerAt = 0;
+  /** Whether that answer was asked because the clock was set back. */
+  let clockSetBack = false;
+  /** What a clock set back keeps the start rule from finishing. */
+  let clock = startDshClockGuard();
   /** Each session's wait on the last poll, so a wait that goes on keeps its time. */
   let waits = new Map<string, DeepseekHarnessWait>();
 
   const psRuns = platform === "darwin" || platform === "linux";
   const systemNote = psRuns ? null : platform === "win32" ? WINDOWS_NOTE : OTHER_SYSTEM_NOTE;
   const unaskedBasis = psRuns ? BASIS : BASIS_WITHOUT_PROCESSES;
+  const sooner =
+    processCheckMs > PROMPT_PROCESS_CHECK_MS
+      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no node or DeepSeek Harness`
+      : "";
   const processCheckRun = psRuns
-    ? `${every(processCheckMs)} at most`
+    ? `${every(processCheckMs)} at most${sooner}`
     : `not run on ${platform === "win32" ? "Windows" : "this system"}`;
   const homeNote = relativeHome ? ` ${RELATIVE_HOME_NOTE}` : "";
   const older = before2215(nodeVersion);
@@ -350,10 +370,29 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     );
   }
 
-  /** What `ps` says, asked again when it is due. A clock set back counts as time enough. */
-  async function programsFor(checkedAt: number): Promise<DshPrograms> {
+  /**
+   * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
+   * though not within 2 seconds of the last ask, when a session was written
+   * after an answer that listed no program that could write one, or up to 2
+   * seconds before, as a disk can keep a write's time rounded down. A clock
+   * set back counts as time enough.
+   */
+  async function programsFor(
+    checkedAt: number,
+    writes: readonly (number | null)[],
+  ): Promise<DshPrograms> {
     const since = checkedAt - answerAt;
-    if (lastAnswer === null || since < 0 || since >= processCheckMs) {
+    let due = lastAnswer === null || since < 0 || since >= processCheckMs;
+    if (
+      !due &&
+      since >= PROMPT_PROCESS_CHECK_MS &&
+      usable(lastAnswer) &&
+      lastAnswer.programs.length === 0
+    ) {
+      due = writes.some((at) => at !== null && at + WRITE_TIME_STEP_MS > answerAt);
+    }
+    if (lastAnswer === null || due) {
+      clockSetBack = since < 0;
       lastAnswer = await processes.read();
       answerAt = checkedAt;
     }
@@ -458,6 +497,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
+    clock = guardDshClock(clock, platform, checkedAt);
 
     // A missing DeepSeek Harness is believed missing for a while, so a machine
     // without it pays nothing on most polls. A clock set back counts as time
@@ -539,18 +579,39 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         own === null ||
         own.state === "unsure" ||
         (own.state === "ended" && (own.end === "error" || own.end === "disposed")) ||
-        dshWriter({ platform, writtenAt, bootAt, answer: null, answerAt: 0 }) === "gone";
+        dshWriter({
+          platform,
+          writtenAt,
+          bootAt,
+          answer: null,
+          answerAt: 0,
+          startFloor: clock.startFloor,
+        }) === "gone";
       return { family, own, children, writtenAt, settled };
     });
 
+    const unsettled = facts.filter(({ settled }) => !settled);
     const answer =
-      psRuns && facts.some(({ settled }) => !settled) ? await programsFor(checkedAt) : null;
+      psRuns && unsettled.length > 0
+        ? await programsFor(
+            checkedAt,
+            unsettled.map(({ writtenAt }) => writtenAt),
+          )
+        : null;
 
     const nextWaits = new Map<string, DeepseekHarnessWait>();
     let tooLong = false;
     let unread = false;
     const sessions = facts.map(({ family, own, children, writtenAt }) => {
-      const writer = dshWriter({ platform, writtenAt, bootAt, answer, answerAt });
+      const writer = dshWriter({
+        platform,
+        writtenAt,
+        bootAt,
+        answer,
+        answerAt,
+        clockSetBack,
+        startFloor: clock.startFloor,
+      });
       const status = deepseekHarnessStatusOf({ own, children, writtenAt, writer, now: checkedAt });
       const id = sessionIdOf(family.folderName);
       if (status.wait !== undefined) {
@@ -592,7 +653,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     let detail = `Sessions are read from the logs DeepSeek Harness keeps in ${sessionsName}. ${alwaysNotes}`;
     let basis = unaskedBasis;
     if (systemNote !== null) detail += ` ${systemNote}`;
-    else if (answer !== null && !usable(answer)) {
+    // A poll that does not ask `ps` is named as the last answer was, so a session that settles while ps cannot say is compared with that way's poll.
+    else if (lastAnswer !== null && !usable(lastAnswer)) {
       detail += ` ${PS_FAILED_NOTE}`;
       basis = BASIS_WITHOUT_PROCESSES;
     }
