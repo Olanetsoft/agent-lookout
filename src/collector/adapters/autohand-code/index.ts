@@ -248,7 +248,7 @@ const BUSY: readonly SessionStatus[] = ["needs-you", "working", "idle"];
  *
  * Whether the process a heartbeat names runs is asked with signal 0, which
  * sends it nothing. Autohand Code deletes a stale heartbeat whenever any of its
- * sessions writes one, and a session that closes deletes its own first, so
+ * sessions writes one, and a session that closes deletes its own, so
  * what the adapter last saw of a session is kept in memory while it is shown:
  * a session whose last heartbeat's process has gone is finished, as is one
  * whose process went on to another session. That memory goes when Agent

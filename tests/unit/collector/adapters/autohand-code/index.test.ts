@@ -460,6 +460,31 @@ describe("what is remembered once a heartbeat goes", () => {
     });
   });
 
+  test("a session the idle timeout closed, with a heartbeat after its close, is finished at its close", async () => {
+    // The idle timeout closes the session first and stops its heartbeat after,
+    // and the close can wait up to 10 seconds on the session index's lock.
+    const pc = computer();
+    const closedAt = NOW - 9 * SECOND;
+    session(pc, metadata({ status: "completed", closedAt, lastActiveAt: closedAt }), {
+      mtimeMs: closedAt,
+    });
+    writeHeartbeat(pc.files, heartbeat({ phase: "idle" }));
+    const adapter = pc.adapter();
+    expect(only((await adapter.poll()).sessions).status).toBe("idle");
+    removeHeartbeat(pc.files);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: closedAt,
+    });
+    pc.processes.stop(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: closedAt,
+    });
+  });
+
   test("is lost when Agent Lookout starts again, so a session whose heartbeat went is unknown", async () => {
     const pc = computer();
     session(pc);

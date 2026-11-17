@@ -124,16 +124,20 @@ export interface MetadataFacts {
 /**
  * What a `metadata.json` says once it is read as Autohand Code wrote it:
  *
- * - `completed` with `lastActiveAt`, or the time of a heartbeat of the
- *   session, `heartbeatAt`, more than a second past `closedAt` is a session
- *   resumed since. Autohand Code keeps `completed` while a resumed session
- *   runs and saves nothing as it resumes one
- *   (`src/session/SessionManager.ts:164-178`), each message moves
- *   `lastActiveAt` (`:598-611`), and the process that closes a session stops
- *   its heartbeat first (`src/core/agent/AgentSessionAccounting.ts:350`;
- *   `src/session/ActiveAgentRegistry.ts:215-216`). For a copy of another
- *   tool's session or of one from the web, the time of the copy counts in
- *   place of an earlier `closedAt` or none. It counts as `active`.
+ * - `completed` with `lastActiveAt` more than a second past `closedAt`, or
+ *   the time of a heartbeat of the session, `heartbeatAt`, more than 15
+ *   seconds past it, is a session resumed since. Autohand Code keeps
+ *   `completed` while a resumed session runs and saves nothing as it resumes
+ *   one (`src/session/SessionManager.ts:164-178`), and each message moves
+ *   `lastActiveAt` (`:598-611`). Every close but one stops the heartbeat
+ *   first (`src/core/agent/AgentSessionAccounting.ts:350`;
+ *   `src/core/agent/AgentLifecycleRunner.ts:332-336`). The idle timeout
+ *   closes the session first and stops the heartbeat after
+ *   (`src/core/agent/AgentSessionAccounting.ts:319-343`), and a close can
+ *   wait up to 10 seconds on the session index's lock
+ *   (`src/session/SessionManager.ts:26-30`, `:392-394`). For a copy of
+ *   another tool's session or of one from the web, the time of the copy
+ *   counts in place of an earlier `closedAt` or none. It counts as `active`.
  * - `crashed` saved after the crash, with `lastActiveAt` no more than a second
  *   before the file was written, is a session that went on: the crash's own
  *   write leaves `lastActiveAt` as it was
@@ -149,9 +153,14 @@ export function effectiveMetadataStatus(
   const lastActiveAt = plausibleTime(facts.lastActiveAt, now);
   if (facts.status === "completed") {
     const since = later(plausibleTime(facts.closedAt, now), plausibleTime(facts.importedAt, now));
-    const after = (at: number | null) =>
-      since !== null && at !== null && at > since + CLOSE_SLACK_MS;
-    if (after(lastActiveAt) || after(plausibleTime(heartbeatAt, now))) return "active";
+    const after = (at: number | null, slack: number) =>
+      since !== null && at !== null && at > since + slack;
+    if (
+      after(lastActiveAt, CLOSE_SLACK_MS) ||
+      after(plausibleTime(heartbeatAt, now), AUTOHAND_STALE_MS)
+    ) {
+      return "active";
+    }
   }
   if (facts.status === "crashed" && writtenAt !== null && lastActiveAt !== null) {
     if (lastActiveAt >= writtenAt - CRASH_SLACK_MS) return "active";

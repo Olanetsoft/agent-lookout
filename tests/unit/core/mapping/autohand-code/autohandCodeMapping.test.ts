@@ -153,11 +153,11 @@ describe("what metadata.json counts as", () => {
     ).toBe("crashed");
   });
 
-  test("completed with a heartbeat after its close is a resumed session, active", () => {
+  test("completed with a heartbeat over 15 seconds after its close is a resumed session, active", () => {
     const closedAt = NOW - 60_000;
     const closed = facts({ status: "completed", closedAt, lastActiveAt: closedAt });
-    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 1_001)).toBe("active");
-    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 1_000)).toBe("completed");
+    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 15_001)).toBe("active");
+    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 15_000)).toBe("completed");
     expect(effectiveMetadataStatus(closed, NOW, NOW, null)).toBe("completed");
     // A time that cannot be right is not believed.
     expect(effectiveMetadataStatus(closed, NOW, NOW, NOW + 60_001)).toBe("completed");
@@ -172,8 +172,8 @@ describe("what metadata.json counts as", () => {
     expect(
       effectiveMetadataStatus({ ...copy, lastActiveAt: importedAt + 1_000 }, NOW, NOW, null),
     ).toBe("completed");
-    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 1_001)).toBe("active");
-    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 1_000)).toBe("completed");
+    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 15_001)).toBe("active");
+    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 15_000)).toBe("completed");
     // Measured from the later of its close and its copy.
     const closedBefore = {
       ...copy,
