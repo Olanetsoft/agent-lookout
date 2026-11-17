@@ -70,6 +70,11 @@ import {
   UNREAL_AGENT_CAPABILITIES,
 } from "@collector/adapters/unreal-agent/index";
 import { unrealAgentSession } from "@collector/adapters/unreal-agent/toSession";
+import {
+  AUTOHAND_CODE_CAPABILITIES,
+  createAutohandCodeAdapter,
+} from "@collector/adapters/autohand-code/index";
+import { autohandCodeSession } from "@collector/adapters/autohand-code/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -120,6 +125,11 @@ import {
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
 import { mapUnrealAgentStatus } from "@core/mapping/unreal-agent/unrealAgentMapping";
 import {
+  autohandStatusOf,
+  type AutohandEvidence,
+  type HeartbeatClass,
+} from "@core/mapping/autohand-code/autohandCodeMapping";
+import {
   applyUnrealAgentLine,
   startUnrealAgentReplay,
   type UnrealAgentItem,
@@ -152,6 +162,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["fx", FX_CAPABILITIES],
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
+  ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -254,6 +265,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createUnrealAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(UNREAL_AGENT_CAPABILITIES);
+    expect(
+      createAutohandCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(AUTOHAND_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1324,6 +1338,74 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(UNREAL_AGENT_CAPABILITIES.jump.level).toBe("no");
     expect(UNREAL_AGENT_CAPABILITIES.stop.level).toBe("no");
     expect(UNREAL_AGENT_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Autohand Code: a session is working, idle, needs you, finished, failed or unknown", () => {
+    const shown: SessionStatus[] = [];
+    const classes: HeartbeatClass[] = ["fresh", "quiet", "just-dead", "gone"];
+    const phases = ["idle", "thinking", "waiting_input", null] as const;
+    for (const heartbeatClass of classes) {
+      for (const phase of phases) {
+        for (const metadata of ["active", "completed", "crashed", "other", null] as const) {
+          const evidence: AutohandEvidence = {
+            chosen: { name: "a.json", pid: 7, updatedAt: NOW, phase, heartbeatClass },
+            metadata,
+            movedOn: false,
+            standIn: null,
+            ended: false,
+            lastProcessGone: false,
+          };
+          shown.push(autohandStatusOf(evidence).status);
+          shown.push(autohandStatusOf({ ...evidence, chosen: null }).status);
+        }
+      }
+    }
+    expect(statuses(shown)).toEqual(
+      new Set(["needs-you", "working", "idle", "finished", "failed", "unknown"]),
+    );
+    expect(AUTOHAND_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(AUTOHAND_CODE_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(AUTOHAND_CODE_CAPABILITIES.finished.level).toBe("partly");
+    expect(AUTOHAND_CODE_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("Autohand Code: a session has its folder's name and its metadata.json's last write, and no tokens, jump, stop or link", () => {
+    const session = autohandCodeSession({
+      sessionId: "0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e-1762772400000",
+      status: "working",
+      statusSince: NOW - 10_000,
+      facts: {
+        status: "active",
+        createdAt: NOW - 60_000,
+        lastActiveAt: NOW - 20_000,
+        closedAt: null,
+        importedAt: null,
+        projectPath: "/Users/example/code/demo",
+        title: null,
+        client: "terminal",
+      },
+      writtenAt: NOW - 20_000,
+      heartbeat: { workspaceRoot: null, mode: "interactive", startedAt: null },
+      process: { pid: 7, alive: true },
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "autohand-code:0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e-1762772400000",
+      source: "autohand-code",
+      name: "demo",
+      status: "working",
+      lastWriteAt: NOW - 20_000,
+    });
+    for (const absent of ["tokens", "jump", "stop", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(AUTOHAND_CODE_CAPABILITIES.names.level).toBe("partly");
+    expect(AUTOHAND_CODE_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(AUTOHAND_CODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(AUTOHAND_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(AUTOHAND_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(AUTOHAND_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a working session has the time of its file's last write, and no tokens, jump, stop or link", () => {

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -124,5 +124,35 @@ describe("nodeIo", () => {
     await expect(nodeIo.readdir(path.join(dir, "missing"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+});
+
+describe("what is at a path", () => {
+  test("says who owns it, its permission bits and how many names it has, for a file, a folder and an open file", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "heartbeat.json");
+    await writeFile(file, "{}\n");
+    await chmod(file, 0o600);
+    const uid = typeof process.geteuid === "function" ? process.geteuid() : 0;
+    const looked = await nodeIo.lstat(file);
+    expect(looked).toMatchObject({ kind: "file", nlink: 1 });
+    expect(typeof looked.uid).toBe("number");
+    expect(typeof looked.mode).toBe("number");
+    if (process.platform !== "win32") {
+      expect(looked.uid).toBe(uid);
+      expect((looked.mode ?? 0) & 0o777).toBe(0o600);
+    }
+    expect((await nodeIo.stat(dir)).kind).toBe("directory");
+    expect(typeof (await nodeIo.lstat(dir)).uid).toBe("number");
+
+    await link(file, path.join(dir, "second-name.json"));
+    expect((await nodeIo.lstat(file)).nlink).toBe(2);
+    const open = await openRegularFile(file);
+    try {
+      expect(open.info.nlink).toBe(2);
+      expect(open.info.uid).toBe(looked.uid);
+    } finally {
+      await open.close();
+    }
   });
 });

@@ -301,6 +301,7 @@ test.each([
       "Prime Agent",
       "fx",
       "Unreal Agent",
+      "Autohand Code",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -328,6 +329,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
       "No",

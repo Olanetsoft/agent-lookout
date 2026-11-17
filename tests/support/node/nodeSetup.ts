@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import {
   EMPTY_ANTIGRAVITY_APP_HOME,
   EMPTY_ANTIGRAVITY_HOME,
+  EMPTY_AUTOHAND_HOME,
   EMPTY_CLINE_HOME,
   EMPTY_CRUSH_HOME,
   EMPTY_FX_HOME,
@@ -201,6 +202,13 @@ delete process.env.FX_HOME;
 // its own.
 mkdirSync(EMPTY_UNREAL_AGENT_SESSIONS, { recursive: true });
 process.env.AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR = EMPTY_UNREAL_AGENT_SESSIONS;
+
+// Nor Autohand Code's, in `~/.autohand`, or the folder `AUTOHAND_HOME` names:
+// the adapter is pointed at an empty folder, and Autohand Code's own variable
+// is dropped. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_AUTOHAND_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_AUTOHAND_HOME = EMPTY_AUTOHAND_HOME;
+delete process.env.AUTOHAND_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

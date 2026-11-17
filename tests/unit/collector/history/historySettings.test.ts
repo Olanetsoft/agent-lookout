@@ -134,6 +134,11 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   for (const value of ["", "relative/state", "~/state"]) {
     expect(sourcesFingerprint({ XDG_STATE_HOME: value }, HOME), value).toBe(defaults);
   }
+  // An AUTOHAND_HOME that is not a whole path is passed over: Autohand Code
+  // reads it from the folder it was started in, which is not known here.
+  for (const value of ["", "  ", "relative/autohand", "~/autohand"]) {
+    expect(sourcesFingerprint({ AUTOHAND_HOME: value }, HOME), value).toBe(defaults);
+  }
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -206,6 +211,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ FX_HOME: "/tmp/a/../fx" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: "/tmp/empty-unreal-agent" }, HOME),
     sourcesFingerprint({ XDG_STATE_HOME: path.resolve("/tmp/state") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_AUTOHAND_HOME: "/tmp/empty-autohand" }, HOME),
+    sourcesFingerprint({ AUTOHAND_HOME: path.resolve("/tmp/autohand-home") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

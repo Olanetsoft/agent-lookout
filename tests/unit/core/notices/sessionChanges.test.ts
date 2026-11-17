@@ -770,6 +770,7 @@ describe("over a long run of snapshots", () => {
     "prime-agent": [],
     fx: [],
     "unreal-agent": [],
+    "autohand-code": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

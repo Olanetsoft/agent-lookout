@@ -34,6 +34,10 @@ import {
   UNREAL_AGENT_CAPABILITIES,
 } from "@collector/adapters/unreal-agent/index";
 import {
+  AUTOHAND_CODE_CAPABILITIES,
+  UNCHECKED_NOTE as AUTOHAND_CODE_UNCHECKED_NOTE,
+} from "@collector/adapters/autohand-code/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -92,6 +96,9 @@ const FX_NOTES = fileURLToPath(new URL("../../../../docs/adapters/fx.md", import
 const UNREAL_AGENT_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/unreal-agent.md", import.meta.url),
 );
+const AUTOHAND_CODE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/autohand-code.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -119,6 +126,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["fx", FX_CAPABILITIES],
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
+  ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -606,5 +614,43 @@ test("PRIVACY.md and the Unreal Agent notes name what is read and from which ver
     ]) {
       expect(text, field).toContain(field);
     }
+  }
+});
+
+test("PRIVACY.md and the Autohand Code notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(AUTOHAND_CODE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const autohand = line("For Autohand Code, Agent Lookout reads");
+  expect(autohand).toContain("built from Autohand Code's source at v0.9.11");
+  expect(autohand).toContain("signal-0");
+  expect(autohand).not.toContain("Unreal Agent");
+  expect(AUTOHAND_CODE_UNCHECKED_NOTE).toContain("v0.9.11");
+  expect(notes).toContain("Apache-2.0");
+
+  const start = privacy.indexOf("### Autohand Code's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "0.9.3",
+      "AUTOHAND_HOME",
+      "AGENT_LOOKOUT_AUTOHAND_HOME",
+      "active-agents",
+      "metadata.json",
+      "titleSource",
+      "conversation.jsonl",
+      "config.json",
+      "4 KiB",
+      "16 KiB",
+      "128 KiB",
+      "1 MiB",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["v0.9.11", "waiting_input", "signal 0", "--ephemeral"]) {
+    expect(notes, field).toContain(field);
   }
 });
