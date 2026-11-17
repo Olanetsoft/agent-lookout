@@ -7,6 +7,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Added
 
 - MiMo Code sessions, from its `mimo` command, read with `sqlite3` from `~/.local/share/mimocode/mimocode.db`, or the file `MIMOCODE_DB` names, on macOS and Linux, the way OpenCode's database is read, from the main agent's messages. A session shows as needing you while MiMo Code asks you a question or to approve a plan, as working while one of its subagents works, and as finished once no `mimo` program runs. Its name is never a title MiMo Code took from your prompt. No request is made to MiMo Code's server, and no last message is read. Built from MiMo Code's source at v0.1.17 and not yet checked on a computer running it. (#77)
+- Kimchi sessions, from its `kimchi` command, read the way Pi's are from the file Kimchi keeps for each in `~/.config/kimchi/harness/sessions`, or the folder `KIMCHI_CODING_AGENT_SESSION_DIR` names, on macOS, Linux and Windows. A session shows as unknown while a `kimchi` program runs and as finished once none does, and on Windows it stays unknown. It is named after its folder, since Kimchi names a session from your first messages. The sessions of Kimchi's subagents and of its Ferment evaluator are left out, and a branch you make is listed. Only the start of a file is read, and no prompt, reply or name is turned into text. Built from Kimchi's source at v1.35.0 and not yet checked on a computer running it. (#73)
 
 ## 0.2.21 - 2026-11-17
 

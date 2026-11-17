@@ -28,6 +28,10 @@ import {
   KILO_CODE_CAPABILITIES,
   UNCHECKED_NOTE as KILO_CODE_UNCHECKED_NOTE,
 } from "@collector/adapters/kilo-code/index";
+import {
+  KIMCHI_CAPABILITIES,
+  UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
+} from "@collector/adapters/kimchi/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
 import {
   COMMAND_SHOWN as MIMO_CODE_COMMAND,
@@ -71,6 +75,7 @@ const KILO_CODE_NOTES = fileURLToPath(
 const MIMO_CODE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/mimo-code.md", import.meta.url),
 );
+const KIMCHI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/kimchi.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -94,6 +99,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Crush", CRUSH_CAPABILITIES],
   ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
+  ["Kimchi", KIMCHI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -431,6 +437,42 @@ test("PRIVACY.md and the MiMo Code notes name what is read and from which versio
       "title_revision",
       "account",
       "control_account",
+      "ps -A -o comm=",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Kimchi notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(KIMCHI_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const kimchi = line("For Kimchi, Agent Lookout reads");
+  expect(kimchi).toContain("built from Kimchi's source at v1.35.0");
+  expect(kimchi).toContain("`ps`");
+  expect(kimchi).not.toContain("MiMo Code");
+  expect(KIMCHI_UNCHECKED_NOTE).toContain("v1.35.0");
+  expect(notes).toContain("v1.35.0");
+  expect(notes).toContain("Apache-2.0");
+  expect(notes).toContain("1.3.0");
+
+  const start = privacy.indexOf("### Kimchi's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.config/kimchi/harness/sessions",
+      "KIMCHI_CODING_AGENT_SESSION_DIR",
+      "AGENT_LOOKOUT_KIMCHI_HOME",
+      "id",
+      "cwd",
+      "timestamp",
+      "version",
+      "kimchi:subagent-session",
+      "kimchi:internal-session",
+      "session_info",
       "ps -A -o comm=",
     ]) {
       expect(text, field).toContain(field);
