@@ -270,8 +270,16 @@ export function importedMetadata(options: MetadataOptions & { importedAt: number
   });
 }
 
-/** A `metadata.json` as a web transfer writes it (`src/session/transfer/transfer-session-store.ts:64-66`). */
-export function transferredMetadata(options: { importedAt: number; sessionId?: string }): string {
+/**
+ * A `metadata.json` as a web transfer writes it
+ * (`src/session/transfer/transfer-session-store.ts:64-66`), or, with a later
+ * `lastActiveAt`, as a resume of it saves it.
+ */
+export function transferredMetadata(options: {
+  importedAt: number;
+  sessionId?: string;
+  lastActiveAt?: number;
+}): string {
   return JSON.stringify(
     {
       sessionId: options.sessionId ?? SESSION_ID,
@@ -279,7 +287,7 @@ export function transferredMetadata(options: { importedAt: number; sessionId?: s
       projectName: "demo-project",
       model: "example/model",
       createdAt: iso(CREATED_AT),
-      lastActiveAt: iso(options.importedAt),
+      lastActiveAt: iso(options.lastActiveAt ?? options.importedAt),
       messageCount: 3,
       status: "completed",
       summary: CANARIES.summary,

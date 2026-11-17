@@ -94,6 +94,7 @@ describe("what metadata.json counts as", () => {
         facts({ status: "completed", closedAt, lastActiveAt: closedAt + 1_001 }),
         NOW,
         NOW,
+        null,
       ),
     ).toBe("active");
     expect(
@@ -101,6 +102,7 @@ describe("what metadata.json counts as", () => {
         facts({ status: "completed", closedAt, lastActiveAt: closedAt + 1_000 }),
         NOW,
         NOW,
+        null,
       ),
     ).toBe("completed");
     expect(
@@ -108,6 +110,7 @@ describe("what metadata.json counts as", () => {
         facts({ status: "completed", closedAt: null, lastActiveAt: NOW }),
         NOW,
         NOW,
+        null,
       ),
     ).toBe("completed");
   });
@@ -119,6 +122,7 @@ describe("what metadata.json counts as", () => {
         facts({ status: "crashed", lastActiveAt: writtenAt - 1_000 }),
         writtenAt,
         NOW,
+        null,
       ),
     ).toBe("active");
     expect(
@@ -126,33 +130,82 @@ describe("what metadata.json counts as", () => {
         facts({ status: "crashed", lastActiveAt: writtenAt - 1_001 }),
         writtenAt,
         NOW,
+        null,
       ),
     ).toBe("crashed");
     expect(
-      effectiveMetadataStatus(facts({ status: "crashed", lastActiveAt: null }), writtenAt, NOW),
+      effectiveMetadataStatus(
+        facts({ status: "crashed", lastActiveAt: null }),
+        writtenAt,
+        NOW,
+        null,
+      ),
     ).toBe("crashed");
-    expect(effectiveMetadataStatus(facts({ status: "crashed" }), null, NOW)).toBe("crashed");
+    expect(effectiveMetadataStatus(facts({ status: "crashed" }), null, NOW, null)).toBe("crashed");
     // A time that cannot be right is not believed.
     expect(
       effectiveMetadataStatus(
         facts({ status: "crashed", lastActiveAt: NOW + 120_000 }),
         writtenAt,
         NOW,
+        null,
       ),
     ).toBe("crashed");
   });
 
+  test("completed with a heartbeat after its close is a resumed session, active", () => {
+    const closedAt = NOW - 60_000;
+    const closed = facts({ status: "completed", closedAt, lastActiveAt: closedAt });
+    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 1_001)).toBe("active");
+    expect(effectiveMetadataStatus(closed, NOW, NOW, closedAt + 1_000)).toBe("completed");
+    expect(effectiveMetadataStatus(closed, NOW, NOW, null)).toBe("completed");
+    // A time that cannot be right is not believed.
+    expect(effectiveMetadataStatus(closed, NOW, NOW, NOW + 60_001)).toBe("completed");
+  });
+
+  test("completed copied and written to since is a resumed session, active, even with no close", () => {
+    const importedAt = NOW - 60_000;
+    const copy = facts({ status: "completed", importedAt, lastActiveAt: importedAt });
+    expect(
+      effectiveMetadataStatus({ ...copy, lastActiveAt: importedAt + 1_001 }, NOW, NOW, null),
+    ).toBe("active");
+    expect(
+      effectiveMetadataStatus({ ...copy, lastActiveAt: importedAt + 1_000 }, NOW, NOW, null),
+    ).toBe("completed");
+    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 1_001)).toBe("active");
+    expect(effectiveMetadataStatus(copy, NOW, NOW, importedAt + 1_000)).toBe("completed");
+    // Measured from the later of its close and its copy.
+    const closedBefore = {
+      ...copy,
+      closedAt: importedAt - 30_000,
+      lastActiveAt: importedAt - 10_000,
+    };
+    expect(effectiveMetadataStatus(closedBefore, NOW, NOW, null)).toBe("completed");
+    const closedSince = {
+      ...copy,
+      closedAt: importedAt + 30_000,
+      lastActiveAt: importedAt + 30_000,
+    };
+    expect(effectiveMetadataStatus(closedSince, NOW, NOW, null)).toBe("completed");
+    // A copy's time that cannot be right is not believed.
+    const early = { ...copy, importedAt: Date.UTC(2019, 0, 1), lastActiveAt: NOW };
+    expect(effectiveMetadataStatus(early, NOW, NOW, null)).toBe("completed");
+  });
+
   test("an import never resumed is told by its copy's time, each condition counting", () => {
     const importedAt = NOW - 60_000;
-    expect(importedAndNeverResumed(facts({ status: "completed", importedAt }))).toBe(true);
-    expect(
-      importedAndNeverResumed(facts({ status: "completed", importedAt, closedAt: importedAt })),
-    ).toBe(true);
-    expect(
-      importedAndNeverResumed(facts({ status: "completed", importedAt, closedAt: importedAt + 1 })),
-    ).toBe(false);
-    expect(importedAndNeverResumed(facts({ status: "active", importedAt }))).toBe(false);
-    expect(importedAndNeverResumed(facts({ status: "completed" }))).toBe(false);
+    const copy = (more: Partial<MetadataFacts>) =>
+      importedAndNeverResumed(facts({ status: "completed", importedAt, ...more }), NOW);
+    expect(copy({})).toBe(true);
+    expect(copy({ closedAt: importedAt })).toBe(true);
+    expect(copy({ closedAt: importedAt + 1 })).toBe(false);
+    expect(copy({ status: "active" })).toBe(false);
+    expect(importedAndNeverResumed(facts({ status: "completed" }), NOW)).toBe(false);
+    // Written to since the copy, it was resumed.
+    expect(copy({ lastActiveAt: importedAt + 1_000 })).toBe(true);
+    expect(copy({ lastActiveAt: importedAt + 1_001 })).toBe(false);
+    // A time that cannot be right is not believed.
+    expect(copy({ lastActiveAt: NOW + 60_001 })).toBe(true);
   });
 });
 

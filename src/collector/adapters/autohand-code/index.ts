@@ -480,28 +480,56 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
       const facts: MetadataFacts | null = md?.state === "ok" ? md.facts : null;
       const writtenAt = md?.state === "ok" ? Math.floor(md.writtenAt) : lstatWrittenAt;
 
-      // A copy from another tool or the web that you never resumed.
-      if (facts !== null && importedAndNeverResumed(facts) && seen.length === 0) {
+      // A heartbeat whose process has gone counts for nothing once the session
+      // was saved over 15 seconds after it. Only a process that runs the
+      // session saves it, and that process writes a heartbeat every 5
+      // seconds, so the save came from another run, as one with --no-daemon.
+      const savedAt = plausibleTime(facts?.lastActiveAt ?? null, checkedAt);
+      const outrun = (at: number | null) =>
+        savedAt !== null && at !== null && savedAt > at + AUTOHAND_STALE_MS;
+      const counted = seen.filter((one) => one.heartbeatClass !== "gone" || !outrun(one.updatedAt));
+
+      // A copy from another tool or the web that you never resumed. One
+      // remembered was seen with a heartbeat, so it was resumed.
+      if (
+        facts !== null &&
+        importedAndNeverResumed(facts, checkedAt) &&
+        counted.length === 0 &&
+        before === undefined
+      ) {
         stillSettled.add(id);
         continue;
       }
 
+      const chosen = chooseCandidate(counted);
       const effective =
-        facts === null ? null : effectiveMetadataStatus(facts, writtenAt, checkedAt);
+        facts === null
+          ? null
+          : effectiveMetadataStatus(
+              facts,
+              writtenAt,
+              checkedAt,
+              chosen?.updatedAt ?? before?.lastUpdatedAt ?? null,
+            );
       const shownMetadata: MetadataStatus | "unreadable" | null =
         effective ?? (md !== null || folder.metadata !== null ? "unreadable" : null);
-      const chosen = chooseCandidate(seen);
 
       // Found ended, until a heartbeat comes back or it is written to after.
       let ended = before?.ended ?? null;
-      if (
-        ended !== null &&
-        (seen.length > 0 || (facts?.lastActiveAt ?? -Infinity) > ended.at + CLOSE_SLACK_MS)
-      ) {
+      let lastPid = before?.lastPid ?? null;
+      if (ended !== null && counted.length > 0) {
         ended = null;
+      } else if (ended !== null && savedAt !== null && savedAt > ended.at + CLOSE_SLACK_MS) {
+        // Written to after it ended: it runs again in a process no heartbeat here names.
+        ended = null;
+        lastPid = null;
+      }
+      if (counted.length === 0 && outrun(before?.lastUpdatedAt ?? null)) {
+        // Saved over 15 seconds after its last heartbeat: the same.
+        ended = null;
+        lastPid = null;
       }
 
-      const lastPid = before?.lastPid ?? null;
       const movedOn =
         chosen === null &&
         lastPid !== null &&

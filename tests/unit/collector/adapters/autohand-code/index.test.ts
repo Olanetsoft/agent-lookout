@@ -208,6 +208,26 @@ describe("a heartbeat whose process has gone", () => {
     expect(only((await adapter.poll()).sessions).status).toBe("working");
   });
 
+  test("counts for nothing once the session was saved over 15 seconds after it, unlike one whose process runs", async () => {
+    for (const [savedAgo, shown] of [
+      [4 * SECOND, "unknown"],
+      [5 * SECOND, "finished"],
+      // A time that cannot be right is not believed.
+      [-61 * SECOND, "finished"],
+    ] as const) {
+      const pc = computer([]);
+      session(pc, metadata({ lastActiveAt: NOW - savedAgo }));
+      writeHeartbeat(pc.files, heartbeat({ updatedAt: NOW - 20 * SECOND }));
+      expect(only((await pc.adapter().poll()).sessions).status, String(savedAgo)).toBe(shown);
+    }
+    // One whose process runs still counts, as for a second process on the session.
+    const running = computer();
+    const closedAt = NOW - 4 * SECOND;
+    session(running, metadata({ status: "completed", closedAt, lastActiveAt: closedAt }));
+    writeHeartbeat(running.files, heartbeat({ updatedAt: NOW - 20 * SECOND }));
+    expect(only((await running.adapter().poll()).sessions).status).toBe("unknown");
+  });
+
   test("with a status this does not know is finished, and with no heartbeat unknown", async () => {
     const pc = computer([]);
     session(pc, metadata({ status: "paused" }));
@@ -351,6 +371,93 @@ describe("what is remembered once a heartbeat goes", () => {
       const first = sessions.find((one) => one.id === `autohand-code:${SESSION_ID}`);
       expect(first?.status, mode).toBe(shown);
     }
+  });
+
+  test("a session found ended and written to after, with its process still gone, is unknown", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat({ mode: "rpc" }));
+    const adapter = pc.adapter();
+    expect(only((await adapter.poll()).sessions).status).toBe("working");
+    removeHeartbeat(pc.files);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions).status).toBe("unknown");
+    pc.processes.stop(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions).status).toBe("finished");
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions).status).toBe("finished");
+    // A time that cannot be right is not believed.
+    pc.clock.advance(2 * SECOND);
+    session(pc, metadata({ lastActiveAt: pc.clock.now() + 61 * SECOND }));
+    expect(only((await adapter.poll()).sessions).status).toBe("finished");
+    // Written to after, it runs again in a process no heartbeat here names.
+    session(pc, metadata({ lastActiveAt: pc.clock.now() }));
+    for (let poll = 0; poll < 2; poll += 1) {
+      pc.clock.advance(2 * SECOND);
+      expect(only((await adapter.poll()).sessions).status, String(poll)).toBe("unknown");
+    }
+  });
+
+  test("a session saved over 15 seconds after its last heartbeat, before it was found ended, is unknown", async () => {
+    const shown = async (saved: boolean) => {
+      const pc = computer();
+      session(pc);
+      writeHeartbeat(pc.files, heartbeat());
+      const adapter = pc.adapter();
+      expect(only((await adapter.poll()).sessions).status).toBe("working");
+      removeHeartbeat(pc.files);
+      pc.processes.stop(PID);
+      if (saved) {
+        session(pc, metadata({ lastActiveAt: NOW + 16 * SECOND }), { mtimeMs: NOW + 16 * SECOND });
+      }
+      pc.clock.advance(20 * SECOND);
+      return only((await adapter.poll()).sessions).status;
+    };
+    expect(await shown(false)).toBe("finished");
+    expect(await shown(true)).toBe("unknown");
+  });
+
+  describe("a closed session resumed, with nothing saved yet,", () => {
+    const closedAt = NOW - 3 * DAY;
+    async function resumed() {
+      const pc = computer();
+      session(pc, metadata({ status: "completed", closedAt, lastActiveAt: closedAt }), {
+        mtimeMs: closedAt,
+      });
+      writeHeartbeat(pc.files, heartbeat({ phase: "idle" }));
+      const adapter = pc.adapter();
+      expect(only((await adapter.poll()).sessions).status).toBe("idle");
+      return { pc, adapter };
+    }
+
+    test("ends at its heartbeat's time, not its old close, when its process ends and leaves its heartbeat", async () => {
+      const { pc, adapter } = await resumed();
+      pc.processes.stop(PID);
+      pc.clock.advance(16 * SECOND);
+      expect(only((await adapter.poll()).sessions)).toMatchObject({
+        status: "finished",
+        statusSince: NOW,
+      });
+    });
+
+    test("ends at its heartbeat's time when its heartbeat goes with its process", async () => {
+      const { pc, adapter } = await resumed();
+      removeHeartbeat(pc.files);
+      pc.processes.stop(PID);
+      pc.clock.advance(2 * SECOND);
+      expect(only((await adapter.poll()).sessions)).toMatchObject({
+        status: "finished",
+        statusSince: NOW,
+      });
+    });
+
+    test("is unknown, not finished, when its heartbeat goes while its process runs", async () => {
+      const { pc, adapter } = await resumed();
+      removeHeartbeat(pc.files);
+      pc.clock.advance(2 * SECOND);
+      expect(only((await adapter.poll()).sessions).status).toBe("unknown");
+    });
   });
 
   test("is lost when Agent Lookout starts again, so a session whose heartbeat went is unknown", async () => {
@@ -595,22 +702,50 @@ describe("which sessions are listed", () => {
   });
 
   test("a copy from another tool or the web that you never resumed is not listed, each condition counting", async () => {
-    const listed = async (text: string, withHeartbeat = false) => {
+    const shown = async (text: string, withHeartbeat = false) => {
       const pc = computer();
       session(pc, text);
       if (withHeartbeat) writeHeartbeat(pc.files, heartbeat());
-      return (await pc.adapter().poll()).sessions.length;
+      return (await pc.adapter().poll()).sessions.map((one) => one.status);
     };
+    const listed = async (text: string, withHeartbeat = false) =>
+      (await shown(text, withHeartbeat)).length;
     const importedAt = NOW - MINUTE;
     expect(await listed(importedMetadata({ importedAt }))).toBe(0);
     expect(await listed(importedMetadata({ importedAt, closedAt: importedAt }))).toBe(0);
     expect(await listed(transferredMetadata({ importedAt }))).toBe(0);
+    expect(await listed(importedMetadata({ importedAt, lastActiveAt: importedAt + SECOND }))).toBe(
+      0,
+    );
     // Resumed and closed since, it is listed.
     expect(await listed(importedMetadata({ importedAt, closedAt: importedAt + 1 }))).toBe(1);
     expect(await listed(importedMetadata({ importedAt, status: "active" }))).toBe(1);
     expect(await listed(metadata({ status: "completed" }))).toBe(1);
+    // Resumed and written to since, it is listed, as one that may run.
+    const later = importedAt + SECOND + 1;
+    expect(await shown(importedMetadata({ importedAt, lastActiveAt: later }))).toEqual(["unknown"]);
+    expect(await shown(transferredMetadata({ importedAt, lastActiveAt: later }))).toEqual([
+      "unknown",
+    ]);
     // A fresh heartbeat lists any.
     expect(await listed(importedMetadata({ importedAt }), true)).toBe(1);
+  });
+
+  test("a copy seen with a heartbeat stays listed once the heartbeat goes, and is finished once its process ends", async () => {
+    const pc = computer();
+    session(pc, importedMetadata({ importedAt: NOW - MINUTE }));
+    writeHeartbeat(pc.files, heartbeat());
+    const adapter = pc.adapter();
+    expect(only((await adapter.poll()).sessions).status).toBe("working");
+    removeHeartbeat(pc.files);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions).status).toBe("unknown");
+    pc.processes.stop(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW,
+    });
   });
 });
 

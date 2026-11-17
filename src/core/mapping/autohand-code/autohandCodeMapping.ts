@@ -124,11 +124,16 @@ export interface MetadataFacts {
 /**
  * What a `metadata.json` says once it is read as Autohand Code wrote it:
  *
- * - `completed` written after its close, with `lastActiveAt` more than a
- *   second past `closedAt`, is a session resumed since, as Autohand Code
- *   keeps `completed` while a resumed session runs
- *   (`src/session/SessionManager.ts:382-395`, `:598-611`). It counts as
- *   `active`.
+ * - `completed` with `lastActiveAt`, or the time of a heartbeat of the
+ *   session, `heartbeatAt`, more than a second past `closedAt` is a session
+ *   resumed since. Autohand Code keeps `completed` while a resumed session
+ *   runs and saves nothing as it resumes one
+ *   (`src/session/SessionManager.ts:164-178`), each message moves
+ *   `lastActiveAt` (`:598-611`), and the process that closes a session stops
+ *   its heartbeat first (`src/core/agent/AgentSessionAccounting.ts:350`;
+ *   `src/session/ActiveAgentRegistry.ts:215-216`). For a copy of another
+ *   tool's session or of one from the web, the time of the copy counts in
+ *   place of an earlier `closedAt` or none. It counts as `active`.
  * - `crashed` saved after the crash, with `lastActiveAt` no more than a second
  *   before the file was written, is a session that went on: the crash's own
  *   write leaves `lastActiveAt` as it was
@@ -139,13 +144,14 @@ export function effectiveMetadataStatus(
   facts: MetadataFacts,
   writtenAt: number | null,
   now: number,
+  heartbeatAt: number | null,
 ): MetadataStatus {
   const lastActiveAt = plausibleTime(facts.lastActiveAt, now);
   if (facts.status === "completed") {
-    const closedAt = plausibleTime(facts.closedAt, now);
-    if (closedAt !== null && lastActiveAt !== null && lastActiveAt > closedAt + CLOSE_SLACK_MS) {
-      return "active";
-    }
+    const since = later(plausibleTime(facts.closedAt, now), plausibleTime(facts.importedAt, now));
+    const after = (at: number | null) =>
+      since !== null && at !== null && at > since + CLOSE_SLACK_MS;
+    if (after(lastActiveAt) || after(plausibleTime(heartbeatAt, now))) return "active";
   }
   if (facts.status === "crashed" && writtenAt !== null && lastActiveAt !== null) {
     if (lastActiveAt >= writtenAt - CRASH_SLACK_MS) return "active";
@@ -153,21 +159,32 @@ export function effectiveMetadataStatus(
   return facts.status;
 }
 
+/** The later of two times, either of which may not be known. */
+function later(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b === null ? a : Math.max(a, b);
+}
+
 /**
  * Whether a session is one Autohand Code copied from another tool, or from
  * the web, and you never resumed: written `completed` with the time of the
- * copy, and not closed since (`src/import/importers/BaseImporter.ts:198-216`,
- * `src/session/transfer/transfer-session-store.ts:64-66`). It is not listed,
- * unless a heartbeat shows it running.
+ * copy, and neither closed nor written to since: its `lastActiveAt` is no
+ * more than a second past the copy, as each save of a resumed session moves it
+ * (`src/import/importers/BaseImporter.ts:198-216`,
+ * `src/session/transfer/transfer-session-store.ts:64-66`,
+ * `src/session/SessionManager.ts:598-611`). It is not listed, unless a
+ * heartbeat shows it running.
  */
-export function importedAndNeverResumed(facts: MetadataFacts): boolean {
+export function importedAndNeverResumed(facts: MetadataFacts, now: number): boolean {
   if (facts.status !== "completed" || facts.importedAt === null) return false;
-  return facts.closedAt === null || facts.closedAt <= facts.importedAt;
+  if (facts.closedAt !== null && facts.closedAt > facts.importedAt) return false;
+  const lastActiveAt = plausibleTime(facts.lastActiveAt, now);
+  return lastActiveAt === null || lastActiveAt <= facts.importedAt + CLOSE_SLACK_MS;
 }
 
 /** Everything a session's status is decided from. */
 export interface AutohandEvidence {
-  /** The heartbeat chosen, or null when the session has none now. */
+  /** The heartbeat chosen, of those that count, or null when the session has none now. */
   chosen: Candidate | null;
   /** The status its `metadata.json` counts as, `unreadable` for one that cannot be read, or null when it has none. */
   metadata: MetadataStatus | "unreadable" | null;

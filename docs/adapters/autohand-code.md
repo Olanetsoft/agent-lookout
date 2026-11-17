@@ -125,7 +125,7 @@ Left out:
 
 - A run with `--ephemeral`, which keeps no session files (`src/index.ts:528`; `src/session/SessionManager.ts:111-131`), still writes a heartbeat (`src/core/agent.ts:3142-3238`). A heartbeat whose session has no folder in `sessions` is not listed, so such a run is left out, as it asks.
 - A heartbeat whose session ID has a dot is never looked up in `sessions`, where its folder would be one of Autohand Code's other files, and so is not listed.
-- A copy of another tool's session, or of a session from the web, that you never resumed: one written `completed` with the time of the copy, and not closed since, with no heartbeat (`src/import/importers/BaseImporter.ts:198-216`; `src/session/transfer/transfer-session-store.ts:64-66`). One resumed and closed since, or with a fresh heartbeat, is listed.
+- A copy of another tool's session, or of a session from the web, that you never resumed: one written `completed` with the time of the copy, neither closed nor written to since, with no heartbeat (`src/import/importers/BaseImporter.ts:198-216`; `src/session/transfer/transfer-session-store.ts:64-66`). One closed or written to since is listed, and so is one with a heartbeat, or that had one while Agent Lookout ran.
 - A teammate, which has no heartbeat or session.
 - Heartbeats of another format, whose name is not their session's, over 128 KiB, of another user, with a second name or links, and every temporary or removed file and lock.
 
@@ -150,7 +150,7 @@ A file found with its process gone stays so while it is unchanged, whatever a la
 
 ### What metadata.json counts as
 
-- `completed` with `lastActiveAt` more than a second past `closedAt` counts as `active`: Autohand Code keeps `completed` while a resumed session runs, and each message moves `lastActiveAt` (`src/session/SessionManager.ts:382-395`, `:598-611`).
+- `completed` with `lastActiveAt`, or a heartbeat of the session, more than a second past `closedAt` counts as `active`: Autohand Code keeps `completed` while a resumed session runs, each message moves `lastActiveAt` (`src/session/SessionManager.ts:382-395`, `:598-611`), and the process that closes a session stops its heartbeat first (`src/core/agent/AgentSessionAccounting.ts:350`; `src/session/ActiveAgentRegistry.ts:215-216`). For a copy of another tool's session, or of one from the web, the time of the copy counts in place of an earlier `closedAt`, or of none, as a copy from the web has none (`src/session/transfer/transfer-session-store.ts:64-66`).
 - `crashed` with `lastActiveAt` no more than a second before the file was written counts as `active`. The crash's own write leaves `lastActiveAt` as it was (`src/core/agent/AgentLifecycleRunner.ts:2192-2206`), and a message saved after it moves it. A misreading can only make a session finished or unknown.
 
 ### The status
@@ -167,18 +167,19 @@ The first row that applies gives the status.
 | 6   | A status held over a late poll                                                                                              | The status before, from the same time |
 | 7   | A quiet heartbeat                                                                                                           | Unknown                               |
 | 8   | A heartbeat whose process ended within 15 seconds                                                                           | Unknown                               |
-| 9   | A gone heartbeat, and `crashed`                                                                                             | Failed                                |
-| 10  | A gone heartbeat                                                                                                            | Finished                              |
+| 9   | A gone heartbeat, with no save of the session over 15 seconds after it, and `crashed`                                       | Failed                                |
+| 10  | A gone heartbeat, with no save of the session over 15 seconds after it                                                      | Finished                              |
 | 11  | No heartbeat, and it was found ended before, or the process of its last one has gone                                        | Finished, or failed when it crashed   |
 | 12  | No heartbeat, and `completed`                                                                                               | Finished                              |
 | 13  | No heartbeat, and `crashed`                                                                                                 | Failed                                |
 | 14  | No heartbeat, and `active` or no `metadata.json`                                                                            | Unknown                               |
 | 15  | No heartbeat, and a status not known or a `metadata.json` that cannot be read                                               | Unknown                               |
 
-"Crashed" is `metadata.json`'s status as it counts above. A session found finished or failed by rows 5, 9, 10 or 11 is remembered so, until a heartbeat of it comes back or its `lastActiveAt` moves past that moment, so a process given its ID later does not bring it back.
+"Crashed" is `metadata.json`'s status as it counts above. A session found finished or failed by rows 5, 9, 10 or 11 is remembered so, until a heartbeat of it comes back or its `lastActiveAt` moves past that moment, so a process given its ID later does not bring it back. Once its `lastActiveAt` moves past that moment, or over 15 seconds past its last heartbeat, the process of that heartbeat is forgotten, since another run saved the session, and rows 12 to 15 decide until a heartbeat comes.
 
 - Row 1: Autohand Code sets `waiting_input` while it asks you to approve a tool and while it asks you a question (`src/core/agent.ts:2926-2948`, `:2969-2979`; `src/session/peers/PeerActivityPublisher.ts:46-52`). The two cannot be told apart.
 - Row 5: an auto-mode iteration's session and a session a terminal's `/new` left are taken up by the same process (`src/core/agent/AgentLifecycleRunner.ts:325-380`, `:1132-1143`). An editor over ACP holds many sessions in one process and writes mode `rpc` (`src/modes/acp/adapter.ts:442-470`), so a process that writes `rpc` does not end a session this way.
+- Rows 9 and 10: only a process that runs a session saves it, and each save moves `lastActiveAt` (`src/session/SessionManager.ts:409`, `:601`, `:683`, `:730`). Such a process writes a heartbeat every 5 seconds, so a save over 15 seconds after a heartbeat whose process has gone came from another run, as one with `--no-daemon`, and that heartbeat counts for nothing.
 - Rows 9 and 13: only the interactive loop writes `crashed` (`src/core/agent/AgentLifecycleRunner.ts:2189-2211`).
 - Rows 10 and 11: a process ends with no close on `kill -9`, on a second Ctrl+C (`src/core/agent/AgentLifecycleRunner.ts:629-651`), on SIGHUP, which it has no handler for, and when an editor's ACP connection closes.
 - Row 12: `closeSession` (`src/session/SessionManager.ts:382-395`). A `-p` run that fails is closed as `completed` too (`src/core/agent/AgentLifecycleRunner.ts:1382-1388`), so it shows as finished.
