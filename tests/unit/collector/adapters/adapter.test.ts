@@ -65,6 +65,11 @@ import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapter
 import { continueSession } from "@collector/adapters/continue/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
+import {
+  createPrimeAgentAdapter,
+  PRIME_AGENT_CAPABILITIES,
+  SOURCE_ID as PRIME_AGENT_SOURCE_ID,
+} from "@collector/adapters/prime-agent/index";
 import { createQwenCodeAdapter, QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { qwenCodeSession, withJump } from "@collector/adapters/qwen-code/toSession";
 import {
@@ -93,6 +98,11 @@ import {
 import { mapMistralVibeStatus } from "@core/mapping/mistral-vibe/mistralVibeMapping";
 import { mapOpencodeStatus } from "@core/mapping/opencode/opencodeMapping";
 import { mapPiStatus } from "@core/mapping/pi/piMapping";
+import {
+  primeAgentHolderStatus,
+  primeAgentJournalStatus,
+  type JournalRecord,
+} from "@core/mapping/prime-agent/primeAgentMapping";
 import {
   foldQwenCodeRecord,
   mapQwenCodeStatus,
@@ -125,6 +135,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Kimchi", KIMCHI_CAPABILITIES],
+  ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -218,6 +229,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createKimchiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(KIMCHI_CAPABILITIES);
+    expect(
+      createPrimeAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(PRIME_AGENT_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1114,6 +1128,79 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(KIMCHI_CAPABILITIES.jump.level).toBe("no");
     expect(KIMCHI_CAPABILITIES.stop.level).toBe("no");
     expect(KIMCHI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {
+    const record = (operation: string, busy: boolean): JournalRecord => ({
+      sessionId: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+      sessionFile: null,
+      busy,
+      operation,
+      recordedAt: NOW,
+    });
+    const shown: SessionStatus[] = [];
+    for (const holder of ["runs", "none", "unknown"] as const) {
+      const status = primeAgentHolderStatus(holder);
+      if (status !== null) shown.push(status);
+    }
+    for (const operation of ["create", "prompt_accepted", "steer_queued", "turn_end", "killed"]) {
+      for (const busy of [true, false]) {
+        for (const suspended of [true, false]) {
+          shown.push(
+            primeAgentJournalStatus({
+              sessionId: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+              createdAt: NOW - 1_000,
+              trail: [{ record: record(operation, busy), queue: null }],
+              queue: { suspended, recordedAt: NOW },
+            }).status,
+          );
+        }
+      }
+    }
+    expect(statuses(shown)).toEqual(new Set(["working", "idle", "finished", "unknown"]));
+    expect(PRIME_AGENT_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(PRIME_AGENT_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(PRIME_AGENT_CAPABILITIES.failed.level).toBe("no");
+    expect(PRIME_AGENT_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Prime Agent: a working session has the time of its file's last write, and no tokens, jump, stop or link", () => {
+    const file = {
+      id: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+      cwd: "/Users/example/code/demo",
+      startedAt: NOW - 60_000,
+      ownName: "demo name",
+    };
+    const at = { file, open: true, writtenAt: NOW - 10_000, now: NOW };
+    const session = piSession({
+      ...at,
+      sourceId: PRIME_AGENT_SOURCE_ID,
+      evidence: { status: "working", since: NOW - 30_000 },
+    });
+    expect(session).toMatchObject({
+      id: "prime-agent:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+      source: "prime-agent",
+      name: "demo name",
+      status: "working",
+      statusSince: NOW - 30_000,
+      lastWriteAt: NOW - 10_000,
+    });
+    for (const absent of ["tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    const idle = piSession({
+      ...at,
+      sourceId: PRIME_AGENT_SOURCE_ID,
+      evidence: { status: "idle", since: NOW - 5_000 },
+    });
+    expect(idle).not.toHaveProperty("lastWriteAt");
+    expect(PRIME_AGENT_CAPABILITIES.names.level).toBe("partly");
+    expect(PRIME_AGENT_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(PRIME_AGENT_CAPABILITIES.tokens.level).toBe("no");
+    expect(PRIME_AGENT_CAPABILITIES.jump.level).toBe("no");
+    expect(PRIME_AGENT_CAPABILITIES.stop.level).toBe("no");
+    expect(PRIME_AGENT_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Continue: a session is unknown, and never working, idle, waiting, finished or failed", () => {

@@ -115,6 +115,14 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   // Kimchi sets its agent folder's variables itself, so they move nothing, nor does a relative sessions folder.
   expect(sourcesFingerprint({ KIMCHI_CODING_AGENT_DIR: "/tmp/kimchi" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ KIMCHI_CODING_AGENT_SESSION_DIR: "relative" }, HOME)).toBe(defaults);
+  // A relative folder of Prime Agent's cannot be followed, nor its own default named outright.
+  expect(sourcesFingerprint({ PRIME_AGENT_SESSION_DIR: "relative/sessions" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ PRIME_AGENT_CODING_AGENT_DIR: "relative/agent" }, HOME)).toBe(
+    defaults,
+  );
+  expect(
+    sourcesFingerprint({ PRIME_AGENT_CODING_AGENT_DIR: "/Users/example/.prime/agent" }, HOME),
+  ).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -167,6 +175,20 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ MIMOCODE_DB: ":memory:" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_KIMCHI_HOME: "/tmp/empty-kimchi" }, HOME),
     sourcesFingerprint({ KIMCHI_CODING_AGENT_SESSION_DIR: path.resolve("/tmp/kimchi") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_PRIME_AGENT_HOME: "/tmp/empty-prime-agent" }, HOME),
+    // Its sessions folder and its agent folder, which holds its leases and journals, each count.
+    sourcesFingerprint({ PRIME_AGENT_SESSION_DIR: path.resolve("/tmp/prime-sessions") }, HOME),
+    sourcesFingerprint(
+      { PRIME_AGENT_CODING_AGENT_SESSION_DIR: path.resolve("/tmp/prime-sessions") },
+      HOME,
+    ),
+    sourcesFingerprint(
+      {
+        PRIME_AGENT_SESSION_DIR: path.resolve("/Users/example/.prime/agent/sessions"),
+        PRIME_AGENT_CODING_AGENT_DIR: path.resolve("/tmp/prime-agent"),
+      },
+      HOME,
+    ),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

@@ -7,9 +7,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue, Crush, Kilo Code, MiMo Code and Kimchi, none of the
- * sixteen installed here, and status files. Then the other machine, connected
- * over SSH.
+ * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and Prime Agent,
+ * none of the seventeen installed here, and status files. Then the other
+ * machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -800,6 +800,49 @@ export const KIMCHI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const PRIME_AGENT_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From the journal of the worker that holds its lease, on macOS and Linux. Unknown before its first prompt, or while parked.",
+  },
+  "needs-you": {
+    level: "no",
+    reason: "Prime Agent puts no question or approval to you mid-turn.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "When no running prime-agent holds the session's lease, as also after Prime Agent stops an idle worker.",
+  },
+  failed: {
+    level: "no",
+    reason: "Prime Agent writes a failed turn inside a message, which is not parsed.",
+  },
+  names: {
+    level: "partly",
+    reason: "One you gave with /name or /new --name, or its model gave, else the folder's.",
+  },
+  jump: { level: "no", reason: "Prime Agent's files name no terminal." },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "The time since the session's file was last written. A long reply or Python call writes nothing until it ends.",
+  },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on the line with its text, which is not parsed.",
+  },
+  stop: {
+    level: "no",
+    reason: "Agent Lookout sends a Prime Agent process no signal but signal 0.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Prime Agent's sockets, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1292,6 +1335,24 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when Prime Agent is not installed: its folder is looked for, and nothing more.
+      id: "prime-agent",
+      label: "Prime Agent",
+      state: "unavailable",
+      detail:
+        "Prime Agent was not found: there is no ~/.prime/agent/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.prime/agent/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Leases folder", value: "~/.prime/agent/session-leases" },
+        { label: "Workers folder", value: "~/.prime/agent/daemon-workers" },
+        { label: "Process check", value: "signal 0, and ps -o pid=,lstart=,comm= -p <pids>" },
+        { label: "Process check run", value: "every 30 seconds at most, and when a lease appears" },
+      ],
+      capabilities: PRIME_AGENT_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1336,6 +1397,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Kilo Code there", value: "Not found" },
         { label: "MiMo Code there", value: "Not found" },
         { label: "Kimchi there", value: "Not found" },
+        { label: "Prime Agent there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],
