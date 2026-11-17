@@ -153,8 +153,8 @@ const FEATURES = [
   { name: "allow-deny", scene: "Allow or Deny", step: 0, height: 800 },
   { name: "notifications", scene: "Settings", step: 0, height: 1000 },
   { name: "jump-stop", scene: "Stop", step: 0, height: 800, pressed: true, alone: true },
-  // With the rows of Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code and Kimchi, the card is taller than its clip in a 1960-wide window, and its clip than a 1000-high one.
-  { name: "agents", scene: "Sources", step: 2, width: 2040, height: 1100 },
+  // With the rows of Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and Prime Agent, the card is taller than its clip in a 2040-wide window, and its clip than a 1100-high one.
+  { name: "agents", scene: "Sources", step: 2, width: 2120, height: 1150 },
 ];
 
 /**
