@@ -77,7 +77,7 @@ export interface UnrealAgentSessionFile {
   id: string;
   /** When Unreal Agent made the session, in epoch milliseconds. */
   createdAt: number;
-  /** The folder of the newest shell command read, or null before one ran. */
+  /** The folder of the newest shell command read, or null before one ran or when its line gives none. */
   folder: string | null;
   replay: UnrealAgentReplay;
   /** Whether the file was too long to read whole when its lines did not reach its start. */
@@ -249,9 +249,10 @@ export function createUnrealAgentSessionReader(
   /** When each file was last read whole, kept while it is listed. */
   const fullReadAt = new Map<string, number>();
 
+  /** The folder of the newest shell command's line in this read, even none, so every reader of the same lines agrees; `before` only when the read held no shell command. */
   function folderFrom(applied: Applied, before: string | null): string | null {
     if (applied.shell === null) return before;
-    return folderOfShellLine(applied.shell.head, applied.shell.stateAt, platform) ?? before;
+    return folderOfShellLine(applied.shell.head, applied.shell.stateAt, platform);
   }
 
   /** Whether a whole read of this file may be made now. A clock set back counts as time enough. */

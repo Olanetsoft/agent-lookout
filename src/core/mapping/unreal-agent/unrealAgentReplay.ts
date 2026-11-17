@@ -47,7 +47,7 @@ export type UnrealAgentLine =
   /** A line of a shape this does not read. */
   | { kind: "unread" };
 
-/** The most commands kept as running. A file past it is read as unknown. */
+/** The most commands kept as running. A file past it is read as unknown, and no command is kept until a fork. */
 export const MAX_OPEN_OPERATIONS = 4096;
 
 /**
@@ -110,7 +110,7 @@ export interface UnrealAgentReplay {
   newestTurnAt: number | null;
   /** Whether the lines reach the session's start: its first item, or a fork. */
   complete: boolean;
-  /** Whether a line was not read. Kept until the file is read afresh, or a fork follows. */
+  /** Whether a line was not read. Kept until the file is read afresh, or a fork follows. While it holds, no command is added. */
   unread: boolean;
   /** Whether the newest line is a reply to the newest turn. */
   endsOnReply: boolean;
@@ -202,6 +202,13 @@ function addAll(set: Set<string>, ids: readonly string[]) {
   for (const id of ids) set.add(id);
 }
 
+/** More commands open than are kept: a line not read, and no command kept until a fork. */
+function tooManyOpen(replay: UnrealAgentReplay) {
+  replay.unread = true;
+  replay.callOps.clear();
+  replay.liveOps.clear();
+}
+
 /**
  * Applies one line, in file order.
  *
@@ -226,8 +233,8 @@ export function applyUnrealAgentLine(replay: UnrealAgentReplay, line: UnrealAgen
   }
   if (line.kind === "operation") {
     if (line.terminal) replay.liveOps.delete(line.id);
-    else replay.liveOps.add(line.id);
-    if (replay.liveOps.size > MAX_OPEN_OPERATIONS) replay.unread = true;
+    else if (!replay.unread) replay.liveOps.add(line.id);
+    if (replay.liveOps.size > MAX_OPEN_OPERATIONS) tooManyOpen(replay);
     return;
   }
 
@@ -271,8 +278,8 @@ export function applyUnrealAgentLine(replay: UnrealAgentReplay, line: UnrealAgen
       replay.imminent = true;
       return;
     case "status-created":
-      addAll(replay.callOps, item.ids);
-      if (replay.callOps.size > MAX_OPEN_OPERATIONS) replay.unread = true;
+      if (!replay.unread) addAll(replay.callOps, item.ids);
+      if (replay.callOps.size > MAX_OPEN_OPERATIONS) tooManyOpen(replay);
       return;
     case "status-completed":
       for (const id of item.ids) {

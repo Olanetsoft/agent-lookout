@@ -1,10 +1,12 @@
-import { appendFile, mkdir, symlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
 import { createUnrealAgentAdapter, WINDOWS_DETAIL } from "@collector/adapters/unreal-agent/index";
 import { createCollector } from "@collector/collector";
+import type { UnrealAgentPrograms } from "@core/mapping/unreal-agent/unrealAgentLiveness";
+import { REPLY_SETTLE_MS } from "@core/mapping/unreal-agent/unrealAgentMapping";
 import {
   PRIVATE_WORDS,
   SESSION_ID,
@@ -16,22 +18,30 @@ import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/t
 
 // The adapter end to end, on real files this test writes, laid out as
 // Unreal Agent v0.3.1 lays them out, and through the collector, which runs
-// the real `ps` on macOS and Linux. Whether an Unreal Agent program runs on
-// the machine under test is not known, so a busy or waiting session may show
-// as working, idle, unknown or finished. A session the terminal app quit,
-// and one whose reply failed, show as they do whatever runs.
+// the real `ps` on macOS and Linux. Each file's time is set a few seconds
+// back, so no reply is still taken as a turn under way. Whether an Unreal
+// Agent program runs on the machine under test is not known, so a waiting
+// session may show as idle, unknown or finished. A session the terminal app
+// quit, and one whose reply failed, show as they do whatever runs.
 
 const OTHER_ID = uuidOf(1, 2);
 const FAILED_ID = uuidOf(1, 3);
 
-/** A sessions folder with these files, by ID, beside the command output and copies Unreal Agent keeps. */
+/**
+ * A sessions folder with these files, by ID, beside the command output and copies Unreal Agent keeps.
+ * Each file's time is set after its newest line, and past the 2 seconds a reply that is the newest
+ * line counts as busy, so only what `ps` shows moves a status.
+ */
 async function folderWith(sessions: Record<string, string>) {
   const dir = path.join(await tempDir(), "sessions");
   await mkdir(path.join(dir, "operations", SESSION_ID, uuidOf(5, 1)), { recursive: true });
   await writeFile(path.join(dir, "operations", SESSION_ID, uuidOf(5, 1), "out"), PRIVATE_WORDS);
   await writeFile(path.join(dir, ".session-123.tmp"), PRIVATE_WORDS);
+  const writtenAt = new Date(Date.now() - REPLY_SETTLE_MS - 3_000);
   for (const [id, text] of Object.entries(sessions)) {
-    await writeFile(path.join(dir, `${id}.session.jsonl`), text);
+    const file = path.join(dir, `${id}.session.jsonl`);
+    await writeFile(file, text);
+    await utimes(file, writtenAt, writtenAt);
   }
   return dir;
 }
@@ -136,6 +146,21 @@ describe.skipIf(process.platform === "win32")(
       lines.hard(Date.now());
       await appendFile(path.join(dir, `${SESSION_ID}.session.jsonl`), lines.text().slice(before));
       expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    });
+
+    test("a waiting session is idle while a program may hold it, and unknown when ps cannot say", async () => {
+      const dir = await folderWith({ [SESSION_ID]: waiting(SESSION_ID).text() });
+      const statusWith = async (programs: UnrealAgentPrograms) =>
+        (
+          await createUnrealAgentAdapter({
+            env: { AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: dir },
+            platform,
+            processes: { read: async () => programs },
+          }).poll()
+        ).sessions[0]?.status;
+      const started = Date.now() - 3_600_000;
+      expect(await statusWith({ ok: true, starts: [started], unknownStart: false })).toBe("idle");
+      expect(await statusWith({ ok: false })).toBe("unknown");
     });
 
     test("a link at a session file's name is passed over", async () => {

@@ -135,7 +135,7 @@ For a shell command of version 3 (`shell.go:15-17`), the state begins with the c
 ,"State":{"Input":{"Command":"<command>","Shell":"<shell>","Directory":"<folder>"},"BaseDirectory":"…
 ```
 
-The command and the shell are passed over as bytes, minding `\`, the command within the 1 MiB kept of the line. The folder, up to 16 KiB, is the one part of any line decoded with `JSON.parse`, and only for the newest shell command's line in each read. It is the session's folder only when it is not empty, at most 4096 characters, has no control character and is absolute, as for every agent. Any step that fails gives no folder from that line, as for two records written into one line, which then holds `{"type"` where `","Shell":"` should be. `BaseDirectory`, the command's output and its paths are never looked at.
+The command and the shell are passed over as bytes, minding `\`, the command within the 1 MiB kept of the line. The folder, up to 16 KiB, is the one part of any line decoded with `JSON.parse`, and only for the newest shell command's line in each read. It is the session's folder only when it is not empty, at most 4096 characters, has no control character and is absolute, as for every agent. Any step that fails gives no folder from that line, as for two records written into one line, which then holds `{"type"` where `","Shell":"` should be, and the session then has none until a later shell command's line gives one. `BaseDirectory`, the command's output and its paths are never looked at.
 
 ## Which sessions are listed
 
@@ -162,6 +162,7 @@ Each session whose file was written in the last 24 hours, by its modified time, 
 - A `settings` input starts each launch (TUI `run.go:213-224`; runner `run.go:369-385`), and begins a new run: a runner that resumes a session takes up no old stop (`loop.go:586-616`). Messages not yet answered and commands carry over.
 - A `fork` item clears what the coordinator clears at it, the tool calls and the commands, and keeps the messages not yet answered (`loop.go:581-584`). The items before it are the parent's, copied first (`localfile/codec.go:157-159`). No program of Unreal Agent's makes a fork at v0.3.1: `Store.Fork` is called only by tests.
 - The lines read are complete when they begin with the first item, hold item 1, or hold a fork.
+- More than 4,096 commands running, or waited for, is a line this does not read, and no command's ID is kept until a fork follows.
 
 ### Ended
 
@@ -224,7 +225,7 @@ The poll's basis is `files` while `ps` shows an Unreal Agent program, `files-clo
 | `unreal-agent`, `uat`                | Homebrew's links to the terminal app (`.goreleaser.yaml:69-70`) |
 | `unreal-agent-tu`, `unreal-agent-ru` | The first two as Linux keeps them, cut to 15 characters         |
 
-Only when each matching program started is kept, in memory. Every other line is dropped as it is read. A line that names one of them but whose start cannot be read makes Lx apply. Another program named `uat` or `unreal-agent` counts too: it can keep a session from showing as finished, and nothing more.
+Only when each matching program started is kept, in memory. Every other line is dropped. A line that names one of them but whose start cannot be read makes Lx apply. Another program named `uat` or `unreal-agent` counts too: it can keep a session from showing as finished, and nothing more.
 
 ### Thirty quiet minutes
 

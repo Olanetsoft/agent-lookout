@@ -284,6 +284,34 @@ describe("applying lines", () => {
     expect(replayOf([turn(), reply(), ...lines]).unread).toBe(true);
   });
 
+  test(`past ${MAX_OPEN_OPERATIONS} commands running, none is kept until a fork`, () => {
+    const ids = Array.from({ length: MAX_OPEN_OPERATIONS + 1 }, (_, n) => `op-${n}`);
+    const more = Array.from({ length: 10 }, (_, n) => operation(`more-${n}`, false));
+    const running = replayOf([turn(), reply(), ...ids.map((id) => operation(id, false)), ...more]);
+    expect(running.unread).toBe(true);
+    expect(running.liveOps.size).toBe(0);
+    expect(copyUnrealAgentReplay(running).liveOps.size).toBe(0);
+    const waited = replayOf([turn(), reply(), created(...ids), created(OP_1, OP_2), ...more]);
+    expect(waited.unread).toBe(true);
+    expect(waited.callOps.size).toBe(0);
+    expect(waited.liveOps.size).toBe(0);
+    const forked = replayOf([turn(), reply(), created(...ids), { kind: "fork" }, created(OP_1)]);
+    expect(forked.unread).toBe(false);
+    expect(forked.callOps.has(OP_1)).toBe(true);
+    expect(unrealAgentPhase(forked).phase).toBe("busy");
+    const answered = replayOf([
+      turn(),
+      reply(),
+      created(...ids),
+      { kind: "fork" },
+      created(OP_1),
+      completed(OP_1),
+      turn(TURN_2),
+      reply("complete", TURN_2),
+    ]);
+    expect(unrealAgentPhase(answered)).toEqual({ phase: "waiting", reply: "complete" });
+  });
+
   test("a copy takes lines without changing the replay it came from", () => {
     const replay = replayOf([turn(), reply(), created(OP_1)]);
     const copy = copyUnrealAgentReplay(replay);

@@ -26,9 +26,8 @@ import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
  * locale and in UTC: `ps -A -o lstart=,comm=`, when each process started and
  * the name it gives its program, and nothing else. Each line is compared with
  * the names, and only the start times of Unreal Agent's programs are kept.
- * Every other line is dropped as it is read. The rest of a process's
- * arguments, its owner and its environment are never asked for. It is run on
- * macOS and Linux only.
+ * Every other line is dropped. The rest of a process's arguments, its owner
+ * and its environment are never asked for. It is run on macOS and Linux only.
  */
 
 /** When each process started and the name it gives its program, and nothing else about any of them. */

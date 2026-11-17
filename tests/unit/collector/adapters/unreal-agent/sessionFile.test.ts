@@ -526,6 +526,36 @@ describe("what is listed", () => {
     expect(okFile(await read(NOW + SECOND)).folder).toBe(PROJECT);
   });
 
+  test("takes no folder while the newest shell command's line gives none, read at once or onward", async () => {
+    const lines = new SessionLines();
+    lines.settings(AT).message(AT).turn(AT);
+    shellCall(lines, AT, 1);
+    lines.turn(AT);
+    const split = lines.text().length;
+    // A command longer than what is kept of a line, so its folder is past the kept bytes.
+    const op = uuidOf(5, 2);
+    lines.operation(
+      shellOperation(
+        op,
+        "awaiting",
+        shellState({ operationId: op, command: "a".repeat(LINE_KEEP_BYTES) }),
+      ),
+    );
+    const once = setup();
+    once.files.write(FILE, lines.text());
+    expect(okFile(await once.read()).folder).toBeNull();
+    const onward = setup();
+    onward.files.write(FILE, lines.text().slice(0, split));
+    expect(okFile(await onward.read()).folder).toBe(PROJECT);
+    onward.files.append(FILE, lines.text().slice(split), { mtimeMs: NOW + SECOND });
+    expect(okFile(await onward.read(NOW + SECOND)).folder).toBeNull();
+    // The next shell command's line gives it back.
+    const before = lines.text().length;
+    shellCall(lines, AT, 3);
+    onward.files.append(FILE, lines.text().slice(before), { mtimeMs: NOW + 2 * SECOND });
+    expect(okFile(await onward.read(NOW + 2 * SECOND)).folder).toBe(PROJECT);
+  });
+
   test("the file's modified time as it was opened, read first or onward, not as it was looked up", async () => {
     const { files, reader } = setup();
     const lines = new SessionLines();
