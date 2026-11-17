@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- fx sessions, from its `fx` command, `fx ask` and editors over ACP, read from the log fx keeps for each in `~/.fx/sessions/v2`, or `sessions/v2` in the folder `FX_HOME` names, on macOS and Linux. A session shows as working while its turn is open and an fx program runs, as failed when fx ends a turn as failed, and as finished once no fx program runs, or once every fx running was missing from `ps` after the session's last write. Between turns, while an fx program runs, it shows as unknown, and a working session quiet for 30 minutes shows as unknown too. It never shows as idle or needing you, since fx writes nothing for either, and takes its folder's name. Subagent sessions are left out. Only each log's first line is turned into text, for the session's folder, and every other line is checked with fx's own checksum and read by its header alone, so no prompt, reply or title is read. fx's index of sessions, a session's lock and its blobs are never opened. Nothing is read on Windows. Built from fx's source at v0.0.17 and not yet checked on a computer running it. (#75)
+
 ## 0.2.22 - 2026-11-17
 
 MiMo Code, Kimchi and Prime Agent sessions show.

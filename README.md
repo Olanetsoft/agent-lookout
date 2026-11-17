@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and Prime Agent sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and fx sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -74,6 +74,7 @@ Any other agent can show up by writing one small file per session. [Your own age
 | MiMo Code       | Partly    | No     | No        | Yes    | No     | No     |
 | Kimchi          | No        | No     | No        | No     | No     | No     |
 | Prime Agent     | No        | No     | Partly    | No     | No     | No     |
+| fx              | No        | No     | Partly    | No     | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -107,6 +108,8 @@ MiMo Code support reads its database, `~/.local/share/mimocode/mimocode.db`, on 
 Kimchi support reads its session files, in `~/.config/kimchi/harness/sessions`, the way Pi's are read: Kimchi runs Pi's coding agent. A session shows as unknown while a `kimchi` program runs and as finished once none does, and takes its folder's name. On Windows it stays unknown. It was built from its source at v1.35.0 and has not yet been checked on a computer running it.
 
 Prime Agent support reads its session files, in `~/.prime/agent/sessions`, the way Pi's are read, and its session leases and workers' journals for each session's status. A session shows as working or idle from its worker's journal while a running `prime-agent` holds it, on macOS and Linux, or as unknown when that journal cannot say, and as finished once none does. On Windows a session it holds shows as unknown. It was built from its source at v0.10.3 and has not yet been checked on a computer running it.
+
+fx support reads the log fx keeps for each session, in `~/.fx/sessions/v2`, on macOS and Linux. A session shows as working while its turn is open and an fx program runs, as failed when fx ends a turn as failed, and as finished once no fx program runs. It never shows as idle or needing you, and takes its folder's name. It was built from its source at v0.0.17 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
