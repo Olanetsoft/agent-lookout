@@ -206,7 +206,8 @@ export interface JournalState {
   queue: QueueState;
   /**
    * When the slot's run of idle records of one session, to its newest, began,
-   * in epoch milliseconds, or null when its newest is not idle.
+   * in epoch milliseconds, or null when its newest is not idle. A `turn_end`
+   * always starts a run.
    */
   idleSince: number | null;
 }
@@ -247,12 +248,15 @@ function take(state: Taking, line: Buffer, slot: string): void {
       operation: record.operation,
       recordedAt: record.recordedAt,
     };
-    // An idle record goes on the run of idle records before it, while that is the same session's.
+    // An idle record goes on the run of idle records before it, while that is the same
+    // session's. A turn_end never does: its turn was admitted with a busy record
+    // (worker/input.rs:143-147; worker/turn.rs:89-92, :1153-1162), which a rewrite may have dropped.
     const previous = state.trail.at(-1)?.record ?? state.carried;
     state.carried = undefined;
     state.idleSince = !mayBeIdle(kept)
       ? null
-      : previous !== undefined &&
+      : kept.operation !== "turn_end" &&
+          previous !== undefined &&
           mayBeIdle(previous) &&
           previous.sessionId === kept.sessionId &&
           previous.sessionFile === kept.sessionFile

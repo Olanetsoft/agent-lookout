@@ -311,6 +311,26 @@ describe("reading a journal", () => {
     expect(state?.idleSince).toBe(AT);
   });
 
+  test("starts the run of idle records again at a turn's end, added or after a rewrite", async () => {
+    for (const how of ["added", "rewritten"] as const) {
+      const files = primeAgentFiles();
+      const reader = createJournalReader(files.io);
+      files.write(
+        JOURNAL,
+        recordLine({ busy: false, operation: "turn_end", at: AT }) +
+          queueLine({ suspended: false, at: AT }),
+      );
+      await read(files, reader);
+      // A turn ran and ended between two polls, and only its end is read.
+      const ended =
+        recordLine({ busy: false, operation: "turn_end", at: AT + 5 * SECOND }) +
+        queueLine({ suspended: false, at: AT + 5 * SECOND });
+      if (how === "added") files.append(JOURNAL, ended);
+      else files.write(JOURNAL, ended);
+      expect((await read(files, reader))?.idleSince, how).toBe(AT + 5 * SECOND);
+    }
+  });
+
   test("keeps no start of a run of idle records past 8 MiB added on one poll", async () => {
     const files = primeAgentFiles();
     const reader = createJournalReader(files.io);
