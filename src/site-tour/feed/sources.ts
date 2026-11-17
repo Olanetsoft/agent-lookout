@@ -946,12 +946,12 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When closed, or soon after its process ends or leaves it. One that ended unclosed before Agent Lookout started is unknown.",
+      "When closed, or soon after its process ends or leaves it. One left open whose heartbeat went before Agent Lookout ran is unknown.",
   },
   failed: {
     level: "partly",
     reason:
-      "When marked crashed, with nothing saved since and no fresh heartbeat. A failed -p run is written completed and shows finished.",
+      "When marked crashed with nothing saved since, soon after its process ends or leaves it. A failed -p run shows finished.",
   },
   names: {
     level: "partly",

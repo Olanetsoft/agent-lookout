@@ -22,7 +22,7 @@ It needs nothing installed and changes nothing. It reads the heartbeats and each
 
 - **It reads the folder itself.** Autohand Code's own reader of heartbeats, `listActive`, deletes every heartbeat it finds stale or cannot read (`src/session/ActiveAgentRegistry.ts:104-136`, `:154-169`), so it is never run, and neither is `autohand agents`, which calls it (`src/commands/agents.ts:95-101`).
 - **Fields are found as bytes, not parsed.** A heartbeat holds the instruction the session works on, the command it runs and the files it wrote. A `metadata.json` holds the start of your last message and a title that can be your first words. So the few fields kept are found in the file's bytes, and nothing else is turned into text: see [Finding a field](#finding-a-field).
-- **It reads only what Autohand Code reads.** Autohand Code takes a heartbeat only as an ordinary file with one name, of 131,072 bytes or less, and on macOS and Linux only one of the user it runs as that no one else may read or write, in an `active-agents` folder of that user (`src/session/ActiveAgentRegistry.ts:138-152`). Agent Lookout holds every file it reads to the same rule, as [What it reads](#what-it-reads) says.
+- **It reads only what Autohand Code reads.** Autohand Code takes a heartbeat only as an ordinary file with one name, of 131,072 bytes or less, and on macOS and Linux only one of the user it runs as that no one else may read or write, in an `active-agents` folder of that user (`src/session/ActiveAgentRegistry.ts:138-152`). Agent Lookout holds every heartbeat it reads to the same rule, and each `metadata.json` to it but for its size and mode, as [What it reads](#what-it-reads) says.
 
 ## What it reads
 
@@ -42,7 +42,7 @@ Never opened, and never looked up:
 - `sessions/index.json`, its lock, its copies and its temporary files (`src/session/SessionManager.ts:24-30`, `:449-469`), and a web transfer's temporary files (`src/session/transfer/transfer-session-store.ts:63`, `:79`);
 - `conversation.jsonl`, `state.json`, `command-output/` and anything else in a session's folder;
 - every `*.lock` folder, its `*.owner` file, every `*.lock.reaper`, and every temporary file and removed file, `.<name>.<pid>.<uuid>.tmp` and `.<name>.<pid>.<uuid>.tombstone` (`src/utils/atomicFile.ts:185-215`, `:541-545`, `:577-580`);
-- `peer-messages/`, `peer-runtime/`, `peer-resources/`, `telemetry/`, `memory/`, `projects/`, `plans/`, `exports/`, `mobile/`, `error.log`, `feedback.log`, `device-id`, `trusted-workspaces.json`, `feature-flags.json`, `announcements.json` and `axo.json` (`src/constants.ts:78-166`).
+- `peer-messages/`, `peer-runtime/` and `peer-resources/` (`src/session/peers/PeerMessaging.ts:115`, `:122`; `src/core/agent/AgentPeerRuntime.ts:40`), and `telemetry/`, `memory/`, `projects/`, `plans/`, `exports/`, `mobile/`, `error.log`, `feedback.log`, `device-id`, `trusted-workspaces.json`, `feature-flags.json`, `announcements.json` and `axo.json` (`src/constants.ts:78-166`).
 
 Nothing is created, locked, renamed, chmod'd or deleted. A heartbeat whose process has gone is left where it is.
 
@@ -60,14 +60,14 @@ Heartbeats are in `active-agents` there and sessions in `sessions` (`src/constan
 
 - Autohand Code takes `AUTOHAND_HOME` trimmed, with nothing in it meaning none, as it is given: `~` is not the home folder, and a relative one is read from the folder Autohand Code was started in (`src/constants.ts:41-45`). That folder is not known here, so a relative `AUTOHAND_HOME` is passed over.
 - On Windows, when `USERPROFILE` is not set or is a system folder, Autohand Code goes on to `HOMEDRIVE` and `HOMEPATH`, then to the folder above `AppData` (`src/constants.ts:51-65`). Agent Lookout takes the home folder Node gives, which is normally `USERPROFILE`.
-- An alpha build's launcher sets `AUTOHAND_HOME` to `~/.autohand-alpha/profile.<random>` (`install.sh:125-140`). Name that folder with `AGENT_LOOKOUT_AUTOHAND_HOME` to read it.
+- An alpha build's launcher sets `AUTOHAND_HOME` to `~/.autohand-alpha/profile.<random>` (`install.sh:127-141`). Name that folder with `AGENT_LOOKOUT_AUTOHAND_HOME` to read it.
 - With peer communication on, `sessions.communication.coordinationDirectory` moves heartbeats to `<that folder>/active-agents` (`src/core/agent.ts:3201-3203`). That setting is in Autohand Code's settings, which are never read, so such heartbeats are not found, and the sessions show as unknown. So does a `--set` given for one run (`src/runConfigOverlay.ts:20`, `:69-76`).
 
 When neither `sessions` nor `active-agents` is there, Autohand Code is reported as not found, with no advice, and looked for again once a minute, or on every poll when `AGENT_LOOKOUT_AUTOHAND_HOME` is set. When that setting names a folder with neither, that is an answer, not a missing Autohand Code. A `sessions` folder that cannot be listed is an error. An `active-agents` folder that is missing, a link, another user's or cannot be listed leaves the sessions read from `metadata.json` alone, the way of reading named `files-without-heartbeats`, and the Sources view says so.
 
 ## Finding a field
 
-Every writer of a heartbeat and of a `metadata.json` writes `JSON.stringify(value, null, 2)`: `atomicWriteJson` (`src/utils/atomicFile.ts:523-534`), the importer (`src/import/importers/BaseImporter.ts:216`), the web transfer (`src/session/transfer/transfer-session-store.ts:66`), and Autohand Code 0.9.3's heartbeat. Such text has a line break only between its parts: inside a string JSON writes one as `\n`. Each key of the outer object is on a line of its own after exactly two spaces, and each key of an object inside it after four or more. So the bytes of a line break, two spaces and `"<key>": ` can only begin a key of the outer object, and each field is found by them. A file written another way has no such bytes, and its fields are then not known, never wrong.
+Every writer of a heartbeat and of a `metadata.json` writes `JSON.stringify(value, null, 2)`: `atomicWriteJson` (`src/utils/atomicFile.ts:523-534`), the importer (`src/import/importers/BaseImporter.ts:216`), the web transfer (`src/session/transfer/transfer-session-store.ts:67`), and Autohand Code 0.9.3's heartbeat. Such text has a line break only between its parts: inside a string JSON writes one as `\n`. Each key of the outer object is on a line of its own after exactly two spaces, and each key of an object inside it after four or more. So the bytes of a line break, two spaces and `"<key>": ` can only begin a key of the outer object, and each field is found by them. A file written another way has no such bytes, and its fields are then not known, never wrong.
 
 Each byte is compared as a number. Only two functions in `jsonBytes.ts` turn bytes into text, and no other code in the adapter's folder does: one for bytes already checked against a short list, such as the digits and signs of a time, and one that gives a single JSON string, from its opening quote to the first quote no backslash escapes, to `JSON.parse`. When that fails, the error, whose words can hold the bytes, is dropped. A test holds the folder to it.
 
@@ -135,7 +135,7 @@ An auto-mode run keeps a session of its own, written `type` `automode` with no h
 
 ### What is remembered
 
-Autohand Code deletes a session's heartbeat when the session closes, before it writes `completed` (`src/core/agent/AgentSessionAccounting.ts:346-379`), and any Autohand Code that writes a heartbeat deletes every other one it finds stale (`src/session/ActiveAgentRegistry.ts:282`; `src/core/agent.ts:3220-3222`). A session in an editor over ACP closes no session when the editor goes: its heartbeat is deleted and its `metadata.json` stays `active` (`src/modes/acp/index.ts:88-94`; `src/modes/acp/adapter.ts:1406-1432`). So, while a session is listed, the adapter keeps in memory what its last heartbeat said: the process, its mode, when it was written and the status shown. It keeps no text. The memory goes when Agent Lookout stops.
+Autohand Code deletes a session's heartbeat when the session closes, before it writes `completed` (`src/core/agent/AgentSessionAccounting.ts:346-379`), and any Autohand Code that writes a heartbeat deletes every other one it finds stale (`src/session/ActiveAgentRegistry.ts:282`; `src/core/agent.ts:3220-3222`). A session in an editor over ACP closes no session when the editor goes: its heartbeat is deleted and its `metadata.json` stays `active` (`src/modes/acp/index.ts:88-94`; `src/modes/acp/adapter.ts:1406-1432`). So, while a session is listed, the adapter keeps in memory what its last heartbeat said: the process, the folder, the mode, when the session was made and when the heartbeat was written, and the status shown. Of text it keeps only the folder. What it read of each heartbeat is also kept while the file is there, so an unchanged one is not opened again, even for a session that is not listed. The memory goes when Agent Lookout stops.
 
 ### The heartbeat a status is taken from
 
@@ -183,7 +183,7 @@ The first row that applies gives the status.
 - Rows 9 and 13: only the interactive loop writes `crashed` (`src/core/agent/AgentLifecycleRunner.ts:2189-2211`).
 - Rows 10 and 11: a process ends with no close on `kill -9`, on a second Ctrl+C (`src/core/agent/AgentLifecycleRunner.ts:629-651`), on SIGHUP, which it has no handler for, and when an editor's ACP connection closes.
 - Row 12: `closeSession` (`src/session/SessionManager.ts:382-395`). A `-p` run that fails is closed as `completed` too (`src/core/agent/AgentLifecycleRunner.ts:1382-1388`), so it shows as finished.
-- Row 14: a run with `--no-daemon`, which writes no heartbeat (`src/core/agent.ts:3143`), a run whose heartbeats were moved, the moment of a clean close between the heartbeat's removal and `completed`, a session that ended unclosed while Agent Lookout was not running, and an RPC session its client switched from (`src/modes/rpc/adapter.ts:1410-1428`) until its process ends.
+- Row 14: a run with `--no-daemon`, which writes no heartbeat (`src/core/agent.ts:3143`), a run whose heartbeats were moved, the moment of a clean close between the heartbeat's removal and `completed`, a session left open whose heartbeat was deleted while Agent Lookout was not running, and an RPC session its client switched from (`src/modes/rpc/adapter.ts:1410-1428`) until its process ends.
 
 ### A late poll
 
@@ -200,7 +200,7 @@ After the computer sleeps, a session's heartbeat is over 15 seconds old until Au
 Autohand Code shows these with no `waiting_input`, so the session shows as working:
 
 - the commit message prompt (`src/core/actionExecutor.ts:2701-2732`);
-- the prompt for a folder outside the project as an instruction starts (`src/core/agent/InstructionRunner.ts:438-449`; `src/permissions/directoryPermissionPrompt.ts:111-124`, `:206`);
+- the prompt for a folder outside the project as an instruction starts (`src/core/agent/InstructionRunner.ts:438-450`; `src/permissions/directoryPermissionPrompt.ts:111-124`, `:206`);
 - the prompt to accept a plan (`src/core/agent/AgentCommandRuntime.ts:563-609`);
 - computer use's "Trust and set up" (`src/core/agent/InstructionRunner.ts:356`, `:400-410`).
 
@@ -210,9 +210,9 @@ A wait shows up to 7 seconds after its prompt opens, since `beginAwaitingInput` 
 
 ## The process
 
-A heartbeat's process is asked about with signal 0 alone, once a poll for each process, and so is the process of a session's last heartbeat after that heartbeat has gone, until it has ended or the session is found ended. EPERM counts as running. No `ps` is run, and no program's name, arguments, environment or start time is read.
+A heartbeat's process is asked about with signal 0 alone, once a poll for each process, and so is the process of a session's last heartbeat after that heartbeat has gone, until it has ended, the session is found ended or another run saves it. EPERM counts as running. No `ps` is run, and no program's name, arguments, environment or start time is read.
 
-A heartbeat names a process that wrote it within the last 15 seconds when it is fresh, so a process ID given to another program is not taken for Autohand Code then. A gone heartbeat's process ID can be given to another program before Agent Lookout first sees it, after Agent Lookout starts again, as on Windows, where process IDs are used again soon. Such a session shows as finished from its heartbeat's time, or, once its heartbeat is gone, as unknown. A heartbeat written in a container names a process this computer's signal 0 does not see, so it shows as finished; a host's Autohand Code deletes it too.
+A heartbeat names a process that wrote it within the last 15 seconds when it is fresh, so a process ID given to another program is not taken for Autohand Code then. A gone heartbeat's process ID can be given to another program before Agent Lookout first sees it, after Agent Lookout starts again, as on Windows, where process IDs are used again soon. Such a session shows as unknown while that program runs and the heartbeat is there, as its `metadata.json` says once the heartbeat is gone, and as finished, or failed when it crashed, once that program ends while Agent Lookout runs. A heartbeat written in a container names a process this computer cannot reliably ask about, so while such a session runs it can show as unknown or finished, or, when a process here has the same ID, as its heartbeat says.
 
 ## Names, folders and apps
 
@@ -238,7 +238,7 @@ No Jump yet: Agent Lookout does not look for the terminal an Autohand Code sessi
 - A run with `--no-daemon` writes no heartbeat, so it shows as unknown while it runs, and is finished only once closed.
 - Heartbeats moved with `coordinationDirectory`, or by a `--set` for one run, are not found.
 - A failed `-p` run is written `completed` and shows as finished.
-- The memory is lost when Agent Lookout stops. Then an editor's session closed over ACP, an auto-mode iteration and a session whose heartbeat another Autohand Code deleted show as unknown, until they leave the list a day after their last write.
+- The memory is lost when Agent Lookout stops. Then an editor's session closed over ACP, an auto-mode iteration and a session whose heartbeat another Autohand Code deleted show as unknown, until they leave the list a day after their last write, and a copy of another tool's session that was resumed with nothing saved yet is left out again.
 - A session an RPC client switched from stays unknown until its process ends.
 - When an editor over ACP reloads a session, its heartbeat goes for a moment (`src/modes/acp/adapter.ts:467-471`), and the session can show as finished for up to 5 seconds.
 - Two processes on one session with peer communication off share one file, and one's clean close deletes it (`src/session/ActiveAgentRegistry.ts:96-102`), so the session can show as finished for up to 5 seconds until the other writes again.

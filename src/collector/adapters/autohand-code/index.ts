@@ -88,7 +88,7 @@ export const UNCHECKED_NOTE =
 
 /** Said when a session's status is unknown. */
 export const UNKNOWN_NOTE =
-  "An Autohand Code session shows as unknown when its files cannot tell, as while it runs with --no-daemon or with its heartbeats moved, while its process runs but its heartbeat is over 15 seconds old, for up to 15 seconds after its process ends, and when it ended without closing while Agent Lookout was not running.";
+  "An Autohand Code session shows as unknown when its files cannot tell, as while it runs with --no-daemon or with its heartbeats moved, while its process runs but its heartbeat is over 15 seconds old, for up to 15 seconds after its process ends, and when it was left open and its heartbeat deleted while Agent Lookout was not running.";
 
 /** Said when a heartbeat is of a newer format than this reads. */
 export const NEWER_FORMAT_NOTE =
@@ -118,8 +118,8 @@ export function noHeartbeatsNote(folder: string): string {
  *   last heartbeat goes or moves on to another session: at once when its
  *   heartbeat goes with it, else once that heartbeat is 15 seconds old.
  * - Failed when Autohand Code wrote `crashed` after an error in its loop and
- *   saved nothing after, once no fresh heartbeat shows it running. A failed
- *   -p run is written `completed`.
+ *   saved nothing after, once the process of its last heartbeat goes or moves
+ *   on, as for finished. A failed -p run is written `completed`.
  * - Its name is yours, from `/rename` or `autohand --rename`, else its
  *   folder's. Autohand Code's own title is never read.
  * - No Jump yet.
@@ -140,12 +140,12 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When closed, or soon after its process ends or leaves it. One that ended unclosed before Agent Lookout started is unknown.",
+      "When closed, or soon after its process ends or leaves it. One left open whose heartbeat went before Agent Lookout ran is unknown.",
   },
   failed: {
     level: "partly",
     reason:
-      "When marked crashed, with nothing saved since and no fresh heartbeat. A failed -p run is written completed and shows finished.",
+      "When marked crashed with nothing saved since, soon after its process ends or leaves it. A failed -p run shows finished.",
   },
   names: {
     level: "partly",
@@ -206,7 +206,7 @@ interface Seen extends Candidate {
   alive: boolean;
 }
 
-/** What the adapter remembers of a session it shows, in memory only. No text is kept. */
+/** What the adapter remembers of a session it shows, in memory only. Of text, only the session's folder is kept. */
 interface Memory {
   /** Of the heartbeat chosen on the last poll that had one. */
   lastPid: number | null;

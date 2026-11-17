@@ -12,7 +12,7 @@ import { decodeAtMost } from "../prime-agent/journals.ts";
  * `JSON.stringify(value, null, 2)` (`atomicWriteJson` in
  * `src/utils/atomicFile.ts:523-534`, the importer's `writeJson` in
  * `src/import/importers/BaseImporter.ts:216`, the web transfer in
- * `src/session/transfer/transfer-session-store.ts:66`). Such text has a line
+ * `src/session/transfer/transfer-session-store.ts:67`). Such text has a line
  * break only between its parts, never inside a string, where JSON writes one
  * as `\n`, and it writes each key of the outer object on a line of its own
  * after exactly two spaces, and each key of an object inside it after four or

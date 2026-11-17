@@ -238,7 +238,10 @@ export interface HeartbeatReaderOptions {
   sweepMs: number;
 }
 
-/** A reader of the heartbeats folder, which keeps what it read of each file until it changes. */
+/**
+ * A reader of the heartbeats folder. It keeps what it read of each file, for a
+ * heartbeat whose session is not shown too, until the file changes or goes.
+ */
 export function createHeartbeatReader(options: HeartbeatReaderOptions): HeartbeatReader {
   const { dir, io, platform, euid } = options;
   const lister: FolderLister = createFolderLister(dir, io, options.sweepMs, (info) =>
