@@ -201,7 +201,8 @@ export interface JournalFacts {
   queue: QueueState;
   /**
    * When the slot's run of idle records of one session, to its newest, began,
-   * in epoch milliseconds, or null when its newest is not idle.
+   * in epoch milliseconds, or null when its newest is not idle. A `turn_end`
+   * always starts a run.
    */
   idleSince: number | null;
 }
