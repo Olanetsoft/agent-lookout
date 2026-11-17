@@ -107,6 +107,14 @@ export interface AdapterResult {
    *   can be shown as finished.
    * - `files-without-processes`: the same while `ps` cannot be run to tell a
    *   lease's process, when a session it holds is unknown.
+   *
+   * The fx adapter has three:
+   * - `files`: fx's session logs, read while `ps` shows an fx program
+   *   running. The usual one.
+   * - `files-closed`: the same while `ps` shows none, when every session is
+   *   finished, unless it failed or cannot be read.
+   * - `files-without-processes`: the same while `ps` cannot say, when no
+   *   session can be shown as working or finished.
    */
   basis?: string;
 }

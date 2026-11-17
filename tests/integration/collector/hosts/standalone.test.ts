@@ -68,12 +68,12 @@ async function distFolder(withPage: boolean): Promise<string> {
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
- * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and Prime Agent
+ * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and fx
  * folders, an empty folder of status files and tmux turned off, on a free port. The poller runs in
  * this process, so anything less would read the real `~/.claude`, `~/.codex`, `~/.vibe`,
  * `~/.gemini`, `~/.local/share/opencode`, `~/.qwen`, `~/.hermes`, `~/.cline`,
  * `~/.local/share/goose`, `~/.pi`, `~/.kimi-code`, `~/.continue`, `~/.local/share/crush`,
- * `~/.local/share/kilo`, `~/.local/share/mimocode`, `~/.config/kimchi`, `~/.prime/agent` and
+ * `~/.local/share/kilo`, `~/.local/share/mimocode`, `~/.config/kimchi`, `~/.prime/agent`, `~/.fx` and
  * `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
@@ -96,6 +96,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const mimoCodeHome = await tempDir();
   const kimchiHome = await tempDir();
   const primeAgentHome = await tempDir();
+  const fxHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -118,6 +119,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     mimoCodeHome,
     kimchiHome,
     primeAgentHome,
+    fxHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -140,6 +142,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_MIMO_CODE_HOME: mimoCodeHome,
       AGENT_LOOKOUT_KIMCHI_HOME: kimchiHome,
       AGENT_LOOKOUT_PRIME_AGENT_HOME: primeAgentHome,
+      AGENT_LOOKOUT_FX_HOME: fxHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -220,6 +223,7 @@ describe("the standalone host", () => {
       mimoCodeHome,
       kimchiHome,
       primeAgentHome,
+      fxHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -420,6 +424,14 @@ describe("the standalone host", () => {
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(primeAgentHome, "sessions") },
               { label: "Leases folder", value: path.join(primeAgentHome, "session-leases") },
+            ]),
+          },
+          {
+            id: "fx",
+            // Nothing of fx's is read on Windows.
+            state: process.platform === "win32" ? "unavailable" : "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(fxHome, "sessions", "v2") },
             ]),
           },
           {

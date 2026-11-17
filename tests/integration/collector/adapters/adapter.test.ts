@@ -28,6 +28,7 @@ import {
   KILO_CODE_CAPABILITIES,
   UNCHECKED_NOTE as KILO_CODE_UNCHECKED_NOTE,
 } from "@collector/adapters/kilo-code/index";
+import { FX_CAPABILITIES, UNCHECKED_NOTE as FX_UNCHECKED_NOTE } from "@collector/adapters/fx/index";
 import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
@@ -83,6 +84,7 @@ const KIMCHI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/kimchi.md"
 const PRIME_AGENT_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/prime-agent.md", import.meta.url),
 );
+const FX_NOTES = fileURLToPath(new URL("../../../../docs/adapters/fx.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -108,6 +110,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Kimchi", KIMCHI_CAPABILITIES],
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
+  ["fx", FX_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -518,6 +521,46 @@ test("PRIVACY.md and the Prime Agent notes name what is read and from which vers
       "session_info",
       "ps -o pid=,lstart=,comm= -p",
       "/proc/<pid>/stat",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the fx notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(FX_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const fx = line("For fx, Agent Lookout reads");
+  expect(fx).toContain("built from fx's source at v0.0.17");
+  expect(fx).toContain("`ps`");
+  expect(fx).toContain("`index.jsonl`");
+  expect(fx).not.toContain("Prime Agent");
+  expect(FX_UNCHECKED_NOTE).toContain("v0.0.17");
+  expect(notes).toContain("v0.0.17");
+  expect(notes).toContain("Apache-2.0");
+
+  const start = privacy.indexOf("### fx's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.fx/sessions/v2",
+      "FX_HOME",
+      "AGENT_LOOKOUT_FX_HOME",
+      "log.jsonl",
+      "workspace",
+      "forked_from",
+      "CRC32C",
+      "16 KiB",
+      "64 KiB",
+      "8 MiB",
+      "index.jsonl",
+      "history.jsonl",
+      "settings.json",
+      "auth.json",
+      "ps -A -o pid=,comm=",
     ]) {
       expect(text, field).toContain(field);
     }

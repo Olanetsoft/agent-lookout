@@ -768,6 +768,7 @@ describe("over a long run of snapshots", () => {
     "mimo-code": [],
     kimchi: [],
     "prime-agent": [],
+    fx: [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

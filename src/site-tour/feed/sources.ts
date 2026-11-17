@@ -7,8 +7,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and Prime Agent,
- * none of the seventeen installed here, and status files. Then the other
+ * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and
+ * fx, none of the eighteen installed here, and status files. Then the other
  * machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
@@ -843,6 +843,53 @@ export const PRIME_AGENT_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const FX_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Working while fx's log has an open turn and an fx program that could hold it runs. Idle never shows: fx writes nothing for it.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Approvals and questions stay in fx's memory, so a session waiting for you shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once ps shows no fx, or ps missed every fx running over 2 seconds after a cut-off turn's last write. Another fx can hold it off.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When fx ends a turn as failed. fx records a turn a crash cut off as a crash, which does not show as failed.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The folder's. Most fx titles are the first line of your prompt, and no line says which, so none is read.",
+  },
+  jump: { level: "no", reason: "The log fx keeps names no process or terminal." },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "From each session's own log, for up to 30 minutes: after that a working session shows as unknown.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "The log keeps a session's running totals, not a reply's counts, and they are not read.",
+  },
+  stop: {
+    level: "no",
+    reason: "The log fx keeps names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to fx, and fx keeps its approvals in memory.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1353,6 +1400,26 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when fx is not installed: its folder is looked for, and nothing more.
+      id: "fx",
+      label: "fx",
+      state: "unavailable",
+      detail:
+        "fx was not found: there is no ~/.fx/sessions/v2 folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.fx/sessions/v2" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -A -o pid=,comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no fx",
+        },
+      ],
+      capabilities: FX_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1398,6 +1465,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "MiMo Code there", value: "Not found" },
         { label: "Kimchi there", value: "Not found" },
         { label: "Prime Agent there", value: "Not found" },
+        { label: "fx there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

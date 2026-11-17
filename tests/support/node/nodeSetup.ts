@@ -19,6 +19,7 @@ import {
   EMPTY_ANTIGRAVITY_HOME,
   EMPTY_CLINE_HOME,
   EMPTY_CRUSH_HOME,
+  EMPTY_FX_HOME,
   EMPTY_GOOSE_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
@@ -185,6 +186,13 @@ process.env.AGENT_LOOKOUT_PRIME_AGENT_HOME = EMPTY_PRIME_AGENT_HOME;
 delete process.env.PRIME_AGENT_SESSION_DIR;
 delete process.env.PRIME_AGENT_CODING_AGENT_SESSION_DIR;
 delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
+
+// Nor fx's, in `~/.fx`, or the folder `FX_HOME` names: the adapter is pointed
+// at an empty folder, and fx's own variable is dropped. A test of the adapter
+// names a folder of its own.
+mkdirSync(EMPTY_FX_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_FX_HOME = EMPTY_FX_HOME;
+delete process.env.FX_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

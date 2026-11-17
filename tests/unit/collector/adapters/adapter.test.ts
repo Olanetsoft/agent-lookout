@@ -63,6 +63,8 @@ import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapter
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
 import { continueSession } from "@collector/adapters/continue/toSession";
+import { createFxAdapter, FX_CAPABILITIES } from "@collector/adapters/fx/index";
+import { fxSession } from "@collector/adapters/fx/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -85,6 +87,7 @@ import {
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
 import { mapCrushStatus } from "@core/mapping/crush/crushMapping";
+import { mapFxStatus } from "@core/mapping/fx/fxMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
@@ -136,6 +139,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Kimchi", KIMCHI_CAPABILITIES],
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
+  ["fx", FX_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -232,6 +236,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createPrimeAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(PRIME_AGENT_CAPABILITIES);
+    expect(createFxAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities).toBe(
+      FX_CAPABILITIES,
+    );
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1164,6 +1171,64 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(PRIME_AGENT_CAPABILITIES["needs-you"].level).toBe("no");
     expect(PRIME_AGENT_CAPABILITIES.failed.level).toBe("no");
     expect(PRIME_AGENT_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("fx: a session is working, finished, failed or unknown, and never idle or waiting", () => {
+    const shown: SessionStatus[] = [];
+    for (const tail of [
+      { turn: "open" as const },
+      { turn: "ended" as const, failed: false, at: NOW },
+      { turn: "ended" as const, failed: true, at: NOW },
+      { turn: "none" as const },
+      { turn: "unknown" as const },
+    ]) {
+      for (const programs of ["none", "some", "unknown"] as const) {
+        for (const writerGone of [true, false]) {
+          for (const writtenAt of [NOW - 1_000, NOW - 60 * 60_000]) {
+            shown.push(mapFxStatus({ tail, programs, writerGone, writtenAt, now: NOW }));
+          }
+        }
+      }
+    }
+    expect(statuses(shown)).toEqual(new Set(["working", "finished", "failed", "unknown"]));
+    expect(FX_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(FX_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(FX_CAPABILITIES.failed.level).toBe("partly");
+    expect(FX_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("fx: a session has its folder's name and its log's last write, and no tokens, jump, stop or link", () => {
+    const session = fxSession({
+      log: {
+        id: "aB3dE5fG7hJ9",
+        cwd: "/Users/example/code/demo",
+        createdAt: NOW - 60_000,
+        tail: { turn: "open" },
+        why: null,
+        newestTs: NOW - 10_000,
+      },
+      programs: "some",
+      writerGone: false,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "fx:aB3dE5fG7hJ9",
+      source: "fx",
+      name: "demo",
+      status: "working",
+      lastWriteAt: NOW - 10_000,
+    });
+    for (const absent of ["tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(FX_CAPABILITIES.names.level).toBe("partly");
+    expect(FX_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(FX_CAPABILITIES.tokens.level).toBe("no");
+    expect(FX_CAPABILITIES.jump.level).toBe("no");
+    expect(FX_CAPABILITIES.stop.level).toBe("no");
+    expect(FX_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a working session has the time of its file's last write, and no tokens, jump, stop or link", () => {

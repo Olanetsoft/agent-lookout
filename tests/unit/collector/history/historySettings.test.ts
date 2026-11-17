@@ -123,6 +123,13 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(
     sourcesFingerprint({ PRIME_AGENT_CODING_AGENT_DIR: "/Users/example/.prime/agent" }, HOME),
   ).toBe(defaults);
+  // An FX_HOME fx refuses is passed over as fx passes it, and so is fx's own default named outright.
+  for (const value of ["", "relative/fx", "~/fx", "/", "//", "/Users/example/.fx/"]) {
+    expect(sourcesFingerprint({ FX_HOME: value }, HOME), value).toBe(defaults);
+  }
+  expect(sourcesFingerprint({ FX_HOME: "/Users/someone", HOME: "/Users/someone/" }, HOME)).toBe(
+    defaults,
+  );
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -189,6 +196,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
       },
       HOME,
     ),
+    sourcesFingerprint({ AGENT_LOOKOUT_FX_HOME: "/tmp/empty-fx" }, HOME),
+    sourcesFingerprint({ FX_HOME: "/tmp/fx-home" }, HOME),
+    // Through a `.` or `..`, nothing of fx's is read.
+    sourcesFingerprint({ FX_HOME: "/tmp/a/../fx" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);
