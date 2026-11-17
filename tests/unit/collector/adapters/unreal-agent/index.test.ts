@@ -470,6 +470,25 @@ describe("a session", () => {
     expect(result.health.detail).toBe(HEALTHY);
   });
 
+  test("whose newest reply failed in a file over 64 MiB stays unknown, quit with Ctrl+C or with no program running", async () => {
+    const lines = new SessionLines();
+    lines
+      .settings(STARTED_AT)
+      .message(STARTED_AT)
+      .turn(STARTED_AT)
+      .reply(STARTED_AT, { text: FILL });
+    lines.message(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT, { stop: "refused" });
+    const open = overLong(lines.text());
+    lines.hard(STARTED_AT);
+    const stopped = memoryFiles();
+    writeSession(stopped, overLong(lines.text()), { mtimeMs: NOW - MINUTE });
+    expect(statusOf(await unrealAgentAdapterFor(stopped).poll())).toBe("unknown");
+    const closed = memoryFiles();
+    writeSession(closed, open, { mtimeMs: NOW - MINUTE });
+    const processes = standInUnrealProcesses({ ok: true, starts: [], unknownStart: false });
+    expect(statusOf(await unrealAgentAdapterFor(closed, { processes }).poll())).toBe("unknown");
+  });
+
   test("takes no time more than 2 seconds before its start", async () => {
     const files = memoryFiles();
     writeSession(files, idleSession(SESSION_ID, NOW - HOUR).text(), { mtimeMs: NOW - 2 * HOUR });
