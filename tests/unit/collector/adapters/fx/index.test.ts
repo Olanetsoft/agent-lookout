@@ -46,6 +46,7 @@ import {
   standInFxProcesses,
   writeSession,
 } from "@tests/support/adapters/fx/fxAdapter";
+import { asWritten } from "@tests/support/paths";
 
 const ALWAYS = `${STATUS_NOTE} ${FILES_ONLY_NOTE} ${UNCHECKED_NOTE}`;
 const HEALTHY = `Sessions are read from the log fx keeps for each in ~/.fx/sessions/v2. ${ALWAYS}`;
@@ -531,7 +532,7 @@ describe("whether an open turn's writer runs", () => {
     const open = files.io.openRegular;
     let added = false;
     files.io.openRegular = async (target) => {
-      if (!added && target === logPath(SESSION_ID)) {
+      if (!added && asWritten(target) === logPath(SESSION_ID)) {
         added = true;
         const mark = log.mark();
         log.turnStarted().item();
