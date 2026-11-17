@@ -20,7 +20,7 @@ Issue #78 was written from the same source. These parts needed more:
 - A session whose newest log is newer than 4 is left out even when a log of format 4 is beside it, as DeepSeek Harness refuses it (`docs/subsystems/persistence.md:193`).
 - An approval or a question counts only in the turn under way. One left in an earlier turn stays in the log for ever.
 - A plan review, `exit_plan_mode`, waits for the person too (`packages/plan/plan-mode/src/index.ts:64`, `:281-331`).
-- A session's first title is the first five words of its first prompt (`base.yml:60-65`), so only a title its model wrote or one marked as yours is read.
+- A session's first title is the first five words of its first prompt (`base.yml:60-65`), so only a title its model wrote or one marked as yours is decoded.
 - Node.js reads Zstandard from 22.15, still marked experimental. On 22.12 to 22.14 compressed logs are not read, and the Sources view says so.
 
 And two things the design missed, found in the source while building:
@@ -67,7 +67,7 @@ A session is `<sessions>/<project folder>/<session folder>/<log>` (`persistence/
 
 - Of a session folder's names, the highest N is taken, as DeepSeek Harness takes it (`persistence/index.ts:1536-1569`). Only when it is 4 is the log read. A higher N leaves the session out, or shows it as unknown when its log of format 4 was already being read, and that log is not read again. Only lower ones leave it out too. Names of both kinds, with and without `.zstd`, leave it out, as DeepSeek Harness refuses such a folder (`:1561`).
 - A `.jsonl` or `.jsonl.zstd` file directly in a project folder is DeepSeek Harness's older flat layout, which it refuses (`:1685-1692`), and is passed over.
-- No link a lookup finds below the sessions folder is followed, and anything that is not a folder or a file is passed over. A session folder is looked up again on every poll just before its log is, and a log is read only when the file opened is the one its own lookup found, so a link put at a folder's name since it was listed is not followed either, unless it is put there between those two lookups, and then for that poll alone.
+- No link a lookup finds below the sessions folder is followed, and anything that is not a folder or a file is passed over. A session folder is looked up again on every poll just before its log is, and a log is read only when the file opened is the one its own lookup found, so a link put at a session folder's name since it was listed is not followed either, unless it is put there between those two lookups. A project folder is looked up once a poll, before its sessions, so a link put at its name after that, while its sessions are listed and looked up, is followed too. Either is followed for that poll alone.
 - Never opened, and never looked up: `session.lock`, which DeepSeek Harness holds a lock on while a program owns the session (`persistence/lease.ts:19`, `:91-106`), the temporary files `<log>.<12 hex>.tmp` and `session.migration.<16 hex>.jsonl[.zstd].tmp` (`persistence/index.ts:1361-1371`; `persistence/generation.ts:728`, its suffix from `:652`), every other generation, and any other name.
 - Without Zstandard, a compressed log is looked up only to be counted, and never opened.
 
@@ -144,7 +144,7 @@ The kind of a turn's end, a reason's kind, an approval's ID and a call's ID are 
 
 ### Titles
 
-`session/title` holds `{"title":…,"messageSeqs":[…],"source":{"kind":…}}` (`packages/session/session-title/src/index.ts:422-426`, `:627-635`, `:810-814`). Its kind is `fallback`, the first five words of your first prompt (`base.yml:60-65`), `provider`, a title its model wrote, or `user`, a rename. The title comes before its kind, so on a line of at most 4 KiB the title is passed over to the first `","messageSeqs":[`, which can only be where it ends, then the numbers to `]`, and then `,"source":{"kind":"` and the kind are compared as bytes. Only for `provider` or `user`, and a title of at most 1 KiB as written, is the title decoded, with JSON's own rules. Any other kind gives no name, and its bytes are never decoded. The newest title line wins. A subagent's titles are never read.
+`session/title` holds `{"title":…,"messageSeqs":[…],"source":{"kind":…}}` (`packages/session/session-title/src/index.ts:422-426`, `:627-635`, `:810-814`). Its kind is `fallback`, the first five words of your first prompt (`base.yml:60-65`), `provider`, a title its model wrote, or `user`, a rename. The title comes before its kind, so on a line of at most 4 KiB the title is passed over to the first `","messageSeqs":[`, which can only be where it ends, then the numbers to `]`, and then `,"source":{"kind":"` and the kind are compared as bytes. Only for `provider` or `user`, and a title of at most 1 KiB as written, is the title decoded, with JSON's own rules. Any other kind gives no name, and its bytes are never decoded. The newest title line wins. A subagent's titles are never decoded.
 
 A `user` title is not always one you typed. A scheduled task's session is renamed with the task's title (`packages/schedule/schedule/src/runtime.ts:449`, `:493-499`), which its model writes from what you asked (`packages/schedule/tool-schedule/src/index.ts:209-210`). A chat imported from chat.deepseek.com keeps the title it had there, marked `user` (`packages/experimental/deepseek-chat-import/src/conversation.ts:160-161`). The ACP and SDK apps write no model title (`packages/bundle/acp-app/cordis.patch.yml:8-9`; `packages/bundle/sdk-app/cordis.patch.yml:8-9`). A fork keeps its source's titles.
 
@@ -218,12 +218,12 @@ The name is a title its model wrote or one marked as yours, else the folder's, e
 
 ## Subagents
 
-A subagent's session is `origin` `subagent`, with `parentSession` its parent's ID (`packages/subagent/subagent/src/child-agent.ts:136-154`). Its log is in the same project folder. The subagent tool returns at once, and the subagent works in the background while its parent can be idle (`packages/subagent/subagent/README.md:45`, `:177-185`), so its turns count for the session it is of: one under way keeps that session working, one that waits for an approval makes it need you, each while its own log says it can, as [The status](#the-status) says. A subagent cannot ask you a question (`packages/interaction/user-questions/src/index.ts:144-148`). Its writes count for its session's last write. Its titles are never read.
+A subagent's session is `origin` `subagent`, with `parentSession` its parent's ID (`packages/subagent/subagent/src/child-agent.ts:136-154`). Its log is in the same project folder. The subagent tool returns at once, and the subagent works in the background while its parent can be idle (`packages/subagent/subagent/README.md:45`, `:177-185`), so its turns count for the session it is of: one under way keeps that session working, one that waits for an approval makes it need you, each while its own log says it can, as [The status](#the-status) says. A subagent cannot ask you a question (`packages/interaction/user-questions/src/index.ts:144-148`). Its writes count for its session's last write. Its titles are never decoded.
 
 ## Quiet for, tokens, Jump, Stop and Answer
 
 - **Quiet for** is the time since its log, or a subagent's, was last written, shown while it works. A long command can write nothing until it ends.
-- **Tokens:** no line that holds a reply is read.
+- **Tokens:** a reply's counts are on its line, after its text, and are never turned into text.
 - **Jump** and **Stop:** a log names no terminal, window or process. **Answer:** Agent Lookout makes no request to DeepSeek Harness.
 
 ## On Linux

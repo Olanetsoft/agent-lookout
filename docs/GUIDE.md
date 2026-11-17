@@ -475,10 +475,10 @@ Why, for each No and Partly:
 - DeepSeek Harness, Needs you: While a turn waits for an approval, question or plan review. One a crash left can show 30 minutes, or while the desktop app runs.
 - DeepSeek Harness, Finished: When DeepSeek Harness closed it mid-turn, or no program that could write its log runs, by ps or since the computer started.
 - DeepSeek Harness, Failed: When its last turn ended on an error, until a new turn starts or it is reopened. A closing DeepSeek Harness can lose that end.
-- DeepSeek Harness, Names: A title its model gave or one marked as yours, else the folder's. Its first title is the start of your prompt, never read.
+- DeepSeek Harness, Names: A title its model gave or one marked as yours, else the folder's. Its first title, the start of your prompt, is never decoded.
 - DeepSeek Harness, Jump: DeepSeek Harness's logs name no terminal or window.
 - DeepSeek Harness, Quiet for: The time since its log, or a subagent's, was last written, while it works. A long command can write nothing until it ends.
-- DeepSeek Harness, Tokens: Agent Lookout reads no line that holds a reply.
+- DeepSeek Harness, Tokens: A reply's counts are on its line, after its text, and are never turned into text.
 - DeepSeek Harness, Stop: A log names no process Agent Lookout could confirm and stop.
 - DeepSeek Harness, Answer: Agent Lookout makes no request to DeepSeek Harness, so it cannot send an answer.
 - Status files, Working and idle: If the agent writes working and idle.

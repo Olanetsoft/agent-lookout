@@ -62,7 +62,7 @@ export interface DeepseekHarnessSessionInput {
  * - The status is `deepseekHarnessStatusOf`'s.
  * - The name is a title its model wrote or one marked as the person's, else
  *   its folder's, else its ID. Its first title, the first words of the
- *   person's first prompt, is never read.
+ *   person's first prompt, is never decoded.
  * - The folder is the one its header names, where it began.
  * - The last write is shown only while it works.
  * - The app is not known, and there is no pid, link, Jump or Stop.

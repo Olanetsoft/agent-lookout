@@ -1008,7 +1008,7 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "A title its model gave or one marked as yours, else the folder's. Its first title is the start of your prompt, never read.",
+      "A title its model gave or one marked as yours, else the folder's. Its first title, the start of your prompt, is never decoded.",
   },
   jump: { level: "no", reason: "DeepSeek Harness's logs name no terminal or window." },
   "quiet-for": {
@@ -1016,7 +1016,10 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
     reason:
       "The time since its log, or a subagent's, was last written, while it works. A long command can write nothing until it ends.",
   },
-  tokens: { level: "no", reason: "Agent Lookout reads no line that holds a reply." },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on its line, after its text, and are never turned into text.",
+  },
   stop: {
     level: "no",
     reason: "A log names no process Agent Lookout could confirm and stop.",

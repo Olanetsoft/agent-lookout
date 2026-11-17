@@ -264,7 +264,6 @@ const IDLE_ENDS: ReadonlySet<DeepseekHarnessEnd> = new Set([
  */
 export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): DeepseekHarnessStatus {
   const { own, children, writtenAt, writer, now } = family;
-  // A log's times are kept as written, and judged against the clock here, on every poll.
   const believed = (time: number | null) => plausibleTime(time, now);
   if (own === null || own.state === "unsure") {
     return { status: "unknown", since: null, showsLastWrite: false };

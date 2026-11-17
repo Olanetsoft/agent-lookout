@@ -423,7 +423,7 @@ describe("a title", () => {
     expect(read(long).title).toBeNull();
   });
 
-  test("of a subagent's log is never read", () => {
+  test("of a subagent's log is never decoded", () => {
     const seen = watchDecoding(() => {
       expect(read(line.title(9, T, "Child title", "provider"), false)).toEqual({
         seq: 9,

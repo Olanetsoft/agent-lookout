@@ -85,7 +85,7 @@ const NEWLINE = 0x0a;
 export interface DeepseekHarnessLog {
   header: DeepseekHarnessHeader;
   turn: DeepseekHarnessTurn;
-  /** The newest title of its own, or null. Never read for a subagent's log. */
+  /** The newest title of its own, or null. Never decoded for a subagent's log. */
   title: string | null;
   /**
    * `ok` once read on; `too-long` past the most read; `stuck` when it did not

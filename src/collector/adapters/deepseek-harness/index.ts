@@ -62,8 +62,8 @@ export const PROCESS_CHECK_MS = 10_000;
 
 /**
  * How soon `ps` is asked again when a session is written after it showed no
- * program that could write one, or up to 2 seconds before, as a disk can keep
- * a write's time rounded down, since one may have been started since.
+ * `node` or DeepSeek Harness program, or up to 2 seconds before, as a disk can
+ * keep a write's time rounded down, since one may have been started since.
  */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
@@ -84,10 +84,10 @@ export const BASIS = "files";
 
 /**
  * The way it reads while `ps` cannot say which programs run, as its last
- * answer could not, and always on Windows: no session is finished then unless DeepSeek Harness closed it
- * mid-turn or it was last written before the computer started, and no wait
- * outlasts 30 quiet minutes. Named apart, so every finished session does not
- * seem to start again.
+ * answer could not, and always on Windows: no session is finished then unless
+ * DeepSeek Harness closed it mid-turn or it was last written before the
+ * computer started, and no wait outlasts 30 quiet minutes. Named apart, so
+ * every finished session does not seem to start again.
  */
 export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
@@ -151,10 +151,10 @@ export const NO_ZSTD_ADVICE = "Update Node.js to 22.15 or later.";
  * - Failed when its last turn ended on an error, until a new turn starts or
  *   it is reopened.
  * - The name is a title its model wrote or one marked as the person's, else
- *   the folder's. Its first title, the first words of a prompt, is never read.
+ *   the folder's. Its first title, the first words of a prompt, is never decoded.
  * - Quiet for is the time since its log, or a subagent's, was written.
  * - No Jump, Stop, Answer or Tokens: its logs name no process or window, and
- *   no line that holds a reply is read.
+ *   a reply's counts, on its line after its text, are never turned into text.
  */
 export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
@@ -180,7 +180,7 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "A title its model gave or one marked as yours, else the folder's. Its first title is the start of your prompt, never read.",
+      "A title its model gave or one marked as yours, else the folder's. Its first title, the start of your prompt, is never decoded.",
   },
   jump: { level: "no", reason: "DeepSeek Harness's logs name no terminal or window." },
   "quiet-for": {
@@ -188,7 +188,10 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
     reason:
       "The time since its log, or a subagent's, was last written, while it works. A long command can write nothing until it ends.",
   },
-  tokens: { level: "no", reason: "Agent Lookout reads no line that holds a reply." },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on its line, after its text, and are never turned into text.",
+  },
   stop: {
     level: "no",
     reason: "A log names no process Agent Lookout could confirm and stop.",
@@ -265,12 +268,13 @@ interface Family {
  * subagent's are shown, and their logs, and those of their subagents, the
  * 200 newest, are read on (`logReader.ts`), one at a time, as bytes
  * (`lines.ts`), undoing Zstandard with `node:zlib` one frame at a time
- * (`zstdFrames.ts`). While a session's status depends on it, it asks `ps`,
- * at most every 10 seconds, and sooner, though not within 2 seconds of the
- * last ask, when a session is written after `ps` showed no program that
- * could write one, or up to 2 seconds before, when each program that could
- * write a session started (`processes.ts`). Nothing else is opened: not `session.lock`, which
- * is never looked up, not DeepSeek Harness's settings or keys.
+ * (`zstdFrames.ts`). While a session's status depends on it, it asks `ps`
+ * when each program that could write a session started (`processes.ts`), at
+ * most every 10 seconds, and sooner, though not within 2 seconds of the last
+ * ask, when a session is written after `ps` showed no `node` or DeepSeek
+ * Harness program, or up to 2 seconds before. Nothing else is opened: not
+ * `session.lock`, which is never looked up, not DeepSeek Harness's settings
+ * or keys.
  *
  * A session's status is `deepseekHarnessStatusOf`'s. A Node.js that cannot
  * read Zstandard, as before 22.15, shows only uncompressed logs, and says so.
@@ -373,9 +377,9 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   /**
    * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
    * though not within 2 seconds of the last ask, when a session was written
-   * after an answer that listed no program that could write one, or up to 2
-   * seconds before, as a disk can keep a write's time rounded down. A clock
-   * set back counts as time enough.
+   * after an answer that listed no `node` or DeepSeek Harness program, or up
+   * to 2 seconds before, as a disk can keep a write's time rounded down. A
+   * clock set back counts as time enough.
    */
   async function programsFor(
     checkedAt: number,
@@ -663,7 +667,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     let detail = `Sessions are read from the logs DeepSeek Harness keeps in ${sessionsName}. ${alwaysNotes}`;
     let basis = unaskedBasis;
     if (systemNote !== null) detail += ` ${systemNote}`;
-    // A poll that does not ask `ps` is named as the last answer was, so a session that settles while ps cannot say is compared with that way's poll.
+    // A poll that does not ask `ps` is named as the last answer was, so a
+    // session that settles while it cannot say is compared with that way's poll.
     else if (lastAnswer !== null && !usable(lastAnswer)) {
       detail += ` ${PS_FAILED_NOTE}`;
       basis = BASIS_WITHOUT_PROCESSES;

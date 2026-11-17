@@ -124,7 +124,7 @@ export interface WriterInput {
   /** What `ps` last said, and when it was asked. */
   answer: DshPrograms | null;
   answerAt: number;
-  /** Whether that answer was asked because the clock was set back, which then allows nothing for a rounded write time. */
+  /** Whether that answer was asked because the clock was set back: then nothing is allowed for a rounded write time. */
   clockSetBack?: boolean;
   /** The earliest last write the start rule may finish (`DshClockGuard`). */
   startFloor: number;

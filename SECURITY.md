@@ -130,7 +130,7 @@ Session names and folder paths can be sensitive. The main risk is that something
 - Any write under DeepSeek Harness's folder (`~/.dsh`, or the folder `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME` or `DSH_HOME` points to). Also any of these:
   - any open, `lstat` or lock of a `session.lock`;
   - any open of a file there that PRIVACY.md does not list, `.credentials.yaml`, `.env`, `cordis.patch.yml`, `profiles/`, `storages/` and `attachments/` among them;
-  - a link being followed below the sessions folder;
+  - a link being followed below the sessions folder, but one put at a project or session folder's name after that folder's lookup, while what is in it is listed and looked up, for that poll alone;
   - more of a log being read than PRIVACY.md says, or more than 8 MiB of one Zstandard frame being kept or looked through;
   - a log of any format but 4 being opened;
   - any byte of a log being turned into text but the first line, the IDs, numbers, times and kinds PRIVACY.md lists, and a title of a session shown whose source is `provider` or `user`;
