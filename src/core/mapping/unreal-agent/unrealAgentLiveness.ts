@@ -158,9 +158,9 @@ export function startUnrealAgentClockGuard(): UnrealAgentClockGuard {
  */
 export function guardUnrealAgentClock(
   guard: UnrealAgentClockGuard,
-  sample: { platform: string; wall: number; mono: number },
+  reading: { platform: string; wall: number; mono: number },
 ): UnrealAgentClockGuard {
-  const { platform, wall, mono } = sample;
+  const { platform, wall, mono } = reading;
   let { l3Floor } = guard;
   if (platform === "linux" && guard.last !== null) {
     const drift = wall - guard.last.wall - (mono - guard.last.mono);
