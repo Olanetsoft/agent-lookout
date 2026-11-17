@@ -9,6 +9,7 @@ import {
   effectiveMetadataStatus,
   heartbeatClass,
   importedAndNeverResumed,
+  AUTOHAND_HEARTBEAT_MS,
   AUTOHAND_STALE_MS,
   type AutohandMode,
   type Candidate,
@@ -67,6 +68,14 @@ export const SWEEP_MS = 60_000;
 
 /** How long a status is held over a late poll, for the heartbeat that is due to come. */
 export const STAND_IN_MS = 7_000;
+
+/**
+ * How long after the poll before a poll is late: the 15 seconds a heartbeat
+ * counts for, less the 5 seconds it can already be old then. A heartbeat on
+ * time at the poll before is over 15 seconds old only on a poll later than
+ * this, as after the computer slept.
+ */
+export const LATE_POLL_MS = AUTOHAND_STALE_MS - AUTOHAND_HEARTBEAT_MS;
 
 /** The usual way this adapter reads, named for the poller: the heartbeats and each session's `metadata.json`. */
 export const BASIS = "files";
@@ -419,8 +428,7 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
     const withHeartbeats = found.folder === "listed";
     const firstPoll = previousAt === null;
     const late =
-      previousAt !== null &&
-      (checkedAt - previousAt > AUTOHAND_STALE_MS || checkedAt - previousAt < 0);
+      previousAt !== null && (checkedAt - previousAt > LATE_POLL_MS || checkedAt - previousAt < 0);
 
     // Each session's heartbeats, and the sessions each process has a fresh one of.
     const bySession = new Map<string, Seen[]>();
@@ -553,9 +561,15 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         [...(freshOf.get(lastPid) ?? [])].some((other) => other !== id);
 
       // A late poll, as after the computer slept, holds the status before for
-      // a moment, for the heartbeat that is due, while its process runs.
+      // a moment, for the heartbeat that is due, while its process runs and has
+      // not moved on to another session, where that heartbeat now goes.
       let standIn: Memory["standIn"] = null;
-      if (withHeartbeats && before !== undefined && chosen?.heartbeatClass !== "fresh") {
+      if (
+        withHeartbeats &&
+        before !== undefined &&
+        !movedOn &&
+        chosen?.heartbeatClass !== "fresh"
+      ) {
         const held = before.standIn;
         const holds = held !== null && checkedAt >= held.at && checkedAt <= held.at + STAND_IN_MS;
         const starts =

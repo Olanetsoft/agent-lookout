@@ -187,7 +187,7 @@ The first row that applies gives the status.
 
 ### A late poll
 
-After the computer sleeps, a session's heartbeat is over 15 seconds old until Autohand Code writes the next one, at most 5 seconds on. Without a rule, a session that waits would show as unknown and then as needing you again, a new wait. So on a poll more than 15 seconds after the one before, or before it by the clock, a session that had a fresh heartbeat on the poll before, whose process still runs and that has not been closed since, keeps the status it had, with the same time, while its heartbeat is quiet or no longer there. It keeps it until a fresh heartbeat comes, or for 7 seconds, and is never held again from that poll. It is not held while the heartbeats folder cannot be read.
+After the computer sleeps, a session's heartbeat can be over 15 seconds old until Autohand Code writes the next one, at most 5 seconds on. Without a rule, a session that waits would show as unknown and then as needing you again, a new wait. A heartbeat can already be 5 seconds old at a poll, so on a poll more than 10 seconds after the one before, or before it by the clock, a session that had a fresh heartbeat on the poll before, whose process still runs and has not moved on to another session, as in row 5, and that has not been closed since, keeps the status it had, with the same time, while its heartbeat is quiet or no longer there. It keeps it until a fresh heartbeat comes, or for 7 seconds, and is never held again from that poll. It is not held while the heartbeats folder cannot be read.
 
 ### The time of a status
 
@@ -246,7 +246,7 @@ No Jump yet: Agent Lookout does not look for the terminal an Autohand Code sessi
 - Two processes on one session with peer communication off share one file, and one's clean close deletes it (`src/session/ActiveAgentRegistry.ts:96-102`), so the session can show as finished for up to 5 seconds until the other writes again.
 - A crash right after a message was saved, within a second, reads as a session that went on, and a crash after an error the loop got past, with nothing saved since, reads as failed.
 - Autohand Code's other Windows folders, used when `USERPROFILE` is not set or is a system folder, are not followed, and neither is a relative `AUTOHAND_HOME`.
-- A heartbeat held up by long work that blocks Autohand Code's process can be over 15 seconds old while the session runs, and the session shows as unknown until the next one.
+- A heartbeat held up by long work that blocks Autohand Code's process, or while that process is stopped, can be over 15 seconds old while the session runs, and the session shows as unknown until the next one, so a session that waits then shows as needing you again, as a new wait.
 - A heartbeat written in a container names a process this computer cannot ask about.
 - Files of another user are not read, so Agent Lookout run as root on macOS or Linux sees no session of another user's.
 

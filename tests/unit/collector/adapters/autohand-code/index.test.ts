@@ -802,6 +802,67 @@ describe("a late poll, as after the computer slept", () => {
     expect(only(result.sessions).status).toBe("unknown");
   });
 
+  test("holds nothing for a session whose process went on to another, which ends at its last heartbeat and stays so", async () => {
+    const pc = computer();
+    session(pc);
+    session(pc, metadata({ sessionId: OTHER_SESSION_ID }), { id: OTHER_SESSION_ID });
+    const first = (sessions: Session[]) =>
+      sessions.find((one) => one.id === `autohand-code:${SESSION_ID}`);
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input" }));
+    const adapter = pc.adapter();
+    expect(first((await adapter.poll()).sessions)).toMatchObject({
+      status: "needs-you",
+      statusSince: null,
+    });
+    pc.clock.advance(10 * SECOND);
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input", updatedAt: pc.clock.now() }));
+    expect(first((await adapter.poll()).sessions)?.status).toBe("needs-you");
+
+    // By a late poll its process has moved on to the other session.
+    removeHeartbeat(pc.files);
+    pc.clock.advance(30 * SECOND);
+    writeHeartbeat(
+      pc.files,
+      heartbeat({ sessionId: OTHER_SESSION_ID, phase: "idle", updatedAt: pc.clock.now() - SECOND }),
+      { name: `${OTHER_SESSION_ID}.json` },
+    );
+    expect(first((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW + 10 * SECOND,
+    });
+
+    // Its process stops the other session's heartbeat, as /new does before it starts the next.
+    removeHeartbeat(pc.files, `${OTHER_SESSION_ID}.json`);
+    pc.clock.advance(2 * SECOND);
+    expect(first((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW + 10 * SECOND,
+    });
+  });
+
+  test("holds a wait over a poll 13 seconds after the one before, as after a short sleep, with no new wait", async () => {
+    const pc = computer();
+    const adapter = await waiting(pc);
+    // A poll on time, with the heartbeat 3 seconds old.
+    pc.clock.advance(3 * SECOND);
+    expect(only((await adapter.poll()).sessions).statusSince).toBe(NOW + 2 * SECOND);
+    // 13 seconds on, as after a short sleep, the heartbeat is 16 seconds old.
+    pc.clock.advance(13 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "needs-you",
+      waitingReason: "other",
+      statusSince: NOW + 2 * SECOND,
+    });
+    // The heartbeat that was due comes, and the wait goes on from the same time.
+    pc.clock.advance(SECOND);
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input", updatedAt: pc.clock.now() }));
+    pc.clock.advance(SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW + 2 * SECOND,
+    });
+  });
+
   test("a clock set back counts as a late poll", async () => {
     const pc = computer();
     const adapter = await waiting(pc);
