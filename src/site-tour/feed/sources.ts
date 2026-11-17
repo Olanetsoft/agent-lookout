@@ -7,8 +7,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue, Crush, Kilo Code and MiMo Code, none of the fifteen
- * installed here, and status files. Then the other machine, connected over SSH.
+ * Kimi Code, Continue, Crush, Kilo Code, MiMo Code and Kimchi, none of the
+ * sixteen installed here, and status files. Then the other machine, connected
+ * over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -757,6 +758,48 @@ export const MIMO_CODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const KIMCHI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason:
+      "Nothing ties a Kimchi session to a process, so a turn a crash cut off looks like one under way.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Kimchi keeps its approvals and questions in memory, and writes nothing while it waits.",
+  },
+  finished: {
+    level: "partly",
+    reason: "Every session at once, when ps shows no kimchi program, on macOS and Linux.",
+  },
+  failed: {
+    level: "no",
+    reason: "Kimchi writes a failed turn inside a message, which is not parsed.",
+  },
+  names: {
+    level: "partly",
+    reason: "The folder's. Kimchi names a session from your first messages, which is never read.",
+  },
+  jump: { level: "no", reason: "A Kimchi session's file names no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Kimchi session never shows as working.",
+  },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on the line with its text, which is not parsed.",
+  },
+  stop: {
+    level: "no",
+    reason: "A Kimchi session's file names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Kimchi, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1229,6 +1272,26 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card when Kimchi is not installed: its folder is looked for, and nothing more.
+      id: "kimchi",
+      label: "Kimchi",
+      state: "unavailable",
+      detail:
+        "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.config/kimchi/harness/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+        },
+      ],
+      capabilities: KIMCHI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1272,6 +1335,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Crush there", value: "Not found" },
         { label: "Kilo Code there", value: "Not found" },
         { label: "MiMo Code there", value: "Not found" },
+        { label: "Kimchi there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

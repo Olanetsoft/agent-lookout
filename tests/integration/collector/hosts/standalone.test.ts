@@ -68,12 +68,12 @@ async function distFolder(withPage: boolean): Promise<string> {
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
- * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code and MiMo Code folders, an empty folder of
- * status files and tmux turned off, on a free port. The poller runs in this process, so anything
- * less would read the real `~/.claude`, `~/.codex`, `~/.vibe`, `~/.gemini`,
+ * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code and Kimchi folders, an empty
+ * folder of status files and tmux turned off, on a free port. The poller runs in this process, so
+ * anything less would read the real `~/.claude`, `~/.codex`, `~/.vibe`, `~/.gemini`,
  * `~/.local/share/opencode`, `~/.qwen`, `~/.hermes`, `~/.cline`, `~/.local/share/goose`, `~/.pi`,
  * `~/.kimi-code`, `~/.continue`, `~/.local/share/crush`, `~/.local/share/kilo`,
- * `~/.local/share/mimocode` and `~/.agent-lookout` and run the real `claude`.
+ * `~/.local/share/mimocode`, `~/.config/kimchi` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -93,6 +93,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const crushHome = await tempDir();
   const kiloHome = await tempDir();
   const mimoCodeHome = await tempDir();
+  const kimchiHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -113,6 +114,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     crushHome,
     kiloHome,
     mimoCodeHome,
+    kimchiHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -133,6 +135,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_CRUSH_HOME: crushHome,
       AGENT_LOOKOUT_KILO_HOME: kiloHome,
       AGENT_LOOKOUT_MIMO_CODE_HOME: mimoCodeHome,
+      AGENT_LOOKOUT_KIMCHI_HOME: kimchiHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -211,6 +214,7 @@ describe("the standalone host", () => {
       crushHome,
       kiloHome,
       mimoCodeHome,
+      kimchiHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -396,6 +400,13 @@ describe("the standalone host", () => {
                 value:
                   process.platform === "win32" ? "not run on Windows" : "when the database changes",
               },
+            ]),
+          },
+          {
+            id: "kimchi",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(kimchiHome, "sessions") },
             ]),
           },
           {

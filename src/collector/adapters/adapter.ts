@@ -96,7 +96,8 @@ export interface AdapterResult {
    * adapter with Kilo Code's names: `database`, while `ps` shows a Kilo Code
    * program running, `database-closed`, while it shows none, and
    * `database-without-processes`, while it cannot say. So does the MiMo Code
-   * adapter, with MiMo Code's.
+   * adapter, with MiMo Code's. The Kimchi adapter has the Pi adapter's three,
+   * since it is that adapter with Kimchi's names.
    */
   basis?: string;
 }

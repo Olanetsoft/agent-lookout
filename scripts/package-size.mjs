@@ -48,10 +48,15 @@ import { gunzipSync } from "node:zlib";
  * 6.00 MB, once Goose, Pi and Kimi Code took the tarball to 1.002 MB and
  * installed to 5.49 MB. They added 126 KB unpacked, about 27 KB of it in the
  * tarball, of code in the command and the documents the package ships.
+ *
+ * Unpacked was raised from 3.90 MB to 4.20 MB once MiMo Code took it to 3.8998
+ * MB and Kimchi past the limit, to 3.92 MB. Kimchi added 18 KB, 6 KB of code in
+ * the command and 12 KB of the documents the package ships, which leaves room
+ * for several more sources.
  */
 const LIMITS = {
   tarball: 1_200_000,
-  unpacked: 3_900_000,
+  unpacked: 4_200_000,
   installed: 6_000_000,
 };
 

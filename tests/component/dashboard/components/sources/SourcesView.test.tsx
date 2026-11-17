@@ -297,6 +297,7 @@ test.each([
       "Crush",
       "Kilo Code",
       "MiMo Code",
+      "Kimchi",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -324,6 +325,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
     ]);
