@@ -115,7 +115,8 @@ export function noHeartbeatsNote(folder: string): string {
  * - Needs you while the heartbeat says it waits for input, which Autohand
  *   Code writes while it asks you to approve a tool or to answer a question.
  * - Finished once Autohand Code closes the session, or the process of its
- *   last heartbeat goes or moves on to another session.
+ *   last heartbeat goes or moves on to another session: at once when its
+ *   heartbeat goes with it, else once that heartbeat is 15 seconds old.
  * - Failed when Autohand Code wrote `crashed` after an error in its loop and
  *   saved nothing after, once no fresh heartbeat shows it running. A failed
  *   -p run is written `completed`.
@@ -139,12 +140,12 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once Autohand Code closes it, or its process ends or leaves it. One that ended unclosed before Agent Lookout started is unknown.",
+      "When closed, or soon after its process ends or leaves it. One that ended unclosed before Agent Lookout started is unknown.",
   },
   failed: {
     level: "partly",
     reason:
-      "When Autohand Code marks it crashed and saves nothing after. A failed -p run is written as completed and shows as finished.",
+      "When marked crashed, with nothing saved since and no fresh heartbeat. A failed -p run is written completed and shows finished.",
   },
   names: {
     level: "partly",

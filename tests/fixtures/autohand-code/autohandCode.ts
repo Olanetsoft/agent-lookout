@@ -107,7 +107,7 @@ function activity(phase: string) {
 
 function communication() {
   return {
-    protocol: "autohand-peer/1",
+    protocol: 1,
     instanceId: INSTANCE_ID,
     endpoint: CANARIES.endpoint,
     publicKey: CANARIES.publicKey,
