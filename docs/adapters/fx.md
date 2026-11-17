@@ -176,7 +176,7 @@ A converted session's unended turn is converted as `turn_interrupted` with `fail
 
 The poll's basis is `files` while `ps` lists an fx program, `files-closed` while it lists none, and `files-without-processes` while it cannot say.
 
-A session's last write is its log's modified time. A finished session's status time is that write, and a failed one's is the time on the line that ended its turn. Neither is kept when it is more than 2 seconds before the session's start.
+A session's last write is its log's modified time, taken from the file as it was opened, so a write since it was looked up counts with the lines it added. A finished session's status time is that write, and a failed one's is the time on the line that ended its turn. Neither is kept when it is more than 2 seconds before the session's start.
 
 ### The process, and the other program named fx
 

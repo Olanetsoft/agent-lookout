@@ -443,7 +443,9 @@ export function createFxAdapter(options: FxAdapterOptions = {}): Adapter {
       if (!isWithinRetention(read.log.newestTs, checkedAt)) continue;
       // A later line of a newer format leaves the session listed, as unknown.
       if (read.log.why === "newer" || read.log.why === "unknown-end") unknownEnd = true;
-      listed.push({ log: read.log, writtenAt: ref.info.mtimeMs });
+      // The time the log had as it was opened, so a write since its `lstat` counts
+      // with the lines it added, or the `lstat`'s when what was read is older.
+      listed.push({ log: read.log, writtenAt: Math.max(ref.info.mtimeMs, read.writtenAt) });
     }
     reader.keepOnly(found.ids);
 

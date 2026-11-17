@@ -481,6 +481,24 @@ describe("a subagent's log", () => {
     reader.keepOnly(new Set([SESSION_ID]));
     expect(reader.isChild(CHILD_ID)).toBe(false);
   });
+
+  test("is no longer taken for a subagent's once a new file in its place is a session's", async () => {
+    const files = memoryFiles();
+    const path = logPath(CHILD_ID);
+    files.write(
+      path,
+      fxLog({ id: CHILD_ID, role: "child", host: "child", parent: SESSION_ID })
+        .turnStarted()
+        .text(),
+    );
+    const reader = createLogReader(files.io);
+    expect(await readOnce(files, reader, CHILD_ID)).toEqual({ state: "child" });
+    expect(reader.isChild(CHILD_ID)).toBe(true);
+
+    files.write(path, fxLog({ id: CHILD_ID }).turnStarted().text(), { mtimeMs: NOW + 5 });
+    expect(tailOf(await readOnce(files, reader, CHILD_ID))).toEqual({ turn: "open" });
+    expect(reader.isChild(CHILD_ID)).toBe(false);
+  });
 });
 
 describe("what the reader gives", () => {
@@ -503,7 +521,21 @@ describe("what the reader gives", () => {
         why: null,
         newestTs: NOW - 20_000,
       },
+      writtenAt: NOW,
     });
+  });
+
+  test("the log's modified time as it was opened, not as it was looked up", async () => {
+    const files = memoryFiles();
+    const log = fxLog().turnStarted().turnCommitted();
+    files.write(PATH, log.text(), { mtimeMs: NOW - 5_000 });
+    const ref = await refOf(files);
+    const mark = log.mark();
+    log.turnStarted().item();
+    files.append(PATH, log.since(mark), { mtimeMs: NOW });
+    const read = await createLogReader(files.io).read(ref);
+    expect(tailOf(read)).toEqual({ turn: "open" });
+    expect(read.state === "ok" && read.writtenAt).toBe(NOW);
   });
 
   test("a first line that is not the folder's, broken, or of a newer format is not a session", async () => {

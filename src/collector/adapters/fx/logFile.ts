@@ -65,7 +65,8 @@ export interface FxLog {
 }
 
 export type LogRead =
-  | { state: "ok"; log: FxLog }
+  /** `writtenAt` is the log's modified time as it was opened for what `log` says. */
+  | { state: "ok"; log: FxLog; writtenAt: number }
   /** A subagent's session, which is not listed. */
   | { state: "child" }
   /** No ordinary file, or one that went or changed as it was opened. */
@@ -378,6 +379,7 @@ function readOf(known: Known): LogRead {
       why,
       newestTs: fold.newestTs,
     },
+    writtenAt: known.info.mtimeMs,
   };
 }
 
@@ -457,7 +459,9 @@ export function createLogReader(io: ReadOnlyIo): LogReader {
       try {
         const read = await readFile(ref, known);
         remembered.set(ref.path, read);
+        // A new file in a subagent's place can be a session's, which is listed.
         if (read.head === "child") children.add(ref.id);
+        else children.delete(ref.id);
         return readOf(read);
       } catch {
         // Gone since its `lstat`, or a read error: what was read of it stands, and

@@ -511,6 +511,44 @@ describe("whether an open turn's writer runs", () => {
     ).toBe("finished");
   });
 
+  test("a write between a log's lookup and its opening counts, so an fx started since can have made it", async () => {
+    const M = NOW;
+    const files = memoryFiles();
+    writeSession(files, OTHER_ID, fxLog({ id: OTHER_ID }).turnStarted().item().text(), {
+      mtimeMs: M,
+    });
+    const log = fxLog().turnStarted().turnCommitted();
+    writeSession(files, SESSION_ID, log.text(), { mtimeMs: M });
+    files.failOpen(logPath(SESSION_ID));
+    const clock = handClock(M + 5 * SECOND);
+    const processes = standInFxProcesses();
+    processes.running();
+    const adapter = fxAdapterFor(files, { now: clock.now, processes });
+    expect(statusOf(await adapter.poll())).toBeUndefined();
+
+    // fx starts and opens a turn after the log is looked up and before it is opened.
+    files.heal(logPath(SESSION_ID));
+    const open = files.io.openRegular;
+    let added = false;
+    files.io.openRegular = async (target) => {
+      if (!added && target === logPath(SESSION_ID)) {
+        added = true;
+        const mark = log.mark();
+        log.turnStarted().item();
+        files.append(logPath(SESSION_ID), log.since(mark), { mtimeMs: M + 14 * SECOND });
+      }
+      return open(target);
+    };
+    clock.set(M + 15 * SECOND);
+    processes.running(200);
+    const result = await adapter.poll();
+    expect(added).toBe(true);
+    expect(statusOf(result)).toBe("working");
+    expect(result.sessions.find((session) => session.id === `fx:${SESSION_ID}`)?.lastWriteAt).toBe(
+      M + 14 * SECOND,
+    );
+  });
+
   test("a line naming fx with no ID keeps the turn from finishing", async () => {
     const files = withLog(fxLog().turnStarted().item().text(), NOW);
     const clock = handClock(NOW + 5 * SECOND);
