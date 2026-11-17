@@ -1,11 +1,12 @@
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   BASIS,
   BASIS_CLOSED,
   BASIS_WITHOUT_PROCESSES,
+  createKimchiAdapter,
   INTERNAL_SESSION_ENTRY,
   KIMCHI_CAPABILITIES,
   KIMCHI_PROFILE,
@@ -51,7 +52,21 @@ import {
   memoryFiles,
   standInProcesses,
 } from "@tests/support/adapters/kimchi/kimchiAdapter";
+import { goldenRun } from "@tests/support/adapters/pi/golden";
 import { asWritten } from "@tests/support/paths";
+
+// The golden runs below build the adapter's own `ps` reader, so `runPs` is a
+// stand-in that records what it is asked, the same on every system.
+const ps = vi.hoisted(() => ({
+  asked: [] as string[][],
+  answer: { ok: true, stdout: "" },
+}));
+vi.mock("@collector/processes/ps", () => ({
+  runPs: async (args: readonly string[]) => {
+    ps.asked.push([...args]);
+    return ps.answer;
+  },
+}));
 
 const FILE = sessionPath(SESSION_ID);
 const NOTES = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
@@ -508,4 +523,18 @@ describe("what it says it can report", () => {
     }
     expect(UNCHECKED_NOTE).toContain("v1.35.0");
   });
+});
+
+describe("the golden runs", () => {
+  // Each run is held to what the shared body did before Prime Agent's options
+  // were added to it, with Kimchi's own `ps` reader, so nothing made for Prime
+  // Agent moves anything for Kimchi.
+  for (const platform of ["darwin", "win32"] as const) {
+    for (const named of [false, true]) {
+      test(`on ${platform}, ${named ? "with" : "without"} AGENT_LOOKOUT_KIMCHI_HOME, are as before`, async () => {
+        const run = await goldenRun(createKimchiAdapter, KIMCHI_PROFILE, platform, named, ps);
+        expect(run).toMatchSnapshot();
+      });
+    }
+  }
 });

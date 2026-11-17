@@ -1,0 +1,3813 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the golden runs > on darwin, with AGENT_LOOKOUT_KIMCHI_HOME, are as before 1`] = `
+[
+  {
+    "at": 0,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856000000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "no folder yet",
+  },
+  {
+    "at": 1000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856001000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "a second later",
+  },
+  {
+    "at": 61000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856061000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a new file in a project folder and in the folder itself",
+  },
+  {
+    "at": 63000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856063000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "one grew",
+  },
+  {
+    "at": 65000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856065000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "name lines",
+  },
+  {
+    "at": 67000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856067000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a rewrite to a new file at the same name",
+  },
+  {
+    "at": 77000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-closed",
+      "health": {
+        "checkedAt": 1790856077000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. No kimchi program runs, so each session shows as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856067000,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856065000,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps says none runs",
+  },
+  {
+    "at": 80000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-closed",
+      "health": {
+        "checkedAt": 1790856080000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. No kimchi program runs, so each session shows as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856080000,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856067000,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "written 3 seconds after ps said none runs",
+  },
+  {
+    "at": 90000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856090000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. ps could not be run to tell whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps fails",
+  },
+  {
+    "at": 150000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856150000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "past a sweep",
+  },
+  {
+    "at": 152000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856152000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder went",
+  },
+  {
+    "at": 154000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856154000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "two seconds after it went",
+  },
+  {
+    "at": 214000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856214000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder came back empty",
+  },
+]
+`;
+
+exports[`the golden runs > on darwin, without AGENT_LOOKOUT_KIMCHI_HOME, are as before 1`] = `
+[
+  {
+    "at": 0,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856000000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "no folder yet",
+  },
+  {
+    "at": 1000,
+    "calls": [],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856001000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "a second later",
+  },
+  {
+    "at": 61000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856061000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a new file in a project folder and in the folder itself",
+  },
+  {
+    "at": 63000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856063000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "one grew",
+  },
+  {
+    "at": 65000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856065000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "name lines",
+  },
+  {
+    "at": 67000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856067000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a rewrite to a new file at the same name",
+  },
+  {
+    "at": 77000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-closed",
+      "health": {
+        "checkedAt": 1790856077000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. No kimchi program runs, so each session shows as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856067000,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856065000,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps says none runs",
+  },
+  {
+    "at": 80000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-closed",
+      "health": {
+        "checkedAt": 1790856080000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. No kimchi program runs, so each session shows as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856080000,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "finished",
+          "statusSince": 1790856067000,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "written 3 seconds after ps said none runs",
+  },
+  {
+    "at": 90000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856090000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. ps could not be run to tell whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps fails",
+  },
+  {
+    "at": 150000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [
+      [
+        "-A",
+        "-o",
+        "comm=",
+      ],
+    ],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856150000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "past a sweep",
+  },
+  {
+    "at": 152000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856152000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder went",
+  },
+  {
+    "at": 154000,
+    "calls": [],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856154000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "two seconds after it went",
+  },
+  {
+    "at": 214000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files",
+      "health": {
+        "checkedAt": 1790856214000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no kimchi",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder came back empty",
+  },
+]
+`;
+
+exports[`the golden runs > on win32, with AGENT_LOOKOUT_KIMCHI_HOME, are as before 1`] = `
+[
+  {
+    "at": 0,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856000000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "no folder yet",
+  },
+  {
+    "at": 1000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856001000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "a second later",
+  },
+  {
+    "at": 61000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856061000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a new file in a project folder and in the folder itself",
+  },
+  {
+    "at": 63000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856063000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "one grew",
+  },
+  {
+    "at": 65000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856065000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "name lines",
+  },
+  {
+    "at": 67000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856067000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a rewrite to a new file at the same name",
+  },
+  {
+    "at": 77000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856077000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps says none runs",
+  },
+  {
+    "at": 80000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856080000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "written 3 seconds after ps said none runs",
+  },
+  {
+    "at": 90000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856090000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps fails",
+  },
+  {
+    "at": 150000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/al-home/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856150000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "past a sweep",
+  },
+  {
+    "at": 152000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856152000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder went",
+  },
+  {
+    "at": 154000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856154000,
+        "detail": "AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ~/al-home/sessions folder, so no Kimchi sessions are listed. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "two seconds after it went",
+  },
+  {
+    "at": 214000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/al-home/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856214000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/al-home/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder came back empty",
+  },
+]
+`;
+
+exports[`the golden runs > on win32, without AGENT_LOOKOUT_KIMCHI_HOME, are as before 1`] = `
+[
+  {
+    "at": 0,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856000000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "no folder yet",
+  },
+  {
+    "at": 1000,
+    "calls": [],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856001000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "a second later",
+  },
+  {
+    "at": 61000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+        "position": 0,
+      },
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856061000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a new file in a project folder and in the folder itself",
+  },
+  {
+    "at": 63000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856063000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "one grew",
+  },
+  {
+    "at": 65000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856065000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "name lines",
+  },
+  {
+    "at": 67000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+      {
+        "method": "openRegular",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [
+      {
+        "length": 65536,
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+        "position": 0,
+      },
+    ],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856067000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "a rewrite to a new file at the same name",
+  },
+  {
+    "at": 77000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856077000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps says none runs",
+  },
+  {
+    "at": 80000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856080000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "written 3 seconds after ps said none runs",
+  },
+  {
+    "at": 90000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856090000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "ps fails",
+  },
+  {
+    "at": 150000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000002.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/0190a1b2-c3d4-7e5f-8a9b-000000000004.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-00-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000001.jsonl",
+      },
+      {
+        "method": "lstat",
+        "path": "/Users/example/.config/kimchi/harness/sessions/--Users-example-code-demo-project--/2026-10-01T11-30-00-000Z_0190a1b2-c3d4-7e5f-8a9b-000000000003.jsonl",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856150000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong. Agent Lookout cannot tell on this system whether Kimchi runs, so no session is shown as finished.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000001",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+        {
+          "cwd": "/Users/example/code/demo-project",
+          "id": "kimchi:0190a1b2-c3d4-7e5f-8a9b-000000000002",
+          "links": {},
+          "name": "demo-project",
+          "project": "demo-project",
+          "source": "kimchi",
+          "stale": false,
+          "startedAt": 1790852400000,
+          "status": "unknown",
+          "statusSince": null,
+          "surface": "unknown",
+        },
+      ],
+    },
+    "step": "past a sweep",
+  },
+  {
+    "at": 152000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856152000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder went",
+  },
+  {
+    "at": 154000,
+    "calls": [],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "health": {
+        "checkedAt": 1790856154000,
+        "detail": "Kimchi was not found: there is no ~/.config/kimchi/harness/sessions folder. Agent Lookout looks again every minute.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "unavailable",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "not found",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "two seconds after it went",
+  },
+  {
+    "at": 214000,
+    "calls": [
+      {
+        "method": "readdir",
+        "path": "/Users/example/.config/kimchi/harness/sessions",
+      },
+    ],
+    "ps": [],
+    "reads": [],
+    "result": {
+      "basis": "files-without-processes",
+      "health": {
+        "checkedAt": 1790856214000,
+        "detail": "Sessions are read from the files Kimchi keeps in ~/.config/kimchi/harness/sessions. Nothing Agent Lookout reads says whether a Kimchi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a kimchi program runs and as finished once none does. This was built from Kimchi's source at v1.35.0 and not yet checked on a computer running Kimchi, so a status can be wrong.",
+        "id": "kimchi",
+        "label": "Kimchi",
+        "state": "ok",
+        "watching": [
+          {
+            "label": "Sessions folder",
+            "value": "~/.config/kimchi/harness/sessions",
+          },
+          {
+            "label": "Read",
+            "value": "every 2 seconds",
+          },
+          {
+            "label": "Process check",
+            "value": "ps -A -o comm=",
+          },
+          {
+            "label": "Process check run",
+            "value": "not run on Windows",
+          },
+        ],
+      },
+      "sessions": [],
+    },
+    "step": "the folder came back empty",
+  },
+]
+`;

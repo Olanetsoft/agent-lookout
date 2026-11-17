@@ -1,13 +1,15 @@
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   BASIS,
   BASIS_CLOSED,
   BASIS_WITHOUT_PROCESSES,
+  createPiAdapter,
   NEWER_FORMAT_NOTE,
   PI_CAPABILITIES,
+  PI_PROFILE,
   piSessionsDirFor,
   PROCESS_CHECK_MS,
   PROMPT_PROCESS_CHECK_MS,
@@ -48,7 +50,21 @@ import {
   piAdapterFor,
   standInProcesses,
 } from "@tests/support/adapters/pi/piAdapter";
+import { goldenRun } from "@tests/support/adapters/pi/golden";
 import { asWritten } from "@tests/support/paths";
+
+// The golden runs below build the adapter's own `ps` reader, so `runPs` is a
+// stand-in that records what it is asked, the same on every system.
+const ps = vi.hoisted(() => ({
+  asked: [] as string[][],
+  answer: { ok: true, stdout: "" },
+}));
+vi.mock("@collector/processes/ps", () => ({
+  runPs: async (args: readonly string[]) => {
+    ps.asked.push([...args]);
+    return ps.answer;
+  },
+}));
 
 const FILE = sessionPath(SESSION_ID);
 const NOTES = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
@@ -821,4 +837,18 @@ describe("what a poll costs", () => {
       "readdir",
     ]);
   });
+});
+
+describe("the golden runs", () => {
+  // Each run is held to what the shared body did before Prime Agent's options
+  // were added to it, with Pi's own `ps` reader, so nothing made for Prime
+  // Agent moves anything for Pi.
+  for (const platform of ["darwin", "win32"] as const) {
+    for (const named of [false, true]) {
+      test(`on ${platform}, ${named ? "with" : "without"} AGENT_LOOKOUT_PI_HOME, are as before`, async () => {
+        const run = await goldenRun(createPiAdapter, PI_PROFILE, platform, named, ps);
+        expect(run).toMatchSnapshot();
+      });
+    }
+  }
 });
