@@ -337,6 +337,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Continue",
         "Crush",
         "Kilo Code",
+        "MiMo Code",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

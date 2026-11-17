@@ -35,6 +35,8 @@ export type RemoteSourceId = `remote:${string}`;
  * each project.
  * `kilo-code` is Kilo Code, in its command `kilo` and its editor extensions,
  * whose sessions are read from its database.
+ * `mimo-code` is Xiaomi's MiMo Code, in its command `mimo`, whose sessions are
+ * read from its database.
  */
 export type SourceId =
   | "claude-code"
@@ -53,6 +55,7 @@ export type SourceId =
   | "continue"
   | "crush"
   | "kilo-code"
+  | "mimo-code"
   | "status-files"
   | RemoteSourceId;
 
@@ -387,9 +390,9 @@ export interface TokenCounts {
   /** The part of `input` read from a cache. Left out when the agent did not record it. */
   cached?: number;
   /**
-   * What the reply wrote. Codex, Claude Code, Gemini CLI, Qwen Code, OpenCode and
-   * Kilo Code count its reasoning in it; whether the Antigravity sources and
-   * Mistral Vibe count a reply's thinking is not known.
+   * What the reply wrote. Codex, Claude Code, Gemini CLI, Qwen Code, OpenCode,
+   * Kilo Code and MiMo Code count its reasoning in it; whether the Antigravity
+   * sources and Mistral Vibe count a reply's thinking is not known.
    */
   output: number;
 }
@@ -491,8 +494,9 @@ export interface Session {
    * be right, which today a Codex or Gemini CLI session's file, an
    * Antigravity CLI or Antigravity session's transcript, a Mistral Vibe
    * session's public state, a Qwen Code session's chat file, OpenCode's
-   * database, for a session of 1.x, and Kilo Code's database give here. A Claude Code session's come
-   * only in the answer of `GET /api/sessions/last-message`.
+   * database, for a session of 1.x, and Kilo Code's and MiMo Code's databases
+   * give here. A Claude Code session's come only in the answer of
+   * `GET /api/sessions/last-message`.
    * Shown in the session's details alone: never copied into an event, the
    * history, an email, a webhook post, a push, an MCP answer or
    * `agent-lookout status`.

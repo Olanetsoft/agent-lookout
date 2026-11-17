@@ -48,6 +48,12 @@ import {
   KILO_CODE_CAPABILITIES,
   SOURCE_ID as KILO_CODE_SOURCE_ID,
 } from "@collector/adapters/kilo-code/index";
+import {
+  createMimoCodeAdapter,
+  MIMO_CODE_CAPABILITIES,
+  MIMO_FAILED_ERRORS,
+  SOURCE_ID as MIMO_CODE_SOURCE_ID,
+} from "@collector/adapters/mimo-code/index";
 import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
@@ -112,6 +118,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Continue", CONTINUE_CAPABILITIES],
   ["Crush", CRUSH_CAPABILITIES],
   ["Kilo Code", KILO_CODE_CAPABILITIES],
+  ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -199,6 +206,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createKiloCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(KILO_CODE_CAPABILITIES);
+    expect(
+      createMimoCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(MIMO_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -854,6 +864,101 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(KILO_CODE_CAPABILITIES.jump.level).toBe("no");
     expect(KILO_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(KILO_CODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("MiMo Code: a question or a plan needs you, a subagent at work keeps a session working, and only an error MiMo Code records fails", () => {
+    const messages = [
+      null,
+      ...["user", "assistant", "system"].flatMap((role) =>
+        [null, NOW - 1_000, NOW - 60_000].flatMap((completedAt) =>
+          [null, "MessageAbortedError", "ModelError", "SomeNewError"].flatMap((error) =>
+            [null, "stop", "tool-calls"].flatMap((finish) =>
+              [null, NOW - 60_000].map((askedAt) => ({
+                role,
+                completedAt,
+                error,
+                finish,
+                tools: 1,
+                shell: 0,
+                askedAt,
+              })),
+            ),
+          ),
+        ),
+      ),
+    ];
+    const map = (message: (typeof messages)[number], open: boolean, subagents: boolean) =>
+      mapOpencodeStatus({ message, open, now: NOW, subagents, failedErrors: MIMO_FAILED_ERRORS });
+    const mapped = statuses(
+      messages.flatMap((message) =>
+        [true, false].flatMap((open) =>
+          [true, false].map((subagents) => map(message, open, subagents)),
+        ),
+      ),
+    );
+    expect(mapped).toEqual(
+      new Set(["needs-you", "working", "idle", "finished", "failed", "unknown"]),
+    );
+    for (const message of messages) {
+      // A subagent at work never leaves a session idle while it is open.
+      expect(map(message, true, true)).not.toBe("idle");
+      // Only a call that waits for the person needs you, whatever else the step holds.
+      if (map(message, true, true) !== "needs-you") continue;
+      expect(message).toMatchObject({ completedAt: null, error: null, askedAt: NOW - 60_000 });
+    }
+    expect(MIMO_CODE_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(MIMO_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(MIMO_CODE_CAPABILITIES.finished.level).toBe("partly");
+    expect(MIMO_CODE_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("MiMo Code: a session has its main agent's newest finished reply's token counts, no time of its last write, jump, stop or link, and its title for a name", () => {
+    const session = opencodeSession({
+      row: {
+        id: "ses_000000000000000000000000a1",
+        folder: "/Users/example/code/demo",
+        title: "Rename the helper",
+        createdAt: NOW - 60_000,
+        updatedAt: NOW - 30_000,
+        message: {
+          createdAt: NOW - 30_000,
+          updatedAt: NOW - 30_000,
+          role: "assistant",
+          completedAt: NOW - 20_000,
+          error: null,
+          finish: "stop",
+          tools: 0,
+          shell: 0,
+          askedAt: null,
+          partsUpdatedAt: NOW - 20_000,
+        },
+        userCreatedAt: NOW - 40_000,
+        tokens: { input: 2_000, cached: 800, output: 64 },
+        turn: null,
+        subagentsAt: null,
+      },
+      sourceId: MIMO_CODE_SOURCE_ID,
+      open: true,
+      now: NOW,
+      failedErrors: MIMO_FAILED_ERRORS,
+    });
+    expect(session).toMatchObject({
+      id: "mimo-code:ses_000000000000000000000000a1",
+      source: "mimo-code",
+      status: "idle",
+      name: "Rename the helper",
+    });
+    expect(session?.tokens).toEqual({ input: 2_000, cached: 800, output: 64 });
+    for (const absent of ["lastWriteAt", "jump", "stop", "pid", "ask", "tokensNotRead"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session?.links).toEqual({});
+    expect(MIMO_CODE_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(MIMO_CODE_CAPABILITIES.tokens.level).toBe("yes");
+    expect(MIMO_CODE_CAPABILITIES.names.level).toBe("yes");
+    expect(MIMO_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(MIMO_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(MIMO_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Goose: a session is unknown or finished, and never working, idle, waiting or failed", () => {
