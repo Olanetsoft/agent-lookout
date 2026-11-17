@@ -50,7 +50,7 @@ function statusOn(files: PrimeAgentFiles, platform: NodeJS.Platform = "darwin", 
   return { source, ps };
 }
 
-const sessions = [{ id: SESSION_ID, writtenAt: NOW - MINUTE }];
+const sessions = [{ id: SESSION_ID, fileName: `${SESSION_ID}.jsonl`, writtenAt: NOW - MINUTE }];
 
 test("a poll that lists nothing, or finds no folder, is read the usual way", () => {
   expect(statusOn(primeAgentFiles()).source.emptyBasis).toBe(BASIS);
@@ -78,7 +78,10 @@ test("a lease it cannot read names the poll apart before a ps that failed does",
   ps.fail();
   const answer = await source.read({
     now: NOW,
-    sessions: [...sessions, { id: sessionIdOf(2), writtenAt: NOW }],
+    sessions: [
+      ...sessions,
+      { id: sessionIdOf(2), fileName: `${sessionIdOf(2)}.jsonl`, writtenAt: NOW },
+    ],
   });
   expect(answer.basis).toBe(BASIS_WITHOUT_LEASES);
   expect(answer.detail).toBe(

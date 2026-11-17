@@ -51,7 +51,15 @@ const status = (
   trail: TrailEntry[],
   queue: QueueState = notParked,
   idleSince: number | null = null,
-) => primeAgentJournalStatus({ sessionId: SESSION, createdAt: CREATED, trail, queue, idleSince });
+) =>
+  primeAgentJournalStatus({
+    sessionId: SESSION,
+    sessionFile: `${SESSION}.jsonl`,
+    createdAt: CREATED,
+    trail,
+    queue,
+    idleSince,
+  });
 
 describe("whether a lease's process holds it", () => {
   test.each([
@@ -184,6 +192,24 @@ describe("a session's status from its worker's journal", () => {
       sessionId: OTHER,
     });
     expect(status([entry(otherId)]).status).toBe("unknown");
+  });
+
+  test("matches a record by the name of the session's file as it was listed, whatever that is", () => {
+    const named = record("prompt_accepted", true, CREATED + 1_000, {
+      sessionFile: "demo-project.jsonl",
+    });
+    const facts = {
+      sessionId: SESSION,
+      sessionFile: "demo-project.jsonl",
+      createdAt: CREATED,
+      trail: [entry(named)],
+      queue: notParked,
+      idleSince: null,
+    };
+    expect(primeAgentJournalStatus(facts).status).toBe("working");
+    expect(primeAgentJournalStatus({ ...facts, sessionFile: `${SESSION}.jsonl` }).status).toBe(
+      "unknown",
+    );
   });
 
   test("counts no record written before the lease was taken", () => {

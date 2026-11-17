@@ -282,6 +282,42 @@ describe("who holds a session", () => {
     expect(at.alive.asked).toEqual([]);
   });
 
+  test("a session's file need not be named for its ID: its lease and its records are matched by the file's name", async () => {
+    const file = `${SESSIONS_DIR}/demo-project.jsonl`;
+    const files = primeAgentFiles();
+    files.write(file, sessionText(SESSION_ID), { mtimeMs: NOW - MINUTE });
+    files.write(ownerOf(1), ownerText(SESSION_ID, { sessionPath: file }));
+    files.write(workerRecordOf(), workerRecordText());
+    files.write(
+      JOURNAL,
+      checkpoint({
+        busy: true,
+        operation: "prompt_accepted",
+        at: STARTED_AT + 2 * SECOND,
+        sessionFile: file,
+      }),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({
+      id: `prime-agent:${SESSION_ID}`,
+      status: "working",
+      statusSince: STARTED_AT + 2 * SECOND,
+    });
+  });
+
+  test("a lease that names a file no listed session has is passed over, whatever the file's name", async () => {
+    const files = primeAgentFiles();
+    files.write(SESSION_FILE, sessionText(SESSION_ID), { mtimeMs: NOW - MINUTE });
+    files.write(
+      ownerOf(2),
+      ownerText(sessionIdOf(2), { sessionPath: "/Users/example/code/demo/scratch notes.jsonl" }),
+    );
+    const { result, session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "finished", statusSince: NOW - MINUTE });
+    expect(result.basis).toBe(BASIS);
+    expect(result.health.detail).toBe(READ_DETAIL);
+  });
+
   test("H3: its lease's process has gone, so it is finished, whatever its journal says", async () => {
     const files = heldSession(checkpointAt(2, "prompt_accepted", true));
     const at = machine();

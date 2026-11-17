@@ -82,7 +82,7 @@ Nothing else in Prime Agent's folders is read: not `settings.json`, its credenti
 
 ## The session file
 
-The file is `<session ID>.jsonl`, directly in the sessions folder (`session_store/read.rs:17-20`), and its ID is a UUIDv7 (`:13-15`). Every line after the first is an entry, `{"type":…,"id":…,"parentId":…,"timestamp":…,…}` (`session_store.rs:93-104`), with `type` first.
+The file is `<session ID>.jsonl`, directly in the sessions folder (`session_store/read.rs:17-20`), and its ID is a UUIDv7 (`:13-15`). A path given to `--resume` that does not exist yet is made there under that name, with a new ID (`crates/pa-core/src/session/discovery.rs:190-196`; `worker/create.rs:314-341`). Every line after the first is an entry, `{"type":…,"id":…,"parentId":…,"timestamp":…,…}` (`session_store.rs:93-104`), with `type` first.
 
 ### The header
 
@@ -107,10 +107,10 @@ Every other line is passed over as bytes: messages, with the prompts, the replie
 | `pid`             | The process that took it (`:516`)                                            | Yes, when it is a whole number above 0                                                  |
 | `processStartId`  | When that process started, as [The process](#the-process) says (`:517`)      | Yes, when it is `proc:<digits>`, `ps:<up to 64 printable characters>` or `win:<digits>` |
 | `activeSessionId` | The worker's ID, from `PRIME_AGENT_INTERNAL_SESSION_LEASE_OWNER_ID` (`:518`) | Yes, when it is up to 128 letters, digits, `_` and `-`. None for a print or RPC run     |
-| `sessionPath`     | The session file's path, its links followed (`:519`, `:72-80`)               | Only the name at its end, which must be `<session ID>.jsonl`                            |
+| `sessionPath`     | The session file's path, its links followed (`:519`, `:72-80`)               | Only the name at its end, which is matched with the name of a listed session's file     |
 | `createdAt`       | When it was taken (`:520`)                                                   | Yes, when it is a time                                                                  |
 
-A lease is given up by renaming its folder to `<hash>.lock.stale-<pid>-<id>` and removing that (`lease.rs:194-219`). Only names of 64 hex digits and `.lock` are looked at, so `.lock.guard` (`:257`), `.lock.candidate-*` (`:507-511`) and `.lock.stale-*` are passed over. A lease whose folder is a link, has no `owner.json`, or whose `owner.json` is over 8 KiB, is not JSON, is of another version, or has no good `pid`, `sessionPath` or `createdAt`, is one that cannot be told whose it is. A parse that fails keeps nothing of its error.
+A lease is given up by renaming its folder to `<hash>.lock.stale-<pid>-<id>` and removing that (`lease.rs:194-219`). Only names of 64 hex digits and `.lock` are looked at, so `.lock.guard` (`:257`), `.lock.candidate-*` (`:507-511`) and `.lock.stale-*` are passed over. A lease whose folder is a link, has no `owner.json`, or whose `owner.json` is over 8 KiB, is not JSON, is of another version, or has no good `pid`, `sessionPath` or `createdAt`, is one that cannot be told whose it is. A lease that names no listed session's file is passed over. A parse that fails keeps nothing of its error.
 
 Since 0.10.1 Prime Agent's daemon removes the leases of processes that have gone (`lease.rs:571-601`, `CHANGELOG.md:150`). How often was not checked.
 
@@ -146,7 +146,7 @@ Each session whose file was written in the last 24 hours, by its modified time, 
 
 ## Status
 
-First, who holds the session's lease, by its session ID (`primeAgentHolder` and `primeAgentLeaseProcess`):
+First, who holds the session's lease, by the name of its file (`primeAgentHolder` and `primeAgentLeaseProcess`):
 
 | Rule | What the leases say                                                                 | Holder  |
 | ---- | ----------------------------------------------------------------------------------- | ------- |
@@ -163,7 +163,7 @@ First, who holds the session's lease, by its session ID (`primeAgentHolder` and 
 | H9   | Some lease since the boot cannot be told whose it is, and no lease of this one runs | unknown |
 | H10  | Two leases name it: it runs if one runs, else it is unknown if one is               |         |
 
-`none` is `finished`, at the file's last write. `unknown` is `unknown`. While a process that runs holds it, on macOS and Linux, its worker's journal says the rest. The worker is the lease's `activeSessionId`. With none, as for a print or RPC run, no journal, or more than one, the session is unknown. The newest record of the slot counts only if it is this session's, by the name of `sessionFile` or, with none, by `sessionId`, and was written since the lease was taken. The newest queue line counts only if it was written since then too.
+`none` is `finished`, at the file's last write. `unknown` is `unknown`. While a process that runs holds it, on macOS and Linux, its worker's journal says the rest. The worker is the lease's `activeSessionId`. With none, as for a print or RPC run, no journal, or more than one, the session is unknown. The newest record of the slot counts only if it is this session's, by the name of `sessionFile` against the session file's name or, with none, by `sessionId`, and was written since the lease was taken. The newest queue line counts only if it was written since then too.
 
 | Newest record                                                                                                     | `busy` | Queue line                  | Status    | Since                                         |
 | ----------------------------------------------------------------------------------------------------------------- | ------ | --------------------------- | --------- | --------------------------------------------- |

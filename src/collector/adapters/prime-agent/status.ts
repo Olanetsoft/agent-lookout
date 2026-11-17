@@ -178,14 +178,14 @@ export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStat
       const bootAt = now - uptimeMs();
       // A lease taken before the computer started cannot be any session's now.
       const stray = leases.stray.some(({ folderMtimeMs }) => folderMtimeMs >= bootAt);
-      const own = (id: string) => leases.byId.get(id) ?? [];
-      const asked: Lease[] = sessions.flatMap(({ id }) => own(id));
+      const own = (fileName: string) => leases.byFile.get(fileName) ?? [];
+      const asked: Lease[] = sessions.flatMap(({ fileName }) => own(fileName));
       const { processes, psFailed } = await holders.check(asked, now);
 
       let folders: readonly string[] | null = null;
       const read = new Set<string>();
-      for (const { id } of sessions) {
-        const held = own(id);
+      for (const { id, fileName } of sessions) {
+        const held = own(fileName);
         const holder = primeAgentHolder({
           listed: true,
           leases: held.map((lease) => processes.get(lease) ?? "unknown"),
@@ -219,6 +219,7 @@ export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStat
             ? unknown
             : primeAgentJournalStatus({
                 sessionId: id,
+                sessionFile: fileName,
                 createdAt: lease.createdAt,
                 trail: state.trail,
                 queue: state.queue,

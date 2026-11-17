@@ -1,4 +1,5 @@
 import os from "node:os";
+import path from "node:path";
 
 import type {
   Session,
@@ -188,6 +189,8 @@ export interface PiAdapterOptions {
 /** One file this poll read. */
 interface Found {
   file: PiSessionFile;
+  /** The name of the session's file, without its folders. */
+  name: string;
   writtenAt: number;
 }
 
@@ -212,10 +215,13 @@ export interface PiStatusSource {
   facts: SourceFact[];
   /** The way a poll that lists no session, or finds no sessions folder, is read. */
   emptyBasis: string;
-  /** Asked once on each poll that lists a session. Never rejects. */
+  /**
+   * Asked once on each poll that lists a session, with each session's id in
+   * its file, the name of its file and when it was written. Never rejects.
+   */
   read(input: {
     now: number;
-    sessions: readonly { id: string; writtenAt: number }[];
+    sessions: readonly { id: string; fileName: string; writtenAt: number }[];
   }): Promise<PiStatusAnswer>;
 }
 
@@ -428,7 +434,11 @@ export function createPiFamilyAdapter(
       if (read.state === "newer") newer = true;
       if (read.state !== "ok" || ids.has(read.session.id)) continue;
       ids.add(read.session.id);
-      found.push({ file: read.session, writtenAt: ref.info.mtimeMs });
+      found.push({
+        file: read.session,
+        name: path.basename(ref.path),
+        writtenAt: ref.info.mtimeMs,
+      });
     }
     reader.keepOnly(new Set(refs.map((ref) => ref.path)));
 
@@ -470,7 +480,11 @@ export function createPiFamilyAdapter(
       found.length > 0
         ? await source.read({
             now: checkedAt,
-            sessions: found.map(({ file, writtenAt }) => ({ id: file.id, writtenAt })),
+            sessions: found.map(({ file, name, writtenAt }) => ({
+              id: file.id,
+              fileName: name,
+              writtenAt,
+            })),
           })
         : null;
     const sessions = found.map(({ file, writtenAt }) =>

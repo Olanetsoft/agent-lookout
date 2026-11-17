@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { validPid } from "../../processes/pids.ts";
 import { isMissing, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
-import { INSTANT, SESSION_ID } from "../pi/sessionFile.ts";
+import { INSTANT } from "../pi/sessionFile.ts";
 import { createFolderLister } from "./folders.ts";
 
 /**
@@ -31,10 +31,14 @@ import { createFolderLister } from "./folders.ts";
  *   or identity changed, without following a link;
  * - parses it, and keeps the pid, when the lease was taken, the start of its
  *   process as Prime Agent wrote it, the worker's ID, and the name of the
- *   session's file without its folders. The `token`, which Prime Agent
- *   compares only when it gives the lease up, the folders of `sessionPath`
- *   and anything else are dropped with the parsed file. A parse that fails
- *   keeps nothing of its error, whose words could hold the file's bytes.
+ *   session's file without its folders, which is matched with the name of a
+ *   listed session's file. Prime Agent names a file for its session's ID,
+ *   but one given to `--resume` that is not there yet is made under the name
+ *   given. A lease that names no listed file is passed over. The `token`,
+ *   which Prime Agent compares only when it gives the lease up, the folders
+ *   of `sessionPath` and anything else are dropped with the parsed file. A
+ *   parse that fails keeps nothing of its error, whose words could hold the
+ *   file's bytes.
  *
  * A lease that cannot be read, or whose fields are not what Prime Agent
  * writes, is kept as one that cannot be told whose it is, with its folder's
@@ -81,8 +85,8 @@ export interface StrayLease {
 export type LeaseRead =
   | {
       state: "listed";
-      /** The leases, by the ID of the session whose file each names. */
-      byId: ReadonlyMap<string, readonly Lease[]>;
+      /** The leases, by the name of the session file each names, without its folders. */
+      byFile: ReadonlyMap<string, readonly Lease[]>;
       stray: readonly StrayLease[];
     }
   | { state: "missing" }
@@ -92,15 +96,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The ID of the session a lease's `sessionPath` names, from its last name, or null. */
-function sessionIdOf(sessionPath: unknown): string | null {
+/** The name of the file a lease's `sessionPath` names, without its folders, on any system, or null. */
+function fileNameOf(sessionPath: unknown): string | null {
   if (typeof sessionPath !== "string") return null;
-  const name = sessionPath.slice(
+  return sessionPath.slice(
     Math.max(sessionPath.lastIndexOf("/"), sessionPath.lastIndexOf("\\")) + 1,
   );
-  if (!name.endsWith(".jsonl")) return null;
-  const id = name.slice(0, -".jsonl".length);
-  return SESSION_ID.test(id) ? id : null;
 }
 
 function timeOf(value: unknown): number | null {
@@ -109,8 +110,8 @@ function timeOf(value: unknown): number | null {
   return Number.isNaN(at) ? null : at;
 }
 
-/** A lease kept, with its session's ID, or why it cannot be. */
-type Parsed = { sessionId: string; lease: Lease } | { reason: string };
+/** A lease kept, with the name of its session's file, or why it cannot be. */
+type Parsed = { fileName: string; lease: Lease } | { reason: string };
 
 /**
  * What is kept of one `owner.json`, from its text. Only the fields named in
@@ -126,9 +127,9 @@ export function parseOwner(text: string): Parsed {
   if (!isRecord(value)) return { reason: "bad JSON" };
   if (value.version !== OWNER_VERSION) return { reason: "another version" };
   const pid = validPid(value.pid);
-  const sessionId = sessionIdOf(value.sessionPath);
+  const fileName = fileNameOf(value.sessionPath);
   const createdAt = timeOf(value.createdAt);
-  if (pid === undefined || sessionId === null || createdAt === null) {
+  if (pid === undefined || fileName === null || createdAt === null) {
     return { reason: "bad fields" };
   }
   const lease: Lease = { pid, createdAt };
@@ -136,7 +137,7 @@ export function parseOwner(text: string): Parsed {
   if (typeof start === "string" && PROCESS_START_ID.test(start)) lease.processStartId = start;
   const worker = value.activeSessionId;
   if (typeof worker === "string" && WORKER_ID.test(worker)) lease.activeSessionId = worker;
-  return { sessionId, lease };
+  return { fileName, lease };
 }
 
 function sameFile(a: FileInfo, b: FileInfo): boolean {
@@ -226,7 +227,7 @@ export function createLeaseReader(agentDir: string, io: ReadOnlyIo, sweepMs?: nu
         return listing;
       }
       const kept = new Map<string, { info: FileInfo; parsed: Parsed }>();
-      const byId = new Map<string, Lease[]>();
+      const byFile = new Map<string, Lease[]>();
       const stray: StrayLease[] = [];
       for (const name of listing.names) {
         if (!LEASE_NAME.test(name)) continue;
@@ -236,12 +237,12 @@ export function createLeaseReader(agentDir: string, io: ReadOnlyIo, sweepMs?: nu
           stray.push({ name, reason: found.reason, folderMtimeMs: found.folderMtimeMs });
           continue;
         }
-        const leases = byId.get(found.sessionId) ?? [];
+        const leases = byFile.get(found.fileName) ?? [];
         leases.push(found.lease);
-        byId.set(found.sessionId, leases);
+        byFile.set(found.fileName, leases);
       }
       remembered = kept;
-      return { state: "listed", byId, stray };
+      return { state: "listed", byFile, stray };
     },
   };
 }

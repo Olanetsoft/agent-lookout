@@ -844,7 +844,10 @@ describe("what a poll costs", () => {
 describe("a reader of status of a profile's own, as Prime Agent's", () => {
   /** A reader that says the one session works, and writes down what it was asked. */
   function reader() {
-    const asked: { now: number; sessions: readonly { id: string; writtenAt: number }[] }[] = [];
+    const asked: {
+      now: number;
+      sessions: readonly { id: string; fileName: string; writtenAt: number }[];
+    }[] = [];
     const source: PiStatusSource = {
       facts: [{ label: "Leases folder", value: "~/leases" }],
       emptyBasis: "files-empty",
@@ -871,7 +874,9 @@ describe("a reader of status of a profile's own, as Prime Agent's", () => {
     );
     const result = await adapter.poll();
     expect(processes.asked.count).toBe(0);
-    expect(asked).toEqual([{ now: NOW, sessions: [{ id: SESSION_ID, writtenAt: NOW }] }]);
+    expect(asked).toEqual([
+      { now: NOW, sessions: [{ id: SESSION_ID, fileName: path.basename(FILE), writtenAt: NOW }] },
+    ]);
     expect(result.basis).toBe("files-own");
     expect(result.health.detail).toBe(`${READ_DETAIL} Own words.`);
     expect(result.health.watching).toEqual([

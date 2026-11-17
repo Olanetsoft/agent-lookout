@@ -187,6 +187,8 @@ export function primeAgentRecordStatus(
 export interface JournalFacts {
   /** The session, by its ID in its file. */
   sessionId: string;
+  /** The name of the session's file, without its folders, as it was listed. */
+  sessionFile: string;
   /** When the lease of the process that holds it was taken, in epoch milliseconds. */
   createdAt: number;
   /** The record lines of the worker's slot, oldest first, with what was read of the queue before each. */
@@ -201,12 +203,12 @@ export interface JournalFacts {
 }
 
 /** Whether a record line is this session's and was written since the lease was taken. */
-function counts(record: JournalRecord, sessionId: string, createdAt: number): boolean {
+function counts(record: JournalRecord, facts: JournalFacts): boolean {
   const own =
     record.sessionFile === null
-      ? record.sessionId === sessionId
-      : record.sessionFile === `${sessionId}.jsonl`;
-  return own && record.recordedAt >= createdAt;
+      ? record.sessionId === facts.sessionId
+      : record.sessionFile === facts.sessionFile;
+  return own && record.recordedAt >= facts.createdAt;
 }
 
 /** A queue line, unless it was written before the lease was taken. */
@@ -218,10 +220,10 @@ function since(queue: QueueState, createdAt: number): QueueState {
 /**
  * A session's status, and since when, from the journal of the worker its
  * lease names, while a process that runs holds the lease. The newest record
- * line counts only if it names the session's file, or its ID when it names
- * no file, and was written since the lease was taken: one before is another
- * run's, and a worker can move to another session with `/new`. Otherwise the
- * session is unknown. The newest queue line counts only if it was written
+ * line counts only if the file it names has the name of the session's file,
+ * or it names the session's ID when it names no file, and it was written
+ * since the lease was taken: one before is another run's, and a worker can
+ * move to another session with `/new`. Otherwise the session is unknown. The newest queue line counts only if it was written
  * since the lease was taken too.
  *
  * A working session's time is the first line of the run of lines at the end
@@ -233,9 +235,9 @@ export function primeAgentJournalStatus(facts: JournalFacts): {
   status: "working" | "idle" | "unknown";
   since: number | null;
 } {
-  const { sessionId, createdAt, trail } = facts;
+  const { createdAt, trail } = facts;
   const last = trail.at(-1);
-  if (last === undefined || !counts(last.record, sessionId, createdAt)) {
+  if (last === undefined || !counts(last.record, facts)) {
     return { status: "unknown", since: null };
   }
   const status = primeAgentRecordStatus(last.record, since(facts.queue, createdAt));
@@ -253,7 +255,7 @@ export function primeAgentJournalStatus(facts: JournalFacts): {
   let first = last.record.recordedAt;
   for (let index = trail.length - 2; index >= 0; index -= 1) {
     const { record, queue } = trail[index] as TrailEntry;
-    if (!counts(record, sessionId, createdAt)) break;
+    if (!counts(record, facts)) break;
     if (primeAgentRecordStatus(record, since(queue, createdAt)) !== "working") break;
     first = record.recordedAt;
   }

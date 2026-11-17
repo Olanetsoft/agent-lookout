@@ -28,9 +28,9 @@ import { primeAgentFiles } from "@tests/support/adapters/prime-agent/primeAgentA
 const NOW = STARTED_AT + 60_000;
 
 describe("an owner.json", () => {
-  test("keeps the pid, when it was taken, its process's start and its worker, by the session's ID", () => {
+  test("keeps the pid, when it was taken, its process's start and its worker, by the name of the session's file", () => {
     expect(parseOwner(ownerText(SESSION_ID))).toStrictEqual({
-      sessionId: SESSION_ID,
+      fileName: `${SESSION_ID}.jsonl`,
       lease: {
         pid: PID,
         createdAt: STARTED_AT,
@@ -68,7 +68,15 @@ describe("an owner.json", () => {
           sessionPath: `C:\\Users\\example\\.prime\\agent\\sessions\\${SESSION_ID}.jsonl`,
         }),
       ),
-    ).toMatchObject({ sessionId: SESSION_ID });
+    ).toMatchObject({ fileName: `${SESSION_ID}.jsonl` });
+  });
+
+  test("keeps a file's name that is not a session's ID, as one given to --resume", () => {
+    for (const name of ["demo-project.jsonl", "scratch notes.jsonl", "notes.txt"]) {
+      expect(
+        parseOwner(ownerText(SESSION_ID, { sessionPath: `/Users/example/code/demo/${name}` })),
+      ).toMatchObject({ fileName: name });
+    }
   });
 
   test("with a field Prime Agent never writes that way cannot be told whose it is", () => {
@@ -79,7 +87,7 @@ describe("an owner.json", () => {
       { pid: 0 },
       { pid: "4242" },
       { createdAt: "yesterday" },
-      { sessionPath: "/Users/example/.prime/agent/sessions/notes.txt" },
+      { sessionPath: 7 },
       { sessionPath: undefined },
     ]) {
       expect(parseOwner(ownerText(SESSION_ID, fields)), JSON.stringify(fields)).toEqual({
@@ -110,9 +118,9 @@ describe("the leases folder", () => {
     const read = await createLeaseReader(AGENT_DIR, files.io).read(NOW);
     expect(read).toStrictEqual({
       state: "listed",
-      byId: new Map([
+      byFile: new Map([
         [
-          SESSION_ID,
+          `${SESSION_ID}.jsonl`,
           [
             {
               pid: PID,
@@ -123,7 +131,7 @@ describe("the leases folder", () => {
           ],
         ],
         [
-          sessionIdOf(2),
+          `${sessionIdOf(2)}.jsonl`,
           [
             {
               pid: PID + 1,
@@ -178,12 +186,12 @@ describe("the leases folder", () => {
     expect(files.opened()).toEqual([]);
     files.write(ownerOf(1), ownerText(SESSION_ID, { createdAt: iso(STARTED_AT + 1_000) }));
     const changed = await reader.read(NOW + 4_000);
-    expect(changed.state === "listed" && changed.byId.get(SESSION_ID)?.[0]?.createdAt).toBe(
-      STARTED_AT + 1_000,
-    );
+    expect(
+      changed.state === "listed" && changed.byFile.get(`${SESSION_ID}.jsonl`)?.[0]?.createdAt,
+    ).toBe(STARTED_AT + 1_000);
     files.remove(leaseOf(1));
     const gone = await reader.read(NOW + 6_000);
-    expect(gone.state === "listed" && gone.byId.size).toBe(0);
+    expect(gone.state === "listed" && gone.byFile.size).toBe(0);
   });
 
   test("lists the folder again only when its time moves, and once a minute", async () => {

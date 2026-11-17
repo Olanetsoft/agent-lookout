@@ -1149,6 +1149,7 @@ describe("each declaration agrees with what its adapter does", () => {
           shown.push(
             primeAgentJournalStatus({
               sessionId: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+              sessionFile: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
               createdAt: NOW - 1_000,
               trail: [{ record: record(operation, busy), queue: null }],
               queue: { suspended, recordedAt: NOW },
