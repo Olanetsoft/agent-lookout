@@ -517,7 +517,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 - `ps` is asked for `kilo`, `.kilo`, the copy npm's launcher starts, and `.kilo-wrapped`, Nix's. npm's `kilocode` link runs as `node`, so it is not one.
 - Only `question` asks. Kilo Code's `plan_exit` asks nothing, and the plan's approval comes after it, from memory.
-- Kilo Code's `suggest` waits inside its call while Kilo Code shows the session as idle, so a step whose one call not over is that is idle here too. Only Kilo Code's question asks for it, `m_idle_call`, so OpenCode's questions are as they were.
+- Kilo Code's `suggest` waits inside its call while Kilo Code shows the session as idle, so a step whose one call not yet over is its `suggest` is idle here too. Only Kilo Code's question asks for it, `m_idle_call`, so OpenCode's questions are as they were.
 - `session_v2` is never read. A database with one is a version Agent Lookout does not read.
 - No last message is read, so the adapter has no `lastMessage`. Its token counts come from the poll, as for OpenCode 1.x.
 
@@ -1336,7 +1336,7 @@ This part covers what Agent Lookout does when you ask it to act: Jump, Stop and 
 | What you do                                 | Route                                             | Main code                                                            | Asked for in            | First release    |
 | ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------- | ---------------- |
 | Jump to a session in VS Code by its link    | none, it is a link                                | `src/core/mapping/claudeCodeMapping.ts`                              | First commit            | 0.2.0            |
-| Jump to a session's VS Code window on a Mac | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/editor/`                | #332                    | Unreleased       |
+| Jump to a session's VS Code window on a Mac | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/editor/`                | #332                    | 0.2.21           |
 | Jump to a tmux pane                         | `POST /api/jump`                                  | `src/collector/jumpRoute.ts`, `src/collector/tmux/`                  | #7                      | 0.2.0            |
 | Jump to a Terminal or iTerm2 tab            | `POST /api/jump`                                  | `src/collector/terminal/`                                            | #7                      | 0.2.0            |
 | Stop one session                            | `POST /api/sessions/stop`                         | `src/collector/actions/`                                             | #5                      | 0.2.4            |
