@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from fx, where each value comes from
 
 Written on 2026-11-17 from fx's source at `v0.0.17`, released 2026-11-14 (commit `d1d4a88` of [vercel-labs/fx](https://github.com/vercel-labs/fx)), the newest release then. fx is Vercel Labs' coding agent, one program built from Zig, under the Apache-2.0 licence. It was not installed or run to write these notes, and no real session was looked at. The fixtures are written by hand from the source. **The adapter was built from fx's source at v0.0.17 and has not yet been checked on a computer running fx.** The Sources view says so too.
 
-Each citation is `path:line` at `v0.0.17`. A path with no folder in front of it is in `src/core/session_manager/`. `README.md`, `CHANGELOG.md`, `build.zig` and `tests/` are at the top of fx's repository, and every other path is in `src/`. The lines were counted on the raw files.
+Each citation is `path:line` at `v0.0.17`. `README.md`, `CHANGELOG.md`, `build.zig` and `tests/` are at the top of fx's repository, and `main.zig` is in `src/`. Any other path with no folder in front of it is in `src/core/session_manager/`, and every other path is in `src/`. The lines were counted on the raw files.
 
 The code is in `src/collector/adapters/fx/`. `index.ts` builds the adapter. `paths.ts` works out the folders, `logFiles.ts` finds the logs, `logFile.ts` reads them and keeps what it read, `logLines.ts` judges each line as bytes, `processes.ts` asks `ps` which fx programs run, and `toSession.ts` makes the session. The status mapping is `src/core/mapping/fx/fxMapping.ts`.
 
@@ -139,7 +139,7 @@ fx refuses an `item` outside an open turn, a `turn_started` while one is open, a
 
 ### Forks
 
-A fork is a new session whose first line is new, written when the fork is made, and whose lines 2 to `S` are the source's, copied byte for byte with their `seq` and `ts`, where `S` ends a turn of the source or comes before its first (`session.zig:1737-1740`, `:1795`, `:1823-1832`, `:2106-2165`). A line whose `seq` is `S` or less is the source's, so it says nothing of the fork's own turns: reading backwards stops there, with no turn yet.
+A fork is a new session whose first line is new, written when the fork is made, and whose lines 2 to `S` are the source's, copied with their `seq` and `ts`, where `S` ends a turn of the source or comes before its first (`session.zig:1737-1740`, `:1795`, `:1823-1832`, `:2106-2165`). Each is copied byte for byte but for a snapshot, which fx encodes again from the fork's own state (`session.zig:2160-2164`). A line whose `seq` is `S` or less is the source's, so it says nothing of the fork's own turns: reading backwards stops there, with no turn yet.
 
 ## Which sessions are listed
 
@@ -162,7 +162,7 @@ A subagent's session is its own folder in `v2`, with `role` `child` in its first
 | 7   | Open                       | Some, quiet for 30 minutes, or written ahead                          | `unknown`  |
 | 8   | Open                       | Some                                                                  | `working`  |
 
-The last turn is read from the log's end backwards: the newest `item` or `turn_started` says open, the newest `turn_committed` or `turn_interrupted` says ended, and reaching the first line, or the lines a fork copied, says none. A `closed` before an open turn is passed over, since fx writes it as it lets a session go, after the turn's end (`session.zig:893-956`). After the first read, each line added is folded in the same way, so a log read in two parts says what it says when read whole.
+The last turn is read from the log's end backwards: the newest `item` or `turn_started` says open, the newest `turn_committed` or `turn_interrupted` says ended, and reaching the first line, or the lines a fork copied, says none. A `closed` after a turn's end is passed over, since fx writes it as it lets a session go (`session.zig:893-956`). A `closed` after an open turn with no end between, which fx never writes, since it ends an open turn first (`session.zig:936-941`), shows the session as unknown. After the first read, each line added is folded in the same way, so a log read in two parts says what it says when read whole.
 
 - **Row 2.** fx writes a failed turn as `turn_interrupted` with `failed` (`core/session/session_adapter.zig:2129-2134`), and a failure stands whether fx runs or not.
 - **Row 4.** fx's lock is the only sign a session is open, and the system lets it go when fx's process ends, however it ends (`storage.zig:291-296`; `tests/tla/session/LiveSessions.tla:6-15`). With no fx program, no session is held.
@@ -224,7 +224,7 @@ fx runs on macOS and Linux only (`README.md:42`), and its storage is for those s
 - An `FX_HOME` set in your shell but not in Agent Lookout's environment is not followed. Start Agent Lookout with the same `FX_HOME`, or `AGENT_LOOKOUT_FX_HOME`.
 - An `FX_HOME` with a `.` or `..` in it shows fx as unavailable.
 - A damaged log shows as unknown. fx never repairs one: it refuses to open it for writing (`session.zig:1249-1259`).
-- For up to 2 seconds after an fx starts, a session can show as finished.
+- For up to 10 seconds after an fx starts, a session can show as finished, or up to 2 seconds once that fx writes to a session's log, since `ps` is asked sooner only after a write.
 - A turn a crash cut off that Agent Lookout first sees while another fx runs, as after Agent Lookout starts, shows as working for up to 30 minutes and then as unknown.
 - With two fx programs, one of which left a turn open, the same.
 - A turn a crash cut off, when another fx starts up to 12 seconds after its last write, the same.
