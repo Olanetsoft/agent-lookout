@@ -34,6 +34,7 @@ function fileOf(
     folder: PROJECT,
     replay,
     tooLong: false,
+    writtenAt: NOW - 10_000,
     ...changes,
   };
 }

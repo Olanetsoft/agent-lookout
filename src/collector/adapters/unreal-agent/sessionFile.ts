@@ -82,6 +82,8 @@ export interface UnrealAgentSessionFile {
   replay: UnrealAgentReplay;
   /** Whether the file was too long to read whole when its lines did not reach its start. */
   tooLong: boolean;
+  /** The file's modified time when it was opened for the lines read, which can be later than this poll's `lstat`. */
+  writtenAt: number;
 }
 
 export type UnrealAgentSessionRead =
@@ -343,6 +345,7 @@ export function createUnrealAgentSessionReader(
           folder: folderFrom(applied, null),
           replay: applied.replay,
           tooLong: false,
+          writtenAt: info.mtimeMs,
         },
       },
       reading: { headerEnd, offset: applied.end, fullReadDone: false, fullReadDue: false },
@@ -390,7 +393,12 @@ export function createUnrealAgentSessionReader(
       info: opened,
       read: {
         state: "ok" as const,
-        file: { ...file, replay: applied.replay, folder: folderFrom(applied, file.folder) },
+        file: {
+          ...file,
+          replay: applied.replay,
+          folder: folderFrom(applied, file.folder),
+          writtenAt: opened.mtimeMs,
+        },
       },
       reading: { ...reading, offset: applied.end },
     };

@@ -189,7 +189,7 @@ A failed reply ends nothing: its tool calls still run (`loop.go:231-259`).
 
 A reply with tool calls is followed at once by their statuses, each one more write (`loop.go:475-495`). So a reply that is the file's newest line, written less than 2 seconds ago, counts as busy, unless no program could hold the session, which then writes nothing more. A hard stop is never so counted.
 
-A session's last write is its file's modified time. Its status time is when its newest turn began, or its first message since, for a working session; its newest item's time for an idle one; its newest reply's for a failed one; and its last write for a finished one. None is kept when it is more than 2 seconds before the session's start.
+A session's last write is its file's modified time, taken from the file as it was opened, so a write since it was looked up counts with the lines it added. Its status time is when its newest turn began, or its first message since, for a working session; its newest item's time for an idle one; its newest reply's for a failed one; and its last write for a finished one. None is kept when it is more than 2 seconds before the session's start.
 
 The poll's basis is `files` while `ps` shows an Unreal Agent program, `files-closed` while it shows none, and `files-without-processes` while it cannot say.
 

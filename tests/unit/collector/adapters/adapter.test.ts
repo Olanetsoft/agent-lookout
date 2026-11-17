@@ -1301,6 +1301,7 @@ describe("each declaration agrees with what its adapter does", () => {
         folder: "/Users/example/code/demo",
         replay,
         tooLong: false,
+        writtenAt: NOW - 10_000,
       },
       liveness: "may-be-open",
       writtenAt: NOW - 10_000,

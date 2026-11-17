@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AdapterResult } from "@collector/adapters/adapter";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
   BASIS,
   BASIS_CLOSED,
@@ -53,6 +54,7 @@ import {
   unrealAgentAdapterFor,
   writeSession,
 } from "@tests/support/adapters/unreal-agent/unrealAgentAdapter";
+import { asWritten } from "@tests/support/paths";
 
 const ALWAYS = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
 const HEALTHY = `Sessions are read from the files Unreal Agent keeps in ~/.local/state/unreal-agent/sessions. ${ALWAYS}`;
@@ -341,6 +343,51 @@ describe("a session", () => {
     lines.turn(STARTED_AT + 5 * SECOND).reply(STARTED_AT + 6 * SECOND);
     writeSession(files, lines.text(), { mtimeMs: NOW - 30 * SECOND });
     expect(statusOf(await unrealAgentAdapterFor(files).poll())).toBe("finished");
+  });
+
+  test("of a runner whose reply is written between its file's lookup and its opening is working", async () => {
+    const files = memoryFiles();
+    const lines = new SessionLines();
+    lines
+      .settings(STARTED_AT)
+      .message(STARTED_AT)
+      .whenIdle(STARTED_AT)
+      .turn(NOW - 6 * SECOND);
+    const file = writeSession(files, lines.text(), { mtimeMs: NOW - 6 * SECOND });
+    const before = lines.text();
+    lines.reply(NOW);
+    const reply = lines.text().slice(before.length);
+    let added = false;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      async lstat(target) {
+        const info = await files.io.lstat(target);
+        // The reply, which its tool calls' statuses can follow, is added after the lookup.
+        if (!added && asWritten(target) === file) {
+          added = true;
+          files.append(file, reply, { mtimeMs: NOW });
+        }
+        return info;
+      },
+    };
+    const result = await unrealAgentAdapterFor(files, { io }).poll();
+    expect(added).toBe(true);
+    expect(result.sessions[0]).toMatchObject({ status: "working", lastWriteAt: NOW });
+  });
+
+  test("whose file cannot be opened after it grew keeps what was read, and its last write is the lookup's", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const lines = idleSession();
+    const file = writeSession(files, lines.text(), { mtimeMs: NOW - MINUTE });
+    const adapter = unrealAgentAdapterFor(files, { now: clock.now });
+    expect(statusOf(await adapter.poll())).toBe("idle");
+    const before = lines.text();
+    lines.message(NOW);
+    files.append(file, lines.text().slice(before.length), { mtimeMs: NOW });
+    files.failOpen(file);
+    clock.advance(5 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "idle", lastWriteAt: NOW });
   });
 
   test("with a line it does not know is unknown, and the card says why", async () => {

@@ -526,6 +526,31 @@ describe("what is listed", () => {
     expect(okFile(await read(NOW + SECOND)).folder).toBe(PROJECT);
   });
 
+  test("the file's modified time as it was opened, read first or onward, not as it was looked up", async () => {
+    const { files, reader } = setup();
+    const lines = new SessionLines();
+    lines.settings(AT).message(AT).turn(AT);
+    files.write(FILE, lines.text(), { mtimeMs: NOW - 5 * SECOND });
+    /** Looks the file up, then adds lines written at `at` before it is opened. */
+    const readAfterAdding = async (add: () => void, at: number) => {
+      const info = await files.io.lstat(FILE);
+      const before = lines.text().length;
+      add();
+      files.append(FILE, lines.text().slice(before), { mtimeMs: at });
+      return okFile(await reader.read({ path: FILE, info }, at));
+    };
+    const first = await readAfterAdding(() => lines.reply(AT), NOW - 4 * SECOND);
+    expect(first.writtenAt).toBe(NOW - 4 * SECOND);
+    const before = lines.text().length;
+    lines.message(AT);
+    files.append(FILE, lines.text().slice(before), { mtimeMs: NOW - 2 * SECOND });
+    files.forget();
+    const onward = await readAfterAdding(() => lines.turn(AT), NOW);
+    expect(files.reads.some(({ position }) => position === 0)).toBe(false);
+    expect(onward.writtenAt).toBe(NOW);
+    expect(unrealAgentPhase(onward.replay).phase).toBe("busy");
+  });
+
   test("forgets a file no longer listed", async () => {
     const { files, reader, read } = setup();
     files.write(FILE, headerLine());

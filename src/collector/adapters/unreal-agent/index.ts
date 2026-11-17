@@ -416,7 +416,14 @@ export function createUnrealAgentAdapter(options: UnrealAgentAdapterOptions = {}
     for (const ref of refs) {
       const read = await reader.read(ref, checkedAt);
       if (read.state === "newer") newer = true;
-      if (read.state === "ok") listed.push({ file: read.file, writtenAt: ref.info.mtimeMs });
+      // The time the file had as it was opened, so a write since its `lstat` counts
+      // with the lines it added, or the `lstat`'s when what was read is older.
+      if (read.state === "ok") {
+        listed.push({
+          file: read.file,
+          writtenAt: Math.max(ref.info.mtimeMs, read.file.writtenAt),
+        });
+      }
     }
     reader.keepOnly(new Set(refs.map((ref) => ref.path)));
 
