@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
@@ -320,4 +322,17 @@ describe.skipIf(process.platform !== "linux")("the real /proc on Linux", () => {
     expect(answer.processes.get(same)).toBe("runs");
     expect(answer.processes.get(other)).toBe("gone");
   }, 10_000);
+});
+
+describe("its modules", () => {
+  test("reach the file system, sockets and programs only through what they are given", () => {
+    const root = fileURLToPath(new URL("../../../../../src/", import.meta.url));
+    const folders = ["collector/adapters/prime-agent", "core/mapping/prime-agent"];
+    for (const folder of folders) {
+      for (const name of readdirSync(path.join(root, folder))) {
+        const text = readFileSync(path.join(root, folder, name), "utf8");
+        expect(text, name).not.toMatch(/from "node:(fs|fs\/promises|net|child_process)"/);
+      }
+    }
+  });
 });

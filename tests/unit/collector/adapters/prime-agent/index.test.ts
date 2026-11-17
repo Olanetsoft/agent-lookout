@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, test } from "vitest";
 
 import type { AdapterResult } from "@collector/adapters/adapter";
@@ -1007,17 +1003,6 @@ describe("what it says it reads and can report", () => {
       expect(note).not.toMatch(/\b(Pi|Kimchi)\b/);
     }
     expect(UNCHECKED_NOTE).toContain("v0.10.3");
-  });
-
-  test("its modules reach the file system, sockets and programs only through what they are given", () => {
-    const root = fileURLToPath(new URL("../../../../../src/", import.meta.url));
-    const folders = ["collector/adapters/prime-agent", "core/mapping/prime-agent"];
-    for (const folder of folders) {
-      for (const name of readdirSync(path.join(root, folder))) {
-        const text = readFileSync(path.join(root, folder, name), "utf8");
-        expect(text, name).not.toMatch(/from "node:(fs|fs\/promises|net|child_process)"/);
-      }
-    }
   });
 });
 
