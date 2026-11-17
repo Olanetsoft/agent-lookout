@@ -24,14 +24,15 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * folder is looked up with `lstat`, which follows no link, and listed when
  * its time moved or a sweep is due. A session folder is listed when it first
  * appears and at each sweep, and on every poll while it holds no log yet and
- * was changed in the last day, for a session being made. Of a session folder
- * only its names are read. On every poll each log of format 4 is looked up
- * with `lstat`, its session folder first, unless the log was found to be
- * older than a day or past the newest `MAX_LOGS`, when it is passed over
- * until the next sweep. A link, or anything that is not a folder or a file,
- * is never gone into or taken, a link put at a session folder's name since
- * it was listed among them. `session.lock`, temporary files and every other
- * name are never looked up.
+ * was changed in the last day, for a session being made. A session folder
+ * that held no log when last listed is looked up with `lstat` on every poll,
+ * however old it is. Of a session folder only its names are read. On every
+ * poll each log of format 4 is looked up with `lstat`, its session folder
+ * first, unless the log was found to be older than a day or past the newest
+ * `MAX_LOGS`, when it is passed over until the next sweep. A link, or
+ * anything that is not a folder or a file, is never gone into or taken, a
+ * link put at a session folder's name since it was listed among them.
+ * `session.lock`, temporary files and every other name are never looked up.
  */
 
 /** How often every folder is listed and every log looked up. */
