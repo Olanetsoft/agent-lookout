@@ -17,6 +17,13 @@ export const EARLIEST_PLAUSIBLE_TIME_MS = Date.UTC(2020, 0, 1);
 export const CLOCK_SLACK_MS = 60_000;
 
 /**
+ * How far a file's modified time can fall behind its write: some disks keep
+ * whole seconds, or steps of 2 seconds, rounded down. So a file whose time is
+ * less than this before a moment may have been written after it.
+ */
+export const WRITE_TIME_STEP_MS = 2_000;
+
+/**
  * Returns an epoch-millisecond time when it could be real, and null when it
  * could not: not a whole number, before 2020, or further ahead of `now` than the
  * slack allows.

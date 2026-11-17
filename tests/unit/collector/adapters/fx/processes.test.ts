@@ -6,8 +6,8 @@ import {
   FX_TABLE_ARGS,
   fxInTable,
   programsOf,
-  WRITE_TIME_STEP_MS,
 } from "@collector/adapters/fx/processes";
+import { WRITE_TIME_STEP_MS } from "@core/time";
 
 const SECOND = 1_000;
 /** The log's last write. */

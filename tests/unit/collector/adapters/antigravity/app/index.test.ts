@@ -239,6 +239,83 @@ describe("with Antigravity 2.0's folder there", () => {
     expect(hub.asked()).toBe(2);
   });
 
+  test.each([
+    ["a disk that keeps whole seconds", 400],
+    ["one that keeps steps of 2 seconds", 1_900],
+  ])(
+    "a chat written just after ps said again that the app was closed, kept as up to 2 seconds before, as %s can, is not finished, and ps is asked again within seconds",
+    async (_disk, askedAfter) => {
+      const { adapter, clock, hub, write } = setUp(false);
+      clock.set(NOW - PROCESS_CHECK_MS);
+      await adapter.poll();
+      clock.set(NOW + askedAfter);
+      await adapter.poll();
+      expect(hub.asked()).toBe(2);
+      hub.set(true);
+      write(
+        IDLE,
+        [...appTurn(0, NOW - 20 * MINUTE), appStep({ index: 2, type: "USER_INPUT", at: NOW })],
+        NOW,
+      );
+      clock.advance(PROMPT_PROCESS_CHECK_MS - 10);
+      expect(statuses((await adapter.poll()).sessions)).toMatchObject({
+        [IDLE]: "working",
+        [WORKING]: "finished",
+      });
+      expect(hub.asked()).toBe(2);
+      clock.advance(10);
+      expect(statuses((await adapter.poll()).sessions)).toMatchObject({
+        [IDLE]: "working",
+        [WORKING]: "working",
+      });
+      expect(hub.asked()).toBe(3);
+    },
+  );
+
+  test("a chat the app wrote in the 2 seconds before ps found it closed is finished with the others, so closing it sends no Finished, and ps is asked again 2 seconds later", async () => {
+    const { adapter, clock, hub, write } = setUp();
+    let memory = EMPTY_CHANGE_MEMORY;
+    const changes: string[] = [];
+    const poll = async () => {
+      const result = await adapter.poll();
+      // As the poller puts it in the snapshot.
+      const health = { ...result.health, basis: result.basis };
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [health],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      changes.push(...next.changes.map(({ event, session }) => `${session.name} ${event}`));
+      return result;
+    };
+    await poll();
+    // The app's last write, a second before ps finds it closed.
+    write(WORKING, [appStep({ index: 0, type: "USER_INPUT", at: NOW - MINUTE })], NOW + 9 * SECOND);
+    hub.set(false);
+    clock.advance(PROCESS_CHECK_MS);
+    const closed = await poll();
+    expect(closed.basis).toBe(BASIS_APP_CLOSED);
+    expect(statuses(closed.sessions)).toMatchObject({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+    });
+    expect(hub.asked()).toBe(2);
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    expect(statuses((await poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(3);
+    expect(changes).toEqual([]);
+  });
+
+  test("a chat last written 2 seconds or more before ps said the app was closed is finished, and ps is not asked early for it", async () => {
+    const { adapter, clock, hub, write } = setUp(false);
+    write(WORKING, [appStep({ index: 0, type: "USER_INPUT", at: NOW - MINUTE })], NOW - 2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(1);
+  });
+
   test("asks ps at most every 10 seconds while the app is open", async () => {
     const { adapter, clock, hub } = setUp();
     await adapter.poll();

@@ -632,6 +632,42 @@ describe("asking ps", () => {
   });
 
   test.each([
+    // Pi starts and writes at NOW + 900 ms, which a disk keeping whole seconds keeps as NOW.
+    ["a disk that keeps whole seconds", 400],
+    // Or at NOW + 1950 ms, which one keeping steps of 2 seconds keeps as NOW.
+    ["one that keeps steps of 2 seconds", 1_900],
+  ])(
+    "sooner too when a write just after it said none runs is kept as up to 2 seconds before, as %s can",
+    async (_disk, askedAfter) => {
+      const files = memoryFiles();
+      files.write(FILE, sessionText(SESSION_ID), { mtimeMs: NOW - MINUTE });
+      const clock = handClock(NOW + askedAfter);
+      const processes = standInProcesses({ ok: true, running: false });
+      const adapter = piAdapterFor(files, { now: clock.now, processes });
+      expect((await adapter.poll()).sessions[0].status).toBe("finished");
+      processes.set({ ok: true, running: true });
+      files.append(FILE, "\n", { mtimeMs: NOW });
+      clock.advance(PROMPT_PROCESS_CHECK_MS);
+      expect((await adapter.poll()).sessions[0].status).toBe("unknown");
+      expect(processes.asked.count).toBe(2);
+    },
+  );
+
+  test("no sooner when every session was written 2 seconds or more before it said none runs", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(SESSION_ID), { mtimeMs: NOW - 2 * SECOND });
+    const clock = handClock();
+    const processes = standInProcesses({ ok: true, running: false });
+    const adapter = piAdapterFor(files, { now: clock.now, processes });
+    await adapter.poll();
+    clock.advance(PROMPT_PROCESS_CHECK_MS);
+    await adapter.poll();
+    clock.advance(PROCESS_CHECK_MS - PROMPT_PROCESS_CHECK_MS - 1);
+    await adapter.poll();
+    expect(processes.asked.count).toBe(1);
+  });
+
+  test.each([
     ["while a pi runs", { ok: true, running: true } as const],
     ["while ps cannot say", { ok: false } as const],
   ])("no sooner %s, whatever is written", async (_case, answer) => {

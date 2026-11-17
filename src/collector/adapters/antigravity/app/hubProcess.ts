@@ -1,4 +1,5 @@
 import type { AntigravityLiveness } from "../../../../core/mapping/antigravityMapping.ts";
+import { WRITE_TIME_STEP_MS } from "../../../../core/time.ts";
 import { runPs, type PsAnswer } from "../../../processes/ps.ts";
 
 /**
@@ -73,14 +74,22 @@ export function createHubProcessReader(
  * once it does not, and "unknown" when `ps` could not say. A chat written
  * after `ps` was last asked, at `askedAt`, counts as open, since the app may
  * have been opened since, as the CLI's adapter does for an agy program
- * started since.
+ * started since. When `ps` said the app was closed the time before as well
+ * (`closedBefore`), so does one written up to 2 seconds before `askedAt`, as a
+ * disk can keep a write's time rounded down: asks are at least 2 seconds
+ * apart, so that write still came after an answer that found the app closed.
+ * After an answer that found the app open, such a write is taken for the
+ * app's last before it was closed, so closing the app finishes every chat at
+ * once.
  */
 export function hubLiveness(
   answer: HubAnswer | null,
   askedAt: number | null,
   writtenAt: number | null,
+  closedBefore = false,
 ): AntigravityLiveness {
   if (answer === null || !answer.ok) return "unknown";
   if (answer.running) return true;
-  return askedAt !== null && writtenAt !== null && writtenAt > askedAt;
+  if (askedAt === null || writtenAt === null) return false;
+  return writtenAt + (closedBefore ? WRITE_TIME_STEP_MS : 0) > askedAt;
 }

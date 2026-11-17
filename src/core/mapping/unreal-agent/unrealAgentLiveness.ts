@@ -9,11 +9,10 @@
 // is held by none of them. This was worked out from Unreal Agent's source at
 // v0.3.1, not checked on a computer running it.
 
+import { WRITE_TIME_STEP_MS } from "../../time.ts";
+
 /** How far apart a start and a write can be and still be taken in either order (`SAME_START_WITHIN_MS`). */
 export const START_SLACK_MS = 60_000;
-
-/** How far a file's modified time can fall behind its write: some disks keep whole seconds, or steps of 2 seconds. */
-export const WRITE_TIME_STEP_MS = 2_000;
 
 /** How far the clock may move between two polls, past the time that passed, before it is taken as set. */
 export const CLOCK_STEP_MS = 60_000;

@@ -8,6 +8,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
+import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -40,7 +41,8 @@ export const PROCESS_CHECK_MS = 10_000;
 
 /**
  * How soon `ps` is asked again when a session is written after it said no `pi`
- * program runs, since Pi may have been started since.
+ * program runs, or up to 2 seconds before, as a disk can keep a write's time
+ * rounded down, since Pi may have been started since.
  */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
@@ -239,7 +241,7 @@ export interface PiStatusSource {
  * of the file, which is the conversation, is never read as text. While there are
  * sessions to show, it asks `ps` whether a `pi` program runs, at most every 10
  * seconds, and sooner, though not within 2 seconds of the last ask, when a session
- * is written after `ps` said none runs (`processes.ts`).
+ * is written after `ps` said none runs, or up to 2 seconds before (`processes.ts`).
  *
  * Each session whose file was written in the last 24 hours is listed. Nothing Pi
  * writes says whether a session is open: it shows as unknown while a `pi` program
@@ -355,8 +357,9 @@ export function createPiFamilyAdapter(
   /**
    * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
    * though not within 2 seconds of the last ask, when a session was written after
-   * it said no such program runs, since one may have been started since. A clock
-   * set back counts as time enough.
+   * it said no such program runs, or up to 2 seconds before, as a disk can keep a
+   * write's time rounded down, since one may have been started since. A clock set
+   * back counts as time enough.
    */
   async function processesFor(
     ps: PiProcessReader,
@@ -366,7 +369,7 @@ export function createPiFamilyAdapter(
     const since = checkedAt - processesAt;
     let due = lastProcesses === null || since < 0 || since >= processCheckMs;
     if (!due && since >= PROMPT_PROCESS_CHECK_MS && lastProcesses?.ok && !lastProcesses.running) {
-      due = found.some(({ writtenAt }) => writtenAt > processesAt);
+      due = found.some(({ writtenAt }) => writtenAt + WRITE_TIME_STEP_MS > processesAt);
     }
     if (lastProcesses === null || due) {
       lastProcesses = await ps.read();

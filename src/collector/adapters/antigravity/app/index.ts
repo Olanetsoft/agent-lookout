@@ -8,6 +8,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../../core/sessions/session.ts";
+import { WRITE_TIME_STEP_MS } from "../../../../core/time.ts";
 import { tildify } from "../../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../../files/readOnlyIo.ts";
 import { lastMessageStoppedBy } from "../../../messages/lastMessageSettings.ts";
@@ -58,7 +59,11 @@ export const RECHECK_MS = 60_000;
 /** How often, at most, `ps` is asked whether the app runs, while there are chats to show. */
 export const PROCESS_CHECK_MS = 10_000;
 
-/** How soon `ps` is asked again when a chat is written after it said the app was closed. */
+/**
+ * How soon `ps` is asked again when a chat is written after it said the app
+ * was closed, or up to 2 seconds before, as a disk can keep a write's time
+ * rounded down.
+ */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
 /**
@@ -300,6 +305,8 @@ export function createAntigravityAppAdapter(
   /** What `ps` last said, and when. Null before it was first asked. */
   let lastHub: HubAnswer | null = null;
   let hubAt: number | null = null;
+  /** Whether `ps` said the app was closed at the ask before the last one too (`hubLiveness`). */
+  let closedBefore = false;
   /** The transcript each chat the last poll listed was read from, by its id: the only file its last message is read from. */
   let listedFiles: ReadonlyMap<string, string> = new Map();
 
@@ -351,6 +358,7 @@ export function createAntigravityAppAdapter(
   function notFound(checkedAt: number): AdapterResult {
     lastHub = null;
     hubAt = null;
+    closedBefore = false;
     return result(
       "unavailable",
       `Antigravity was not found: there is no ${homeName} folder. Agent Lookout looks again ${every(recheckMs)}.`,
@@ -370,8 +378,9 @@ export function createAntigravityAppAdapter(
 
   /**
    * Asks `ps` again when it is due: every 10 seconds, and sooner when a chat
-   * was written after it last said the app was closed. Null when no chat is
-   * to be shown, so it is not asked.
+   * was written after it last said the app was closed, or up to 2 seconds
+   * before, as a disk can keep a write's time rounded down. Null when no chat
+   * is to be shown, so it is not asked.
    */
   async function hubFor(
     conversations: readonly ConversationFiles[],
@@ -382,10 +391,12 @@ export function createAntigravityAppAdapter(
     let due = since < 0 || since >= processCheckMs;
     if (!due && since >= PROMPT_PROCESS_CHECK_MS && lastHub?.ok && !lastHub.running) {
       due = conversations.some(
-        (files) => files.writtenAt !== null && files.writtenAt > (hubAt as number),
+        (files) =>
+          files.writtenAt !== null && files.writtenAt + WRITE_TIME_STEP_MS > (hubAt as number),
       );
     }
     if (due) {
+      closedBefore = lastHub !== null && lastHub.ok && !lastHub.running;
       lastHub = await hub.read();
       hubAt = checkedAt;
     }
@@ -504,7 +515,7 @@ export function createAntigravityAppAdapter(
         continue;
       }
       kept.add(files.transcript);
-      const live = hubLiveness(answer, hubAt, files.writtenAt);
+      const live = hubLiveness(answer, hubAt, files.writtenAt, closedBefore);
       // A chat of an app that is closed is finished, so its database is not read.
       const wait: Wait =
         live === false
