@@ -132,7 +132,7 @@ fx writes the first line with the held settings and the first batch of the first
 | `turn_interrupted` | exactly `,"turn":<n>,"reason":"cancel"`, `failed`, `closed` or `crash` | The turn ended, failed when `failed` |
 | `closed`           | nothing                                                                | fx let the session go                |
 
-fx refuses an `item` outside an open turn, a `turn_started` while one is open, and a turn's end with no open turn (`fold.zig:287-315`), so an `item` proves an open turn. A turn line of any other shape, `session_created` after the first line, or a kind fx 0.0.17 does not write, makes the session unknown.
+fx refuses an `item` outside an open turn, a `turn_started` while one is open, and a turn's end with no open turn (`fold.zig:287-315`), so an `item` proves an open turn. A turn line of any other shape, `session_created` after the first line, or a kind fx 0.0.17 does not write, after the newest line that decides the last turn, makes the session unknown. Before that line, it is passed over.
 
 ### Everything else
 
@@ -246,15 +246,15 @@ Everything here is read from the source, so each of these is for a person with f
 
 ## What breaks when fx changes
 
-| Change in fx                                                  | What the dashboard shows                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| The header, the frame, the checksum or the `seq` rule changes | Sessions show as unknown, or are not listed                                      |
-| A new kind, a higher `v`, or a turn line of another shape     | Those sessions show as unknown, or are not listed, and the Sources view says why |
-| A new reason for `turn_interrupted`                           | Those sessions show as unknown                                                   |
-| `sessions/v2`, the `FX_HOME` rules or the rule for ids change | fx is not found, or found with no sessions                                       |
-| `forked_from`'s `seq` comes to mean another line              | A fork shows its source's last turn                                              |
-| A writable open stops writing `crash` first                   | Row 6 can show a turn a running fx is still in as finished                       |
-| The program is renamed                                        | Sessions show as finished while fx runs                                          |
-| fx writes a file that says a session is open                  | Nothing changes until the adapter reads it. It could show idle then              |
+| Change in fx                                                  | What the dashboard shows                                                             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| The header, the frame, the checksum or the `seq` rule changes | Sessions show as unknown, or are not listed                                          |
+| A new kind, a higher `v`, or a turn line of another shape     | Those sessions can show as unknown, or are not listed, and the Sources view says why |
+| A new reason for `turn_interrupted`                           | Those sessions show as unknown                                                       |
+| `sessions/v2`, the `FX_HOME` rules or the rule for ids change | fx is not found, or found with no sessions                                           |
+| `forked_from`'s `seq` comes to mean another line              | A fork shows its source's last turn                                                  |
+| A writable open stops writing `crash` first                   | Row 6 can show a turn a running fx is still in as finished                           |
+| The program is renamed                                        | Sessions show as finished while fx runs                                              |
+| fx writes a file that says a session is open                  | Nothing changes until the adapter reads it. It could show idle then                  |
 
 To check a new fx version, read `src/core/session_manager/schema.zig`, `log.zig`, `session.zig` and `fold.zig`, `src/core/shared/profile_paths.zig`, `useFxHomeFromEnv` in `src/main.zig`, and in `src/core/session/session_adapter.zig` `checkSessionsPath`, `commitTurn` and `listLive`, then the CHANGELOG. Then update `UNCHECKED_NOTE` in `src/collector/adapters/fx/index.ts` and the first paragraphs here.
