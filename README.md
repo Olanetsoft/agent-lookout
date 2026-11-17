@@ -106,7 +106,7 @@ MiMo Code support reads its database, `~/.local/share/mimocode/mimocode.db`, on 
 
 Kimchi support reads its session files, in `~/.config/kimchi/harness/sessions`, the way Pi's are read: Kimchi runs Pi's coding agent. A session shows as unknown while a `kimchi` program runs and as finished once none does, and takes its folder's name. On Windows it stays unknown. It was built from its source at v1.35.0 and has not yet been checked on a computer running it.
 
-Prime Agent support reads its session files, in `~/.prime/agent/sessions`, the way Pi's are read, and its session leases and workers' journals for each session's status. A session shows as working or idle while a running `prime-agent` holds it, on macOS and Linux, and as finished once none does. On Windows a session it holds shows as unknown. It was built from its source at v0.10.3 and has not yet been checked on a computer running it.
+Prime Agent support reads its session files, in `~/.prime/agent/sessions`, the way Pi's are read, and its session leases and workers' journals for each session's status. A session shows as working or idle from its worker's journal while a running `prime-agent` holds it, on macOS and Linux, or as unknown when that journal cannot say, and as finished once none does. On Windows a session it holds shows as unknown. It was built from its source at v0.10.3 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
