@@ -171,9 +171,9 @@ export function guardDshClock(
  *   that started before it, or within a minute after, as Linux can move a
  *   start by that much. A start that cannot be read counts as before. An
  *   answer asked because the clock was set back allows nothing for that. On
- *   macOS, while such a program runs, a write before the latest time a poll
- *   saw, once the clock was set back past it by more than a minute, is never
- *   finished this way.
+ *   macOS, once a poll's time is more than a minute behind the latest one
+ *   seen, a write before that latest time is never finished this way while
+ *   such a program runs.
  * - The desktop app backs it when such a program of its names runs.
  * - Otherwise one may. So it is on Windows, with no time that can be right,
  *   when `ps` could not say, and when its table did not list Agent Lookout's
