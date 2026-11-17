@@ -384,6 +384,10 @@ describe("what is remembered once a heartbeat goes", () => {
     const before = await ended();
     before.pc.clock.set(NOW - 20 * SECOND);
     expect(only((await before.adapter.poll()).sessions).status).toBe("finished");
+    // Saved by a run with --no-daemon after that poll, it runs again on the first save.
+    before.pc.clock.advance(2 * SECOND);
+    session(before.pc, metadata({ lastActiveAt: before.pc.clock.now() }));
+    expect(only((await before.adapter.poll()).sessions).status).toBe("unknown");
     // Saved on the new time by a run with --no-daemon, it runs again.
     const { pc, adapter } = await ended();
     pc.clock.advance(2 * SECOND);
