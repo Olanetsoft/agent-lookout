@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { ANTIGRAVITY_APP_HOME_ENV, DEFAULT_APP_HOME } from "../adapters/antigravity/app/index.ts";
 import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/index.ts";
+import { autohandHomeFor } from "../adapters/autohand-code/index.ts";
 import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
@@ -68,7 +69,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the eighteen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the nineteen other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -109,6 +110,7 @@ export function sourcesFingerprint(
     primeAgentAgentDirFor(env, homeDir),
     fxSessionsDirFor(env, homeDir) ?? "",
     unrealAgentSessionsDirFor(env, homeDir),
+    autohandHomeFor(env, homeDir, platform),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

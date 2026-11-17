@@ -241,6 +241,19 @@ export const EMPTY_UNREAL_AGENT_SESSIONS = path.join(
 );
 
 /**
+ * An empty folder for the Autohand Code adapter to read in place of
+ * `~/.autohand`, so that a collector a test builds from `process.env` finds
+ * no heartbeats or sessions: `nodeSetup.ts` makes it and names it there.
+ * Nothing is ever written in it. A test that builds an environment of its own
+ * names a `tempDir` there.
+ */
+export const EMPTY_AUTOHAND_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-autohand",
+  "autohand",
+);
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

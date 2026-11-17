@@ -47,6 +47,9 @@ export type RemoteSourceId = `remote:${string}`;
  * `unreal-agent` is Unreal Labs' Unreal Agent, in its terminal app
  * `unreal-agent-tui` and its runner `unreal-agent-runner`, whose sessions are
  * read from the file it keeps for each.
+ * `autohand-code` is Autohand Code, in its command `autohand`, whose sessions
+ * are read from the heartbeat it rewrites while each runs and the details it
+ * keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -70,6 +73,7 @@ export type SourceId =
   | "prime-agent"
   | "fx"
   | "unreal-agent"
+  | "autohand-code"
   | "status-files"
   | RemoteSourceId;
 

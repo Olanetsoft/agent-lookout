@@ -39,3 +39,20 @@ test("a folder that cannot be looked up or listed is unlistable, and listed afre
   files.heal(WORKERS_DIR);
   expect(await lister.list(NOW + SECOND)).toEqual({ state: "listed", names: ["a"] });
 });
+
+test("a folder its caller does not accept is unlistable, and listed once it is", async () => {
+  const files = primeAgentFiles();
+  files.mkdir(`${WORKERS_DIR}/a`);
+  let accepted = false;
+  const lister = createFolderLister(WORKERS_DIR, files.io, undefined, (info) => {
+    expect(info.kind).toBe("directory");
+    return accepted;
+  });
+  expect(await lister.list(NOW)).toEqual({ state: "unlistable" });
+  expect(files.count("readdir")).toBe(0);
+  accepted = true;
+  expect(await lister.list(NOW + SECOND)).toEqual({ state: "listed", names: ["a"] });
+  // It is asked on every poll, even when the folder is unchanged.
+  accepted = false;
+  expect(await lister.list(NOW + 2 * SECOND)).toEqual({ state: "unlistable" });
+});

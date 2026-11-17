@@ -124,6 +124,13 @@ export interface AdapterResult {
    * - `files-without-processes`: the same while `ps` cannot say, when no
    *   session can be shown as idle, nor as finished unless its file says it
    *   ended.
+   *
+   * The Autohand Code adapter has two:
+   * - `files`: Autohand Code's heartbeats and each session's `metadata.json`.
+   *   The usual one.
+   * - `files-without-heartbeats`: the same while the folder of heartbeats is
+   *   missing, a link, another user's or cannot be listed, when no session can
+   *   be shown as working, idle or needing you.
    */
   basis?: string;
 }

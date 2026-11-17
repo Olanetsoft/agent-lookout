@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import * as antigravityApp from "@collector/adapters/antigravity/app/index";
 import * as antigravityCli from "@collector/adapters/antigravity/cli/index";
+import * as autohandCode from "@collector/adapters/autohand-code/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import * as codex from "@collector/adapters/codex/index";
 import * as continueAdapter from "@collector/adapters/continue/index";
@@ -330,6 +331,7 @@ describe("readRemoteSnapshot", () => {
     > = {
       "antigravity-app": antigravityApp,
       "antigravity-cli": antigravityCli,
+      "autohand-code": autohandCode,
       cline,
       codex,
       continue: continueAdapter,

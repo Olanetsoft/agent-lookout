@@ -25,6 +25,8 @@
     "prime-agent",
     "fx",
     "unreal-agent",
+    "autohand",
+    "autohand-code",
     "mcp",
     "mcp-server",
     "tmux",

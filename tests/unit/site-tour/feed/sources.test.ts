@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { createStopTargets } from "@collector/actions/stopTargets";
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
+import { AUTOHAND_CODE_CAPABILITIES } from "@collector/adapters/autohand-code/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
@@ -65,6 +66,10 @@ import {
   memoryFiles as unrealAgentFiles,
   unrealAgentAdapterFor,
 } from "@tests/support/adapters/unreal-agent/unrealAgentAdapter";
+import {
+  autohandAdapterFor,
+  memoryFiles as autohandFiles,
+} from "@tests/support/adapters/autohand-code/autohandCodeAdapter";
 import { fakeTmux } from "@tests/support/node/tmux";
 
 const readme = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
@@ -95,6 +100,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.PRIME_AGENT_CAPABILITIES).toEqual(PRIME_AGENT_CAPABILITIES);
   expect(tour.FX_CAPABILITIES).toEqual(FX_CAPABILITIES);
   expect(tour.UNREAL_AGENT_CAPABILITIES).toEqual(UNREAL_AGENT_CAPABILITIES);
+  expect(tour.AUTOHAND_CODE_CAPABILITIES).toEqual(AUTOHAND_CODE_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -122,6 +128,7 @@ test("this computer's sources come in the collector's order", () => {
     "prime-agent",
     "fx",
     "unreal-agent",
+    "autohand-code",
     "status-files",
   ]);
 });
@@ -375,6 +382,18 @@ test("Unreal Agent's card is the one its adapter shows on a Mac without it", asy
   expect(sessions).toEqual([]);
 });
 
+test("Autohand Code's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = autohandAdapterFor(autohandFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "autohand-code")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -525,6 +544,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: UNREAL_AGENT_CAPABILITIES,
         },
         {
+          id: "autohand-code",
+          label: "Autohand Code",
+          state: "unavailable",
+          capabilities: AUTOHAND_CODE_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -563,7 +588,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["fx", "Unreal Agent"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>(["fx", "Unreal Agent", "Autohand Code"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";
