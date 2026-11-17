@@ -1,5 +1,4 @@
 import os from "node:os";
-import path from "node:path";
 
 import type {
   Session,
@@ -14,7 +13,13 @@ import { POLL_INTERVAL_MS } from "../../poller.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import type { ProcessAnswer } from "../opencode/processes.ts";
 import { every } from "../words.ts";
-import { createPiProcessReader, PI_TABLE_ARGS, type PiProcessReader } from "./processes.ts";
+import {
+  createPiProcessReader,
+  PI_PROGRAMS,
+  PI_TABLE_ARGS,
+  type PiProcessReader,
+} from "./processes.ts";
+import { sessionsDirFor, type PiProfile } from "./profile.ts";
 import { createSessionFileReader, type PiSessionFile } from "./sessionFile.ts";
 import { createSessionFileFinder, type SessionFileRef } from "./sessionFiles.ts";
 import { piSession, SOURCE_ID } from "./toSession.ts";
@@ -55,8 +60,6 @@ export const BASIS_CLOSED = "files-closed";
  * start again and then finish.
  */
 export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
-
-const LABEL = "Pi";
 
 /** Said whenever Pi is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
@@ -130,16 +133,21 @@ export const PI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
-/** One of Pi's own settings as a folder: `~` is the home folder, and a relative one cannot be followed. */
-function ownFolder(value: string | undefined, homeDir: string): string | undefined {
-  const folder = value?.trim();
-  if (!folder) return undefined;
-  if (folder === "~") return homeDir;
-  if (folder.startsWith("~/") || folder.startsWith("~\\")) {
-    return path.join(homeDir, folder.slice(2));
-  }
-  return path.isAbsolute(folder) ? folder : undefined;
-}
+/** Pi's profile: its names, its folders, its programs and its words, for the shared body below. */
+export const PI_PROFILE: PiProfile = {
+  sourceId: SOURCE_ID,
+  label: "Pi",
+  program: "pi",
+  programs: PI_PROGRAMS,
+  homeEnv: PI_HOME_ENV,
+  sessionsEnv: PI_OWN_SESSIONS_ENV,
+  agentDirEnv: PI_OWN_HOME_ENV,
+  agentDir: [".pi", "agent"],
+  readsNames: true,
+  hiddenMarkers: [],
+  capabilities: PI_CAPABILITIES,
+  notes: { status: STATUS_NOTE, unchecked: UNCHECKED_NOTE, newerFormat: NEWER_FORMAT_NOTE },
+};
 
 /**
  * The folder this adapter reads. `AGENT_LOOKOUT_PI_HOME` names Pi's agent folder,
@@ -150,12 +158,7 @@ function ownFolder(value: string | undefined, homeDir: string): string | undefin
  * process's arguments are not either.
  */
 export function piSessionsDirFor(env: NodeJS.ProcessEnv, homeDir: string): string {
-  const own = env[PI_HOME_ENV]?.trim();
-  if (own) return path.resolve(own, "sessions");
-  const sessions = ownFolder(env[PI_OWN_SESSIONS_ENV], homeDir);
-  if (sessions !== undefined) return path.resolve(sessions);
-  const home = ownFolder(env[PI_OWN_HOME_ENV], homeDir) ?? path.join(homeDir, ".pi", "agent");
-  return path.resolve(home, "sessions");
+  return sessionsDirFor(PI_PROFILE, env, homeDir);
 }
 
 /** Everything the adapter touches outside itself. Tests replace these. */
@@ -166,7 +169,7 @@ export interface PiAdapterOptions {
   io?: ReadOnlyIo;
   /** The system's rules for folders, and whether `ps` is asked. Defaults to this one. */
   platform?: NodeJS.Platform;
-  /** What asks whether a `pi` program runs. Defaults to one that runs `ps`. */
+  /** What asks whether the agent's program runs. Defaults to one that runs `ps`. */
   processes?: PiProcessReader;
   /** How often, at most, `ps` is asked. Defaults to 10 seconds. */
   processCheckMs?: number;
@@ -216,6 +219,18 @@ interface Found {
  * is an answer, not a missing Pi.
  */
 export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
+  return createPiFamilyAdapter(PI_PROFILE, options);
+}
+
+/**
+ * An adapter of the shared body, which reads as `createPiAdapter` describes,
+ * with the names, folders, programs and words of `profile`. Pi's adapter is
+ * this with `PI_PROFILE`, and Kimchi's gives a profile of its own
+ * (`../kimchi/index.ts`): it reads no names and leaves out the sessions Kimchi
+ * marks as its own.
+ */
+export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOptions = {}): Adapter {
+  const { sourceId, label, program, notes } = profile;
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -224,13 +239,17 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const processCheckMs = options.processCheckMs ?? PROCESS_CHECK_MS;
-  const processes = options.processes ?? createPiProcessReader({ platform });
+  const processes =
+    options.processes ?? createPiProcessReader({ platform, programs: profile.programs });
 
-  const named = Boolean(env[PI_HOME_ENV]?.trim());
-  const sessionsDir = piSessionsDirFor(env, homeDir);
+  const named = Boolean(env[profile.homeEnv]?.trim());
+  const sessionsDir = sessionsDirFor(profile, env, homeDir);
   const sessionsName = tildify(sessionsDir, homeDir);
   const files = createSessionFileFinder({ sessionsDir, io, sweepMs: options.sweepMs });
-  const reader = createSessionFileReader(sessionsDir, io, platform);
+  const reader = createSessionFileReader(sessionsDir, io, platform, {
+    readsNames: profile.readsNames,
+    hiddenMarkers: profile.hiddenMarkers,
+  });
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -247,7 +266,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
   const unaskedBasis = psRuns ? BASIS : BASIS_WITHOUT_PROCESSES;
   const sooner =
     processCheckMs > PROMPT_PROCESS_CHECK_MS
-      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no pi`
+      ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no ${program}`
       : "";
   const processCheckRun = psRuns
     ? `${every(processCheckMs)} at most${sooner}`
@@ -271,8 +290,8 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
     basis: string = unaskedBasis,
   ): AdapterResult {
     const health: SourceHealth = {
-      id: SOURCE_ID,
-      label: LABEL,
+      id: sourceId,
+      label,
       state,
       detail,
       watching: watching(read),
@@ -284,7 +303,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
   /**
    * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
    * though not within 2 seconds of the last ask, when a session was written after
-   * it said no `pi` program runs, since Pi may have been started since. A clock
+   * it said no such program runs, since one may have been started since. A clock
    * set back counts as time enough.
    */
   async function processesFor(found: readonly Found[], checkedAt: number): Promise<ProcessAnswer> {
@@ -300,23 +319,23 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
     return lastProcesses;
   }
 
-  /** Pi is not on this machine, or not where it was said to be. Said calmly, with no advice. */
+  /** The agent is not on this machine, or not where it was said to be. Said calmly, with no advice. */
   function notFound(checkedAt: number): AdapterResult {
     return result(
       "unavailable",
-      `Pi was not found: there is no ${sessionsName} folder. Agent Lookout looks again ${every(recheckMs)}.`,
+      `${label} was not found: there is no ${sessionsName} folder. Agent Lookout looks again ${every(recheckMs)}.`,
       "not found",
       checkedAt,
     );
   }
 
-  const alwaysNotes = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
+  const alwaysNotes = `${notes.status} ${notes.unchecked}`;
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
 
-    // A missing Pi is believed missing for a while, so a machine without it pays
-    // nothing on most polls. A clock set back counts as time enough.
+    // A missing agent is believed missing for a while, so a machine without it
+    // pays nothing on most polls. A clock set back counts as time enough.
     if (!named && absentAt !== null) {
       const since = checkedAt - absentAt;
       if (since >= 0 && since < recheckMs) return notFound(checkedAt);
@@ -329,7 +348,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
       if (!isMissing(error)) {
         return result(
           "error",
-          `Pi sessions could not be read: the folder ${sessionsName} could not be listed.`,
+          `${label} sessions could not be read: the folder ${sessionsName} could not be listed.`,
           "cannot be read",
           checkedAt,
         );
@@ -339,7 +358,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
       if (named) {
         return result(
           "ok",
-          `${PI_HOME_ENV} is set, and there is no ${sessionsName} folder, so no Pi sessions are listed. ${alwaysNotes}`,
+          `${profile.homeEnv} is set, and there is no ${sessionsName} folder, so no ${label} sessions are listed. ${alwaysNotes}`,
           "not found",
           checkedAt,
         );
@@ -352,7 +371,8 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
     const found: Found[] = [];
     const ids = new Set<string>();
     let newer = false;
-    // Newest first, so of two files that hold one id, the newest is kept.
+    // Newest first, so of two files that hold one id, the newest is kept. A file
+    // left out by a marker is not a session, and holds no id.
     for (const ref of refs) {
       const read = await reader.read(ref);
       if (read.state === "newer") newer = true;
@@ -366,29 +386,29 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
     const asked = found.length > 0 ? await processesFor(found, checkedAt) : null;
     const open = asked === null || !asked.ok || asked.running;
     const sessions = found.map(({ file, writtenAt }) =>
-      piSession({ file, open, writtenAt, now: checkedAt }),
+      piSession({ file, open, writtenAt, now: checkedAt, sourceId }),
     );
 
-    let detail = `Sessions are read from the files Pi keeps in ${sessionsName}. ${alwaysNotes}`;
+    let detail = `Sessions are read from the files ${label} keeps in ${sessionsName}. ${alwaysNotes}`;
     let basis = unaskedBasis;
     if (asked !== null && !asked.ok) {
       detail += psRuns
-        ? " ps could not be run to tell whether Pi runs, so no session is shown as finished."
-        : " Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.";
+        ? ` ps could not be run to tell whether ${label} runs, so no session is shown as finished.`
+        : ` Agent Lookout cannot tell on this system whether ${label} runs, so no session is shown as finished.`;
       basis = BASIS_WITHOUT_PROCESSES;
     } else if (asked?.ok && !asked.running) {
-      detail += " No pi program runs, so each session shows as finished.";
+      detail += ` No ${program} program runs, so each session shows as finished.`;
       basis = BASIS_CLOSED;
     }
-    if (newer) detail += ` ${NEWER_FORMAT_NOTE}`;
+    if (newer) detail += ` ${notes.newerFormat}`;
     return result("ok", detail, every(pollIntervalMs), checkedAt, sessions, basis);
   }
 
   return {
-    id: SOURCE_ID,
-    label: LABEL,
-    capabilities: PI_CAPABILITIES,
-    lookingIn: `Looking for Pi sessions in ${sessionsName}.`,
+    id: sourceId,
+    label,
+    capabilities: profile.capabilities,
+    lookingIn: `Looking for ${label} sessions in ${sessionsName}.`,
     async poll() {
       try {
         return await poll();
@@ -397,7 +417,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
         // answer, and the person sees a sentence, not a stack trace.
         return result(
           "error",
-          "Something unexpected went wrong while reading Pi sessions.",
+          `Something unexpected went wrong while reading ${label} sessions.`,
           every(pollIntervalMs),
           now(),
         );

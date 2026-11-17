@@ -36,11 +36,14 @@ export const PI_TABLE_ARGS = ["-A", "-o", "comm="] as const;
  */
 export const PI_PROGRAMS: ReadonlySet<string> = new Set(["pi", "pi-rpc"]);
 
-/** Whether one line of what `ps -A -o comm=` printed is Pi's program: one of its names, or a path ending in one. */
-export function piInTable(stdout: string): boolean {
+/**
+ * Whether one line of what `ps -A -o comm=` printed is Pi's program: one of its
+ * names, or a path ending in one. The Kimchi adapter passes its own names.
+ */
+export function piInTable(stdout: string, programs: ReadonlySet<string> = PI_PROGRAMS): boolean {
   return stdout.split("\n").some((line) => {
     const program = line.trim();
-    return PI_PROGRAMS.has(program.slice(program.lastIndexOf("/") + 1));
+    return programs.has(program.slice(program.lastIndexOf("/") + 1));
   });
 }
 
@@ -50,16 +53,22 @@ export interface PiProcessReader {
 }
 
 export function createPiProcessReader(
-  options: { platform?: NodeJS.Platform; run?: RunPs } = {},
+  options: {
+    platform?: NodeJS.Platform;
+    run?: RunPs;
+    /** The names of the program looked for. Defaults to Pi's. */
+    programs?: ReadonlySet<string>;
+  } = {},
 ): PiProcessReader {
   const run = options.run ?? runPs;
   const platform = options.platform ?? process.platform;
+  const programs = options.programs ?? PI_PROGRAMS;
   return {
     async read() {
       if (platform !== "darwin" && platform !== "linux") return { ok: false };
       try {
         const table = await run(PI_TABLE_ARGS);
-        return table.ok ? { ok: true, running: piInTable(table.stdout) } : { ok: false };
+        return table.ok ? { ok: true, running: piInTable(table.stdout, programs) } : { ok: false };
       } catch {
         return { ok: false };
       }
