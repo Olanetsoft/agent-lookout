@@ -75,6 +75,7 @@ When the sessions folder is missing, Prime Agent is reported as not found, with 
 | `daemon-workers/`                            | One `lstat`. Listed. A link at its name is not followed                                 | On macOS and Linux, every poll on which a session's lease is held by a process  |
 | Each `<12 hex digits>/` in it                | One `lstat`, and one of `<worker ID>.recovery.jsonl` in it, for each worker that counts | The same                                                                        |
 | The one `<worker ID>.recovery.jsonl` found   | Opened read-only: its last 1 MiB, then what was added, at most 8 MiB a poll             | When it changes                                                                 |
+| `/proc/uptime`, through `os.uptime()`        | Read by Node for when the computer started, as a number of seconds                      | On Linux, every poll that lists a session and `session-leases/`                 |
 | `/proc/<pid>/stat` of a lease's process      | Opened read-only, at most 4 KiB. Field 22 is kept                                       | On Linux, for a `proc:` start, at most every 30 seconds, and when a lease comes |
 | `ps -o pid=,lstart=,comm= -p <pids>`, in UTC | Run directly, never through a shell                                                     | On macOS, and on Linux for a lease whose start was not compared, the same       |
 
@@ -148,20 +149,20 @@ Each session whose file was written in the last 24 hours, by its modified time, 
 
 First, who holds the session's lease, by the name of its file (`primeAgentHolder` and `primeAgentLeaseProcess`):
 
-| Rule | What the leases say                                                                 | Holder  |
-| ---- | ----------------------------------------------------------------------------------- | ------- |
-| H1   | Every lease was read, and none names the session's file                             | none    |
-| H2   | `session-leases/` is missing, is not a folder, or cannot be listed                  | unknown |
-| H3   | The lease's process does not answer signal 0                                        | none    |
-| H4   | Its start differs from the lease's (`lease.rs:141-147`)                             | none    |
-| H5   | Its start is the lease's                                                            | runs    |
-| H6   | No start was compared, and the lease was taken before the computer started          | none    |
-| H7   | `ps` names its program `prime-agent`                                                | runs    |
-| H7b  | `ps` names another program                                                          | unknown |
-| H7c  | `ps` names none, or cannot be run                                                   | unknown |
-| H8   | On Windows, a lease since the boot whose process answers signal 0                   | unknown |
-| H9   | Some lease since the boot cannot be told whose it is, and no lease of this one runs | unknown |
-| H10  | Two leases name it: it runs if one runs, else it is unknown if one is               |         |
+| Rule | What the leases say                                                                          | Holder  |
+| ---- | -------------------------------------------------------------------------------------------- | ------- |
+| H1   | Every lease was read, and none names the session's file                                      | none    |
+| H2   | `session-leases/` is missing, is not a folder, or cannot be listed                           | unknown |
+| H3   | The lease's process does not answer signal 0                                                 | none    |
+| H4   | Its start differs from the lease's (`lease.rs:141-147`)                                      | none    |
+| H5   | Its start is the lease's                                                                     | runs    |
+| H6   | No start was compared, and the lease was taken before the computer started, by `os.uptime()` | none    |
+| H7   | `ps` names its program `prime-agent`                                                         | runs    |
+| H7b  | `ps` names another program                                                                   | unknown |
+| H7c  | `ps` names none, or cannot be run                                                            | unknown |
+| H8   | On Windows, a lease since the boot whose process answers signal 0                            | unknown |
+| H9   | Some lease since the boot cannot be told whose it is, and no lease of this one runs          | unknown |
+| H10  | Two leases name it: it runs if one runs, else it is unknown if one is                        |         |
 
 `none` is `finished`, at the file's last write. `unknown` is `unknown`. While a process that runs holds it, on macOS and Linux, its worker's journal says the rest. The worker is the lease's `activeSessionId`. With none, as for a print or RPC run, no journal, or more than one, the session is unknown. The newest record of the slot counts only if it is this session's, by the name of `sessionFile` against the session file's name or, with none, by `sessionId`, and was written since the lease was taken. The newest queue line counts only if it was written since then too.
 
