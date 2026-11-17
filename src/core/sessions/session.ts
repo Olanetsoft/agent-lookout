@@ -50,6 +50,8 @@ export type RemoteSourceId = `remote:${string}`;
  * `autohand-code` is Autohand Code, in its command `autohand`, whose sessions
  * are read from the heartbeat it rewrites while each runs and the details it
  * keeps for each.
+ * `deepseek-harness` is DeepSeek Harness, in its command `dsh`, whose sessions
+ * are read from the event log it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -74,6 +76,7 @@ export type SourceId =
   | "fx"
   | "unreal-agent"
   | "autohand-code"
+  | "deepseek-harness"
   | "status-files"
   | RemoteSourceId;
 
@@ -498,7 +501,7 @@ export interface Session {
   /**
    * When the agent last wrote to the file this session is read from, or for
    * Codex and Gemini CLI to a subagent's file, or for Cline to its messages
-   * file, in epoch milliseconds: the file's own modified time, and nothing
+   * file, or for DeepSeek Harness to a subagent's log, in epoch milliseconds: the file's own modified time, and nothing
    * read from inside it. Present only for a source whose file is written as
    * the session works, and only when the time could be right. It is a
    * measurement, not a status: a working session that has written nothing for

@@ -343,6 +343,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "fx",
         "Unreal Agent",
         "Autohand Code",
+        "DeepSeek Harness",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

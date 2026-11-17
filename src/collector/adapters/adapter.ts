@@ -131,6 +131,13 @@ export interface AdapterResult {
    * - `files-without-heartbeats`: the same while the folder of heartbeats is
    *   missing, a link, another user's or cannot be listed, when no session can
    *   be shown as working, idle or needing you.
+   *
+   * The DeepSeek Harness adapter has two:
+   * - `files`: DeepSeek Harness's session logs, with `ps` able to say which
+   *   programs that could write them run. The usual one.
+   * - `files-without-processes`: the same while `ps` cannot say, and always on
+   *   Windows, when a session is finished only if DeepSeek Harness closed it
+   *   mid-turn or it was last written before the computer started.
    */
   basis?: string;
 }

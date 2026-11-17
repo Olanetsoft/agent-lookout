@@ -27,6 +27,8 @@
     "unreal-agent",
     "autohand",
     "autohand-code",
+    "deepseek-harness",
+    "dsh",
     "mcp",
     "mcp-server",
     "tmux",

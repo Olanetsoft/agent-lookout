@@ -8,7 +8,8 @@
 // - A working session counts until 30 minutes after its newest update: the
 //   newer of when its status last changed and when its agent last wrote to
 //   its file, or for Codex and Gemini CLI to a subagent's file, or for Cline
-//   to its messages file, of whichever of the two it has. A session that
+//   to its messages file, or for DeepSeek Harness to a subagent's log, of
+//   whichever of the two it has. A session that
 //   still reads as waiting, in a wait Agent Lookout has answered, is working,
 //   as the page lists it, so the Mac is not let go for the second or two
 //   before its agent writes that it works again.

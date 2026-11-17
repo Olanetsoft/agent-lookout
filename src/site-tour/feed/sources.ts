@@ -8,8 +8,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent and Autohand Code, none of the twenty installed here, and
- * status files. Then the other machine, connected over SSH.
+ * Unreal Agent, Autohand Code and DeepSeek Harness, none of the twenty-one
+ * installed here, and status files. Then the other machine, connected over
+ * SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -983,6 +984,49 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From the turn its log, or a subagent's, has under way. One that has written nothing for 30 minutes, as a crash leaves, is unknown.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While a turn waits for an approval, a question or a plan review. One a crash left shows 30 minutes, or while the desktop app runs.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "When DeepSeek Harness closed it mid-turn, or no program that could write its log runs, by ps or since the computer started.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When a turn ends on an error, until the session is reopened. A DeepSeek Harness that is closing can lose that end.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "A title its model gave or one marked as yours, else the folder's. Its first title is the start of your prompt, never read.",
+  },
+  jump: { level: "no", reason: "DeepSeek Harness's logs name no terminal or window." },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "The time since its log, or a subagent's, was last written, while it works. A long command can write nothing until it ends.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout reads no line that holds a reply." },
+  stop: {
+    level: "no",
+    reason: "A log names no process Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to DeepSeek Harness, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1549,6 +1593,23 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when DeepSeek Harness is not installed: its sessions folder is looked for, and nothing more.
+      id: "deepseek-harness",
+      label: "DeepSeek Harness",
+      state: "unavailable",
+      detail:
+        "DeepSeek Harness was not found: there is no ~/.dsh/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.dsh/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Zstandard", value: "node:zlib" },
+        { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
+        { label: "Process check run", value: "every 10 seconds at most" },
+      ],
+      capabilities: DEEPSEEK_HARNESS_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1597,6 +1658,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "fx there", value: "Not found" },
         { label: "Unreal Agent there", value: "Not found" },
         { label: "Autohand Code there", value: "Not found" },
+        { label: "DeepSeek Harness there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

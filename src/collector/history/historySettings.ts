@@ -10,6 +10,7 @@ import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { continueHomeFor } from "../adapters/continue/index.ts";
 import { crushDataDirFor } from "../adapters/crush/index.ts";
+import { deepseekHarnessSessionsDirFor } from "../adapters/deepseek-harness/index.ts";
 import { fxSessionsDirFor } from "../adapters/fx/index.ts";
 import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli/index.ts";
 import { gooseDatabaseFor } from "../adapters/goose/index.ts";
@@ -69,7 +70,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the nineteen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the twenty other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -111,6 +112,7 @@ export function sourcesFingerprint(
     fxSessionsDirFor(env, homeDir) ?? "",
     unrealAgentSessionsDirFor(env, homeDir),
     autohandHomeFor(env, homeDir, platform),
+    deepseekHarnessSessionsDirFor(env, homeDir, platform),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }
