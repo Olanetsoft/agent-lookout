@@ -25,6 +25,7 @@ import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { PRIME_AGENT_CAPABILITIES } from "@collector/adapters/prime-agent/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
+import { UNREAL_AGENT_CAPABILITIES } from "@collector/adapters/unreal-agent/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
 import { sshArguments } from "@collector/remotes/sshProgram";
 import { createTabFinder } from "@collector/terminal/tabFinder";
@@ -60,6 +61,10 @@ import {
   primeAgentFiles,
 } from "@tests/support/adapters/prime-agent/primeAgentAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
+import {
+  memoryFiles as unrealAgentFiles,
+  unrealAgentAdapterFor,
+} from "@tests/support/adapters/unreal-agent/unrealAgentAdapter";
 import { fakeTmux } from "@tests/support/node/tmux";
 
 const readme = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
@@ -89,6 +94,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.KIMCHI_CAPABILITIES).toEqual(KIMCHI_CAPABILITIES);
   expect(tour.PRIME_AGENT_CAPABILITIES).toEqual(PRIME_AGENT_CAPABILITIES);
   expect(tour.FX_CAPABILITIES).toEqual(FX_CAPABILITIES);
+  expect(tour.UNREAL_AGENT_CAPABILITIES).toEqual(UNREAL_AGENT_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -115,6 +121,7 @@ test("this computer's sources come in the collector's order", () => {
     "kimchi",
     "prime-agent",
     "fx",
+    "unreal-agent",
     "status-files",
   ]);
 });
@@ -356,6 +363,18 @@ test("fx's card is the one its adapter shows on a Mac without it", async () => {
   expect(sessions).toEqual([]);
 });
 
+test("Unreal Agent's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = unrealAgentAdapterFor(unrealAgentFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "unreal-agent")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -500,6 +519,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: FX_CAPABILITIES,
         },
         {
+          id: "unreal-agent",
+          label: "Unreal Agent",
+          state: "unavailable",
+          capabilities: UNREAL_AGENT_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -538,7 +563,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["fx"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>(["fx", "Unreal Agent"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

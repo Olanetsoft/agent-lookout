@@ -30,6 +30,10 @@ import {
 } from "@collector/adapters/kilo-code/index";
 import { FX_CAPABILITIES, UNCHECKED_NOTE as FX_UNCHECKED_NOTE } from "@collector/adapters/fx/index";
 import {
+  UNCHECKED_NOTE as UNREAL_AGENT_UNCHECKED_NOTE,
+  UNREAL_AGENT_CAPABILITIES,
+} from "@collector/adapters/unreal-agent/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -85,6 +89,9 @@ const PRIME_AGENT_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/prime-agent.md", import.meta.url),
 );
 const FX_NOTES = fileURLToPath(new URL("../../../../docs/adapters/fx.md", import.meta.url));
+const UNREAL_AGENT_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/unreal-agent.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -111,6 +118,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kimchi", KIMCHI_CAPABILITIES],
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["fx", FX_CAPABILITIES],
+  ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -561,6 +569,40 @@ test("PRIVACY.md and the fx notes name what is read and from which version", asy
       "settings.json",
       "auth.json",
       "ps -A -o pid=,comm=",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Unreal Agent notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(UNREAL_AGENT_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const unrealAgent = line("For Unreal Agent, Agent Lookout reads");
+  expect(unrealAgent).toContain("built from Unreal Agent's source at v0.3.1");
+  expect(unrealAgent).toContain("`ps`");
+  expect(unrealAgent).not.toContain("fx");
+  expect(UNREAL_AGENT_UNCHECKED_NOTE).toContain("v0.3.1");
+  expect(notes).toContain("v0.3.1");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### Unreal Agent's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "ps -A -o lstart=,comm=",
+      "XDG_STATE_HOME",
+      "AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR",
+      "~/.local/state/unreal-agent/sessions",
+      "operations",
+      ".session.jsonl",
+      ".session-",
+      "64 MiB",
+      "8 MiB",
+      "10 minutes",
     ]) {
       expect(text, field).toContain(field);
     }

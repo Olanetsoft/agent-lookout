@@ -33,6 +33,7 @@ import {
   EMPTY_OPENCODE_HOME,
   EMPTY_PRIME_AGENT_HOME,
   EMPTY_QWEN_HOME,
+  EMPTY_UNREAL_AGENT_SESSIONS,
   EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
 } from "@tests/support/node/tempFiles";
@@ -193,6 +194,13 @@ delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
 mkdirSync(EMPTY_FX_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_FX_HOME = EMPTY_FX_HOME;
 delete process.env.FX_HOME;
+
+// Nor Unreal Agent's, in `~/.local/state/unreal-agent/sessions`, or under the
+// folder `XDG_STATE_HOME` names: the adapter is pointed at an empty folder,
+// which wins over `XDG_STATE_HOME`. A test of the adapter names a folder of
+// its own.
+mkdirSync(EMPTY_UNREAL_AGENT_SESSIONS, { recursive: true });
+process.env.AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR = EMPTY_UNREAL_AGENT_SESSIONS;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

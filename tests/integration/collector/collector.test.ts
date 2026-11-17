@@ -165,6 +165,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
       AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
       AGENT_LOOKOUT_FX_HOME: await tempDir(),
+      AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -197,8 +198,11 @@ const MIMO_CODE_STATE = process.platform === "win32" ? "unavailable" : "ok";
 /** fx's card in a folder with no sessions: watched, but not on Windows, where nothing of it is read. */
 const FX_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
+/** Unreal Agent's card in a folder with no sessions: watched, but not on Windows, where nothing of it is read. */
+const UNREAL_AGENT_STATE = process.platform === "win32" ? "unavailable" : "ok";
+
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and fx, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx and Unreal Agent, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -222,6 +226,7 @@ describe("createCollector", () => {
       ["kimchi", "Kimchi", "ok"],
       ["prime-agent", "Prime Agent", "ok"],
       ["fx", "fx", FX_STATE],
+      ["unreal-agent", "Unreal Agent", UNREAL_AGENT_STATE],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -269,6 +274,7 @@ describe("createCollector", () => {
       { id: "kimchi", state: "ok" },
       { id: "prime-agent", state: "ok" },
       { id: "fx", state: FX_STATE },
+      { id: "unreal-agent", state: UNREAL_AGENT_STATE },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -407,6 +413,7 @@ describe("createCollector", () => {
           AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
           AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
           AGENT_LOOKOUT_FX_HOME: await tempDir(),
+          AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
           AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
           AGENT_LOOKOUT_TMUX: "off",
           AGENT_LOOKOUT_STOP: "off",
@@ -454,6 +461,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
         AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
         AGENT_LOOKOUT_FX_HOME: await tempDir(),
+        AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -538,6 +546,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
         AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
         AGENT_LOOKOUT_FX_HOME: await tempDir(),
+        AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2586,6 +2595,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
         AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
         AGENT_LOOKOUT_FX_HOME: await tempDir(),
+        AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
@@ -2868,6 +2878,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
         AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
         AGENT_LOOKOUT_FX_HOME: await tempDir(),
+        AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -3110,6 +3121,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "kimchi",
       "prime-agent",
       "fx",
+      "unreal-agent",
       "status-files",
       "remote:",
     ]);
