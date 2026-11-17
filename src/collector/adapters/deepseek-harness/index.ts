@@ -83,7 +83,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever DeepSeek Harness is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "A DeepSeek Harness session shows as working while its log, or a subagent's, has a turn under way, as needing you while a turn waits for an approval, an answer or a plan review, as idle or failed once its turn ends, and as finished when DeepSeek Harness closed it mid-turn. Nothing it writes marks an open session, so a session no program could still be writing, by ps or since the computer started, shows as finished. A turn that has written nothing for 30 minutes shows as unknown, and so does a wait, unless the desktop app runs.";
+  "A DeepSeek Harness session shows as working while its log, or a subagent's, has a turn under way, as needing you while a turn waits for an approval, an answer or a plan review, as idle or failed once its turn ends, and as finished when DeepSeek Harness closed it mid-turn. Nothing it writes marks an open session, so a session no program could still be writing, by ps or since the computer started, shows as finished, unless its last turn failed or its log cannot be followed. Its own turn shows as unknown once neither its log nor a subagent's has been written for 30 minutes, and so does a wait, unless the desktop app runs, and a subagent's turn quiet that long stops keeping it working.";
 
 /** Said whenever DeepSeek Harness is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -131,13 +131,15 @@ export const NO_ZSTD_ADVICE = "Update Node.js to 22.15 or later.";
  * computer running it.
  *
  * - Working while a turn of its own or a subagent's is under way, idle once
- *   it ends. A turn quiet for 30 minutes is unknown: a crash leaves one open.
+ *   it ends. Its own turn quiet for 30 minutes is unknown, as a crash leaves
+ *   one open; a subagent's quiet that long no longer keeps it working.
  * - Needs you while a turn waits for an approval, an `ask_user_question`
  *   answer or an `exit_plan_mode` review. One left quiet for 30 minutes is
  *   unknown, unless the desktop app runs.
  * - Finished when DeepSeek Harness closed it mid-turn, or when no program
  *   that could write it runs, by `ps`, or the computer started since.
- * - Failed when its last turn ended on an error.
+ * - Failed when its last turn ended on an error, until a new turn starts or
+ *   it is reopened.
  * - The name is a title its model wrote or one marked as the person's, else
  *   the folder's. Its first title, the first words of a prompt, is never read.
  * - Quiet for is the time since its log, or a subagent's, was written.
@@ -148,12 +150,12 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the turn its log, or a subagent's, has under way. One that has written nothing for 30 minutes, as a crash leaves, is unknown.",
+      "From its own turn, or a subagent's written in the last 30 minutes. Its own, quiet for 30 minutes, can show as unknown.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "While a turn waits for an approval, a question or a plan review. One a crash left shows 30 minutes, or while the desktop app runs.",
+      "While a turn waits for an approval, question or plan review. One a crash left can show 30 minutes, or while the desktop app runs.",
   },
   finished: {
     level: "partly",
@@ -163,7 +165,7 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When a turn ends on an error, until the session is reopened. A DeepSeek Harness that is closing can lose that end.",
+      "When its last turn ended on an error, until a new turn starts or it is reopened. A closing DeepSeek Harness can lose that end.",
   },
   names: {
     level: "partly",

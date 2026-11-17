@@ -19,7 +19,7 @@ import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
  * it as `node` (apps/cli/src/bin.ts). Its desktop app, and the host that app
  * starts from the same program, show as `DeepSeek Harness`
  * (apps/desktop/scripts/electron-builder-config.mjs:119, apps/desktop/src/
- * main.ts:209, host-process.ts:211-224). On Linux the desktop app's program
+ * main.ts:210, host-process.ts:211-224). On Linux the desktop app's program
  * is named from its package, `@deepseek-aidsh-desktop`, which Linux cuts to
  * its first 15 characters, `@deepseek-aidsh`; that was worked out from the
  * builder's rules and not seen. A process whose program has one of these

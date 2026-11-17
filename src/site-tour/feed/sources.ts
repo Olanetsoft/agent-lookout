@@ -988,12 +988,12 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the turn its log, or a subagent's, has under way. One that has written nothing for 30 minutes, as a crash leaves, is unknown.",
+      "From its own turn, or a subagent's written in the last 30 minutes. Its own, quiet for 30 minutes, can show as unknown.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "While a turn waits for an approval, a question or a plan review. One a crash left shows 30 minutes, or while the desktop app runs.",
+      "While a turn waits for an approval, question or plan review. One a crash left can show 30 minutes, or while the desktop app runs.",
   },
   finished: {
     level: "partly",
@@ -1003,7 +1003,7 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When a turn ends on an error, until the session is reopened. A DeepSeek Harness that is closing can lose that end.",
+      "When its last turn ended on an error, until a new turn starts or it is reopened. A closing DeepSeek Harness can lose that end.",
   },
   names: {
     level: "partly",
