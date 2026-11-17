@@ -165,7 +165,8 @@ describe("a Kimchi that is not there", () => {
     const { health, sessions } = await adapter.poll();
     expect(health.state).toBe("ok");
     expect(health.detail).toBe(
-      `AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no /tmp/empty-kimchi/sessions folder, so no Kimchi sessions are listed. ${NOTES}`,
+      // Resolved, so on Windows it starts with the drive.
+      `AGENT_LOOKOUT_KIMCHI_HOME is set, and there is no ${path.join(path.resolve("/tmp/empty-kimchi"), "sessions")} folder, so no Kimchi sessions are listed. ${NOTES}`,
     );
     expect(sessions).toEqual([]);
   });
