@@ -108,15 +108,21 @@ const OPENCODE_OWN_PART = [
  */
 export const OPENCODE_ASKING_TOOLS: readonly string[] = ["question", "plan_exit"];
 
-/** A tool's name as a question may hold it: fixed text of this adapter's, never anything read. */
-const TOOL_NAME = /^[a-z][a-z_-]{0,63}$/;
+/**
+ * A word as a question may hold it, a tool's name, an agent's or a title's
+ * source: fixed text of this adapter's, never anything read.
+ */
+const FIXED_WORD = /^[a-z][a-z_-]{0,63}$/;
 
-/** These tools' names as SQL writes a list of them, each checked first. */
-function toolList(tools: readonly string[]): string {
-  for (const tool of tools) {
-    if (!TOOL_NAME.test(tool)) throw new Error(`Not a tool's name: ${tool}`);
-  }
-  return tools.map((tool) => `'${tool}'`).join(", ");
+/** One such word as SQL writes it, checked first. */
+function fixedWord(word: string): string {
+  if (!FIXED_WORD.test(word)) throw new Error(`Not a fixed word: ${word}`);
+  return `'${word}'`;
+}
+
+/** These words as SQL writes a list of them, each checked first. */
+function toolList(words: readonly string[]): string {
+  return words.map(fixedWord).join(", ");
 }
 
 /**
@@ -259,7 +265,7 @@ export interface V1Extras {
   /**
    * Whether the agent keeps a row for each subagent in `actor_registry`, with
    * a `status` of `pending`, `running` or `idle`, as MiMo Code does. Then
-   * each row has `a_active_at` (`activeSubagents`).
+   * each row has `a_active_at` (`ACTIVE_SUBAGENTS`).
    */
   actors?: boolean;
   /**
@@ -285,8 +291,7 @@ type MainOnly = (alias: string) => string;
 function mainOnly(extras: V1Extras): MainOnly {
   const { mainAgent } = extras;
   if (mainAgent === undefined) return () => "";
-  // Checked as a tool's name is: fixed text of this adapter's.
-  const [main] = toolList([mainAgent]).split(", ");
+  const main = fixedWord(mainAgent);
   return (alias) => ` AND ${alias}.agent_id = ${main}`;
 }
 
