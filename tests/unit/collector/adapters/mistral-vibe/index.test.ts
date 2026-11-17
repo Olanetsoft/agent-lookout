@@ -476,6 +476,104 @@ describe("open and closed", () => {
     expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working" });
   });
 
+  test("a write whose time a disk rounds down to just before the lease's still opens the session at once", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: idle(A) });
+    makeOld(files, A, NOW - 2 * HOUR);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "finished" });
+
+    // A program takes A back and writes to it at once, on a disk that keeps whole
+    // seconds, so the write's time is the second before the lease's.
+    takeLease(files, A, NOW + 2_700);
+    files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, running(A)), {
+      mtimeMs: NOW + 2 * SECOND,
+    });
+    // Vibe takes the lease of a new session and saves it at once, on a disk that
+    // keeps steps of 2 seconds, so the save's time is the step before the lease's.
+    clock.set(NOW + 2 * SECOND);
+    writeStore(files, { id: B, state: running(B) });
+    takeLease(files, B, NOW + 3_900);
+    clock.set(NOW + 4 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working", [B]: "working" });
+    clock.advance(2 * SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ [A]: "working", [B]: "working" });
+  });
+
+  test("a write 2 seconds or more before the lease's time still leaves a closed session finished", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    for (const id of [A, B, C]) {
+      writeStore(files, { id, state: running(id) });
+      takeLease(files, id, NOW - HOUR);
+    }
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [A]: "working",
+      [B]: "working",
+      [C]: "working",
+    });
+
+    // Between two polls, each program writes its session's last turn and lets
+    // go, and Vibe takes the lease at once to clear old output.
+    const closed = { [A]: NOW + SECOND, [B]: NOW + 500, [C]: NOW + 1_001 };
+    for (const [id, at] of Object.entries(closed)) {
+      files.append(`${SESSION_DIR}/${journalPath(id)}`, delta(5, idle(id)), { mtimeMs: at });
+      releaseLease(files, id);
+      takeLease(files, id, NOW + 3 * SECOND);
+    }
+    clock.set(NOW + 4 * SECOND);
+    // A's write is 2 seconds before the lease's time, and B's more. C's is less,
+    // so it may have come after the lease, and C shows as open.
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [A]: "finished",
+      [B]: "finished",
+      [C]: "idle",
+    });
+  });
+
+  test("a lease Vibe takes to clear old output leaves a session finished once a poll has seen it so, however soon after its last write", async () => {
+    const clock = handClock();
+    const files = vibeFiles(clock.now);
+    writeStore(files, { id: A, state: running(A) });
+    takeLease(files, A, NOW - HOUR);
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+
+    let memory = EMPTY_CHANGE_MEMORY;
+    const seen: string[] = [];
+    const told: string[] = [];
+    const steps = [
+      () => undefined,
+      // Vibe ends the turn, then lets go of the session.
+      () => {
+        files.append(`${SESSION_DIR}/${journalPath(A)}`, delta(5, idle(A)), {
+          mtimeMs: NOW + SECOND,
+        });
+        releaseLease(files, A);
+      },
+      // Half a second after the poll that showed it finished, and 1.5 seconds after
+      // that write, Vibe takes the lease to clear old output.
+      () => takeLease(files, A, NOW + 2_500),
+      () => releaseLease(files, A),
+    ];
+    for (const step of steps) {
+      step();
+      const result = await adapter.poll();
+      seen.push(statuses(result.sessions)[A] ?? "not listed");
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      told.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+    }
+    expect(seen).toEqual(["working", "finished", "finished", "finished"]);
+    expect(told).toEqual(["finished"]);
+  });
+
   test("a lease Vibe takes for a moment on a closed session tells nothing, wherever the polls fall", async () => {
     const clock = handClock();
     const files = vibeFiles(clock.now);
