@@ -135,7 +135,7 @@ For a shell command of version 3 (`shell.go:15-17`), the state begins with the c
 ,"State":{"Input":{"Command":"<command>","Shell":"<shell>","Directory":"<folder>"},"BaseDirectory":"…
 ```
 
-The command and the shell are passed over as bytes, minding `\`, the command within the 1 MiB kept of the line. The folder, up to 16 KiB, is the one part of any line decoded, with `JSON.parse`, and only for the newest shell command's line in each read. It is the session's folder only when it is not empty, at most 4096 characters, has no control character and is absolute, as for every agent. Any step that fails gives no folder from that line, as for two records written into one line, which then holds `{"type"` where `","Shell":"` should be. `BaseDirectory`, the command's output and its paths are never looked at.
+The command and the shell are passed over as bytes, minding `\`, the command within the 1 MiB kept of the line. The folder, up to 16 KiB, is the one part of any line decoded with `JSON.parse`, and only for the newest shell command's line in each read. It is the session's folder only when it is not empty, at most 4096 characters, has no control character and is absolute, as for every agent. Any step that fails gives no folder from that line, as for two records written into one line, which then holds `{"type"` where `","Shell":"` should be. `BaseDirectory`, the command's output and its paths are never looked at.
 
 ## Which sessions are listed
 
