@@ -641,6 +641,59 @@ describe("the heartbeat a session's status is taken from", () => {
     pc.clock.advance(2 * SECOND);
     expect(only((await adapter.poll()).sessions).status).toBe("unknown");
   });
+
+  test("of two processes on one file, drops what one wrote once its process is found gone, even when its ID is given to another", async () => {
+    const pc = computer([PID, OTHER_PID]);
+    session(pc);
+    const adapter = pc.adapter();
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input" }));
+    await adapter.poll();
+    pc.clock.advance(2 * SECOND);
+    writeHeartbeat(
+      pc.files,
+      heartbeat({ phase: "idle", pid: OTHER_PID, updatedAt: pc.clock.now() }),
+    );
+    expect(only((await adapter.poll()).sessions).status).toBe("needs-you");
+    pc.processes.stop(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "idle",
+      statusSince: NOW + 2 * SECOND,
+    });
+    pc.processes.start(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "idle",
+      statusSince: NOW + 2 * SECOND,
+    });
+
+    // The same when its heartbeat was the file's as its process was found gone.
+    const last = computer([PID, OTHER_PID]);
+    session(last);
+    const again = last.adapter();
+    writeHeartbeat(last.files, heartbeat({ phase: "idle", pid: OTHER_PID }));
+    await again.poll();
+    last.clock.advance(2 * SECOND);
+    writeHeartbeat(last.files, heartbeat({ phase: "waiting_input", updatedAt: last.clock.now() }));
+    expect(only((await again.poll()).sessions).status).toBe("needs-you");
+    last.processes.stop(PID);
+    last.clock.advance(2 * SECOND);
+    expect(only((await again.poll()).sessions)).toMatchObject({
+      status: "idle",
+      statusSince: NOW,
+    });
+    last.clock.advance(SECOND);
+    writeHeartbeat(
+      last.files,
+      heartbeat({ phase: "idle", pid: OTHER_PID, updatedAt: last.clock.now() }),
+    );
+    last.processes.start(PID);
+    last.clock.advance(SECOND);
+    expect(only((await again.poll()).sessions)).toMatchObject({
+      status: "idle",
+      statusSince: NOW,
+    });
+  });
 });
 
 describe("a status's time", () => {

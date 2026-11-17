@@ -205,7 +205,7 @@ export interface HeartbeatPoll {
   /**
    * Each heartbeat's newest content, and, for a file two programs share, what
    * each other program last wrote in it while that is fresh and its process
-   * runs.
+   * runs, until its process is found gone.
    */
   found: HeartbeatFound[];
   /** A heartbeat of another format was found. */
@@ -249,7 +249,7 @@ export function createHeartbeatReader(options: HeartbeatReaderOptions): Heartbea
     isTrusted(info, "heartbeats-folder", platform, euid),
   );
   const known = new Map<string, Known>();
-  /** Each file's last content from each process that wrote it, by process, newest last. */
+  /** Each file's last content from each process that wrote it, by process, newest last, none of a process found gone. */
   const byPid = new Map<string, Map<number, Heartbeat>>();
 
   async function lookUp(name: string): Promise<FileInfo | null> {
@@ -365,15 +365,17 @@ export function createHeartbeatReader(options: HeartbeatReaderOptions): Heartbea
 
         const pids = byPid.get(name) ?? new Map<number, Heartbeat>();
         pids.delete(heartbeat.pid);
-        pids.set(heartbeat.pid, heartbeat);
+        // A process found gone is not kept, so once another process overwrites
+        // the file, a later process given its ID does not bring back what it wrote.
+        if (!before.dead) pids.set(heartbeat.pid, heartbeat);
         while (pids.size > MAX_PIDS_PER_NAME) pids.delete(pids.keys().next().value as number);
         byPid.set(name, pids);
-        // What another program last wrote here counts while it is fresh and its process runs.
+        // What another program last wrote here counts while it is fresh and its
+        // process runs, and is dropped once its process is found gone.
         for (const [pid, other] of pids) {
-          if (pid === heartbeat.pid) continue;
-          if (inFreshWindow(other.updatedAt, checkedAt) && alive(pid)) {
-            found.push({ name, heartbeat: other, alive: true });
-          }
+          if (pid === heartbeat.pid || !inFreshWindow(other.updatedAt, checkedAt)) continue;
+          if (alive(pid)) found.push({ name, heartbeat: other, alive: true });
+          else pids.delete(pid);
         }
       }
 

@@ -146,7 +146,7 @@ Each heartbeat of a session is one of these, by whether its process answers sign
 - just ended: its process has gone and it is recent;
 - gone: its process has gone and it is older.
 
-A file found with its process gone stays so while it is unchanged, whatever a later process given the same ID answers. Two Autohand Codes on one session with peer communication off share one file (`src/session/ActiveAgentRegistry.ts:88`), so what each process last wrote in it counts while the file is there, it is fresh and that process runs. Of a session's heartbeats, a fresh one is taken first, and of those one that waits for input, then one that works, then an idle one. Of the others, a quiet one is taken first, then one just ended, then a gone one, and of each the newest. Two alike go by name, then process, so two processes that take turns writing give the same answer.
+A file found with its process gone stays so while it is unchanged, whatever a later process given the same ID answers. Two Autohand Codes on one session with peer communication off share one file (`src/session/ActiveAgentRegistry.ts:88`), so what each process last wrote in it counts while the file is there, it is fresh and that process runs, and not once that process has been found gone, whatever a later process given the same ID answers. Of a session's heartbeats, a fresh one is taken first, and of those one that waits for input, then one that works, then an idle one. Of the others, a quiet one is taken first, then one just ended, then a gone one, and of each the newest. Two alike go by name, then process, so two processes that take turns writing give the same answer.
 
 ### What metadata.json counts as
 

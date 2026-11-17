@@ -401,15 +401,10 @@ describe("the heartbeats folder", () => {
       [PID, "waiting_input"],
     ]);
 
-    // Not once the other's process has gone,
-    running.delete(PID);
-    const gone = await heartbeats.read(NOW + 3 * SECOND, ask);
-    expect(gone.found.map((one) => one.heartbeat.pid)).toEqual([OTHER_PID]);
-    running.add(PID);
-    // nor once what it wrote is over 15 seconds old,
+    // Not once what it wrote is over 15 seconds old,
     const old = await heartbeats.read(NOW + 15 * SECOND + 1, ask);
     expect(old.found.map((one) => one.heartbeat.pid)).toEqual([OTHER_PID]);
-    // nor once the file is gone.
+    // nor once its process has gone, even when its ID is given to a new process,
     writeHeartbeat(
       files,
       heartbeat({ pid: PID, phase: "waiting_input", updatedAt: NOW + 16 * SECOND }),
@@ -417,10 +412,24 @@ describe("the heartbeats folder", () => {
     await heartbeats.read(NOW + 16 * SECOND, ask);
     writeHeartbeat(files, heartbeat({ pid: OTHER_PID, updatedAt: NOW + 17 * SECOND }));
     expect((await heartbeats.read(NOW + 18 * SECOND, ask)).found).toHaveLength(2);
+    running.delete(PID);
+    const gone = await heartbeats.read(NOW + 19 * SECOND, ask);
+    expect(gone.found.map((one) => one.heartbeat.pid)).toEqual([OTHER_PID]);
+    running.add(PID);
+    const reused = await heartbeats.read(NOW + 20 * SECOND, ask);
+    expect(reused.found.map((one) => one.heartbeat.pid)).toEqual([OTHER_PID]);
+    // nor once the file is gone.
+    writeHeartbeat(
+      files,
+      heartbeat({ pid: PID, phase: "waiting_input", updatedAt: NOW + 21 * SECOND }),
+    );
+    await heartbeats.read(NOW + 21 * SECOND, ask);
+    writeHeartbeat(files, heartbeat({ pid: OTHER_PID, updatedAt: NOW + 22 * SECOND }));
+    expect((await heartbeats.read(NOW + 23 * SECOND, ask)).found).toHaveLength(2);
     removeHeartbeat(files);
-    expect((await heartbeats.read(NOW + 19 * SECOND, ask)).found).toEqual([]);
-    writeHeartbeat(files, heartbeat({ pid: OTHER_PID, updatedAt: NOW + 20 * SECOND }));
-    const after = await heartbeats.read(NOW + 21 * SECOND, ask);
+    expect((await heartbeats.read(NOW + 24 * SECOND, ask)).found).toEqual([]);
+    writeHeartbeat(files, heartbeat({ pid: OTHER_PID, updatedAt: NOW + 25 * SECOND }));
+    const after = await heartbeats.read(NOW + 26 * SECOND, ask);
     expect(after.found.map((one) => one.heartbeat.pid)).toEqual([OTHER_PID]);
   });
 
