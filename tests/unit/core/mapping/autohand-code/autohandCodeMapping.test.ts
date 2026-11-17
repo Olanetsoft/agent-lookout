@@ -66,10 +66,16 @@ describe("the heartbeat chosen", () => {
     expect(chooseCandidate([])).toBeNull();
   });
 
-  test("of the others, the newest, then by name and process, so it holds as two processes take turns", () => {
+  test("of the others, a quiet one, then a just-dead one, then a gone one, and of each the newest, then by name and process, so it holds as two processes take turns", () => {
     const older = candidate({ heartbeatClass: "gone", updatedAt: NOW - 60_000, name: "a.json" });
     const newer = candidate({ heartbeatClass: "gone", updatedAt: NOW - 30_000, name: "b.json" });
     expect(chooseCandidate([older, newer])).toBe(newer);
+    // A quiet one is taken first even when it is older than the rest.
+    const oldQuiet = candidate({ heartbeatClass: "quiet", updatedAt: NOW - 90_000 });
+    const justDead = candidate({ heartbeatClass: "just-dead", updatedAt: NOW - 5_000 });
+    expect(chooseCandidate([newer, oldQuiet])).toBe(oldQuiet);
+    expect(chooseCandidate([justDead, oldQuiet])).toBe(oldQuiet);
+    expect(chooseCandidate([newer, justDead])).toBe(justDead);
     expect(chooseCandidate([candidate({ heartbeatClass: "quiet" }), newer])?.heartbeatClass).toBe(
       "quiet",
     );

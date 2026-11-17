@@ -123,7 +123,7 @@ export function noHeartbeatsNote(folder: string): string {
  *   while a run with --no-daemon goes on. A failed -p run is written
  *   `completed`.
  * - Its name is yours, from `/rename` or `autohand --rename`, else its
- *   folder's. Autohand Code's own title is never read.
+ *   folder's. Autohand Code's own title is never looked for.
  * - No Jump yet.
  * - Quiet for is when its `metadata.json` was last written.
  * - No tokens, Stop or Answer.
@@ -152,7 +152,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words, so it is never read.",
+      "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words and is never looked for.",
   },
   jump: {
     level: "no",

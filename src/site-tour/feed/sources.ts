@@ -956,7 +956,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words, so it is never read.",
+      "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words and is never looked for.",
   },
   jump: {
     level: "no",

@@ -26,13 +26,13 @@ It needs nothing installed and changes nothing. It reads the heartbeats and each
 
 ## What it reads
 
-| Path                          | How                                                                                                                                 | How often                                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `active-agents/`              | One `lstat`, then listed                                                                                                            | The `lstat` every poll, the listing when its modified time moves and once a minute                                               |
-| `active-agents/<name>.json`   | One `lstat`. When it changed, opened read-only without following a link, and its first 4 KiB read, and at most 16 KiB               | Every poll, at most 200 of them: when there are more, the 200 written most recently                                              |
-| `sessions/`                   | Listed                                                                                                                              | Every poll                                                                                                                       |
-| `sessions/<id>/`              | One `lstat`, to see that it is a folder of this user's and not a link                                                               | Every poll for a session shown, a folder a heartbeat or the memory names and a new folder, and once a minute for every other one |
-| `sessions/<id>/metadata.json` | One `lstat`. When it changed and its session is shown, opened read-only without following a link, and read whole when 1 MiB or less | The same                                                                                                                         |
+| Path                          | How                                                                                                                                                    | How often                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `active-agents/`              | One `lstat`, then listed                                                                                                                               | The `lstat` every poll, the listing when its modified time moves and once a minute                                               |
+| `active-agents/<name>.json`   | One `lstat`. When it changed, opened read-only without following a link, and its first 4 KiB read, and at most 16 KiB                                  | The `lstat` every poll. When there are more than 200, only the 200 written most recently are opened                              |
+| `sessions/`                   | Listed                                                                                                                                                 | Every poll                                                                                                                       |
+| `sessions/<id>/`              | One `lstat`, to see that it is a folder of this user's and not a link, and one more just before its `metadata.json` is opened                          | Every poll for a session shown, a folder a heartbeat or the memory names and a new folder, and once a minute for every other one |
+| `sessions/<id>/metadata.json` | One `lstat`. When it changed, its session is shown and it is 1 MiB or less, opened read-only without following a link, and read whole when it still is | The same                                                                                                                         |
 
 A heartbeat and a `metadata.json` are read only as an ordinary file with one name. On macOS and Linux each one, `active-agents` and each session's folder must belong to the user Agent Lookout runs as, and a heartbeat must be one no one else may read or write. A `metadata.json` is not held to that: one the importer writes is readable by others (`src/import/importers/BaseImporter.ts:216`), and a later write keeps the mode it finds (`src/utils/atomicFile.ts:551-554`). Each is checked on the `lstat` and again on the open file. Autohand Code's own folder and `sessions` may be links, and are followed.
 
@@ -113,7 +113,7 @@ A file is read only when it begins with `{` and ends with `}`, so one cut off as
 
 Never looked for or turned into text: `summary`, the start of your last message (`src/core/agent/AgentSessionAccounting.ts:374-379`), `automodePrompt`, an auto-mode run's whole task (`src/index.ts:2942`), a `title` whose `titleSource` is not `user`, `readFileState`, which names the files the session read, `usage`, `branch`, `model`, `projectName`, the counts, and the rest of `importedFrom`, an account's ID among it.
 
-### Why a title Autohand Code made is never read
+### Why a title Autohand Code made is never looked for
 
 `titleSource` is `auto` for two kinds of title, which cannot be told apart. The first is the start of your first instruction, up to 7 words or 48 characters (`src/core/agent/SessionAutoNamer.ts:20-38`; `src/core/agent/AgentSessionTitle.ts:48-59`). The second is a model's name for the session, written later the same way (`AgentSessionTitle.ts:65-83`). `user` comes only from `/rename` (`src/commands/rename.ts:39`) and `renameSession` (`src/session/SessionManager.ts:402-429`), which `autohand --rename` runs (`src/index.ts:527`, `:667-675`; `src/startup/renameSession.ts:16-28`). That command exists so a session can be named from a script, so a name set with it may not be yours. A fork copies the name of the session it came from (`src/session/SessionManager.ts:240-241`).
 
@@ -146,7 +146,7 @@ Each heartbeat of a session is one of these, by whether its process answers sign
 - just ended: its process has gone and it is recent;
 - gone: its process has gone and it is older.
 
-A file found with its process gone stays so while it is unchanged, whatever a later process given the same ID answers. Two Autohand Codes on one session with peer communication off share one file (`src/session/ActiveAgentRegistry.ts:88`), so what each process last wrote in it counts while the file is there, it is fresh and that process runs. Of a session's heartbeats, a fresh one is taken first, and of those one that waits for input, then one that works, then an idle one. Of the others, the newest. Two alike go by name, then process, so two processes that take turns writing give the same answer.
+A file found with its process gone stays so while it is unchanged, whatever a later process given the same ID answers. Two Autohand Codes on one session with peer communication off share one file (`src/session/ActiveAgentRegistry.ts:88`), so what each process last wrote in it counts while the file is there, it is fresh and that process runs. Of a session's heartbeats, a fresh one is taken first, and of those one that waits for input, then one that works, then an idle one. Of the others, a quiet one is taken first, then one just ended, then a gone one, and of each the newest. Two alike go by name, then process, so two processes that take turns writing give the same answer.
 
 ### What metadata.json counts as
 
@@ -187,7 +187,7 @@ The first row that applies gives the status.
 
 ### A late poll
 
-After the computer sleeps, a session's heartbeat is over 15 seconds old until Autohand Code writes the next one, at most 5 seconds on. Without a rule, a session that waits would show as unknown and then as needing you again, a new wait. So on a poll more than 15 seconds after the one before, or before it by the clock, a session that had a fresh heartbeat on the poll before, whose process still runs and that has not been closed since, keeps the status it had, with the same time, while its heartbeat is quiet or gone. It keeps it until a fresh heartbeat comes, or for 7 seconds, and is never held again from that poll. It is not held while the heartbeats folder cannot be read.
+After the computer sleeps, a session's heartbeat is over 15 seconds old until Autohand Code writes the next one, at most 5 seconds on. Without a rule, a session that waits would show as unknown and then as needing you again, a new wait. So on a poll more than 15 seconds after the one before, or before it by the clock, a session that had a fresh heartbeat on the poll before, whose process still runs and that has not been closed since, keeps the status it had, with the same time, while its heartbeat is quiet or no longer there. It keeps it until a fresh heartbeat comes, or for 7 seconds, and is never held again from that poll. It is not held while the heartbeats folder cannot be read.
 
 ### The time of a status
 

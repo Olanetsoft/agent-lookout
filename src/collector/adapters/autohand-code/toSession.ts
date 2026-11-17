@@ -55,7 +55,7 @@ function surfaceOf(facts: MetadataFacts | null, mode: AutohandMode | null | unde
  * One Autohand Code session in the shared model.
  *
  * - Its name is the one you gave it with `/rename` or `autohand --rename`,
- *   else its folder's, else its id. Autohand Code's own title is never read.
+ *   else its folder's, else its id. Autohand Code's own title is never looked for.
  * - Its folder is its `metadata.json`'s `projectPath`, else its heartbeat's
  *   `workspaceRoot`.
  * - It started when its `metadata.json` says it was made, else when its

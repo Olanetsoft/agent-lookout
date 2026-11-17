@@ -46,8 +46,9 @@ import {
  * is the first key of `activity` in both of Autohand Code's writers
  * (`src/session/peers/PeerActivityPublisher.ts:60-61`, `src/core/agent.ts:3166`),
  * and the instruction comes after it, so the other keys are looked for only
- * before `phase`. Nothing after it is looked at. `status` is not read: it can
- * lag `phase` (`src/core/agent.ts:3133-3136`).
+ * before `phase`. Past its word, only the file's last bytes are looked at, to
+ * tell a whole file. `status` is not read: it can lag `phase`
+ * (`src/core/agent.ts:3133-3136`).
  *
  * The folder is looked up on each poll and listed when it changed and once a
  * minute (`folders.ts` in the Prime Agent adapter). Each heartbeat is looked up

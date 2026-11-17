@@ -77,7 +77,8 @@ function phaseRank(phase: AutohandPhase | null): number {
 /**
  * The heartbeat a session's status is taken from, of the ones its files hold:
  * a fresh one first, and of those one that waits for you, then one that works,
- * then an idle one. Of the others, the newest. Two alike go by name, then
+ * then an idle one. Of the others, a quiet one first, then a just-dead one,
+ * then a gone one, and of each the newest. Two alike go by name, then
  * process, so two processes that take turns writing give the same answer.
  */
 export function chooseCandidate<T extends Candidate>(candidates: readonly T[]): T | null {
