@@ -462,13 +462,43 @@ describe("what its worker's journal says", () => {
     expect((await statusOf(steered)).session?.status).toBe("unknown");
   });
 
+  test("idle once a queued message is deleted after an abort, from the deletion", async () => {
+    const files = heldSession(
+      checkpointAt(2, "prompt_accepted", true) +
+        checkpointAt(5, "turn_end", true, true) +
+        checkpointAt(7, "queue_mutated", false),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "idle", statusSince: STARTED_AT + 7 * SECOND });
+  });
+
+  test("working from the resume once a parked queue is resumed with work waiting", async () => {
+    const files = heldSession(
+      checkpointAt(2, "prompt_accepted", true) +
+        checkpointAt(5, "turn_end", true, true) +
+        checkpointAt(7, "queue_resumed", true),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "working", statusSince: STARTED_AT + 7 * SECOND });
+  });
+
+  test("still working from the turn's start when a queued message is edited during it", async () => {
+    const files = heldSession(
+      checkpointAt(2, "prompt_accepted", true) +
+        checkpointAt(3, "follow_up_queued", true) +
+        checkpointAt(4, "queue_mutated", true),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "working", statusSince: STARTED_AT + 2 * SECOND });
+  });
+
   test("unknown right after a create, whose busy flag is always true", async () => {
     const files = heldSession(recordAt(1, "create", true));
     expect((await statusOf(files)).session).toMatchObject({ status: "unknown", statusSince: null });
   });
 
   test("unknown at a step that ends the worker or is not traced", async () => {
-    for (const operation of ["shutdown", "killed", "replaced", "queue_resumed", "worker_gave_up"]) {
+    for (const operation of ["shutdown", "killed", "replaced", "worker_gave_up"]) {
       const files = heldSession(
         checkpointAt(2, "prompt_accepted", true) + recordAt(5, operation, false),
       );
@@ -581,6 +611,7 @@ describe("what its worker's journal says", () => {
       "turn_end",
       "queue_purged",
       "queue_cleared",
+      "queue_mutated",
       "queue_resumed",
       "shutdown",
       "killed",

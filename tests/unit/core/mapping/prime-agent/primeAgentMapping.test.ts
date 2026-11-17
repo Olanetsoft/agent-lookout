@@ -129,7 +129,11 @@ describe("what one record says", () => {
     ["create", true, notParked, "unknown"],
     ["prompt_accepted", false, notParked, "unknown"],
     ["steer_queued", false, notParked, "unknown"],
-    ["queue_resumed", true, notParked, "unknown"],
+    ["queue_mutated", true, notParked, "working"],
+    ["queue_mutated", true, parked, "unknown"],
+    ["queue_mutated", false, notParked, "idle"],
+    ["queue_resumed", true, notParked, "working"],
+    ["queue_resumed", false, notParked, "idle"],
     ["shutdown", true, notParked, "unknown"],
     ["shutdown", false, notParked, "unknown"],
     ["killed", false, notParked, "unknown"],
@@ -143,6 +147,7 @@ describe("what one record says", () => {
   test("only a step that can be working with busy true starts a run", () => {
     expect(mayBeWorking(record("prompt_accepted", true))).toBe(true);
     expect(mayBeWorking(record("turn_end", true))).toBe(true);
+    expect(mayBeWorking(record("queue_mutated", true))).toBe(true);
     expect(mayBeWorking(record("turn_end", false))).toBe(false);
     expect(mayBeWorking(record("create", true))).toBe(false);
   });

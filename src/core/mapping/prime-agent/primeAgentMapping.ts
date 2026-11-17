@@ -123,16 +123,27 @@ export interface TrailEntry {
   queue: QueueState;
 }
 
-/** The record lines that settle a turn: Prime Agent's `Settle` checkpoints. */
-const SETTLES: ReadonlySet<string> = new Set(["turn_end", "queue_purged", "queue_cleared"]);
+/**
+ * The record lines that settle a turn: Prime Agent's `Settle` checkpoints, and
+ * `queue_resumed`, which writes `busy` the same way.
+ */
+const SETTLES: ReadonlySet<string> = new Set([
+  "turn_end",
+  "queue_purged",
+  "queue_cleared",
+  "queue_mutated",
+  "queue_resumed",
+]);
 
-/** The record lines that say work is waiting in a lane: `Admitted`, and a `Settle` that leaves some. */
+/** The record lines that say work is waiting in a lane: `Admitted`, and a settle that leaves some. */
 const QUEUED: ReadonlySet<string> = new Set([
   "steer_queued",
   "follow_up_queued",
   "turn_end",
   "queue_purged",
   "queue_cleared",
+  "queue_mutated",
+  "queue_resumed",
 ]);
 
 /** Whether a record line could show its session as working, whatever its queue says. */
@@ -143,15 +154,16 @@ export function mayBeWorking(record: JournalRecord): boolean {
 /**
  * What one record line says, with the queue line read before it:
  *
- * | Record                                      | busy  | Queue           | Status  |
- * | ------------------------------------------- | ----- | --------------- | ------- |
- * | `prompt_accepted`                           | true  | any             | working |
+ * | Record                                       | busy  | Queue           | Status  |
+ * | -------------------------------------------- | ----- | --------------- | ------- |
+ * | `prompt_accepted`                            | true  | any             | working |
  * | `steer_queued`, `follow_up_queued`, a settle | true  | not parked      | working |
- * | the same                                    | true  | parked, or none | unknown |
- * | `turn_end`, `queue_purged`, `queue_cleared` | false | any             | idle    |
- * | `create`, and anything else                 | any   | any             | unknown |
+ * | the same                                     | true  | parked, or none | unknown |
+ * | a settle                                     | false | any             | idle    |
+ * | `create`, and anything else                  | any   | any             | unknown |
  *
- * `busy` alone says nothing: Prime Agent writes it true on every create and
+ * A settle is `turn_end`, `queue_purged`, `queue_cleared`, `queue_mutated`
+ * or `queue_resumed`. `busy` alone says nothing: Prime Agent writes it true on every create and
  * reopen. A prompt is accepted only while a turn runs or into one it starts.
  * Queued work runs unless the queue is parked, which a parked queue line
  * says, or the worker is compacting, which nothing says.
