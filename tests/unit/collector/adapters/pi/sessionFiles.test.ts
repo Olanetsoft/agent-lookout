@@ -310,3 +310,60 @@ describe("what a poll costs", () => {
     expect(files.count("lstat", (target) => target.endsWith(".jsonl"))).toBe(1);
   });
 });
+
+describe("a flat sessions folder, as Prime Agent keeps", () => {
+  const flatOf = (files: MemoryFiles) =>
+    createSessionFileFinder({ sessionsDir: path.resolve(SESSIONS_DIR), io: files.io, flat: true });
+
+  test("is listed again only when its time moves, and at each sweep, and has no project folders", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/${SESSION_ID}.jsonl`, sessionText(SESSION_ID));
+    files.write(FILE, sessionText(sessionIdOf(2)));
+    const finder = flatOf(files);
+    const names = async (at: number) =>
+      (await finder.recent(at)).map((ref) => path.basename(ref.path));
+    expect(await names(NOW)).toEqual([`${SESSION_ID}.jsonl`]);
+    expect(await names(NOW + 2 * SECOND)).toEqual([`${SESSION_ID}.jsonl`]);
+    const listed = () => files.count("readdir", (target) => target === SESSIONS_DIR);
+    expect(listed()).toBe(1);
+    expect(files.count(undefined, (target) => target.startsWith(PROJECT_FOLDER))).toBe(0);
+    files.write(`${SESSIONS_DIR}/${sessionIdOf(3)}.jsonl`, sessionText(sessionIdOf(3)));
+    expect(await names(NOW + 4 * SECOND)).toHaveLength(1);
+    files.touch(SESSIONS_DIR, NOW + 5 * SECOND);
+    expect(await names(NOW + 6 * SECOND)).toHaveLength(2);
+    await names(NOW + 6 * SECOND + SWEEP_MS);
+    expect(listed()).toBe(3);
+  });
+
+  test("still rejects when the folder is missing, and is still followed when a link is at its name", async () => {
+    const missing = memoryFiles();
+    await expect(flatOf(missing).recent(NOW)).rejects.toMatchObject({ code: "ENOENT" });
+    const linked = memoryFiles();
+    linked.write(`${SESSIONS_DIR}/${SESSION_ID}.jsonl`, sessionText(SESSION_ID));
+    // The stand-in calls a link "other" at lstat, and lists what is under its name.
+    const io = {
+      ...linked.io,
+      lstat: async (target: string) =>
+        target === path.resolve(SESSIONS_DIR)
+          ? { kind: "other" as const, size: 0, mtimeMs: 0, ino: 1 }
+          : linked.io.lstat(target),
+    };
+    const finder = createSessionFileFinder({
+      sessionsDir: path.resolve(SESSIONS_DIR),
+      io,
+      flat: true,
+    });
+    await finder.recent(NOW);
+    await finder.recent(NOW + 2 * SECOND);
+    expect(linked.count("readdir", (target) => target === SESSIONS_DIR)).toBe(2);
+  });
+
+  test("Pi's folder is still listed on every poll", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(SESSION_ID));
+    const finder = finderOf(files);
+    await finder.recent(NOW);
+    await finder.recent(NOW + 2 * SECOND);
+    expect(files.count("readdir", (target) => target === SESSIONS_DIR)).toBe(2);
+  });
+});

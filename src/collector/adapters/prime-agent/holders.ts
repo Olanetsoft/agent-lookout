@@ -225,7 +225,12 @@ export function createHolderCheck(options: HolderOptions): HolderCheck {
           else
             processes.set(
               record.lease,
-              primeAgentLeaseProcess({ alive: true, start, beforeBoot: false, program: null }),
+              primeAgentLeaseProcess({
+                alive: true,
+                start,
+                beforeBoot: beforeBoot(record),
+                program: null,
+              }),
             );
         }
       }

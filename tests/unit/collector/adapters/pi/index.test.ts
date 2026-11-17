@@ -7,6 +7,7 @@ import {
   BASIS_CLOSED,
   BASIS_WITHOUT_PROCESSES,
   createPiAdapter,
+  createPiFamilyAdapter,
   NEWER_FORMAT_NOTE,
   PI_CAPABILITIES,
   PI_PROFILE,
@@ -16,6 +17,7 @@ import {
   RECHECK_MS,
   STATUS_NOTE,
   UNCHECKED_NOTE,
+  type PiStatusSource,
 } from "@collector/adapters/pi/index";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
@@ -836,6 +838,67 @@ describe("what a poll costs", () => {
       "openRegular",
       "readdir",
     ]);
+  });
+});
+
+describe("a reader of status of a profile's own, as Prime Agent's", () => {
+  /** A reader that says the one session works, and writes down what it was asked. */
+  function reader() {
+    const asked: { now: number; sessions: readonly { id: string; writtenAt: number }[] }[] = [];
+    const source: PiStatusSource = {
+      facts: [{ label: "Leases folder", value: "~/leases" }],
+      emptyBasis: "files-empty",
+      async read(input) {
+        asked.push(input);
+        return {
+          basis: "files-own",
+          detail: "Own words.",
+          byId: new Map([[SESSION_ID, { status: "working", since: NOW - MINUTE }]]),
+        };
+      },
+    };
+    return { source, asked };
+  }
+
+  test("gives each session's status, and asks no ps question of Pi's", async () => {
+    const files = oneSession();
+    const { source, asked } = reader();
+    const processes = standInProcesses();
+    const adapter = createPiFamilyAdapter(
+      PI_PROFILE,
+      { env: {}, homeDir: HOME, now: () => NOW, io: files.io, platform: "darwin", processes },
+      source,
+    );
+    const result = await adapter.poll();
+    expect(processes.asked.count).toBe(0);
+    expect(asked).toEqual([{ now: NOW, sessions: [{ id: SESSION_ID, writtenAt: NOW }] }]);
+    expect(result.basis).toBe("files-own");
+    expect(result.health.detail).toBe(`${READ_DETAIL} Own words.`);
+    expect(result.health.watching).toEqual([
+      { label: "Sessions folder", value: "~/.pi/agent/sessions" },
+      { label: "Read", value: "every 2 seconds" },
+      { label: "Leases folder", value: "~/leases" },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("is not asked while no session is listed, and a session it leaves out is unknown", async () => {
+    const files = memoryFiles();
+    files.mkdir(PROJECT_FOLDER);
+    const { source, asked } = reader();
+    const options = {
+      env: {},
+      homeDir: HOME,
+      now: () => NOW,
+      io: files.io,
+      platform: "darwin" as const,
+    };
+    const empty = await createPiFamilyAdapter(PI_PROFILE, options, source).poll();
+    expect(asked).toEqual([]);
+    expect(empty.basis).toBe("files-empty");
+    files.write(sessionPath(sessionIdOf(2)), sessionText(sessionIdOf(2)));
+    const other = await createPiFamilyAdapter(PI_PROFILE, options, source).poll();
+    expect(other.sessions[0]).toMatchObject({ status: "unknown", statusSince: null });
   });
 });
 
